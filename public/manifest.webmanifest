@@ -1,0 +1,10 @@
+{
+  "id": "/", "name": "EverChat · 让对话继续", "short_name": "EverChat",
+  "description": "断线不散，换端续聊。你的私人 AI 对话空间。",
+  "lang": "zh-CN", "start_url": "/", "scope": "/", "display": "standalone",
+  "background_color": "#fcfcfa", "theme_color": "#285c50",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

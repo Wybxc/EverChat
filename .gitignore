@@ -1,0 +1,12 @@
+node_modules/
+.pnpm-store/
+.pnpm-state/
+dist/
+.wrangler/
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+.env*
+playwright-report/
+test-results/
+.DS_Store

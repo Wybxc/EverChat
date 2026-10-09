@@ -1,0 +1,5 @@
+# Copy to .dev.vars for local development only. Use new secrets in production.
+APP_PASSWORD="everchat-local"
+SESSION_SECRET="local-development-only-change-this-to-a-random-32-byte-secret"
+# To use a real provider, change AI_PROVIDER to openai-compatible in wrangler.jsonc.
+# AI_API_KEY="your-provider-api-key"
