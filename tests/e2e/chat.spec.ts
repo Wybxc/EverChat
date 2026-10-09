@@ -87,7 +87,7 @@ test('mobile and desktop layouts fit their viewports', async ({ page }) => {
   await page.screenshot({ path: 'test-results/login-desktop.png' });
   await page.getByLabel('访问密码').fill('everchat-local');
   await page.getByRole('button', { name: '进入我的空间' }).click();
-  await expect(page.getByRole('heading', { name: '让对话， 继续发生。' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '新对话' })).toBeVisible();
   await page.screenshot({ path: 'test-results/desktop.png' });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.setViewportSize({ width: 390, height: 844 });
@@ -97,4 +97,12 @@ test('mobile and desktop layouts fit their viewports', async ({ page }) => {
   await page.getByRole('button', { name: '打开对话列表' }).click();
   await expect(page.getByRole('button', { name: '开启新对话' })).toBeVisible();
   await page.getByRole('button', { name: '收起侧栏' }).click();
+  await page.getByRole('button', { name: '空间设置' }).click();
+  await page.getByRole('radio', { name: '深色' }).check();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await page.reload();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await page.getByRole('button', { name: '空间设置' }).click();
+  await page.getByRole('radio', { name: '浅色' }).check();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
 });
