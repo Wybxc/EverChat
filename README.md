@@ -18,28 +18,41 @@ pnpm dev
 
 ## 接入真实模型
 
-支持提供流式 `POST /chat/completions` 的 OpenAI 兼容供应商。在 `wrangler.jsonc` 的 `vars` 中设置：
+登录后打开「空间设置 → AI 供应商」，选择协议，填写 API 基础地址、模型 ID 和 API 密钥，保存即可用于后续生成。也可设置系统提示词和输出 Token 上限。
+
+| 接口协议 | 默认 API 基础地址 | 流式接口 |
+|---|---|---|
+| OpenAI Chat Completions（含兼容供应商） | `https://api.openai.com/v1` | `/chat/completions` |
+| Anthropic Messages | `https://api.anthropic.com/v1` | `/messages` |
+| OpenAI Responses | `https://api.openai.com/v1` | `/responses` |
+| Gemini | `https://generativelanguage.googleapis.com/v1beta` | `/models/{model}:streamGenerateContent` |
+
+基础地址必须使用 HTTPS，包含版本路径，不含具体接口路径、查询参数或账号信息。模型 ID 按供应商提供的名称填写。四种协议使用 AI SDK 的对应适配器，保持流式保存和零自动重试；OpenAI 请求设置 `store: false`。保存设置本身不会调用或验证模型服务。
+
+设置保存在个人 `Library` Durable Object 中，跨设备共享。密钥仅存在服务端：读取设置只返回 `hasApiKey`，不会回显或放入浏览器存储。修改同一协议、同一地址的模型时密钥留空可保留；更换协议或地址必须重新填写密钥。选择演示模型会清除网页保存的密钥。已经启动的生成继续使用启动时读取的配置。
+
+首次使用时仍可在 `wrangler.jsonc` 的 `vars` 中设置默认值：
 
 ```json
 {
-  "AI_PROVIDER": "openai-compatible",
+  "AI_PROVIDER": "openai-chat",
   "AI_BASE_URL": "https://your-provider.example/v1",
   "AI_MODEL": "your-model-name",
   "MAX_OUTPUT_TOKENS": "4096"
 }
 ```
 
-`AI_BASE_URL` 必须使用 HTTPS，包含供应商的版本路径，**不含** `/chat/completions`。本地密钥写入 `.dev.vars` 中的 `AI_API_KEY`。服务端自动添加 `/chat/completions`，发送 `stream: true` 和 `max_tokens`。当前不支持仅提供 Responses、Anthropic Messages 或其他非兼容协议的服务。
+`AI_PROVIDER` 可为 `demo`、`openai-chat`、`anthropic`、`openai-responses` 或 `gemini`；旧值 `openai-compatible` 继续映射到 Chat Completions。本地默认密钥写入 `.dev.vars` 的 `AI_API_KEY`，生产默认密钥可使用同名 Cloudflare Secret。网页保存的完整配置优先于这些默认值，后续更改默认值不会覆盖已保存的网页配置。
 
 ## 部署到 Cloudflare
 
-先选择自己的 Cloudflare 账户，并设置三个 Secrets。不要使用示例中的本地密码或 session secret 部署。
+先选择自己的 Cloudflare 账户，并设置登录所需的两个 Secrets。不要使用示例中的本地密码或 session secret 部署。
 
 ```sh
 pnpm exec wrangler login
 pnpm exec wrangler secret put APP_PASSWORD
 pnpm exec wrangler secret put SESSION_SECRET
-# 真实模型时还需要：
+# 可选：通过环境变量配置默认模型密钥时使用；网页配置无需此步骤。
 pnpm exec wrangler secret put AI_API_KEY
 pnpm deploy
 ```
@@ -57,7 +70,7 @@ pnpm exec playwright install chromium
 pnpm test:e2e
 ```
 
-端到端测试使用本地 Cloudflare 运行时，不模拟生成后台。`pnpm test:e2e` 会启动开发服务器或复用已运行的 5173 端口，需要默认 demo 模式和 `.dev.vars.example` 中的本地密码。测试包含鉴权、跨域写入拒绝、请求幂等、会话并发限制、断网恢复、第二设备同步、页面关闭后继续生成、离线待发送、取消、重新生成和响应式截图。
+端到端测试使用本地 Cloudflare 运行时，不模拟生成后台。`pnpm test:e2e` 在 5174 端口启动独立服务器，使用临时存储目录，避免修改日常聊天及供应商设置；需要默认 demo 模式和 `.dev.vars.example` 中的本地密码。测试包含鉴权、跨域写入拒绝、请求幂等、会话并发限制、断网恢复、第二设备同步、页面关闭后继续生成、离线待发送、取消、重新生成、响应式截图，以及四种协议的网页配置、密钥隐藏与保留、跨设备读取和字段校验。单元测试使用协议响应样本验证请求及流式处理，不发起真实付费模型调用。
 
 手动验证：
 
@@ -76,7 +89,7 @@ PWA → Worker（密码鉴权、API）→ Conversation Durable Object（SQLite�
                             Conversation → 休眠 WebSocket → 多设备
 ```
 
-- `Library` Durable Object 保存个人会话索引与登录频率限制，`Conversation` 每个对话一个实例。暂不使用 D1、R2 或第三方登录。
+- `Library` Durable Object 保存个人会话索引、供应商配置与登录频率限制，`Conversation` 每个对话一个实例。暂不使用 D1、R2 或第三方登录。
 - 接收消息前先设置持久化 alarm；保存消息和任务 outbox 在同一个 SQLite 事务。alarm 用任务 ID 创建 Workflow，创建确认丢失时复用同一 ID。浏览器保存提交 request ID，未知网络结果继续用它重试。
 - 每个会话只允许一个活跃生成，不同会话可同时生成。回答约每 500ms 保存一次，事件带有递增序号。重连读取快照并补齐事件；事件日志只保留最近 500 次更新，较旧设备通过完整快照恢复。
 - 供应商调用步骤的自动重试次数为零；任务领取也是幂等的。供应商失败保留已保存/已缓冲的内容，标记失败，不自动二次调用付费模型。用户主动重新生成、编辑消息都保存为新版本。

@@ -4,6 +4,7 @@ import type { Env } from './env';
 import type { SubmitInput } from '../shared/types';
 import { authenticated, logoutCookie, passwordMatches, sessionCookie } from './auth';
 import { HttpError, json, parseBody, type AppContext } from './http';
+import { providerConfigFromEnv, providerConfigSchema, publicProviderSettings } from './provider-config';
 
 export { Conversation } from './conversation';
 export { Library } from './library';
@@ -42,12 +43,29 @@ app.use('*', async (context, next) => {
   await next();
 });
 
-app.get('/session', async (context) => json({
-  authenticated: await authenticated(context.req.raw, context.env),
-  configured: Boolean(context.env.APP_PASSWORD && context.env.SESSION_SECRET),
-  provider: context.env.AI_PROVIDER,
-  model: context.env.AI_PROVIDER === 'demo' ? '演示模型' : context.env.AI_MODEL,
-}));
+app.get('/session', async (context) => {
+  const signedIn = await authenticated(context.req.raw, context.env);
+  const config = signedIn ? await context.env.LIBRARY.getByName('personal').providerConfig() : providerConfigFromEnv(context.env);
+  return json({
+    authenticated: signedIn,
+    configured: Boolean(context.env.APP_PASSWORD && context.env.SESSION_SECRET),
+    provider: signedIn ? config.provider : 'demo',
+    model: signedIn ? config.model : '演示模型',
+  });
+});
+
+app.get('/settings/provider', async (context) => {
+  await requireAuth(context);
+  return json(publicProviderSettings(await context.env.LIBRARY.getByName('personal').providerConfig()));
+});
+
+app.put('/settings/provider', async (context) => {
+  await requireAuth(context);
+  const input = await parseBody(context, providerConfigSchema);
+  const result = await context.env.LIBRARY.getByName('personal').saveProviderConfig(input);
+  if ('error' in result) throw new HttpError(400, result.error);
+  return json(result.settings);
+});
 
 app.post('/login', async (context) => {
   const { APP_PASSWORD, SESSION_SECRET } = context.env;

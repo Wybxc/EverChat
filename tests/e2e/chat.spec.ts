@@ -1,7 +1,7 @@
 import { test, expect, type BrowserContext, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 
-const origin = 'http://127.0.0.1:5173';
+const origin = 'http://127.0.0.1:5174';
 async function login(page: Page) {
   await page.goto('/');
   await page.getByLabel('访问密码').fill('everchat-local');
@@ -66,7 +66,7 @@ test('offline outbox is persisted, delivered once, and cancellation preserves pr
   await context.setOffline(true);
   await page.getByLabel('消息', { exact: true }).fill('这条消息先离线保存');
   await page.getByRole('button', { name: '发送消息', exact: true }).click();
-  await expect(page.getByText('已保存在此设备 · 等待云端确认')).toBeVisible();
+  await expect(page.getByText('等待发送', { exact: true })).toBeVisible();
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('everchat:pending')!));
   expect(saved).toHaveLength(1);
   await context.setOffline(false);
@@ -98,11 +98,13 @@ test('mobile and desktop layouts fit their viewports', async ({ page }) => {
   await expect(page.getByRole('button', { name: '开启新对话' })).toBeVisible();
   await page.getByRole('button', { name: '收起侧栏' }).click();
   await page.getByRole('button', { name: '空间设置' }).click();
-  await page.getByRole('radio', { name: '深色' }).check();
+  await page.getByRole('radio', { name: '深色' }).focus();
+  await page.getByRole('radio', { name: '深色' }).press('Space');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await page.getByRole('button', { name: '空间设置' }).click();
-  await page.getByRole('radio', { name: '浅色' }).check();
+  await page.getByRole('radio', { name: '浅色' }).focus();
+  await page.getByRole('radio', { name: '浅色' }).press('Space');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
 });

@@ -22,7 +22,8 @@ export class GenerationWorkflow extends WorkflowEntrypoint<Env, GenerationParams
           lastFlush = Date.now();
         };
         try {
-          await generate(this.env, claim.context, async (delta) => {
+          const config = await this.env.LIBRARY.getByName('personal').providerConfig();
+          await generate(config, claim.context, async (delta) => {
             content += delta;
             if (content.length > 100_000) throw new ProviderError('回答已达到 100,000 字的原型限制。');
             if (Date.now() - lastFlush >= 500) await flush();

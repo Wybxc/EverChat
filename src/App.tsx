@@ -2,10 +2,11 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowDown, ArrowRight, ArrowUp, Check, CheckCheck, CloudOff, Copy, Download, Feather, Infinity as InfinityIcon, Lightbulb, LockKeyhole, LogOut, Menu, MessageCircle, Moon, Pencil, Plus, RefreshCw, Search, Settings, Sparkles, Square, Sun, WifiOff, X } from 'lucide-react';
 import 'streamdown/styles.css';
-import { isActive, type ConversationInfo, type Message, type SessionInfo, type Submission, type SubmitInput } from '../shared/types';
+import { isActive, type ConversationInfo, type Message, type ProviderSettings, type SessionInfo, type Submission, type SubmitInput } from '../shared/types';
 import { api, ApiError } from './api';
 import { clearLocal, read, write, writePending, type Pending } from './storage';
 import { useConversation } from './useConversation';
+import { ProviderSettingsPanel } from './ProviderSettings';
 
 const EMPTY_SESSION: SessionInfo = { authenticated: false, configured: false, provider: 'demo', model: '演示模型' };
 const Streamdown = lazy(() => import('streamdown').then(({ Streamdown: Component }) => ({ default: Component })));
@@ -110,6 +111,16 @@ export function App() {
   const nearBottom = useRef(true);
   const editor = useRef<HTMLTextAreaElement>(null);
   const settings = useRef<HTMLDialogElement>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const openSettings = () => { setSettingsOpen(true); settings.current?.showModal(); };
+  const providerSaved = (config: ProviderSettings) => {
+    setSession((current) => {
+      if (!current) return current;
+      const next = { ...current, provider: config.provider, model: config.model };
+      write('session', next);
+      return next;
+    });
+  };
   const sessionRef = useRef(session);
   sessionRef.current = session;
   const loggedOut = useCallback(() => { setSession((current) => ({ ...(current ?? EMPTY_SESSION), authenticated: false })); }, []);
@@ -260,13 +271,13 @@ export function App() {
         {!conversations.length && <p className="px-3 text-xs leading-6 text-base-content/60">暂无对话</p>}
         {search && !conversations.some((item) => item.title.toLowerCase().includes(search.toLowerCase())) && <p className="px-3 text-xs text-base-content/60">没有找到相关对话</p>}
       </div>
-      <button className="mx-3 mb-4 flex items-center gap-3 rounded-lg px-3 py-3 text-left hover:bg-base-300" onClick={() => settings.current?.showModal()}><span className="flex h-8 w-8 items-center justify-center rounded-full border border-base-content/50 bg-base-100 text-xs">我</span><span className="flex-1"><span className="block text-xs font-medium">私人空间</span></span><Settings size={16} /></button>
+      <button className="mx-3 mb-4 flex items-center gap-3 rounded-lg px-3 py-3 text-left hover:bg-base-300" onClick={openSettings}><span className="flex h-8 w-8 items-center justify-center rounded-full border border-base-content/50 bg-base-100 text-xs">我</span><span className="flex-1"><span className="block text-xs font-medium">私人空间</span></span><Settings size={16} /></button>
     </aside>
 
     <div className="flex min-w-0 flex-1 flex-col">
       <header className="flex h-18 shrink-0 items-center justify-between border-b border-base-content/50 px-5 sm:px-8">
         <div className="flex min-w-0 items-center gap-3"><button className="btn btn-ghost btn-sm btn-square lg:hidden" onClick={() => setSidebarOpen(true)} aria-label="打开对话列表"><Menu size={19} /></button><div className="min-w-0"><p className="truncate text-sm font-medium">{currentConversation?.title ?? '新对话'}</p><p className="mt-1 text-[10px] text-base-content/60">{session.model}</p></div></div>
-        <div className="flex shrink-0 items-center gap-3"><span aria-live="polite" className="hidden items-center gap-1.5 text-[11px] text-base-content/60 sm:flex" title={syncedAt ? `上次同步 ${new Date(syncedAt).toLocaleTimeString('zh-CN')}` : undefined}>{connection === 'offline' ? <CloudOff size={14} /> : <span className={`h-1.5 w-1.5 rounded-full ${connection === 'connected' ? 'bg-success' : 'bg-warning'}`} />}{statusText}</span>{snapshot.messages.length > 0 && <button aria-label="导出对话" title="导出 Markdown" className="btn btn-ghost btn-sm btn-square" onClick={exportChat}><Download size={16} /></button>}<button aria-label="空间设置" className="btn btn-ghost btn-sm btn-square" onClick={() => settings.current?.showModal()}><Settings size={17} /></button></div>
+        <div className="flex shrink-0 items-center gap-3"><span aria-live="polite" className="hidden items-center gap-1.5 text-[11px] text-base-content/60 sm:flex" title={syncedAt ? `上次同步 ${new Date(syncedAt).toLocaleTimeString('zh-CN')}` : undefined}>{connection === 'offline' ? <CloudOff size={14} /> : <span className={`h-1.5 w-1.5 rounded-full ${connection === 'connected' ? 'bg-success' : 'bg-warning'}`} />}{statusText}</span>{snapshot.messages.length > 0 && <button aria-label="导出对话" title="导出 Markdown" className="btn btn-ghost btn-sm btn-square" onClick={exportChat}><Download size={16} /></button>}<button aria-label="空间设置" className="btn btn-ghost btn-sm btn-square" onClick={openSettings}><Settings size={17} /></button></div>
       </header>
       {connection === 'offline' && <div role="status" className="flex items-center justify-center gap-2 border-b border-base-content/50 bg-base-200 px-4 py-2 text-xs text-base-content"><WifiOff size={13} />你现在离线，已保存的对话仍可阅读。新消息将在联网后发送。</div>}
       <div ref={scrollArea} className="relative flex-1 overflow-y-auto" onScroll={(event) => { const node = event.currentTarget; nearBottom.current = node.scrollHeight - node.scrollTop - node.clientHeight < 100; setAtBottom(nearBottom.current); }}>
@@ -294,11 +305,12 @@ export function App() {
         </div>
       </div>
     </div>
-    <dialog ref={settings} className="modal">
-      <div className="modal-box max-w-md">
-        <div className="mb-7 flex items-center justify-between"><h2 className="text-lg font-semibold">我的私人空间</h2><form method="dialog"><button className="btn btn-ghost btn-sm btn-square" aria-label="关闭设置"><X size={18} /></button></form></div>
+    <dialog id="space-settings" ref={settings} className="modal" onClose={() => setSettingsOpen(false)} aria-labelledby="space-settings-title">
+      <div className="modal-box max-w-lg">
+        <div className="mb-7 flex items-center justify-between"><h2 id="space-settings-title" className="text-lg font-semibold">我的私人空间</h2><form method="dialog"><button className="btn btn-ghost btn-sm btn-square" aria-label="关闭设置"><X size={18} /></button></form></div>
         <div className="space-y-4 text-sm"><div className="flex justify-between"><span className="text-base-content/60">模型</span><span>{session.model}</span></div><div className="flex justify-between"><span className="text-base-content/60">状态</span><span>{statusText}</span></div><div className="flex justify-between"><span className="text-base-content/60">对话</span><span>{conversations.length}</span></div></div>
         <div className="mt-6"><ThemeControl /></div>
+        {settingsOpen && <ProviderSettingsPanel onSaved={providerSaved} />}
         <div className="modal-action"><button className="btn gap-2" onClick={logout}><LogOut size={15} />退出并清除本地记录</button></div>
       </div>
       <form method="dialog" className="modal-backdrop"><button>关闭</button></form>

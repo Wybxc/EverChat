@@ -20,6 +20,19 @@ export interface GenerationParams { conversationId: string; runId: string }
 export interface ChatInput { role: 'system' | 'user' | 'assistant'; content: string }
 export interface SessionInfo { authenticated: boolean; provider: string; model: string; configured: boolean }
 
+export type ProviderKind = 'demo' | 'openai-chat' | 'anthropic' | 'openai-responses' | 'gemini';
+export interface ProviderConfig {
+  provider: ProviderKind;
+  baseUrl: string;
+  model: string;
+  systemPrompt: string;
+  maxOutputTokens: number;
+  apiKey?: string;
+}
+export interface ProviderSettings extends Omit<ProviderConfig, 'apiKey'> {
+  hasApiKey: boolean;
+}
+
 export const isActive = (message: Message) => message.status === 'queued' || message.status === 'running';
 
 export function applyChange(snapshot: Snapshot, change: Change): Snapshot {

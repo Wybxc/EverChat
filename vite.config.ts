@@ -30,6 +30,6 @@ export default defineConfig({
       navigateFallbackDenylist: [/^\/api\//],
       globPatterns: ['**/*.{js,css,html,svg,png,webmanifest}'],
     },
-  }), cloudflare()],
+  }), cloudflare({ persistState: process.env.EVERCHAT_TEST_STATE ? { path: process.env.EVERCHAT_TEST_STATE } : true })],
   server: { port: 5173, strictPort: true },
 });

@@ -15,7 +15,9 @@
     "check": "pnpm test && pnpm build && pnpm test:e2e"
   },
   "dependencies": {
-    "@ai-sdk/openai-compatible": "^3.0.66",
+    "@ai-sdk/anthropic": "^4.0.78",
+    "@ai-sdk/google": "^4.0.93",
+    "@ai-sdk/openai": "^4.0.91",
     "@tanstack/react-query": "^5.104.1",
     "ai": "^7.0.133",
     "hono": "^4.13.13",

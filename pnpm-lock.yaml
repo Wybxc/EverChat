@@ -191,9 +191,15 @@ importers:
 
   .:
     dependencies:
-      '@ai-sdk/openai-compatible':
-        specifier: ^3.0.66
-        version: 3.0.66(zod@4.6.5)
+      '@ai-sdk/anthropic':
+        specifier: ^4.0.78
+        version: 4.0.78(zod@4.6.5)
+      '@ai-sdk/google':
+        specifier: ^4.0.93
+        version: 4.0.93(zod@4.6.5)
+      '@ai-sdk/openai':
+        specifier: ^4.0.91
+        version: 4.0.91(zod@4.6.5)
       '@tanstack/react-query':
         specifier: ^5.104.1
         version: 5.104.1(react@19.3.0)
@@ -227,10 +233,10 @@ importers:
     devDependencies:
       '@cloudflare/vite-plugin':
         specifier: ^1.63.1
-        version: 1.63.1(@types/node@26.6.4)(vite@8.3.4(@types/node@26.6.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15))(wrangler@4.149.0(@cloudflare/workers-types@5.20261008.1)(@types/node@26.6.4))
+        version: 1.63.1(@types/node@26.6.4)(vite@8.3.4(@types/node@26.6.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15))(wrangler@4.149.0(@cloudflare/workers-types@5.20261009.1)(@types/node@26.6.4))
       '@cloudflare/workers-types':
         specifier: latest
-        version: 5.20261008.1
+        version: 5.20261009.1
       '@playwright/test':
         specifier: latest
         version: 1.64.0
@@ -269,9 +275,15 @@ importers:
         version: 2.0.0(supports-color@10.2.2)(vite@8.3.4(@types/node@26.6.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15))(workbox-build@7.4.1(supports-color@10.2.2))(workbox-window@7.4.1)
       wrangler:
         specifier: ^4.149.0
-        version: 4.149.0(@cloudflare/workers-types@5.20261008.1)(@types/node@26.6.4)
+        version: 4.149.0(@cloudflare/workers-types@5.20261009.1)(@types/node@26.6.4)
 
 packages:
+
+  '@ai-sdk/anthropic@4.0.78':
+    resolution: {integrity: sha512-lVMxa9tLM5WoB72bqxjzWEWQlCwtBTo1L3yIKxAefowWATd+1YKohrINey6wTn8gtGEqyYm79z4DUGJBYauUFw==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
 
   '@ai-sdk/gateway@4.0.108':
     resolution: {integrity: sha512-UgtnyyuIpMSzhha89MAK6c2pTeQW8s9jLSmDeYI92NzqDsoyEYFZ/lYAXTXLUQxA25j5iTWPEnzGVl5adIy+8w==}
@@ -279,8 +291,14 @@ packages:
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
-  '@ai-sdk/openai-compatible@3.0.66':
-    resolution: {integrity: sha512-w7hO8Zff6LyRBav3xs2YAnjSNh/fW7ymBsDuGRSjsD40/wiLWbbn9Hub11obLcjrxs2x1lXSFqKt8ZI5vX8u8Q==}
+  '@ai-sdk/google@4.0.93':
+    resolution: {integrity: sha512-hubOUxbG2W7oD3acdCxxnrQ84NlnLqfzcHe9uWMmwkglHxq/rwsbjloPhvebeQlcQ2G0gaX+akDF1Ddm/fNAnQ==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
+
+  '@ai-sdk/openai@4.0.91':
+    resolution: {integrity: sha512-Nk382R6us0GNxI1cGJUXMryz1XHpyrmC3K/Rmqdx9tIsqAlc7UtuO/hC9dd31F41w8uzoS362HJSDXgAI7zKbA==}
     engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
@@ -291,8 +309,18 @@ packages:
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
+  '@ai-sdk/provider-utils@5.0.58':
+    resolution: {integrity: sha512-iXSwKR/7LpHzAlyrUl+bTinwzmZ3Nmup1viwPisM5Gn5cogRdIG4rV9w1ZDuKFcrXyu/AeVs42E1CX/0aNwrfQ==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
+
   '@ai-sdk/provider@4.0.25':
     resolution: {integrity: sha512-vG0l7MUavfhn6c5+Z0y1/E6lKUrzecsLtFkuIknnHjAGAIiuwFDucafzebJuFVTZcLyhf8qhYYU2zeKP55Mymw==}
+    engines: {node: '>=22'}
+
+  '@ai-sdk/provider@4.0.26':
+    resolution: {integrity: sha512-BZ443uBEq6HuMA+Z4b7Hpm65GpZSo7pWqnYqpf/7tAO3C48JbtvAhOE2JnODFj+jodsZzfRHkAyQb64xuD2tZQ==}
     engines: {node: '>=22'}
 
   '@apideck/better-ajv-errors@0.3.7':
@@ -852,8 +880,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@cloudflare/workers-types@5.20261008.1':
-    resolution: {integrity: sha512-Ya6zuPTAQPka+Mn5rMI5f8Zl5bihhm+ytqhHiMzMgpLDGrD24A1k/Z/JPSBIqhIC0bx0AclgYyoZoRs6UWVlmw==}
+  '@cloudflare/workers-types@5.20261009.1':
+    resolution: {integrity: sha512-Oa/7pS2upeCKG0lEvPSGHLK8B8sx3lPanEaXDlOj13H6HfZV5agBeHq5A1VtJj+/x9dXuMJpHTg7U7kTYt4xDA==}
 
   '@cspotcode/source-map-support@0.8.1':
     resolution: {integrity: sha512-IchNf6dN4tHoMFIn/7OE8LWZ19Y6q/67Bmf6vnGREv8RSbBVb9LPJxEcnwrcwX6ixSvaiGoomAUvu4YSxXrVgw==}
@@ -3289,6 +3317,12 @@ packages:
 
 snapshots:
 
+  '@ai-sdk/anthropic@4.0.78(zod@4.6.5)':
+    dependencies:
+      '@ai-sdk/provider': 4.0.26
+      '@ai-sdk/provider-utils': 5.0.58(zod@4.6.5)
+      zod: 4.6.5
+
   '@ai-sdk/gateway@4.0.108(zod@4.6.5)':
     dependencies:
       '@ai-sdk/provider': 4.0.25
@@ -3296,10 +3330,16 @@ snapshots:
       '@vercel/oidc': 3.2.0
       zod: 4.6.5
 
-  '@ai-sdk/openai-compatible@3.0.66(zod@4.6.5)':
+  '@ai-sdk/google@4.0.93(zod@4.6.5)':
     dependencies:
-      '@ai-sdk/provider': 4.0.25
-      '@ai-sdk/provider-utils': 5.0.57(zod@4.6.5)
+      '@ai-sdk/provider': 4.0.26
+      '@ai-sdk/provider-utils': 5.0.58(zod@4.6.5)
+      zod: 4.6.5
+
+  '@ai-sdk/openai@4.0.91(zod@4.6.5)':
+    dependencies:
+      '@ai-sdk/provider': 4.0.26
+      '@ai-sdk/provider-utils': 5.0.58(zod@4.6.5)
       zod: 4.6.5
 
   '@ai-sdk/provider-utils@5.0.57(zod@4.6.5)':
@@ -3311,7 +3351,20 @@ snapshots:
       undici: 7.29.1
       zod: 4.6.5
 
+  '@ai-sdk/provider-utils@5.0.58(zod@4.6.5)':
+    dependencies:
+      '@ai-sdk/provider': 4.0.26
+      '@standard-schema/spec': 1.1.0
+      '@workflow/serde': 4.1.0
+      eventsource-parser: 3.1.1
+      undici: 7.29.1
+      zod: 4.6.5
+
   '@ai-sdk/provider@4.0.25':
+    dependencies:
+      json-schema: 0.4.0
+
+  '@ai-sdk/provider@4.0.26':
     dependencies:
       json-schema: 0.4.0
 
@@ -3992,14 +4045,14 @@ snapshots:
     optionalDependencies:
       workerd: 1.20261006.1
 
-  '@cloudflare/vite-plugin@1.63.1(@types/node@26.6.4)(vite@8.3.4(@types/node@26.6.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15))(wrangler@4.149.0(@cloudflare/workers-types@5.20261008.1)(@types/node@26.6.4))':
+  '@cloudflare/vite-plugin@1.63.1(@types/node@26.6.4)(vite@8.3.4(@types/node@26.6.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15))(wrangler@4.149.0(@cloudflare/workers-types@5.20261009.1)(@types/node@26.6.4))':
     dependencies:
       '@cloudflare/unenv-preset': 2.16.2(unenv@2.0.0-rc.24)(workerd@1.20261006.1)
       miniflare: 5.20261006.1-alpha(@types/node@26.6.4)
       unenv: 2.0.0-rc.24
       vite: 8.3.4(@types/node@26.6.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)
       workerd: 1.20261006.1
-      wrangler: 4.149.0(@cloudflare/workers-types@5.20261008.1)(@types/node@26.6.4)
+      wrangler: 4.149.0(@cloudflare/workers-types@5.20261009.1)(@types/node@26.6.4)
       ws: 8.21.0
     transitivePeerDependencies:
       - '@types/node'
@@ -4021,7 +4074,7 @@ snapshots:
   '@cloudflare/workerd-windows-64@1.20261006.1':
     optional: true
 
-  '@cloudflare/workers-types@5.20261008.1': {}
+  '@cloudflare/workers-types@5.20261009.1': {}
 
   '@cspotcode/source-map-support@0.8.1':
     dependencies:
@@ -6629,7 +6682,7 @@ snapshots:
       '@cloudflare/workerd-linux-arm64': 1.20261006.1
       '@cloudflare/workerd-windows-64': 1.20261006.1
 
-  wrangler@4.149.0(@cloudflare/workers-types@5.20261008.1)(@types/node@26.6.4):
+  wrangler@4.149.0(@cloudflare/workers-types@5.20261009.1)(@types/node@26.6.4):
     dependencies:
       '@cloudflare/kv-asset-handler': 0.5.0
       '@cloudflare/unenv-preset': 2.16.2(unenv@2.0.0-rc.24)(workerd@1.20261006.1)
@@ -6640,7 +6693,7 @@ snapshots:
       unenv: 2.0.0-rc.24
       workerd: 1.20261006.1
     optionalDependencies:
-      '@cloudflare/workers-types': 5.20261008.1
+      '@cloudflare/workers-types': 5.20261009.1
       fsevents: 2.3.3
     transitivePeerDependencies:
       - '@types/node'
