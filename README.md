@@ -46,7 +46,7 @@ pnpm deploy
 
 `SESSION_SECRET` 使用至少 32 字符的随机值，例如 `openssl rand -hex 32` 生成的结果。Secrets 存在服务端，不写入前端或 Git。默认 demo 模式也可部署，无需模型密钥。部署将创建 Worker、两个 SQLite Durable Object namespace 和一个 Workflow；首次启用服务时按 Cloudflare 提示完成账户配置。费用以账户当前套餐和实际用量为准。
 
-生产构建有 PWA manifest、应用图标及 Service Worker，支持安装和离线重新打开已访问的应用。开发模式不注册 Service Worker。客户端缓存和离线草稿保存在当前浏览器的 localStorage；共享设备上用“退出并清除本地记录”。
+生产构建有 PWA manifest、应用图标及 Service Worker，支持安装和离线重新打开已访问的应用。开发模式不注册 Service Worker。客户端缓存、快照和离线草稿优先保存在 IndexedDB（由 `idb-keyval` 管理），并保留 localStorage 作为迁移和故障回退；共享设备上用“退出并清除本地记录”。主题偏好仍使用 localStorage，以便页面启动前立即恢复主题。
 
 ## 验收与测试
 
@@ -89,9 +89,9 @@ PWA → Worker（密码鉴权、API）→ Conversation Durable Object（SQLite�
 
 ## 文件
 
-- `worker/`：鉴权、API、持久化会话、后台生成及 SSE 供应商适配。
+- `worker/`：鉴权、Hono API、持久化会话、后台生成及 AI SDK 供应商适配。
 - `src/`：React 界面、离线缓存与 outbox、WebSocket 自动重连。
 - `shared/`：API 数据结构及按序应用同步事件。
-- `tests/`：流式解析单元测试、基于浏览器和真实本地运行时的集成测试。
+- `tests/`：AI SDK 流式适配单元测试、基于浏览器和真实本地运行时的集成测试。
 
 架构依据：[Cloudflare Workflows API](https://developers.cloudflare.com/workflows/build/workers-api/)、[Durable Objects WebSocket 休眠](https://developers.cloudflare.com/durable-objects/best-practices/websockets/)、[Durable Objects alarms](https://developers.cloudflare.com/durable-objects/api/alarms/)。

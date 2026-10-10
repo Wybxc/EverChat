@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowDown, ArrowRight, ArrowUp, Check, CheckCheck, CloudOff, Copy, Download, Feather, Infinity as InfinityIcon, Lightbulb, LockKeyhole, LogOut, Menu, MessageCircle, Moon, Pencil, Plus, RefreshCw, Search, Settings, Sparkles, Square, Sun, WifiOff, X } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import 'streamdown/styles.css';
 import { isActive, type ConversationInfo, type Message, type SessionInfo, type Submission, type SubmitInput } from '../shared/types';
 import { api, ApiError } from './api';
 import { clearLocal, read, write, writePending, type Pending } from './storage';
 import { useConversation } from './useConversation';
 
 const EMPTY_SESSION: SessionInfo = { authenticated: false, configured: false, provider: 'demo', model: '演示模型' };
+const Streamdown = lazy(() => import('streamdown').then(({ Streamdown: Component }) => ({ default: Component })));
 const starters = [
   { icon: Lightbulb, title: '梳理想法', prompt: '帮我梳理一个新项目的想法。请先问我三个能让方向更清晰的问题。' },
   { icon: Feather, title: '写一段文字', prompt: '我想写一个关于重逢的短篇故事，帮我构思一个有画面感的开头。' },
@@ -78,7 +79,7 @@ function MessageView({ message, busy, onRetry, onEdit }: { message: Message; bus
     <span className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-base-content/50 bg-base-100"><InfinityIcon size={20} strokeWidth={1.7} /></span>
     <div className="min-w-0 flex-1 pt-1">
       <div className="mb-3 flex items-center gap-3 text-xs"><span className="font-semibold">EverChat</span>{message.revisionOf && <span className="text-base-content/60">新版本</span>}{isActive(message) && <span className="flex items-center gap-1.5 text-base-content/60"><span className="loading loading-dots loading-xs" />{message.status === 'queued' ? '排队中' : '生成中'}</span>}</div>
-      {message.content ? <div className="markdown"><ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: ({ children, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer">{children}</a>, img: ({ alt }) => <span className="text-base-content/60">[图片：{alt ?? '附件'}]</span> }}>{message.content}</ReactMarkdown></div> : isActive(message) ? <p className="py-2 text-sm text-base-content/60">准备中…</p> : null}
+      {message.content ? <Suspense fallback={<div className="markdown whitespace-pre-wrap">{message.content}</div>}><Streamdown className="markdown" mode={isActive(message) ? 'streaming' : 'static'} isAnimating={isActive(message)} components={{ a: ({ children, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer">{children}</a>, img: ({ alt }) => <span className="text-base-content/60">[图片：{alt ?? '附件'}]</span> }}>{message.content}</Streamdown></Suspense> : isActive(message) ? <p className="py-2 text-sm text-base-content/60">准备中…</p> : null}
       {message.status === 'failed' && <p role="alert" className="mt-4 rounded-lg bg-error/5 px-3 py-2 text-xs font-medium leading-6 text-base-content">{message.error ?? '生成失败，已保存部分内容。'}</p>}
       {message.status === 'cancelled' && <p className="mt-4 text-xs text-base-content/60">已停止</p>}
       {!isActive(message) && <div className="mt-4 flex items-center gap-1 text-base-content/60">
@@ -90,9 +91,10 @@ function MessageView({ message, busy, onRetry, onEdit }: { message: Message; bus
 }
 
 export function App() {
+  const queryClient = useQueryClient();
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [bootError, setBootError] = useState('');
-  const [conversations, setConversations] = useState<ConversationInfo[]>(() => read('library', []));
+  const [localConversations, setLocalConversations] = useState<ConversationInfo[]>(() => read('library', []));
   const [selected, setSelected] = useState<string | null>(() => read('selected', null));
   const [pending, setPending] = useState<Pending[]>(() => read('pending', []));
   const pendingRef = useRef(pending);
@@ -114,6 +116,20 @@ export function App() {
   const { snapshot, connection, syncedAt, loading } = useConversation(selected, Boolean(session?.authenticated), loggedOut);
   const active = snapshot.messages.find(isActive);
   const currentPending = pending.find((item) => item.conversation.id === selected);
+  const libraryQuery = useQuery({
+    queryKey: ['conversations'],
+    queryFn: () => api<ConversationInfo[]>('/conversations'),
+    enabled: Boolean(session?.authenticated),
+    initialData: () => read('library', []),
+    refetchInterval: 10_000,
+  });
+  const conversations = useMemo(() => {
+    const cloud = libraryQuery.data ?? [];
+    const cloudIds = new Set(cloud.map((item) => item.id));
+    const queued = pending.map((item) => item.conversation).filter((item) => !cloudIds.has(item.id));
+    const local = localConversations.filter((item) => !cloudIds.has(item.id) && !queued.some((next) => next.id === item.id));
+    return [...queued, ...local, ...cloud];
+  }, [libraryQuery.data, localConversations, pending]);
   const busy = Boolean(active || currentPending || sending);
   const currentConversation = conversations.find((item) => item.id === selected);
 
@@ -128,21 +144,11 @@ export function App() {
     }
   }, []);
   useEffect(() => { void boot(); }, [boot]);
-  const refreshLibrary = useCallback(async () => {
-    try {
-      const items = await api<ConversationInfo[]>('/conversations');
-      const cloudIds = new Set(items.map((item) => item.id));
-      const combined = [...pendingRef.current.map((item) => item.conversation).filter((item) => !cloudIds.has(item.id)), ...items];
-      setConversations(combined); write('library', combined);
-    } catch (error) { if (error instanceof ApiError && error.status === 401) loggedOut(); }
-  }, [loggedOut]);
   useEffect(() => {
-    if (!session?.authenticated) return;
-    void refreshLibrary();
-    const timer = setInterval(() => { if (navigator.onLine && document.visibilityState === 'visible') void refreshLibrary(); }, 10_000);
-    window.addEventListener('online', refreshLibrary);
-    return () => { clearInterval(timer); window.removeEventListener('online', refreshLibrary); };
-  }, [session?.authenticated, refreshLibrary]);
+    if (libraryQuery.error instanceof ApiError && libraryQuery.error.status === 401) loggedOut();
+    if (libraryQuery.data) { setLocalConversations(libraryQuery.data); write('library', libraryQuery.data); }
+  }, [libraryQuery.data, libraryQuery.error, loggedOut]);
+  const refreshLibrary = useCallback(() => { void queryClient.invalidateQueries({ queryKey: ['conversations'] }); }, [queryClient]);
 
   const commitPending = (items: Pending[]) => {
     if (!writePending(items)) { setError('浏览器存储已满，无法可靠保存待发送消息。请释放空间后重试。'); return false; }
@@ -156,7 +162,7 @@ export function App() {
       await api('/conversations', 'POST', { id: item.conversation.id, title: item.conversation.title });
       await api<Submission>(`/conversations/${item.conversation.id}/messages`, 'POST', item.input);
       commitPending(pendingRef.current.filter((next) => next.input.requestId !== key));
-      void refreshLibrary();
+      refreshLibrary();
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) loggedOut();
       else if (error instanceof ApiError) commitPending(pendingRef.current.map((next) => next.input.requestId === key ? { ...next, error: error.message } : next));
@@ -195,7 +201,7 @@ export function App() {
     const item: Pending = { conversation, input };
     if (!commitPending([...pendingRef.current, item])) return;
     if (!conversations.some((item) => item.id === conversation.id)) {
-      const items = [conversation, ...conversations]; setConversations(items); write('library', items);
+      const items = [conversation, ...localConversations]; setLocalConversations(items); write('library', items);
     }
     write(`draft:${selected ?? 'new'}`, { text: '' }); setDraft(''); setRevisionOf(undefined);
     select(conversation.id);
@@ -227,7 +233,7 @@ export function App() {
   const logout = async () => {
     try {
       await api('/logout', 'POST'); clearLocal(); pendingRef.current = []; setPending([]);
-      setConversations([]); setSelected(null); setDraft(''); setRevisionOf(undefined); loggedOut(); settings.current?.close();
+      setLocalConversations([]); void queryClient.removeQueries({ queryKey: ['conversations'] }); setSelected(null); setDraft(''); setRevisionOf(undefined); loggedOut(); settings.current?.close();
     } catch (error) { setError(error instanceof Error ? error.message : '退出失败，请联网后重试。'); settings.current?.close(); }
   };
   const exportChat = () => {

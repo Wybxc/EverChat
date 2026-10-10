@@ -1,3 +1,7 @@
+import type { Context } from 'hono';
+import * as v from 'valibot';
+import type { Env } from './env';
+
 export class HttpError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
@@ -8,7 +12,11 @@ export function json(body: unknown, status = 200, headers?: HeadersInit) {
   result.set('X-Content-Type-Options', 'nosniff');
   return new Response(JSON.stringify(body), { status, headers: result });
 }
-export async function readJson<T>(request: Request): Promise<T> {
+
+export type AppContext = Context<{ Bindings: Env }>;
+
+export async function parseBody<TSchema extends v.GenericSchema>(context: AppContext, schema: TSchema): Promise<v.InferOutput<TSchema>> {
+  const request = context.req.raw;
   if (!request.headers.get('Content-Type')?.includes('application/json')) throw new HttpError(415, '请使用 JSON 请求。');
   const reader = request.body?.getReader();
   if (!reader) throw new HttpError(400, '请求内容为空。');
@@ -23,9 +31,8 @@ export async function readJson<T>(request: Request): Promise<T> {
     text += decoder.decode(value, { stream: true });
   }
   try {
-    const value = JSON.parse(text + decoder.decode());
-    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error();
-    return value as T;
+    const result = v.safeParse(schema, JSON.parse(text + decoder.decode()));
+    if (!result.success) throw new Error();
+    return result.output;
   } catch { throw new HttpError(400, '请求内容不是有效的 JSON 对象。'); }
 }
-export const validId = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);

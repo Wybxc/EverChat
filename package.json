@@ -15,11 +15,17 @@
     "check": "pnpm test && pnpm build && pnpm test:e2e"
   },
   "dependencies": {
+    "@ai-sdk/openai-compatible": "^3.0.66",
+    "@tanstack/react-query": "^5.104.1",
+    "ai": "^7.0.133",
+    "hono": "^4.13.13",
+    "idb-keyval": "^6.3.0",
     "lucide-react": "^0.577.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1"
+    "reconnecting-websocket": "^4.4.0",
+    "streamdown": "^2.7.0",
+    "valibot": "^1.5.0"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.63.1",
@@ -35,6 +41,7 @@
     "tsx": "^4.21.0",
     "typescript": "^6.0.0",
     "vite": "^8.3.4",
+    "vite-plugin-pwa": "^2.0.0",
     "wrangler": "^4.149.0"
   }
 }
