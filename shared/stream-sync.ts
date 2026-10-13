@@ -10,8 +10,11 @@ export class StreamSync {
   get hasPreview() { return this.pending.size > 0; }
   resetPreview() { this.pending.clear(); this.view = this.durable; }
   receive(packet: SyncPacket): boolean {
+    // A confirmed deletion is permanent, including across reconnects and delayed packets.
+    if (this.durable.deletedAt) return false;
     const previous = this.durable;
-    if (packet.type === 'snapshot') { this.durable = packet.snapshot; this.resetPreview(); }
+    if (packet.type === 'deleted') { this.durable = { messages: [], seq: this.durable.seq, deletedAt: packet.deletedAt }; this.resetPreview(); }
+    else if (packet.type === 'snapshot') { this.durable = packet.snapshot; this.resetPreview(); }
     else if (packet.type === 'ready') {
       if (packet.seq !== this.durable.seq) throw new Error('Sync readiness gap');
     } else if (packet.type === 'preview') this.preview(packet.batch);

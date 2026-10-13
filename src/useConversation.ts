@@ -7,7 +7,7 @@ import { api, ApiError } from './api';
 import { cachedSnapshot, storageEpoch, write } from './storage';
 
 export type Connection = 'connected' | 'connecting' | 'offline' | 'unavailable';
-export function useConversation(id: string | null, enabled: boolean, onUnauthorized: () => void, awaitingAcceptance = false) {
+export function useConversation(id: string | null, enabled: boolean, onUnauthorized: () => void, awaitingAcceptance = false, onDeleted?: (id: string, deletedAt: number) => void, confirmedDeletion: number | null = null) {
   const [snapshot, setSnapshot] = useState<Snapshot>({ messages: [], seq: 0 });
   const [durableSnapshot, setDurableSnapshot] = useState<Snapshot>({ messages: [], seq: 0 });
   const [hasUnconfirmed, setHasUnconfirmed] = useState(false);
@@ -18,6 +18,8 @@ export function useConversation(id: string | null, enabled: boolean, onUnauthori
   const [retryVersion, setRetryVersion] = useState(0);
   const unauthorized = useRef(onUnauthorized);
   unauthorized.current = onUnauthorized;
+  const deletionNotice = useRef(onDeleted);
+  deletionNotice.current = onDeleted;
 
   useEffect(() => {
     let alive = true;
@@ -46,6 +48,14 @@ export function useConversation(id: string | null, enabled: boolean, onUnauthori
       if (heartbeat) clearInterval(heartbeat);
       heartbeat = undefined;
     };
+    const rememberDeletion = (deletedAt: number) => {
+      generation++;
+      if (retry) clearTimeout(retry);
+      stopHeartbeat(); socket?.close();
+      receive({ type: 'deleted', deletedAt });
+      setSyncError('这个对话已删除。'); setConnection('unavailable'); setLoading(false);
+      if (id) deletionNotice.current?.(id, deletedAt);
+    };
     const startHeartbeat = () => {
       stopHeartbeat();
       attempt = 0;
@@ -63,6 +73,7 @@ export function useConversation(id: string | null, enabled: boolean, onUnauthori
       if (socket) { socket.close(); socket = undefined; }
       resetPreview();
       setSyncError('');
+      if (sync.durable.deletedAt) { rememberDeletion(sync.durable.deletedAt); return; }
       if (!navigator.onLine) { setConnection('offline'); setLoading(false); return; }
       setConnection('connecting');
       if (!id) {
@@ -92,6 +103,7 @@ export function useConversation(id: string | null, enabled: boolean, onUnauthori
           lastHeartbeat = Date.now();
           try {
             const packet = JSON.parse(event.data) as SyncPacket;
+            if (packet.type === 'deleted') { rememberDeletion(packet.deletedAt); return; }
             receive(packet);
             if (packet.type === 'preview' && socket?.readyState === ReconnectingWebSocket.OPEN) {
               socket.send(JSON.stringify({ type: 'preview-ack', runId: packet.batch.runId, messageId: packet.batch.messageId, offset: packet.batch.endOffset }));
@@ -103,11 +115,13 @@ export function useConversation(id: string | null, enabled: boolean, onUnauthori
           if (!alive || token !== generation) return;
           stopHeartbeat(); resetPreview();
           if (event.code === 4001) { socket?.close(); unauthorized.current(); return; }
+          if (event.code === 4003) { rememberDeletion(Date.now()); return; }
           setConnection(navigator.onLine ? 'connecting' : 'offline');
         };
       } catch (error) {
         if (!alive || token !== generation) return;
         if (error instanceof ApiError && error.status === 401) { unauthorized.current(); return; }
+        if (error instanceof ApiError && error.status === 410) { rememberDeletion(Date.now()); return; }
         // An offline outbox can reconnect before its conversation has been created in the cloud.
         const pendingCreation = error instanceof ApiError && error.status === 404 && awaitingAcceptance;
         if (error instanceof ApiError && !pendingCreation && (error.status === 507 || (error.status >= 400 && error.status < 500 && ![408, 429].includes(error.status)))) {
@@ -140,6 +154,6 @@ export function useConversation(id: string | null, enabled: boolean, onUnauthori
       window.removeEventListener('offline', offline);
       document.removeEventListener('visibilitychange', visible);
     };
-  }, [id, enabled, retryVersion, awaitingAcceptance]);
+  }, [id, enabled, retryVersion, awaitingAcceptance, confirmedDeletion]);
   return { snapshot, durableSnapshot, hasUnconfirmed, connection, syncedAt, loading, syncError, reconnect: () => setRetryVersion((value) => value + 1) };
 }

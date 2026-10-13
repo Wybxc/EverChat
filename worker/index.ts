@@ -27,7 +27,7 @@ const submitSchema = v.object({
   reasoningEffort: v.optional(v.picklist(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])),
 });
 const cancelSchema = v.object({ runId: uuidSchema });
-const titleSchema = v.object({ title: v.pipe(v.string(), v.maxLength(80)) });
+const conversationPatchSchema = v.object({ title: v.optional(v.pipe(v.string(), v.maxLength(80))), pinned: v.optional(v.boolean()), archived: v.optional(v.boolean()) });
 
 const requireAuth = async (context: AppContext) => {
   if (!await authenticated(context.req.raw, context.env)) throw new HttpError(401, '请先登录你的私人空间。');
@@ -37,6 +37,14 @@ const conversationId = (context: AppContext) => {
   const id = context.req.param('id');
   if (!id || !v.safeParse(uuidSchema, id).success) throw new HttpError(404, '找不到这个接口。');
   return id;
+};
+const requireConversation = async (context: AppContext, id: string) => {
+  const library = context.env.LIBRARY.getByName('personal');
+  if (!await library.get(id)) {
+    if (await library.deletedAt(id)) throw new HttpError(410, '这个对话已删除。');
+    throw new HttpError(404, '找不到这个对话。');
+  }
+  return library;
 };
 
 app.use('*', async (context, next) => {
@@ -111,7 +119,9 @@ app.post('/logout', async (context) => {
 
 app.get('/conversations', async (context) => {
   await requireAuth(context);
-  return json(await context.env.LIBRARY.getByName('personal').list());
+  const after = Number(context.req.query('after') ?? 0);
+  if (!Number.isSafeInteger(after) || after < 0) throw new HttpError(400, '对话同步游标无效。');
+  return json(await context.env.LIBRARY.getByName('personal').indexSnapshot(after));
 });
 
 app.post('/conversations', async (context) => {
@@ -127,8 +137,7 @@ app.post('/conversations', async (context) => {
 app.get('/conversations/:id', async (context) => {
   await requireAuth(context);
   const id = conversationId(context);
-  const library = context.env.LIBRARY.getByName('personal');
-  if (!await library.get(id)) throw new HttpError(404, '找不到这个对话。');
+  await requireConversation(context, id);
   return context.env.CONVERSATIONS.getByName(id).snapshotResponse();
 });
 
@@ -136,15 +145,14 @@ app.get('/conversations/:id/measurements', async (context) => {
   if (context.env.GENERATION_METRICS !== '1') throw new HttpError(404, '找不到这个接口。');
   await requireAuth(context);
   const id = conversationId(context);
-  if (!await context.env.LIBRARY.getByName('personal').get(id)) throw new HttpError(404, '找不到这个对话。');
+  await requireConversation(context, id);
   return json(await context.env.CONVERSATIONS.getByName(id).generationMeasurements());
 });
 
 app.get('/conversations/:id/sync', async (context) => {
   await requireAuth(context);
   const id = conversationId(context);
-  const library = context.env.LIBRARY.getByName('personal');
-  if (!await library.get(id)) throw new HttpError(404, '找不到这个对话。');
+  await requireConversation(context, id);
   const token = context.req.header('Cookie')?.match(/everchat_session=(\d+)/)?.[1] ?? '0';
   const headers = new Headers(context.req.raw.headers);
   headers.set('X-Session-Expires', token);
@@ -154,8 +162,7 @@ app.get('/conversations/:id/sync', async (context) => {
 app.post('/conversations/:id/messages', async (context) => {
   await requireAuth(context);
   const id = conversationId(context);
-  const library = context.env.LIBRARY.getByName('personal');
-  if (!await library.get(id)) throw new HttpError(404, '找不到这个对话。');
+  const library = await requireConversation(context, id);
   const input = await parseBody(context, submitSchema) as SubmitInput;
   if (input.retryOf && (input.content !== undefined || input.revisionOf !== undefined)) throw new HttpError(400, '消息参数无效。');
   const baseConfig = await library.providerConfig(input.selection);
@@ -177,22 +184,36 @@ app.post('/conversations/:id/messages', async (context) => {
 app.post('/conversations/:id/cancel', async (context) => {
   await requireAuth(context);
   const id = conversationId(context);
-  const library = context.env.LIBRARY.getByName('personal');
-  if (!await library.get(id)) throw new HttpError(404, '找不到这个对话。');
+  await requireConversation(context, id);
   const { runId } = await parseBody(context, cancelSchema);
   await context.env.CONVERSATIONS.getByName(id).cancel(runId);
   return json({ ok: true });
 });
 
-app.patch('/conversations/:id/title', async (context) => {
+app.patch('/conversations/:id', async (context) => {
+  await requireAuth(context);
+  const id = conversationId(context);
+  const patch = await parseBody(context, conversationPatchSchema);
+  if (!Object.keys(patch).length) throw new HttpError(400, '请选择要修改的对话信息。');
+  if (patch.title !== undefined) {
+    patch.title = patch.title.trim();
+    if (!patch.title) throw new HttpError(400, '标题应为 1 到 80 字。');
+  }
+  const result = await context.env.LIBRARY.getByName('personal').update(id, patch);
+  if ('error' in result) return json({ error: result.error }, result.status);
+  return json(result);
+});
+
+app.delete('/conversations/:id', async (context) => {
   await requireAuth(context);
   const id = conversationId(context);
   const library = context.env.LIBRARY.getByName('personal');
-  if (!await library.get(id)) throw new HttpError(404, '找不到这个对话。');
-  const { title } = await parseBody(context, titleSchema);
-  if (!title.trim()) throw new HttpError(400, '标题应为 1 到 80 字。');
-  await library.rename(id, title.trim());
-  return json({ ok: true });
+  const deletion = await library.beginDelete(id);
+  if (!deletion.completed) {
+    await context.env.CONVERSATIONS.getByName(id).deleteConversation(deletion.deletedAt);
+    await library.completeDelete(id);
+  }
+  return json({ deletedAt: deletion.deletedAt });
 });
 
 app.notFound(() => json({ error: '找不到这个接口。' }, 404));

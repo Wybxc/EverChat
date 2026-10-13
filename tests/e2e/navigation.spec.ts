@@ -1,5 +1,5 @@
 import { test, expect, type APIRequestContext } from '@playwright/test';
-import type { ConversationInfo, ProviderSettings, Snapshot } from '../../shared/types';
+import type { LibrarySnapshot, ProviderSettings, Snapshot } from '../../shared/types';
 
 const headers = { Origin: 'http://127.0.0.1:5174' };
 async function setup(request: APIRequestContext) {
@@ -99,7 +99,7 @@ for (const invalid of [false, true]) test(`${invalid ? 'invalid' : 'missing'} co
     await expect(page.getByRole('alert')).toContainText(invalid ? '找不到这个页面' : '找不到这个对话');
     await page.getByRole('textbox', { name: '消息', exact: true }).fill('不应创建对话');
     await expect(page.getByRole('button', { name: '发送消息', exact: true })).toBeDisabled();
-    expect((await page.request.get('/api/conversations').then((response) => response.json()) as ConversationInfo[]).some((item) => item.id === id)).toBe(false);
+    expect((await page.request.get('/api/conversations').then((response) => response.json()) as LibrarySnapshot).conversations.some((item) => item.id === id)).toBe(false);
     await page.locator('aside').getByRole('button', { name: '开启新对话', exact: true }).click();
     await expect(page).toHaveURL('/');
     await expect(page.getByRole('alert')).toHaveCount(0);

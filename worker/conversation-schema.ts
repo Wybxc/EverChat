@@ -1,6 +1,9 @@
 import { STREAM_JOURNAL_SCHEMA } from './stream-journal';
+export const DELETION_SCHEMA = 'CREATE TABLE IF NOT EXISTS conversation_deletion (id INTEGER PRIMARY KEY CHECK (id = 1), deletedAt INTEGER NOT NULL)';
 
 export function initializeConversation(sql: SqlStorage, metrics: boolean) {
+  sql.exec(DELETION_SCHEMA);
+  if (sql.exec('SELECT deletedAt FROM conversation_deletion WHERE id = 1').toArray().length) return;
   sql.exec(`CREATE TABLE IF NOT EXISTS messages (
     id TEXT PRIMARY KEY, role TEXT NOT NULL, content TEXT NOT NULL, status TEXT NOT NULL,
     createdAt INTEGER NOT NULL, runId TEXT, parentId TEXT, revisionOf TEXT, error TEXT,

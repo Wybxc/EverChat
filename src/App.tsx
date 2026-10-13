@@ -1,16 +1,17 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowDown, ArrowRight, ArrowUp, Check, CheckCheck, CloudOff, Copy, Download, Feather, Infinity as InfinityIcon, Lightbulb, LockKeyhole, Menu, MessageCircle, Monitor, Moon, Pencil, Plus, RefreshCw, Search, Settings, Sparkles, Square, Sun, WifiOff, X } from 'lucide-react';
+import { ArrowDown, ArrowRight, ArrowUp, Check, CheckCheck, CloudOff, Copy, Download, Feather, Infinity as InfinityIcon, Lightbulb, LockKeyhole, Menu, MessageCircle, Monitor, Moon, Pencil, Pin, Plus, RefreshCw, Search, Settings, Sparkles, Square, Sun, WifiOff, X } from 'lucide-react';
 import 'streamdown/styles.css';
-import { isActive, type ConversationInfo, type Message, type ProviderSettings, type ReasoningEffort, type SessionInfo, type Submission, type SubmitInput } from '../shared/types';
+import { isActive, type ConversationInfo, type LibrarySnapshot, type Message, type ProviderSettings, type ReasoningEffort, type SessionInfo, type Submission, type SubmitInput } from '../shared/types';
 import { api, ApiError } from './api';
-import { clearLocal, read, write, writePending, type Pending } from './storage';
+import { clearLocal, deletedAt, markConversationDeleted, read, write, writePending, type Pending } from './storage';
 import { useConversation } from './useConversation';
 import { ProviderSettingsPanel } from './ProviderSettings';
 import { chatModels, effortLabels, modelSelectionKey } from '../shared/models';
 import { useThemeMode } from './theme';
 import { useFollowScroll } from './useFollowScroll';
 import { conversationUrl, useConversationRoute } from './useConversationRoute';
+import { ConversationActions } from './ConversationActions';
 
 const EMPTY_SESSION: SessionInfo = { authenticated: false, configured: false, provider: '', model: '' };
 const Streamdown = lazy(() => import('streamdown').then(({ Streamdown: Component }) => ({ default: Component })));
@@ -111,7 +112,9 @@ export function App() {
   const [bootError, setBootError] = useState('');
   const [localConversations, setLocalConversations] = useState<ConversationInfo[]>(() => read('library', []));
   const { id: selected, invalid: invalidRoute, navigate } = useConversationRoute();
-  const [pending, setPending] = useState<Pending[]>(() => read('pending', []));
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
+  const [pending, setPending] = useState<Pending[]>(() => read<Pending[]>('pending', []).filter((item) => !deletedAt(item.conversation.id)));
   const pendingRef = useRef(pending);
   const deliveryLocks = useRef(new Set<string>());
   const [draft, setDraft] = useState('');
@@ -119,6 +122,7 @@ export function App() {
   const [error, setError] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [archivedList, setArchivedList] = useState(false);
   const [sending, setSending] = useState(false);
   const { viewportRef, contentRef, atBottom, scrollToBottom } = useFollowScroll(selected);
   const editor = useRef<HTMLTextAreaElement>(null);
@@ -144,12 +148,29 @@ export function App() {
   const sessionRef = useRef(session);
   sessionRef.current = session;
   const loggedOut = useCallback(() => { setSession((current) => ({ ...(current ?? EMPTY_SESSION), authenticated: false })); }, []);
+  const rememberDeletion = useCallback((id: string, time: number) => {
+    markConversationDeleted(id, time);
+    const remaining = pendingRef.current.filter((item) => item.conversation.id !== id);
+    writePending(remaining); pendingRef.current = remaining; setPending(remaining);
+    setLocalConversations((items) => items.filter((item) => item.id !== id));
+    queryClient.setQueryData<ConversationInfo[]>(['conversations'], (items) => items?.filter((item) => item.id !== id));
+    write('library', read<ConversationInfo[]>('library', []).filter((item) => item.id !== id));
+    if (selectedRef.current === id) { setDraft(''); setRevisionOf(undefined); }
+  }, [queryClient]);
   const currentPending = pending.find((item) => item.conversation.id === selected);
-  const { snapshot, durableSnapshot, hasUnconfirmed, connection, syncedAt, loading, syncError, reconnect } = useConversation(selected, Boolean(session?.authenticated), loggedOut, Boolean(currentPending && !currentPending.error));
+  const { snapshot, durableSnapshot, hasUnconfirmed, connection, syncedAt, loading, syncError, reconnect } = useConversation(selected, Boolean(session?.authenticated), loggedOut, Boolean(currentPending && !currentPending.error), rememberDeletion, selected ? deletedAt(selected) : null);
   const active = snapshot.messages.find(isActive);
   const libraryQuery = useQuery({
     queryKey: ['conversations'],
-    queryFn: () => api<ConversationInfo[]>('/conversations'),
+    queryFn: async () => {
+      let page: LibrarySnapshot;
+      do {
+        page = await api<LibrarySnapshot>(`/conversations?after=${read('library-deletion-cursor', 0)}`);
+        for (const deletion of page.deletions) rememberDeletion(deletion.id, deletion.deletedAt);
+        write('library-deletion-cursor', page.deletionCursor);
+      } while (page.hasMoreDeletions);
+      return page.conversations;
+    },
     enabled: Boolean(session?.authenticated),
     initialData: () => read('library', []),
     refetchInterval: 10_000,
@@ -159,10 +180,11 @@ export function App() {
     const cloudIds = new Set(cloud.map((item) => item.id));
     const queued = pending.map((item) => item.conversation).filter((item) => !cloudIds.has(item.id));
     const local = localConversations.filter((item) => !cloudIds.has(item.id) && !queued.some((next) => next.id === item.id));
-    return [...queued, ...local, ...cloud];
+    return [...queued, ...local, ...cloud].filter((item) => !deletedAt(item.id)).sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
   }, [libraryQuery.data, localConversations, pending]);
   const busy = Boolean(active || currentPending || sending || syncError || invalidRoute);
   const currentConversation = conversations.find((item) => item.id === selected);
+  const visibleConversations = conversations.filter((item) => Boolean(item.archived) === archivedList && item.title.toLowerCase().includes(search.toLowerCase()));
 
   const boot = useCallback(async () => {
     setBootError('');
@@ -187,10 +209,12 @@ export function App() {
   const refreshLibrary = useCallback(() => { void queryClient.invalidateQueries({ queryKey: ['conversations'] }); }, [queryClient]);
 
   const commitPending = (items: Pending[]) => {
+    items = items.filter((item) => !deletedAt(item.conversation.id));
     if (!writePending(items)) { setError('浏览器存储已满，无法可靠保存待发送消息。请释放空间后重试。'); return false; }
     pendingRef.current = items; setPending(items); return true;
   };
   const deliver = async (item: Pending) => {
+    if (deletedAt(item.conversation.id)) return;
     const key = item.input.requestId;
     if (deliveryLocks.current.has(key) || !navigator.onLine || !sessionRef.current?.authenticated) return;
     deliveryLocks.current.add(key);
@@ -201,6 +225,7 @@ export function App() {
       refreshLibrary();
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) loggedOut();
+      else if (error instanceof ApiError && error.status === 410) rememberDeletion(item.conversation.id, Date.now());
       else if (error instanceof ApiError) commitPending(pendingRef.current.map((next) => next.input.requestId === key ? { ...next, error: error.message } : next));
       // A network error has an unknown outcome: keep the same request ID for retry.
     } finally { deliveryLocks.current.delete(key); }
@@ -216,7 +241,7 @@ export function App() {
   }, [session?.authenticated, pending.length]);
 
   useEffect(() => {
-    const saved = read<{ text: string; revisionOf?: string }>(`draft:${selected ?? 'new'}`, { text: '' });
+    const saved: { text: string; revisionOf?: string } = selected && deletedAt(selected) ? { text: '' } : read(`draft:${selected ?? 'new'}`, { text: '' });
     setDraft(saved.text); setRevisionOf(saved.revisionOf); setError('');
   }, [selected]);
   useEffect(() => {
@@ -249,7 +274,7 @@ export function App() {
       input = { ...input, reasoningEffort: generationEffort };
     }
     const conversation: ConversationInfo = currentConversation ?? {
-      id: selected ?? crypto.randomUUID(), title: (input.content ?? '新对话').trim().slice(0, 26), createdAt: Date.now(), updatedAt: Date.now(),
+      id: selected ?? crypto.randomUUID(), title: (input.content ?? '新对话').trim().slice(0, 26), createdAt: Date.now(), updatedAt: Date.now(), pinned: false, archived: false,
     };
     const item: Pending = { conversation, input };
     if (!commitPending([...pendingRef.current, item])) return;
@@ -296,6 +321,19 @@ export function App() {
     const url = URL.createObjectURL(new Blob([text], { type: 'text/markdown;charset=utf-8' }));
     const link = document.createElement('a'); link.href = url; link.download = `EverChat-${selected}.md`; link.click(); URL.revokeObjectURL(url);
   };
+  const updateConversation = async (patch: { title?: string; pinned?: boolean; archived?: boolean }) => {
+    if (!selected) return;
+    const result = await api<ConversationInfo>(`/conversations/${selected}`, 'PATCH', patch);
+    queryClient.setQueryData<ConversationInfo[]>(['conversations'], (items) => items?.map((item) => item.id === result.id ? result : item));
+    refreshLibrary();
+  };
+  const deleteConversation = async () => {
+    if (!selected) return;
+    const id = selected, result = await api<{ deletedAt: number }>(`/conversations/${id}`, 'DELETE');
+    rememberDeletion(id, result.deletedAt);
+    if (selectedRef.current === id) select(null);
+    refreshLibrary();
+  };
 
   if (!session) return <main className="flex min-h-dvh flex-col items-center justify-center gap-6"><Brand />{bootError ? <><p className="max-w-sm px-5 text-center text-sm font-medium text-base-content" role="alert">{bootError}</p><button className="btn" onClick={boot}>重新连接</button></> : <span className="loading loading-dots loading-sm text-base-content/60" />}</main>;
   if (!session.authenticated) return <Login session={session} onLogin={async () => { await boot(); }} />;
@@ -308,15 +346,14 @@ export function App() {
       <div className="px-4"><button className="btn h-11 w-full justify-between border-base-content/50 bg-base-100 px-4 text-sm font-medium" onClick={() => select(null)}><span className="flex items-center gap-2.5"><Plus size={17} />开启新对话</span><span><MessageCircle size={15} /></span></button></div>
       <label className="input mx-4 mt-5 h-9 w-auto gap-2 border-base-content/50 bg-base-100"><Search size={14} /><input className="text-xs placeholder:text-base-content/60" placeholder="搜索你的对话" aria-label="搜索对话" value={search} onChange={(event) => setSearch(event.target.value)} /></label>
       <div className="flex-1 overflow-y-auto px-3 pt-6">
-        <p className="px-3 pb-3 text-[10px] font-medium tracking-wider text-base-content/60">对话 <span className="ml-1">{conversations.length ? String(conversations.length).padStart(2, '0') : ''}</span></p>
+        <div role="tablist" className="tabs tabs-border tabs-sm mb-3"><input type="radio" role="tab" name="conversation-list" className="tab" aria-label="对话" aria-selected={!archivedList} checked={!archivedList} onChange={() => setArchivedList(false)} /><input type="radio" role="tab" name="conversation-list" className="tab" aria-label="归档" aria-selected={archivedList} checked={archivedList} onChange={() => setArchivedList(true)} /></div>
         <ul className="menu w-full gap-1 p-0 text-sm">
-          {conversations.filter((item) => item.title.toLowerCase().includes(search.toLowerCase())).map((item) => <li key={item.id}><a href={conversationUrl(item.id)} onClick={(event) => {
+          {visibleConversations.map((item) => <li key={item.id}><a href={conversationUrl(item.id)} onClick={(event) => {
             if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
             event.preventDefault(); select(item.id);
-          }} aria-current={item.id === selected ? 'page' : undefined} className={`${item.id === selected ? 'menu-active bg-primary! text-primary-content! hover:bg-primary!' : ''} h-11 min-w-0 gap-3 rounded-lg px-3 font-normal`}><MessageCircle size={15} className="shrink-0" /><span className="truncate">{item.title}</span>{pending.some((p) => p.conversation.id === item.id) && <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />}</a></li>)}
+          }} aria-current={item.id === selected ? 'page' : undefined} className={`${item.id === selected ? 'menu-active bg-primary! text-primary-content! hover:bg-primary!' : ''} h-11 min-w-0 gap-3 rounded-lg px-3 font-normal`}><MessageCircle size={15} className="shrink-0" /><span className="truncate">{item.title}</span>{item.pinned && <Pin size={12} aria-hidden="true" className="shrink-0" />}{pending.some((p) => p.conversation.id === item.id) && <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />}</a></li>)}
         </ul>
-        {!conversations.length && <p className="px-3 text-xs leading-6 text-base-content/60">暂无对话</p>}
-        {search && !conversations.some((item) => item.title.toLowerCase().includes(search.toLowerCase())) && <p className="px-3 text-xs text-base-content/60">没有找到相关对话</p>}
+        {!visibleConversations.length && <p className="px-3 text-xs text-base-content/60">{search ? '没有找到相关对话' : archivedList ? '暂无归档' : '暂无对话'}</p>}
       </div>
       <button className="mx-3 mb-4 flex items-center gap-3 rounded-lg px-3 py-3 text-left hover:bg-base-300" onClick={openSettings}><span className="flex h-8 w-8 items-center justify-center rounded-full border border-base-content/50 bg-base-100 text-xs">我</span><span className="flex-1"><span className="block text-xs font-medium">私人空间</span></span><Settings size={16} /></button>
     </aside>
@@ -324,7 +361,7 @@ export function App() {
     <div className="flex min-w-0 flex-1 flex-col">
       <header className="flex h-18 shrink-0 items-center justify-between border-b border-base-content/50 px-5 sm:px-8">
         <div className="flex min-w-0 items-center gap-3"><button ref={mobileSidebarTrigger} className="btn btn-ghost btn-sm btn-square lg:hidden" onClick={() => setSidebarOpen(true)} aria-label="打开对话列表"><Menu size={19} /></button><div className="min-w-0"><p className="truncate text-sm font-medium">{invalidRoute ? '页面不可用' : currentConversation?.title ?? (selected ? '对话' : '新对话')}</p><p className="mt-1 text-[10px] text-base-content/60">{selectedModel?.name || session.modelName || session.model || '未选择模型'}</p></div></div>
-        <div className="flex shrink-0 items-center gap-3"><span aria-live="polite" className="hidden items-center gap-1.5 text-[11px] text-base-content/60 sm:flex" title={syncedAt ? `上次同步 ${new Date(syncedAt).toLocaleTimeString('zh-CN')}` : undefined}>{connection === 'offline' ? <CloudOff size={14} /> : <span className={`status status-xs ${connection === 'connected' && !hasUnconfirmed ? 'status-success' : 'status-warning'}`} />}{statusText}</span>{snapshot.messages.length > 0 && <button aria-label="导出对话" title="导出 Markdown" className="btn btn-ghost btn-sm btn-square" onClick={exportChat}><Download size={16} /></button>}<button aria-label="空间设置" className="btn btn-ghost btn-sm btn-square" onClick={openSettings}><Settings size={17} /></button></div>
+        <div className="flex shrink-0 items-center gap-3"><span aria-live="polite" className="hidden items-center gap-1.5 text-[11px] text-base-content/60 sm:flex" title={syncedAt ? `上次同步 ${new Date(syncedAt).toLocaleTimeString('zh-CN')}` : undefined}>{connection === 'offline' ? <CloudOff size={14} /> : <span className={`status status-xs ${connection === 'connected' && !hasUnconfirmed ? 'status-success' : 'status-warning'}`} />}{statusText}</span>{currentConversation && <ConversationActions key={currentConversation.id} conversation={currentConversation} disabled={connection === 'offline'} update={updateConversation} remove={deleteConversation} />}{snapshot.messages.length > 0 && <button aria-label="导出对话" title="导出 Markdown" className="btn btn-ghost btn-sm btn-square" onClick={exportChat}><Download size={16} /></button>}<button aria-label="空间设置" className="btn btn-ghost btn-sm btn-square" onClick={openSettings}><Settings size={17} /></button></div>
       </header>
       {connection === 'offline' && <div role="status" className="flex items-center justify-center gap-2 border-b border-base-content/50 bg-base-200 px-4 py-2 text-xs text-base-content"><WifiOff size={13} />你现在离线，已保存的对话仍可阅读。新消息将在联网后发送。</div>}
       <div ref={viewportRef} className="relative flex-1 overflow-y-auto">
@@ -348,7 +385,7 @@ export function App() {
           {error && <p role="alert" className="mb-3 text-xs font-medium text-base-content">{error}</p>}
           {revisionOf && <div className="mb-2 flex items-center justify-between text-xs text-base-content/60"><span>编辑消息</span><button className="btn btn-ghost btn-xs" onClick={() => { setRevisionOf(undefined); write(`draft:${selected}`, { text: draft }); }}>取消</button></div>}
           <form onSubmit={submit} className="rounded-2xl border border-base-content/50 bg-base-100 p-3 shadow-[0_3px_16px_-7px_rgba(39,55,47,0.12)] sm:p-4">
-            <textarea ref={editor} aria-label="消息" className="textarea textarea-ghost block min-h-13 w-full resize-none border-0 p-1 text-[15px] leading-6 placeholder:text-base-content/60 outline-none! focus:outline-none!" placeholder={active ? '生成中…' : '输入消息…'} value={draft} maxLength={16000} rows={2} onChange={(event) => updateDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void submit(); } }} />
+            <textarea ref={editor} disabled={Boolean(snapshot.deletedAt)} aria-label="消息" className="textarea textarea-ghost block min-h-13 w-full resize-none border-0 p-1 text-[15px] leading-6 placeholder:text-base-content/60 outline-none! focus:outline-none!" placeholder={active ? '生成中…' : '输入消息…'} value={draft} maxLength={16000} rows={2} onChange={(event) => updateDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void submit(); } }} />
             <div className="mt-2 flex flex-wrap items-center justify-between gap-2"><div className="flex min-w-0 flex-wrap items-center gap-2 text-base-content"><Sparkles size={14} strokeWidth={1.5} className="shrink-0" />{selectedModel ? <select aria-label="聊天模型" className="select select-ghost select-sm min-w-0 max-w-48 border-base-content/50 text-xs sm:max-w-80" value={modelSelectionKey(selectedModel)} onChange={(event) => { setModelChoice(event.target.value); write('chat-model', event.target.value); }}>
               {[...new Set(models.map((model) => model.providerId))].map((providerId) => <optgroup key={providerId} label={models.find((model) => model.providerId === providerId)!.providerName}>
                 {models.filter((model) => model.providerId === providerId).map((model) => <option key={model.model} value={modelSelectionKey(model)}>{model.name}</option>)}

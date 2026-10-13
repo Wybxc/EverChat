@@ -6,7 +6,7 @@ import { commitAck, payloadBytes, STREAM_VERSION, validateCommit } from '../shar
 import type { GenerationMeasurements } from '../shared/generation-metrics';
 import { GenerationMeter, measuredQuery } from './generation-metrics';
 import { StreamJournal } from './stream-journal';
-import { initializeConversation } from './conversation-schema';
+import { DELETION_SCHEMA, initializeConversation } from './conversation-schema';
 import { openProviderStream } from './provider';
 import { ProviderStream, StreamParseError } from '../shared/provider-stream';
 import { GenerationCancelled, ProviderError } from './generation-errors';
@@ -28,14 +28,18 @@ export class Conversation extends DurableObject<Env> {
   private meter?: GenerationMeter;
   private readonly journal: StreamJournal;
   private activeGeneration?: ActiveGeneration;
+  private deletedAt: number | null = null;
+  private deletionCleaned = false;
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     initializeConversation(ctx.storage.sql, env.GENERATION_METRICS === '1');
+    this.deletedAt = ctx.storage.sql.exec<{ deletedAt: number }>('SELECT deletedAt FROM conversation_deletion WHERE id = 1').toArray()[0]?.deletedAt ?? null;
+    this.deletionCleaned = this.deletedAt !== null;
     this.journal = new StreamJournal(this.query.bind(this));
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
     // A new instance cannot resume an old upstream socket. Recover before serving any snapshot.
-    for (const run of this.query<Run>(`SELECT runs.* FROM runs JOIN messages ON messages.id = runs.assistantId WHERE messages.status = 'running'`).toArray()) {
-      this.finishInterrupted(run);
+    if (!this.deletedAt) {
+      for (const run of this.query<Run>(`SELECT runs.* FROM runs JOIN messages ON messages.id = runs.assistantId WHERE messages.status = 'running'`).toArray()) this.finishInterrupted(run);
     }
   }
   private query<T extends Record<string, SqlStorageValue> = Record<string, SqlStorageValue>>(statement: string, ...bindings: SqlStorageValue[]) {
@@ -47,6 +51,7 @@ export class Conversation extends DurableObject<Env> {
     }
   }
   generationMeasurements(): GenerationMeasurements | null {
+    if (this.deletedAt) return null;
     if (this.env.GENERATION_METRICS !== '1') return null;
     const row = this.ctx.storage.sql.exec<{ payload: string }>('SELECT payload FROM generation_measurements WHERE id = 1').toArray()[0];
     return row ? JSON.parse(row.payload) as GenerationMeasurements : null;
@@ -73,6 +78,7 @@ export class Conversation extends DurableObject<Env> {
   private seq(): number { return this.query<{ seq: number }>('SELECT COALESCE(MAX(seq), 0) AS seq FROM events').one().seq; }
   private snapshot(): Snapshot { return { messages: this.all(), seq: this.seq() }; }
   snapshotResponse(): Response {
+    if (this.deletedAt) return json({ error: '这个对话已删除。' }, 410);
     // RPC transfers a Response body as a stream, keeping history decoding and JSON work out of the Free Worker.
     return json(this.snapshot());
   }
@@ -87,6 +93,7 @@ export class Conversation extends DurableObject<Env> {
     return seq;
   }
   private broadcast(change: DurableChange) {
+    if (this.deletedAt) return;
     // Durable confirmations pass through the storage output gate; preview packets never acknowledge storage.
     this.sendPacket(JSON.stringify(change.type === 'commit' ? commitAck(change) : change));
   }
@@ -114,6 +121,7 @@ export class Conversation extends DurableObject<Env> {
     this.meter?.broadcast(packet, recipients);
   }
   private preview(batch: StreamBatch, target?: WebSocket) {
+    if (this.deletedAt) return;
     this.sendPacket(JSON.stringify({ type: 'preview', batch }), batch, target);
   }
   private insert(message: Message) {
@@ -122,7 +130,9 @@ export class Conversation extends DurableObject<Env> {
       message.providerId ?? null, message.model ?? null, message.modelName ?? null, message.reasoning ?? null, message.streamVersion ?? null, message.durableOffset ?? 0);
   }
   async submit(conversationId: string, input: SubmitInput, config: ProviderConfig | null): Promise<Submission | Failure> {
-    const accepted = await this.ctx.storage.transaction(async () => {
+    if (this.deletedAt || await this.env.LIBRARY.getByName('personal').deletedAt(conversationId)) return { error: '这个对话已删除。', status: 410 };
+    const accepted = await this.ctx.storage.transaction<Submission | Failure | { result: Submission; change: Change }>(async () => {
+      if (this.deletedAt) return { error: '这个对话已删除。', status: 410 };
       const fingerprint = JSON.stringify([input.content ?? null, input.retryOf ?? null, input.revisionOf ?? null,
         input.selection?.providerId ?? null, input.selection?.model ?? null, input.showReasoning ?? null, input.reasoningEffort ?? null]);
       const duplicate = () => {
@@ -189,9 +199,13 @@ export class Conversation extends DurableObject<Env> {
     return accepted;
   }
   async alarm() {
+    if (this.deletedAt) return;
     // An RPC re-entry during a live alarm never starts a second upstream call.
     if (this.activeGeneration) return;
     for (const run of this.query<Run>(`SELECT runs.* FROM runs JOIN messages ON messages.id = runs.assistantId WHERE messages.status IN ('queued', 'running')`).toArray()) {
+      const deletion = await this.env.LIBRARY.getByName('personal').deletedAt(run.conversationId);
+      if (this.deletedAt) return;
+      if (deletion) { await this.deleteConversation(deletion); return; }
       const message = this.rawMessage(run.assistantId)!;
       if (message.status === 'running') this.finishInterrupted(run);
       else if (run.cancelRequested) this.finish(run.id, 'cancelled');
@@ -202,6 +216,7 @@ export class Conversation extends DurableObject<Env> {
     }
     // Acceptance and cleanup both use transactions so cleanup cannot erase a new task's alarm.
     await this.ctx.storage.transaction(async () => {
+      if (this.deletedAt) return;
       const pending = this.query<Run>(`SELECT runs.* FROM runs JOIN messages ON messages.id = runs.assistantId WHERE messages.status IN ('queued', 'running')`).toArray();
       if (pending.length) await this.ctx.storage.setAlarm(Date.now() + 1000);
       else await this.ctx.storage.deleteAlarm();
@@ -287,6 +302,7 @@ export class Conversation extends DurableObject<Env> {
       streamVersion: run.streamVersion ?? undefined, assistantId: run.assistantId };
   }
   commit(runId: string, batches: StreamBatch[]): boolean {
+    if (this.deletedAt) return false;
     const run = this.run(runId), message = run && this.rawMessage(run.assistantId);
     if (!run || !message || message.status !== 'running') return false;
     const commit: StreamCommit = { runId, messageId: run.assistantId, batches };
@@ -315,6 +331,7 @@ export class Conversation extends DurableObject<Env> {
     return true;
   }
   finish(runId: string, status: 'completed' | 'failed' | 'cancelled', error: string | null = null) {
+    if (this.deletedAt) return;
     const run = this.run(runId);
     const message = run && this.message(run.assistantId);
     if (!run || !message || !isActive(message)) return;
@@ -353,6 +370,7 @@ export class Conversation extends DurableObject<Env> {
     }
   }
   async cancel(runId: string) {
+    if (this.deletedAt) return;
     const run = this.run(runId), message = run && this.rawMessage(run.assistantId);
     if (!run || !message || !isActive(message)) return;
     this.query('UPDATE runs SET cancelRequested = 1 WHERE id = ?', runId);
@@ -371,7 +389,31 @@ export class Conversation extends DurableObject<Env> {
     await this.ctx.storage.sync();
   }
   closeSessions() { for (const socket of this.ctx.getWebSockets()) socket.close(4001, 'Signed out'); }
+  protected eraseDeletedStorage() { return this.ctx.storage.deleteAll(); }
+  async deleteConversation(deletedAt: number) {
+    this.deletedAt = deletedAt;
+    const active = this.activeGeneration;
+    if (active) {
+      active.cancelled = true; active.abort.abort();
+      if (active.timer) clearInterval(active.timer);
+    }
+    // Keep all RPCs and Alarm continuations outside the empty-database interval.
+    if (!this.deletionCleaned) {
+      await this.ctx.blockConcurrencyWhile(async () => {
+        await this.eraseDeletedStorage();
+        this.ctx.storage.sql.exec(DELETION_SCHEMA);
+        this.ctx.storage.sql.exec('INSERT INTO conversation_deletion VALUES (1, ?)', deletedAt);
+        await this.ctx.storage.sync();
+      });
+      this.deletionCleaned = true;
+    }
+    for (const socket of this.ctx.getWebSockets()) {
+      try { socket.send(JSON.stringify({ type: 'deleted', deletedAt })); socket.close(4003, 'Conversation deleted'); }
+      catch { /* A disconnected subscriber reads the Library tombstone on reconnect. */ }
+    }
+  }
   async fetch(request: Request) {
+    if (this.deletedAt) return json({ error: '这个对话已删除。' }, 410);
     if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') return new Response('WebSocket required', { status: 426 });
     const [client, server] = Object.values(new WebSocketPair());
     this.ctx.acceptWebSocket(server);
@@ -394,6 +436,7 @@ export class Conversation extends DurableObject<Env> {
     return new Response(null, { status: 101, webSocket: client });
   }
   webSocketMessage(socket: WebSocket, data: string | ArrayBuffer) {
+    if (this.deletedAt) { socket.send(JSON.stringify({ type: 'deleted', deletedAt: this.deletedAt })); socket.close(4003, 'Conversation deleted'); return; }
     const attachment = socket.deserializeAttachment() as Attachment;
     if (attachment.expires <= Date.now() / 1000) { socket.close(4001, 'Session expired'); return; }
     if (data === 'session-check') return;

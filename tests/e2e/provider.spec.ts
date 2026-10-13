@@ -4,7 +4,7 @@ import type { ProviderSettings } from '../../shared/types';
 const origin = 'http://127.0.0.1:5174';
 const headers = { Origin: origin };
 async function tab(page: Page, name: string) {
-  const item = page.getByRole('tab', { name, exact: true });
+  const item = page.getByRole('dialog', { name: '设置', exact: true }).getByRole('tab', { name, exact: true });
   await item.focus(); await item.press('Space');
   await expect(item).toHaveAttribute('aria-selected', 'true');
 }

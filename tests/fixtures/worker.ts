@@ -9,6 +9,27 @@ import type { ProviderKind } from '../../shared/types';
 import { MAX_CONVERSATIONS, MAX_DATABASE_BYTES } from '../../worker/resource-limits';
 
 export class Library extends ProductionLibrary {
+  fixtureDeletionHistory(count: number) {
+    if (!Number.isInteger(count) || count < 0 || count > 600) throw new Error('Invalid deletion fixture count');
+    this.ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS fixture_deletion_ids (id TEXT PRIMARY KEY)');
+    this.ctx.storage.transactionSync(() => {
+      this.ctx.storage.sql.exec('DELETE FROM conversation_deletions WHERE id IN (SELECT id FROM fixture_deletion_ids)');
+      this.ctx.storage.sql.exec('DELETE FROM fixture_deletion_ids');
+      for (let index = 0; index < count; index++) {
+        const id = crypto.randomUUID();
+        this.ctx.storage.sql.exec('INSERT INTO fixture_deletion_ids VALUES (?)', id);
+        this.ctx.storage.sql.exec('INSERT INTO conversation_deletions VALUES (?, ?, 1)', id, Date.now());
+      }
+    });
+  }
+  fixtureSupplierCall(id: string) {
+    this.ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS fixture_supplier_calls (id TEXT PRIMARY KEY, calls INTEGER NOT NULL)');
+    this.ctx.storage.sql.exec('INSERT INTO fixture_supplier_calls VALUES (?, 1) ON CONFLICT(id) DO UPDATE SET calls = calls + 1', id);
+  }
+  fixtureSupplierCalls(id: string) {
+    this.ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS fixture_supplier_calls (id TEXT PRIMARY KEY, calls INTEGER NOT NULL)');
+    return this.ctx.storage.sql.exec<{ calls: number }>('SELECT calls FROM fixture_supplier_calls WHERE id = ?', id).toArray()[0]?.calls ?? 0;
+  }
   fixtureCapacity(seed: boolean) {
     const sql = this.ctx.storage.sql;
     this.ctx.storage.transactionSync(() => {
@@ -24,6 +45,22 @@ export class Library extends ProductionLibrary {
 
 export class Conversation extends ProductionConversation {
   private failNextCommit = false;
+  private failDelete = false;
+  private resetDelete = false;
+  fixtureDeleteFailure(reset: boolean) { if (reset) this.resetDelete = true; else this.failDelete = true; }
+  override async deleteConversation(deletedAt: number) {
+    if (this.failDelete) { this.failDelete = false; throw new Error('Injected deletion failure'); }
+    return super.deleteConversation(deletedAt);
+  }
+  protected override async eraseDeletedStorage() {
+    await super.eraseDeletedStorage();
+    if (this.resetDelete) this.ctx.abort('Intentional reset after deleting storage');
+  }
+  async fixtureDeletionState() {
+    const marker = this.ctx.storage.sql.exec<{ deletedAt: number }>('SELECT deletedAt FROM conversation_deletion WHERE id = 1').toArray()[0]?.deletedAt ?? null;
+    return { ...this.fixtureResources(), deletedAt: marker, alarmAt: await this.ctx.storage.getAlarm(),
+      events: this.fixtureCount('events'), submissions: this.fixtureCount('submissions') };
+  }
   override snapshotResponse() {
     const faults = this.ctx.storage.sql.exec("SELECT name FROM sqlite_master WHERE name = 'fixture_storage_fault'").toArray();
     if (faults.length) throw new Error('SQLITE_FULL private fixture diagnostic');
@@ -40,17 +77,20 @@ export class Conversation extends ProductionConversation {
   fixtureResources() {
     const sql = this.ctx.storage.sql;
     const hasCalls = sql.exec("SELECT name FROM sqlite_master WHERE name = 'fixture_calls'").toArray().length;
-    return { databaseBytes: sql.databaseSize, messages: sql.exec<{ count: number }>('SELECT COUNT(*) AS count FROM messages').one().count,
-      runs: sql.exec<{ count: number }>('SELECT COUNT(*) AS count FROM runs').one().count,
-      retainedContexts: sql.exec<{ count: number }>("SELECT COUNT(*) AS count FROM runs WHERE context != '[]'").one().count,
-      journalRows: sql.exec<{ count: number }>('SELECT COUNT(*) AS count FROM stream_commits').one().count,
+    return { databaseBytes: sql.databaseSize, messages: this.fixtureCount('messages'), runs: this.fixtureCount('runs'),
+      retainedContexts: this.fixtureCount('runs', "WHERE context != '[]'"), journalRows: this.fixtureCount('stream_commits'),
       calls: hasCalls ? sql.exec<{ calls: number }>('SELECT COALESCE(SUM(calls), 0) AS calls FROM fixture_calls').one().calls : 0 };
+  }
+  private fixtureCount(table: string, where = '') {
+    if (!this.ctx.storage.sql.exec('SELECT name FROM sqlite_master WHERE name = ?', table).toArray().length) return 0;
+    return this.ctx.storage.sql.exec<{ count: number }>(`SELECT COUNT(*) AS count FROM ${table} ${where}`).one().count;
   }
   protected override async openModelStream(...args: Parameters<typeof openProviderStream>) {
     if (args[0].model.startsWith('alarm-')) {
       this.ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS fixture_calls (runId TEXT PRIMARY KEY, calls INTEGER NOT NULL)');
-      const run = this.ctx.storage.sql.exec<{ id: string }>(`SELECT runs.id FROM runs JOIN messages ON messages.id = runs.assistantId WHERE messages.status = 'running'`).one();
+      const run = this.ctx.storage.sql.exec<{ id: string; conversationId: string }>(`SELECT runs.id, runs.conversationId FROM runs JOIN messages ON messages.id = runs.assistantId WHERE messages.status = 'running'`).one();
       this.ctx.storage.sql.exec('INSERT INTO fixture_calls VALUES (?, 1) ON CONFLICT(runId) DO UPDATE SET calls = calls + 1', run.id);
+      await (this.env.LIBRARY as unknown as DurableObjectNamespace<Library>).getByName('personal').fixtureSupplierCall(run.conversationId);
       if (args[0].model === 'alarm-cancel-tail-failure') {
         let step = 0;
         return new ReadableStream<Uint8Array>({
@@ -118,13 +158,35 @@ export default {
       const { seed } = await request.json() as { seed: boolean };
       return Response.json(await (env.LIBRARY as unknown as DurableObjectNamespace<Library>).getByName('personal').fixtureCapacity(seed));
     }
-    const match = /^\/api\/__test\/conversations\/([0-9a-f-]{36})\/(state|alarm|abort|abort-stop|history|fill|resources|storage-error)$/.exec(url.pathname);
+    if (url.pathname === '/api/__test/library/deletion-history') {
+      if (request.method !== 'POST' || request.headers.get('Origin') !== url.origin) return new Response('Forbidden', { status: 403 });
+      if (!await authenticated(request, env)) return new Response('Unauthorized', { status: 401 });
+      const { count } = await request.json() as { count: number };
+      await (env.LIBRARY as unknown as DurableObjectNamespace<Library>).getByName('personal').fixtureDeletionHistory(count);
+      return Response.json({ ok: true });
+    }
+    if (url.pathname === '/api/__test/library/deletion') {
+      if (request.method !== 'POST' || request.headers.get('Origin') !== url.origin) return new Response('Forbidden', { status: 403 });
+      if (!await authenticated(request, env)) return new Response('Unauthorized', { status: 401 });
+      const { id, begin } = await request.json() as { id: string; begin?: boolean };
+      const library = (env.LIBRARY as unknown as DurableObjectNamespace<Library>).getByName('personal');
+      if (begin) return Response.json(await library.beginDelete(id));
+      return Response.json({ deletedAt: await library.deletedAt(id), calls: await library.fixtureSupplierCalls(id) });
+    }
+    const match = /^\/api\/__test\/conversations\/([0-9a-f-]{36})\/(state|alarm|abort|abort-stop|history|fill|resources|storage-error|delete-failure|delete-reset|deletion-state|late-submit)$/.exec(url.pathname);
     if (!match) return production.fetch(request, env, ctx);
     if (request.method !== 'POST' || request.headers.get('Origin') !== url.origin) return new Response('Forbidden', { status: 403 });
     if (!await authenticated(request, env)) return new Response('Unauthorized', { status: 401 });
     const { runId, pairs, target } = await request.json() as { runId: string; pairs: number; target: number };
     const conversation = (env.CONVERSATIONS as unknown as DurableObjectNamespace<Conversation>).getByName(match[1]);
     switch (match[2]) {
+      case 'late-submit': {
+        const result = await conversation.submit(match[1], { requestId: runId, content: '迟到的 RPC' }, await env.LIBRARY.getByName('personal').providerConfig());
+        return Response.json(result, { status: 'error' in result ? result.status : 202 });
+      }
+      case 'delete-failure': await conversation.fixtureDeleteFailure(false); break;
+      case 'delete-reset': await conversation.fixtureDeleteFailure(true); break;
+      case 'deletion-state': return Response.json(await conversation.fixtureDeletionState());
       case 'fill': return Response.json(await conversation.fixtureFillDatabase(target));
       case 'resources': return Response.json(await conversation.fixtureResources());
       case 'storage-error': await conversation.fixtureStorageError(); break;

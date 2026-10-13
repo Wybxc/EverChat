@@ -11,7 +11,7 @@ const server = createServer(async (request, response) => {
   const path = new URL(request.url ?? '/', 'http://127.0.0.1:5175').pathname;
   const json = (data: unknown) => { response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); response.end(JSON.stringify(data)); };
   if (path === '/api/session') return json({ authenticated: true, configured: true, provider: '', model: '', models: [] });
-  if (path === '/api/conversations') return json([{ id: conversationId, title, createdAt: 1, updatedAt: 1 }]);
+  if (path === '/api/conversations') return json({ conversations: [{ id: conversationId, title, createdAt: 1, updatedAt: 1, pinned: false, archived: false }], deletions: [], deletionCursor: 0, hasMoreDeletions: false });
   if (path === `/api/conversations/${conversationId}`) return json({ seq: 1, messages: [
     { id: 'user', role: 'user', content: title, status: 'completed', createdAt: 1, runId: null, parentId: null, revisionOf: null, error: null },
     { id: 'assistant', role: 'assistant', content: '**已保存的正文**', reasoning: '**已保存的思考**', status: 'completed', createdAt: 2, runId: 'run', parentId: 'user', revisionOf: null, error: null },

@@ -54,14 +54,36 @@ export function read<T>(key: string, fallback: T): T {
 function persist(key: string, value: unknown) {
   const fullKey = storageKey(key);
   cache.set(fullKey, value);
-  void set(fullKey, value).catch(() => {
+  const persistEpoch = epoch;
+  const fallback = () => {
+    if (epoch !== persistEpoch) return;
+    if (key.startsWith('snapshot:') && deletedAt(key.slice(9)) && !(value as Snapshot).deletedAt) return;
+    if (key.startsWith('draft:') && deletedAt(key.slice(6))) return;
     try { localStorage.setItem(fullKey, JSON.stringify(value)); } catch { /* Cloud remains authoritative. */ }
-  });
+  };
+  try { void set(fullKey, value).catch(fallback); }
+  catch { fallback(); }
   // Keep a small synchronous fallback for browsers where IndexedDB is delayed or unavailable.
   try { localStorage.setItem(fullKey, JSON.stringify(value)); } catch { /* IndexedDB remains authoritative. */ }
 }
+function discard(keys: string[]) {
+  try { void delMany(keys).catch(() => {}); } catch { /* IndexedDB can also fail synchronously. */ }
+}
 
-export function write(key: string, value: unknown) { persist(key, value); }
+export const deletedAt = (id: string) => read<number | null>(`deleted:${id}`, null);
+export function write(key: string, value: unknown) {
+  if (key.startsWith('snapshot:') && deletedAt(key.slice(9)) && !(value as Snapshot).deletedAt) return;
+  if (key.startsWith('draft:') && deletedAt(key.slice(6))) return;
+  persist(key, value);
+}
+export function markConversationDeleted(id: string, time: number) {
+  persist(`deleted:${id}`, time);
+  persist(`snapshot:${id}`, { messages: [], seq: 0, deletedAt: time });
+  const draft = storageKey(`draft:${id}`);
+  cache.delete(draft);
+  try { localStorage.removeItem(draft); } catch { /* The deletion marker also prevents recovering the draft. */ }
+  discard([draft]);
+}
 
 export function writePending(items: Pending[]): boolean {
   try { persist('pending', items); return true; } catch { return false; }
@@ -71,10 +93,13 @@ export function clearLocal() {
   epoch++;
   const keys = [...cache.keys()];
   cache.clear();
-  void delMany(keys).catch(() => {});
+  discard(keys);
   try {
     for (const key of Object.keys(localStorage)) if (key.startsWith(PREFIX)) localStorage.removeItem(key);
   } catch { /* The in-memory cache is already cleared. */ }
 }
 
-export const cachedSnapshot = (id: string) => read<Snapshot>(`snapshot:${id}`, { messages: [], seq: 0 });
+export const cachedSnapshot = (id: string) => {
+  const time = deletedAt(id);
+  return time ? { messages: [], seq: 0, deletedAt: time } : read<Snapshot>(`snapshot:${id}`, { messages: [], seq: 0 });
+};

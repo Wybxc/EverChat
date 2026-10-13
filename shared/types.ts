@@ -22,8 +22,9 @@ export interface Message {
   durableOffset?: number;
   liveOffset?: number;
 }
-export interface ConversationInfo { id: string; title: string; createdAt: number; updatedAt: number }
-export interface Snapshot { messages: Message[]; seq: number }
+export interface ConversationInfo { id: string; title: string; createdAt: number; updatedAt: number; pinned: boolean; archived: boolean }
+export interface LibrarySnapshot { conversations: ConversationInfo[]; deletions: { id: string; deletedAt: number }[]; deletionCursor: number; hasMoreDeletions: boolean }
+export interface Snapshot { messages: Message[]; seq: number; deletedAt?: number }
 export interface Change { type: 'change'; seq: number; messages: Message[] }
 export interface StreamBatch {
   version: 'raw-sse-v1'; runId: string; messageId: string; chunkSeq: number;
@@ -37,7 +38,7 @@ export interface CommitAck {
 }
 export interface Preview { type: 'preview'; batch: StreamBatch }
 export type DurableChange = Change | Commit;
-export type SyncPacket = DurableChange | Preview | CommitAck | { type: 'snapshot'; snapshot: Snapshot } | { type: 'ready'; seq: number };
+export type SyncPacket = DurableChange | Preview | CommitAck | { type: 'snapshot'; snapshot: Snapshot } | { type: 'ready'; seq: number } | { type: 'deleted'; deletedAt: number };
 export interface ModelSelection { providerId: string; model: string }
 export interface SubmitInput { requestId: string; content?: string; retryOf?: string; revisionOf?: string; selection?: ModelSelection; showReasoning?: boolean; reasoningEffort?: ReasoningEffort }
 export interface Submission { runId: string; userId: string; assistantId: string }

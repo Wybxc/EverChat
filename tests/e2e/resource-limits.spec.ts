@@ -77,7 +77,7 @@ test('Library serializes concurrent creations at the limit and allows idempotent
     const index = responses.findIndex((response) => response.status() === 201);
     const repeated = await request.post('/api/conversations', { headers, data: { id: ids[index], title: '__capacity_fixture__' } });
     expect(repeated.status()).toBe(201); expect((await repeated.json()).id).toBe(ids[index]);
-    expect(await request.get('/api/conversations').then((response) => response.json()).then((items) => items.length)).toBe(MAX_CONVERSATIONS);
+    expect(await request.get('/api/conversations').then((response) => response.json()).then((items) => items.conversations.length)).toBe(MAX_CONVERSATIONS);
   } finally { expect((await capacity(false)).ok()).toBe(true); }
 });
 
