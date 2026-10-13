@@ -61,7 +61,7 @@ app.get('/session', async (context) => {
     activeProviderId: config?.providerId ?? null,
     models: settings ? chatModels(settings) : [],
     showReasoning: settings?.showReasoning ?? false,
-    systemPrompt: settings?.systemPrompt ?? '', maxOutputTokens: settings?.maxOutputTokens ?? 4096,
+    systemPrompt: settings?.systemPrompt ?? '', maxOutputTokens: settings?.maxOutputTokens ?? null,
   });
 });
 

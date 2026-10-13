@@ -22,7 +22,7 @@ pnpm dev
 
 在「供应商」中添加供应商，配置名称、接口协议、API 基础地址和密钥。模型使用复选框启用或禁用，并可编辑 ID 和显示名。获取的新增模型默认禁用，手动添加的模型默认启用；重新获取保留已有模型的显示名和启用状态。已有模型列表自动迁移为启用状态。
 
-「对话」中的默认模型只包含已启用且配置密钥的模型。聊天输入框可以为每次请求选择模型，选择随离线请求保存，重新生成沿用原模型。模型设置中可以继承统一系统提示词或配置专属提示词；模型支持时还可以设定思维强度。思维强度默认按模型 ID 识别，也可在模型设置中指定能力。系统提示词、输出 Token 上限和是否显示供应商返回的思考内容在「对话」Tab 中设置。
+「对话」中的默认模型只包含已启用且配置密钥的模型。聊天输入框可以为每次请求选择模型，选择随离线请求保存，重新生成沿用原模型。模型设置中可以继承统一系统提示词或配置专属提示词；模型支持时还可以设定思维强度。思维强度默认按模型 ID 识别，也可在模型设置中指定能力。系统提示词、输出 Token 上限和是否显示供应商返回的思考内容在「对话」Tab 中设置。输出上限默认留空，使用供应商或 SDK 的默认值；填写正整数可设置上限，清空后取消。已有保存的上限继续保留。
 
 颜色模式支持浅色、深色和系统偏好。默认跟随设备外观变化。
 
@@ -43,12 +43,11 @@ pnpm dev
 {
   "AI_PROVIDER": "openai-chat",
   "AI_BASE_URL": "https://your-provider.example/v1",
-  "AI_MODEL": "your-model-name",
-  "MAX_OUTPUT_TOKENS": "4096"
+  "AI_MODEL": "your-model-name"
 }
 ```
 
-`AI_PROVIDER` 可为 `openai-chat`、`anthropic`、`openai-responses` 或 `gemini`；旧值 `openai-compatible` 继续映射到 Chat Completions。本地默认密钥写入 `.dev.vars` 的 `AI_API_KEY`，生产默认密钥可使用同名 Cloudflare Secret。首次保存网页设置前，这些值会作为初始供应商和模型。未配置供应商或默认模型时禁止生成，旧演示配置迁移为空配置。
+`AI_PROVIDER` 可为 `openai-chat`、`anthropic`、`openai-responses` 或 `gemini`；旧值 `openai-compatible` 继续映射到 Chat Completions。本地默认密钥写入 `.dev.vars` 的 `AI_API_KEY`，生产默认密钥可使用同名 Cloudflare Secret。首次保存网页设置前，这些值会作为初始供应商和模型。`MAX_OUTPUT_TOKENS` 可选，填写正整数时指定初始输出上限。未配置供应商或默认模型时禁止生成，旧演示配置迁移为空配置。
 
 ## 部署到 Cloudflare
 

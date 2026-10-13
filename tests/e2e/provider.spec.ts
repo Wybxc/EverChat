@@ -23,6 +23,38 @@ test('provider settings and model discovery require a session and same-origin wr
   expect((await request.get(`/api/settings/providers/${crypto.randomUUID()}/models`)).status()).toBe(401);
 });
 
+test('output limits start unset and can be configured or cleared with autosave', async ({ page, context }) => {
+  await login(page);
+  const getSettings = () => context.request.get('/api/settings/providers').then((response) => response.json()) as Promise<ProviderSettings>;
+  const initial = await getSettings();
+  try {
+    expect(initial.maxOutputTokens).toBeNull();
+    await page.getByRole('button', { name: '空间设置', exact: true }).click();
+    await tab(page, '对话');
+    const limit = page.getByLabel('输出上限（Tokens）');
+    await expect(limit).toHaveValue('');
+    await expect(limit).toHaveAttribute('placeholder', '不设置');
+    await limit.fill('512');
+    await saved(page);
+    expect((await getSettings()).maxOutputTokens).toBe(512);
+    await page.reload();
+    await page.getByRole('button', { name: '空间设置', exact: true }).click();
+    await tab(page, '对话');
+    await expect(limit).toHaveValue('512');
+    await limit.fill('');
+    await saved(page);
+    expect((await getSettings()).maxOutputTokens).toBeNull();
+    expect(await context.request.get('/api/session').then((response) => response.json())).toMatchObject({ maxOutputTokens: null });
+    await page.reload();
+    await page.getByRole('button', { name: '空间设置', exact: true }).click();
+    await tab(page, '对话');
+    await expect(limit).toHaveValue('');
+  } finally {
+    await page.close();
+    expect((await context.request.put('/api/settings/providers', { headers, data: initial })).status()).toBe(200);
+  }
+});
+
 test('tabbed settings autosave model names and enabled choices; the close button stays visible', async ({ page, context, browser }) => {
   await login(page);
   const getSettings = () => context.request.get('/api/settings/providers').then((response) => response.json()) as Promise<ProviderSettings>;

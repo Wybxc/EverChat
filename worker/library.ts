@@ -55,14 +55,14 @@ export class Library extends DurableObject<Env> {
         activeProviderId: preferences?.activeProviderId ?? null,
         activeModel: preferences?.activeModel ?? '',
         systemPrompt: preferences?.systemPrompt ?? defaults.systemPrompt,
-        maxOutputTokens: Number(preferences?.maxOutputTokens ?? defaults.maxOutputTokens),
+        maxOutputTokens: Number(preferences?.maxOutputTokens ?? defaults.maxOutputTokens) || null,
         showReasoning: Boolean(preferences?.showReasoning ?? defaults.showReasoning),
       };
     }
     const legacy = this.ctx.storage.sql.exec<ProviderConfig & Record<string, SqlStorageValue>>(
       'SELECT provider, baseUrl, model, systemPrompt, maxOutputTokens, apiKey FROM provider_config WHERE id = 1',
     ).toArray()[0];
-    if (legacy) return legacyProviderSettings({ ...legacy, maxOutputTokens: Number(legacy.maxOutputTokens) });
+    if (legacy) return legacyProviderSettings({ ...legacy, maxOutputTokens: Number(legacy.maxOutputTokens) || null });
     return defaultProviderSettings(this.env);
   }
   providerConfig(selection?: ModelSelection, effort?: ReasoningEffort): ProviderConfig | null {
@@ -86,7 +86,8 @@ export class Library extends DurableObject<Env> {
       this.ctx.storage.sql.exec(`INSERT INTO provider_preferences (id, activeProviderId, activeModel, systemPrompt, maxOutputTokens, showReasoning)
         VALUES (1, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET activeProviderId = excluded.activeProviderId,
         activeModel = excluded.activeModel, systemPrompt = excluded.systemPrompt, maxOutputTokens = excluded.maxOutputTokens, showReasoning = excluded.showReasoning`,
-      settings.activeProviderId, settings.activeModel, settings.systemPrompt, settings.maxOutputTokens, settings.showReasoning);
+      // Use 0 for an unset limit in the existing NOT NULL SQLite column.
+      settings.activeProviderId, settings.activeModel, settings.systemPrompt, settings.maxOutputTokens ?? 0, settings.showReasoning);
     });
     return { settings: publicProviderSettings(settings) };
   }

@@ -26,7 +26,7 @@ export const providerSettingsSchema = v.object({
   activeProviderId: v.nullable(v.pipe(v.string(), v.uuid())),
   activeModel: v.pipe(v.string(), v.trim(), v.maxLength(200)),
   systemPrompt: v.pipe(v.string(), v.maxLength(20_000)),
-  maxOutputTokens: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(100_000)),
+  maxOutputTokens: v.optional(v.nullable(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(100_000))), null),
   showReasoning: v.optional(v.boolean()),
 });
 

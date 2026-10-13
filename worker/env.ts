@@ -14,5 +14,5 @@ export interface Env {
   AI_BASE_URL: string;
   AI_MODEL: string;
   SYSTEM_PROMPT: string;
-  MAX_OUTPUT_TOKENS: string;
+  MAX_OUTPUT_TOKENS?: string;
 }

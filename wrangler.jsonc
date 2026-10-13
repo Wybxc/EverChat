@@ -13,8 +13,7 @@
     "AI_PROVIDER": "",
     "AI_BASE_URL": "https://api.openai.com/v1",
     "AI_MODEL": "",
-    "SYSTEM_PROMPT": "你是一位清晰、友善的助手。请默认使用中文回答。",
-    "MAX_OUTPUT_TOKENS": "4096"
+    "SYSTEM_PROMPT": "你是一位清晰、友善的助手。请默认使用中文回答。"
   },
   "durable_objects": {
     "bindings": [

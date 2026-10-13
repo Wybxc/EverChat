@@ -79,6 +79,20 @@ for (const [kind, fixture] of Object.entries(streams)) {
     await assert.rejects(() => generate({ ...config, provider }, history, async (delta) => { text += delta; }, new AbortController().signal));
     assert.equal(text, '你好'); assert.equal(calls, 1);
   });
+  test(`${provider} uses provider defaults when no output limit is configured`, async (t) => {
+    t.mock.method(globalThis, 'fetch', async (_input: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string);
+      if (provider === 'anthropic') {
+        // Anthropic requires max_tokens; its SDK supplies the model's default maximum.
+        assert.ok(Number.isInteger(body.max_tokens) && body.max_tokens > 128);
+      } else if (provider === 'gemini') assert.ok(!('maxOutputTokens' in body.generationConfig));
+      else assert.ok(!('max_tokens' in body) && !('max_output_tokens' in body));
+      return new Response(fixture.partial + fixture.finish, { headers: { 'Content-Type': 'text/event-stream' } });
+    });
+    let text = '';
+    await generate({ ...config, provider, maxOutputTokens: null }, history, async (delta) => { text += delta; }, new AbortController().signal);
+    assert.equal(text, '你好');
+  });
   test(`${provider} keeps upstream diagnostics private and does not retry HTTP errors`, async (t) => {
     let calls = 0;
     t.mock.method(globalThis, 'fetch', async () => { calls++; return new Response(JSON.stringify({ error: { message: 'private-key private diagnostic' } }), { status: 429, headers: { 'Content-Type': 'application/json' } }); });
@@ -92,6 +106,19 @@ const settings = {
   providers: [{ id: profileId, name: 'Test', provider: 'openai-chat' as const, baseUrl: 'https://provider.example/v1', models: [{ id: 'test-model', name: '测试模型', enabled: true }], apiKey: 'private-key' }],
   activeProviderId: profileId, activeModel: 'test-model', systemPrompt: 'system', maxOutputTokens: 128,
 };
+
+test('output limits default to unset while explicit configured limits remain available', () => {
+  const env = { AI_PROVIDER: 'openai-chat', AI_MODEL: 'test-model', AI_API_KEY: 'private-key' } as Env;
+  assert.equal(defaultProviderSettings({} as Env).maxOutputTokens, null);
+  assert.equal(defaultProviderSettings(env).maxOutputTokens, null);
+  assert.equal(providerConfigFromEnv(env)?.maxOutputTokens, null);
+  assert.equal(defaultProviderSettings({ ...env, MAX_OUTPUT_TOKENS: '4096' }).maxOutputTokens, 4096);
+  assert.equal(providerConfigFromEnv({ ...env, MAX_OUTPUT_TOKENS: '4096' })?.maxOutputTokens, 4096);
+  assert.equal(runtimeProviderConfig(mergeProviderSettings(settings, { ...settings, maxOutputTokens: null }))?.maxOutputTokens, null);
+  const { maxOutputTokens: _limit, ...omitted } = settings;
+  assert.equal(mergeProviderSettings(settings, omitted).maxOutputTokens, null);
+  assert.equal(mergeProviderSettings(settings, settings).maxOutputTokens, 128);
+});
 
 test('provider profiles retain keys only for the same endpoint and return saved keys to settings', () => {
   const blankKey = { ...settings, providers: [{ ...settings.providers[0], apiKey: '' }] };

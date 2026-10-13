@@ -24,7 +24,7 @@ export interface Submission { runId: string; userId: string; assistantId: string
 export interface GenerationParams { conversationId: string; runId: string }
 export interface ChatInput { role: 'system' | 'user' | 'assistant'; content: string }
 export interface ChatModel extends ModelSelection { name: string; providerName: string; reasoningSupported: boolean; reasoningEfforts: ReasoningEffort[] }
-export interface SessionInfo { authenticated: boolean; provider: string; model: string; modelName?: string; activeProviderId?: string | null; models?: ChatModel[]; configured: boolean; showReasoning?: boolean; systemPrompt?: string; maxOutputTokens?: number }
+export interface SessionInfo { authenticated: boolean; provider: string; model: string; modelName?: string; activeProviderId?: string | null; models?: ChatModel[]; configured: boolean; showReasoning?: boolean; systemPrompt?: string; maxOutputTokens?: number | null }
 
 export type ProviderKind = 'openai-chat' | 'anthropic' | 'openai-responses' | 'gemini';
 export type ProviderApiKind = ProviderKind;
@@ -34,7 +34,7 @@ export interface ProviderConfig {
   model: string;
   modelName?: string;
   systemPrompt: string;
-  maxOutputTokens: number;
+  maxOutputTokens: number | null;
   apiKey?: string;
   providerId?: string;
   reasoningEnabled?: boolean;
@@ -65,7 +65,7 @@ export interface ProviderSettings {
   activeProviderId: string | null;
   activeModel: string;
   systemPrompt: string;
-  maxOutputTokens: number;
+  maxOutputTokens: number | null;
   showReasoning: boolean;
 }
 export interface ProviderSettingsInput {
@@ -73,7 +73,7 @@ export interface ProviderSettingsInput {
   activeProviderId: string | null;
   activeModel: string;
   systemPrompt: string;
-  maxOutputTokens: number;
+  maxOutputTokens: number | null;
   showReasoning: boolean;
 }
 export interface ProviderModelConfig extends Omit<ProviderProfile, 'hasApiKey'> {

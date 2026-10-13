@@ -22,7 +22,7 @@ export function providerConfigFromEnv(env: Env): ProviderConfig | null {
     baseUrl: env.AI_BASE_URL?.trim().replace(/\/+$/, '') || defaults?.baseUrl || '',
     model: env.AI_MODEL?.trim() || '',
     systemPrompt: env.SYSTEM_PROMPT ?? '你是一位清晰、友善的助手。请默认使用中文回答。',
-    maxOutputTokens: Number.isInteger(maxOutputTokens) && maxOutputTokens > 0 ? maxOutputTokens : 4096,
+    maxOutputTokens: Number.isInteger(maxOutputTokens) && maxOutputTokens > 0 ? maxOutputTokens : null,
     apiKey: env.AI_API_KEY?.trim() || undefined,
   };
 }
@@ -35,7 +35,7 @@ export function defaultProviderSettings(env: Env): ProviderSettingsInput {
     return {
       providers: [], activeProviderId: null, activeModel: '',
       systemPrompt: env.SYSTEM_PROMPT ?? '你是一位清晰、友善的助手。请默认使用中文回答。',
-      maxOutputTokens: Number.isInteger(limit) && limit > 0 ? limit : 4096, showReasoning: false,
+      maxOutputTokens: Number.isInteger(limit) && limit > 0 ? limit : null, showReasoning: false,
     };
   }
   const option = providerOptions.find((item) => item.value === config.provider)!;

@@ -45,7 +45,7 @@ export async function generate(config: ProviderConfig, context: ChatInput[], onD
       model: languageModel(config),
       system: config.systemPrompt || undefined,
       messages: context,
-      maxOutputTokens: config.maxOutputTokens,
+      maxOutputTokens: config.maxOutputTokens ?? undefined,
       reasoning: deepseek ? undefined : effort,
       // Compatible Responses APIs can return reasoning_text instead of OpenAI's summaries.
       // Keep the SDK's SSE parser and expose the events it does not normalize yet.
