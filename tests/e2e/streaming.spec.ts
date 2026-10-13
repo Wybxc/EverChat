@@ -32,6 +32,32 @@ async function subscribe(request: APIRequestContext, id: string, initial: Snapsh
   return { socket, packets, snapshot: () => { if (failure) throw failure; return sync.durable; }, view: () => { if (failure) throw failure; return sync.view; }, closeCode: () => closeCode };
 }
 
+test('large completed history crosses the DO response boundary and recovers from an expired WebSocket cursor', async ({ request }) => {
+  const id = crypto.randomUUID();
+  expect((await request.get(`/api/conversations/${id}`)).status()).toBe(401);
+  expect((await request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok()).toBe(true);
+  expect((await request.post('/api/conversations', { headers, data: { id, title: 'Large history' } })).status()).toBe(201);
+  expect((await request.post(`/api/__test/conversations/${id}/history`, { headers, data: { pairs: 16 } })).ok()).toBe(true);
+  const response = await request.get(`/api/conversations/${id}`);
+  expect(response.status()).toBe(200);
+  expect(response.headers()).toMatchObject({ 'cache-control': 'no-store', 'content-type': 'application/json; charset=utf-8', 'x-content-type-options': 'nosniff' });
+  expect((await response.body()).byteLength).toBeGreaterThan(7_800_000);
+  const stored = await response.json() as Snapshot;
+  expect(stored.seq).toBe(501); expect(stored.messages).toHaveLength(32);
+  for (const [index, message] of stored.messages.entries()) {
+    expect(message.content).toBe(index % 2 ? '正文🙂'.repeat(22500) : '历史🙂'.repeat(4000));
+    expect(message.reasoning ?? '').toBe(index % 2 ? '思考🙂'.repeat(22500) : '');
+  }
+  const full = await subscribe(request, id);
+  try {
+    expect(full.snapshot()).toEqual(stored);
+    expect(full.packets.map(({ type }) => type)).toEqual(['snapshot', 'ready']);
+    const latest = await subscribe(request, id, stored);
+    try { expect(latest.snapshot()).toEqual(stored); expect(latest.packets).toEqual([{ type: 'ready', seq: 501 }]); }
+    finally { latest.socket.terminate(); }
+  } finally { full.socket.terminate(); }
+});
+
 test('previews precede commits and reconnecting subscribers recover the same durable and live boundaries', async ({ request }) => {
   expect((await request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok()).toBe(true);
   const initial = await request.get('/api/settings/providers').then((response) => response.json()) as ProviderSettings;

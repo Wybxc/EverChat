@@ -11,6 +11,7 @@ import { openProviderStream } from './provider';
 import { ProviderStream, StreamParseError } from '../shared/provider-stream';
 import { GenerationCancelled, ProviderError } from './generation-errors';
 import { GenerationBuffer } from './generation-buffer';
+import { json } from './http';
 
 type Row = Message & { generationResult: string | null } & Record<string, SqlStorageValue>;
 type Run = { id: string; conversationId: string; assistantId: string; context: string; config: string | null; chunkSeq: number; updatedAt: number;
@@ -65,7 +66,11 @@ export class Conversation extends DurableObject<Env> {
   private message(id: string): Message | undefined { const message = this.rawMessage(id); return message && this.materialize(message); }
   private run(id: string): Run | undefined { return this.query<Run>('SELECT * FROM runs WHERE id = ?', id).toArray()[0]; }
   private seq(): number { return this.query<{ seq: number }>('SELECT COALESCE(MAX(seq), 0) AS seq FROM events').one().seq; }
-  snapshot(): Snapshot { return { messages: this.all(), seq: this.seq() }; }
+  private snapshot(): Snapshot { return { messages: this.all(), seq: this.seq() }; }
+  snapshotResponse(): Response {
+    // RPC transfers a Response body as a stream, keeping history decoding and JSON work out of the Free Worker.
+    return json(this.snapshot());
+  }
   private record(messages: Message[]): Change {
     return { type: 'change', seq: this.recordPayload(JSON.stringify(messages)), messages };
   }

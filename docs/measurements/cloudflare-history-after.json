@@ -1,0 +1,192 @@
+{
+  "version": 1,
+  "workerName": "everchat-stream-validation",
+  "plan": "Workers Free (user confirmed)",
+  "diagnosticCounters": false,
+  "suite": "history",
+  "expectedScenarios": 3,
+  "complete": true,
+  "passed": true,
+  "startedAt": "2026-10-13T14:31:08.084Z",
+  "finishedAt": "2026-10-13T14:31:17.357Z",
+  "results": [
+    {
+      "scenario": "history-1-pairs",
+      "pairs": 1,
+      "conversationId": "048d4db3-5f11-4342-b235-c151be059bbe",
+      "seed": {
+        "messages": 2,
+        "contentCharacters": 106000,
+        "reasoningCharacters": 90000,
+        "databaseBytes": 540672
+      },
+      "reads": [
+        {
+          "status": 200,
+          "passed": true,
+          "bytes": 490665,
+          "elapsedMs": 819
+        },
+        {
+          "status": 200,
+          "passed": true,
+          "bytes": 490665,
+          "elapsedMs": 108
+        },
+        {
+          "status": 200,
+          "passed": true,
+          "bytes": 490665,
+          "elapsedMs": 111
+        },
+        {
+          "status": 200,
+          "passed": true,
+          "bytes": 490665,
+          "elapsedMs": 104
+        },
+        {
+          "status": 200,
+          "passed": true,
+          "bytes": 490665,
+          "elapsedMs": 97
+        }
+      ],
+      "replays": [
+        {
+          "mode": "full-snapshot",
+          "passed": true,
+          "frames": 2,
+          "bytes": 490722,
+          "elapsedMs": 388
+        },
+        {
+          "mode": "latest-cursor",
+          "passed": true,
+          "frames": 1,
+          "bytes": 26,
+          "elapsedMs": 394
+        }
+      ]
+    },
+    {
+      "scenario": "history-4-pairs",
+      "pairs": 4,
+      "conversationId": "18eec6dd-12eb-4b97-879a-b746cdad06df",
+      "seed": {
+        "messages": 8,
+        "contentCharacters": 424000,
+        "reasoningCharacters": 360000,
+        "databaseBytes": 2019328
+      },
+      "reads": [
+        {
+          "status": 200,
+          "passed": true,
+          "bytes": 1962588,
+          "elapsedMs": 681
+        },
+        {
+          "status": 200,
+          "passed": true,
+          "bytes": 1962588,
+          "elapsedMs": 446
+        },
+        {
+          "status": 200,
+          "passed": true,
+          "bytes": 1962588,
+          "elapsedMs": 189
+        },
+        {
+          "status": 200,
+          "passed": true,
+          "bytes": 1962588,
+          "elapsedMs": 122
+        },
+        {
+          "status": 200,
+          "passed": true,
+          "bytes": 1962588,
+          "elapsedMs": 137
+        }
+      ],
+      "replays": [
+        {
+          "mode": "full-snapshot",
+          "passed": true,
+          "frames": 2,
+          "bytes": 1962645,
+          "elapsedMs": 785
+        },
+        {
+          "mode": "latest-cursor",
+          "passed": true,
+          "frames": 1,
+          "bytes": 26,
+          "elapsedMs": 280
+        }
+      ]
+    },
+    {
+      "scenario": "history-16-pairs",
+      "pairs": 16,
+      "conversationId": "d968cd2b-ba7e-4da2-a357-ce4f6e91252c",
+      "seed": {
+        "messages": 32,
+        "contentCharacters": 1696000,
+        "reasoningCharacters": 1440000,
+        "databaseBytes": 7925760
+      },
+      "reads": [
+        {
+          "status": 200,
+          "passed": true,
+          "bytes": 7850302,
+          "elapsedMs": 759
+        },
+        {
+          "status": 200,
+          "passed": true,
+          "bytes": 7850302,
+          "elapsedMs": 307
+        },
+        {
+          "status": 200,
+          "passed": true,
+          "bytes": 7850302,
+          "elapsedMs": 348
+        },
+        {
+          "status": 200,
+          "passed": true,
+          "bytes": 7850302,
+          "elapsedMs": 287
+        },
+        {
+          "status": 200,
+          "passed": true,
+          "bytes": 7850302,
+          "elapsedMs": 281
+        }
+      ],
+      "replays": [
+        {
+          "mode": "full-snapshot",
+          "passed": true,
+          "frames": 2,
+          "bytes": 7850359,
+          "elapsedMs": 1124
+        },
+        {
+          "mode": "latest-cursor",
+          "passed": true,
+          "frames": 1,
+          "bytes": 26,
+          "elapsedMs": 545
+        }
+      ]
+    }
+  ],
+  "scope": "Synthetic persisted completed history with compacted events. Five HTTP reads and full/latest WebSocket recovery. No suppliers, production data or configuration changes. Complete means all sizes exercised; passed separately records correctness."
+}

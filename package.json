@@ -15,6 +15,7 @@
     "measure:cloudflare-metrics": "node --import tsx/esm scripts/cloudflare-metrics.ts",
     "measure:cloudflare-tail": "node --import tsx/esm scripts/cloudflare-tail.ts",
     "measure:cloudflare": "node --import tsx/esm scripts/stream-cloudflare.ts",
+    "measure:cloudflare-history": "node --import tsx/esm scripts/history-cloudflare.ts",
     "measure:stream": "node --import tsx/esm scripts/stream-baseline.ts",
     "check": "pnpm test && pnpm build && pnpm test:e2e"
   },

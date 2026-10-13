@@ -52,19 +52,38 @@ export class Conversation extends ProductionConversation {
     await this.ctx.storage.sync();
     this.ctx.abort('Intentional test reset', { retryAlarm: true });
   }
-
+  fixtureHistory(pairs: number) {
+    if (!Number.isInteger(pairs) || pairs < 1 || pairs > 16) throw new Error('Invalid history fixture size');
+    const sql = this.ctx.storage.sql;
+    if (sql.exec<{ count: number }>('SELECT COUNT(*) AS count FROM messages').one().count) throw new Error('Seed only an empty test conversation');
+    const content = '正文🙂'.repeat(22500), reasoning = '思考🙂'.repeat(22500), input = '历史🙂'.repeat(4000);
+    this.ctx.storage.transactionSync(() => {
+      for (let index = 0; index < pairs; index++) {
+        const userId = crypto.randomUUID(), runId = crypto.randomUUID();
+        sql.exec('INSERT INTO messages (id, role, content, status, createdAt, runId) VALUES (?, ?, ?, ?, ?, ?)',
+          userId, 'user', input, 'completed', index * 2, null);
+        sql.exec('INSERT INTO messages (id, role, content, reasoning, status, createdAt, runId, parentId, model, modelName) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          crypto.randomUUID(), 'assistant', content, reasoning, 'completed', index * 2 + 1, runId, userId, 'history-fixture', 'History fixture');
+      }
+      // Simulate compacted old events, so a cursor of zero must use the full snapshot path.
+      sql.exec("INSERT INTO events (seq, payload) VALUES (501, '[]')");
+    });
+    return { messages: pairs * 2, contentCharacters: pairs * (input.length + content.length), reasoningCharacters: pairs * reasoning.length,
+      databaseBytes: sql.databaseSize };
+  }
 }
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext) {
     const url = new URL(request.url);
-    const match = /^\/api\/__test\/conversations\/([0-9a-f-]{36})\/(state|alarm|abort|abort-stop)$/.exec(url.pathname);
+    const match = /^\/api\/__test\/conversations\/([0-9a-f-]{36})\/(state|alarm|abort|abort-stop|history)$/.exec(url.pathname);
     if (!match) return production.fetch(request, env, ctx);
     if (request.method !== 'POST' || request.headers.get('Origin') !== url.origin) return new Response('Forbidden', { status: 403 });
     if (!await authenticated(request, env)) return new Response('Unauthorized', { status: 401 });
-    const { runId } = await request.json() as { runId: string };
+    const { runId, pairs } = await request.json() as { runId: string; pairs: number };
     const conversation = (env.CONVERSATIONS as unknown as DurableObjectNamespace<Conversation>).getByName(match[1]);
     switch (match[2]) {
+      case 'history': return Response.json(await conversation.fixtureHistory(pairs));
       case 'state': return Response.json(await conversation.fixtureState(runId));
       case 'alarm': await conversation.fixtureReenterAlarm(); break;
       case 'abort':

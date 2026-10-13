@@ -1,0 +1,238 @@
+{
+  "version": 1,
+  "queriedAt": "2026-10-13T14:38:34.652Z",
+  "window": {
+    "start": "2026-10-13T14:31:00.000Z",
+    "end": "2026-10-13T14:33:00.000Z"
+  },
+  "storageWindow": {
+    "start": "2026-10-13T14:00:00.000Z",
+    "end": "2026-10-13T14:38:32.536Z"
+  },
+  "workerName": "everchat-stream-validation",
+  "namespaces": [
+    {
+      "name": "CONVERSATIONS",
+      "id": "8e5f713ef1964283896e9245c5bbbe31"
+    },
+    {
+      "name": "LIBRARY",
+      "id": "7dad94e315754c0dbd3f8c2dd316046b"
+    }
+  ],
+  "units": {
+    "cpuTime": "microseconds",
+    "cpuTimeUs": "microseconds",
+    "activeTime": "microseconds",
+    "duration": "GB*s",
+    "storedBytes": "bytes",
+    "memoryUsageBytes": "bytes"
+  },
+  "scope": "Isolated deployed namespaces and Worker, diagnostic counters disabled. Adaptive fields may be sampled; empty arrays do not prove zero usage. Invocation minute rounding includes setup and idle activity. Storage uses a separate wider window and reports samples rather than the exact functional-run peak. Delayed query after resource cleanup; runtime allocation sample retained from the earlier deployed query. Dataset presence does not prove all invocation or periodic samples have arrived.",
+  "available": {
+    "workersInvocationsAdaptive": true,
+    "durableObjectsInvocationsAdaptiveGroups": true,
+    "durableObjectsPeriodicGroups": true,
+    "durableObjectsSqlStorageGroups": false
+  },
+  "data": {
+    "viewer": {
+      "accounts": [
+        {
+          "durableObjectsInvocationsAdaptiveGroups": [
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "namespaceId": "8e5f713ef1964283896e9245c5bbbe31",
+                "status": "responseStreamDisconnected",
+                "type": "http"
+              },
+              "quantiles": {
+                "cpuTimeP50": 1015,
+                "cpuTimeP99": 10191
+              },
+              "sum": {
+                "errors": 3,
+                "requests": 3
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "namespaceId": "8e5f713ef1964283896e9245c5bbbe31",
+                "status": "clientDisconnected",
+                "type": "jsrpc"
+              },
+              "quantiles": {
+                "cpuTimeP50": 7361,
+                "cpuTimeP99": 24834
+              },
+              "sum": {
+                "errors": 6,
+                "requests": 6
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "namespaceId": "8e5f713ef1964283896e9245c5bbbe31",
+                "status": "success",
+                "type": "hibernation"
+              },
+              "quantiles": {
+                "cpuTimeP50": 323,
+                "cpuTimeP99": 516
+              },
+              "sum": {
+                "errors": 0,
+                "requests": 3
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "namespaceId": "8e5f713ef1964283896e9245c5bbbe31",
+                "status": "success",
+                "type": "jsrpc"
+              },
+              "quantiles": {
+                "cpuTimeP50": 206,
+                "cpuTimeP99": 1307
+              },
+              "sum": {
+                "errors": 0,
+                "requests": 2
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1.2857142857142858
+              },
+              "dimensions": {
+                "namespaceId": "7dad94e315754c0dbd3f8c2dd316046b",
+                "status": "success",
+                "type": "jsrpc"
+              },
+              "quantiles": {
+                "cpuTimeP50": 217,
+                "cpuTimeP99": 681
+              },
+              "sum": {
+                "errors": 0,
+                "requests": 9
+              }
+            }
+          ],
+          "durableObjectsPeriodicGroups": [
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "namespaceId": "7dad94e315754c0dbd3f8c2dd316046b"
+              },
+              "sum": {
+                "activeTime": 436624,
+                "cpuTime": 12144,
+                "duration": 0.055887872000000005,
+                "exceededCpuErrors": 0,
+                "exceededMemoryErrors": 0,
+                "fatalInternalErrors": 0,
+                "inboundWebsocketMsgCount": 0,
+                "outboundWebsocketMsgCount": 0,
+                "rowsRead": 42,
+                "rowsWritten": 9
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "namespaceId": "8e5f713ef1964283896e9245c5bbbe31"
+              },
+              "sum": {
+                "activeTime": 1221719,
+                "cpuTime": 777788,
+                "duration": 0.156380032,
+                "exceededCpuErrors": 0,
+                "exceededMemoryErrors": 0,
+                "fatalInternalErrors": 0,
+                "inboundWebsocketMsgCount": 0,
+                "outboundWebsocketMsgCount": 10,
+                "rowsRead": 266,
+                "rowsWritten": 0
+              }
+            }
+          ],
+          "durableObjectsSqlStorageGroups": [],
+          "workersInvocationsAdaptive": [
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "status": "responseStreamDisconnected",
+                "usageModel": "standard"
+              },
+              "max": {
+                "cpuTime": 12267,
+                "memoryUsageBytes": 13861346
+              },
+              "quantiles": {
+                "cpuTimeP50": 8530,
+                "cpuTimeP99": 12267
+              },
+              "sum": {
+                "cpuTimeUs": 51307,
+                "errors": 0,
+                "requests": 6
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1.5
+              },
+              "dimensions": {
+                "status": "success",
+                "usageModel": "standard"
+              },
+              "max": {
+                "cpuTime": 8191,
+                "memoryUsageBytes": 13872988
+              },
+              "quantiles": {
+                "cpuTimeP50": 1487,
+                "cpuTimeP99": 8191
+              },
+              "sum": {
+                "cpuTimeUs": 51959,
+                "errors": 0,
+                "requests": 27
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "errors": null,
+  "deployedStorage": {
+    "sampledAt": "2026-10-13T14:32:31.050Z",
+    "libraryBytes": 36864,
+    "conversationBytes": [
+      7925760,
+      2019328,
+      540672
+    ],
+    "scope": "Post-run SQLite database allocation from deployed objects. Not a platform billing total or the peak during streaming."
+  }
+}

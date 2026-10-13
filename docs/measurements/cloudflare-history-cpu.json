@@ -1,0 +1,122 @@
+{
+  "version": 1,
+  "workerName": "everchat-stream-validation",
+  "unit": "milliseconds (whole-ms tail values)",
+  "sources": [
+    {
+      "phase": "before",
+      "startedAt": "2026-10-13T14:25:20.381Z",
+      "finishedAt": "2026-10-13T14:25:32.202Z",
+      "received": 28,
+      "connected": true,
+      "malformed": 0,
+      "dropped": 0,
+      "partialFrame": false,
+      "groups": [
+        {
+          "endpoint": "DO Conversation",
+          "outcome": "ok",
+          "missingCpu": 0,
+          "count": 13,
+          "p50": 4,
+          "max": 72,
+          "over10": 4
+        },
+        {
+          "endpoint": "DO Conversation",
+          "outcome": "responseStreamDisconnected",
+          "missingCpu": 0,
+          "count": 2,
+          "p50": 7,
+          "max": 7,
+          "over10": 0
+        },
+        {
+          "endpoint": "GET /api/conversations/:id",
+          "outcome": "ok",
+          "missingCpu": 0,
+          "count": 8,
+          "p50": 18,
+          "max": 79,
+          "over10": 5
+        },
+        {
+          "endpoint": "GET /api/conversations/:id/sync",
+          "outcome": "responseStreamDisconnected",
+          "missingCpu": 0,
+          "count": 5,
+          "p50": 5,
+          "max": 13,
+          "over10": 1
+        }
+      ]
+    },
+    {
+      "phase": "after",
+      "startedAt": "2026-10-13T14:31:08.084Z",
+      "finishedAt": "2026-10-13T14:31:17.357Z",
+      "received": 35,
+      "connected": true,
+      "malformed": 0,
+      "dropped": 0,
+      "partialFrame": false,
+      "groups": [
+        {
+          "endpoint": "POST /api/login",
+          "outcome": "ok",
+          "missingCpu": 0,
+          "count": 1,
+          "p50": 8,
+          "max": 8,
+          "over10": 0
+        },
+        {
+          "endpoint": "GET /api/conversations/:id",
+          "outcome": "ok",
+          "missingCpu": 0,
+          "count": 11,
+          "p50": 1,
+          "max": 2,
+          "over10": 0
+        },
+        {
+          "endpoint": "DO Conversation",
+          "outcome": "canceled",
+          "missingCpu": 0,
+          "count": 12,
+          "p50": 24,
+          "max": 109,
+          "over10": 8
+        },
+        {
+          "endpoint": "DO Conversation",
+          "outcome": "responseStreamDisconnected",
+          "missingCpu": 0,
+          "count": 4,
+          "p50": 10,
+          "max": 36,
+          "over10": 1
+        },
+        {
+          "endpoint": "DO Conversation",
+          "outcome": "ok",
+          "missingCpu": 0,
+          "count": 4,
+          "p50": 0,
+          "max": 0,
+          "over10": 0
+        },
+        {
+          "endpoint": "GET /api/conversations/:id/sync",
+          "outcome": "responseStreamDisconnected",
+          "missingCpu": 0,
+          "count": 3,
+          "p50": 8,
+          "max": 11,
+          "over10": 1
+        }
+      ]
+    }
+  ],
+  "scope": "Sanitized sampled invocation metadata filtered to each functional run window. Does not cover all requests or identify the cause of WebSocket CPU spikes. DO and Worker records use different CPU limits."
+}

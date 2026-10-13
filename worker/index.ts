@@ -127,7 +127,7 @@ app.get('/conversations/:id', async (context) => {
   const id = conversationId(context);
   const library = context.env.LIBRARY.getByName('personal');
   if (!await library.get(id)) throw new HttpError(404, '找不到这个对话。');
-  return json(await context.env.CONVERSATIONS.getByName(id).snapshot());
+  return context.env.CONVERSATIONS.getByName(id).snapshotResponse();
 });
 
 app.get('/conversations/:id/measurements', async (context) => {

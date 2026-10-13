@@ -113,7 +113,36 @@ Worker 错误计数和资源超限计数均为零；DO HTTP 的断线状态仍�
 
 长流结束后的 Library 与三个 Conversation SQLite 分配合计 3,854,336 字节（约 3.68 MiB）。SQL 存储 GraphQL 仍无采样，不能将分配大小当作平台账单量或生成中峰值。隔离 Worker 及本轮两个 namespaces 已删除，随机 Secrets 已移除，见 [清理确认](measurements/cloudflare-sustained-cleanup.json)。
 
-**阶段 0 的剩余验证：**当前快照接口把整个对话经 RPC 返回，再在 Worker 中序列化 JSON。长历史可能增加这个 10ms 路径的 CPU，需单独构造大历史测量并验证优化；这只是代码检查发现的风险，不能归因于本轮 `/sync` 的偶发高样本。平台存储采样及长期保留预算仍需补齐。
+这一步发现快照接口把整个对话经 RPC 返回，再在 Worker 中序列化 JSON。随后验证和修复见下节；它与 `/sync` 的偶发高样本分别记录。
+
+### 大历史快照的 Worker CPU 修复
+
+在同一隔离环境构造三份已完成历史，模拟旧事件已整理、从零游标必须获取完整快照。每轮分别读取每份历史五次，并测试完整 WebSocket 恢复与最新游标连接。正文、思考、父消息关系、顺序和 JSON 响应头均验证一致。没有调用供应商；模拟数据只包含完成消息和整理后的事件，不包含真实任务的上下文、副本与所有回放日志。
+
+| 历史轮数／消息数 | JSON 响应字节 | 单个对象 SQLite 分配 |
+|---|---:|---:|
+| 1／2 | 490,665 | 540,672 |
+| 4／8 | 1,962,588 | 2,019,328 |
+| 16／32 | 7,850,302 | 7,925,760 |
+
+基线版本 `da50766f-2764-4c96-9816-931c9ee6134c` 的生产代码基于 `18eb774`；优化版本为 `38a521e2-cebe-4ba6-aab3-2d7bd042d8b8`。两轮使用同一组数据库，没有重新生成或清空数据。基线和优化后的 15 次 HTTP 读取、6 次 WebSocket 恢复全部通过。结果见 [优化前](measurements/cloudflare-history-before.json)、[优化后](measurements/cloudflare-history-after.json)，平台数据见 [优化前指标](measurements/cloudflare-history-before-metrics.json)、[优化后指标](measurements/cloudflare-history-after-metrics.json)，采样调用见 [CPU 摘要](measurements/cloudflare-history-cpu.json)。
+
+修复前，Worker 接收结构化历史并序列化整个 JSON，大响应多次超过标称 10ms CPU。修复后，`snapshotResponse()` 在 Conversation DO 内构造 JSON，RPC 自动传输 Response 字节流，Worker 只做鉴权、索引校验和响应转发。接口数据结构、响应头和 WebSocket 协议保持当前定义，没有维护旧 RPC 路径。[Cloudflare RPC 的 Response 流传输](https://developers.cloudflare.com/workers/runtime-apis/rpc/#readablestream-writablestream-request-and-response)。
+
+| 指标 | 优化前 | 优化后 |
+|---|---:|---:|
+| 平台窗口（UTC） | 14:25:00–14:27:00 | 14:31:00–14:33:00 |
+| 成功 Worker 请求最高 CPU | 79.691ms | 8.191ms |
+| 成功 Worker 请求最高内存 | 85.54 MiB | 13.23 MiB |
+| tail 中快照读取样本数 | 8 | 11 |
+| tail 中快照读取最高 CPU（整毫秒） | 79ms | 2ms |
+| 断线状态 Worker 最高 CPU | 13.295ms | 12.267ms |
+
+平台成功请求分组包含登录和测量接口，不能把 8.191ms 全部归为快照读取；tail 是部分捕获，不能声称所有读取均低于其 2ms 最大值。DO 负责了 JSON 工作，tail 中单次 DO 调用最高约 109ms，处于其 30 秒 CPU 预算内；RPC 调用出现 `canceled` 元数据，完整响应的内容验证仍通过，报告保留该状态。没有证明 `/sync` 的高样本原因，也未把它计为快照修复已解决的问题。
+
+清理资源后再次查询，两个 DO namespace 的调用与 periodic 数据已开始到达，收到的 CPU／内存超限及内部致命错误计数均为零。数据仍可能继续补齐，不能用两轮目前的 DO 小计计算 CPU 降幅；优化后 RPC 另有 `clientDisconnected` 状态，不能写成所有 DO 错误为零。SQL 存储仍无采样，以 `available: false` 标记，不能写成零消耗。三个历史与 Library 的终态 SQLite 分配合计 10,522,624 字节。仅按最大模拟对象外推 500 个类似对话，约为 3.96GB，占免费账户 5GB 的约 79%；真实任务还保存上下文、事件和元数据，其他应用也共享额度。因此 500 个对话和每条消息长度上限不能单独作为存储保证，后续需要明确总量边界与保留预算。
+
+本地 83 项单元测试、类型检查、构建，以及 9 项 API／流式专项回归通过，覆盖 8MB 恢复、四协议断字恢复、慢订阅和保存失败。测试 Worker、两个 namespaces 与临时 Secrets 均清理，见 [清理确认](measurements/cloudflare-history-cleanup.json)。阶段 0 的剩余工作收敛到存储／大历史总量边界及超限状态；不为等待无数据的 GraphQL 存储采样保留公共测试资源。
 
 ### 复现
 
@@ -143,6 +172,15 @@ pnpm measure:cloudflare-metrics --account YOUR_ACCOUNT_ID --functional /tmp/ever
 ```
 
 延迟查询另写文件，以保留原报告中的部署存储样本。工具为每个数据集记录 `available`，空数组明确标为无数据。
+
+大历史比较先运行以下两轮；第二轮在部署快照优化后使用第一轮的数据库 ID，不重复写入模拟历史：
+
+```sh
+pnpm measure:cloudflare-history --url https://everchat-stream-validation.YOUR-SUBDOMAIN.workers.dev --credentials /tmp/everchat-stream-validation-secrets.json --output /tmp/everchat-history-before.json
+pnpm measure:cloudflare-history --source /tmp/everchat-history-before.json --url https://everchat-stream-validation.YOUR-SUBDOMAIN.workers.dev --credentials /tmp/everchat-stream-validation-secrets.json --output /tmp/everchat-history-after.json
+```
+
+历史报告的 `complete` 表示三种大小已测完，`passed` 单独表示正确性通过；测量失败返回非零退出码，仍保存报告。CPU 用平台指标和独立 tail 核实，命令执行耗时不能替代 CPU。
 
 本机存在系统代理时，Node 不会自动读取 macOS 代理设置。可按现有代理配置设置 `HTTP_PROXY`、`HTTPS_PROXY` 和 `NODE_USE_ENV_PROXY=1`；WebSocket 工具使用显式代理 agent，保持 TLS 证书验证。
 
