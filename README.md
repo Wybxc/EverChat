@@ -107,6 +107,7 @@ PWA → Worker（密码鉴权、API）→ Conversation Durable Object（SQLite�
 
 ## 文件
 
+- [功能实施路线图](docs/serverless-feature-roadmap.md)：Serverless 约束下的 Chatbox 功能取舍、实施顺序及阶段验收。
 - `worker/`：鉴权、Hono API、持久化会话、后台生成及 AI SDK 供应商适配。
 - `src/`：React 界面、离线缓存与 outbox、WebSocket 自动重连。
 - `shared/`：API 数据结构及按序应用同步事件。
