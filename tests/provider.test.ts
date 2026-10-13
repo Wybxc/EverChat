@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { ProviderConfig, ProviderKind } from '../shared/types';
-import { generate, GenerationCancelled } from '../worker/provider';
+import { GenerationCancelled } from '../worker/provider';
+import { generate } from './fixtures/generate';
 import { defaultProviderSettings, mergeProviderSettings, providerConfigFromEnv, publicProviderSettings, runtimeProviderConfig } from '../worker/provider-config';
 import { fetchProviderModels } from '../worker/provider-models';
 import type { Env } from '../worker/env';

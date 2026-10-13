@@ -143,7 +143,7 @@ try {
   }
   const output = resolve(values.output!);
   await mkdir(dirname(output), { recursive: true });
-  await writeFile(output, JSON.stringify({ version: 1, runtime: 'local Cloudflare fixture', capturedAt: new Date().toISOString(),
+  await writeFile(output, JSON.stringify({ version: 2, runtime: 'local Cloudflare fixture', capturedAt: new Date().toISOString(),
     workload: { chunks, intervalMs: interval, baseCharactersPerChunk: size },
     scope: 'Claim-to-terminal Conversation SQL and broadcasts; excludes bootstrap, acceptance, Library, RPC metering, alarms and diagnostic persistence. elapsedMs is wall time, not CPU. No paid model calls.',
     results }, null, 2) + '\n');

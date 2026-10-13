@@ -12,10 +12,10 @@ export function initializeConversation(sql: SqlStorage, metrics: boolean) {
     id TEXT PRIMARY KEY, conversationId TEXT NOT NULL, assistantId TEXT NOT NULL,
     context TEXT NOT NULL, chunkSeq INTEGER NOT NULL DEFAULT 0, updatedAt INTEGER NOT NULL,
     config TEXT, streamVersion TEXT, durableOffset INTEGER NOT NULL DEFAULT 0,
-    contentLength INTEGER NOT NULL DEFAULT 0, reasoningLength INTEGER NOT NULL DEFAULT 0,
     executor TEXT NOT NULL DEFAULT 'do-v1', startedAt INTEGER, cancelRequested INTEGER NOT NULL DEFAULT 0
   )`);
   sql.exec('CREATE TABLE IF NOT EXISTS events (seq INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL)');
   sql.exec(STREAM_JOURNAL_SCHEMA);
+  sql.exec('CREATE TABLE IF NOT EXISTS generation_results (runId TEXT PRIMARY KEY, payload TEXT NOT NULL)');
   if (metrics) sql.exec('CREATE TABLE IF NOT EXISTS generation_measurements (id INTEGER PRIMARY KEY, payload TEXT NOT NULL)');
 }

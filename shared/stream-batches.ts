@@ -1,41 +1,33 @@
 import type { Commit, CommitAck, StreamBatch, StreamCommit } from './types';
 
-export const STREAM_VERSION = 'semantic-delta-v1' as const;
-export const MAX_BATCH_BYTES = 64 * 1024;
-export const MAX_COMMIT_BYTES = 64 * 1024;
-const encoder = new TextEncoder();
+import { decodeBytes, encodeBytes } from './provider-stream';
 
-// Byte offsets refer to a canonical JSON delta stream, not to supplier SSE bytes.
-export const batchPayload = (content: string, reasoning: string) => JSON.stringify({ content, reasoning });
+export const STREAM_VERSION = 'raw-sse-v1' as const;
+export const MAX_BATCH_BYTES = 8192;
+export const MAX_COMMIT_BYTES = 64 * 1024;
+export const MAX_STREAM_BYTES = 4 * 1024 * 1024;
+const encoder = new TextEncoder();
 export const payloadBytes = (payload: string) => encoder.encode(payload).byteLength;
 
-function prefixLength(text: string, limit: number) {
-  let length = Math.min(text.length, limit);
-  if (length < text.length && length > 0 && /[\uD800-\uDBFF]/.test(text[length - 1]) && /[\uDC00-\uDFFF]/.test(text[length])) length--;
-  return length;
-}
-
-export function* streamBatches(runId: string, messageId: string, chunkSeq: number, offset: number, content: string, reasoning: string): Generator<StreamBatch> {
-  let textIndex = 0, reasoningIndex = 0;
-  while (textIndex < content.length || reasoningIndex < reasoning.length) {
-    // JSON escapes need at most six bytes per UTF-16 unit; reserve space for the object keys.
-    const textLength = prefixLength(content.slice(textIndex), 8000);
-    const thoughtLength = prefixLength(reasoning.slice(reasoningIndex), 8000 - textLength);
-    const text = content.slice(textIndex, textIndex + textLength), thought = reasoning.slice(reasoningIndex, reasoningIndex + thoughtLength);
-    const endOffset = offset + payloadBytes(batchPayload(text, thought));
-    yield { version: STREAM_VERSION, runId, messageId, chunkSeq: ++chunkSeq, startOffset: offset, endOffset, content: text, reasoning: thought };
-    offset = endOffset; textIndex += textLength; reasoningIndex += thoughtLength;
+// Offsets count original supplier bytes, including partial UTF-8 and partial SSE events.
+export function* streamBatches(runId: string, messageId: string, chunkSeq: number, offset: number, bytes: Uint8Array): Generator<StreamBatch> {
+  for (let index = 0; index < bytes.length; index += MAX_BATCH_BYTES) {
+    const data = bytes.subarray(index, index + MAX_BATCH_BYTES);
+    const endOffset = offset + data.byteLength;
+    yield { version: STREAM_VERSION, runId, messageId, chunkSeq: ++chunkSeq, startOffset: offset, endOffset, data: encodeBytes(data) };
+    offset = endOffset;
   }
 }
 
-export function validateBatch(batch: StreamBatch) {
+export function validateBatch(batch: StreamBatch): Uint8Array {
   if (batch.version !== STREAM_VERSION || !Number.isSafeInteger(batch.chunkSeq) || batch.chunkSeq < 1
     || !Number.isSafeInteger(batch.startOffset) || batch.startOffset < 0 || !Number.isSafeInteger(batch.endOffset)
-    || typeof batch.content !== 'string' || typeof batch.reasoning !== 'string' || (!batch.content && !batch.reasoning)) throw new Error('Invalid stream batch');
-  const payload = batchPayload(batch.content, batch.reasoning);
-  const size = payloadBytes(payload);
-  if (size > MAX_BATCH_BYTES || batch.endOffset !== batch.startOffset + size) throw new Error('Invalid stream batch size or offset');
-  return payload;
+    || typeof batch.data !== 'string' || !batch.data || batch.data.length > Math.ceil(MAX_BATCH_BYTES / 3) * 4
+    || !/^[A-Za-z0-9+/]*={0,2}$/.test(batch.data)) throw new Error('Invalid stream batch');
+  const bytes = decodeBytes(batch.data);
+  if (!bytes.length || bytes.length > MAX_BATCH_BYTES || encodeBytes(bytes) !== batch.data || batch.endOffset !== batch.startOffset + bytes.length
+    || batch.endOffset > MAX_STREAM_BYTES) throw new Error('Invalid stream batch size or offset');
+  return bytes;
 }
 
 export function validateCommit(commit: StreamCommit): string {

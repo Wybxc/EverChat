@@ -1,5 +1,6 @@
-import { appendMessage, type Message, type StreamBatch, type StreamCommit } from '../shared/types';
-import { STREAM_VERSION, validateCommit } from '../shared/stream-batches';
+import { type Message, type StreamBatch, type StreamCommit } from '../shared/types';
+import { ProviderStream, type StreamState } from '../shared/provider-stream';
+import { STREAM_VERSION, validateBatch, validateCommit } from '../shared/stream-batches';
 import type { SqlQuery } from './generation-metrics';
 
 type CommitRow = { chunkSeq: number; endSeq: number; startOffset: number; endOffset: number; payload: string } & Record<string, SqlStorageValue>;
@@ -23,10 +24,11 @@ export class StreamJournal {
       commit.runId, first.chunkSeq, last.chunkSeq, first.startOffset, last.endOffset, payload);
     return true;
   }
-  materialize(message: Message): Message {
+  materialize(message: Message, descriptor: Pick<StreamState, 'protocol' | 'showReasoning'>): Message {
     if (message.streamVersion !== STREAM_VERSION || !message.runId) return message;
     const rows = this.query<CommitRow>('SELECT * FROM stream_commits WHERE runId = ? ORDER BY chunkSeq', message.runId).toArray();
-    let result = message, sequence = 0;
+    const parser = new ProviderStream(descriptor.protocol, descriptor.showReasoning);
+    let sequence = 0, offset = 0;
     for (const row of rows) {
       const batches = JSON.parse(row.payload) as StreamBatch[];
       validateCommit({ runId: message.runId, messageId: message.id, batches });
@@ -34,10 +36,11 @@ export class StreamJournal {
       if (row.chunkSeq !== first.chunkSeq || row.endSeq !== last.chunkSeq || row.startOffset !== first.startOffset || row.endOffset !== last.endOffset) throw new Error('Stream journal boundary mismatch');
       for (const batch of batches) {
         if (batch.chunkSeq !== ++sequence) throw new Error('Stream sequence gap');
-        result = appendMessage(result, batch);
+        if (batch.startOffset !== offset) throw new Error('Stream offset gap');
+        parser.feed(validateBatch(batch)); parser.drainDeltas(); offset = batch.endOffset;
       }
     }
-    return result;
+    return { ...message, content: parser.content, reasoning: parser.reasoning, durableOffset: offset, streamState: parser.checkpoint() };
   }
   compact(message: Message) {
     this.query('UPDATE messages SET content = ?, reasoning = ?, durableOffset = ? WHERE id = ?',

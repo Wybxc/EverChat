@@ -103,3 +103,14 @@ test('stopping a silent upstream aborts promptly and leaves the next task schedu
     expect((await fixture.snapshot()).messages.map((message) => message.status)).toEqual(['completed', 'cancelled', 'completed', 'cancelled']);
   } finally { await fixture.restore(); }
 });
+
+test('cancellation finalizes the last complete CR-delimited SSE event without inventing completion', async ({ request }) => {
+  const fixture = await setup(request, 'alarm-stall-cr');
+  try {
+    await expect.poll(async () => (await fixture.snapshot()).messages[1].durableOffset ?? 0).toBeGreaterThan(0);
+    expect((await fixture.snapshot()).messages[1].content).toBe('');
+    expect((await request.post(`/api/conversations/${fixture.id}/cancel`, { headers, data: { runId: fixture.submission.runId } })).ok()).toBe(true);
+    expect((await fixture.snapshot()).messages[1]).toMatchObject({ status: 'cancelled', content: '等待上游的正文', reasoning: '等待上游的思考', generation: { usage: {} } });
+    expect((await fixture.state()).calls).toBe(1);
+  } finally { await fixture.restore(); }
+});

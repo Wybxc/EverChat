@@ -3,23 +3,24 @@ import type { Env } from './env';
 import type { ChatInput, Change, Commit, DurableChange, GenerationExecutor, Message, MessageStatus, ProviderConfig, Snapshot, StreamBatch, StreamCommit, Submission, SubmitInput } from '../shared/types';
 import { isActive } from '../shared/types';
 import { commitAck, STREAM_VERSION, validateCommit } from '../shared/stream-batches';
-import type { GenerationMeasurements, StreamCounts } from '../shared/generation-metrics';
+import type { GenerationMeasurements } from '../shared/generation-metrics';
 import { GenerationMeter, measuredQuery } from './generation-metrics';
 import { StreamJournal } from './stream-journal';
 import { initializeConversation } from './conversation-schema';
-import { generate } from './provider';
+import { openProviderStream } from './provider';
+import { ProviderStream, StreamParseError } from '../shared/provider-stream';
 import { GenerationCancelled, ProviderError } from './generation-errors';
 import { GenerationBuffer } from './generation-buffer';
 
-type Row = Message & Record<string, SqlStorageValue>;
+type Row = Message & { generationResult: string | null } & Record<string, SqlStorageValue>;
 type Run = { id: string; conversationId: string; assistantId: string; context: string; config: string | null; chunkSeq: number; updatedAt: number;
-  streamVersion: string | null; durableOffset: number; contentLength: number; reasoningLength: number;
+  streamVersion: string | null; durableOffset: number;
   executor: GenerationExecutor; startedAt: number | null; cancelRequested: number } & Record<string, SqlStorageValue>;
 type Attachment = { expires: number; blocked?: boolean; runId?: string; messageId?: string; sentOffset?: number; ackedOffset?: number; ackAt?: number };
 export const SUBSCRIBER_WINDOW_BYTES = 128 * 1024;
 type Failure = { error: string; status: number };
 type Claim = { context: ChatInput[]; config?: ProviderConfig; claimed: boolean; status: MessageStatus; streamVersion?: string; assistantId?: string };
-type ActiveGeneration = { runId: string; abort: AbortController; buffer: GenerationBuffer; cancelled: boolean; failure?: Error; timer?: ReturnType<typeof setInterval> };
+type ActiveGeneration = { runId: string; abort: AbortController; buffer: GenerationBuffer; cancelled: boolean; failure?: Error; persistence?: Promise<void>; timer?: ReturnType<typeof setInterval> };
 
 export class Conversation extends DurableObject<Env> {
   private meter?: GenerationMeter;
@@ -43,9 +44,24 @@ export class Conversation extends DurableObject<Env> {
     const row = this.ctx.storage.sql.exec<{ payload: string }>('SELECT payload FROM generation_measurements WHERE id = 1').toArray()[0];
     return row ? JSON.parse(row.payload) as GenerationMeasurements : null;
   }
-  private materialize(message: Message): Message { return isActive(message) ? this.journal.materialize(message) : message; }
-  private all(): Message[] { return this.query<Row>('SELECT * FROM messages ORDER BY rowid').toArray().map((message) => this.materialize(message)); }
-  private rawMessage(id: string): Message | undefined { return this.query<Row>('SELECT * FROM messages WHERE id = ?', id).toArray()[0]; }
+  private decorate(row: Row): Message {
+    const { generationResult, ...message } = row;
+    return { ...message, ...(generationResult ? { generation: JSON.parse(generationResult) as Message['generation'] } : {}) };
+  }
+  private materialize(message: Message): Message {
+    if (!isActive(message) || !message.runId || message.streamVersion !== STREAM_VERSION) return message;
+    const config = this.run(message.runId)?.config;
+    if (!config) return message;
+    const descriptor = JSON.parse(config) as ProviderConfig;
+    return this.journal.materialize(message, { protocol: descriptor.provider, showReasoning: descriptor.showReasoning === true });
+  }
+  private all(): Message[] {
+    return this.query<Row>('SELECT messages.*, generation_results.payload AS generationResult FROM messages LEFT JOIN generation_results ON generation_results.runId = messages.runId ORDER BY messages.rowid').toArray().map((row) => this.materialize(this.decorate(row)));
+  }
+  private rawMessage(id: string): Message | undefined {
+    const row = this.query<Row>('SELECT messages.*, generation_results.payload AS generationResult FROM messages LEFT JOIN generation_results ON generation_results.runId = messages.runId WHERE messages.id = ?', id).toArray()[0];
+    return row && this.decorate(row);
+  }
   private message(id: string): Message | undefined { const message = this.rawMessage(id); return message && this.materialize(message); }
   private run(id: string): Run | undefined { return this.query<Run>('SELECT * FROM runs WHERE id = ?', id).toArray()[0]; }
   private seq(): number { return this.query<{ seq: number }>('SELECT COALESCE(MAX(seq), 0) AS seq FROM events').one().seq; }
@@ -178,11 +194,21 @@ export class Conversation extends DurableObject<Env> {
       ? '停止过程中后台执行被中断。已保留最近检查点，请主动重新生成。'
       : '后台执行被中断。已保留最近检查点，为避免重复计费，请主动重新生成。');
   }
-  protected generateModel(...args: Parameters<typeof generate>) { return generate(...args); }
+  protected openModelStream(...args: Parameters<typeof openProviderStream>) { return openProviderStream(...args); }
   private async runInObject(runId: string, claim: Claim) {
     const abort = new AbortController();
     const active: ActiveGeneration = { runId, abort, cancelled: false, buffer: new GenerationBuffer(runId, claim.assistantId!,
-      (batches, counts) => this.commit(runId, batches, counts), (batch) => this.preview(batch), this.env.GENERATION_METRICS === '1') };
+      (batches) => {
+        const saved = this.commit(runId, batches);
+        if (saved) {
+          const barrier = (active.persistence ?? Promise.resolve()).then(() => this.ctx.storage.sync());
+          active.persistence = barrier;
+          void barrier.then(() => { if (active.persistence === barrier) active.persistence = undefined; }, (error) => {
+            active.failure = error instanceof Error ? error : new Error('Generation persistence failed'); abort.abort();
+          });
+        }
+        return saved;
+      }, (batch) => this.preview(batch)) };
     this.activeGeneration = active;
     const timeout = setTimeout(() => abort.abort(), 14 * 60_000);
     try {
@@ -192,23 +218,30 @@ export class Conversation extends DurableObject<Env> {
       if (active.cancelled || abort.signal.aborted) throw new GenerationCancelled();
       if (!claim.config) throw new ProviderError('此任务缺少已保存的供应商配置，请主动重新生成。');
       active.timer = setInterval(() => {
-        if (active.cancelled) return;
+        if (active.cancelled || active.persistence) return;
         try { active.buffer.tick(); }
         catch (error) { active.failure = error instanceof Error ? error : new Error('Generation persistence failed'); abort.abort(); }
       }, 100);
-      const receive = async (kind: 'content' | 'reasoning', delta: string) => {
-        if (active.cancelled) throw new GenerationCancelled();
-        if (active.failure) throw active.failure;
-        active.buffer.add(kind, delta);
-      };
-      await this.generateModel(claim.config, claim.context, (delta) => receive('content', delta), abort.signal,
-        async (delta) => { if (claim.config!.showReasoning) await receive('reasoning', delta); });
+      const body = await this.openModelStream(claim.config, claim.context, abort.signal), reader = body.getReader();
+      try {
+        while (true) {
+          if (active.cancelled) throw new GenerationCancelled();
+          if (active.failure) throw active.failure;
+          if (abort.signal.aborted) throw new ProviderError('模型供应商连接已中断。');
+          await active.persistence;
+          const next = await reader.read();
+          if (next.done) break;
+          if (active.cancelled) throw new GenerationCancelled();
+          active.buffer.add(next.value);
+        }
+      } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
       active.buffer.flush();
+      await active.persistence;
       this.finish(runId, active.cancelled ? 'cancelled' : 'completed', null);
     } catch (error) {
       let failure = active.failure ?? error;
       let tailFailed = false;
-      try { active.buffer.flush(); } catch (saveError) {
+      try { active.buffer.flush(); await active.persistence; } catch (saveError) {
         if (!(saveError instanceof GenerationCancelled)) { failure = saveError; tailFailed = true; }
       }
       const cancelled = active.cancelled && !tailFailed;
@@ -235,7 +268,7 @@ export class Conversation extends DurableObject<Env> {
     return { context: JSON.parse(run.context), ...(run.config ? { config: JSON.parse(run.config) as ProviderConfig } : {}), claimed: true, status: 'running',
       streamVersion: run.streamVersion ?? undefined, assistantId: run.assistantId };
   }
-  commit(runId: string, batches: StreamBatch[], counts?: StreamCounts): boolean {
+  commit(runId: string, batches: StreamBatch[]): boolean {
     const run = this.run(runId), message = run && this.rawMessage(run.assistantId);
     if (!run || !message || message.status !== 'running') return false;
     const commit: StreamCommit = { runId, messageId: run.assistantId, batches };
@@ -249,18 +282,14 @@ export class Conversation extends DurableObject<Env> {
       return true;
     }
     if (first.chunkSeq !== run.chunkSeq + 1 || first.startOffset !== run.durableOffset) throw new Error('Stream sequence or offset gap');
-    const contentDelta = batches.reduce((sum, batch) => sum + batch.content.length, 0);
-    const reasoningDelta = batches.reduce((sum, batch) => sum + batch.reasoning.length, 0);
-    const contentLength = run.contentLength + contentDelta, reasoningLength = run.reasoningLength + reasoningDelta;
-    if (contentLength > 100_000 || reasoningLength > 100_000) throw new Error('Stream exceeds message limits');
     if (this.env.GENERATION_METRICS === '1' && !this.meter) this.meter = new GenerationMeter(runId, Date.now, 'since-last-resume', 'do-v1');
     const change: Commit = this.ctx.storage.transactionSync(() => {
       if (!this.journal.append(commit)) throw new Error('Conflicting stream sequence');
-      this.query('UPDATE runs SET chunkSeq = ?, durableOffset = ?, contentLength = ?, reasoningLength = ?, updatedAt = ? WHERE id = ?',
-        last.chunkSeq, last.endOffset, contentLength, reasoningLength, Date.now(), runId);
+      this.query('UPDATE runs SET chunkSeq = ?, durableOffset = ?, updatedAt = ? WHERE id = ?',
+        last.chunkSeq, last.endOffset, Date.now(), runId);
       return { type: 'commit', ...commit, seq: this.recordPayload(JSON.stringify(commit)) };
     });
-    this.meter?.checkpoint(contentDelta, reasoningDelta, counts);
+    this.meter?.rawCheckpoint(last.endOffset - first.startOffset);
     this.broadcast(change);
     return true;
   }
@@ -269,8 +298,21 @@ export class Conversation extends DurableObject<Env> {
     const message = run && this.message(run.assistantId);
     if (!run || !message || !isActive(message)) return;
     if (this.env.GENERATION_METRICS === '1' && !this.meter) this.meter = new GenerationMeter(runId, Date.now, 'since-last-resume', 'do-v1');
+    if (message.streamState) {
+      const state = message.streamState;
+      const parser = new ProviderStream(state.protocol, state.showReasoning, state, message.content, message.reasoning ?? '');
+      parser.end();
+      if (status === 'completed') {
+        try { parser.assertComplete(); }
+        catch (failure) { status = 'failed'; error = failure instanceof StreamParseError ? failure.message : '无法验证供应商回答。'; }
+      }
+      message.content = parser.content; message.reasoning = parser.reasoning; message.streamState = parser.checkpoint();
+      message.generation = { finishReason: message.streamState.finishReason, usage: message.streamState.usage };
+      this.meter?.streamCounts(message.streamState);
+    }
     const change = this.ctx.storage.transactionSync(() => {
       if (message.streamVersion === STREAM_VERSION) this.journal.compact(message);
+      if (message.generation) this.query('INSERT INTO generation_results (runId, payload) VALUES (?, ?)', runId, JSON.stringify(message.generation));
       this.query('UPDATE messages SET status = ?, error = ? WHERE id = ?', status, error, message.id);
       this.query('UPDATE runs SET config = NULL WHERE id = ?', runId);
       return this.record([this.message(message.id)!]);

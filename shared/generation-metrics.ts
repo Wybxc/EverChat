@@ -10,7 +10,7 @@ export interface GenerationMeasurements extends StreamCounts {
   status: MessageStatus;
   elapsedMs: number;
   checkpoints: number;
-  checkpointCharacters: number;
+  checkpointBytes: number;
   sqlStatements: number;
   sqlRowsRead: number;
   sqlRowsWritten: number;

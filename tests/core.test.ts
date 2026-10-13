@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { applyChange, type Message } from '../shared/types';
-import { generate } from '../worker/provider';
+import { generate } from './fixtures/generate';
 import { providerConfigFromEnv } from '../worker/provider-config';
 import type { Env } from '../worker/env';
 

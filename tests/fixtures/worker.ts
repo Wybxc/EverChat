@@ -2,31 +2,43 @@
 import production, { Conversation as ProductionConversation } from '../../worker/index';
 import { authenticated } from '../../worker/auth';
 import type { Env } from '../../worker/env';
-import type { generate } from '../../worker/provider';
+import type { openProviderStream } from '../../worker/provider';
 import type { StreamBatch } from '../../shared/types';
-import type { StreamCounts } from '../../shared/generation-metrics';
+import { providerStreams } from './provider-streams';
+import type { ProviderKind } from '../../shared/types';
 export { Library } from '../../worker/index';
 
 export class Conversation extends ProductionConversation {
   private failNextCommit = false;
-  protected override async generateModel(...args: Parameters<typeof generate>) {
+  protected override async openModelStream(...args: Parameters<typeof openProviderStream>) {
     if (args[0].model.startsWith('alarm-')) {
       this.ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS fixture_calls (runId TEXT PRIMARY KEY, calls INTEGER NOT NULL)');
       const run = this.ctx.storage.sql.exec<{ id: string }>(`SELECT runs.id FROM runs JOIN messages ON messages.id = runs.assistantId WHERE messages.status = 'running'`).one();
       this.ctx.storage.sql.exec('INSERT INTO fixture_calls VALUES (?, 1) ON CONFLICT(runId) DO UPDATE SET calls = calls + 1', run.id);
       if (args[0].model === 'alarm-cancel-tail-failure') {
-        // No I/O between receiving this tail and cancellation; the write fails inside cancel().
-        await args[2]('停止前的内容'.repeat(2000)); await args[2]('尚未保存的尾部');
-        this.failNextCommit = true;
-        await this.cancel(run.id);
-        return;
+        let step = 0;
+        return new ReadableStream<Uint8Array>({
+          pull: async (controller) => {
+            if (step++ === 0) {
+              controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ choices: [{ delta: { content: '停止前的内容'.repeat(200) } }] })}\n\n`));
+              return;
+            }
+            // Let the first complete event become durable, then fail cancel's tail write.
+            await new Promise((resolve) => setTimeout(resolve, 1700));
+            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ choices: [{ delta: { content: '尚未保存的尾部' } }] })}\n\n`));
+            await new Promise((resolve) => setTimeout(resolve, 150));
+            this.failNextCommit = true;
+            await this.cancel(run.id);
+            try { controller.close(); } catch { /* The reader may already have been cancelled. */ }
+          },
+        });
       }
     }
-    return super.generateModel(...args);
+    return super.openModelStream(...args);
   }
-  override commit(runId: string, batches: StreamBatch[], counts?: StreamCounts) {
+  override commit(runId: string, batches: StreamBatch[]) {
     if (this.failNextCommit) { this.failNextCommit = false; throw new Error('Injected storage failure'); }
-    return super.commit(runId, batches, counts);
+    return super.commit(runId, batches);
   }
   async fixtureState(runId: string) {
     const run = this.ctx.storage.sql.exec<{ executor: string; cancelRequested: number; startedAt: number | null }>('SELECT executor, cancelRequested, startedAt FROM runs WHERE id = ?', runId).one();
@@ -70,16 +82,39 @@ globalThis.fetch = async (input, init) => {
   const request = new Request(input, init);
   const url = new URL(request.url);
   if (url.hostname !== 'provider.test') return upstreamFetch(input, init);
-  if (request.headers.get('Authorization') !== 'Bearer integration-test-key') {
+  if (request.headers.get('Authorization') !== 'Bearer integration-test-key' && request.headers.get('x-api-key') !== 'integration-test-key' && request.headers.get('x-goog-api-key') !== 'integration-test-key') {
     return Response.json({ error: { message: 'Unauthorized' } }, { status: 401 });
   }
   if (url.pathname === '/v1/models') {
     return Response.json({ data: [{ id: 'test-model' }, { id: 'test-model-2' }] });
   }
-  if (!['/v1/chat/completions', '/v1/responses'].includes(url.pathname)) return new Response('Not found', { status: 404 });
+  if (!['/v1/chat/completions', '/v1/responses', '/v1/messages'].includes(url.pathname) && !url.pathname.includes(':streamGenerateContent')) return new Response('Not found', { status: 404 });
   const requestBody = await request.clone().json() as { model: string; thinking?: { type: string }; reasoning_effort?: string; reasoning?: { effort?: string } };
   const encoder = new TextEncoder();
-  if (requestBody.model === 'alarm-stall') {
+  const rawKind = requestBody.model?.startsWith('raw-') ? requestBody.model.slice(4) as ProviderKind
+    : url.pathname.includes('/models/raw-gemini:') ? 'gemini' : undefined;
+  if (rawKind && providerStreams[rawKind]) {
+    const { partial, finish } = providerStreams[rawKind];
+    const bytes = encoder.encode(partial + finish);
+    // Split a supplementary Unicode character and hold the incomplete frame through a commit.
+    const marker = encoder.encode(partial).indexOf(0xf0) + 2;
+    let step = 0;
+    return new Response(new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        const current = step++;
+        if (current === 0) controller.enqueue(bytes.slice(0, marker));
+        else if (current === 1) {
+          await new Promise((resolve) => setTimeout(resolve, 1900));
+          controller.enqueue(bytes.slice(marker, encoder.encode(partial).length));
+        } else {
+          await new Promise((resolve) => setTimeout(resolve, 1900));
+          controller.enqueue(bytes.slice(encoder.encode(partial).length)); controller.close();
+        }
+      },
+    }), { headers: { 'Content-Type': 'text/event-stream' } });
+  }
+
+  if (requestBody.model === 'alarm-stall' || requestBody.model === 'alarm-stall-cr') {
     let stop: (() => void) | undefined;
     return new Response(new ReadableStream<Uint8Array>({
       start(controller) {
@@ -87,7 +122,7 @@ globalThis.fetch = async (input, init) => {
         if (request.signal.aborted) { stop(); return; }
         request.signal.addEventListener('abort', stop, { once: true });
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ id: 'idle', choices: [{ index: 0,
-          delta: { content: '等待上游的正文', reasoning_content: '等待上游的思考' }, finish_reason: null }] })}\n\n`));
+          delta: { content: '等待上游的正文', reasoning_content: '等待上游的思考' }, finish_reason: null }] })}${requestBody.model === 'alarm-stall-cr' ? '\r\r' : '\n\n'}`));
       },
       cancel() { if (stop) request.signal.removeEventListener('abort', stop); },
     }), { headers: { 'Content-Type': 'text/event-stream' } });

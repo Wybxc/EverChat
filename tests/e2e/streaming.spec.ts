@@ -51,7 +51,7 @@ test('previews precede commits and reconnecting subscribers recover the same dur
     } }).then((response) => response.json());
     const answer = (snapshot: Snapshot) => snapshot.messages.find((message) => message.runId === submission.runId && message.role === 'assistant');
     await expect.poll(() => answer(first.view())?.content.length ?? 0).toBeGreaterThan(0);
-    expect(first.packets.some((packet) => packet.type === 'preview' && packet.batch.reasoning.length > 0)).toBe(true);
+    expect((answer(first.view())?.reasoning?.length ?? 0) > 0).toBe(true);
     expect(answer(first.snapshot())!.content).toBe('');
     expect((await request.get(`/api/conversations/${id}`).then((response) => response.json())).messages[1].content).toBe('');
     const prefix = first.snapshot();
@@ -62,7 +62,7 @@ test('previews precede commits and reconnecting subscribers recover the same dur
     const stored = await request.get(`/api/conversations/${id}`).then((response) => response.json()) as Snapshot;
     await expect.poll(() => second.snapshot()).toEqual(stored);
     expect(resumed.snapshot()).toEqual(stored);
-    expect(answer(stored)).toMatchObject({ content: '正文🙂'.repeat(2000), reasoning: '思考🙂'.repeat(2000), streamVersion: 'semantic-delta-v1' });
+    expect(answer(stored)).toMatchObject({ content: '正文🙂'.repeat(2000), reasoning: '思考🙂'.repeat(2000), streamVersion: 'raw-sse-v1' });
     expect(answer(stored)!.durableOffset).toBeGreaterThan(0);
     expect(resumed.packets.some((packet) => packet.type === 'commit-ack')).toBe(true);
     expect(resumed.packets.some((packet) => packet.type === 'preview')).toBe(true);
@@ -202,7 +202,7 @@ test('failed persistence drops the preview tail without publishing a durable con
     expect(acknowledgements).toHaveLength(1);
     const previews = live.packets.filter((packet) => packet.type === 'preview');
     expect(acknowledgements[0].endOffset).toBeLessThan(previews.at(-1)!.batch.endOffset);
-    expect(live.view()).toEqual(live.snapshot()); expect(live.snapshot().messages[1].content).toBe('停止前的内容'.repeat(2000));
+    expect(live.view()).toEqual(live.snapshot()); expect(live.snapshot().messages[1].content).toBe('停止前的内容'.repeat(200));
     expect(live.snapshot()).toEqual(await request.get(`/api/conversations/${id}`).then((response) => response.json()));
   } finally {
     socket?.terminate();
@@ -260,3 +260,45 @@ test('logging out clears cached messages even when a delayed durable snapshot wr
     expect((await context.request.put('/api/settings/providers', { headers, data: initial })).ok()).toBe(true);
   }
 });
+
+for (const protocol of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'] as const) {
+  test(`${protocol} resumes a committed partial UTF-8 SSE event and matches server-verified output and usage`, async ({ request }) => {
+    expect((await request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok()).toBe(true);
+    const initial = await request.get('/api/settings/providers').then((response) => response.json()) as ProviderSettings;
+    const sockets: WebSocket[] = [];
+    try {
+      const providerId = crypto.randomUUID(), id = crypto.randomUUID(), model = `raw-${protocol}`;
+      expect((await request.put('/api/settings/providers', { headers, data: {
+        providers: [{ id: providerId, name: protocol, provider: protocol, baseUrl: 'https://provider.test/v1', apiKey: 'integration-test-key',
+          models: [{ id: model, name: model, enabled: true, reasoningSupport: 'supported' }] }],
+        activeProviderId: providerId, activeModel: model, systemPrompt: '', maxOutputTokens: null, showReasoning: true,
+      } })).ok()).toBe(true);
+      expect((await request.post('/api/conversations', { headers, data: { id, title: 'Raw SSE recovery' } })).status()).toBe(201);
+      const live = await subscribe(request, id); sockets.push(live.socket);
+      expect((await request.post(`/api/conversations/${id}/messages`, { headers, data: { requestId: crypto.randomUUID(), content: '恢复事件', showReasoning: true } })).status()).toBe(202);
+      await expect.poll(() => live.snapshot().messages[1]?.durableOffset ?? 0, { intervals: [50] }).toBeGreaterThan(0);
+      const prefix = live.snapshot();
+      expect(prefix.messages[1].content).toBe('');
+      expect(prefix.messages[1].streamState?.utf8).toBeTruthy();
+      expect(prefix.messages[1].streamState?.tail).toContain('data:');
+      const saved = await request.get(`/api/conversations/${id}`).then((response) => response.json()) as Snapshot;
+      expect(saved).toEqual(prefix);
+      live.socket.terminate();
+      // Resume from an API snapshot, whose parser state must include the two pending emoji bytes.
+      const resumed = await subscribe(request, id, saved); sockets.push(resumed.socket);
+      await expect.poll(() => resumed.view().messages[1]?.content, { intervals: [50] }).toBe('**正文🙂**\n');
+      expect(resumed.view().messages[1].reasoning).toBe('**思考🙂**\n');
+      await expect.poll(() => resumed.snapshot().messages[1]?.status).toBe('completed');
+      const final = await request.get(`/api/conversations/${id}`).then((response) => response.json()) as Snapshot;
+      expect(resumed.snapshot()).toEqual(final); expect(resumed.view()).toEqual(final);
+      expect(final.messages[1]).toMatchObject({ content: '**正文🙂**\n答案。', reasoning: '**思考🙂**\n结论。',
+        generation: { finishReason: 'stop', usage: { inputTokens: 10, outputTokens: 5, cachedInputTokens: 4 } } });
+      expect(final.messages[1].streamState).toBeUndefined();
+      const replay = await subscribe(request, id); sockets.push(replay.socket);
+      expect(replay.snapshot()).toEqual(final);
+    } finally {
+      for (const socket of sockets) socket.terminate();
+      expect((await request.put('/api/settings/providers', { headers, data: initial })).ok()).toBe(true);
+    }
+  });
+}

@@ -2,16 +2,16 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { GenerationMeter, measuredQuery } from '../worker/generation-metrics';
 
-test('generation measurements count UTF-8 payloads, fanout and cumulative checkpoint amplification', () => {
+test('generation measurements count UTF-8 payloads, fanout and raw checkpoint bytes', () => {
   let time = 100;
   const meter = new GenerationMeter('run', () => time);
-  meter.checkpoint(2, 3, { textDeltas: 1, reasoningDeltas: 2 });
-  meter.checkpoint(4, 6, { textDeltas: 3, reasoningDeltas: 4 });
+  meter.rawCheckpoint(20);
+  meter.rawCheckpoint(40); meter.streamCounts({ textDeltas: 3, reasoningDeltas: 4 });
   meter.event('你好'); meter.broadcast('你好', 2); meter.broadcast('ignored', 0);
   meter.sql(5, 3); meter.sql(2, 1); time = 350;
   assert.deepEqual(meter.report('completed', 4096, 4, 6), {
     runId: 'run', coverage: 'claim-to-terminal', status: 'completed', elapsedMs: 250, textDeltas: 3, reasoningDeltas: 4,
-    checkpoints: 2, checkpointCharacters: 15, sqlStatements: 2, sqlRowsRead: 7, sqlRowsWritten: 4,
+    checkpoints: 2, checkpointBytes: 60, sqlStatements: 2, sqlRowsRead: 7, sqlRowsWritten: 4,
     eventPayloadBytes: 6, broadcastFrames: 2, broadcastBytes: 12, databaseBytes: 4096,
     contentCharacters: 4, reasoningCharacters: 6,
   });

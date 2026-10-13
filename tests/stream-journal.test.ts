@@ -3,12 +3,16 @@ import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { initializeConversation } from '../worker/conversation-schema';
 import { StreamJournal } from '../worker/stream-journal';
-import { batchPayload, MAX_BATCH_BYTES, payloadBytes, STREAM_VERSION, streamBatches, validateBatch } from '../shared/stream-batches';
+import { MAX_BATCH_BYTES, STREAM_VERSION, streamBatches, validateBatch } from '../shared/stream-batches';
+import { ProviderStream, encodeBytes } from '../shared/provider-stream';
 import { applyChange, type Message } from '../shared/types';
 import type { SqlQuery } from '../worker/generation-metrics';
 
 const message: Message = { id: 'assistant', role: 'assistant', content: '', reasoning: '', status: 'running', createdAt: 1,
-  runId: 'run', parentId: 'user', revisionOf: null, error: null, streamVersion: STREAM_VERSION, durableOffset: 0 };
+  runId: 'run', parentId: 'user', revisionOf: null, error: null, streamVersion: STREAM_VERSION, durableOffset: 0, streamState: new ProviderStream('openai-chat', true).checkpoint() };
+
+const descriptor = { protocol: 'openai-chat' as const, showReasoning: true };
+const wire = (content: string, reasoning: string) => new TextEncoder().encode(`data: ${JSON.stringify({ choices: [{ delta: { content, reasoning_content: reasoning } }] })}\n\n`);
 
 function database() {
   const db = new DatabaseSync(':memory:');
@@ -27,23 +31,22 @@ function database() {
 
 test('stream batches preserve UTF-8, escaped JSON and separate thoughts within a bounded byte size', () => {
   const text = '\u0000"\\🙂正文'.repeat(5000), thoughts = '思考🙂'.repeat(5000);
-  const batches = [...streamBatches('run', 'assistant', 0, 0, text, thoughts)];
+  const batches = [...streamBatches('run', 'assistant', 0, 0, wire(text, thoughts))];
   let snapshot = { seq: 0, messages: [message] };
   for (const [index, batch] of batches.entries()) {
-    assert.ok(payloadBytes(validateBatch(batch)) <= MAX_BATCH_BYTES);
+    assert.ok(validateBatch(batch).length <= MAX_BATCH_BYTES);
     assert.equal(batch.chunkSeq, index + 1);
     assert.equal(batch.startOffset, index === 0 ? 0 : batches[index - 1].endOffset);
-    assert.ok(!/[\uD800-\uDBFF]$/.test(batch.content) && !/[\uD800-\uDBFF]$/.test(batch.reasoning));
     snapshot = applyChange(snapshot, { type: 'commit', seq: index + 1, runId: batch.runId, messageId: batch.messageId, batches: [batch] });
   }
   assert.equal(snapshot.messages[0].content, text); assert.equal(snapshot.messages[0].reasoning, thoughts);
   assert.equal(snapshot.messages[0].durableOffset, batches.at(-1)!.endOffset);
   assert.throws(() => validateBatch({ ...batches[0], endOffset: batches[0].endOffset + 1 }), /size or offset/);
-  assert.throws(() => validateBatch({ ...batches[0], content: '\u0000'.repeat(15_000) }), /size or offset/);
+  assert.throws(() => validateBatch({ ...batches[0], data: encodeBytes(new Uint8Array(15_000)) }), /Invalid stream batch/);
 });
 
 test('incremental replay is idempotent and rejects missing identity, sequence and offset boundaries', () => {
-  const batch = [...streamBatches('run', 'assistant', 0, 0, '你好🙂', '想法')][0];
+  const batch = [...streamBatches('run', 'assistant', 0, 0, wire('你好🙂', '想法'))][0];
   const change = { type: 'commit' as const, seq: 1, runId: batch.runId, messageId: batch.messageId, batches: [batch] };
   const first = applyChange({ seq: 0, messages: [message] }, change);
   assert.equal(applyChange(first, change), first);
@@ -73,14 +76,14 @@ test('SQLite journal survives a new reader, deduplicates batches and compacts on
     query('INSERT INTO messages (id, role, content, reasoning, status, createdAt, runId, streamVersion) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       message.id, message.role, '', '', message.status, 1, message.runId, STREAM_VERSION);
     const journal = new StreamJournal(query);
-    const batches = [...streamBatches('run', 'assistant', 0, 0, '正文🙂'.repeat(2000), '思考\n'.repeat(2000))];
+    const batches = [...streamBatches('run', 'assistant', 0, 0, wire('正文🙂'.repeat(2000), '思考\n'.repeat(2000)))];
     const commits = batches.map((batch) => ({ runId: batch.runId, messageId: batch.messageId, batches: [batch] }));
     for (const commit of commits) { assert.equal(journal.append(commit), true); assert.equal(journal.append(commit), false); }
-    const conflict = { ...batches[0], content: '不同内容' };
-    conflict.endOffset = conflict.startOffset + payloadBytes(batchPayload(conflict.content, conflict.reasoning));
+    const data = wire('不同内容', '');
+    const conflict = { ...batches[0], data: encodeBytes(data), endOffset: data.length };
     assert.throws(() => journal.append({ runId: conflict.runId, messageId: conflict.messageId, batches: [conflict] }), /Conflicting stream commit/);
     assert.equal(query<{ content: string }>('SELECT content FROM messages').one().content, '', 'streaming never rewrites the full message');
-    const full = new StreamJournal(query).materialize(message);
+    const full = new StreamJournal(query).materialize(message, descriptor);
     assert.equal(full.content, '正文🙂'.repeat(2000)); assert.equal(full.reasoning, '思考\n'.repeat(2000));
     assert.throws(() => transaction(() => { journal.compact(full); throw new Error('Final status write failed'); }), /status write failed/);
     assert.equal(query<{ count: number }>('SELECT COUNT(*) AS count FROM stream_commits').one().count, batches.length);
@@ -97,10 +100,10 @@ test('journal replay rejects a gap rather than returning a partial result as com
   try {
     initializeConversation(sql, false);
     const journal = new StreamJournal(query);
-    const first = [...streamBatches('run', 'assistant', 0, 0, '第一批', '')][0];
-    const second = [...streamBatches('run', 'assistant', 1, first.endOffset, '第二批', '')][0];
+    const first = [...streamBatches('run', 'assistant', 0, 0, wire('第一批', ''))][0];
+    const second = [...streamBatches('run', 'assistant', 1, first.endOffset, wire('第二批', ''))][0];
     journal.append({ runId: second.runId, messageId: second.messageId, batches: [second] });
-    assert.throws(() => journal.materialize(message), /sequence gap|offset gap/);
+    assert.throws(() => journal.materialize(message, descriptor), /sequence gap|offset gap/);
   } finally { db.close(); }
 });
 
@@ -109,8 +112,8 @@ test('a grouped commit persists once, replays every boundary and rolls back with
   const { db, sql, query, transaction } = database();
   try {
     initializeConversation(sql, false);
-    const first = [...streamBatches('run', 'assistant', 0, 0, '首段🙂', '思考')][0];
-    const second = [...streamBatches('run', 'assistant', 1, first.endOffset, '末段', '结论')][0];
+    const first = [...streamBatches('run', 'assistant', 0, 0, wire('首段🙂', '思考'))][0];
+    const second = [...streamBatches('run', 'assistant', 1, first.endOffset, wire('末段', '结论'))][0];
     const commit = { runId: 'run', messageId: 'assistant', batches: [first, second] };
     const journal = new StreamJournal(query);
     assert.throws(() => transaction(() => { journal.append(commit); query('INSERT INTO events (payload) VALUES (?)', JSON.stringify(commit)); throw new Error('Commit failure'); }), /Commit failure/);
@@ -118,8 +121,8 @@ test('a grouped commit persists once, replays every boundary and rolls back with
     assert.equal(query<{ count: number }>('SELECT COUNT(*) AS count FROM events').one().count, 0);
     transaction(() => { journal.append(commit); query('INSERT INTO events (payload) VALUES (?)', JSON.stringify(commit)); });
     assert.equal(query<{ count: number }>('SELECT COUNT(*) AS count FROM stream_commits').one().count, 1);
-    assert.equal(journal.materialize(message).content, '首段🙂末段');
-    assert.equal(journal.materialize(message).reasoning, '思考结论');
+    assert.equal(journal.materialize(message, descriptor).content, '首段🙂末段');
+    assert.equal(journal.materialize(message, descriptor).reasoning, '思考结论');
     assert.throws(() => journal.append({ ...commit, batches: [first, { ...second, chunkSeq: 3 }] }), /gap/);
   } finally { db.close(); }
 });

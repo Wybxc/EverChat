@@ -5,17 +5,14 @@ export class GenerationMeter {
   private readonly startedAt: number;
   private readonly encoder = new TextEncoder();
   private counts = {
-    textDeltas: 0, reasoningDeltas: 0, checkpoints: 0, checkpointCharacters: 0,
+    textDeltas: 0, reasoningDeltas: 0, checkpoints: 0, checkpointBytes: 0,
     sqlStatements: 0, sqlRowsRead: 0, sqlRowsWritten: 0, eventPayloadBytes: 0,
     broadcastFrames: 0, broadcastBytes: 0,
   };
   constructor(readonly runId: string, private readonly now: () => number = Date.now,
     private readonly coverage: GenerationMeasurements['coverage'] = 'claim-to-terminal', private readonly executor?: GenerationExecutor) { this.startedAt = now(); }
-  checkpoint(contentLength: number, reasoningLength: number, upstream?: StreamCounts) {
-    this.counts.checkpoints++;
-    this.counts.checkpointCharacters += contentLength + reasoningLength;
-    if (upstream) { this.counts.textDeltas = upstream.textDeltas; this.counts.reasoningDeltas = upstream.reasoningDeltas; }
-  }
+  rawCheckpoint(bytes: number) { this.counts.checkpoints++; this.counts.checkpointBytes += bytes; }
+  streamCounts(counts: StreamCounts) { this.counts.textDeltas = counts.textDeltas; this.counts.reasoningDeltas = counts.reasoningDeltas; }
   sql(read: number, written: number) {
     this.counts.sqlStatements++;
     this.counts.sqlRowsRead += read;

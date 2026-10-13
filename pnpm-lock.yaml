@@ -203,12 +203,15 @@ importers:
       '@ai-sdk/openai-compatible':
         specifier: ^3.0.67
         version: 3.0.67(zod@4.6.5)
+      '@ai-sdk/provider':
+        specifier: ^4.0.26
+        version: 4.0.26
       '@tanstack/react-query':
         specifier: ^5.104.1
         version: 5.104.1(react@19.3.0)
-      ai:
-        specifier: ^7.0.133
-        version: 7.0.133(zod@4.6.5)
+      eventsource-parser:
+        specifier: ^3.1.1
+        version: 3.1.1
       hono:
         specifier: ^4.13.13
         version: 4.13.13
@@ -294,12 +297,6 @@ packages:
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
-  '@ai-sdk/gateway@4.0.108':
-    resolution: {integrity: sha512-UgtnyyuIpMSzhha89MAK6c2pTeQW8s9jLSmDeYI92NzqDsoyEYFZ/lYAXTXLUQxA25j5iTWPEnzGVl5adIy+8w==}
-    engines: {node: '>=22'}
-    peerDependencies:
-      zod: ^3.25.76 || ^4.1.8
-
   '@ai-sdk/google@4.0.93':
     resolution: {integrity: sha512-hubOUxbG2W7oD3acdCxxnrQ84NlnLqfzcHe9uWMmwkglHxq/rwsbjloPhvebeQlcQ2G0gaX+akDF1Ddm/fNAnQ==}
     engines: {node: '>=22'}
@@ -318,21 +315,11 @@ packages:
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
-  '@ai-sdk/provider-utils@5.0.57':
-    resolution: {integrity: sha512-giQ9mNwVzYUbahU2DG1FWEjXkDU8D8Hitz7Rk4AlRGtqh8Ss48msQ9+wEAXquWs/GYOETzxMMFsgcHK0i7TbUQ==}
-    engines: {node: '>=22'}
-    peerDependencies:
-      zod: ^3.25.76 || ^4.1.8
-
   '@ai-sdk/provider-utils@5.0.58':
     resolution: {integrity: sha512-iXSwKR/7LpHzAlyrUl+bTinwzmZ3Nmup1viwPisM5Gn5cogRdIG4rV9w1ZDuKFcrXyu/AeVs42E1CX/0aNwrfQ==}
     engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
-
-  '@ai-sdk/provider@4.0.25':
-    resolution: {integrity: sha512-vG0l7MUavfhn6c5+Z0y1/E6lKUrzecsLtFkuIknnHjAGAIiuwFDucafzebJuFVTZcLyhf8qhYYU2zeKP55Mymw==}
-    engines: {node: '>=22'}
 
   '@ai-sdk/provider@4.0.26':
     resolution: {integrity: sha512-BZ443uBEq6HuMA+Z4b7Hpm65GpZSo7pWqnYqpf/7tAO3C48JbtvAhOE2JnODFj+jodsZzfRHkAyQb64xuD2tZQ==}
@@ -1722,10 +1709,6 @@ packages:
   '@ungap/structured-clone@1.4.0':
     resolution: {integrity: sha512-1mEZtMKPM09vDmQt5y7YvmN2+DFTP7Tg0EWXdic8/C6VRnpb33e4ghisCIE3WZjsE2N8mf+QV1Zqh7ZFYLWInQ==}
 
-  '@vercel/oidc@3.2.0':
-    resolution: {integrity: sha512-UycprH3T6n3jH0k44NHMa7pnFHGu/N05MjojYr+Mc6I7obkoLIJujSWwin1pCvdy/eOxrI/l3uDLQsmcrOb4ug==}
-    engines: {node: '>= 20'}
-
   '@vitejs/plugin-react@6.1.2':
     resolution: {integrity: sha512-fhJNGUdscQa4HkI0xFxwonWyhnVReCPDbXI7FH7jmzpnVCrFQI7PRrhWecO263610vOrs9tr2Y4xcf8uAdFxbw==}
     engines: {node: ^20.19.0 || >=22.12.0}
@@ -1749,12 +1732,6 @@ packages:
     resolution: {integrity: sha512-oJlA3XiRm7Cyk6qFD2Jn8ak9B7jSy0qy00ADO3+8dpT0LSjFihQYv4C02LFCSYJV3Q37xYwwRy5m+IpIiUzqWw==}
     engines: {node: '>=0.4.0'}
     hasBin: true
-
-  ai@7.0.133:
-    resolution: {integrity: sha512-OjyVMdsDp4ORPSrRB9hiYGic4bzeiOtaOzBPxOM7jiavz6tSXuMrqLwd1eILGhN669VD0G/+jxaiweRqfVulYg==}
-    engines: {node: '>=22'}
-    peerDependencies:
-      zod: ^3.25.76 || ^4.1.8
 
   ajv@8.20.0:
     resolution: {integrity: sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA==}
@@ -3353,13 +3330,6 @@ snapshots:
       '@ai-sdk/provider-utils': 5.0.58(zod@4.6.5)
       zod: 4.6.5
 
-  '@ai-sdk/gateway@4.0.108(zod@4.6.5)':
-    dependencies:
-      '@ai-sdk/provider': 4.0.25
-      '@ai-sdk/provider-utils': 5.0.57(zod@4.6.5)
-      '@vercel/oidc': 3.2.0
-      zod: 4.6.5
-
   '@ai-sdk/google@4.0.93(zod@4.6.5)':
     dependencies:
       '@ai-sdk/provider': 4.0.26
@@ -3378,15 +3348,6 @@ snapshots:
       '@ai-sdk/provider-utils': 5.0.58(zod@4.6.5)
       zod: 4.6.5
 
-  '@ai-sdk/provider-utils@5.0.57(zod@4.6.5)':
-    dependencies:
-      '@ai-sdk/provider': 4.0.25
-      '@standard-schema/spec': 1.1.0
-      '@workflow/serde': 4.1.0
-      eventsource-parser: 3.1.1
-      undici: 7.29.1
-      zod: 4.6.5
-
   '@ai-sdk/provider-utils@5.0.58(zod@4.6.5)':
     dependencies:
       '@ai-sdk/provider': 4.0.26
@@ -3395,10 +3356,6 @@ snapshots:
       eventsource-parser: 3.1.1
       undici: 7.29.1
       zod: 4.6.5
-
-  '@ai-sdk/provider@4.0.25':
-    dependencies:
-      json-schema: 0.4.0
 
   '@ai-sdk/provider@4.0.26':
     dependencies:
@@ -4656,8 +4613,6 @@ snapshots:
 
   '@ungap/structured-clone@1.4.0': {}
 
-  '@vercel/oidc@3.2.0': {}
-
   '@vitejs/plugin-react@6.1.2(vite@8.3.4(@types/node@26.6.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15))':
     dependencies:
       '@rolldown/pluginutils': 1.0.1
@@ -4666,13 +4621,6 @@ snapshots:
   '@workflow/serde@4.1.0': {}
 
   acorn@8.19.0: {}
-
-  ai@7.0.133(zod@4.6.5):
-    dependencies:
-      '@ai-sdk/gateway': 4.0.108(zod@4.6.5)
-      '@ai-sdk/provider': 4.0.25
-      '@ai-sdk/provider-utils': 5.0.57(zod@4.6.5)
-      zod: 4.6.5
 
   ajv@8.20.0:
     dependencies:

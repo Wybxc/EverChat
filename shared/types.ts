@@ -1,3 +1,4 @@
+import { ProviderStream, type StreamState, type StreamUsage } from './provider-stream';
 import { validateBatch, validateCommit } from './stream-batches';
 
 export type MessageStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
@@ -15,7 +16,9 @@ export interface Message {
   providerId?: string | null;
   model?: string | null;
   modelName?: string | null;
-  streamVersion?: 'semantic-delta-v1' | null;
+  streamVersion?: 'raw-sse-v1' | null;
+  streamState?: StreamState;
+  generation?: { finishReason?: StreamState['finishReason']; usage: StreamUsage };
   durableOffset?: number;
   liveOffset?: number;
 }
@@ -23,8 +26,8 @@ export interface ConversationInfo { id: string; title: string; createdAt: number
 export interface Snapshot { messages: Message[]; seq: number }
 export interface Change { type: 'change'; seq: number; messages: Message[] }
 export interface StreamBatch {
-  version: 'semantic-delta-v1'; runId: string; messageId: string; chunkSeq: number;
-  startOffset: number; endOffset: number; content: string; reasoning: string;
+  version: 'raw-sse-v1'; runId: string; messageId: string; chunkSeq: number;
+  startOffset: number; endOffset: number; data: string;
 }
 export interface StreamCommit { runId: string; messageId: string; batches: StreamBatch[] }
 export interface Commit extends StreamCommit { type: 'commit'; seq: number }
@@ -118,12 +121,13 @@ export function applyChange(snapshot: Snapshot, change: DurableChange): Snapshot
 }
 
 export function appendMessage(message: Message, batch: StreamBatch): Message {
-  validateBatch(batch);
-  if (batch.version !== 'semantic-delta-v1' || message.streamVersion !== batch.version || message.role !== 'assistant'
-    || message.id !== batch.messageId || message.runId !== batch.runId) throw new Error('Stream identity mismatch');
+  const bytes = validateBatch(batch);
+  if (message.streamVersion !== batch.version || message.role !== 'assistant'
+    || message.id !== batch.messageId || message.runId !== batch.runId || !message.streamState) throw new Error('Stream identity mismatch');
   if (message.status !== 'running') throw new Error('Streamed message is not running');
-  if (batch.startOffset !== (message.durableOffset ?? 0) || batch.endOffset <= batch.startOffset) throw new Error('Stream offset gap');
-  const content = message.content + batch.content, reasoning = (message.reasoning ?? '') + batch.reasoning;
-  if (content.length > 100_000 || reasoning.length > 100_000) throw new Error('Stream exceeds message limits');
-  return { ...message, content, reasoning, durableOffset: batch.endOffset };
+  if (batch.startOffset !== (message.durableOffset ?? 0)) throw new Error('Stream offset gap');
+  const state = message.streamState;
+  const parser = new ProviderStream(state.protocol, state.showReasoning, state, message.content, message.reasoning ?? '');
+  parser.feed(bytes);
+  return { ...message, content: parser.content, reasoning: parser.reasoning, streamState: parser.checkpoint(), durableOffset: batch.endOffset };
 }
