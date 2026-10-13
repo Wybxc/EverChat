@@ -9,6 +9,7 @@ import { useConversation } from './useConversation';
 import { ProviderSettingsPanel } from './ProviderSettings';
 import { chatModels, effortLabels, modelSelectionKey } from '../shared/models';
 import { useThemeMode } from './theme';
+import { useFollowScroll } from './useFollowScroll';
 
 const EMPTY_SESSION: SessionInfo = { authenticated: false, configured: false, provider: '', model: '' };
 const Streamdown = lazy(() => import('streamdown').then(({ Streamdown: Component }) => ({ default: Component })));
@@ -72,6 +73,7 @@ function Login({ session, onLogin }: { session: SessionInfo; onLogin: () => Prom
 function MessageView({ message, busy, onRetry, onEdit }: { message: Message; busy: boolean; onRetry: () => void; onEdit: () => void }) {
   const [copied, setCopied] = useState(false);
   const [reasoningOpen, setReasoningOpen] = useState(true);
+  const reasoningScroll = useFollowScroll(message.id);
   const copy = async () => {
     try { await navigator.clipboard.writeText(message.content); setCopied(true); setTimeout(() => setCopied(false), 1800); } catch { /* Clipboard can be unavailable outside HTTPS. */ }
   };
@@ -89,7 +91,7 @@ function MessageView({ message, busy, onRetry, onEdit }: { message: Message; bus
       <div className="mb-3 flex items-center gap-3 text-xs"><span className="font-semibold">{message.modelName || message.model || 'EverChat'}</span>{message.revisionOf && <span className="text-base-content/60">新版本</span>}{isActive(message) && <span className="flex items-center gap-1.5 text-base-content/60"><span className="loading loading-dots loading-xs" />{message.status === 'queued' ? '排队中' : '生成中'}</span>}</div>
       {message.reasoning && <details open={reasoningOpen || isActive(message)} onToggle={(event) => setReasoningOpen(event.currentTarget.open)} className="collapse collapse-arrow mb-4 border border-base-content/30 bg-base-200" data-testid="message-reasoning">
         <summary className="collapse-title min-h-0 py-3 text-sm font-medium">思考过程</summary>
-        <div className="collapse-content text-sm"><div className="max-h-80 overflow-y-auto break-words"><MarkdownContent content={message.reasoning} streaming={isActive(message)} /></div></div>
+        <div className="collapse-content text-sm"><div ref={reasoningScroll.viewportRef} className="max-h-80 overflow-y-auto break-words"><div ref={reasoningScroll.contentRef}><MarkdownContent content={message.reasoning} streaming={isActive(message)} /></div></div></div>
       </details>}
       {message.content ? <MarkdownContent content={message.content} streaming={isActive(message)} /> : isActive(message) && !message.reasoning ? <p className="py-2 text-sm text-base-content/60">准备中…</p> : null}
       {message.status === 'failed' && <p role="alert" className="mt-4 rounded-lg bg-error/5 px-3 py-2 text-xs font-medium leading-6 text-base-content">{message.error ?? '生成失败，已保存部分内容。'}</p>}
@@ -117,9 +119,7 @@ export function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [sending, setSending] = useState(false);
-  const [atBottom, setAtBottom] = useState(true);
-  const scrollArea = useRef<HTMLDivElement>(null);
-  const nearBottom = useRef(true);
+  const { viewportRef, contentRef, atBottom, scrollToBottom } = useFollowScroll(selected);
   const editor = useRef<HTMLTextAreaElement>(null);
   const mobileSidebarTrigger = useRef<HTMLButtonElement>(null);
   const settings = useRef<HTMLDialogElement>(null);
@@ -217,7 +217,6 @@ export function App() {
   useEffect(() => {
     const saved = read<{ text: string; revisionOf?: string }>(`draft:${selected ?? 'new'}`, { text: '' });
     setDraft(saved.text); setRevisionOf(saved.revisionOf); setError('');
-    nearBottom.current = true; setAtBottom(true);
   }, [selected]);
   useEffect(() => {
     if (!selectedModel?.reasoningSupported) { setReasoningEffort(''); return; }
@@ -228,9 +227,6 @@ export function App() {
     const node = editor.current;
     if (node) { node.style.height = 'auto'; node.style.height = `${Math.min(node.scrollHeight, 160)}px`; }
   }, [draft]);
-  useEffect(() => {
-    if (nearBottom.current && scrollArea.current) scrollArea.current.scrollTop = scrollArea.current.scrollHeight;
-  }, [snapshot.seq, pending.length, selected]);
   const updateDraft = (text: string) => { setDraft(text); write(`draft:${selected ?? 'new'}`, { text, revisionOf }); };
   const select = (id: string | null) => {
     setSelected(id); write('selected', id); setSidebarOpen(false);
@@ -261,7 +257,7 @@ export function App() {
     }
     write(`draft:${selected ?? 'new'}`, { text: '' }); setDraft(''); setRevisionOf(undefined);
     select(conversation.id);
-    nearBottom.current = true;
+    scrollToBottom();
     await deliver(item);
   };
   const submit = async (event?: FormEvent) => {
@@ -327,13 +323,13 @@ export function App() {
         <div className="flex shrink-0 items-center gap-3"><span aria-live="polite" className="hidden items-center gap-1.5 text-[11px] text-base-content/60 sm:flex" title={syncedAt ? `上次同步 ${new Date(syncedAt).toLocaleTimeString('zh-CN')}` : undefined}>{connection === 'offline' ? <CloudOff size={14} /> : <span className={`h-1.5 w-1.5 rounded-full ${connection === 'connected' ? 'bg-success' : 'bg-warning'}`} />}{statusText}</span>{snapshot.messages.length > 0 && <button aria-label="导出对话" title="导出 Markdown" className="btn btn-ghost btn-sm btn-square" onClick={exportChat}><Download size={16} /></button>}<button aria-label="空间设置" className="btn btn-ghost btn-sm btn-square" onClick={openSettings}><Settings size={17} /></button></div>
       </header>
       {connection === 'offline' && <div role="status" className="flex items-center justify-center gap-2 border-b border-base-content/50 bg-base-200 px-4 py-2 text-xs text-base-content"><WifiOff size={13} />你现在离线，已保存的对话仍可阅读。新消息将在联网后发送。</div>}
-      <div ref={scrollArea} className="relative flex-1 overflow-y-auto" onScroll={(event) => { const node = event.currentTarget; nearBottom.current = node.scrollHeight - node.scrollTop - node.clientHeight < 100; setAtBottom(nearBottom.current); }}>
-        {welcome ? <section className="mx-auto flex min-h-full w-full max-w-3xl flex-col justify-center px-6 pt-8 pb-12 sm:px-10">
+      <div ref={viewportRef} className="relative flex-1 overflow-y-auto">
+        {welcome ? <section ref={contentRef} className="mx-auto flex min-h-full w-full max-w-3xl flex-col justify-center px-6 pt-8 pb-12 sm:px-10">
           <h1 className="text-[32px] leading-[1.45] font-semibold tracking-tight sm:text-[42px]">新对话</h1>
           <div className="mt-10 grid grid-cols-1 gap-3 sm:grid-cols-3">
             {starters.map(({ icon: Icon, title, prompt }) => <button key={title} className="group rounded-lg border border-base-content/50 bg-base-100 p-4 text-left transition hover:-translate-y-0.5 hover:bg-base-200" onClick={() => { updateDraft(prompt); editor.current?.focus(); }}><Icon size={18} strokeWidth={1.5} className="mb-5" /><span className="flex items-center justify-between text-[13px] font-medium">{title}<ArrowUp size={13} className="rotate-45" /></span></button>)}
           </div>
-        </section> : <section aria-label="对话消息" className="mx-auto w-full max-w-3xl space-y-8 px-5 py-8 sm:px-9 sm:py-10">
+        </section> : <section ref={contentRef} aria-label="对话消息" className="mx-auto w-full max-w-3xl space-y-8 px-5 py-8 sm:px-9 sm:py-10">
           {loading && !snapshot.messages.length && <div className="py-10 text-center text-xs text-base-content/60"><span className="loading loading-dots loading-sm" /><p className="mt-3">正在找回我们的对话…</p></div>}
           {snapshot.messages.map((message) => <MessageView key={message.id} message={message} busy={busy} onRetry={() => void retry(message)} onEdit={() => edit(message)} />)}
           {currentPending && <article className="ml-auto max-w-[90%] rounded-2xl border border-dashed border-base-content/50 bg-base-200 px-5 py-4"><p className="text-sm leading-7 whitespace-pre-wrap">{currentPending.input.content ?? '新版本'}</p><div className="mt-2 flex items-center gap-2 text-[11px] text-base-content/60"><CloudOff size={12} />{currentPending.error ? '发送失败' : '等待发送'}</div>{currentPending.error && <p className="mt-2 text-xs font-medium leading-5 text-base-content">{currentPending.error}</p>}<div className="mt-2 flex gap-1"><button className="btn btn-ghost btn-xs" onClick={() => { const clean = { ...currentPending, error: undefined }; commitPending(pendingRef.current.map((item) => item.input.requestId === clean.input.requestId ? clean : item)); void deliver(clean); }}>重试</button><button className="btn btn-ghost btn-xs" onClick={() => { if (currentPending.input.content) updateDraft(currentPending.input.content); commitPending(pendingRef.current.filter((item) => item.input.requestId !== currentPending.input.requestId)); }}>编辑</button></div></article>}
@@ -341,7 +337,7 @@ export function App() {
       </div>
 
       <div className="relative shrink-0 px-4 pt-2 pb-3 sm:px-8 sm:pb-5" style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
-        {!atBottom && <button className="btn btn-circle btn-sm absolute -top-12 left-1/2 z-10 border-base-content/50 bg-base-100 shadow-sm" aria-label="滚动到最新消息" onClick={() => { scrollArea.current?.scrollTo({ top: scrollArea.current.scrollHeight, behavior: 'smooth' }); nearBottom.current = true; }}><ArrowDown size={16} /></button>}
+        {!atBottom && <button className="btn btn-circle btn-sm absolute -top-12 left-1/2 z-10 border-base-content/50 bg-base-100 shadow-sm" aria-label="滚动到最新消息" onClick={scrollToBottom}><ArrowDown size={16} /></button>}
         <div className="mx-auto w-full max-w-3xl">
           {error && <p role="alert" className="mb-3 text-xs font-medium text-base-content">{error}</p>}
           {revisionOf && <div className="mb-2 flex items-center justify-between text-xs text-base-content/60"><span>编辑消息</span><button className="btn btn-ghost btn-xs" onClick={() => { setRevisionOf(undefined); write(`draft:${selected}`, { text: draft }); }}>取消</button></div>}

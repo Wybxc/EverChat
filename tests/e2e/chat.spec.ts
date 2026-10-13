@@ -219,3 +219,61 @@ test('DeepSeek-compatible Responses streams Markdown thoughts, persists them and
   await thoughts.getByText('思考过程', { exact: true }).click();
   await expect(thoughts.locator('[data-streamdown="strong"]')).toBeVisible();
 });
+
+test('streaming answers and thoughts follow the bottom, pause when scrolled up and resume at the bottom', async ({ page, context }) => {
+  await page.setViewportSize({ width: 900, height: 700 });
+  await login(page);
+  const settings = await context.request.get('/api/settings/providers').then((response) => response.json());
+  settings.providers[0].models = [{ id: 'scroll-test', name: '滚动测试', enabled: true }];
+  settings.activeModel = 'scroll-test';
+  settings.showReasoning = true;
+  expect((await context.request.put('/api/settings/providers', { headers: { Origin: origin }, data: settings })).status()).toBe(200);
+  await page.reload();
+  await page.getByLabel('消息', { exact: true }).fill('持续生成，验证滚动');
+  await page.getByRole('button', { name: '发送消息', exact: true }).click();
+  const answer = page.getByTestId('assistant-message');
+  const conversation = page.getByRole('region', { name: '对话消息' }).locator('..');
+  const thoughts = answer.getByTestId('message-reasoning').locator('.overflow-y-auto');
+  const metrics = (pane: typeof conversation) => pane.evaluate((node) => ({
+    top: node.scrollTop, height: node.scrollHeight, gap: node.scrollHeight - node.scrollTop - node.clientHeight,
+    overflow: node.scrollHeight - node.clientHeight,
+  }));
+  await expect.poll(async () => (await metrics(conversation)).overflow).toBeGreaterThan(400);
+  await expect.poll(async () => (await metrics(thoughts)).overflow).toBeGreaterThan(300);
+  const initial = await metrics(conversation);
+  const initialThoughts = await metrics(thoughts);
+  await expect.poll(async () => (await metrics(conversation)).height).toBeGreaterThan(initial.height + 100);
+  await expect.poll(async () => (await metrics(conversation)).gap).toBeLessThan(2);
+  await expect.poll(async () => (await metrics(thoughts)).height).toBeGreaterThan(initialThoughts.height + 100);
+  await expect.poll(async () => (await metrics(thoughts)).gap).toBeLessThan(2);
+  await expect(answer).toHaveAttribute('data-status', 'running');
+
+  await conversation.evaluate((node) => { node.scrollTop -= 250; });
+  await expect(page.getByRole('button', { name: '滚动到最新消息' })).toBeVisible();
+  const reading = await metrics(conversation);
+  await expect.poll(async () => (await metrics(conversation)).height).toBeGreaterThan(reading.height + 100);
+  expect((await metrics(conversation)).top).toBeCloseTo(reading.top, 0);
+  await page.getByRole('button', { name: '滚动到最新消息' }).click();
+  const resumed = await metrics(conversation);
+  await expect.poll(async () => (await metrics(conversation)).height).toBeGreaterThan(resumed.height + 100);
+  await expect.poll(async () => (await metrics(conversation)).gap).toBeLessThan(2);
+
+  await thoughts.evaluate((node) => { node.scrollTop -= 250; });
+  await expect.poll(async () => (await metrics(thoughts)).gap).toBeGreaterThan(100);
+  const readingThoughts = await metrics(thoughts);
+  await expect.poll(async () => (await metrics(thoughts)).height).toBeGreaterThan(readingThoughts.height + 100);
+  expect((await metrics(thoughts)).top).toBeCloseTo(readingThoughts.top, 0);
+  await thoughts.evaluate((node) => { node.scrollTop = node.scrollHeight; });
+  await expect.poll(async () => (await metrics(thoughts)).gap).toBeLessThan(2);
+  const resumedThoughts = await metrics(thoughts);
+  await expect.poll(async () => (await metrics(thoughts)).height).toBeGreaterThan(resumedThoughts.height + 100);
+  await expect.poll(async () => (await metrics(thoughts)).gap).toBeLessThan(2);
+  await expect(answer).toHaveAttribute('data-status', 'completed', { timeout: 30_000 });
+  await expect.poll(async () => (await metrics(conversation)).gap).toBeLessThan(2);
+  await conversation.evaluate((node) => { node.scrollTop -= 250; });
+  await expect(page.getByRole('button', { name: '滚动到最新消息' })).toBeVisible();
+  await page.getByRole('button', { name: '打开对话列表' }).click();
+  await page.getByRole('button', { name: '开启新对话' }).click();
+  await expect(page.getByRole('heading', { name: '新对话' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '滚动到最新消息' })).toHaveCount(0);
+});

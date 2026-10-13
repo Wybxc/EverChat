@@ -39,14 +39,18 @@ globalThis.fetch = async (input, init) => {
       },
     }), { headers: { 'Content-Type': 'text/event-stream' } });
   }
-  const tokens = ['**集成测试回答。**\n\n', ...Array<string>(28).fill('持续输出，'), '服务端生成完成。'];
+  const scrollTest = requestBody.model === 'scroll-test';
+  const tokens = scrollTest
+    ? Array.from({ length: 60 }, (_, i) => `段落 ${i + 1}：持续生成的内容。\n\n`)
+    : ['**集成测试回答。**\n\n', ...Array<string>(28).fill('持续输出，'), '服务端生成完成。'];
   let index = 0;
   const body = new ReadableStream<Uint8Array>({
     async pull(controller) {
       await new Promise((resolve) => setTimeout(resolve, 400));
       const content = tokens[index++];
       const delta = content ? {
-        ...(index === 1 && (requestBody.thinking?.type === 'enabled' || requestBody.reasoning_effort) ? { reasoning_content: '**集成思考。**' } : {}),
+        ...(scrollTest ? { reasoning_content: `思考 ${index}：持续生成的思考内容。\n\n` }
+          : index === 1 && (requestBody.thinking?.type === 'enabled' || requestBody.reasoning_effort) ? { reasoning_content: '**集成思考。**' } : {}),
         content: `${index === 1 && requestBody.model === 'test-model-2' ? '第二模型：\n\n' : ''}${content}`,
       } : {};
       const chunk = { id: 'integration', choices: [{ index: 0, delta, finish_reason: content ? null : 'stop' }] };
