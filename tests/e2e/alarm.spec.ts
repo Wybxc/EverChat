@@ -28,12 +28,11 @@ async function setup(request: APIRequestContext, model = 'alarm-test') {
   };
 }
 
-test('a live DO owns the task; Alarm re-entry and the old Workflow cannot claim it twice', async ({ request }) => {
+test('a live DO owns the task and Alarm re-entry cannot generate twice', async ({ request }) => {
   const fixture = await setup(request);
   try {
     await expect.poll(async () => (await fixture.snapshot()).messages[1].content.length).toBeGreaterThan(0);
-    expect(await fixture.state()).toMatchObject({ executor: 'do-v1', calls: 1, cancelRequested: 0, workflowStatus: null });
-    expect(await fixture.action('claim').then((response) => response.json())).toBeNull();
+    expect(await fixture.state()).toMatchObject({ executor: 'do-v1', calls: 1, cancelRequested: 0 });
     expect((await fixture.action('alarm')).ok()).toBe(true);
     await expect.poll(async () => (await fixture.snapshot()).messages[1].status).toBe('completed');
     const stored = await fixture.snapshot();
@@ -70,18 +69,7 @@ test('cancelling an accepted task before its Alarm starts prevents all supplier 
     expect((await request.post(`/api/conversations/${fixture.id}/cancel`, { headers, data: { runId: fixture.submission.runId } })).ok()).toBe(true);
     expect((await fixture.action('alarm')).ok()).toBe(true);
     expect((await fixture.snapshot()).messages[1]).toMatchObject({ status: 'cancelled', content: '', reasoning: '' });
-    expect(await fixture.state()).toMatchObject({ executor: 'do-v1', calls: 0, cancelRequested: 1, startedAt: null, workflowStatus: null });
-  } finally { await fixture.restore(); }
-});
-
-test('legacy queued tasks still complete through their pinned Workflow executor', async ({ request }) => {
-  const fixture = await setup(request);
-  try {
-    expect((await fixture.action('legacy')).ok()).toBe(true);
-    await expect.poll(async () => (await fixture.snapshot()).messages[1].status).toBe('completed');
-    expect((await fixture.snapshot()).messages[1].content).toContain('服务端生成完成');
-    await expect.poll(async () => (await fixture.state()).workflowStatus).toBe('complete');
-    expect(await fixture.state()).toMatchObject({ executor: 'workflow-v1', calls: 0 });
+    expect(await fixture.state()).toMatchObject({ executor: 'do-v1', calls: 0, cancelRequested: 1, startedAt: null });
   } finally { await fixture.restore(); }
 });
 
@@ -92,7 +80,7 @@ test('a cancellation tail write failure records failure rather than a false succ
     const stored = await fixture.snapshot();
     expect(stored.messages[1].content).not.toContain('尚未保存的尾部');
     expect(stored.messages[1].error).toContain('最近检查点');
-    expect(await fixture.state()).toMatchObject({ executor: 'do-v1', calls: 1, cancelRequested: 1, workflowStatus: null });
+    expect(await fixture.state()).toMatchObject({ executor: 'do-v1', calls: 1, cancelRequested: 1 });
     expect((await fixture.action('alarm')).ok()).toBe(true);
     expect(await fixture.snapshot()).toEqual(stored);
   } finally { await fixture.restore(); }

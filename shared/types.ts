@@ -1,4 +1,4 @@
-import { validateBatch } from './stream-batches';
+import { validateBatch, validateCommit } from './stream-batches';
 
 export type MessageStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 export interface Message {
@@ -17,6 +17,7 @@ export interface Message {
   modelName?: string | null;
   streamVersion?: 'semantic-delta-v1' | null;
   durableOffset?: number;
+  liveOffset?: number;
 }
 export interface ConversationInfo { id: string; title: string; createdAt: number; updatedAt: number }
 export interface Snapshot { messages: Message[]; seq: number }
@@ -25,14 +26,19 @@ export interface StreamBatch {
   version: 'semantic-delta-v1'; runId: string; messageId: string; chunkSeq: number;
   startOffset: number; endOffset: number; content: string; reasoning: string;
 }
-export interface Append extends StreamBatch { type: 'append'; seq: number }
-export type DurableChange = Change | Append;
-export type SyncPacket = DurableChange | { type: 'snapshot'; snapshot: Snapshot } | { type: 'ready'; seq: number };
+export interface StreamCommit { runId: string; messageId: string; batches: StreamBatch[] }
+export interface Commit extends StreamCommit { type: 'commit'; seq: number }
+export interface CommitAck {
+  type: 'commit-ack'; seq: number; runId: string; messageId: string;
+  firstChunkSeq: number; lastChunkSeq: number; startOffset: number; endOffset: number;
+}
+export interface Preview { type: 'preview'; batch: StreamBatch }
+export type DurableChange = Change | Commit;
+export type SyncPacket = DurableChange | Preview | CommitAck | { type: 'snapshot'; snapshot: Snapshot } | { type: 'ready'; seq: number };
 export interface ModelSelection { providerId: string; model: string }
 export interface SubmitInput { requestId: string; content?: string; retryOf?: string; revisionOf?: string; selection?: ModelSelection; showReasoning?: boolean; reasoningEffort?: ReasoningEffort }
 export interface Submission { runId: string; userId: string; assistantId: string }
-export interface GenerationParams { conversationId: string; runId: string }
-export type GenerationExecutor = 'workflow-v1' | 'do-v1';
+export type GenerationExecutor = 'do-v1';
 export interface ChatInput { role: 'system' | 'user' | 'assistant'; content: string }
 export interface ChatModel extends ModelSelection { name: string; providerName: string; reasoningSupported: boolean; reasoningEfforts: ReasoningEffort[] }
 export interface SessionInfo { authenticated: boolean; provider: string; model: string; modelName?: string; activeProviderId?: string | null; models?: ChatModel[]; configured: boolean; showReasoning?: boolean; systemPrompt?: string; maxOutputTokens?: number | null }
@@ -96,10 +102,11 @@ export function applyChange(snapshot: Snapshot, change: DurableChange): Snapshot
   if (change.seq <= snapshot.seq) return snapshot;
   if (change.seq !== snapshot.seq + 1) throw new Error('Sync sequence gap');
   const messages = [...snapshot.messages];
-  if (change.type === 'append') {
+  if (change.type === 'commit') {
     const index = messages.findIndex((message) => message.id === change.messageId);
     if (index === -1) throw new Error('Missing streamed message');
-    messages[index] = appendMessage(messages[index], change);
+    validateCommit(change);
+    for (const batch of change.batches) messages[index] = appendMessage(messages[index], batch);
     return { messages, seq: change.seq };
   }
   for (const message of change.messages) {

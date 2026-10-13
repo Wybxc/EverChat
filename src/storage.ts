@@ -5,6 +5,8 @@ export interface Pending { conversation: ConversationInfo; input: SubmitInput; e
 
 const PREFIX = 'everchat:';
 const cache = new Map<string, unknown>();
+let epoch = 0;
+export const storageEpoch = () => epoch;
 const storageKey = (key: string) => `${PREFIX}${key}`;
 
 export async function hydrateStorage() {
@@ -14,8 +16,8 @@ export async function hydrateStorage() {
   } catch {
     // IndexedDB can be unavailable in private browsing or restricted WebViews.
   }
-  // Migrate the previous localStorage cache once, then keep it as a fallback for this session.
-  const migrated: [string, unknown][] = [];
+  // Recover the synchronous fallback when IndexedDB is delayed or unavailable.
+  const fallback: [string, unknown][] = [];
   try {
     for (const key of Object.keys(localStorage)) {
       if (!key.startsWith(PREFIX)) continue;
@@ -24,10 +26,10 @@ export async function hydrateStorage() {
       const value = JSON.parse(raw) as unknown;
       if (!cache.has(key)) {
         cache.set(key, value);
-        migrated.push([key, value]);
+        fallback.push([key, value]);
       }
     }
-    if (migrated.length) await setMany(migrated);
+    if (fallback.length) await setMany(fallback);
   } catch {
     // The in-memory cache still keeps the current session usable.
   }
@@ -66,6 +68,7 @@ export function writePending(items: Pending[]): boolean {
 }
 
 export function clearLocal() {
+  epoch++;
   const keys = [...cache.keys()];
   cache.clear();
   void delMany(keys).catch(() => {});

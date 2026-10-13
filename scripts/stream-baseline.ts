@@ -7,7 +7,8 @@ import { parseArgs } from 'node:util';
 import { setTimeout as pause } from 'node:timers/promises';
 import WebSocket from 'ws';
 import type { GenerationMeasurements } from '../shared/generation-metrics';
-import { applyChange, type Snapshot, type SyncPacket } from '../shared/types';
+import { type Snapshot, type SyncPacket } from '../shared/types';
+import { StreamSync } from '../shared/stream-sync';
 
 const { values } = parseArgs({ options: {
   chunks: { type: 'string', default: '120' }, interval: { type: 'string', default: '25' },
@@ -46,10 +47,10 @@ async function api<T>(path: string, body?: unknown, method = body === undefined 
 }
 
 async function subscriber(id: string, disconnect: boolean) {
-  const socket = new WebSocket(`${origin.replace('http:', 'ws:')}/api/conversations/${id}/sync?after=0&protocol=2`, { headers: { Cookie: cookie, Origin: origin } });
+  const socket = new WebSocket(`${origin.replace('http:', 'ws:')}/api/conversations/${id}/sync?after=0`, { headers: { Cookie: cookie, Origin: origin } });
   sockets.add(socket);
   const observed = { frames: 0, bytes: 0, disconnected: false };
-  let snapshot: Snapshot = { messages: [], seq: 0 };
+  const sync = new StreamSync();
   let failure: Error | undefined;
   await new Promise<void>((resolveReady, reject) => {
     const timer = setTimeout(() => reject(new Error('WebSocket readiness timed out')), 10_000);
@@ -59,10 +60,10 @@ async function subscriber(id: string, disconnect: boolean) {
       observed.frames++; observed.bytes += bytes.byteLength;
       try {
         const packet = JSON.parse(bytes.toString()) as SyncPacket;
-        if (packet.type === 'snapshot') snapshot = packet.snapshot;
-        if (packet.type === 'change' || packet.type === 'append') snapshot = applyChange(snapshot, packet);
-        if (packet.type === 'ready') { assert.equal(packet.seq, snapshot.seq); clearTimeout(timer); resolveReady(); }
-        if (disconnect && snapshot.messages.some((message) => message.role === 'assistant' && message.content.length > 0)) {
+        sync.receive(packet);
+        if (packet.type === 'preview') socket.send(JSON.stringify({ type: 'preview-ack', runId: packet.batch.runId, messageId: packet.batch.messageId, offset: packet.batch.endOffset }));
+        if (packet.type === 'ready') { clearTimeout(timer); resolveReady(); }
+        if (disconnect && packet.type === 'preview') {
           observed.disconnected = true; socket.close();
         }
       } catch (error) {
@@ -71,7 +72,7 @@ async function subscriber(id: string, disconnect: boolean) {
       }
     });
   });
-  return { socket, observed, snapshot: () => { if (failure) throw failure; return snapshot; } };
+  return { socket, observed, snapshot: () => { if (failure) throw failure; return sync.durable; } };
 }
 
 try {

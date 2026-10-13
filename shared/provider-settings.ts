@@ -1,18 +1,15 @@
 import * as v from 'valibot';
 import { providerOptions } from './providers';
-import type { ProviderApiKind, ProviderModel, ProviderSettingsInput } from './types';
+import type { ProviderApiKind, ProviderSettingsInput } from './types';
 
 export const providerTypes = providerOptions.map((option) => option.value) as [ProviderApiKind, ...ProviderApiKind[]];
 const modelId = v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(200));
-const modelSchema = v.union([
-  v.pipe(modelId, v.transform((id) => ({ id, name: id, enabled: true }))),
-  v.object({
-    id: modelId, name: v.pipe(v.string(), v.trim(), v.maxLength(200)), enabled: v.boolean(),
-    useGlobalSystemPrompt: v.optional(v.boolean()),
-    systemPrompt: v.optional(v.pipe(v.string(), v.maxLength(20_000))),
-    reasoningSupport: v.optional(v.picklist(['auto', 'supported', 'unsupported'])),
-  }),
-]);
+const modelSchema = v.object({
+  id: modelId, name: v.pipe(v.string(), v.trim(), v.maxLength(200)), enabled: v.boolean(),
+  useGlobalSystemPrompt: v.optional(v.boolean()),
+  systemPrompt: v.optional(v.pipe(v.string(), v.maxLength(20_000))),
+  reasoningSupport: v.optional(v.picklist(['auto', 'supported', 'unsupported'])),
+});
 const profileSchema = v.object({
   id: v.pipe(v.string(), v.uuid()),
   name: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(100)),
@@ -29,10 +26,6 @@ export const providerSettingsSchema = v.object({
   maxOutputTokens: v.optional(v.nullable(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(100_000))), null),
   showReasoning: v.optional(v.boolean()),
 });
-
-export function migrateModels(models: (ProviderModel | string)[]): ProviderModel[] {
-  return models.map((model) => typeof model === 'string' ? { id: model, name: model, enabled: true } : model);
-}
 
 export function normalizeBaseUrl(value: string): string {
   const baseUrl = value.trim().replace(/\/+$/, '');

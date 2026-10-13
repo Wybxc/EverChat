@@ -1,8 +1,8 @@
 import { DurableObject } from 'cloudflare:workers';
 import type { Env } from './env';
-import type { ChatInput, Change, DurableChange, GenerationExecutor, Message, MessageStatus, ProviderConfig, Snapshot, StreamBatch, Submission, SubmitInput } from '../shared/types';
+import type { ChatInput, Change, Commit, DurableChange, GenerationExecutor, Message, MessageStatus, ProviderConfig, Snapshot, StreamBatch, StreamCommit, Submission, SubmitInput } from '../shared/types';
 import { isActive } from '../shared/types';
-import { STREAM_VERSION, validateBatch } from '../shared/stream-batches';
+import { commitAck, STREAM_VERSION, validateCommit } from '../shared/stream-batches';
 import type { GenerationMeasurements, StreamCounts } from '../shared/generation-metrics';
 import { GenerationMeter, measuredQuery } from './generation-metrics';
 import { StreamJournal } from './stream-journal';
@@ -15,6 +15,8 @@ type Row = Message & Record<string, SqlStorageValue>;
 type Run = { id: string; conversationId: string; assistantId: string; context: string; config: string | null; chunkSeq: number; updatedAt: number;
   streamVersion: string | null; durableOffset: number; contentLength: number; reasoningLength: number;
   executor: GenerationExecutor; startedAt: number | null; cancelRequested: number } & Record<string, SqlStorageValue>;
+type Attachment = { expires: number; blocked?: boolean; runId?: string; messageId?: string; sentOffset?: number; ackedOffset?: number; ackAt?: number };
+export const SUBSCRIBER_WINDOW_BYTES = 128 * 1024;
 type Failure = { error: string; status: number };
 type Claim = { context: ChatInput[]; config?: ProviderConfig; claimed: boolean; status: MessageStatus; streamVersion?: string; assistantId?: string };
 type ActiveGeneration = { runId: string; abort: AbortController; buffer: GenerationBuffer; cancelled: boolean; failure?: Error; timer?: ReturnType<typeof setInterval> };
@@ -29,7 +31,7 @@ export class Conversation extends DurableObject<Env> {
     this.journal = new StreamJournal(this.query.bind(this));
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
     // A new instance cannot resume an old upstream socket. Recover before serving any snapshot.
-    for (const run of this.query<Run>(`SELECT runs.* FROM runs JOIN messages ON messages.id = runs.assistantId WHERE runs.executor = 'do-v1' AND messages.status = 'running'`).toArray()) {
+    for (const run of this.query<Run>(`SELECT runs.* FROM runs JOIN messages ON messages.id = runs.assistantId WHERE messages.status = 'running'`).toArray()) {
       this.finishInterrupted(run);
     }
   }
@@ -59,21 +61,34 @@ export class Conversation extends DurableObject<Env> {
     return seq;
   }
   private broadcast(change: DurableChange) {
-    // SQLite writes and events commit before the output gate releases socket sends.
-    const packet = JSON.stringify(change);
-    let recipients = 0, legacyRecipients = 0, legacyPacket: string | undefined;
-    for (const socket of this.ctx.getWebSockets()) {
-      const attachment = socket.deserializeAttachment() as { expires: number; protocol?: number };
+    // Durable confirmations pass through the storage output gate; preview packets never acknowledge storage.
+    this.sendPacket(JSON.stringify(change.type === 'commit' ? commitAck(change) : change));
+  }
+  private sendPacket(packet: string, batch?: StreamBatch, target?: WebSocket) {
+    let recipients = 0;
+    for (const socket of target ? [target] : this.ctx.getWebSockets()) {
+      const attachment = socket.deserializeAttachment() as Attachment;
+      if (attachment.blocked) continue;
       if (attachment.expires <= Date.now() / 1000) { socket.close(4001, 'Session expired'); continue; }
-      try {
-        if (change.type === 'append' && attachment.protocol !== 2) {
-          legacyPacket ??= JSON.stringify({ type: 'change', seq: change.seq, messages: [this.message(change.messageId)!] });
-          socket.send(legacyPacket); legacyRecipients++;
-        } else { socket.send(packet); recipients++; }
-      } catch { socket.close(1011, 'Reconnect to sync'); }
+      if (batch) {
+        if (attachment.runId !== batch.runId || attachment.messageId !== batch.messageId) {
+          Object.assign(attachment, { runId: batch.runId, messageId: batch.messageId, sentOffset: batch.startOffset, ackedOffset: batch.startOffset, ackAt: Date.now() });
+        }
+        if (attachment.sentOffset !== batch.startOffset || batch.endOffset - attachment.ackedOffset! > SUBSCRIBER_WINDOW_BYTES
+          || (attachment.sentOffset! > attachment.ackedOffset! && Date.now() - attachment.ackAt! > 30_000)) {
+          attachment.blocked = true; socket.serializeAttachment(attachment);
+          socket.close(4002, 'Reconnect to sync'); continue;
+        }
+        attachment.sentOffset = batch.endOffset;
+        socket.serializeAttachment(attachment);
+      }
+      try { socket.send(packet); recipients++; }
+      catch { socket.close(1011, 'Reconnect to sync'); }
     }
     this.meter?.broadcast(packet, recipients);
-    if (legacyPacket) this.meter?.broadcast(legacyPacket, legacyRecipients);
+  }
+  private preview(batch: StreamBatch, target?: WebSocket) {
+    this.sendPacket(JSON.stringify({ type: 'preview', batch }), batch, target);
   }
   private insert(message: Message) {
     this.query('INSERT INTO messages (id, role, content, status, createdAt, runId, parentId, revisionOf, error, providerId, model, modelName, reasoning, streamVersion, durableOffset) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
@@ -82,11 +97,8 @@ export class Conversation extends DurableObject<Env> {
   }
   async submit(conversationId: string, input: SubmitInput, config: ProviderConfig | null): Promise<Submission | Failure> {
     const accepted = await this.ctx.storage.transaction(async () => {
-      // Keep the old fingerprint for requests accepted before model selection was available.
-      const parts: (string | null)[] = [input.content ?? null, input.retryOf ?? null, input.revisionOf ?? null];
-      if (input.selection) parts.push(input.selection.providerId, input.selection.model);
-      if (input.showReasoning !== undefined || input.reasoningEffort) parts.push(input.showReasoning === true ? 'show-reasoning' : 'hide-reasoning', input.reasoningEffort ?? null);
-      const fingerprint = JSON.stringify(parts);
+      const fingerprint = JSON.stringify([input.content ?? null, input.retryOf ?? null, input.revisionOf ?? null,
+        input.selection?.providerId ?? null, input.selection?.model ?? null, input.showReasoning ?? null, input.reasoningEffort ?? null]);
       const duplicate = () => {
         const existing = this.query<{ fingerprint: string; result: string }>('SELECT * FROM submissions WHERE id = ?', input.requestId).toArray()[0];
         if (!existing) return null;
@@ -147,57 +159,30 @@ export class Conversation extends DurableObject<Env> {
     if (this.activeGeneration) return;
     for (const run of this.query<Run>(`SELECT runs.* FROM runs JOIN messages ON messages.id = runs.assistantId WHERE messages.status IN ('queued', 'running')`).toArray()) {
       const message = this.rawMessage(run.assistantId)!;
-      if (run.cancelRequested) {
-        if (message.status === 'running' && run.executor === 'do-v1') this.finishInterrupted(run);
-        else this.finish(run.id, 'cancelled', null, run.executor);
-        continue;
-      }
-      if (run.executor === 'do-v1') {
-        if (message.status === 'running') {
-          this.finishInterrupted(run);
-        } else {
-          const claim = this.claim(run.id, 'do-v1');
-          if (claim?.claimed) await this.runInObject(run.id, claim);
-        }
-        continue;
-      }
-      if (run.executor !== 'workflow-v1') {
-        this.finish(run.id, 'failed', '任务执行器版本不可用。已保留最近检查点，请主动重新生成。', run.executor);
-        continue;
-      }
-      if (Date.now() - run.updatedAt > 20 * 60_000) {
-        this.finish(run.id, 'failed', '后台任务已超时。已保存的内容仍可阅读，请主动重新生成。', run.executor);
-        continue;
-      }
-      if (message.status === 'queued') {
-        try {
-          await this.env.GENERATION.create({ id: run.id, params: { conversationId: run.conversationId, runId: run.id } });
-        } catch {
-          // A lost creation acknowledgement can mean the instance already exists.
-          try {
-            const status = await (await this.env.GENERATION.get(run.id)).status();
-            if (['errored', 'terminated', 'complete'].includes(status.status)) this.finish(run.id, 'failed', '后台任务未能完成，请重新生成。');
-          } catch { /* The next alarm retries the same deterministic instance ID. */ }
-        }
+      if (message.status === 'running') this.finishInterrupted(run);
+      else if (run.cancelRequested) this.finish(run.id, 'cancelled');
+      else {
+        const claim = this.claim(run.id);
+        if (claim?.claimed) await this.runInObject(run.id, claim);
       }
     }
     // Acceptance and cleanup both use transactions so cleanup cannot erase a new task's alarm.
     await this.ctx.storage.transaction(async () => {
       const pending = this.query<Run>(`SELECT runs.* FROM runs JOIN messages ON messages.id = runs.assistantId WHERE messages.status IN ('queued', 'running')`).toArray();
-      if (pending.length) await this.ctx.storage.setAlarm(Date.now() + (pending.some((run) => run.executor === 'do-v1') ? 1000 : 60_000));
+      if (pending.length) await this.ctx.storage.setAlarm(Date.now() + 1000);
       else await this.ctx.storage.deleteAlarm();
     });
   }
   private finishInterrupted(run: Run) {
     this.finish(run.id, 'failed', run.cancelRequested
       ? '停止过程中后台执行被中断。已保留最近检查点，请主动重新生成。'
-      : '后台执行被中断。已保留最近检查点，为避免重复计费，请主动重新生成。', 'do-v1');
+      : '后台执行被中断。已保留最近检查点，为避免重复计费，请主动重新生成。');
   }
   protected generateModel(...args: Parameters<typeof generate>) { return generate(...args); }
   private async runInObject(runId: string, claim: Claim) {
     const abort = new AbortController();
     const active: ActiveGeneration = { runId, abort, cancelled: false, buffer: new GenerationBuffer(runId, claim.assistantId!,
-      (batch, counts) => this.append(runId, batch, counts, 'do-v1'), this.env.GENERATION_METRICS === '1') };
+      (batches, counts) => this.commit(runId, batches, counts), (batch) => this.preview(batch), this.env.GENERATION_METRICS === '1') };
     this.activeGeneration = active;
     const timeout = setTimeout(() => abort.abort(), 14 * 60_000);
     try {
@@ -219,7 +204,7 @@ export class Conversation extends DurableObject<Env> {
       await this.generateModel(claim.config, claim.context, (delta) => receive('content', delta), abort.signal,
         async (delta) => { if (claim.config!.showReasoning) await receive('reasoning', delta); });
       active.buffer.flush();
-      this.finish(runId, active.cancelled ? 'cancelled' : 'completed', null, 'do-v1');
+      this.finish(runId, active.cancelled ? 'cancelled' : 'completed', null);
     } catch (error) {
       let failure = active.failure ?? error;
       let tailFailed = false;
@@ -228,19 +213,19 @@ export class Conversation extends DurableObject<Env> {
       }
       const cancelled = active.cancelled && !tailFailed;
       this.finish(runId, cancelled ? 'cancelled' : 'failed', cancelled ? null : failure instanceof ProviderError
-        ? failure.message : '生成中断或无法保存尾部。已保留最近检查点，请主动重新生成。', 'do-v1');
+        ? failure.message : '生成中断或无法保存尾部。已保留最近检查点，请主动重新生成。');
     } finally {
       if (active.timer) clearInterval(active.timer);
       clearTimeout(timeout); abort.abort();
       if (this.activeGeneration === active) this.activeGeneration = undefined;
     }
   }
-  claim(runId: string, executor: GenerationExecutor = 'workflow-v1'): Claim | null {
+  private claim(runId: string): Claim | null {
     const run = this.run(runId);
     const message = run && this.message(run.assistantId);
-    if (!run || !message || run.executor !== executor || run.cancelRequested) return null;
+    if (!run || !message || run.cancelRequested) return null;
     if (message.status !== 'queued') return { context: [], claimed: false, status: message.status };
-    if (this.env.GENERATION_METRICS === '1') this.meter = new GenerationMeter(runId, Date.now, 'claim-to-terminal', executor);
+    if (this.env.GENERATION_METRICS === '1') this.meter = new GenerationMeter(runId, Date.now, 'claim-to-terminal', 'do-v1');
     const change = this.ctx.storage.transactionSync(() => {
       this.query('UPDATE messages SET status = ? WHERE id = ?', 'running', message.id);
       this.query('UPDATE runs SET updatedAt = ?, startedAt = ? WHERE id = ?', Date.now(), Date.now(), runId);
@@ -250,55 +235,40 @@ export class Conversation extends DurableObject<Env> {
     return { context: JSON.parse(run.context), ...(run.config ? { config: JSON.parse(run.config) as ProviderConfig } : {}), claimed: true, status: 'running',
       streamVersion: run.streamVersion ?? undefined, assistantId: run.assistantId };
   }
-  append(runId: string, batch: StreamBatch, counts?: StreamCounts, executor: GenerationExecutor = 'workflow-v1'): boolean {
+  commit(runId: string, batches: StreamBatch[], counts?: StreamCounts): boolean {
     const run = this.run(runId), message = run && this.rawMessage(run.assistantId);
-    if (!run || !message || message.status !== 'running' || run.executor !== executor) return false;
-    if (run.streamVersion !== STREAM_VERSION || batch.runId !== runId || batch.messageId !== run.assistantId) throw new Error('Stream identity mismatch');
-    validateBatch(batch);
-    if (batch.chunkSeq <= run.chunkSeq) {
+    if (!run || !message || message.status !== 'running') return false;
+    const commit: StreamCommit = { runId, messageId: run.assistantId, batches };
+    if (run.streamVersion !== STREAM_VERSION) throw new Error('Stream identity mismatch');
+    validateCommit(commit);
+    const first = batches[0], last = batches.at(-1)!;
+    if (last.chunkSeq <= run.chunkSeq) {
       this.ctx.storage.transactionSync(() => {
-        if (this.journal.append(batch)) throw new Error('Missing acknowledged stream batch');
+        if (this.journal.append(commit)) throw new Error('Missing acknowledged stream commit');
       });
       return true;
     }
-    if (batch.chunkSeq !== run.chunkSeq + 1 || batch.startOffset !== run.durableOffset) throw new Error('Stream sequence or offset gap');
-    const contentLength = run.contentLength + batch.content.length, reasoningLength = run.reasoningLength + batch.reasoning.length;
+    if (first.chunkSeq !== run.chunkSeq + 1 || first.startOffset !== run.durableOffset) throw new Error('Stream sequence or offset gap');
+    const contentDelta = batches.reduce((sum, batch) => sum + batch.content.length, 0);
+    const reasoningDelta = batches.reduce((sum, batch) => sum + batch.reasoning.length, 0);
+    const contentLength = run.contentLength + contentDelta, reasoningLength = run.reasoningLength + reasoningDelta;
     if (contentLength > 100_000 || reasoningLength > 100_000) throw new Error('Stream exceeds message limits');
-    if (this.env.GENERATION_METRICS === '1' && !this.meter) this.meter = new GenerationMeter(runId, Date.now, 'since-last-resume', executor);
-    const change = this.ctx.storage.transactionSync(() => {
-      if (!this.journal.append(batch)) throw new Error('Conflicting stream sequence');
+    if (this.env.GENERATION_METRICS === '1' && !this.meter) this.meter = new GenerationMeter(runId, Date.now, 'since-last-resume', 'do-v1');
+    const change: Commit = this.ctx.storage.transactionSync(() => {
+      if (!this.journal.append(commit)) throw new Error('Conflicting stream sequence');
       this.query('UPDATE runs SET chunkSeq = ?, durableOffset = ?, contentLength = ?, reasoningLength = ?, updatedAt = ? WHERE id = ?',
-        batch.chunkSeq, batch.endOffset, contentLength, reasoningLength, Date.now(), runId);
-      return { type: 'append' as const, ...batch, seq: this.recordPayload(JSON.stringify(batch)) };
+        last.chunkSeq, last.endOffset, contentLength, reasoningLength, Date.now(), runId);
+      return { type: 'commit', ...commit, seq: this.recordPayload(JSON.stringify(commit)) };
     });
-    this.meter?.checkpoint(batch.content.length, batch.reasoning.length, counts);
+    this.meter?.checkpoint(contentDelta, reasoningDelta, counts);
     this.broadcast(change);
     return true;
   }
-  checkpoint(runId: string, content: string, chunkSeq: number, reasoning = '', counts?: StreamCounts): boolean {
+  finish(runId: string, status: 'completed' | 'failed' | 'cancelled', error: string | null = null) {
     const run = this.run(runId);
     const message = run && this.message(run.assistantId);
-    if (!run || !message || !isActive(message)) return false;
-    if (run.executor !== 'workflow-v1') return false;
-    if (run.streamVersion === STREAM_VERSION) throw new Error('Incremental runs require append');
-    if (chunkSeq <= run.chunkSeq) return true;
-    if (content.length > 100_000) throw new Error('回答超出 100,000 字限制。');
-    if (reasoning.length > 100_000) throw new Error('思考内容超出 100,000 字限制。');
-    if (this.env.GENERATION_METRICS === '1' && !this.meter) this.meter = new GenerationMeter(runId, Date.now, 'since-last-resume');
-    this.meter?.checkpoint(content.length, reasoning.length, counts);
-    const change = this.ctx.storage.transactionSync(() => {
-      this.query('UPDATE messages SET content = ?, reasoning = ? WHERE id = ?', content, reasoning, message.id);
-      this.query('UPDATE runs SET chunkSeq = ?, updatedAt = ? WHERE id = ?', chunkSeq, Date.now(), runId);
-      return this.record([this.message(message.id)!]);
-    });
-    this.broadcast(change);
-    return true;
-  }
-  finish(runId: string, status: 'completed' | 'failed' | 'cancelled', error: string | null = null, executor: GenerationExecutor = 'workflow-v1') {
-    const run = this.run(runId);
-    const message = run && this.message(run.assistantId);
-    if (!run || run.executor !== executor || !message || !isActive(message)) return;
-    if (this.env.GENERATION_METRICS === '1' && !this.meter) this.meter = new GenerationMeter(runId, Date.now, 'since-last-resume', executor);
+    if (!run || !message || !isActive(message)) return;
+    if (this.env.GENERATION_METRICS === '1' && !this.meter) this.meter = new GenerationMeter(runId, Date.now, 'since-last-resume', 'do-v1');
     const change = this.ctx.storage.transactionSync(() => {
       if (message.streamVersion === STREAM_VERSION) this.journal.compact(message);
       this.query('UPDATE messages SET status = ?, error = ? WHERE id = ?', status, error, message.id);
@@ -332,7 +302,7 @@ export class Conversation extends DurableObject<Env> {
     try { active?.buffer.flush(); } catch (failure) {
       if (!(failure instanceof GenerationCancelled)) error = '停止时未能保存尾部。已保留最近检查点，请主动重新生成。';
     }
-    this.finish(runId, error ? 'failed' : 'cancelled', error, run.executor);
+    this.finish(runId, error ? 'failed' : 'cancelled', error);
     await this.ctx.storage.sync();
   }
   closeSessions() { for (const socket of this.ctx.getWebSockets()) socket.close(4001, 'Signed out'); }
@@ -341,25 +311,36 @@ export class Conversation extends DurableObject<Env> {
     const [client, server] = Object.values(new WebSocketPair());
     this.ctx.acceptWebSocket(server);
     const expires = Number(request.headers.get('X-Session-Expires'));
-    const url = new URL(request.url), protocol = url.searchParams.get('protocol') === '2' ? 2 : 1;
-    server.serializeAttachment({ expires, protocol });
+    server.serializeAttachment({ expires } satisfies Attachment);
     const cursor = Number(new URL(request.url).searchParams.get('after'));
     const current = this.seq();
     const first = this.query<{ seq: number }>('SELECT COALESCE(MIN(seq), 0) AS seq FROM events').one().seq;
-    if (protocol === 1 || !Number.isSafeInteger(cursor) || cursor < first - 1 || cursor > current) {
+    if (!Number.isSafeInteger(cursor) || cursor < first - 1 || cursor > current) {
       server.send(JSON.stringify({ type: 'snapshot', snapshot: this.snapshot() }));
     } else {
       for (const row of this.query<{ seq: number; payload: string }>('SELECT * FROM events WHERE seq > ? ORDER BY seq', cursor)) {
-        const payload = JSON.parse(row.payload) as Message[] | StreamBatch;
-        server.send(JSON.stringify(Array.isArray(payload) ? { type: 'change', seq: row.seq, messages: payload } : { type: 'append', seq: row.seq, ...payload }));
+        const payload = JSON.parse(row.payload) as Message[] | StreamCommit;
+        server.send(JSON.stringify(Array.isArray(payload) ? { type: 'change', seq: row.seq, messages: payload } : { type: 'commit', seq: row.seq, ...payload }));
       }
     }
     server.send(JSON.stringify({ type: 'ready', seq: current }));
+    // No await between replay, ready and this tail: the next live preview follows exactly once.
+    for (const batch of this.activeGeneration?.buffer.previewTail ?? []) this.preview(batch, server);
     return new Response(null, { status: 101, webSocket: client });
   }
-  webSocketMessage(socket: WebSocket) {
-    const attachment = socket.deserializeAttachment() as { expires: number };
-    if (attachment.expires <= Date.now() / 1000) socket.close(4001, 'Session expired');
+  webSocketMessage(socket: WebSocket, data: string | ArrayBuffer) {
+    const attachment = socket.deserializeAttachment() as Attachment;
+    if (attachment.expires <= Date.now() / 1000) { socket.close(4001, 'Session expired'); return; }
+    if (data === 'session-check') return;
+    try {
+      if (typeof data !== 'string' || data.length > 1024) throw new Error('Invalid acknowledgement');
+      const ack = JSON.parse(data) as { type: string; runId: string; messageId: string; offset: number };
+      if (ack.type !== 'preview-ack') throw new Error('Invalid acknowledgement');
+      if (ack.runId !== attachment.runId || ack.messageId !== attachment.messageId) return;
+      if (!Number.isSafeInteger(ack.offset) || ack.offset < attachment.ackedOffset! || ack.offset > attachment.sentOffset!) return;
+      attachment.ackedOffset = ack.offset; attachment.ackAt = Date.now();
+      socket.serializeAttachment(attachment);
+    } catch { socket.close(4002, 'Reconnect to sync'); }
   }
   webSocketClose(socket: WebSocket, code: number, reason: string) {
     // Reserved status codes describe a missing close frame; they cannot be sent back on the wire.

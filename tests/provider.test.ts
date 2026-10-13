@@ -2,10 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { ProviderConfig, ProviderKind } from '../shared/types';
 import { generate, GenerationCancelled } from '../worker/provider';
-import { defaultProviderSettings, legacyProviderSettings, mergeProviderSettings, providerConfigFromEnv, publicProviderSettings, runtimeProviderConfig } from '../worker/provider-config';
+import { defaultProviderSettings, mergeProviderSettings, providerConfigFromEnv, publicProviderSettings, runtimeProviderConfig } from '../worker/provider-config';
 import { fetchProviderModels } from '../worker/provider-models';
 import type { Env } from '../worker/env';
-import { migrateModels } from '../shared/provider-settings';
 
 const config: ProviderConfig = { provider: 'openai-chat', baseUrl: 'https://provider.example/v1', model: 'test-model', systemPrompt: '系统提示', maxOutputTokens: 128, apiKey: 'private-key' };
 const history = [{ role: 'user' as const, content: '历史问题' }, { role: 'assistant' as const, content: '历史回答' }, { role: 'user' as const, content: '新问题' }];
@@ -129,18 +128,17 @@ test('provider profiles retain keys only for the same endpoint and return saved 
   assert.equal(moved.providers[0].apiKey, undefined);
   assert.equal(publicProviderSettings(settings).providers[0].apiKey, 'private-key');
   assert.equal(publicProviderSettings(settings).providers[0].hasApiKey, true);
-  assert.equal(providerConfigFromEnv({ AI_PROVIDER: 'openai-compatible', AI_MODEL: 'env-model' } as Env)?.provider, 'openai-chat');
+  assert.equal(providerConfigFromEnv({ AI_PROVIDER: 'openai-chat', AI_MODEL: 'env-model' } as Env)?.provider, 'openai-chat');
   assert.equal(runtimeProviderConfig({ ...settings, activeProviderId: null, activeModel: '' }), null);
 });
 
-test('missing model configuration and retired demo settings never produce a runtime provider', () => {
-  for (const env of [{}, { AI_PROVIDER: 'demo' }]) {
-    assert.equal(providerConfigFromEnv(env as Env), null);
-    assert.deepEqual(defaultProviderSettings(env as Env).providers, []);
-  }
+test('missing model configuration cannot generate and unknown provider types are rejected', () => {
+  assert.equal(providerConfigFromEnv({} as Env), null);
+  assert.deepEqual(defaultProviderSettings({} as Env).providers, []);
+  assert.throws(() => providerConfigFromEnv({ AI_PROVIDER: 'demo' } as Env), /AI_PROVIDER/);
+  assert.throws(() => providerConfigFromEnv({ AI_PROVIDER: 'openai-compatible' } as Env), /AI_PROVIDER/);
   assert.equal(runtimeProviderConfig({ ...settings, providers: [{ ...settings.providers[0], apiKey: undefined }] }), null);
   assert.equal(runtimeProviderConfig({ ...settings, activeModel: 'missing-model' }), null);
-  assert.deepEqual(legacyProviderSettings({ ...config, provider: 'demo' }).providers, []);
 });
 
 test('enabled model names survive persistence while disabled models cannot generate', () => {
@@ -152,10 +150,7 @@ test('enabled model names survive persistence while disabled models cannot gener
   assert.equal(runtimeProviderConfig(saved)?.modelName, '测试模型');
   const blankName = { ...settings, providers: [{ ...settings.providers[0], models: [{ id: 'test-model', name: '', enabled: true }] }] };
   assert.equal(runtimeProviderConfig(blankName)?.modelName, 'test-model');
-  assert.deepEqual(migrateModels(['legacy-model']), [{ id: 'legacy-model', name: 'legacy-model', enabled: true }]);
-  assert.deepEqual(mergeProviderSettings(settings, { ...settings, providers: [{ ...settings.providers[0], models: ['test-model'] }] }).providers[0].models,
-    [{ id: 'test-model', name: 'test-model', enabled: true }]);
-  assert.deepEqual(legacyProviderSettings(config).providers[0].models, [{ id: 'test-model', name: 'test-model', enabled: true }]);
+  assert.throws(() => mergeProviderSettings(settings, { ...settings, providers: [{ ...settings.providers[0], models: ['test-model'] }] }), /请检查/);
 });
 
 test('provider profiles reject insecure endpoints, duplicate models and invalid limits', () => {
@@ -165,7 +160,7 @@ test('provider profiles reject insecure endpoints, duplicate models and invalid 
   for (const maxOutputTokens of [0, -1, 0.5, 100001]) assert.throws(() => mergeProviderSettings(settings, { ...settings, maxOutputTokens }));
   assert.throws(() => mergeProviderSettings(settings, { ...settings, providers: [{ ...settings.providers[0], provider: 'invalid' as ProviderKind }] }));
   assert.throws(() => mergeProviderSettings(settings, { ...settings, providers: [{ ...settings.providers[0], apiKey: 'key\nheader' }] }));
-  assert.throws(() => mergeProviderSettings(settings, { ...settings, providers: [{ ...settings.providers[0], models: ['same', 'same'] }] }));
+  assert.throws(() => mergeProviderSettings(settings, { ...settings, providers: [{ ...settings.providers[0], models: [{ id: 'same', name: 'same', enabled: true }, { id: 'same', name: 'same', enabled: true }] }] }));
 });
 
 for (const provider of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'] as const) {
@@ -295,6 +290,6 @@ test('model overrides pin their prompt and validate provider reasoning support',
   assert.equal(runtimeProviderConfig(custom, undefined, 'high')?.reasoningEffort, 'high');
   assert.equal(runtimeProviderConfig(custom, undefined, 'max'), null);
   assert.equal(runtimeProviderConfig(custom)?.showReasoning, true);
-  const legacyEffort = { ...custom, providers: [{ ...custom.providers[0], models: [{ ...custom.providers[0].models[0], reasoningEffort: 'high' }] }] };
-  assert.equal(mergeProviderSettings(custom, legacyEffort).providers[0].models[0].reasoningEffort, undefined);
+  const unknownField = { ...custom, providers: [{ ...custom.providers[0], models: [{ ...custom.providers[0].models[0], reasoningEffort: 'high' }] }] };
+  assert.equal(mergeProviderSettings(custom, unknownField).providers[0].models[0].reasoningEffort, undefined);
 });

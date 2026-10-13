@@ -2,18 +2,16 @@ import type { ModelSelection, ProviderApiKind, ProviderConfig, ProviderKind, Pro
 import { modelReasoning } from '../shared/models';
 import { providerOptions } from '../shared/providers';
 import type { Env } from './env';
-import { migrateModels, providerTypes } from '../shared/provider-settings';
+import { providerTypes } from '../shared/provider-settings';
 export { normalizeBaseUrl, providerSettingsSchema, mergeProviderSettings } from '../shared/provider-settings';
 
 export function normalizeProvider(value: string | undefined): ProviderKind {
-  if (value === 'openai-compatible') return 'openai-chat';
   if (providerTypes.includes(value as ProviderApiKind)) return value as ProviderKind;
   throw new Error('AI_PROVIDER 配置无效。');
 }
 
 export function providerConfigFromEnv(env: Env): ProviderConfig | null {
-  // Retire the old environment setting without preventing existing installations from logging in.
-  if (!env.AI_PROVIDER || env.AI_PROVIDER === 'demo') return null;
+  if (!env.AI_PROVIDER) return null;
   const provider = normalizeProvider(env.AI_PROVIDER);
   const defaults = providerOptions.find((option) => option.value === provider);
   const maxOutputTokens = Number(env.MAX_OUTPUT_TOKENS);
@@ -41,7 +39,7 @@ export function defaultProviderSettings(env: Env): ProviderSettingsInput {
   const option = providerOptions.find((item) => item.value === config.provider)!;
   const profile: ProviderProfileInput = {
     id: profileId, name: option.label, provider: config.provider, baseUrl: config.baseUrl,
-    models: migrateModels(config.model ? [config.model] : []), ...(config.apiKey ? { apiKey: config.apiKey } : {}),
+    models: config.model ? [{ id: config.model, name: config.model, enabled: true }] : [], ...(config.apiKey ? { apiKey: config.apiKey } : {}),
   };
   return {
     providers: [profile], activeProviderId: config.model && config.apiKey ? profileId : null,
@@ -54,19 +52,6 @@ export function publicProviderSettings(settings: ProviderSettingsInput): Provide
   return {
     ...settings,
     providers: settings.providers.map((profile) => ({ ...profile, hasApiKey: Boolean(profile.apiKey) })),
-  };
-}
-
-export function legacyProviderSettings(config: Omit<ProviderConfig, 'provider'> & { provider: string }): ProviderSettingsInput {
-  const profileId = '00000000-0000-4000-8000-000000000001';
-  const option = providerOptions.find((item) => item.value === config.provider);
-  if (!option) return { providers: [], activeProviderId: null, activeModel: '', systemPrompt: config.systemPrompt, maxOutputTokens: config.maxOutputTokens, showReasoning: false };
-  return {
-    providers: [{ id: profileId, name: option.label, provider: option.value, baseUrl: config.baseUrl,
-      models: migrateModels(config.model ? [config.model] : []), ...(config.apiKey ? { apiKey: config.apiKey } : {}) }],
-    activeProviderId: config.model && config.apiKey ? profileId : null,
-    activeModel: config.model && config.apiKey ? config.model : '',
-    systemPrompt: config.systemPrompt, maxOutputTokens: config.maxOutputTokens, showReasoning: false,
   };
 }
 

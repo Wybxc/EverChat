@@ -1,7 +1,8 @@
-import type { StreamBatch } from './types';
+import type { Commit, CommitAck, StreamBatch, StreamCommit } from './types';
 
 export const STREAM_VERSION = 'semantic-delta-v1' as const;
 export const MAX_BATCH_BYTES = 64 * 1024;
+export const MAX_COMMIT_BYTES = 64 * 1024;
 const encoder = new TextEncoder();
 
 // Byte offsets refer to a canonical JSON delta stream, not to supplier SSE bytes.
@@ -35,4 +36,24 @@ export function validateBatch(batch: StreamBatch) {
   const size = payloadBytes(payload);
   if (size > MAX_BATCH_BYTES || batch.endOffset !== batch.startOffset + size) throw new Error('Invalid stream batch size or offset');
   return payload;
+}
+
+export function validateCommit(commit: StreamCommit): string {
+  if (!Array.isArray(commit.batches) || !commit.batches.length || commit.batches.length > 32) throw new Error('Invalid stream commit');
+  let previous: StreamBatch | undefined;
+  for (const batch of commit.batches) {
+    validateBatch(batch);
+    if (batch.runId !== commit.runId || batch.messageId !== commit.messageId
+      || (previous && (batch.startOffset !== previous.endOffset || batch.chunkSeq !== previous.chunkSeq + 1))) throw new Error('Stream commit gap or identity mismatch');
+    previous = batch;
+  }
+  const payload = JSON.stringify(commit.batches);
+  if (payloadBytes(payload) > MAX_COMMIT_BYTES) throw new Error('Stream commit exceeds buffer limit');
+  return payload;
+}
+
+export function commitAck(commit: Commit): CommitAck {
+  const first = commit.batches[0], last = commit.batches.at(-1)!;
+  return { type: 'commit-ack', seq: commit.seq, runId: commit.runId, messageId: commit.messageId,
+    firstChunkSeq: first.chunkSeq, lastChunkSeq: last.chunkSeq, startOffset: first.startOffset, endOffset: last.endOffset };
 }

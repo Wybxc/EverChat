@@ -1,44 +1,47 @@
-import { appendMessage, type Message, type StreamBatch } from '../shared/types';
-import { STREAM_VERSION, validateBatch } from '../shared/stream-batches';
+import { appendMessage, type Message, type StreamBatch, type StreamCommit } from '../shared/types';
+import { STREAM_VERSION, validateCommit } from '../shared/stream-batches';
 import type { SqlQuery } from './generation-metrics';
 
-type BatchRow = { chunkSeq: number; startOffset: number; endOffset: number; payload: string } & Record<string, SqlStorageValue>;
+type CommitRow = { chunkSeq: number; endSeq: number; startOffset: number; endOffset: number; payload: string } & Record<string, SqlStorageValue>;
 
-export const STREAM_JOURNAL_SCHEMA = `CREATE TABLE IF NOT EXISTS stream_batches (
-  runId TEXT NOT NULL, chunkSeq INTEGER NOT NULL, startOffset INTEGER NOT NULL, endOffset INTEGER NOT NULL,
+export const STREAM_JOURNAL_SCHEMA = `CREATE TABLE IF NOT EXISTS stream_commits (
+  runId TEXT NOT NULL, chunkSeq INTEGER NOT NULL, endSeq INTEGER NOT NULL, startOffset INTEGER NOT NULL, endOffset INTEGER NOT NULL,
   payload TEXT NOT NULL, PRIMARY KEY (runId, chunkSeq)
 ) WITHOUT ROWID`;
 
-// All methods are synchronous. The caller groups append/ack and compact/terminal into a storage transaction.
+// The caller atomically commits the journal, progress and event, or compacts the terminal snapshot.
 export class StreamJournal {
   constructor(private readonly query: SqlQuery) {}
-  append(batch: StreamBatch) {
-    const payload = validateBatch(batch);
-    const existing = this.query<BatchRow>('SELECT chunkSeq, startOffset, endOffset, payload FROM stream_batches WHERE runId = ? AND chunkSeq = ?', batch.runId, batch.chunkSeq).toArray()[0];
+  append(commit: StreamCommit) {
+    const payload = validateCommit(commit), first = commit.batches[0], last = commit.batches.at(-1)!;
+    const existing = this.query<CommitRow>('SELECT * FROM stream_commits WHERE runId = ? AND chunkSeq = ?', commit.runId, first.chunkSeq).toArray()[0];
     if (existing) {
-      if (existing.startOffset !== batch.startOffset || existing.endOffset !== batch.endOffset || existing.payload !== payload) throw new Error('Conflicting stream batch');
+      if (existing.startOffset !== first.startOffset || existing.endOffset !== last.endOffset || existing.endSeq !== last.chunkSeq || existing.payload !== payload) throw new Error('Conflicting stream commit');
       return false;
     }
-    this.query('INSERT INTO stream_batches (runId, chunkSeq, startOffset, endOffset, payload) VALUES (?, ?, ?, ?, ?)',
-      batch.runId, batch.chunkSeq, batch.startOffset, batch.endOffset, payload);
+    this.query('INSERT INTO stream_commits (runId, chunkSeq, endSeq, startOffset, endOffset, payload) VALUES (?, ?, ?, ?, ?, ?)',
+      commit.runId, first.chunkSeq, last.chunkSeq, first.startOffset, last.endOffset, payload);
     return true;
   }
   materialize(message: Message): Message {
     if (message.streamVersion !== STREAM_VERSION || !message.runId) return message;
-    const rows = this.query<BatchRow>('SELECT chunkSeq, startOffset, endOffset, payload FROM stream_batches WHERE runId = ? ORDER BY chunkSeq', message.runId).toArray();
-    let result = message;
-    let sequence = 0;
+    const rows = this.query<CommitRow>('SELECT * FROM stream_commits WHERE runId = ? ORDER BY chunkSeq', message.runId).toArray();
+    let result = message, sequence = 0;
     for (const row of rows) {
-      if (row.chunkSeq !== ++sequence) throw new Error('Stream sequence gap');
-      const delta = JSON.parse(row.payload) as { content: string; reasoning: string };
-      const batch: StreamBatch = { version: STREAM_VERSION, runId: message.runId, messageId: message.id, ...row, ...delta };
-      result = appendMessage(result, batch);
+      const batches = JSON.parse(row.payload) as StreamBatch[];
+      validateCommit({ runId: message.runId, messageId: message.id, batches });
+      const first = batches[0], last = batches.at(-1)!;
+      if (row.chunkSeq !== first.chunkSeq || row.endSeq !== last.chunkSeq || row.startOffset !== first.startOffset || row.endOffset !== last.endOffset) throw new Error('Stream journal boundary mismatch');
+      for (const batch of batches) {
+        if (batch.chunkSeq !== ++sequence) throw new Error('Stream sequence gap');
+        result = appendMessage(result, batch);
+      }
     }
     return result;
   }
   compact(message: Message) {
     this.query('UPDATE messages SET content = ?, reasoning = ?, durableOffset = ? WHERE id = ?',
       message.content, message.reasoning ?? '', message.durableOffset ?? 0, message.id);
-    this.query('DELETE FROM stream_batches WHERE runId = ?', message.runId);
+    this.query('DELETE FROM stream_commits WHERE runId = ?', message.runId);
   }
 }

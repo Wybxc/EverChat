@@ -1,12 +1,10 @@
 import type { Conversation } from './conversation';
 import type { Library } from './library';
-import type { GenerationParams } from '../shared/types';
 
 export interface Env {
   ASSETS: Fetcher;
   CONVERSATIONS: DurableObjectNamespace<Conversation>;
   LIBRARY: DurableObjectNamespace<Library>;
-  GENERATION: Workflow<GenerationParams>;
   APP_PASSWORD?: string;
   SESSION_SECRET?: string;
   AI_API_KEY?: string;

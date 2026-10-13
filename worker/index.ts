@@ -10,7 +10,6 @@ import { ProviderModelError, fetchProviderModels } from './provider-models';
 
 export { Conversation } from './conversation';
 export { Library } from './library';
-export { GenerationWorkflow } from './workflow';
 
 type AppEnv = { Bindings: Env };
 const app = new Hono<AppEnv>().basePath('/api');

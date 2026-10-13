@@ -1,18 +1,13 @@
 import { DurableObject } from 'cloudflare:workers';
 import type { Env } from './env';
 import type { ConversationInfo, ModelSelection, ProviderConfig, ProviderModelConfig, ProviderSettings, ProviderSettingsInput, ReasoningEffort } from '../shared/types';
-import { migrateModels } from '../shared/provider-settings';
-import { defaultProviderSettings, legacyProviderSettings, mergeProviderSettings, publicProviderSettings, runtimeProviderConfig } from './provider-config';
+import { defaultProviderSettings, mergeProviderSettings, publicProviderSettings, runtimeProviderConfig } from './provider-config';
 
 export class Library extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS conversations (id TEXT PRIMARY KEY, title TEXT NOT NULL, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL)`);
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS login_attempts (ip TEXT PRIMARY KEY, attempts INTEGER NOT NULL, startedAt INTEGER NOT NULL)`);
-    ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS provider_config (
-      id INTEGER PRIMARY KEY CHECK (id = 1), provider TEXT NOT NULL, baseUrl TEXT NOT NULL,
-      model TEXT NOT NULL, systemPrompt TEXT NOT NULL, maxOutputTokens INTEGER NOT NULL, apiKey TEXT
-    )`);
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS provider_profiles (
       id TEXT PRIMARY KEY, name TEXT NOT NULL, provider TEXT NOT NULL, baseUrl TEXT NOT NULL,
       models TEXT NOT NULL, apiKey TEXT
@@ -21,9 +16,7 @@ export class Library extends DurableObject<Env> {
       id INTEGER PRIMARY KEY CHECK (id = 1), activeProviderId TEXT, activeModel TEXT NOT NULL,
       systemPrompt TEXT NOT NULL, maxOutputTokens INTEGER NOT NULL, showReasoning INTEGER NOT NULL DEFAULT 0
     )`);
-    if (!ctx.storage.sql.exec<{ name: string }>('PRAGMA table_info(provider_preferences)').toArray().some((row) => row.name === 'showReasoning')) {
-      ctx.storage.sql.exec('ALTER TABLE provider_preferences ADD COLUMN showReasoning INTEGER NOT NULL DEFAULT 0');
-    }
+
   }
   list(): ConversationInfo[] {
     return this.ctx.storage.sql.exec<ConversationInfo & Record<string, SqlStorageValue>>('SELECT * FROM conversations ORDER BY updatedAt DESC LIMIT 500').toArray();
@@ -50,7 +43,7 @@ export class Library extends DurableObject<Env> {
       return {
         providers: profiles.map((profile) => ({
           id: profile.id, name: profile.name, provider: profile.provider, baseUrl: profile.baseUrl,
-          models: migrateModels(JSON.parse(profile.models)), ...(profile.apiKey ? { apiKey: profile.apiKey } : {}),
+          models: JSON.parse(profile.models), ...(profile.apiKey ? { apiKey: profile.apiKey } : {}),
         })),
         activeProviderId: preferences?.activeProviderId ?? null,
         activeModel: preferences?.activeModel ?? '',
@@ -59,10 +52,6 @@ export class Library extends DurableObject<Env> {
         showReasoning: Boolean(preferences?.showReasoning ?? defaults.showReasoning),
       };
     }
-    const legacy = this.ctx.storage.sql.exec<ProviderConfig & Record<string, SqlStorageValue>>(
-      'SELECT provider, baseUrl, model, systemPrompt, maxOutputTokens, apiKey FROM provider_config WHERE id = 1',
-    ).toArray()[0];
-    if (legacy) return legacyProviderSettings({ ...legacy, maxOutputTokens: Number(legacy.maxOutputTokens) || null });
     return defaultProviderSettings(this.env);
   }
   providerConfig(selection?: ModelSelection, effort?: ReasoningEffort): ProviderConfig | null {
@@ -77,7 +66,6 @@ export class Library extends DurableObject<Env> {
     try { settings = mergeProviderSettings(this.providerSettingsData(), input); }
     catch (error) { return { error: error instanceof Error ? error.message : '供应商配置无效。' }; }
     this.ctx.storage.transactionSync(() => {
-      this.ctx.storage.sql.exec('DELETE FROM provider_config WHERE id = 1');
       this.ctx.storage.sql.exec('DELETE FROM provider_profiles');
       for (const profile of settings.providers) {
         this.ctx.storage.sql.exec('INSERT INTO provider_profiles (id, name, provider, baseUrl, models, apiKey) VALUES (?, ?, ?, ?, ?, ?)',
@@ -86,7 +74,7 @@ export class Library extends DurableObject<Env> {
       this.ctx.storage.sql.exec(`INSERT INTO provider_preferences (id, activeProviderId, activeModel, systemPrompt, maxOutputTokens, showReasoning)
         VALUES (1, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET activeProviderId = excluded.activeProviderId,
         activeModel = excluded.activeModel, systemPrompt = excluded.systemPrompt, maxOutputTokens = excluded.maxOutputTokens, showReasoning = excluded.showReasoning`,
-      // Use 0 for an unset limit in the existing NOT NULL SQLite column.
+      // Store an unset limit as 0 in SQLite; expose it as null through the API.
       settings.activeProviderId, settings.activeModel, settings.systemPrompt, settings.maxOutputTokens ?? 0, settings.showReasoning);
     });
     return { settings: publicProviderSettings(settings) };

@@ -8,7 +8,7 @@ async function login(page: Page) {
   await page.getByRole('button', { name: '进入我的空间' }).click();
   await expect(page.getByLabel('消息', { exact: true })).toBeVisible();
   const response = await page.request.put('/api/settings/providers', { headers: { Origin: origin }, data: {
-    providers: [{ id: '00000000-0000-4000-8000-000000000099', name: 'Integration', provider: 'openai-chat', baseUrl: 'https://provider.test/v1', models: ['test-model'], apiKey: 'integration-test-key' }],
+    providers: [{ id: '00000000-0000-4000-8000-000000000099', name: 'Integration', provider: 'openai-chat', baseUrl: 'https://provider.test/v1', models: [{ id: 'test-model', name: 'test-model', enabled: true }], apiKey: 'integration-test-key' }],
     activeProviderId: '00000000-0000-4000-8000-000000000099', activeModel: 'test-model', systemPrompt: '', maxOutputTokens: 128,
   } });
   expect(response.status()).toBe(200);

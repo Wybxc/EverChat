@@ -85,7 +85,7 @@ function MessageView({ message, busy, onRetry, onEdit }: { message: Message; bus
       <button className="btn btn-ghost btn-xs btn-square sm:opacity-0 sm:group-hover:opacity-100 sm:focus:opacity-100" aria-label="编辑为新版本" title="编辑为新版本" disabled={busy} onClick={onEdit}><Pencil size={12} /></button>
     </div>
   </article>;
-  return <article data-testid="assistant-message" data-status={message.status} className="group flex gap-3 sm:gap-4">
+  return <article data-testid="assistant-message" data-status={message.status} data-durable-offset={message.durableOffset ?? 0} data-live-offset={message.liveOffset ?? message.durableOffset ?? 0} className="group flex gap-3 sm:gap-4">
     <span className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-base-content/50 bg-base-100"><InfinityIcon size={20} strokeWidth={1.7} /></span>
     <div className="min-w-0 flex-1 pt-1">
       <div className="mb-3 flex items-center gap-3 text-xs"><span className="font-semibold">{message.modelName || message.model || 'EverChat'}</span>{message.revisionOf && <span className="text-base-content/60">新版本</span>}{isActive(message) && <span className="flex items-center gap-1.5 text-base-content/60"><span className="loading loading-dots loading-xs" />{message.status === 'queued' ? '排队中' : '生成中'}</span>}</div>
@@ -143,7 +143,7 @@ export function App() {
   const sessionRef = useRef(session);
   sessionRef.current = session;
   const loggedOut = useCallback(() => { setSession((current) => ({ ...(current ?? EMPTY_SESSION), authenticated: false })); }, []);
-  const { snapshot, connection, syncedAt, loading } = useConversation(selected, Boolean(session?.authenticated), loggedOut);
+  const { snapshot, durableSnapshot, hasUnconfirmed, connection, syncedAt, loading } = useConversation(selected, Boolean(session?.authenticated), loggedOut);
   const active = snapshot.messages.find(isActive);
   const currentPending = pending.find((item) => item.conversation.id === selected);
   const libraryQuery = useQuery({
@@ -291,14 +291,14 @@ export function App() {
     } catch (error) { setError(error instanceof Error ? error.message : '退出失败，请联网后重试。'); settings.current?.close(); }
   };
   const exportChat = () => {
-    const text = `# ${currentConversation?.title ?? 'EverChat'}\n\n` + snapshot.messages.map((message) => `## ${message.role === 'user' ? '你' : 'EverChat'}${message.revisionOf ? ' · 新版本' : ''}\n\n${message.content}\n\n${message.error ? `> ${message.error}\n\n` : ''}`).join('');
+    const text = `# ${currentConversation?.title ?? 'EverChat'}\n\n` + durableSnapshot.messages.map((message) => `## ${message.role === 'user' ? '你' : 'EverChat'}${message.revisionOf ? ' · 新版本' : ''}\n\n${message.content}\n\n${message.error ? `> ${message.error}\n\n` : ''}`).join('');
     const url = URL.createObjectURL(new Blob([text], { type: 'text/markdown;charset=utf-8' }));
     const link = document.createElement('a'); link.href = url; link.download = `EverChat-${selected}.md`; link.click(); URL.revokeObjectURL(url);
   };
 
   if (!session) return <main className="flex min-h-dvh flex-col items-center justify-center gap-6"><Brand />{bootError ? <><p className="max-w-sm px-5 text-center text-sm font-medium text-base-content" role="alert">{bootError}</p><button className="btn" onClick={boot}>重新连接</button></> : <span className="loading loading-dots loading-sm text-base-content/60" />}</main>;
   if (!session.authenticated) return <Login session={session} onLogin={async () => { await boot(); }} />;
-  const statusText = connection === 'offline' ? '离线' : connection === 'connecting' ? '连接中' : '已同步';
+  const statusText = connection === 'offline' ? '离线' : connection === 'connecting' ? '连接中' : hasUnconfirmed ? '保存中' : '已同步';
   const welcome = !selected || (!snapshot.messages.length && !currentPending && !loading);
   return <div className="flex h-dvh overflow-hidden">
     {sidebarOpen && <button aria-label="关闭对话列表" className="fixed inset-0 z-30 bg-neutral/20 backdrop-blur-sm lg:hidden" onClick={closeSidebar} />}
@@ -320,7 +320,7 @@ export function App() {
     <div className="flex min-w-0 flex-1 flex-col">
       <header className="flex h-18 shrink-0 items-center justify-between border-b border-base-content/50 px-5 sm:px-8">
         <div className="flex min-w-0 items-center gap-3"><button ref={mobileSidebarTrigger} className="btn btn-ghost btn-sm btn-square lg:hidden" onClick={() => setSidebarOpen(true)} aria-label="打开对话列表"><Menu size={19} /></button><div className="min-w-0"><p className="truncate text-sm font-medium">{currentConversation?.title ?? '新对话'}</p><p className="mt-1 text-[10px] text-base-content/60">{selectedModel?.name || session.modelName || session.model || '未选择模型'}</p></div></div>
-        <div className="flex shrink-0 items-center gap-3"><span aria-live="polite" className="hidden items-center gap-1.5 text-[11px] text-base-content/60 sm:flex" title={syncedAt ? `上次同步 ${new Date(syncedAt).toLocaleTimeString('zh-CN')}` : undefined}>{connection === 'offline' ? <CloudOff size={14} /> : <span className={`h-1.5 w-1.5 rounded-full ${connection === 'connected' ? 'bg-success' : 'bg-warning'}`} />}{statusText}</span>{snapshot.messages.length > 0 && <button aria-label="导出对话" title="导出 Markdown" className="btn btn-ghost btn-sm btn-square" onClick={exportChat}><Download size={16} /></button>}<button aria-label="空间设置" className="btn btn-ghost btn-sm btn-square" onClick={openSettings}><Settings size={17} /></button></div>
+        <div className="flex shrink-0 items-center gap-3"><span aria-live="polite" className="hidden items-center gap-1.5 text-[11px] text-base-content/60 sm:flex" title={syncedAt ? `上次同步 ${new Date(syncedAt).toLocaleTimeString('zh-CN')}` : undefined}>{connection === 'offline' ? <CloudOff size={14} /> : <span className={`status status-xs ${connection === 'connected' && !hasUnconfirmed ? 'status-success' : 'status-warning'}`} />}{statusText}</span>{snapshot.messages.length > 0 && <button aria-label="导出对话" title="导出 Markdown" className="btn btn-ghost btn-sm btn-square" onClick={exportChat}><Download size={16} /></button>}<button aria-label="空间设置" className="btn btn-ghost btn-sm btn-square" onClick={openSettings}><Settings size={17} /></button></div>
       </header>
       {connection === 'offline' && <div role="status" className="flex items-center justify-center gap-2 border-b border-base-content/50 bg-base-200 px-4 py-2 text-xs text-base-content"><WifiOff size={13} />你现在离线，已保存的对话仍可阅读。新消息将在联网后发送。</div>}
       <div ref={viewportRef} className="relative flex-1 overflow-y-auto">
