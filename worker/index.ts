@@ -7,6 +7,7 @@ import { HttpError, json, parseBody, type AppContext } from './http';
 import { providerSettingsSchema } from './provider-config';
 import { chatModels } from '../shared/models';
 import { ProviderModelError, fetchProviderModels } from './provider-models';
+import { storageErrorMessage } from './resource-limits';
 
 export { Conversation } from './conversation';
 export { Library } from './library';
@@ -118,8 +119,9 @@ app.post('/conversations', async (context) => {
   const { id, title } = await parseBody(context, conversationSchema);
   if (!title.trim()) throw new HttpError(400, '对话 ID 或标题无效。');
   const library = context.env.LIBRARY.getByName('personal');
-  if ((await library.list()).length >= 500 && !await library.get(id)) throw new HttpError(400, '原型最多保存 500 个对话。');
-  return json(await library.create(id, title.trim()), 201);
+  const result = await library.create(id, title.trim());
+  if ('error' in result) return json({ error: result.error }, result.status);
+  return json(result, 201);
 });
 
 app.get('/conversations/:id', async (context) => {
@@ -196,6 +198,8 @@ app.patch('/conversations/:id/title', async (context) => {
 app.notFound(() => json({ error: '找不到这个接口。' }, 404));
 app.onError((error) => {
   if (error instanceof HttpError) return json({ error: error.message }, error.status);
+  const storage = storageErrorMessage(error);
+  if (storage) return json({ error: storage }, 507);
   console.error('EverChat request failed', error instanceof Error ? error.name : 'UnknownError');
   return json({ error: '服务暂时不可用，请稍后重试。' }, 500);
 });

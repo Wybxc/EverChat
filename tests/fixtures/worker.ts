@@ -1,15 +1,51 @@
 // Test entry point: production API and runtime, mock upstream plus isolated fault-injection RPCs.
-import production, { Conversation as ProductionConversation } from '../../worker/index';
+import production, { Conversation as ProductionConversation, Library as ProductionLibrary } from '../../worker/index';
 import { authenticated } from '../../worker/auth';
 import type { Env } from '../../worker/env';
 import type { openProviderStream } from '../../worker/provider';
 import type { StreamBatch } from '../../shared/types';
 import { providerStreams } from './provider-streams';
 import type { ProviderKind } from '../../shared/types';
-export { Library } from '../../worker/index';
+import { MAX_CONVERSATIONS, MAX_DATABASE_BYTES } from '../../worker/resource-limits';
+
+export class Library extends ProductionLibrary {
+  fixtureCapacity(seed: boolean) {
+    const sql = this.ctx.storage.sql;
+    this.ctx.storage.transactionSync(() => {
+      sql.exec("DELETE FROM conversations WHERE title = '__capacity_fixture__'");
+      if (seed) {
+        const count = sql.exec<{ count: number }>('SELECT COUNT(*) AS count FROM conversations').one().count;
+        for (let index = count; index < MAX_CONVERSATIONS - 1; index++) this.create(crypto.randomUUID(), '__capacity_fixture__');
+      }
+    });
+    return { count: sql.exec<{ count: number }>('SELECT COUNT(*) AS count FROM conversations').one().count };
+  }
+}
 
 export class Conversation extends ProductionConversation {
   private failNextCommit = false;
+  override snapshotResponse() {
+    const faults = this.ctx.storage.sql.exec("SELECT name FROM sqlite_master WHERE name = 'fixture_storage_fault'").toArray();
+    if (faults.length) throw new Error('SQLITE_FULL private fixture diagnostic');
+    return super.snapshotResponse();
+  }
+  fixtureStorageError() { this.ctx.storage.sql.exec('CREATE TABLE fixture_storage_fault (id INTEGER)'); }
+  fixtureFillDatabase(target: number) {
+    if (!Number.isInteger(target) || target < 0 || target > MAX_DATABASE_BYTES - 512 * 1024) throw new Error('Invalid storage fixture size');
+    const sql = this.ctx.storage.sql;
+    sql.exec('CREATE TABLE IF NOT EXISTS fixture_padding (payload BLOB NOT NULL)');
+    while (sql.databaseSize < target) sql.exec('INSERT INTO fixture_padding VALUES (zeroblob(?))', Math.min(256 * 1024, target - sql.databaseSize));
+    return this.fixtureResources();
+  }
+  fixtureResources() {
+    const sql = this.ctx.storage.sql;
+    const hasCalls = sql.exec("SELECT name FROM sqlite_master WHERE name = 'fixture_calls'").toArray().length;
+    return { databaseBytes: sql.databaseSize, messages: sql.exec<{ count: number }>('SELECT COUNT(*) AS count FROM messages').one().count,
+      runs: sql.exec<{ count: number }>('SELECT COUNT(*) AS count FROM runs').one().count,
+      retainedContexts: sql.exec<{ count: number }>("SELECT COUNT(*) AS count FROM runs WHERE context != '[]'").one().count,
+      journalRows: sql.exec<{ count: number }>('SELECT COUNT(*) AS count FROM stream_commits').one().count,
+      calls: hasCalls ? sql.exec<{ calls: number }>('SELECT COALESCE(SUM(calls), 0) AS calls FROM fixture_calls').one().calls : 0 };
+  }
   protected override async openModelStream(...args: Parameters<typeof openProviderStream>) {
     if (args[0].model.startsWith('alarm-')) {
       this.ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS fixture_calls (runId TEXT PRIMARY KEY, calls INTEGER NOT NULL)');
@@ -76,13 +112,22 @@ export class Conversation extends ProductionConversation {
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext) {
     const url = new URL(request.url);
-    const match = /^\/api\/__test\/conversations\/([0-9a-f-]{36})\/(state|alarm|abort|abort-stop|history)$/.exec(url.pathname);
+    if (url.pathname === '/api/__test/library/capacity') {
+      if (request.method !== 'POST' || request.headers.get('Origin') !== url.origin) return new Response('Forbidden', { status: 403 });
+      if (!await authenticated(request, env)) return new Response('Unauthorized', { status: 401 });
+      const { seed } = await request.json() as { seed: boolean };
+      return Response.json(await (env.LIBRARY as unknown as DurableObjectNamespace<Library>).getByName('personal').fixtureCapacity(seed));
+    }
+    const match = /^\/api\/__test\/conversations\/([0-9a-f-]{36})\/(state|alarm|abort|abort-stop|history|fill|resources|storage-error)$/.exec(url.pathname);
     if (!match) return production.fetch(request, env, ctx);
     if (request.method !== 'POST' || request.headers.get('Origin') !== url.origin) return new Response('Forbidden', { status: 403 });
     if (!await authenticated(request, env)) return new Response('Unauthorized', { status: 401 });
-    const { runId, pairs } = await request.json() as { runId: string; pairs: number };
+    const { runId, pairs, target } = await request.json() as { runId: string; pairs: number; target: number };
     const conversation = (env.CONVERSATIONS as unknown as DurableObjectNamespace<Conversation>).getByName(match[1]);
     switch (match[2]) {
+      case 'fill': return Response.json(await conversation.fixtureFillDatabase(target));
+      case 'resources': return Response.json(await conversation.fixtureResources());
+      case 'storage-error': await conversation.fixtureStorageError(); break;
       case 'history': return Response.json(await conversation.fixtureHistory(pairs));
       case 'state': return Response.json(await conversation.fixtureState(runId));
       case 'alarm': await conversation.fixtureReenterAlarm(); break;

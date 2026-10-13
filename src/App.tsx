@@ -143,9 +143,9 @@ export function App() {
   const sessionRef = useRef(session);
   sessionRef.current = session;
   const loggedOut = useCallback(() => { setSession((current) => ({ ...(current ?? EMPTY_SESSION), authenticated: false })); }, []);
-  const { snapshot, durableSnapshot, hasUnconfirmed, connection, syncedAt, loading } = useConversation(selected, Boolean(session?.authenticated), loggedOut);
-  const active = snapshot.messages.find(isActive);
   const currentPending = pending.find((item) => item.conversation.id === selected);
+  const { snapshot, durableSnapshot, hasUnconfirmed, connection, syncedAt, loading, syncError, reconnect } = useConversation(selected, Boolean(session?.authenticated), loggedOut, Boolean(currentPending && !currentPending.error));
+  const active = snapshot.messages.find(isActive);
   const libraryQuery = useQuery({
     queryKey: ['conversations'],
     queryFn: () => api<ConversationInfo[]>('/conversations'),
@@ -160,7 +160,7 @@ export function App() {
     const local = localConversations.filter((item) => !cloudIds.has(item.id) && !queued.some((next) => next.id === item.id));
     return [...queued, ...local, ...cloud];
   }, [libraryQuery.data, localConversations, pending]);
-  const busy = Boolean(active || currentPending || sending);
+  const busy = Boolean(active || currentPending || sending || syncError);
   const currentConversation = conversations.find((item) => item.id === selected);
 
   const boot = useCallback(async () => {
@@ -298,7 +298,7 @@ export function App() {
 
   if (!session) return <main className="flex min-h-dvh flex-col items-center justify-center gap-6"><Brand />{bootError ? <><p className="max-w-sm px-5 text-center text-sm font-medium text-base-content" role="alert">{bootError}</p><button className="btn" onClick={boot}>重新连接</button></> : <span className="loading loading-dots loading-sm text-base-content/60" />}</main>;
   if (!session.authenticated) return <Login session={session} onLogin={async () => { await boot(); }} />;
-  const statusText = connection === 'offline' ? '离线' : connection === 'connecting' ? '连接中' : hasUnconfirmed ? '保存中' : '已同步';
+  const statusText = connection === 'unavailable' ? '同步失败' : connection === 'offline' ? '离线' : connection === 'connecting' ? '连接中' : hasUnconfirmed ? '保存中' : '已同步';
   const welcome = !selected || (!snapshot.messages.length && !currentPending && !loading);
   return <div className="flex h-dvh overflow-hidden">
     {sidebarOpen && <button aria-label="关闭对话列表" className="fixed inset-0 z-30 bg-neutral/20 backdrop-blur-sm lg:hidden" onClick={closeSidebar} />}
@@ -339,6 +339,7 @@ export function App() {
       <div className="relative shrink-0 px-4 pt-2 pb-3 sm:px-8 sm:pb-5" style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
         {!atBottom && <button className="btn btn-circle btn-sm absolute -top-12 left-1/2 z-10 border-base-content/50 bg-base-100 shadow-sm" aria-label="滚动到最新消息" onClick={scrollToBottom}><ArrowDown size={16} /></button>}
         <div className="mx-auto w-full max-w-3xl">
+          {syncError && <div role="alert" className="alert alert-error mb-3 text-xs"><span>{syncError}</span><button type="button" className="btn btn-sm" onClick={reconnect}>重新同步</button></div>}
           {error && <p role="alert" className="mb-3 text-xs font-medium text-base-content">{error}</p>}
           {revisionOf && <div className="mb-2 flex items-center justify-between text-xs text-base-content/60"><span>编辑消息</span><button className="btn btn-ghost btn-xs" onClick={() => { setRevisionOf(undefined); write(`draft:${selected}`, { text: draft }); }}>取消</button></div>}
           <form onSubmit={submit} className="rounded-2xl border border-base-content/50 bg-base-100 p-3 shadow-[0_3px_16px_-7px_rgba(39,55,47,0.12)] sm:p-4">

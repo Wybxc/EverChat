@@ -5,6 +5,17 @@ import { providerStreams } from './fixtures/provider-streams';
 import type { ProviderKind } from '../shared/types';
 const encoder = new TextEncoder();
 
+test('Responses bounds thought identities while retaining an already decoded prefix', () => {
+  const parser = new ProviderStream('openai-responses', true);
+  for (const event of [
+    { type: 'response.reasoning_text.delta', item_id: 'thought', delta: '已保存思考' },
+    { type: 'response.reasoning_text.delta', item_id: 'x'.repeat(201), delta: '超限片段' },
+  ]) parser.feed(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+  assert.equal(parser.reasoning, '已保存思考');
+  assert.match(parser.checkpoint().failure ?? '', /标识超过/);
+  assert.deepEqual(parser.checkpoint().thoughts, [{ id: 'thought:0', raw: '已保存思考', summary: '' }]);
+});
+
 for (const [protocol, fixture] of Object.entries(providerStreams)) {
   const kind = protocol as ProviderKind;
   test(`${kind} restores across every raw byte boundary, including partial UTF-8, CRLF and JSON`, () => {

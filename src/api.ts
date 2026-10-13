@@ -8,7 +8,12 @@ export async function api<T>(path: string, method = 'GET', body?: unknown): Prom
     body: body === undefined ? undefined : JSON.stringify(body),
     signal: AbortSignal.timeout(20_000),
   });
-  const result = await response.json();
-  if (!response.ok) throw new ApiError(response.status, result.error ?? '请求失败，请稍后重试。');
+  let result: { error?: string };
+  try { result = await response.json(); }
+  catch {
+    if (!response.ok) throw new ApiError(response.status, '云端服务暂时不可用，请稍后重试。');
+    throw new Error('云端响应格式无效，请重新同步。');
+  }
+  if (!response.ok) throw new ApiError(response.status, typeof result?.error === 'string' ? result.error : '请求失败，请稍后重试。');
   return result as T;
 }

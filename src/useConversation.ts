@@ -6,14 +6,16 @@ import { SnapshotWriter } from './snapshot-writer';
 import { api, ApiError } from './api';
 import { cachedSnapshot, storageEpoch, write } from './storage';
 
-export type Connection = 'connected' | 'connecting' | 'offline';
-export function useConversation(id: string | null, enabled: boolean, onUnauthorized: () => void) {
+export type Connection = 'connected' | 'connecting' | 'offline' | 'unavailable';
+export function useConversation(id: string | null, enabled: boolean, onUnauthorized: () => void, awaitingAcceptance = false) {
   const [snapshot, setSnapshot] = useState<Snapshot>({ messages: [], seq: 0 });
   const [durableSnapshot, setDurableSnapshot] = useState<Snapshot>({ messages: [], seq: 0 });
   const [hasUnconfirmed, setHasUnconfirmed] = useState(false);
   const [connection, setConnection] = useState<Connection>(navigator.onLine ? 'connecting' : 'offline');
   const [syncedAt, setSyncedAt] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
+  const [syncError, setSyncError] = useState('');
+  const [retryVersion, setRetryVersion] = useState(0);
   const unauthorized = useRef(onUnauthorized);
   unauthorized.current = onUnauthorized;
 
@@ -31,6 +33,7 @@ export function useConversation(id: string | null, enabled: boolean, onUnauthori
     const render = () => { setSnapshot(sync.view); setDurableSnapshot(sync.durable); setHasUnconfirmed(sync.hasPreview); };
     render();
     setSyncedAt(null);
+    setSyncError('');
     const receive = (packet: SyncPacket) => {
       if (sync.receive(packet)) {
         writer.schedule(sync.durable, packet.type === 'snapshot' || !sync.durable.messages.some(isActive));
@@ -59,6 +62,7 @@ export function useConversation(id: string | null, enabled: boolean, onUnauthori
       stopHeartbeat();
       if (socket) { socket.close(); socket = undefined; }
       resetPreview();
+      setSyncError('');
       if (!navigator.onLine) { setConnection('offline'); setLoading(false); return; }
       setConnection('connecting');
       if (!id) {
@@ -104,6 +108,11 @@ export function useConversation(id: string | null, enabled: boolean, onUnauthori
       } catch (error) {
         if (!alive || token !== generation) return;
         if (error instanceof ApiError && error.status === 401) { unauthorized.current(); return; }
+        // An offline outbox can reconnect before its conversation has been created in the cloud.
+        const pendingCreation = error instanceof ApiError && error.status === 404 && awaitingAcceptance;
+        if (error instanceof ApiError && !pendingCreation && (error.status === 507 || (error.status >= 400 && error.status < 500 && ![408, 429].includes(error.status)))) {
+          setSyncError(error.message); setConnection('unavailable'); return;
+        }
         setConnection(navigator.onLine ? 'connecting' : 'offline');
         if (navigator.onLine) retry = setTimeout(() => { void connect(); }, Math.min(15_000, 1_000 * 2 ** attempt++));
       } finally { if (alive && token === generation) setLoading(false); }
@@ -131,6 +140,6 @@ export function useConversation(id: string | null, enabled: boolean, onUnauthori
       window.removeEventListener('offline', offline);
       document.removeEventListener('visibilitychange', visible);
     };
-  }, [id, enabled]);
-  return { snapshot, durableSnapshot, hasUnconfirmed, connection, syncedAt, loading };
+  }, [id, enabled, retryVersion, awaitingAcceptance]);
+  return { snapshot, durableSnapshot, hasUnconfirmed, connection, syncedAt, loading, syncError, reconnect: () => setRetryVersion((value) => value + 1) };
 }

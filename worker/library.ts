@@ -2,6 +2,7 @@ import { DurableObject } from 'cloudflare:workers';
 import type { Env } from './env';
 import type { ConversationInfo, ModelSelection, ProviderConfig, ProviderModelConfig, ProviderSettings, ProviderSettingsInput, ReasoningEffort } from '../shared/types';
 import { defaultProviderSettings, mergeProviderSettings, publicProviderSettings, runtimeProviderConfig } from './provider-config';
+import { MAX_CONVERSATIONS } from './resource-limits';
 
 export class Library extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
@@ -19,12 +20,17 @@ export class Library extends DurableObject<Env> {
 
   }
   list(): ConversationInfo[] {
-    return this.ctx.storage.sql.exec<ConversationInfo & Record<string, SqlStorageValue>>('SELECT * FROM conversations ORDER BY updatedAt DESC LIMIT 500').toArray();
+    return this.ctx.storage.sql.exec<ConversationInfo & Record<string, SqlStorageValue>>('SELECT * FROM conversations ORDER BY updatedAt DESC').toArray();
   }
   get(id: string): ConversationInfo | null {
     return this.ctx.storage.sql.exec<ConversationInfo & Record<string, SqlStorageValue>>('SELECT * FROM conversations WHERE id = ?', id).toArray()[0] ?? null;
   }
   create(id: string, title: string) {
+    const existing = this.get(id);
+    if (existing) return existing;
+    if (this.ctx.storage.sql.exec<{ count: number }>('SELECT COUNT(*) AS count FROM conversations').one().count >= MAX_CONVERSATIONS) {
+      return { error: `空间最多保存 ${MAX_CONVERSATIONS} 个对话，请整理已有对话后再创建。`, status: 507 };
+    }
     const now = Date.now();
     this.ctx.storage.sql.exec('INSERT OR IGNORE INTO conversations VALUES (?, ?, ?, ?)', id, title, now, now);
     return this.get(id)!;

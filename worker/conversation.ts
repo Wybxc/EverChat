@@ -2,7 +2,7 @@ import { DurableObject } from 'cloudflare:workers';
 import type { Env } from './env';
 import type { ChatInput, Change, Commit, DurableChange, GenerationExecutor, Message, MessageStatus, ProviderConfig, Snapshot, StreamBatch, StreamCommit, Submission, SubmitInput } from '../shared/types';
 import { isActive } from '../shared/types';
-import { commitAck, STREAM_VERSION, validateCommit } from '../shared/stream-batches';
+import { commitAck, payloadBytes, STREAM_VERSION, validateCommit } from '../shared/stream-batches';
 import type { GenerationMeasurements } from '../shared/generation-metrics';
 import { GenerationMeter, measuredQuery } from './generation-metrics';
 import { StreamJournal } from './stream-journal';
@@ -12,6 +12,7 @@ import { ProviderStream, StreamParseError } from '../shared/provider-stream';
 import { GenerationCancelled, ProviderError } from './generation-errors';
 import { GenerationBuffer } from './generation-buffer';
 import { json } from './http';
+import { DATABASE_LIMIT_MESSAGE, HISTORY_LIMIT_MESSAGE, MAX_DATABASE_BYTES, MAX_DATABASE_START_BYTES, MAX_DATABASE_WRITE_BYTES, MAX_HISTORY_START_BYTES, MAX_MESSAGES, storageErrorMessage } from './resource-limits';
 
 type Row = Message & { generationResult: string | null } & Record<string, SqlStorageValue>;
 type Run = { id: string; conversationId: string; assistantId: string; context: string; config: string | null; chunkSeq: number; updatedAt: number;
@@ -38,7 +39,12 @@ export class Conversation extends DurableObject<Env> {
     }
   }
   private query<T extends Record<string, SqlStorageValue> = Record<string, SqlStorageValue>>(statement: string, ...bindings: SqlStorageValue[]) {
-    return measuredQuery<T>(this.ctx.storage.sql, this.meter, statement, ...bindings);
+    try { return measuredQuery<T>(this.ctx.storage.sql, this.meter, statement, ...bindings); }
+    catch (error) {
+      const storage = storageErrorMessage(error);
+      if (storage) throw new ProviderError(storage);
+      throw error;
+    }
   }
   generationMeasurements(): GenerationMeasurements | null {
     if (this.env.GENERATION_METRICS !== '1') return null;
@@ -56,9 +62,8 @@ export class Conversation extends DurableObject<Env> {
     const descriptor = JSON.parse(config) as ProviderConfig;
     return this.journal.materialize(message, { protocol: descriptor.provider, showReasoning: descriptor.showReasoning === true });
   }
-  private all(): Message[] {
-    return this.query<Row>('SELECT messages.*, generation_results.payload AS generationResult FROM messages LEFT JOIN generation_results ON generation_results.runId = messages.runId ORDER BY messages.rowid').toArray().map((row) => this.materialize(this.decorate(row)));
-  }
+  private rows() { return this.query<Row>('SELECT messages.*, generation_results.payload AS generationResult FROM messages LEFT JOIN generation_results ON generation_results.runId = messages.runId ORDER BY messages.rowid'); }
+  private all(): Message[] { return Array.from(this.rows(), (row) => this.materialize(this.decorate(row))); }
   private rawMessage(id: string): Message | undefined {
     const row = this.query<Row>('SELECT messages.*, generation_results.payload AS generationResult FROM messages LEFT JOIN generation_results ON generation_results.runId = messages.runId WHERE messages.id = ?', id).toArray()[0];
     return row && this.decorate(row);
@@ -128,9 +133,16 @@ export class Conversation extends DurableObject<Env> {
       const existing = duplicate();
       if (existing) return existing;
       if (!config) return { error: '所选模型不可用，请配置供应商并启用模型。', status: 400 };
-      const messages = this.all();
-      if (messages.some(isActive)) return { error: '这个对话正在生成回答，请等待完成或先停止。', status: 409 };
-      if (messages.length >= 1000) return { error: '此对话已达到原型的消息上限，请新建对话。', status: 400 };
+      if (this.query(`SELECT id FROM messages WHERE status IN ('queued', 'running') LIMIT 1`).toArray().length) return { error: '这个对话正在生成回答，请等待完成或先停止。', status: 409 };
+      if (this.ctx.storage.sql.databaseSize > MAX_DATABASE_START_BYTES) return { error: DATABASE_LIMIT_MESSAGE, status: 507 };
+      const messages: Message[] = [];
+      let historyBytes = 32;
+      for (const row of this.rows()) {
+        const message = this.decorate(row);
+        historyBytes += payloadBytes(JSON.stringify(message)) + 1;
+        if (historyBytes > MAX_HISTORY_START_BYTES) return { error: HISTORY_LIMIT_MESSAGE, status: 507 };
+        messages.push(message);
+      }
       let parent: Message | undefined;
       let previous: Message | undefined;
       if (input.retryOf) {
@@ -140,6 +152,7 @@ export class Conversation extends DurableObject<Env> {
       }
       const original = input.revisionOf ? messages.find((m) => m.id === input.revisionOf && m.role === 'user') : undefined;
       if (input.revisionOf && !original) return { error: '找不到要编辑的消息。', status: 404 };
+      if (messages.length + (parent ? 1 : 2) > MAX_MESSAGES) return { error: '此对话已达到原型的消息上限，请新建对话。', status: 507 };
       const content = parent?.content ?? input.content?.trim();
       if (!content || content.length > 16_000) return { error: '请输入 1 到 16,000 字的消息。', status: 400 };
       const runId = crypto.randomUUID();
@@ -288,11 +301,14 @@ export class Conversation extends DurableObject<Env> {
     }
     if (first.chunkSeq !== run.chunkSeq + 1 || first.startOffset !== run.durableOffset) throw new Error('Stream sequence or offset gap');
     if (this.env.GENERATION_METRICS === '1' && !this.meter) this.meter = new GenerationMeter(runId, Date.now, 'since-last-resume', 'do-v1');
+    if (this.ctx.storage.sql.databaseSize > MAX_DATABASE_WRITE_BYTES) throw new ProviderError(DATABASE_LIMIT_MESSAGE);
     const change: Commit = this.ctx.storage.transactionSync(() => {
       if (!this.journal.append(commit)) throw new Error('Conflicting stream sequence');
       this.query('UPDATE runs SET chunkSeq = ?, durableOffset = ?, updatedAt = ? WHERE id = ?',
         last.chunkSeq, last.endOffset, Date.now(), runId);
-      return { type: 'commit', ...commit, seq: this.recordPayload(JSON.stringify(commit)) };
+      const seq = this.recordPayload(JSON.stringify(commit));
+      if (this.ctx.storage.sql.databaseSize > MAX_DATABASE_WRITE_BYTES) throw new ProviderError(DATABASE_LIMIT_MESSAGE);
+      return { type: 'commit', ...commit, seq };
     });
     this.meter?.rawCheckpoint(last.endOffset - first.startOffset);
     this.broadcast(change);
@@ -319,8 +335,10 @@ export class Conversation extends DurableObject<Env> {
       if (message.streamVersion === STREAM_VERSION) this.journal.compact(message);
       if (message.generation) this.query('INSERT INTO generation_results (runId, payload) VALUES (?, ?)', runId, JSON.stringify(message.generation));
       this.query('UPDATE messages SET status = ?, error = ? WHERE id = ?', status, error, message.id);
-      this.query('UPDATE runs SET config = NULL WHERE id = ?', runId);
-      return this.record([this.message(message.id)!]);
+      this.query("UPDATE runs SET config = NULL, context = '[]' WHERE id = ?", runId);
+      const terminal = this.record([this.message(message.id)!]);
+      if (this.ctx.storage.sql.databaseSize > MAX_DATABASE_BYTES) throw new ProviderError(DATABASE_LIMIT_MESSAGE);
+      return terminal;
     });
     this.broadcast(change);
     if (this.meter?.runId === runId) {

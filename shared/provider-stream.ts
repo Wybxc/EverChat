@@ -179,6 +179,7 @@ export class ProviderStream {
   }
   private responseThought(event: Record<string, unknown>, channel: 'raw' | 'summary') {
     if (!this.state.showReasoning) return;
+    if (string(event.item_id).length > 200) { this.fail('思考片段标识超过原型限制。'); return; }
     const id = `${string(event.item_id)}:${number(event.content_index ?? event.summary_index) ?? 0}`;
     let part = this.state.thoughts.find((part) => part.id === id);
     if (!part) {
