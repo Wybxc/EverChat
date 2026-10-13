@@ -1,0 +1,194 @@
+{
+  "version": 1,
+  "workerName": "everchat-stream-validation",
+  "unit": "milliseconds (whole-ms tail values corroborated against microsecond GraphQL maxima)",
+  "sources": [
+    {
+      "startedAt": "2026-10-13T13:43:27.650Z",
+      "finishedAt": "2026-10-13T13:48:26.190Z",
+      "received": 305,
+      "metadataParsed": true,
+      "connectionEvidence": "Parsed invocation events; the initial observer did not detect connection readiness because JSON mode omits the human-readable banner.",
+      "groups": [
+        {
+          "endpoint": "GET /api/settings/providers",
+          "outcome": "ok",
+          "count": 1,
+          "p50": 6,
+          "max": 6,
+          "over10": 0
+        },
+        {
+          "endpoint": "POST /api/login",
+          "outcome": "ok",
+          "count": 1,
+          "p50": 3,
+          "max": 3,
+          "over10": 0
+        },
+        {
+          "endpoint": "GET /api/conversations/REDACTED/measurements",
+          "outcome": "ok",
+          "count": 1,
+          "p50": 0,
+          "max": 0,
+          "over10": 0
+        },
+        {
+          "endpoint": "PUT /api/settings/providers",
+          "outcome": "ok",
+          "count": 1,
+          "p50": 2,
+          "max": 2,
+          "over10": 0
+        },
+        {
+          "endpoint": "POST /api/conversations",
+          "outcome": "ok",
+          "count": 3,
+          "p50": 2,
+          "max": 2,
+          "over10": 0
+        },
+        {
+          "endpoint": "DO Library",
+          "outcome": "ok",
+          "count": 82,
+          "p50": 0,
+          "max": 2,
+          "over10": 0
+        },
+        {
+          "endpoint": "DO Conversation",
+          "outcome": "ok",
+          "count": 149,
+          "p50": 1,
+          "max": 152,
+          "over10": 19
+        },
+        {
+          "endpoint": "POST /api/conversations/REDACTED/messages",
+          "outcome": "ok",
+          "count": 5,
+          "p50": 3,
+          "max": 4,
+          "over10": 0
+        },
+        {
+          "endpoint": "GET /api/conversations/REDACTED",
+          "outcome": "ok",
+          "count": 34,
+          "p50": 3,
+          "max": 9,
+          "over10": 0
+        },
+        {
+          "endpoint": "GET /api/conversations/REDACTED/sync",
+          "outcome": "ok",
+          "count": 24,
+          "p50": 2,
+          "max": 11,
+          "over10": 1
+        },
+        {
+          "endpoint": "GET /api/conversations/REDACTED/sync",
+          "outcome": "responseStreamDisconnected",
+          "count": 2,
+          "p50": 10,
+          "max": 10,
+          "over10": 0
+        },
+        {
+          "endpoint": "GET /api/conversations/REDACTED/sync",
+          "outcome": "canceled",
+          "count": 1,
+          "p50": 2,
+          "max": 2,
+          "over10": 0
+        },
+        {
+          "endpoint": "DO Conversation",
+          "outcome": "canceled",
+          "count": 1,
+          "p50": 7,
+          "max": 7,
+          "over10": 0
+        }
+      ]
+    },
+    {
+      "startedAt": "2026-10-13T13:55:07.188Z",
+      "finishedAt": "2026-10-13T13:56:37.778Z",
+      "received": 56,
+      "metadataParsed": true,
+      "connectionEvidence": "Parsed invocation events; the initial observer did not detect connection readiness because JSON mode omits the human-readable banner.",
+      "groups": [
+        {
+          "endpoint": "GET /api/settings/providers",
+          "outcome": "ok",
+          "count": 1,
+          "p50": 0,
+          "max": 0,
+          "over10": 0
+        },
+        {
+          "endpoint": "DO Library",
+          "outcome": "ok",
+          "count": 14,
+          "p50": 0,
+          "max": 0,
+          "over10": 0
+        },
+        {
+          "endpoint": "POST /api/login",
+          "outcome": "ok",
+          "count": 1,
+          "p50": 2,
+          "max": 2,
+          "over10": 0
+        },
+        {
+          "endpoint": "GET /api/conversations/REDACTED/measurements",
+          "outcome": "ok",
+          "count": 1,
+          "p50": 0,
+          "max": 0,
+          "over10": 0
+        },
+        {
+          "endpoint": "DO Conversation",
+          "outcome": "ok",
+          "count": 11,
+          "p50": 0,
+          "max": 4,
+          "over10": 0
+        },
+        {
+          "endpoint": "GET /api/conversations/REDACTED/sync",
+          "outcome": "responseStreamDisconnected",
+          "count": 22,
+          "p50": 2,
+          "max": 5,
+          "over10": 0
+        },
+        {
+          "endpoint": "DO Conversation",
+          "outcome": "responseStreamDisconnected",
+          "count": 5,
+          "p50": 7,
+          "max": 12,
+          "over10": 1
+        },
+        {
+          "endpoint": "GET /api/conversations/REDACTED",
+          "outcome": "ok",
+          "count": 1,
+          "p50": 4,
+          "max": 4,
+          "over10": 0
+        }
+      ]
+    }
+  ],
+  "scope": "Sanitized real-time invocation summaries. Capture covers part of sustained and reconnect workloads, not every request. This cannot identify the root cause of an occasional CPU spike or reconstruct the earlier 12.448ms sample."
+}

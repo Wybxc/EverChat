@@ -78,7 +78,42 @@ DO 调用统计有 3 个 `clientDisconnected`、9 个 `responseStreamDisconnecte
 
 本轮 DO 时长约占每日 13,000 GB-s 的 0.034%，SQL 写入占每日 100,000 行的 0.614%，读取占每日 5,000,000 行的 0.026%。若每天重复 10 套相同短负载，约为 44.15 GB-s、6,140 写入行和 12,990 读取行，尚有较大余量；这包含 90 次测试任务和测试中的多次读取／重连，不能外推成 90 次一分钟的真实模型响应。真实响应持续时间、输出大小、设备数、其他应用及额外工具调用会改变预算。
 
-**本轮功能验证通过，完整免费层验收仍保留待办：**Worker 有一次超过免费层标称 10ms 的样本；官方允许偶发 CPU 波动，但不能依赖它持续超限。[Workers CPU 限制](https://developers.cloudflare.com/workers/platform/limits/#cpu-time)。需要补充重复连接／断开和一分钟以上负载，核实 CPU 余量、平台存储采样，以及大上下文与长期保留数据。当前报告作为后续改动的平台基线；没有改造前的真实平台 CPU 报告，不能宣称 CPU 下降比例。
+**这次短负载功能验证通过。** Worker 有一次超过免费层标称 10ms 的样本；官方允许偶发 CPU 波动，但不能依赖它持续超限。[Workers CPU 限制](https://developers.cloudflare.com/workers/platform/limits/#cpu-time)。后续长流与重连补充结果见下节。当前报告作为改造后的平台基线；没有改造前的真实平台 CPU 报告，不能宣称 CPU 下降比例。
+
+### 一分钟以上生成与重复重连
+
+同日重新部署隔离入口，版本 `cd6b50c0-2da2-4b03-a037-80e164e9237f`，生产代码仍基于 `58a1691`，未修改生产流处理。测试继续关闭诊断计数、禁止真实供应商调用。报告见 [长流结果](measurements/cloudflare-sustained.json)、[长流指标](measurements/cloudflare-sustained-metrics.json)、[重连结果](measurements/cloudflare-reconnect.json)、[重连指标](measurements/cloudflare-reconnect-metrics.json) 和 [CPU 调用摘要](measurements/cloudflare-cpu.json)。
+
+三项生成均使用 16,000 字符输入，每次接收 140 个增量、间隔 500ms，生成持续约 72 秒：
+
+| 场景 | 正文／思考字符 | 断线行为 | 结果 |
+|---|---:|---|---|
+| 在线正文 | 84,000／0 | 保持订阅 | 实时结果、终态快照和完整回放一致 |
+| 正文与思考 | 84,000／84,000 | 生成中重连 20 次，另保留第二订阅 | 两个客户端均恢复完整结果，无重复或缺口 |
+| 首次预览后离线 | 84,000／0 | 关闭唯一订阅，每 5 秒查询终态 | 云端继续生成并完整保存 |
+
+随后对已完成的正文与思考对话测试 30 次独立 WebSocket 连接，交替进行 15 次从头回放和 15 次最新游标连接；每次均与数据库快照一致并以 1000 正常关闭，没有再次调用模型。一次握手的临时连接重置经重试恢复，合计 31 次握手尝试。工具仅在此只读重连场景对三类临时网络错误最多重试三次，不重试生成或供应商请求。
+
+| 指标 | 三项长流 | 30 次终态重连 |
+|---|---:|---:|
+| 平台调用窗口（UTC） | 13:44:00–13:49:00 | 13:56:00–13:58:00 |
+| Worker 请求 | 86 | 34 |
+| Worker 最高 CPU | 11.518ms | 5.738ms |
+| DO 调用 | 613 | 94 |
+| DO 总 CPU | 2.758946 秒 | 0.151010 秒 |
+| DO 活跃时长 | 27.48776704 GB-s | 0.142772352 GB-s |
+| DO SQL 读取／写入 | 2,361／872 行 | 880／3 行 |
+| DO CPU／内存超限、内部致命错误 | 均为 0 | 均为 0 |
+
+Worker 错误计数和资源超限计数均为零；DO HTTP 的断线状态仍计入错误，其中终态重连记录 30 次 `responseStreamDisconnected`，不能写成所有 DO 错误为零。调用数是 Adaptive 汇总，部分分组存在采样，不能直接等同账单请求数。WebSocket 的 periodic 入站计数仍为零，但长流含 449 次 hibernation 调用，接收确认的开销仍需纳入预算。
+
+长流的成功 Worker 请求最高 CPU 为 11.518ms，断线状态最高 10.606ms。实时 tail 捕获的 Worker `/sync` 样本最高整毫秒值为 11ms；随后 30 次终态重连平台最高 CPU 为 5.738ms。tail 中 DO HTTP 也使用 `/sync`，必须先依据 `durableObject` 标志区分 Worker 与 DO，不能仅按路径比较不同 CPU 限制。捕获覆盖部分请求，尚未证明高样本的根因，也不能据后续低样本删去先前风险。[实时日志的覆盖边界](https://developers.cloudflare.com/workers/observability/logs/real-time-logs/)。
+
+若每天重复 100 次这组负载的平均生成，**按本次三个样本外推**，约消耗 916.26 GB-s（每日额度约 7.05%）、29,067 行写入（约 29.07%）和 78,700 行读取（约 1.57%）。这不是 100 次实际测试，且包含长输入、长输出、思考、多订阅和重连；响应时长、设备数及其他应用会改变预算。供应商费用另计。
+
+长流结束后的 Library 与三个 Conversation SQLite 分配合计 3,854,336 字节（约 3.68 MiB）。SQL 存储 GraphQL 仍无采样，不能将分配大小当作平台账单量或生成中峰值。隔离 Worker 及本轮两个 namespaces 已删除，随机 Secrets 已移除，见 [清理确认](measurements/cloudflare-sustained-cleanup.json)。
+
+**阶段 0 的剩余验证：**当前快照接口把整个对话经 RPC 返回，再在 Worker 中序列化 JSON。长历史可能增加这个 10ms 路径的 CPU，需单独构造大历史测量并验证优化；这只是代码检查发现的风险，不能归因于本轮 `/sync` 的偶发高样本。平台存储采样及长期保留预算仍需补齐。
 
 ### 复现
 
@@ -92,6 +127,22 @@ pnpm measure:cloudflare-metrics --account YOUR_ACCOUNT_ID --functional /tmp/ever
 ```
 
 功能报告即使失败也会保存；只有命令成功且 `complete: true`、9 项结果齐全才算通过。分析数据可能延迟，空数组不算零用量。指标读取需要账户分析权限；套餐由账户订阅或人工确认，`usageModel: standard` 不能单独证明 Workers Free。
+
+补充负载使用以下命令。在独立终端先启动 tail，再运行测试；其输出只保留调用元数据，不保存请求头、正文、控制台文字或异常内容。JSON tail 没有人类可读的连接提示，以收到有效调用事件作为连接证据；无事件或部分捕获均不代表零 CPU。
+
+```sh
+pnpm measure:cloudflare-tail --seconds 300 --output /tmp/everchat-cloudflare-tail.json
+pnpm measure:cloudflare --suite sustained --url https://everchat-stream-validation.YOUR-SUBDOMAIN.workers.dev --credentials /tmp/everchat-stream-validation-secrets.json --output /tmp/everchat-cloudflare-sustained.json
+pnpm measure:cloudflare --suite reconnect --source /tmp/everchat-cloudflare-sustained.json --url https://everchat-stream-validation.YOUR-SUBDOMAIN.workers.dev --credentials /tmp/everchat-stream-validation-secrets.json --output /tmp/everchat-cloudflare-reconnect.json
+```
+
+两套报告分别要求 3 项和 30 项完整结果。使用 `measure:cloudflare-metrics --functional` 分别指定其报告，查询对应窗口，保留各自输出。资源删除后仍可用已保存的 namespace IDs 读取历史指标，不必为等待指标保留测试 Worker：
+
+```sh
+pnpm measure:cloudflare-metrics --account YOUR_ACCOUNT_ID --functional /tmp/everchat-cloudflare-sustained.json --namespace-report /tmp/everchat-cloudflare-sustained-metrics.json --output /tmp/everchat-cloudflare-later-metrics.json
+```
+
+延迟查询另写文件，以保留原报告中的部署存储样本。工具为每个数据集记录 `available`，空数组明确标为无数据。
 
 本机存在系统代理时，Node 不会自动读取 macOS 代理设置。可按现有代理配置设置 `HTTP_PROXY`、`HTTPS_PROXY` 和 `NODE_USE_ENV_PROXY=1`；WebSocket 工具使用显式代理 agent，保持 TLS 证书验证。
 

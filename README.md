@@ -85,7 +85,7 @@ pnpm measure:stream
 pnpm measure:stream --interval 100 --output /tmp/everchat-stream-comparison.json
 ```
 
-此命令在 5184 端口启动独立本地运行时，使用临时数据库和模拟供应商，覆盖正文、思考及客户端在回答开始后断开订阅的场景。在线场景还比较增量回放和最终数据库快照。只保存计数，不记录正文或密钥；报告默认写入系统临时目录中的 `everchat-stream-measurements.json`，可用 `--output` 指定文件，保留首次基线。指标定义、Workers Free 隔离部署验证结果及复现步骤见 [流式测量说明](docs/stream-measurements.md)。平台 9 项功能场景通过；完整免费层验收仍需核实 CPU 波动和长期负载。
+此命令在 5184 端口启动独立本地运行时，使用临时数据库和模拟供应商，覆盖正文、思考及客户端在回答开始后断开订阅的场景。在线场景还比较增量回放和最终数据库快照。只保存计数，不记录正文或密钥；报告默认写入系统临时目录中的 `everchat-stream-measurements.json`，可用 `--output` 指定文件，保留首次基线。指标定义、Workers Free 隔离部署验证结果及复现步骤见 [流式测量说明](docs/stream-measurements.md)。平台已通过 9 项功能场景、3 项一分钟以上生成和 30 次终态重连；完整免费层验收仍需核实大历史快照 CPU 和存储预算。
 
 手动验证：
 

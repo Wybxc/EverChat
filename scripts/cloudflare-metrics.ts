@@ -7,6 +7,7 @@ const { values } = parseArgs({ options: {
   account: { type: 'string' }, functional: { type: 'string', default: 'docs/measurements/cloudflare-functional.json' },
   output: { type: 'string', default: '/tmp/everchat-cloudflare-metrics.json' },
   url: { type: 'string' }, credentials: { type: 'string' },
+  'namespace-report': { type: 'string' },
 } });
 assert.ok(values.account && /^[a-f0-9]{32}$/.test(values.account), '--account must be a Cloudflare account ID');
 const functional = JSON.parse(await readFile(values.functional!, 'utf8')) as { workerName: string; startedAt: string; finishedAt: string; complete: boolean };
@@ -14,10 +15,18 @@ assert.equal(functional.workerName, 'everchat-stream-validation');
 assert.equal(functional.complete, true, 'Use a complete functional run for platform validation');
 assert.ok(Number.isFinite(Date.parse(functional.startedAt)) && Number.isFinite(Date.parse(functional.finishedAt)));
 assert.ok(Date.parse(functional.finishedAt) >= Date.parse(functional.startedAt));
-const settings = await cloudflareRead<{ bindings: { name: string; type: string; namespace_id?: string }[] }>(`/accounts/${values.account}/workers/scripts/${functional.workerName}/settings`);
-assert.ok(settings.success && settings.result, `Cannot read validation namespaces: HTTP ${settings.status}`);
-const namespaces = settings.result.bindings.filter((binding) => binding.type === 'durable_object_namespace').map(({ name, namespace_id }) => ({ name, id: namespace_id! }));
+let namespaces: { name: string; id: string }[];
+if (values['namespace-report']) {
+  const source = JSON.parse(await readFile(values['namespace-report'], 'utf8')) as { workerName: string; namespaces: typeof namespaces };
+  assert.equal(source.workerName, functional.workerName); namespaces = source.namespaces;
+} else {
+  const settings = await cloudflareRead<{ bindings: { name: string; type: string; namespace_id?: string }[] }>(`/accounts/${values.account}/workers/scripts/${functional.workerName}/settings`);
+  assert.ok(settings.success && settings.result, `Cannot read validation namespaces: HTTP ${settings.status}`);
+  namespaces = settings.result.bindings.filter((binding) => binding.type === 'durable_object_namespace').map(({ name, namespace_id }) => ({ name, id: namespace_id! }));
+}
 assert.equal(namespaces.length, 2); assert.ok(namespaces.every(({ id }) => /^[a-f0-9]{32}$/.test(id)));
+assert.deepEqual(namespaces.map(({ name }) => name).sort(), ['CONVERSATIONS', 'LIBRARY']);
+assert.equal(new Set(namespaces.map(({ id }) => id)).size, 2);
 const start = new Date(Math.floor(Date.parse(functional.startedAt) / 60000) * 60000).toISOString();
 const end = new Date(Math.ceil(Date.parse(functional.finishedAt) / 60000) * 60000 + 60000).toISOString();
 // Storage is sampled independently from invocations; include later samples in a separate window.
@@ -38,6 +47,9 @@ const query = `{ viewer { accounts(filter:{accountTag:${JSON.stringify(values.ac
   durableObjectsSqlStorageGroups(limit:1000, filter:{datetime_geq:${JSON.stringify(storageStart)}, datetime_lt:${JSON.stringify(storageEnd)}, namespaceId_in:${identifiers}}) { dimensions { namespaceId datetime } max { storedBytes } }
 } } }`;
 const response = await cloudflareQuery<{ viewer: { accounts: Record<string, unknown>[] } }>(query);
+const datasets = response.data?.viewer.accounts[0];
+const available = Object.fromEntries(['workersInvocationsAdaptive', 'durableObjectsInvocationsAdaptiveGroups', 'durableObjectsPeriodicGroups', 'durableObjectsSqlStorageGroups']
+  .map((key) => [key, Array.isArray(datasets?.[key]) && (datasets[key] as unknown[]).length > 0]));
 let deployedStorage: unknown;
 if (values.url || values.credentials) {
   assert.ok(values.url && values.credentials, '--url and --credentials must be supplied together');
@@ -57,6 +69,6 @@ const output = resolve(values.output!); await mkdir(dirname(output), { recursive
 await writeFile(output, JSON.stringify({ version: 1, queriedAt: new Date().toISOString(), window: { start, end }, storageWindow: { start: storageStart, end: storageEnd }, workerName: functional.workerName, namespaces,
   units: { cpuTime: 'microseconds', cpuTimeUs: 'microseconds', activeTime: 'microseconds', duration: 'GB*s', storedBytes: 'bytes', memoryUsageBytes: 'bytes' },
   scope: 'Isolated deployed namespaces and Worker, diagnostic counters disabled. Adaptive fields may be sampled; empty arrays do not prove zero usage. Invocation minute rounding includes setup and idle activity. Storage uses a separate wider window and reports samples rather than the exact functional-run peak.',
-  data: response.data, errors: response.errors, deployedStorage }, null, 2) + '\n');
+  available, data: response.data, errors: response.errors, deployedStorage }, null, 2) + '\n');
 if (response.errors?.length) { console.error(JSON.stringify(response.errors)); process.exitCode = 1; }
 else console.log(JSON.stringify(response.data));

@@ -1,0 +1,315 @@
+{
+  "version": 1,
+  "runtime": "deployed Cloudflare isolated fixture",
+  "workerName": "everchat-stream-validation",
+  "plan": "Workers Free (user confirmed)",
+  "suite": "reconnect",
+  "diagnosticCounters": false,
+  "expectedScenarios": 30,
+  "complete": true,
+  "startedAt": "2026-10-13T13:56:18.463Z",
+  "finishedAt": "2026-10-13T13:56:37.018Z",
+  "results": [
+    {
+      "scenario": "reconnect-1",
+      "mode": "full-replay",
+      "status": "completed",
+      "handshakeAttempts": 1,
+      "client": {
+        "frames": 52,
+        "bytes": 1085016
+      }
+    },
+    {
+      "scenario": "reconnect-2",
+      "mode": "latest-cursor",
+      "status": "completed",
+      "handshakeAttempts": 1,
+      "client": {
+        "frames": 1,
+        "bytes": 25
+      }
+    },
+    {
+      "scenario": "reconnect-3",
+      "mode": "full-replay",
+      "status": "completed",
+      "handshakeAttempts": 1,
+      "client": {
+        "frames": 52,
+        "bytes": 1085016
+      }
+    },
+    {
+      "scenario": "reconnect-4",
+      "mode": "latest-cursor",
+      "status": "completed",
+      "handshakeAttempts": 1,
+      "client": {
+        "frames": 1,
+        "bytes": 25
+      }
+    },
+    {
+      "scenario": "reconnect-5",
+      "mode": "full-replay",
+      "status": "completed",
+      "handshakeAttempts": 1,
+      "client": {
+        "frames": 52,
+        "bytes": 1085016
+      }
+    },
+    {
+      "scenario": "reconnect-6",
+      "mode": "latest-cursor",
+      "status": "completed",
+      "handshakeAttempts": 1,
+      "client": {
+        "frames": 1,
+        "bytes": 25
+      }
+    },
+    {
+      "scenario": "reconnect-7",
+      "mode": "full-replay",
+      "status": "completed",
+      "handshakeAttempts": 1,
+      "client": {
+        "frames": 52,
+        "bytes": 1085016
+      }
+    },
+    {
+      "scenario": "reconnect-8",
+      "mode": "latest-cursor",
+      "status": "completed",
+      "handshakeAttempts": 1,
+      "client": {
+        "frames": 1,
+        "bytes": 25
+      }
+    },
+    {
+      "scenario": "reconnect-9",
+      "mode": "full-replay",
+      "status": "completed",
+      "handshakeAttempts": 1,
+      "client": {
+        "frames": 52,
+        "bytes": 1085016
+      }
+    },
+    {
+      "scenario": "reconnect-10",
+      "mode": "latest-cursor",
+      "status": "completed",
+      "handshakeAttempts": 1,
+      "client": {
+        "frames": 1,
+        "bytes": 25
+      }
+    },
+    {
+      "scenario": "reconnect-11",
+      "mode": "full-replay",
+      "status": "completed",
+      "handshakeAttempts": 1,
+      "client": {
+        "frames": 52,
+        "bytes": 1085016
+      }
+    },
+    {
+      "scenario": "reconnect-12",
+      "mode": "latest-cursor",
+      "status": "completed",
+      "handshakeAttempts": 1,
+      "client": {
+        "frames": 1,
+        "bytes": 25
+      }
+    },
+    {
+      "scenario": "reconnect-13",
+      "mode": "full-replay",
+      "status": "completed",
+      "handshakeAttempts": 1,
+      "client": {
+        "frames": 52,
+        "bytes": 1085016
+      }
+    },
+    {
+      "scenario": "reconnect-14",
+      "mode": "latest-cursor",
+      "status": "completed",
+      "handshakeAttempts": 1,
+      "client": {
+        "frames": 1,
+        "bytes": 25
+      }
+    },
+    {
+      "scenario": "reconnect-15",
+      "mode": "full-replay",
+      "status": "completed",
+      "handshakeAttempts": 1,
+      "client": {
+        "frames": 52,
+        "bytes": 1085016
+      }
+    },
+    {
+      "scenario": "reconnect-16",
+      "mode": "latest-cursor",
+      "status": "completed",
+      "handshakeAttempts": 1,
+      "client": {
+        "frames": 1,
+        "bytes": 25
+      }
+    },
+    {
+      "scenario": "reconnect-17",
+      "mode": "full-replay",
+      "status": "completed",
+      "handshakeAttempts": 1,
+      "client": {
+        "frames": 52,
+        "bytes": 1085016
+      }
+    },
+    {
+      "scenario": "reconnect-18",
+      "mode": "latest-cursor",
+      "status": "completed",
+      "handshakeAttempts": 1,
+      "client": {
+        "frames": 1,
+        "bytes": 25
+      }
+    },
+    {
+      "scenario": "reconnect-19",
+      "mode": "full-replay",
+      "status": "completed",
+      "handshakeAttempts": 1,
+      "client": {
+        "frames": 52,
+        "bytes": 1085016
+      }
+    },
+    {
+      "scenario": "reconnect-20",
+      "mode": "latest-cursor",
+      "status": "completed",
+      "handshakeAttempts": 1,
+      "client": {
+        "frames": 1,
+        "bytes": 25
+      }
+    },
+    {
+      "scenario": "reconnect-21",
+      "mode": "full-replay",
+      "status": "completed",
+      "handshakeAttempts": 1,
+      "client": {
+        "frames": 52,
+        "bytes": 1085016
+      }
+    },
+    {
+      "scenario": "reconnect-22",
+      "mode": "latest-cursor",
+      "status": "completed",
+      "handshakeAttempts": 1,
+      "client": {
+        "frames": 1,
+        "bytes": 25
+      }
+    },
+    {
+      "scenario": "reconnect-23",
+      "mode": "full-replay",
+      "status": "completed",
+      "handshakeAttempts": 1,
+      "client": {
+        "frames": 52,
+        "bytes": 1085016
+      }
+    },
+    {
+      "scenario": "reconnect-24",
+      "mode": "latest-cursor",
+      "status": "completed",
+      "handshakeAttempts": 1,
+      "client": {
+        "frames": 1,
+        "bytes": 25
+      }
+    },
+    {
+      "scenario": "reconnect-25",
+      "mode": "full-replay",
+      "status": "completed",
+      "handshakeAttempts": 2,
+      "client": {
+        "frames": 52,
+        "bytes": 1085016
+      }
+    },
+    {
+      "scenario": "reconnect-26",
+      "mode": "latest-cursor",
+      "status": "completed",
+      "handshakeAttempts": 1,
+      "client": {
+        "frames": 1,
+        "bytes": 25
+      }
+    },
+    {
+      "scenario": "reconnect-27",
+      "mode": "full-replay",
+      "status": "completed",
+      "handshakeAttempts": 1,
+      "client": {
+        "frames": 52,
+        "bytes": 1085016
+      }
+    },
+    {
+      "scenario": "reconnect-28",
+      "mode": "latest-cursor",
+      "status": "completed",
+      "handshakeAttempts": 1,
+      "client": {
+        "frames": 1,
+        "bytes": 25
+      }
+    },
+    {
+      "scenario": "reconnect-29",
+      "mode": "full-replay",
+      "status": "completed",
+      "handshakeAttempts": 1,
+      "client": {
+        "frames": 52,
+        "bytes": 1085016
+      }
+    },
+    {
+      "scenario": "reconnect-30",
+      "mode": "latest-cursor",
+      "status": "completed",
+      "handshakeAttempts": 1,
+      "client": {
+        "frames": 1,
+        "bytes": 25
+      }
+    }
+  ],
+  "scope": "Functional cases with mock suppliers; platform analytics collected separately. No real model calls or production data."
+}

@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "runtime": "deployed Cloudflare isolated fixture",
+  "workerName": "everchat-stream-validation",
+  "plan": "Workers Free (user confirmed)",
+  "suite": "sustained",
+  "diagnosticCounters": false,
+  "expectedScenarios": 3,
+  "complete": true,
+  "startedAt": "2026-10-13T13:44:03.976Z",
+  "finishedAt": "2026-10-13T13:47:50.098Z",
+  "results": [
+    {
+      "scenario": "sustained-text",
+      "conversationId": "f88a23e3-cbdd-4480-93c3-2e0aaf808409",
+      "status": "completed",
+      "contentCharacters": 84000,
+      "reasoningCharacters": 0,
+      "elapsedMs": 75485,
+      "generationElapsedMs": 72634,
+      "reconnects": 0,
+      "client": {
+        "frames": 194,
+        "bytes": 597978
+      }
+    },
+    {
+      "scenario": "sustained-reasoning-reconnect",
+      "conversationId": "7ad2f5c6-c718-49f3-8d90-0e5bcb5d087f",
+      "status": "completed",
+      "contentCharacters": 84000,
+      "reasoningCharacters": 84000,
+      "elapsedMs": 75109,
+      "generationElapsedMs": 71833,
+      "reconnects": 20,
+      "client": {
+        "frames": 214,
+        "bytes": 1161464
+      }
+    },
+    {
+      "scenario": "sustained-disconnected",
+      "conversationId": "324aba31-88a7-4f7b-ab3b-104a1467a103",
+      "status": "completed",
+      "contentCharacters": 84000,
+      "reasoningCharacters": 0,
+      "elapsedMs": 73766,
+      "generationElapsedMs": 71623,
+      "reconnects": 0,
+      "client": {
+        "frames": 4,
+        "bytes": 51775
+      }
+    }
+  ],
+  "scope": "Functional cases with mock suppliers; platform analytics collected separately. No real model calls or production data."
+}

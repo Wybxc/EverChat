@@ -1,0 +1,210 @@
+{
+  "version": 1,
+  "queriedAt": "2026-10-13T14:04:30.413Z",
+  "window": {
+    "start": "2026-10-13T13:56:00.000Z",
+    "end": "2026-10-13T13:58:00.000Z"
+  },
+  "storageWindow": {
+    "start": "2026-10-13T13:00:00.000Z",
+    "end": "2026-10-13T14:04:28.394Z"
+  },
+  "workerName": "everchat-stream-validation",
+  "namespaces": [
+    {
+      "name": "CONVERSATIONS",
+      "id": "359e54b86fc14903947ac4f02105e72a"
+    },
+    {
+      "name": "LIBRARY",
+      "id": "528afad721b5451bb6127facf7b6d67d"
+    }
+  ],
+  "units": {
+    "cpuTime": "microseconds",
+    "cpuTimeUs": "microseconds",
+    "activeTime": "microseconds",
+    "duration": "GB*s",
+    "storedBytes": "bytes",
+    "memoryUsageBytes": "bytes"
+  },
+  "scope": "Isolated deployed namespaces and Worker, diagnostic counters disabled. Adaptive fields may be sampled; empty arrays do not prove zero usage. Invocation minute rounding includes setup and idle activity. Storage uses a separate wider window and reports samples rather than the exact functional-run peak.",
+  "available": {
+    "workersInvocationsAdaptive": true,
+    "durableObjectsInvocationsAdaptiveGroups": true,
+    "durableObjectsPeriodicGroups": true,
+    "durableObjectsSqlStorageGroups": false
+  },
+  "data": {
+    "viewer": {
+      "accounts": [
+        {
+          "durableObjectsInvocationsAdaptiveGroups": [
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "namespaceId": "359e54b86fc14903947ac4f02105e72a",
+                "status": "responseStreamDisconnected",
+                "type": "http"
+              },
+              "quantiles": {
+                "cpuTimeP50": 915,
+                "cpuTimeP99": 12095
+              },
+              "sum": {
+                "errors": 30,
+                "requests": 30
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1.5
+              },
+              "dimensions": {
+                "namespaceId": "359e54b86fc14903947ac4f02105e72a",
+                "status": "success",
+                "type": "hibernation"
+              },
+              "quantiles": {
+                "cpuTimeP50": 167,
+                "cpuTimeP99": 284
+              },
+              "sum": {
+                "errors": 0,
+                "requests": 30
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1.5
+              },
+              "dimensions": {
+                "namespaceId": "528afad721b5451bb6127facf7b6d67d",
+                "status": "success",
+                "type": "jsrpc"
+              },
+              "quantiles": {
+                "cpuTimeP50": 302,
+                "cpuTimeP99": 531
+              },
+              "sum": {
+                "errors": 0,
+                "requests": 33
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "namespaceId": "359e54b86fc14903947ac4f02105e72a",
+                "status": "success",
+                "type": "jsrpc"
+              },
+              "quantiles": {
+                "cpuTimeP50": 4652,
+                "cpuTimeP99": 4652
+              },
+              "sum": {
+                "errors": 0,
+                "requests": 1
+              }
+            }
+          ],
+          "durableObjectsPeriodicGroups": [
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "namespaceId": "528afad721b5451bb6127facf7b6d67d"
+              },
+              "sum": {
+                "activeTime": 553262,
+                "cpuTime": 10379,
+                "duration": 0.070817536,
+                "exceededCpuErrors": 0,
+                "exceededMemoryErrors": 0,
+                "fatalInternalErrors": 0,
+                "inboundWebsocketMsgCount": 0,
+                "outboundWebsocketMsgCount": 0,
+                "rowsRead": 34,
+                "rowsWritten": 3
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "namespaceId": "359e54b86fc14903947ac4f02105e72a"
+              },
+              "sum": {
+                "activeTime": 562147,
+                "cpuTime": 140631,
+                "duration": 0.071954816,
+                "exceededCpuErrors": 0,
+                "exceededMemoryErrors": 0,
+                "fatalInternalErrors": 0,
+                "inboundWebsocketMsgCount": 0,
+                "outboundWebsocketMsgCount": 825,
+                "rowsRead": 846,
+                "rowsWritten": 0
+              }
+            }
+          ],
+          "durableObjectsSqlStorageGroups": [],
+          "workersInvocationsAdaptive": [
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "status": "responseStreamDisconnected",
+                "usageModel": "standard"
+              },
+              "max": {
+                "cpuTime": 5738,
+                "memoryUsageBytes": 13857015
+              },
+              "quantiles": {
+                "cpuTimeP50": 2018,
+                "cpuTimeP99": 5738
+              },
+              "sum": {
+                "cpuTimeUs": 74358,
+                "errors": 0,
+                "requests": 30
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "status": "success",
+                "usageModel": "standard"
+              },
+              "max": {
+                "cpuTime": 4808,
+                "memoryUsageBytes": 10125954
+              },
+              "quantiles": {
+                "cpuTimeP50": 828,
+                "cpuTimeP99": 4808
+              },
+              "sum": {
+                "cpuTimeUs": 8267,
+                "errors": 0,
+                "requests": 4
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "errors": null
+}
