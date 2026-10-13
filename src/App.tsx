@@ -10,6 +10,7 @@ import { ProviderSettingsPanel } from './ProviderSettings';
 import { chatModels, effortLabels, modelSelectionKey } from '../shared/models';
 import { useThemeMode } from './theme';
 import { useFollowScroll } from './useFollowScroll';
+import { conversationUrl, useConversationRoute } from './useConversationRoute';
 
 const EMPTY_SESSION: SessionInfo = { authenticated: false, configured: false, provider: '', model: '' };
 const Streamdown = lazy(() => import('streamdown').then(({ Streamdown: Component }) => ({ default: Component })));
@@ -109,7 +110,7 @@ export function App() {
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [bootError, setBootError] = useState('');
   const [localConversations, setLocalConversations] = useState<ConversationInfo[]>(() => read('library', []));
-  const [selected, setSelected] = useState<string | null>(() => read('selected', null));
+  const { id: selected, invalid: invalidRoute, navigate } = useConversationRoute();
   const [pending, setPending] = useState<Pending[]>(() => read('pending', []));
   const pendingRef = useRef(pending);
   const deliveryLocks = useRef(new Set<string>());
@@ -160,7 +161,7 @@ export function App() {
     const local = localConversations.filter((item) => !cloudIds.has(item.id) && !queued.some((next) => next.id === item.id));
     return [...queued, ...local, ...cloud];
   }, [libraryQuery.data, localConversations, pending]);
-  const busy = Boolean(active || currentPending || sending || syncError);
+  const busy = Boolean(active || currentPending || sending || syncError || invalidRoute);
   const currentConversation = conversations.find((item) => item.id === selected);
 
   const boot = useCallback(async () => {
@@ -229,7 +230,7 @@ export function App() {
   }, [draft]);
   const updateDraft = (text: string) => { setDraft(text); write(`draft:${selected ?? 'new'}`, { text, revisionOf }); };
   const select = (id: string | null) => {
-    setSelected(id); write('selected', id); setSidebarOpen(false);
+    navigate(id); setSidebarOpen(false);
     requestAnimationFrame(() => editor.current?.focus());
   };
   const closeSidebar = () => {
@@ -287,7 +288,7 @@ export function App() {
   const logout = async () => {
     try {
       await api('/logout', 'POST'); clearLocal(); pendingRef.current = []; setPending([]);
-      setLocalConversations([]); queryClient.clear(); setSelected(null); setDraft(''); setRevisionOf(undefined); loggedOut(); settings.current?.close();
+      setLocalConversations([]); queryClient.clear(); navigate(null, true); setDraft(''); setRevisionOf(undefined); loggedOut(); settings.current?.close();
     } catch (error) { setError(error instanceof Error ? error.message : '退出失败，请联网后重试。'); settings.current?.close(); }
   };
   const exportChat = () => {
@@ -299,7 +300,7 @@ export function App() {
   if (!session) return <main className="flex min-h-dvh flex-col items-center justify-center gap-6"><Brand />{bootError ? <><p className="max-w-sm px-5 text-center text-sm font-medium text-base-content" role="alert">{bootError}</p><button className="btn" onClick={boot}>重新连接</button></> : <span className="loading loading-dots loading-sm text-base-content/60" />}</main>;
   if (!session.authenticated) return <Login session={session} onLogin={async () => { await boot(); }} />;
   const statusText = connection === 'unavailable' ? '同步失败' : connection === 'offline' ? '离线' : connection === 'connecting' ? '连接中' : hasUnconfirmed ? '保存中' : '已同步';
-  const welcome = !selected || (!snapshot.messages.length && !currentPending && !loading);
+  const welcome = !invalidRoute && !syncError && (!selected || (!snapshot.messages.length && !currentPending && !loading));
   return <div className="flex h-dvh overflow-hidden">
     {sidebarOpen && <button aria-label="关闭对话列表" className="fixed inset-0 z-30 bg-neutral/20 backdrop-blur-sm lg:hidden" onClick={closeSidebar} />}
     <aside className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} fixed inset-y-0 left-0 z-40 flex w-70 shrink-0 flex-col border-r border-base-content/50 bg-base-200 transition-transform lg:static lg:translate-x-0`}>
@@ -309,7 +310,10 @@ export function App() {
       <div className="flex-1 overflow-y-auto px-3 pt-6">
         <p className="px-3 pb-3 text-[10px] font-medium tracking-wider text-base-content/60">对话 <span className="ml-1">{conversations.length ? String(conversations.length).padStart(2, '0') : ''}</span></p>
         <ul className="menu w-full gap-1 p-0 text-sm">
-          {conversations.filter((item) => item.title.toLowerCase().includes(search.toLowerCase())).map((item) => <li key={item.id}><button onClick={() => select(item.id)} aria-current={item.id === selected ? 'page' : undefined} className={`${item.id === selected ? 'menu-active bg-primary! text-primary-content! hover:bg-primary!' : ''} h-11 min-w-0 gap-3 rounded-lg px-3 font-normal`}><MessageCircle size={15} className="shrink-0" /><span className="truncate">{item.title}</span>{pending.some((p) => p.conversation.id === item.id) && <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />}</button></li>)}
+          {conversations.filter((item) => item.title.toLowerCase().includes(search.toLowerCase())).map((item) => <li key={item.id}><a href={conversationUrl(item.id)} onClick={(event) => {
+            if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+            event.preventDefault(); select(item.id);
+          }} aria-current={item.id === selected ? 'page' : undefined} className={`${item.id === selected ? 'menu-active bg-primary! text-primary-content! hover:bg-primary!' : ''} h-11 min-w-0 gap-3 rounded-lg px-3 font-normal`}><MessageCircle size={15} className="shrink-0" /><span className="truncate">{item.title}</span>{pending.some((p) => p.conversation.id === item.id) && <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />}</a></li>)}
         </ul>
         {!conversations.length && <p className="px-3 text-xs leading-6 text-base-content/60">暂无对话</p>}
         {search && !conversations.some((item) => item.title.toLowerCase().includes(search.toLowerCase())) && <p className="px-3 text-xs text-base-content/60">没有找到相关对话</p>}
@@ -319,7 +323,7 @@ export function App() {
 
     <div className="flex min-w-0 flex-1 flex-col">
       <header className="flex h-18 shrink-0 items-center justify-between border-b border-base-content/50 px-5 sm:px-8">
-        <div className="flex min-w-0 items-center gap-3"><button ref={mobileSidebarTrigger} className="btn btn-ghost btn-sm btn-square lg:hidden" onClick={() => setSidebarOpen(true)} aria-label="打开对话列表"><Menu size={19} /></button><div className="min-w-0"><p className="truncate text-sm font-medium">{currentConversation?.title ?? '新对话'}</p><p className="mt-1 text-[10px] text-base-content/60">{selectedModel?.name || session.modelName || session.model || '未选择模型'}</p></div></div>
+        <div className="flex min-w-0 items-center gap-3"><button ref={mobileSidebarTrigger} className="btn btn-ghost btn-sm btn-square lg:hidden" onClick={() => setSidebarOpen(true)} aria-label="打开对话列表"><Menu size={19} /></button><div className="min-w-0"><p className="truncate text-sm font-medium">{invalidRoute ? '页面不可用' : currentConversation?.title ?? (selected ? '对话' : '新对话')}</p><p className="mt-1 text-[10px] text-base-content/60">{selectedModel?.name || session.modelName || session.model || '未选择模型'}</p></div></div>
         <div className="flex shrink-0 items-center gap-3"><span aria-live="polite" className="hidden items-center gap-1.5 text-[11px] text-base-content/60 sm:flex" title={syncedAt ? `上次同步 ${new Date(syncedAt).toLocaleTimeString('zh-CN')}` : undefined}>{connection === 'offline' ? <CloudOff size={14} /> : <span className={`status status-xs ${connection === 'connected' && !hasUnconfirmed ? 'status-success' : 'status-warning'}`} />}{statusText}</span>{snapshot.messages.length > 0 && <button aria-label="导出对话" title="导出 Markdown" className="btn btn-ghost btn-sm btn-square" onClick={exportChat}><Download size={16} /></button>}<button aria-label="空间设置" className="btn btn-ghost btn-sm btn-square" onClick={openSettings}><Settings size={17} /></button></div>
       </header>
       {connection === 'offline' && <div role="status" className="flex items-center justify-center gap-2 border-b border-base-content/50 bg-base-200 px-4 py-2 text-xs text-base-content"><WifiOff size={13} />你现在离线，已保存的对话仍可阅读。新消息将在联网后发送。</div>}
@@ -339,6 +343,7 @@ export function App() {
       <div className="relative shrink-0 px-4 pt-2 pb-3 sm:px-8 sm:pb-5" style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
         {!atBottom && <button className="btn btn-circle btn-sm absolute -top-12 left-1/2 z-10 border-base-content/50 bg-base-100 shadow-sm" aria-label="滚动到最新消息" onClick={scrollToBottom}><ArrowDown size={16} /></button>}
         <div className="mx-auto w-full max-w-3xl">
+          {invalidRoute && <div role="alert" className="alert alert-error mb-3 text-xs"><span>找不到这个页面。</span><button type="button" className="btn btn-sm" onClick={() => select(null)}>开启新对话</button></div>}
           {syncError && <div role="alert" className="alert alert-error mb-3 text-xs"><span>{syncError}</span><button type="button" className="btn btn-sm" onClick={reconnect}>重新同步</button></div>}
           {error && <p role="alert" className="mb-3 text-xs font-medium text-base-content">{error}</p>}
           {revisionOf && <div className="mb-2 flex items-center justify-between text-xs text-base-content/60"><span>编辑消息</span><button className="btn btn-ghost btn-xs" onClick={() => { setRevisionOf(undefined); write(`draft:${selected}`, { text: draft }); }}>取消</button></div>}

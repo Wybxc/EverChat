@@ -100,7 +100,7 @@ test('a storage sync error is visible, pauses automatic retries and supports man
   });
   try {
     await page.goto('/');
-    await page.locator('aside').getByRole('button', { name: 'Capacity test', exact: true }).first().click();
+    await page.locator('aside').getByRole('link', { name: 'Capacity test', exact: true }).first().click();
     await expect(page.getByRole('alert')).toContainText(STORAGE_QUOTA_MESSAGE);
     await page.getByRole('textbox', { name: '消息', exact: true }).fill('保留草稿');
     await expect(page.getByRole('button', { name: '发送消息', exact: true })).toBeDisabled();

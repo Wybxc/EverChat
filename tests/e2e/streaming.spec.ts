@@ -195,7 +195,7 @@ test('browser rendering streams ahead of saving, while export and throttled cach
     expect(exported).toContain('验证持久化导出'); expect(exported).not.toContain('正文');
     await expect(answer).toHaveAttribute('data-status', 'completed');
     await expect(page.getByRole('banner')).toContainText('已同步');
-    const id = await page.evaluate(() => JSON.parse(localStorage.getItem('everchat:selected')!) as string);
+    const id = new URL(page.url()).pathname.split('/')[2];
     const stored = await context.request.get(`/api/conversations/${id}`).then((response) => response.json()) as Snapshot;
     const cached = await page.evaluate((id) => JSON.parse(localStorage.getItem(`everchat:snapshot:${id}`)!), id) as Snapshot;
     expect(cached).toEqual(stored);
@@ -252,7 +252,7 @@ test('logging out clears cached messages even when a delayed durable snapshot wr
     await page.getByRole('button', { name: '发送消息', exact: true }).click();
     const answer = page.getByTestId('assistant-message');
     await expect.poll(async () => Number(await answer.getAttribute('data-durable-offset')), { intervals: [50] }).toBeGreaterThan(0);
-    id = await page.evaluate(() => JSON.parse(localStorage.getItem('everchat:selected')!) as string);
+    id = new URL(page.url()).pathname.split('/')[2];
     await page.getByRole('button', { name: '空间设置' }).click();
     await page.getByRole('button', { name: '退出并清除本地记录' }).click();
     await expect(page.getByLabel('访问密码')).toBeVisible();

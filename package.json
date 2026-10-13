@@ -12,12 +12,13 @@
     "typecheck": "tsc -p tsconfig.app.json && tsc -p tsconfig.worker.json && tsc -p tsconfig.tools.json",
     "test": "node --import tsx/esm --test tests/*.test.ts",
     "test:e2e": "playwright test",
+    "test:pwa": "playwright test --config playwright.pwa.config.ts",
     "measure:cloudflare-metrics": "node --import tsx/esm scripts/cloudflare-metrics.ts",
     "measure:cloudflare-tail": "node --import tsx/esm scripts/cloudflare-tail.ts",
     "measure:cloudflare": "node --import tsx/esm scripts/stream-cloudflare.ts",
     "measure:cloudflare-history": "node --import tsx/esm scripts/history-cloudflare.ts",
     "measure:stream": "node --import tsx/esm scripts/stream-baseline.ts",
-    "check": "pnpm test && pnpm build && pnpm test:e2e"
+    "check": "pnpm test && pnpm build && pnpm test:e2e && pnpm test:pwa"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.78",

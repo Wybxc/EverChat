@@ -37,7 +37,7 @@ test('generation survives offline, tab closure and a second device; retries are 
   await page.getByLabel('消息', { exact: true }).fill(prompt);
   await page.getByRole('button', { name: '发送消息', exact: true }).click();
   await expect(page.getByTestId('assistant-message')).toHaveAttribute('data-status', 'running');
-  const id = await page.evaluate(() => JSON.parse(localStorage.getItem('everchat:selected')!));
+  const id = new URL(page.url()).pathname.split('/')[2];
   const initial = await context.request.get(`/api/conversations/${id}`).then((response) => response.json());
   expect(initial.messages).toHaveLength(2);
   await context.setOffline(true);
@@ -46,7 +46,7 @@ test('generation survives offline, tab closure and a second device; retries are 
   const second = await browser.newContext();
   const otherPage = await second.newPage();
   await login(otherPage);
-  await otherPage.getByRole('button', { name: prompt }).click();
+  await otherPage.getByRole('link', { name: prompt }).click();
   await expect(otherPage.getByTestId('assistant-message')).toHaveAttribute('data-status', 'completed', { timeout: 30_000 });
   await context.setOffline(false);
   await expect(page.getByTestId('assistant-message')).toHaveAttribute('data-status', 'completed');
@@ -184,7 +184,7 @@ test('the composer uses the selected model and shows opt-in provider thoughts', 
   await expect(answer.getByTestId('message-reasoning')).toContainText('集成思考。');
   await expect(answer.getByTestId('message-reasoning')).toHaveJSProperty('open', true);
   await expect(answer.getByTestId('message-reasoning').locator('.collapse-content [data-streamdown="strong"]')).toContainText('集成思考。');
-  const id = await page.evaluate(() => JSON.parse(localStorage.getItem('everchat:selected')!));
+  const id = new URL(page.url()).pathname.split('/')[2];
   const snapshot = await context.request.get(`/api/conversations/${id}`).then((response) => response.json());
   expect(snapshot.messages[1]).toMatchObject({ model: 'test-model-2', modelName: '第二模型', reasoning: '**集成思考。**' });
 
@@ -219,7 +219,7 @@ test('DeepSeek-compatible Responses streams Markdown thoughts, persists them and
   await expect(answer.locator('[data-streamdown="strong"]').filter({ hasText: '集成测试回答。' })).toBeVisible();
   await expect(answer).toHaveAttribute('data-status', 'running');
   await expect(answer).toHaveAttribute('data-status', 'completed');
-  const id = await page.evaluate(() => JSON.parse(localStorage.getItem('everchat:selected')!));
+  const id = new URL(page.url()).pathname.split('/')[2];
   const snapshot = await context.request.get(`/api/conversations/${id}`).then((response) => response.json());
   expect(snapshot.messages[1]).toMatchObject({ model: 'deepseek-flash', reasoning: '**集成思考。**' });
   await page.reload();
