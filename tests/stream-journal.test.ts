@@ -72,6 +72,7 @@ test('schema migration keeps old messages, in-flight tasks and full-message even
     assert.equal(applyChange({ seq: 0, messages: [] }, { type: 'change', seq: 1, messages: JSON.parse(retained) }).messages[0].content, '旧正文');
     const run = query('SELECT * FROM runs WHERE id = ?', 'old-run').one();
     assert.equal(run.chunkSeq, 7); assert.equal(run.streamVersion, null);
+    assert.equal(run.executor, 'workflow-v1'); assert.equal(run.cancelRequested, 0); assert.equal(run.startedAt, null);
     assert.equal(query<{ seq: number }>('SELECT MAX(seq) AS seq FROM events').one().seq, 1);
     query('INSERT INTO events (payload) VALUES (?)', '[]');
     assert.equal(query<{ seq: number }>('SELECT MAX(seq) AS seq FROM events').one().seq, 2);

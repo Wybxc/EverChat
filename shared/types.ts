@@ -32,6 +32,7 @@ export interface ModelSelection { providerId: string; model: string }
 export interface SubmitInput { requestId: string; content?: string; retryOf?: string; revisionOf?: string; selection?: ModelSelection; showReasoning?: boolean; reasoningEffort?: ReasoningEffort }
 export interface Submission { runId: string; userId: string; assistantId: string }
 export interface GenerationParams { conversationId: string; runId: string }
+export type GenerationExecutor = 'workflow-v1' | 'do-v1';
 export interface ChatInput { role: 'system' | 'user' | 'assistant'; content: string }
 export interface ChatModel extends ModelSelection { name: string; providerName: string; reasoningSupported: boolean; reasoningEfforts: ReasoningEffort[] }
 export interface SessionInfo { authenticated: boolean; provider: string; model: string; modelName?: string; activeProviderId?: string | null; models?: ChatModel[]; configured: boolean; showReasoning?: boolean; systemPrompt?: string; maxOutputTokens?: number | null }

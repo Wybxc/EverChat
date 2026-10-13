@@ -1,5 +1,5 @@
 import type { GenerationMeasurements, StreamCounts } from '../shared/generation-metrics';
-import type { MessageStatus } from '../shared/types';
+import type { GenerationExecutor, MessageStatus } from '../shared/types';
 
 export class GenerationMeter {
   private readonly startedAt: number;
@@ -10,7 +10,7 @@ export class GenerationMeter {
     broadcastFrames: 0, broadcastBytes: 0,
   };
   constructor(readonly runId: string, private readonly now: () => number = Date.now,
-    private readonly coverage: GenerationMeasurements['coverage'] = 'claim-to-terminal') { this.startedAt = now(); }
+    private readonly coverage: GenerationMeasurements['coverage'] = 'claim-to-terminal', private readonly executor?: GenerationExecutor) { this.startedAt = now(); }
   checkpoint(contentLength: number, reasoningLength: number, upstream?: StreamCounts) {
     this.counts.checkpoints++;
     this.counts.checkpointCharacters += contentLength + reasoningLength;
@@ -27,7 +27,7 @@ export class GenerationMeter {
     if (recipients) this.counts.broadcastBytes += this.encoder.encode(payload).byteLength * recipients;
   }
   report(status: MessageStatus, databaseBytes: number, contentCharacters: number, reasoningCharacters: number): GenerationMeasurements {
-    return { runId: this.runId, coverage: this.coverage, status, elapsedMs: Math.max(0, this.now() - this.startedAt), ...this.counts,
+    return { runId: this.runId, ...(this.executor ? { executor: this.executor } : {}), coverage: this.coverage, status, elapsedMs: Math.max(0, this.now() - this.startedAt), ...this.counts,
       databaseBytes, contentCharacters, reasoningCharacters };
   }
 }

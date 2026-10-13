@@ -18,7 +18,8 @@ export function initializeConversation(sql: SqlStorage, metrics: boolean) {
   }
   const runColumns = new Set(sql.exec<{ name: string }>('PRAGMA table_info(runs)').toArray().map((row) => row.name));
   for (const [name, type] of [['config', 'TEXT'], ['streamVersion', 'TEXT'], ['durableOffset', 'INTEGER NOT NULL DEFAULT 0'],
-    ['contentLength', 'INTEGER NOT NULL DEFAULT 0'], ['reasoningLength', 'INTEGER NOT NULL DEFAULT 0']]) {
+    ['contentLength', 'INTEGER NOT NULL DEFAULT 0'], ['reasoningLength', 'INTEGER NOT NULL DEFAULT 0'],
+    ['executor', "TEXT NOT NULL DEFAULT 'workflow-v1'"], ['startedAt', 'INTEGER'], ['cancelRequested', 'INTEGER NOT NULL DEFAULT 0']]) {
     if (!runColumns.has(name)) sql.exec(`ALTER TABLE runs ADD COLUMN ${name} ${type}`);
   }
   sql.exec(STREAM_JOURNAL_SCHEMA);

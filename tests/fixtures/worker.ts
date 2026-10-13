@@ -1,5 +1,75 @@
-// Test entry point: keep the real Workflow, Durable Objects and API, replacing only upstream HTTP.
-export { default, Conversation, Library, GenerationWorkflow } from '../../worker/index';
+// Test entry point: production API and runtime, mock upstream plus isolated fault-injection RPCs.
+import production, { Conversation as ProductionConversation } from '../../worker/index';
+import { authenticated } from '../../worker/auth';
+import type { Env } from '../../worker/env';
+import type { generate } from '../../worker/provider';
+import type { GenerationExecutor, StreamBatch } from '../../shared/types';
+import type { StreamCounts } from '../../shared/generation-metrics';
+export { Library, GenerationWorkflow } from '../../worker/index';
+
+export class Conversation extends ProductionConversation {
+  private failNextAppend = false;
+  protected override async generateModel(...args: Parameters<typeof generate>) {
+    if (args[0].model.startsWith('alarm-')) {
+      this.ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS fixture_calls (runId TEXT PRIMARY KEY, calls INTEGER NOT NULL)');
+      const run = this.ctx.storage.sql.exec<{ id: string }>(`SELECT runs.id FROM runs JOIN messages ON messages.id = runs.assistantId WHERE messages.status = 'running'`).one();
+      this.ctx.storage.sql.exec('INSERT INTO fixture_calls VALUES (?, 1) ON CONFLICT(runId) DO UPDATE SET calls = calls + 1', run.id);
+      if (args[0].model === 'alarm-cancel-tail-failure') {
+        // No I/O between receiving this tail and cancellation; the write fails inside cancel().
+        await args[2]('停止前的内容'); await args[2]('尚未保存的尾部');
+        this.failNextAppend = true;
+        await this.cancel(run.id);
+        return;
+      }
+    }
+    return super.generateModel(...args);
+  }
+  override append(runId: string, batch: StreamBatch, counts?: StreamCounts, executor: GenerationExecutor = 'workflow-v1') {
+    if (this.failNextAppend) { this.failNextAppend = false; throw new Error('Injected storage failure'); }
+    return super.append(runId, batch, counts, executor);
+  }
+  async fixtureState(runId: string) {
+    const run = this.ctx.storage.sql.exec<{ executor: string; cancelRequested: number; startedAt: number | null }>('SELECT executor, cancelRequested, startedAt FROM runs WHERE id = ?', runId).one();
+    const hasCalls = this.ctx.storage.sql.exec(`SELECT name FROM sqlite_master WHERE name = 'fixture_calls'`).toArray().length;
+    const calls = hasCalls ? this.ctx.storage.sql.exec<{ calls: number }>('SELECT calls FROM fixture_calls WHERE runId = ?', runId).toArray()[0]?.calls ?? 0 : 0;
+    let workflowStatus: string | null = null;
+    try { workflowStatus = (await (await this.env.GENERATION.get(runId)).status()).status; } catch { /* No Workflow was created. */ }
+    return { ...run, calls, workflowStatus };
+  }
+  fixtureReenterAlarm() { return this.alarm(); }
+  async fixtureAbort(runId: string, stopping: boolean) {
+    if (stopping) this.ctx.storage.sql.exec('UPDATE runs SET cancelRequested = 1 WHERE id = ?', runId);
+    await this.ctx.storage.sync();
+    this.ctx.abort('Intentional test reset', { retryAlarm: true });
+  }
+  fixtureLegacy(runId: string) {
+    this.ctx.storage.sql.exec(`UPDATE runs SET executor = 'workflow-v1' WHERE id = ? AND startedAt IS NULL`, runId);
+  }
+}
+
+export default {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext) {
+    const url = new URL(request.url);
+    const match = /^\/api\/__test\/conversations\/([0-9a-f-]{36})\/(state|alarm|abort|abort-stop|legacy|claim)$/.exec(url.pathname);
+    if (!match) return production.fetch(request, env, ctx);
+    if (request.method !== 'POST' || request.headers.get('Origin') !== url.origin) return new Response('Forbidden', { status: 403 });
+    if (!await authenticated(request, env)) return new Response('Unauthorized', { status: 401 });
+    const { runId } = await request.json() as { runId: string };
+    const conversation = (env.CONVERSATIONS as unknown as DurableObjectNamespace<Conversation>).getByName(match[1]);
+    switch (match[2]) {
+      case 'state': return Response.json(await conversation.fixtureState(runId));
+      case 'alarm': await conversation.fixtureReenterAlarm(); break;
+      case 'abort':
+      case 'abort-stop':
+        try { await conversation.fixtureAbort(runId, match[2] === 'abort-stop'); }
+        catch { return Response.json({ reset: true }, { status: 503 }); }
+        break;
+      case 'legacy': await conversation.fixtureLegacy(runId); break;
+      case 'claim': return Response.json(await conversation.claim(runId));
+    }
+    return Response.json({ ok: true });
+  },
+} satisfies ExportedHandler<Env>;
 
 const upstreamFetch = globalThis.fetch;
 globalThis.fetch = async (input, init) => {
@@ -15,6 +85,19 @@ globalThis.fetch = async (input, init) => {
   if (!['/v1/chat/completions', '/v1/responses'].includes(url.pathname)) return new Response('Not found', { status: 404 });
   const requestBody = await request.clone().json() as { model: string; thinking?: { type: string }; reasoning_effort?: string; reasoning?: { effort?: string } };
   const encoder = new TextEncoder();
+  if (requestBody.model === 'alarm-stall') {
+    let stop: (() => void) | undefined;
+    return new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        stop = () => controller.error(new Error('Upstream aborted'));
+        if (request.signal.aborted) { stop(); return; }
+        request.signal.addEventListener('abort', stop, { once: true });
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ id: 'idle', choices: [{ index: 0,
+          delta: { content: '等待上游的正文', reasoning_content: '等待上游的思考' }, finish_reason: null }] })}\n\n`));
+      },
+      cancel() { if (stop) request.signal.removeEventListener('abort', stop); },
+    }), { headers: { 'Content-Type': 'text/event-stream' } });
+  }
   const benchmark = /^benchmark-(text|reasoning|long|error)-(\d+)-(\d+)-(\d+)$/.exec(requestBody.model);
   if (benchmark) {
     const [, kind, count, delay, size] = benchmark;
@@ -74,7 +157,7 @@ globalThis.fetch = async (input, init) => {
       const content = tokens[index++];
       const delta = content ? {
         ...(scrollTest ? { reasoning_content: `思考 ${index}：持续生成的思考内容。\n\n` }
-          : index === 1 && (requestBody.thinking?.type === 'enabled' || requestBody.reasoning_effort) ? { reasoning_content: '**集成思考。**' } : {}),
+          : index === 1 && (requestBody.model.startsWith('alarm-') || requestBody.thinking?.type === 'enabled' || requestBody.reasoning_effort) ? { reasoning_content: '**集成思考。**' } : {}),
         content: `${index === 1 && requestBody.model === 'test-model-2' ? '第二模型：\n\n' : ''}${content}`,
       } : {};
       const chunk = { id: 'integration', choices: [{ index: 0, delta, finish_reason: content ? null : 'stop' }] };

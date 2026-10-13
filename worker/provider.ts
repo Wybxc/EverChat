@@ -5,9 +5,9 @@ import { createAnthropic } from '@ai-sdk/anthropic';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import type { ChatInput, ProviderConfig } from '../shared/types';
 import { normalizeBaseUrl } from './provider-config';
+import { GenerationCancelled, ProviderError } from './generation-errors';
 
-export class ProviderError extends Error {}
-export class GenerationCancelled extends Error {}
+export { GenerationCancelled, ProviderError } from './generation-errors';
 
 function responseReasoningDelta(value: unknown): { id: string; text: string } | null {
   if (!value || typeof value !== 'object') return null;
