@@ -1,7 +1,8 @@
 import { DurableObject } from 'cloudflare:workers';
 import type { Env } from './env';
-import type { ConversationInfo, ProviderConfig, ProviderSettings } from '../shared/types';
-import { mergeProviderConfig, providerConfigFromEnv, publicProviderSettings } from './provider-config';
+import type { ConversationInfo, ModelSelection, ProviderConfig, ProviderModelConfig, ProviderSettings, ProviderSettingsInput, ReasoningEffort } from '../shared/types';
+import { migrateModels } from '../shared/provider-settings';
+import { defaultProviderSettings, legacyProviderSettings, mergeProviderSettings, publicProviderSettings, runtimeProviderConfig } from './provider-config';
 
 export class Library extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
@@ -12,6 +13,17 @@ export class Library extends DurableObject<Env> {
       id INTEGER PRIMARY KEY CHECK (id = 1), provider TEXT NOT NULL, baseUrl TEXT NOT NULL,
       model TEXT NOT NULL, systemPrompt TEXT NOT NULL, maxOutputTokens INTEGER NOT NULL, apiKey TEXT
     )`);
+    ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS provider_profiles (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, provider TEXT NOT NULL, baseUrl TEXT NOT NULL,
+      models TEXT NOT NULL, apiKey TEXT
+    )`);
+    ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS provider_preferences (
+      id INTEGER PRIMARY KEY CHECK (id = 1), activeProviderId TEXT, activeModel TEXT NOT NULL,
+      systemPrompt TEXT NOT NULL, maxOutputTokens INTEGER NOT NULL, showReasoning INTEGER NOT NULL DEFAULT 0
+    )`);
+    if (!ctx.storage.sql.exec<{ name: string }>('PRAGMA table_info(provider_preferences)').toArray().some((row) => row.name === 'showReasoning')) {
+      ctx.storage.sql.exec('ALTER TABLE provider_preferences ADD COLUMN showReasoning INTEGER NOT NULL DEFAULT 0');
+    }
   }
   list(): ConversationInfo[] {
     return this.ctx.storage.sql.exec<ConversationInfo & Record<string, SqlStorageValue>>('SELECT * FROM conversations ORDER BY updatedAt DESC LIMIT 500').toArray();
@@ -26,28 +38,57 @@ export class Library extends DurableObject<Env> {
   }
   touch(id: string) { this.ctx.storage.sql.exec('UPDATE conversations SET updatedAt = ? WHERE id = ?', Date.now(), id); }
   rename(id: string, title: string) { this.ctx.storage.sql.exec('UPDATE conversations SET title = ? WHERE id = ?', title, id); }
-  providerConfig(): ProviderConfig {
-    const row = this.ctx.storage.sql.exec<ProviderConfig & Record<string, SqlStorageValue>>('SELECT provider, baseUrl, model, systemPrompt, maxOutputTokens, apiKey FROM provider_config WHERE id = 1').toArray()[0];
-    if (!row) return providerConfigFromEnv(this.env);
-    return {
-      provider: row.provider,
-      baseUrl: row.baseUrl,
-      model: row.model,
-      systemPrompt: row.systemPrompt,
-      maxOutputTokens: Number(row.maxOutputTokens),
-      apiKey: typeof row.apiKey === 'string' && row.apiKey ? row.apiKey : undefined,
-    };
+  private providerSettingsData(): ProviderSettingsInput {
+    const preferences = this.ctx.storage.sql.exec<{
+      activeProviderId: string | null; activeModel: string; systemPrompt: string; maxOutputTokens: number; showReasoning: number;
+    } & Record<string, SqlStorageValue>>('SELECT activeProviderId, activeModel, systemPrompt, maxOutputTokens, showReasoning FROM provider_preferences WHERE id = 1').toArray()[0];
+    const profiles = this.ctx.storage.sql.exec<{
+      id: string; name: string; provider: ProviderModelConfig['provider']; baseUrl: string; models: string; apiKey: string | null;
+    } & Record<string, SqlStorageValue>>('SELECT id, name, provider, baseUrl, models, apiKey FROM provider_profiles ORDER BY rowid').toArray();
+    if (preferences || profiles.length) {
+      const defaults = defaultProviderSettings(this.env);
+      return {
+        providers: profiles.map((profile) => ({
+          id: profile.id, name: profile.name, provider: profile.provider, baseUrl: profile.baseUrl,
+          models: migrateModels(JSON.parse(profile.models)), ...(profile.apiKey ? { apiKey: profile.apiKey } : {}),
+        })),
+        activeProviderId: preferences?.activeProviderId ?? null,
+        activeModel: preferences?.activeModel ?? '',
+        systemPrompt: preferences?.systemPrompt ?? defaults.systemPrompt,
+        maxOutputTokens: Number(preferences?.maxOutputTokens ?? defaults.maxOutputTokens),
+        showReasoning: Boolean(preferences?.showReasoning ?? defaults.showReasoning),
+      };
+    }
+    const legacy = this.ctx.storage.sql.exec<ProviderConfig & Record<string, SqlStorageValue>>(
+      'SELECT provider, baseUrl, model, systemPrompt, maxOutputTokens, apiKey FROM provider_config WHERE id = 1',
+    ).toArray()[0];
+    if (legacy) return legacyProviderSettings({ ...legacy, maxOutputTokens: Number(legacy.maxOutputTokens) });
+    return defaultProviderSettings(this.env);
   }
-  saveProviderConfig(input: ProviderConfig): { settings: ProviderSettings } | { error: string } {
-    let config: ProviderConfig;
-    try { config = mergeProviderConfig(this.providerConfig(), input); }
+  providerConfig(selection?: ModelSelection, effort?: ReasoningEffort): ProviderConfig | null {
+    return runtimeProviderConfig(this.providerSettingsData(), selection, effort);
+  }
+  providerSettings(): ProviderSettings { return publicProviderSettings(this.providerSettingsData()); }
+  providerForModelList(id: string): ProviderModelConfig | null {
+    return this.providerSettingsData().providers.find((profile) => profile.id === id) ?? null;
+  }
+  saveProviderSettings(input: ProviderSettingsInput): { settings: ProviderSettings } | { error: string } {
+    let settings: ProviderSettingsInput;
+    try { settings = mergeProviderSettings(this.providerSettingsData(), input); }
     catch (error) { return { error: error instanceof Error ? error.message : '供应商配置无效。' }; }
-    this.ctx.storage.sql.exec(`INSERT INTO provider_config (id, provider, baseUrl, model, systemPrompt, maxOutputTokens, apiKey)
-      VALUES (1, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET provider = excluded.provider, baseUrl = excluded.baseUrl,
-      model = excluded.model, systemPrompt = excluded.systemPrompt, maxOutputTokens = excluded.maxOutputTokens,
-      apiKey = excluded.apiKey`, config.provider, config.baseUrl, config.model, config.systemPrompt, config.maxOutputTokens, config.apiKey ?? null);
-    return { settings: publicProviderSettings(config) };
+    this.ctx.storage.transactionSync(() => {
+      this.ctx.storage.sql.exec('DELETE FROM provider_config WHERE id = 1');
+      this.ctx.storage.sql.exec('DELETE FROM provider_profiles');
+      for (const profile of settings.providers) {
+        this.ctx.storage.sql.exec('INSERT INTO provider_profiles (id, name, provider, baseUrl, models, apiKey) VALUES (?, ?, ?, ?, ?, ?)',
+          profile.id, profile.name, profile.provider, profile.baseUrl, JSON.stringify(profile.models), profile.apiKey ?? null);
+      }
+      this.ctx.storage.sql.exec(`INSERT INTO provider_preferences (id, activeProviderId, activeModel, systemPrompt, maxOutputTokens, showReasoning)
+        VALUES (1, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET activeProviderId = excluded.activeProviderId,
+        activeModel = excluded.activeModel, systemPrompt = excluded.systemPrompt, maxOutputTokens = excluded.maxOutputTokens, showReasoning = excluded.showReasoning`,
+      settings.activeProviderId, settings.activeModel, settings.systemPrompt, settings.maxOutputTokens, settings.showReasoning);
+    });
+    return { settings: publicProviderSettings(settings) };
   }
   // Count before password checking so concurrent failures cannot bypass the limit.
   allowLogin(ip: string) {

@@ -15,6 +15,7 @@ test('replayed events are idempotent and sequence gaps trigger resync', () => {
   assert.throws(() => applyChange(final, { type: 'change', seq: 4, messages: [message] }), /sequence gap/);
 });
 const provider = providerConfigFromEnv({ AI_PROVIDER: 'openai-compatible', AI_BASE_URL: 'https://provider.example/v1', AI_API_KEY: 'private-key', AI_MODEL: 'test', SYSTEM_PROMPT: 'test', MAX_OUTPUT_TOKENS: '128' } as Env);
+assert.ok(provider);
 test('AI SDK provider preserves UTF-8 deltas from fragmented streams', async () => {
   const original = globalThis.fetch;
   const bytes = new TextEncoder().encode(': comment\r\n\r\ndata: {"id":"1","choices":[{"index":0,"delta":{"content":"你好"},"finish_reason":null}]}\r\n\r\ndata: {"id":"1","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\r\n\r\ndata: [DONE]\r\n\r\n');

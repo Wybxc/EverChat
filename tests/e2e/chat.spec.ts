@@ -7,6 +7,13 @@ async function login(page: Page) {
   await page.getByLabel('访问密码').fill('everchat-local');
   await page.getByRole('button', { name: '进入我的空间' }).click();
   await expect(page.getByLabel('消息', { exact: true })).toBeVisible();
+  const response = await page.request.put('/api/settings/providers', { headers: { Origin: origin }, data: {
+    providers: [{ id: '00000000-0000-4000-8000-000000000099', name: 'Integration', provider: 'openai-chat', baseUrl: 'https://provider.test/v1', models: ['test-model'], apiKey: 'integration-test-key' }],
+    activeProviderId: '00000000-0000-4000-8000-000000000099', activeModel: 'test-model', systemPrompt: '', maxOutputTokens: 128,
+  } });
+  expect(response.status()).toBe(200);
+  await page.reload();
+  await expect(page.getByLabel('消息', { exact: true })).toBeVisible();
 }
 async function newConversation(context: BrowserContext, title = 'Integration test') {
   const id = randomUUID();
@@ -43,8 +50,9 @@ test('generation survives offline, tab closure and a second device; retries are 
   await expect(otherPage.getByTestId('assistant-message')).toHaveAttribute('data-status', 'completed', { timeout: 30_000 });
   await context.setOffline(false);
   await expect(page.getByTestId('assistant-message')).toHaveAttribute('data-status', 'completed');
-  const firstText = await page.getByTestId('assistant-message').innerText();
-  expect(await otherPage.getByTestId('assistant-message').innerText()).toBe(firstText);
+  await expect(page.getByTestId('assistant-message')).toContainText('服务端生成完成');
+  const firstText = (await page.getByTestId('assistant-message').innerText()).replace(/\s+/g, '');
+  await expect.poll(async () => (await otherPage.getByTestId('assistant-message').innerText()).replace(/\s+/g, '')).toBe(firstText);
 
   const input = { requestId: randomUUID(), content: '关闭页面也继续生成' };
   const first = await context.request.post(`/api/conversations/${id}/messages`, { headers: { Origin: origin }, data: input });
@@ -57,7 +65,16 @@ test('generation survives offline, tab closure and a second device; retries are 
   await expect(otherPage.getByTestId('assistant-message').last()).toHaveAttribute('data-status', 'completed', { timeout: 30_000 });
   const final = await second.request.get(`/api/conversations/${id}`).then((response) => response.json());
   expect(final.messages).toHaveLength(4);
-  expect(final.messages[3].content).toContain('现在，把注意力');
+  expect(final.messages[3].content).toContain('服务端生成完成');
+  const settings = await context.request.get('/api/settings/providers').then((response) => response.json());
+  try {
+    expect((await context.request.put('/api/settings/providers', { headers: { Origin: origin }, data: { ...settings, activeProviderId: null, activeModel: '' } })).status()).toBe(200);
+    const replay = await context.request.post(`/api/conversations/${id}/messages`, { headers: { Origin: origin }, data: input });
+    expect(replay.status()).toBe(202);
+    expect(await replay.json()).toEqual(await first.json());
+  } finally {
+    expect((await context.request.put('/api/settings/providers', { headers: { Origin: origin }, data: settings })).status()).toBe(200);
+  }
   await second.close();
 });
 
@@ -71,10 +88,10 @@ test('offline outbox is persisted, delivered once, and cancellation preserves pr
   expect(saved).toHaveLength(1);
   await context.setOffline(false);
   await expect(page.getByTestId('assistant-message')).toHaveAttribute('data-status', 'running');
-  await expect(page.getByTestId('assistant-message')).toContainText('演示回答');
+  await expect(page.getByTestId('assistant-message')).toContainText('集成测试回答');
   await page.getByRole('button', { name: '停止生成' }).click();
   await expect(page.getByTestId('assistant-message')).toHaveAttribute('data-status', 'cancelled');
-  expect(await page.getByTestId('assistant-message').innerText()).toContain('演示回答');
+  expect(await page.getByTestId('assistant-message').innerText()).toContain('集成测试回答');
   await page.getByRole('button', { name: '重新生成' }).click();
   await expect(page.getByTestId('assistant-message')).toHaveCount(2);
   await expect(page.getByTestId('assistant-message').last()).toHaveAttribute('data-status', 'completed', { timeout: 30_000 });
@@ -107,4 +124,98 @@ test('mobile and desktop layouts fit their viewports', async ({ page }) => {
   await page.getByRole('radio', { name: '浅色' }).focus();
   await page.getByRole('radio', { name: '浅色' }).press('Space');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+});
+
+test('new conversation moves keyboard focus to the composer', async ({ page }) => {
+  await login(page);
+  await page.getByRole('button', { name: '开启新对话' }).click();
+  await expect(page.getByLabel('消息', { exact: true })).toBeFocused();
+});
+
+test('system theme follows the operating-system color preference', async ({ page }) => {
+  await login(page);
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.getByRole('button', { name: '空间设置' }).click();
+  await page.getByRole('radio', { name: '系统' }).focus();
+  await page.getByRole('radio', { name: '系统' }).press('Space');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await page.emulateMedia({ colorScheme: 'light' });
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+});
+
+test('the composer uses the selected model and shows opt-in provider thoughts', async ({ page, context }) => {
+  await login(page);
+  const settings = await context.request.get('/api/settings/providers').then((response) => response.json());
+  const model = settings.providers[0].models[0];
+  model.reasoningSupport = 'supported';
+  settings.providers[0].models.push({ id: 'test-model-2', name: '第二模型', enabled: true, reasoningSupport: 'supported' });
+  settings.showReasoning = true;
+  expect((await context.request.put('/api/settings/providers', { headers: { Origin: origin }, data: settings })).status()).toBe(200);
+  const invalidConversationId = randomUUID();
+  expect((await context.request.post('/api/conversations', { headers: { Origin: origin }, data: { id: invalidConversationId, title: 'Invalid effort' } })).status()).toBe(201);
+  const unsupported = await context.request.post(`/api/conversations/${invalidConversationId}/messages`, { headers: { Origin: origin }, data: {
+    requestId: randomUUID(), content: '不应开始', selection: { providerId: settings.providers[0].id, model: 'test-model-2' }, reasoningEffort: 'max',
+  } });
+  expect(unsupported.status()).toBe(400);
+  expect(await unsupported.json()).toMatchObject({ error: '所选模型不支持此思维强度。' });
+  await page.reload();
+  await page.getByLabel('聊天模型').selectOption(JSON.stringify([settings.providers[0].id, 'test-model-2']));
+  await expect(page.getByRole('banner').getByText('第二模型', { exact: true })).toBeVisible();
+  await page.getByLabel('思维强度').selectOption('high');
+  await page.getByLabel('消息', { exact: true }).fill('用选定模型回答');
+  await page.getByRole('button', { name: '发送消息', exact: true }).click();
+  const answer = page.getByTestId('assistant-message');
+  await expect(answer).toHaveAttribute('data-status', 'running');
+  await expect(answer.getByTestId('message-reasoning').locator('[data-streamdown="strong"]').filter({ hasText: '集成思考。' })).toBeVisible();
+  await expect(answer.locator('[data-streamdown="strong"]').filter({ hasText: '集成测试回答。' })).toBeVisible();
+  await expect(answer).toHaveAttribute('data-status', 'running');
+  await expect(answer).toHaveAttribute('data-status', 'completed', { timeout: 30_000 });
+  await expect(answer).toContainText('第二模型：'); await expect(answer).toContainText('第二模型');
+  await expect(answer.getByTestId('message-reasoning')).toContainText('集成思考。');
+  await expect(answer.getByTestId('message-reasoning')).toHaveJSProperty('open', true);
+  await expect(answer.getByTestId('message-reasoning').locator('.collapse-content [data-streamdown="strong"]')).toContainText('集成思考。');
+  const id = await page.evaluate(() => JSON.parse(localStorage.getItem('everchat:selected')!));
+  const snapshot = await context.request.get(`/api/conversations/${id}`).then((response) => response.json());
+  expect(snapshot.messages[1]).toMatchObject({ model: 'test-model-2', modelName: '第二模型', reasoning: '**集成思考。**' });
+
+  await page.getByLabel('聊天模型').selectOption(JSON.stringify([settings.providers[0].id, 'test-model']));
+  await answer.getByRole('button', { name: '重新生成' }).click();
+  const retry = page.getByTestId('assistant-message').last();
+  await expect(retry).toHaveAttribute('data-status', 'completed', { timeout: 30_000 });
+  await expect(retry).toContainText('第二模型：');
+  const retried = await context.request.get(`/api/conversations/${id}`).then((response) => response.json());
+  expect(retried.messages.at(-1)).toMatchObject({ model: 'test-model-2', modelName: '第二模型' });
+});
+
+test('DeepSeek-compatible Responses streams Markdown thoughts, persists them and renders them after reload', async ({ page, context }) => {
+  await login(page);
+  const settings = await context.request.get('/api/settings/providers').then((response) => response.json());
+  settings.providers[0].provider = 'openai-responses';
+  settings.providers[0].models = [{ id: 'deepseek-flash', name: 'DeepSeek Flash', enabled: true }];
+  settings.activeModel = 'deepseek-flash';
+  settings.showReasoning = true;
+  expect((await context.request.put('/api/settings/providers', { headers: { Origin: origin }, data: settings })).status()).toBe(200);
+  await page.reload();
+  await page.getByRole('button', { name: '开启新对话' }).click();
+  await page.getByLabel('思维强度').selectOption('low');
+  await page.getByLabel('消息', { exact: true }).fill('测试 Responses 思考内容');
+  await page.getByRole('button', { name: '发送消息', exact: true }).click();
+  const answer = page.getByTestId('assistant-message');
+  const thoughts = answer.getByTestId('message-reasoning');
+  await expect(thoughts.locator('[data-streamdown="strong"]')).toHaveText('集成思考。');
+  await expect(thoughts.locator('[data-streamdown="strong"]')).toBeVisible();
+  await expect(answer).toHaveAttribute('data-status', 'running');
+  await expect(answer.locator('[data-streamdown="strong"]').filter({ hasText: '集成测试回答。' })).toHaveCount(0);
+  await expect(answer.locator('[data-streamdown="strong"]').filter({ hasText: '集成测试回答。' })).toBeVisible();
+  await expect(answer).toHaveAttribute('data-status', 'running');
+  await expect(answer).toHaveAttribute('data-status', 'completed');
+  const id = await page.evaluate(() => JSON.parse(localStorage.getItem('everchat:selected')!));
+  const snapshot = await context.request.get(`/api/conversations/${id}`).then((response) => response.json());
+  expect(snapshot.messages[1]).toMatchObject({ model: 'deepseek-flash', reasoning: '**集成思考。**' });
+  await page.reload();
+  await expect(thoughts.locator('[data-streamdown="strong"]')).toBeVisible();
+  await thoughts.getByText('思考过程', { exact: true }).click();
+  await expect(thoughts.locator('[data-streamdown="strong"]')).not.toBeVisible();
+  await thoughts.getByText('思考过程', { exact: true }).click();
+  await expect(thoughts.locator('[data-streamdown="strong"]')).toBeVisible();
 });

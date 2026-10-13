@@ -30,6 +30,10 @@ export default defineConfig({
       navigateFallbackDenylist: [/^\/api\//],
       globPatterns: ['**/*.{js,css,html,svg,png,webmanifest}'],
     },
-  }), cloudflare({ persistState: process.env.EVERCHAT_TEST_STATE ? { path: process.env.EVERCHAT_TEST_STATE } : true })],
+  }), cloudflare({
+    persistState: process.env.EVERCHAT_TEST_STATE ? { path: process.env.EVERCHAT_TEST_STATE } : true,
+    ...(process.env.EVERCHAT_TEST_STATE ? { inspectorPort: false } : {}),
+    ...(process.env.EVERCHAT_MOCK_PROVIDER === '1' ? { config: { main: 'tests/fixtures/worker.ts' } } : {}),
+  })],
   server: { port: 5173, strictPort: true },
 });

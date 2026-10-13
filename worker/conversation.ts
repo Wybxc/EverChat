@@ -1,10 +1,10 @@
 import { DurableObject } from 'cloudflare:workers';
 import type { Env } from './env';
-import type { ChatInput, Change, Message, MessageStatus, Snapshot, Submission, SubmitInput } from '../shared/types';
+import type { ChatInput, Change, Message, MessageStatus, ProviderConfig, Snapshot, Submission, SubmitInput } from '../shared/types';
 import { isActive } from '../shared/types';
 
 type Row = Message & Record<string, SqlStorageValue>;
-type Run = { id: string; conversationId: string; assistantId: string; context: string; chunkSeq: number; updatedAt: number } & Record<string, SqlStorageValue>;
+type Run = { id: string; conversationId: string; assistantId: string; context: string; config: string | null; chunkSeq: number; updatedAt: number } & Record<string, SqlStorageValue>;
 type Failure = { error: string; status: number };
 
 export class Conversation extends DurableObject<Env> {
@@ -21,6 +21,13 @@ export class Conversation extends DurableObject<Env> {
       context TEXT NOT NULL, chunkSeq INTEGER NOT NULL DEFAULT 0, updatedAt INTEGER NOT NULL
     )`);
     sql.exec('CREATE TABLE IF NOT EXISTS events (seq INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL)');
+    const columns = new Set(sql.exec<{ name: string }>('PRAGMA table_info(messages)').toArray().map((row) => row.name));
+    for (const column of ['reasoning', 'providerId', 'model', 'modelName']) {
+      if (!columns.has(column)) sql.exec(`ALTER TABLE messages ADD COLUMN ${column} TEXT`);
+    }
+    if (!sql.exec<{ name: string }>('PRAGMA table_info(runs)').toArray().some((row) => row.name === 'config')) {
+      sql.exec('ALTER TABLE runs ADD COLUMN config TEXT');
+    }
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
   }
   private all(): Message[] { return this.ctx.storage.sql.exec<Row>('SELECT * FROM messages ORDER BY rowid').toArray(); }
@@ -44,11 +51,16 @@ export class Conversation extends DurableObject<Env> {
     }
   }
   private insert(message: Message) {
-    this.ctx.storage.sql.exec('INSERT INTO messages VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      message.id, message.role, message.content, message.status, message.createdAt, message.runId, message.parentId, message.revisionOf, message.error);
+    this.ctx.storage.sql.exec('INSERT INTO messages (id, role, content, status, createdAt, runId, parentId, revisionOf, error, providerId, model, modelName, reasoning) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      message.id, message.role, message.content, message.status, message.createdAt, message.runId, message.parentId, message.revisionOf, message.error,
+      message.providerId ?? null, message.model ?? null, message.modelName ?? null, message.reasoning ?? null);
   }
-  async submit(conversationId: string, input: SubmitInput): Promise<Submission | Failure> {
-    const fingerprint = JSON.stringify([input.content ?? null, input.retryOf ?? null, input.revisionOf ?? null]);
+  async submit(conversationId: string, input: SubmitInput, config: ProviderConfig | null): Promise<Submission | Failure> {
+    // Keep the old fingerprint for requests accepted before model selection was available.
+    const parts: (string | null)[] = [input.content ?? null, input.retryOf ?? null, input.revisionOf ?? null];
+    if (input.selection) parts.push(input.selection.providerId, input.selection.model);
+    if (input.showReasoning !== undefined || input.reasoningEffort) parts.push(input.showReasoning === true ? 'show-reasoning' : 'hide-reasoning', input.reasoningEffort ?? null);
+    const fingerprint = JSON.stringify(parts);
     const duplicate = () => {
       const existing = this.ctx.storage.sql.exec<{ fingerprint: string; result: string }>('SELECT * FROM submissions WHERE id = ?', input.requestId).toArray()[0];
       if (!existing) return null;
@@ -56,6 +68,7 @@ export class Conversation extends DurableObject<Env> {
     };
     const existing = duplicate();
     if (existing) return existing;
+    if (!config) return { error: '所选模型不可用，请配置供应商并启用模型。', status: 400 };
     // Alarm is durable before acceptance; an interrupted request never leaves an unscheduled outbox.
     await this.ctx.storage.setAlarm(Date.now() + 1000);
     const raced = duplicate();
@@ -82,6 +95,7 @@ export class Conversation extends DurableObject<Env> {
     const assistant: Message = {
       id: crypto.randomUUID(), role: 'assistant', content: '', status: 'queued', createdAt: Date.now(),
       runId, parentId: user.id, revisionOf: previous?.id ?? null, error: null,
+      providerId: config.providerId, model: config.model, modelName: config.modelName || config.model,
     };
     const cutoff = parent ?? original;
     const history = cutoff ? messages.slice(0, messages.findIndex((m) => m.id === cutoff.id)) : messages;
@@ -95,7 +109,8 @@ export class Conversation extends DurableObject<Env> {
     const change = this.ctx.storage.transactionSync(() => {
       if (!parent) this.insert(user);
       this.insert(assistant);
-      this.ctx.storage.sql.exec('INSERT INTO runs VALUES (?, ?, ?, ?, 0, ?)', runId, conversationId, assistant.id, JSON.stringify(context), Date.now());
+      this.ctx.storage.sql.exec('INSERT INTO runs (id, conversationId, assistantId, context, chunkSeq, updatedAt, config) VALUES (?, ?, ?, ?, 0, ?, ?)',
+        runId, conversationId, assistant.id, JSON.stringify(context), Date.now(), JSON.stringify(config));
       this.ctx.storage.sql.exec('INSERT INTO submissions VALUES (?, ?, ?)', input.requestId, fingerprint, JSON.stringify(result));
       return this.record(parent ? [assistant] : [user, assistant]);
     });
@@ -124,7 +139,7 @@ export class Conversation extends DurableObject<Env> {
     }
     if (this.all().some(isActive)) await this.ctx.storage.setAlarm(Date.now() + 60_000);
   }
-  claim(runId: string): { context: ChatInput[]; claimed: boolean; status: MessageStatus } | null {
+  claim(runId: string): { context: ChatInput[]; config?: ProviderConfig; claimed: boolean; status: MessageStatus } | null {
     const run = this.run(runId);
     const message = run && this.message(run.assistantId);
     if (!run || !message) return null;
@@ -135,16 +150,17 @@ export class Conversation extends DurableObject<Env> {
       return this.record([this.message(message.id)!]);
     });
     this.broadcast(change);
-    return { context: JSON.parse(run.context), claimed: true, status: 'running' };
+    return { context: JSON.parse(run.context), ...(run.config ? { config: JSON.parse(run.config) as ProviderConfig } : {}), claimed: true, status: 'running' };
   }
-  checkpoint(runId: string, content: string, chunkSeq: number): boolean {
+  checkpoint(runId: string, content: string, chunkSeq: number, reasoning = ''): boolean {
     const run = this.run(runId);
     const message = run && this.message(run.assistantId);
     if (!run || !message || !isActive(message)) return false;
     if (chunkSeq <= run.chunkSeq) return true;
     if (content.length > 100_000) throw new Error('回答超出 100,000 字限制。');
+    if (reasoning.length > 100_000) throw new Error('思考内容超出 100,000 字限制。');
     const change = this.ctx.storage.transactionSync(() => {
-      this.ctx.storage.sql.exec('UPDATE messages SET content = ? WHERE id = ?', content, message.id);
+      this.ctx.storage.sql.exec('UPDATE messages SET content = ?, reasoning = ? WHERE id = ?', content, reasoning, message.id);
       this.ctx.storage.sql.exec('UPDATE runs SET chunkSeq = ?, updatedAt = ? WHERE id = ?', chunkSeq, Date.now(), runId);
       return this.record([this.message(message.id)!]);
     });
@@ -157,6 +173,7 @@ export class Conversation extends DurableObject<Env> {
     if (!message || !isActive(message)) return;
     const change = this.ctx.storage.transactionSync(() => {
       this.ctx.storage.sql.exec('UPDATE messages SET status = ?, error = ? WHERE id = ?', status, error, message.id);
+      this.ctx.storage.sql.exec('UPDATE runs SET config = NULL WHERE id = ?', runId);
       return this.record([this.message(message.id)!]);
     });
     this.broadcast(change);

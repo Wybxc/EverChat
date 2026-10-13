@@ -4,7 +4,9 @@ import type { Env } from './env';
 import type { SubmitInput } from '../shared/types';
 import { authenticated, logoutCookie, passwordMatches, sessionCookie } from './auth';
 import { HttpError, json, parseBody, type AppContext } from './http';
-import { providerConfigFromEnv, providerConfigSchema, publicProviderSettings } from './provider-config';
+import { providerSettingsSchema } from './provider-config';
+import { chatModels } from '../shared/models';
+import { ProviderModelError, fetchProviderModels } from './provider-models';
 
 export { Conversation } from './conversation';
 export { Library } from './library';
@@ -20,6 +22,9 @@ const submitSchema = v.object({
   content: v.optional(v.string()),
   retryOf: v.optional(uuidSchema),
   revisionOf: v.optional(uuidSchema),
+  selection: v.optional(v.object({ providerId: uuidSchema, model: v.pipe(v.string(), v.minLength(1), v.maxLength(200)) })),
+  showReasoning: v.optional(v.boolean()),
+  reasoningEffort: v.optional(v.picklist(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])),
 });
 const cancelSchema = v.object({ runId: uuidSchema });
 const titleSchema = v.object({ title: v.pipe(v.string(), v.maxLength(80)) });
@@ -45,26 +50,46 @@ app.use('*', async (context, next) => {
 
 app.get('/session', async (context) => {
   const signedIn = await authenticated(context.req.raw, context.env);
-  const config = signedIn ? await context.env.LIBRARY.getByName('personal').providerConfig() : providerConfigFromEnv(context.env);
+  const config = signedIn ? await context.env.LIBRARY.getByName('personal').providerConfig() : null;
+  const settings = signedIn ? await context.env.LIBRARY.getByName('personal').providerSettings() : null;
   return json({
     authenticated: signedIn,
     configured: Boolean(context.env.APP_PASSWORD && context.env.SESSION_SECRET),
-    provider: signedIn ? config.provider : 'demo',
-    model: signedIn ? config.model : '演示模型',
+    provider: config?.provider ?? '',
+    model: config?.model ?? '',
+    modelName: config?.modelName ?? '',
+    activeProviderId: config?.providerId ?? null,
+    models: settings ? chatModels(settings) : [],
+    showReasoning: settings?.showReasoning ?? false,
+    systemPrompt: settings?.systemPrompt ?? '', maxOutputTokens: settings?.maxOutputTokens ?? 4096,
   });
 });
 
-app.get('/settings/provider', async (context) => {
+app.get('/settings/providers', async (context) => {
   await requireAuth(context);
-  return json(publicProviderSettings(await context.env.LIBRARY.getByName('personal').providerConfig()));
+  return json(await context.env.LIBRARY.getByName('personal').providerSettings());
 });
 
-app.put('/settings/provider', async (context) => {
+app.put('/settings/providers', async (context) => {
   await requireAuth(context);
-  const input = await parseBody(context, providerConfigSchema);
-  const result = await context.env.LIBRARY.getByName('personal').saveProviderConfig(input);
+  const input = await parseBody(context, providerSettingsSchema);
+  const normalizedInput = { ...input, showReasoning: input.showReasoning ?? false };
+  const result = await context.env.LIBRARY.getByName('personal').saveProviderSettings(normalizedInput);
   if ('error' in result) throw new HttpError(400, result.error);
   return json(result.settings);
+});
+
+app.get('/settings/providers/:id/models', async (context) => {
+  await requireAuth(context);
+  const id = context.req.param('id');
+  if (!v.safeParse(uuidSchema, id).success) throw new HttpError(404, '找不到这个供应商。');
+  const profile = await context.env.LIBRARY.getByName('personal').providerForModelList(id);
+  if (!profile) throw new HttpError(404, '找不到这个供应商。');
+  try { return json({ models: await fetchProviderModels(profile) }); }
+  catch (error) {
+    if (error instanceof ProviderModelError) throw new HttpError(error.status, error.message);
+    throw new HttpError(502, '获取模型列表失败。');
+  }
 });
 
 app.post('/login', async (context) => {
@@ -124,7 +149,17 @@ app.post('/conversations/:id/messages', async (context) => {
   if (!await library.get(id)) throw new HttpError(404, '找不到这个对话。');
   const input = await parseBody(context, submitSchema) as SubmitInput;
   if (input.retryOf && (input.content !== undefined || input.revisionOf !== undefined)) throw new HttpError(400, '消息参数无效。');
-  const result = await context.env.CONVERSATIONS.getByName(id).submit(id, input);
+  const baseConfig = await library.providerConfig(input.selection);
+  if (!baseConfig) {
+    const result = await context.env.CONVERSATIONS.getByName(id).submit(id, input, null);
+    if ('error' in result) return json({ error: result.error }, result.status);
+    await library.touch(id);
+    return json(result, 202);
+  }
+  const config = input.reasoningEffort ? await library.providerConfig(input.selection, input.reasoningEffort) : baseConfig;
+  if (!config) throw new HttpError(400, '所选模型不支持此思维强度。');
+  if (config) config.showReasoning = input.showReasoning ?? false;
+  const result = await context.env.CONVERSATIONS.getByName(id).submit(id, input, config);
   if ('error' in result) return json({ error: result.error }, result.status);
   await library.touch(id);
   return json(result, 202);

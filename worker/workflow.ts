@@ -16,24 +16,31 @@ export class GenerationWorkflow extends WorkflowEntrypoint<Env, GenerationParams
         }
         const abort = new AbortController();
         const timer = setTimeout(() => abort.abort(), 14 * 60_000);
-        let content = '', chunkSeq = 0, lastFlush = 0;
+        let content = '', reasoning = '', chunkSeq = 0, lastFlush = 0;
         const flush = async () => {
-          if (!await conversation.checkpoint(runId, content, ++chunkSeq)) throw new GenerationCancelled();
+          if (!await conversation.checkpoint(runId, content, ++chunkSeq, reasoning)) throw new GenerationCancelled();
           lastFlush = Date.now();
         };
         try {
-          const config = await this.env.LIBRARY.getByName('personal').providerConfig();
+          // Older queued runs have no snapshot; all new submissions pin their settings on acceptance.
+          const config = claim.config ?? await this.env.LIBRARY.getByName('personal').providerConfig();
+          if (!config) throw new ProviderError('请先配置供应商并选择默认模型。');
           await generate(config, claim.context, async (delta) => {
             content += delta;
             if (content.length > 100_000) throw new ProviderError('回答已达到 100,000 字的原型限制。');
-            if (Date.now() - lastFlush >= 500) await flush();
-          }, abort.signal);
+            if (Date.now() - lastFlush >= 100) await flush();
+          }, abort.signal, async (delta) => {
+            if (!config.showReasoning) return;
+            reasoning += delta;
+            if (reasoning.length > 100_000) throw new ProviderError('思考内容已达到 100,000 字的原型限制。');
+            if (Date.now() - lastFlush >= 100) await flush();
+          });
           await flush();
           await conversation.finish(runId, 'completed');
         } catch (error) {
           if (!(error instanceof GenerationCancelled)) {
             // Flush buffered text on an upstream error before marking the run failed.
-            await conversation.checkpoint(runId, content.slice(0, 100_000), ++chunkSeq);
+            await conversation.checkpoint(runId, content.slice(0, 100_000), ++chunkSeq, reasoning.slice(0, 100_000));
             await conversation.finish(runId, 'failed', error instanceof ProviderError ? error.message : '生成中断或超时。已保存部分内容，请主动重新生成。');
           }
         } finally { clearTimeout(timer); abort.abort(); }

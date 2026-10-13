@@ -12,13 +12,19 @@ cp .dev.vars.example .dev.vars
 pnpm dev
 ```
 
-打开 http://127.0.0.1:5173，使用本地密码 `everchat-local` 登录。本地 `.dev.vars` 已为本次原型配置好。默认演示模型缓慢输出示例文字，不调用外部 AI API，适合验证断网和后台执行。
+打开 http://127.0.0.1:5173，使用本地密码 `everchat-local` 登录。在空间设置中添加供应商并选择默认模型后即可发送消息。
 
 依赖锁文件为 `pnpm-lock.yaml`。本地聊天和 Workflow 状态保存在 `.wrangler/`，重启开发服务器后仍保留。`.npmrc` 将 pnpm 的存储放在项目内，便于受限工作区运行。
 
 ## 接入真实模型
 
-登录后打开「空间设置 → AI 供应商」，选择协议，填写 API 基础地址、模型 ID 和 API 密钥，保存即可用于后续生成。也可设置系统提示词和输出 Token 上限。
+设置分为「通用」「供应商」「对话」三个 Tab，修改后自动保存。停止输入约 600ms、离开输入框或关闭窗口时保存；失败会保留当前编辑并提供重试。关闭按钮和 Tab 固定显示，内容区域独立滚动。
+
+在「供应商」中添加供应商，配置名称、接口协议、API 基础地址和密钥。模型使用复选框启用或禁用，并可编辑 ID 和显示名。获取的新增模型默认禁用，手动添加的模型默认启用；重新获取保留已有模型的显示名和启用状态。已有模型列表自动迁移为启用状态。
+
+「对话」中的默认模型只包含已启用且配置密钥的模型。聊天输入框可以为每次请求选择模型，选择随离线请求保存，重新生成沿用原模型。模型设置中可以继承统一系统提示词或配置专属提示词；模型支持时还可以设定思维强度。思维强度默认按模型 ID 识别，也可在模型设置中指定能力。系统提示词、输出 Token 上限和是否显示供应商返回的思考内容在「对话」Tab 中设置。
+
+颜色模式支持浅色、深色和系统偏好。默认跟随设备外观变化。
 
 | 接口协议 | 默认 API 基础地址 | 流式接口 |
 |---|---|---|
@@ -27,9 +33,9 @@ pnpm dev
 | OpenAI Responses | `https://api.openai.com/v1` | `/responses` |
 | Gemini | `https://generativelanguage.googleapis.com/v1beta` | `/models/{model}:streamGenerateContent` |
 
-基础地址必须使用 HTTPS，包含版本路径，不含具体接口路径、查询参数或账号信息。模型 ID 按供应商提供的名称填写。四种协议使用 AI SDK 的对应适配器，保持流式保存和零自动重试；OpenAI 请求设置 `store: false`。保存设置本身不会调用或验证模型服务。
+基础地址必须使用 HTTPS，保留供应商要求的版本路径，不含具体接口路径、查询参数或账号信息。获取模型列表由服务端使用该供应商的 API 密钥访问模型目录；响应只包含模型 ID。四种生成协议使用 AI SDK 的对应适配器，保持流式保存和零自动重试；OpenAI 请求设置 `store: false`。DeepSeek 可选择 OpenAI Chat Completions，基础地址填写 `https://api.deepseek.com`，再获取模型列表。DeepSeek 的兼容接口单独映射 `thinking.type` 和 `reasoning_effort`，显示的是供应商实际返回的 `reasoning_content`；OpenAI Responses、Anthropic 与 Gemini 也仅展示供应商主动提供的思考摘要或思考内容。
 
-设置保存在个人 `Library` Durable Object 中，跨设备共享。密钥仅存在服务端：读取设置只返回 `hasApiKey`，不会回显或放入浏览器存储。修改同一协议、同一地址的模型时密钥留空可保留；更换协议或地址必须重新填写密钥。选择演示模型会清除网页保存的密钥。已经启动的生成继续使用启动时读取的配置。
+供应商和模型列表保存在个人 `Library` Durable Object 中，跨设备共享。登录后的设置接口会返回已配置的密钥，客户端默认遮蔽，可点击眼睛按钮查看；密钥不会写入 localStorage、IndexedDB 或离线缓存。修改同一协议、同一地址的供应商时密钥留空可保留；更换协议或地址必须重新填写密钥。删除供应商会同时删除对应密钥和模型列表。已接受的生成会保存当时的模型、系统提示词和强度配置，后续设置改动不影响排队任务。
 
 首次使用时仍可在 `wrangler.jsonc` 的 `vars` 中设置默认值：
 
@@ -42,7 +48,7 @@ pnpm dev
 }
 ```
 
-`AI_PROVIDER` 可为 `demo`、`openai-chat`、`anthropic`、`openai-responses` 或 `gemini`；旧值 `openai-compatible` 继续映射到 Chat Completions。本地默认密钥写入 `.dev.vars` 的 `AI_API_KEY`，生产默认密钥可使用同名 Cloudflare Secret。网页保存的完整配置优先于这些默认值，后续更改默认值不会覆盖已保存的网页配置。
+`AI_PROVIDER` 可为 `openai-chat`、`anthropic`、`openai-responses` 或 `gemini`；旧值 `openai-compatible` 继续映射到 Chat Completions。本地默认密钥写入 `.dev.vars` 的 `AI_API_KEY`，生产默认密钥可使用同名 Cloudflare Secret。首次保存网页设置前，这些值会作为初始供应商和模型。未配置供应商或默认模型时禁止生成，旧演示配置迁移为空配置。
 
 ## 部署到 Cloudflare
 
@@ -57,7 +63,7 @@ pnpm exec wrangler secret put AI_API_KEY
 pnpm deploy
 ```
 
-`SESSION_SECRET` 使用至少 32 字符的随机值，例如 `openssl rand -hex 32` 生成的结果。Secrets 存在服务端，不写入前端或 Git。默认 demo 模式也可部署，无需模型密钥。部署将创建 Worker、两个 SQLite Durable Object namespace 和一个 Workflow；首次启用服务时按 Cloudflare 提示完成账户配置。费用以账户当前套餐和实际用量为准。
+`SESSION_SECRET` 使用至少 32 字符的随机值，例如 `openssl rand -hex 32` 生成的结果。登录 Secrets 仅存在服务端，不写入前端或 Git。部署后可通过网页配置模型。部署将创建 Worker、两个 SQLite Durable Object namespace 和一个 Workflow；首次启用服务时按 Cloudflare 提示完成账户配置。费用以账户当前套餐和实际用量为准。
 
 生产构建有 PWA manifest、应用图标及 Service Worker，支持安装和离线重新打开已访问的应用。开发模式不注册 Service Worker。客户端缓存、快照和离线草稿优先保存在 IndexedDB（由 `idb-keyval` 管理），并保留 localStorage 作为迁移和故障回退；共享设备上用“退出并清除本地记录”。主题偏好仍使用 localStorage，以便页面启动前立即恢复主题。
 
@@ -70,7 +76,7 @@ pnpm exec playwright install chromium
 pnpm test:e2e
 ```
 
-端到端测试使用本地 Cloudflare 运行时，不模拟生成后台。`pnpm test:e2e` 在 5174 端口启动独立服务器，使用临时存储目录，避免修改日常聊天及供应商设置；需要默认 demo 模式和 `.dev.vars.example` 中的本地密码。测试包含鉴权、跨域写入拒绝、请求幂等、会话并发限制、断网恢复、第二设备同步、页面关闭后继续生成、离线待发送、取消、重新生成、响应式截图，以及四种协议的网页配置、密钥隐藏与保留、跨设备读取和字段校验。单元测试使用协议响应样本验证请求及流式处理，不发起真实付费模型调用。
+端到端测试使用本地 Cloudflare 运行时及真实 Workflow、SQLite 和 WebSocket，仅在测试入口替换上游供应商 HTTP 响应，不发起付费模型调用。`pnpm test:e2e` 在 5174 端口启动独立服务器，使用临时存储目录，避免修改日常聊天及供应商设置；需要 `.dev.vars.example` 中的本地密码。测试包含鉴权、跨域写入拒绝、请求幂等、会话并发限制、断网恢复、第二设备同步、页面关闭后继续生成、离线待发送、取消、重新生成、响应式截图，以及多供应商增删改、模型获取与编辑、密钥查看与遮蔽、跨设备读取和未配置模型时禁止生成。单元测试检查四种协议的请求及模型目录解析。
 
 手动验证：
 

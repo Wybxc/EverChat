@@ -10,9 +10,9 @@
     "run_worker_first": ["/api/*"]
   },
   "vars": {
-    "AI_PROVIDER": "demo",
+    "AI_PROVIDER": "",
     "AI_BASE_URL": "https://api.openai.com/v1",
-    "AI_MODEL": "gpt-4.1-mini",
+    "AI_MODEL": "",
     "SYSTEM_PROMPT": "你是一位清晰、友善的助手。请默认使用中文回答。",
     "MAX_OUTPUT_TOKENS": "4096"
   },

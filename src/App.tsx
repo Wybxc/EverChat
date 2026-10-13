@@ -1,14 +1,16 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowDown, ArrowRight, ArrowUp, Check, CheckCheck, CloudOff, Copy, Download, Feather, Infinity as InfinityIcon, Lightbulb, LockKeyhole, LogOut, Menu, MessageCircle, Moon, Pencil, Plus, RefreshCw, Search, Settings, Sparkles, Square, Sun, WifiOff, X } from 'lucide-react';
+import { ArrowDown, ArrowRight, ArrowUp, Check, CheckCheck, CloudOff, Copy, Download, Feather, Infinity as InfinityIcon, Lightbulb, LockKeyhole, Menu, MessageCircle, Monitor, Moon, Pencil, Plus, RefreshCw, Search, Settings, Sparkles, Square, Sun, WifiOff, X } from 'lucide-react';
 import 'streamdown/styles.css';
-import { isActive, type ConversationInfo, type Message, type ProviderSettings, type SessionInfo, type Submission, type SubmitInput } from '../shared/types';
+import { isActive, type ConversationInfo, type Message, type ProviderSettings, type ReasoningEffort, type SessionInfo, type Submission, type SubmitInput } from '../shared/types';
 import { api, ApiError } from './api';
 import { clearLocal, read, write, writePending, type Pending } from './storage';
 import { useConversation } from './useConversation';
 import { ProviderSettingsPanel } from './ProviderSettings';
+import { chatModels, effortLabels, modelSelectionKey } from '../shared/models';
+import { useThemeMode } from './theme';
 
-const EMPTY_SESSION: SessionInfo = { authenticated: false, configured: false, provider: 'demo', model: '演示模型' };
+const EMPTY_SESSION: SessionInfo = { authenticated: false, configured: false, provider: '', model: '' };
 const Streamdown = lazy(() => import('streamdown').then(({ Streamdown: Component }) => ({ default: Component })));
 const starters = [
   { icon: Lightbulb, title: '梳理想法', prompt: '帮我梳理一个新项目的想法。请先问我三个能让方向更清晰的问题。' },
@@ -16,21 +18,25 @@ const starters = [
   { icon: Search, title: '解释概念', prompt: '用简单的语言和生活中的例子，向我解释什么是 Serverless。' },
 ];
 
+function MarkdownContent({ content, streaming, className = 'markdown' }: { content: string; streaming: boolean; className?: string }) {
+  return <Suspense fallback={<div className={`${className} whitespace-pre-wrap`}>{content}</div>}>
+    <Streamdown className={className} mode={streaming ? 'streaming' : 'static'} isAnimating={streaming} components={{
+      a: ({ children, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer">{children}</a>,
+      img: ({ alt }) => <span className="text-base-content/60">[图片：{alt ?? '附件'}]</span>,
+    }}>{content}</Streamdown>
+  </Suspense>;
+}
+
 function Brand({ small = false }: { small?: boolean }) {
   return <div className="flex items-center gap-3"><span className={`${small ? 'h-9 w-9' : 'h-11 w-11'} inline-flex shrink-0 items-center justify-center rounded-lg bg-neutral text-neutral-content`}><InfinityIcon size={small ? 24 : 29} strokeWidth={1.7} /></span><span className="text-xl font-semibold">EverChat</span></div>;
 }
 
 function ThemeControl() {
-  const [theme, setTheme] = useState<'light' | 'dark'>(() => document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light');
-  const choose = (value: 'light' | 'dark') => {
-    document.documentElement.dataset.theme = value;
-    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', value === 'dark' ? '#1d232a' : '#ffffff');
-    try { localStorage.setItem('everchat:theme', value); } catch { /* Theme still applies for this session. */ }
-    setTheme(value);
-  };
-  return <fieldset className="space-y-2"><legend className="text-sm font-medium">主题</legend><div className="join">
-    <label className={`join-item btn btn-sm gap-2 ${theme === 'light' ? 'btn-active' : ''}`}><input type="radio" name="theme" value="light" className="theme-controller sr-only" checked={theme === 'light'} onChange={() => choose('light')} /><Sun size={14} />浅色</label>
-    <label className={`join-item btn btn-sm gap-2 ${theme === 'dark' ? 'btn-active' : ''}`}><input type="radio" name="theme" value="dark" className="theme-controller sr-only" checked={theme === 'dark'} onChange={() => choose('dark')} /><Moon size={14} />深色</label>
+  const [theme, choose] = useThemeMode();
+  return <fieldset className="space-y-2"><legend className="text-sm font-medium">颜色模式</legend><div className="join">
+    <label className={`join-item btn btn-sm gap-2 ${theme === 'light' ? 'btn-active' : ''}`}><input type="radio" name="theme" value="light" className="sr-only" checked={theme === 'light'} onChange={() => choose('light')} /><Sun size={14} />浅色</label>
+    <label className={`join-item btn btn-sm gap-2 ${theme === 'dark' ? 'btn-active' : ''}`}><input type="radio" name="theme" value="dark" className="sr-only" checked={theme === 'dark'} onChange={() => choose('dark')} /><Moon size={14} />深色</label>
+    <label className={`join-item btn btn-sm gap-2 ${theme === 'system' ? 'btn-active' : ''}`}><input type="radio" name="theme" value="system" className="sr-only" checked={theme === 'system'} onChange={() => choose('system')} /><Monitor size={14} />系统</label>
   </div></fieldset>;
 }
 
@@ -57,7 +63,7 @@ function Login({ session, onLogin }: { session: SessionInfo; onLogin: () => Prom
       </form>
       {error && <p role="alert" className="mt-4 text-sm font-medium text-base-content">{error}</p>}
       {!session.configured && <p role="alert" className="mt-4 text-sm font-medium leading-6 text-base-content">服务尚未设置访问密码。请按照 README 配置服务端 Secrets 后重试。</p>}
-      {local && session.provider === 'demo' && <p className="mt-4 text-xs text-base-content/60">本地密码：<code>everchat-local</code></p>}
+      {local && <p className="mt-4 text-xs text-base-content/60">本地密码：<code>everchat-local</code></p>}
     </section>
     <footer className="pb-6 text-center text-[11px] text-base-content/60">EverChat</footer>
   </main>;
@@ -65,6 +71,7 @@ function Login({ session, onLogin }: { session: SessionInfo; onLogin: () => Prom
 
 function MessageView({ message, busy, onRetry, onEdit }: { message: Message; busy: boolean; onRetry: () => void; onEdit: () => void }) {
   const [copied, setCopied] = useState(false);
+  const [reasoningOpen, setReasoningOpen] = useState(true);
   const copy = async () => {
     try { await navigator.clipboard.writeText(message.content); setCopied(true); setTimeout(() => setCopied(false), 1800); } catch { /* Clipboard can be unavailable outside HTTPS. */ }
   };
@@ -79,8 +86,12 @@ function MessageView({ message, busy, onRetry, onEdit }: { message: Message; bus
   return <article data-testid="assistant-message" data-status={message.status} className="group flex gap-3 sm:gap-4">
     <span className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-base-content/50 bg-base-100"><InfinityIcon size={20} strokeWidth={1.7} /></span>
     <div className="min-w-0 flex-1 pt-1">
-      <div className="mb-3 flex items-center gap-3 text-xs"><span className="font-semibold">EverChat</span>{message.revisionOf && <span className="text-base-content/60">新版本</span>}{isActive(message) && <span className="flex items-center gap-1.5 text-base-content/60"><span className="loading loading-dots loading-xs" />{message.status === 'queued' ? '排队中' : '生成中'}</span>}</div>
-      {message.content ? <Suspense fallback={<div className="markdown whitespace-pre-wrap">{message.content}</div>}><Streamdown className="markdown" mode={isActive(message) ? 'streaming' : 'static'} isAnimating={isActive(message)} components={{ a: ({ children, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer">{children}</a>, img: ({ alt }) => <span className="text-base-content/60">[图片：{alt ?? '附件'}]</span> }}>{message.content}</Streamdown></Suspense> : isActive(message) ? <p className="py-2 text-sm text-base-content/60">准备中…</p> : null}
+      <div className="mb-3 flex items-center gap-3 text-xs"><span className="font-semibold">{message.modelName || message.model || 'EverChat'}</span>{message.revisionOf && <span className="text-base-content/60">新版本</span>}{isActive(message) && <span className="flex items-center gap-1.5 text-base-content/60"><span className="loading loading-dots loading-xs" />{message.status === 'queued' ? '排队中' : '生成中'}</span>}</div>
+      {message.reasoning && <details open={reasoningOpen || isActive(message)} onToggle={(event) => setReasoningOpen(event.currentTarget.open)} className="collapse collapse-arrow mb-4 border border-base-content/30 bg-base-200" data-testid="message-reasoning">
+        <summary className="collapse-title min-h-0 py-3 text-sm font-medium">思考过程</summary>
+        <div className="collapse-content text-sm"><div className="max-h-80 overflow-y-auto break-words"><MarkdownContent content={message.reasoning} streaming={isActive(message)} /></div></div>
+      </details>}
+      {message.content ? <MarkdownContent content={message.content} streaming={isActive(message)} /> : isActive(message) && !message.reasoning ? <p className="py-2 text-sm text-base-content/60">准备中…</p> : null}
       {message.status === 'failed' && <p role="alert" className="mt-4 rounded-lg bg-error/5 px-3 py-2 text-xs font-medium leading-6 text-base-content">{message.error ?? '生成失败，已保存部分内容。'}</p>}
       {message.status === 'cancelled' && <p className="mt-4 text-xs text-base-content/60">已停止</p>}
       {!isActive(message) && <div className="mt-4 flex items-center gap-1 text-base-content/60">
@@ -110,17 +121,25 @@ export function App() {
   const scrollArea = useRef<HTMLDivElement>(null);
   const nearBottom = useRef(true);
   const editor = useRef<HTMLTextAreaElement>(null);
+  const mobileSidebarTrigger = useRef<HTMLButtonElement>(null);
   const settings = useRef<HTMLDialogElement>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [modelChoice, setModelChoice] = useState<string>(() => read('chat-model', ''));
+  const models = session?.models ?? [];
+  const selectedModel = models.find((model) => modelSelectionKey(model) === modelChoice)
+    ?? models.find((model) => model.providerId === session?.activeProviderId && model.model === session?.model)
+    ?? models[0];
+  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort | ''>('');
   const openSettings = () => { setSettingsOpen(true); settings.current?.showModal(); };
-  const providerSaved = (config: ProviderSettings) => {
+  const providerSaved = useCallback((config: ProviderSettings) => {
+    const profile = config.providers.find((profile) => profile.id === config.activeProviderId);
+    const model = profile?.models.find((model) => model.id === config.activeModel && model.enabled);
     setSession((current) => {
-      if (!current) return current;
-      const next = { ...current, provider: config.provider, model: config.model };
-      write('session', next);
-      return next;
+      if (!current?.authenticated) return current;
+      const next = { ...current, provider: model ? profile!.provider : '', model: model?.id ?? '', modelName: model?.name || model?.id || '', activeProviderId: model ? profile!.id : null, models: chatModels(config), showReasoning: config.showReasoning, systemPrompt: config.systemPrompt, maxOutputTokens: config.maxOutputTokens };
+      write('session', next); return next;
     });
-  };
+  }, []);
   const sessionRef = useRef(session);
   sessionRef.current = session;
   const loggedOut = useCallback(() => { setSession((current) => ({ ...(current ?? EMPTY_SESSION), authenticated: false })); }, []);
@@ -154,7 +173,12 @@ export function App() {
       else setBootError('暂时无法连接你的空间。请检查网络和服务是否已启动。');
     }
   }, []);
-  useEffect(() => { void boot(); }, [boot]);
+  useEffect(() => {
+    void boot();
+    const refresh = () => { void boot(); };
+    window.addEventListener('online', refresh); window.addEventListener('focus', refresh);
+    return () => { window.removeEventListener('online', refresh); window.removeEventListener('focus', refresh); };
+  }, [boot]);
   useEffect(() => {
     if (libraryQuery.error instanceof ApiError && libraryQuery.error.status === 401) loggedOut();
     if (libraryQuery.data) { setLocalConversations(libraryQuery.data); write('library', libraryQuery.data); }
@@ -196,6 +220,11 @@ export function App() {
     nearBottom.current = true; setAtBottom(true);
   }, [selected]);
   useEffect(() => {
+    if (!selectedModel?.reasoningSupported) { setReasoningEffort(''); return; }
+    const saved = read<ReasoningEffort | ''>(`reasoning-effort:${modelSelectionKey(selectedModel)}`, '');
+    setReasoningEffort(selectedModel.reasoningEfforts.includes(saved as ReasoningEffort) ? saved : '');
+  }, [selectedModel]);
+  useEffect(() => {
     const node = editor.current;
     if (node) { node.style.height = 'auto'; node.style.height = `${Math.min(node.scrollHeight, 160)}px`; }
   }, [draft]);
@@ -203,9 +232,25 @@ export function App() {
     if (nearBottom.current && scrollArea.current) scrollArea.current.scrollTop = scrollArea.current.scrollHeight;
   }, [snapshot.seq, pending.length, selected]);
   const updateDraft = (text: string) => { setDraft(text); write(`draft:${selected ?? 'new'}`, { text, revisionOf }); };
-  const select = (id: string | null) => { setSelected(id); write('selected', id); setSidebarOpen(false); };
+  const select = (id: string | null) => {
+    setSelected(id); write('selected', id); setSidebarOpen(false);
+    requestAnimationFrame(() => editor.current?.focus());
+  };
+  const closeSidebar = () => {
+    setSidebarOpen(false);
+    requestAnimationFrame(() => mobileSidebarTrigger.current?.focus());
+  };
 
   const queue = async (input: SubmitInput) => {
+    if (!input.selection && selectedModel) input = { ...input, selection: { providerId: selectedModel.providerId, model: selectedModel.model } };
+    if (input.showReasoning === undefined) input = { ...input, showReasoning: session?.showReasoning ?? false };
+    const generationModel = input.selection ? models.find((model) => model.providerId === input.selection!.providerId && model.model === input.selection!.model) : selectedModel;
+    const generationEffort = generationModel && generationModel === selectedModel
+      ? reasoningEffort
+      : generationModel ? read<ReasoningEffort | ''>(`reasoning-effort:${modelSelectionKey(generationModel)}`, '') : '';
+    if (input.reasoningEffort === undefined && generationModel?.reasoningSupported && generationEffort && generationModel.reasoningEfforts.includes(generationEffort)) {
+      input = { ...input, reasoningEffort: generationEffort };
+    }
     const conversation: ConversationInfo = currentConversation ?? {
       id: selected ?? crypto.randomUUID(), title: (input.content ?? '新对话').trim().slice(0, 26), createdAt: Date.now(), updatedAt: Date.now(),
     };
@@ -221,7 +266,7 @@ export function App() {
   };
   const submit = async (event?: FormEvent) => {
     event?.preventDefault();
-    if (!draft.trim() || busy) return;
+    if (!draft.trim() || busy || !selectedModel) return;
     setError(''); setSending(true);
     try { await queue({ requestId: crypto.randomUUID(), content: draft.trim(), ...(revisionOf ? { revisionOf } : {}) }); }
     finally { setSending(false); }
@@ -232,9 +277,11 @@ export function App() {
     catch (error) { setError(error instanceof Error ? error.message : '停止失败。'); }
   };
   const retry = async (message: Message) => {
-    if (busy) return;
+    if (busy || !selectedModel) { openSettings(); return; }
     setSending(true);
-    try { await queue({ requestId: crypto.randomUUID(), retryOf: message.id }); }
+    try { await queue({ requestId: crypto.randomUUID(), retryOf: message.id,
+      ...(message.providerId && message.model ? { selection: { providerId: message.providerId, model: message.model } } : {}),
+    }); }
     finally { setSending(false); }
   };
   const edit = (message: Message) => {
@@ -244,7 +291,7 @@ export function App() {
   const logout = async () => {
     try {
       await api('/logout', 'POST'); clearLocal(); pendingRef.current = []; setPending([]);
-      setLocalConversations([]); void queryClient.removeQueries({ queryKey: ['conversations'] }); setSelected(null); setDraft(''); setRevisionOf(undefined); loggedOut(); settings.current?.close();
+      setLocalConversations([]); queryClient.clear(); setSelected(null); setDraft(''); setRevisionOf(undefined); loggedOut(); settings.current?.close();
     } catch (error) { setError(error instanceof Error ? error.message : '退出失败，请联网后重试。'); settings.current?.close(); }
   };
   const exportChat = () => {
@@ -258,9 +305,9 @@ export function App() {
   const statusText = connection === 'offline' ? '离线' : connection === 'connecting' ? '连接中' : '已同步';
   const welcome = !selected || (!snapshot.messages.length && !currentPending && !loading);
   return <div className="flex h-dvh overflow-hidden">
-    {sidebarOpen && <button aria-label="关闭对话列表" className="fixed inset-0 z-30 bg-neutral/20 backdrop-blur-sm lg:hidden" onClick={() => setSidebarOpen(false)} />}
+    {sidebarOpen && <button aria-label="关闭对话列表" className="fixed inset-0 z-30 bg-neutral/20 backdrop-blur-sm lg:hidden" onClick={closeSidebar} />}
     <aside className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} fixed inset-y-0 left-0 z-40 flex w-70 shrink-0 flex-col border-r border-base-content/50 bg-base-200 transition-transform lg:static lg:translate-x-0`}>
-      <div className="flex items-center justify-between px-6 pt-7 pb-8"><Brand small /><button className="btn btn-ghost btn-sm btn-square lg:hidden" aria-label="收起侧栏" onClick={() => setSidebarOpen(false)}><X size={18} /></button></div>
+      <div className="flex items-center justify-between px-6 pt-7 pb-8"><Brand small /><button className="btn btn-ghost btn-sm btn-square lg:hidden" aria-label="收起侧栏" onClick={closeSidebar}><X size={18} /></button></div>
       <div className="px-4"><button className="btn h-11 w-full justify-between border-base-content/50 bg-base-100 px-4 text-sm font-medium" onClick={() => select(null)}><span className="flex items-center gap-2.5"><Plus size={17} />开启新对话</span><span><MessageCircle size={15} /></span></button></div>
       <label className="input mx-4 mt-5 h-9 w-auto gap-2 border-base-content/50 bg-base-100"><Search size={14} /><input className="text-xs placeholder:text-base-content/60" placeholder="搜索你的对话" aria-label="搜索对话" value={search} onChange={(event) => setSearch(event.target.value)} /></label>
       <div className="flex-1 overflow-y-auto px-3 pt-6">
@@ -276,7 +323,7 @@ export function App() {
 
     <div className="flex min-w-0 flex-1 flex-col">
       <header className="flex h-18 shrink-0 items-center justify-between border-b border-base-content/50 px-5 sm:px-8">
-        <div className="flex min-w-0 items-center gap-3"><button className="btn btn-ghost btn-sm btn-square lg:hidden" onClick={() => setSidebarOpen(true)} aria-label="打开对话列表"><Menu size={19} /></button><div className="min-w-0"><p className="truncate text-sm font-medium">{currentConversation?.title ?? '新对话'}</p><p className="mt-1 text-[10px] text-base-content/60">{session.model}</p></div></div>
+        <div className="flex min-w-0 items-center gap-3"><button ref={mobileSidebarTrigger} className="btn btn-ghost btn-sm btn-square lg:hidden" onClick={() => setSidebarOpen(true)} aria-label="打开对话列表"><Menu size={19} /></button><div className="min-w-0"><p className="truncate text-sm font-medium">{currentConversation?.title ?? '新对话'}</p><p className="mt-1 text-[10px] text-base-content/60">{selectedModel?.name || session.modelName || session.model || '未选择模型'}</p></div></div>
         <div className="flex shrink-0 items-center gap-3"><span aria-live="polite" className="hidden items-center gap-1.5 text-[11px] text-base-content/60 sm:flex" title={syncedAt ? `上次同步 ${new Date(syncedAt).toLocaleTimeString('zh-CN')}` : undefined}>{connection === 'offline' ? <CloudOff size={14} /> : <span className={`h-1.5 w-1.5 rounded-full ${connection === 'connected' ? 'bg-success' : 'bg-warning'}`} />}{statusText}</span>{snapshot.messages.length > 0 && <button aria-label="导出对话" title="导出 Markdown" className="btn btn-ghost btn-sm btn-square" onClick={exportChat}><Download size={16} /></button>}<button aria-label="空间设置" className="btn btn-ghost btn-sm btn-square" onClick={openSettings}><Settings size={17} /></button></div>
       </header>
       {connection === 'offline' && <div role="status" className="flex items-center justify-center gap-2 border-b border-base-content/50 bg-base-200 px-4 py-2 text-xs text-base-content"><WifiOff size={13} />你现在离线，已保存的对话仍可阅读。新消息将在联网后发送。</div>}
@@ -300,18 +347,23 @@ export function App() {
           {revisionOf && <div className="mb-2 flex items-center justify-between text-xs text-base-content/60"><span>编辑消息</span><button className="btn btn-ghost btn-xs" onClick={() => { setRevisionOf(undefined); write(`draft:${selected}`, { text: draft }); }}>取消</button></div>}
           <form onSubmit={submit} className="rounded-2xl border border-base-content/50 bg-base-100 p-3 shadow-[0_3px_16px_-7px_rgba(39,55,47,0.12)] sm:p-4">
             <textarea ref={editor} aria-label="消息" className="textarea textarea-ghost block min-h-13 w-full resize-none border-0 p-1 text-[15px] leading-6 placeholder:text-base-content/60 outline-none! focus:outline-none!" placeholder={active ? '生成中…' : '输入消息…'} value={draft} maxLength={16000} rows={2} onChange={(event) => updateDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void submit(); } }} />
-            <div className="mt-2 flex items-center justify-between"><div className="flex items-center gap-2 text-[11px] text-base-content/60"><Sparkles size={14} strokeWidth={1.5} /><span>{session.model}</span>{session.provider === 'demo' && <span className="badge badge-sm border-base-content/50 bg-base-200 text-[9px] text-base-content/60">演示</span>}</div>{active ? <button type="button" className="btn btn-sm h-9 gap-2 px-3" onClick={cancel} disabled={!navigator.onLine}><Square size={12} />停止生成</button> : <button type="submit" className="btn btn-primary btn-square btn-sm h-9 w-9 rounded-xl" aria-label="发送消息" disabled={!draft.trim() || busy}>{sending ? <span className="loading loading-spinner loading-xs" /> : <ArrowUp size={18} />}</button>}</div>
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2"><div className="flex min-w-0 flex-wrap items-center gap-2 text-base-content"><Sparkles size={14} strokeWidth={1.5} className="shrink-0" />{selectedModel ? <select aria-label="聊天模型" className="select select-ghost select-sm min-w-0 max-w-48 border-base-content/50 text-xs sm:max-w-80" value={modelSelectionKey(selectedModel)} onChange={(event) => { setModelChoice(event.target.value); write('chat-model', event.target.value); }}>
+              {[...new Set(models.map((model) => model.providerId))].map((providerId) => <optgroup key={providerId} label={models.find((model) => model.providerId === providerId)!.providerName}>
+                {models.filter((model) => model.providerId === providerId).map((model) => <option key={model.model} value={modelSelectionKey(model)}>{model.name}</option>)}
+              </optgroup>)}
+            </select> : <button type="button" className="btn btn-ghost btn-xs" onClick={openSettings}>配置模型</button>}
+            {selectedModel?.reasoningSupported && <select aria-label="思维强度" className="select select-ghost select-sm w-auto max-w-32 border-base-content/50 text-xs" value={reasoningEffort} onChange={(event) => { const value = event.target.value as ReasoningEffort | ''; setReasoningEffort(value); write(`reasoning-effort:${modelSelectionKey(selectedModel)}`, value); }}>
+              <option value="">思维强度：默认</option>{selectedModel.reasoningEfforts.map((effort) => <option key={effort} value={effort}>{effortLabels[effort]}</option>)}
+            </select>}
+            </div>{active ? <button type="button" className="btn btn-sm h-9 shrink-0 gap-2 px-3" onClick={cancel} disabled={!navigator.onLine}><Square size={12} />停止生成</button> : <button type="submit" className="btn btn-primary btn-square btn-sm h-9 w-9 shrink-0 rounded-xl" aria-label="发送消息" disabled={!draft.trim() || busy || !selectedModel}>{sending ? <span className="loading loading-spinner loading-xs" /> : <ArrowUp size={18} />}</button>}</div>
           </form>
         </div>
       </div>
     </div>
     <dialog id="space-settings" ref={settings} className="modal" onClose={() => setSettingsOpen(false)} aria-labelledby="space-settings-title">
-      <div className="modal-box max-w-lg">
-        <div className="mb-7 flex items-center justify-between"><h2 id="space-settings-title" className="text-lg font-semibold">我的私人空间</h2><form method="dialog"><button className="btn btn-ghost btn-sm btn-square" aria-label="关闭设置"><X size={18} /></button></form></div>
-        <div className="space-y-4 text-sm"><div className="flex justify-between"><span className="text-base-content/60">模型</span><span>{session.model}</span></div><div className="flex justify-between"><span className="text-base-content/60">状态</span><span>{statusText}</span></div><div className="flex justify-between"><span className="text-base-content/60">对话</span><span>{conversations.length}</span></div></div>
-        <div className="mt-6"><ThemeControl /></div>
-        {settingsOpen && <ProviderSettingsPanel onSaved={providerSaved} />}
-        <div className="modal-action"><button className="btn gap-2" onClick={logout}><LogOut size={15} />退出并清除本地记录</button></div>
+      <div className="modal-box flex h-[min(48rem,92dvh)] max-h-[92dvh] max-w-5xl flex-col overflow-hidden p-0">
+        <div className="flex shrink-0 items-center justify-between border-b border-base-content/30 px-6 py-4"><h2 id="space-settings-title" className="text-lg font-semibold">设置</h2><form method="dialog"><button className="btn btn-ghost btn-sm btn-square" aria-label="关闭设置"><X size={18} /></button></form></div>
+        <ProviderSettingsPanel open={settingsOpen} onSaved={providerSaved} themeControl={<ThemeControl />} onLogout={() => void logout()} />
       </div>
       <form method="dialog" className="modal-backdrop"><button>关闭</button></form>
     </dialog>

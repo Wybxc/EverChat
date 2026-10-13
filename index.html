@@ -10,5 +10,5 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <title>EverChat</title>
   </head>
-  <body><div id="root"></div><script>try{const t=localStorage.getItem('everchat:theme');if(t==='dark'||t==='light')document.documentElement.dataset.theme=t}catch{}</script><script type="module" src="/src/main.tsx"></script></body>
+  <body><div id="root"></div><script>let t='system';try{t=localStorage.getItem('everchat:theme')||'system'}catch{}const resolved=t==='dark'||t==='light'?t:matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.dataset.theme=resolved;document.querySelector('meta[name="theme-color"]').content=resolved==='dark'?'#1d232a':'#ffffff';</script><script type="module" src="/src/main.tsx"></script></body>
 </html>
