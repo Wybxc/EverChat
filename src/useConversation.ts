@@ -64,6 +64,7 @@ export function useConversation(id: string | null, enabled: boolean, onUnauthori
           const url = new URL(`/api/conversations/${id}/sync`, location.href);
           url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
           url.searchParams.set('after', String(current.seq));
+          url.searchParams.set('protocol', '2');
           return url.toString();
         };
         socket = new ReconnectingWebSocket(socketUrl, [], {
@@ -79,7 +80,7 @@ export function useConversation(id: string | null, enabled: boolean, onUnauthori
           try {
             const packet = JSON.parse(event.data) as SyncPacket;
             if (packet.type === 'snapshot') update(packet.snapshot);
-            if (packet.type === 'change') update(applyChange(current, packet));
+            if (packet.type === 'change' || packet.type === 'append') update(applyChange(current, packet));
             if (packet.type === 'ready') {
               if (packet.seq !== current.seq) { socket?.reconnect(); return; }
               setConnection('connected'); setSyncedAt(Date.now());

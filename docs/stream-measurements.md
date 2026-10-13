@@ -9,9 +9,9 @@ pnpm measure:stream
 pnpm measure:stream --chunks 120 --interval 100 --size 200 --output /tmp/everchat-stream-comparison.json
 ```
 
-工具启动独立 Vite／Cloudflare 本地运行时，使用临时存储和 `provider.test` 模拟 HTTP 响应，不调用真实模型。三个场景分别为在线正文、在线正文加思考，以及收到第一段回答后关闭唯一订阅。每个场景检查完整持久化结果、输出长度和实际供应商增量数，最后停止服务器并清理本次临时数据。默认监听 5184；可用 `--port` 修改。默认本地密码为 `everchat-local`，环境变量 `EVERCHAT_TEST_PASSWORD` 可覆盖，不输出密码。
+工具启动独立 Vite／Cloudflare 本地运行时，使用临时存储和 `provider.test` 模拟 HTTP 响应，不调用真实模型。三个场景分别为在线正文、在线正文加思考，以及收到第一段回答后关闭唯一订阅。每个场景检查完整持久化结果、输出长度和实际供应商增量数；在线场景还检查客户端增量回放与数据库最终快照一致。最后停止服务器并清理本次临时数据。默认监听 5184；可用 `--port` 修改。默认本地密码为 `everchat-local`，环境变量 `EVERCHAT_TEST_PASSWORD` 可覆盖，不输出密码。
 
-首次报告位于 [stream-baseline.json](measurements/stream-baseline.json)。比较时使用另一输出路径，避免覆盖基线；相同负载下检查资源变化，时间调度会让检查点数略有浮动。
+报告默认写入系统临时目录中的 `everchat-stream-measurements.json`。首次报告位于 [stream-baseline.json](measurements/stream-baseline.json)，增量日志检查点报告位于 [stream-incremental.json](measurements/stream-incremental.json)。使用 `--output` 保存比较结果；相同负载下检查资源变化，时间调度会让检查点数略有浮动。
 
 ## 指标与边界
 
@@ -20,7 +20,7 @@ pnpm measure:stream --chunks 120 --interval 100 --size 200 --output /tmp/evercha
 | `coverage` | `claim-to-terminal` 表示完整测量窗口；DO 在途中休眠或重启导致内存计数丢失时，用 `since-last-resume` 标明不完整，基线工具拒绝将它作为完整报告 |
 | `elapsedMs` | 任务认领至终态的实际经过时间，包含网络等待；不是 CPU，也不是 Cloudflare 的 DO 计费时长 |
 | `textDeltas`、`reasoningDeltas` | 供应商适配器输出的正文和已启用思考增量数 |
-| `checkpoints`、`checkpointCharacters` | 已接受检查点数，以及各次提交的正文和思考长度之和；字符按 JavaScript 字符串长度计，用于识别重复发送全文 |
+| `checkpoints`、`checkpointCharacters` | 已接受检查点数，以及各次提交负载中的正文和思考长度之和；旧路径提交全文，新路径只提交新增片段。字符按 JavaScript 字符串长度计，用于识别重复发送全文 |
 | `sqlStatements`、`sqlRowsRead`、`sqlRowsWritten` | 认领至终态期间 Conversation 的 SQL 语句和游标实际行计数；读完游标后采样，包含运行期间其他 API 查询，但不包含诊断读取 |
 | `eventPayloadBytes` | 插入事件日志的 JSON 负载总 UTF-8 字节数，包含此窗口内的状态事件 |
 | `broadcastFrames`、`broadcastBytes` | 此窗口内成功排入 WebSocket 发送队列的帧数和 UTF-8 字节数，按订阅数累计；不代表客户端已收到，也不含连接回放、心跳或传输协议开销 |

@@ -7,12 +7,12 @@ import { parseArgs } from 'node:util';
 import { setTimeout as pause } from 'node:timers/promises';
 import WebSocket from 'ws';
 import type { GenerationMeasurements } from '../shared/generation-metrics';
-import type { Snapshot } from '../shared/types';
+import { applyChange, type Snapshot, type SyncPacket } from '../shared/types';
 
 const { values } = parseArgs({ options: {
   chunks: { type: 'string', default: '120' }, interval: { type: 'string', default: '25' },
   size: { type: 'string', default: '200' }, port: { type: 'string', default: '5184' },
-  output: { type: 'string', default: 'docs/measurements/stream-baseline.json' },
+  output: { type: 'string', default: join(tmpdir(), 'everchat-stream-measurements.json') },
 } });
 const integer = (value: string | undefined, min: number, max: number) => {
   const number = Number(value);
@@ -46,23 +46,32 @@ async function api<T>(path: string, body?: unknown, method = body === undefined 
 }
 
 async function subscriber(id: string, disconnect: boolean) {
-  const socket = new WebSocket(`${origin.replace('http:', 'ws:')}/api/conversations/${id}/sync?after=0`, { headers: { Cookie: cookie, Origin: origin } });
+  const socket = new WebSocket(`${origin.replace('http:', 'ws:')}/api/conversations/${id}/sync?after=0&protocol=2`, { headers: { Cookie: cookie, Origin: origin } });
   sockets.add(socket);
   const observed = { frames: 0, bytes: 0, disconnected: false };
+  let snapshot: Snapshot = { messages: [], seq: 0 };
+  let failure: Error | undefined;
   await new Promise<void>((resolveReady, reject) => {
     const timer = setTimeout(() => reject(new Error('WebSocket readiness timed out')), 10_000);
-    socket.on('error', (error) => { clearTimeout(timer); reject(error); });
+    socket.on('error', (error) => { clearTimeout(timer); failure = error; reject(error); });
     socket.on('message', (data) => {
       const bytes = Buffer.isBuffer(data) ? data : Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data);
       observed.frames++; observed.bytes += bytes.byteLength;
-      const packet = JSON.parse(bytes.toString()) as { type: string; messages?: { role: string; content: string }[] };
-      if (packet.type === 'ready') { clearTimeout(timer); resolveReady(); }
-      if (disconnect && packet.messages?.some((message) => message.role === 'assistant' && message.content.length > 0)) {
-        observed.disconnected = true; socket.close();
+      try {
+        const packet = JSON.parse(bytes.toString()) as SyncPacket;
+        if (packet.type === 'snapshot') snapshot = packet.snapshot;
+        if (packet.type === 'change' || packet.type === 'append') snapshot = applyChange(snapshot, packet);
+        if (packet.type === 'ready') { assert.equal(packet.seq, snapshot.seq); clearTimeout(timer); resolveReady(); }
+        if (disconnect && snapshot.messages.some((message) => message.role === 'assistant' && message.content.length > 0)) {
+          observed.disconnected = true; socket.close();
+        }
+      } catch (error) {
+        failure = error instanceof Error ? error : new Error('Invalid sync packet');
+        clearTimeout(timer); socket.close(); reject(failure);
       }
     });
   });
-  return { socket, observed };
+  return { socket, observed, snapshot: () => { if (failure) throw failure; return snapshot; } };
 }
 
 try {
@@ -92,13 +101,15 @@ try {
   for (const [index, scenario] of scenarios.entries()) {
     const id = crypto.randomUUID();
     await api('/conversations', { id, title: scenario.name });
-    const { socket, observed } = await subscriber(id, scenario.disconnect);
+    const live = await subscriber(id, scenario.disconnect);
+    const { socket, observed } = live;
     const submission = await api<{ runId: string }>(`/conversations/${id}/messages`, { requestId: crypto.randomUUID(),
       content: 'Deterministic stream workload', selection: { providerId, model: models[index].id }, showReasoning: true });
     const deadline = Date.now() + chunks * interval + 30_000;
     let report: GenerationMeasurements | null;
     do {
       await pause(500);
+      live.snapshot();
       report = await api<GenerationMeasurements | null>(`/conversations/${id}/measurements`);
       assert.ok(Date.now() < deadline, `${scenario.name}: generation timed out`);
     } while (!report || report.runId !== submission.runId);
@@ -115,7 +126,15 @@ try {
       assert.ok(observed.disconnected, 'The subscriber must disconnect during generation');
       assert.ok(report.broadcastFrames > 0, 'The subscriber must receive part of the answer before disconnecting');
     }
-    else assert.ok(observed.bytes > 0 && report.broadcastFrames > 0);
+    else {
+      assert.ok(observed.bytes > 0 && report.broadcastFrames > 0);
+      const syncDeadline = Date.now() + 5000;
+      while (live.snapshot().seq < snapshot.seq) {
+        assert.ok(Date.now() < syncDeadline, 'Subscriber did not receive the final committed state');
+        await pause(10);
+      }
+      assert.deepEqual(live.snapshot(), snapshot, 'Incremental subscriber and persisted snapshot must agree');
+    }
     socket.close(); sockets.delete(socket);
     results.push({ scenario: scenario.name, measurements: report, client: observed });
     console.log(JSON.stringify({ scenario: scenario.name, checkpoints: report.checkpoints, sqlRowsWritten: report.sqlRowsWritten,

@@ -15,7 +15,7 @@ globalThis.fetch = async (input, init) => {
   if (!['/v1/chat/completions', '/v1/responses'].includes(url.pathname)) return new Response('Not found', { status: 404 });
   const requestBody = await request.clone().json() as { model: string; thinking?: { type: string }; reasoning_effort?: string; reasoning?: { effort?: string } };
   const encoder = new TextEncoder();
-  const benchmark = /^benchmark-(text|reasoning|long)-(\d+)-(\d+)-(\d+)$/.exec(requestBody.model);
+  const benchmark = /^benchmark-(text|reasoning|long|error)-(\d+)-(\d+)-(\d+)$/.exec(requestBody.model);
   if (benchmark) {
     const [, kind, count, delay, size] = benchmark;
     const chunks = Math.min(Number(count), 1000);
@@ -29,10 +29,13 @@ globalThis.fetch = async (input, init) => {
         await new Promise((resolve) => setTimeout(resolve, interval));
         const done = index++ >= chunks;
         const chunk = { id: 'benchmark', choices: [{ index: 0, delta: done ? {} : {
-          content: text, ...(kind === 'reasoning' ? { reasoning_content: reasoning } : {}),
-        }, finish_reason: done ? 'stop' : null }] };
+          content: text, ...(kind === 'reasoning' || kind === 'error' ? { reasoning_content: reasoning } : {}),
+        }, finish_reason: done && kind !== 'error' ? 'stop' : null }] };
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
-        if (done) { controller.enqueue(encoder.encode('data: [DONE]\n\n')); controller.close(); }
+        if (done) {
+          if (kind !== 'error') controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+          controller.close();
+        }
       },
     }), { headers: { 'Content-Type': 'text/event-stream' } });
   }

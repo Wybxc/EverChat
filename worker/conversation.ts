@@ -1,37 +1,25 @@
 import { DurableObject } from 'cloudflare:workers';
 import type { Env } from './env';
-import type { ChatInput, Change, Message, MessageStatus, ProviderConfig, Snapshot, Submission, SubmitInput } from '../shared/types';
+import type { ChatInput, Change, DurableChange, Message, MessageStatus, ProviderConfig, Snapshot, StreamBatch, Submission, SubmitInput } from '../shared/types';
 import { isActive } from '../shared/types';
+import { STREAM_VERSION, validateBatch } from '../shared/stream-batches';
 import type { GenerationMeasurements, StreamCounts } from '../shared/generation-metrics';
 import { GenerationMeter, measuredQuery } from './generation-metrics';
+import { StreamJournal } from './stream-journal';
+import { initializeConversation } from './conversation-schema';
 
 type Row = Message & Record<string, SqlStorageValue>;
-type Run = { id: string; conversationId: string; assistantId: string; context: string; config: string | null; chunkSeq: number; updatedAt: number } & Record<string, SqlStorageValue>;
+type Run = { id: string; conversationId: string; assistantId: string; context: string; config: string | null; chunkSeq: number; updatedAt: number;
+  streamVersion: string | null; durableOffset: number; contentLength: number; reasoningLength: number } & Record<string, SqlStorageValue>;
 type Failure = { error: string; status: number };
 
 export class Conversation extends DurableObject<Env> {
   private meter?: GenerationMeter;
+  private readonly journal: StreamJournal;
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
-    const sql = ctx.storage.sql;
-    sql.exec(`CREATE TABLE IF NOT EXISTS messages (
-      id TEXT PRIMARY KEY, role TEXT NOT NULL, content TEXT NOT NULL, status TEXT NOT NULL,
-      createdAt INTEGER NOT NULL, runId TEXT, parentId TEXT, revisionOf TEXT, error TEXT
-    )`);
-    sql.exec('CREATE TABLE IF NOT EXISTS submissions (id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, result TEXT NOT NULL)');
-    sql.exec(`CREATE TABLE IF NOT EXISTS runs (
-      id TEXT PRIMARY KEY, conversationId TEXT NOT NULL, assistantId TEXT NOT NULL,
-      context TEXT NOT NULL, chunkSeq INTEGER NOT NULL DEFAULT 0, updatedAt INTEGER NOT NULL
-    )`);
-    sql.exec('CREATE TABLE IF NOT EXISTS events (seq INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL)');
-    const columns = new Set(sql.exec<{ name: string }>('PRAGMA table_info(messages)').toArray().map((row) => row.name));
-    for (const column of ['reasoning', 'providerId', 'model', 'modelName']) {
-      if (!columns.has(column)) sql.exec(`ALTER TABLE messages ADD COLUMN ${column} TEXT`);
-    }
-    if (!sql.exec<{ name: string }>('PRAGMA table_info(runs)').toArray().some((row) => row.name === 'config')) {
-      sql.exec('ALTER TABLE runs ADD COLUMN config TEXT');
-    }
-    if (env.GENERATION_METRICS === '1') sql.exec('CREATE TABLE IF NOT EXISTS generation_measurements (id INTEGER PRIMARY KEY, payload TEXT NOT NULL)');
+    initializeConversation(ctx.storage.sql, env.GENERATION_METRICS === '1');
+    this.journal = new StreamJournal(this.query.bind(this));
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
   }
   private query<T extends Record<string, SqlStorageValue> = Record<string, SqlStorageValue>>(statement: string, ...bindings: SqlStorageValue[]) {
@@ -42,34 +30,44 @@ export class Conversation extends DurableObject<Env> {
     const row = this.ctx.storage.sql.exec<{ payload: string }>('SELECT payload FROM generation_measurements WHERE id = 1').toArray()[0];
     return row ? JSON.parse(row.payload) as GenerationMeasurements : null;
   }
-  private all(): Message[] { return this.query<Row>('SELECT * FROM messages ORDER BY rowid').toArray(); }
-  private message(id: string): Message | undefined { return this.query<Row>('SELECT * FROM messages WHERE id = ?', id).toArray()[0]; }
+  private materialize(message: Message): Message { return isActive(message) ? this.journal.materialize(message) : message; }
+  private all(): Message[] { return this.query<Row>('SELECT * FROM messages ORDER BY rowid').toArray().map((message) => this.materialize(message)); }
+  private rawMessage(id: string): Message | undefined { return this.query<Row>('SELECT * FROM messages WHERE id = ?', id).toArray()[0]; }
+  private message(id: string): Message | undefined { const message = this.rawMessage(id); return message && this.materialize(message); }
   private run(id: string): Run | undefined { return this.query<Run>('SELECT * FROM runs WHERE id = ?', id).toArray()[0]; }
   private seq(): number { return this.query<{ seq: number }>('SELECT COALESCE(MAX(seq), 0) AS seq FROM events').one().seq; }
   snapshot(): Snapshot { return { messages: this.all(), seq: this.seq() }; }
   private record(messages: Message[]): Change {
-    const payload = JSON.stringify(messages);
+    return { type: 'change', seq: this.recordPayload(JSON.stringify(messages)), messages };
+  }
+  private recordPayload(payload: string): number {
     this.meter?.event(payload);
     this.query('INSERT INTO events (payload) VALUES (?)', payload);
     const seq = this.seq();
     this.query('DELETE FROM events WHERE seq < ?', seq - 500);
-    return { type: 'change', seq, messages };
+    return seq;
   }
-  private broadcast(change: Change) {
+  private broadcast(change: DurableChange) {
     // SQLite writes and events commit before the output gate releases socket sends.
     const packet = JSON.stringify(change);
-    let recipients = 0;
+    let recipients = 0, legacyRecipients = 0, legacyPacket: string | undefined;
     for (const socket of this.ctx.getWebSockets()) {
-      const attachment = socket.deserializeAttachment() as { expires: number };
+      const attachment = socket.deserializeAttachment() as { expires: number; protocol?: number };
       if (attachment.expires <= Date.now() / 1000) { socket.close(4001, 'Session expired'); continue; }
-      try { socket.send(packet); recipients++; } catch { socket.close(1011, 'Reconnect to sync'); }
+      try {
+        if (change.type === 'append' && attachment.protocol !== 2) {
+          legacyPacket ??= JSON.stringify({ type: 'change', seq: change.seq, messages: [this.message(change.messageId)!] });
+          socket.send(legacyPacket); legacyRecipients++;
+        } else { socket.send(packet); recipients++; }
+      } catch { socket.close(1011, 'Reconnect to sync'); }
     }
     this.meter?.broadcast(packet, recipients);
+    if (legacyPacket) this.meter?.broadcast(legacyPacket, legacyRecipients);
   }
   private insert(message: Message) {
-    this.query('INSERT INTO messages (id, role, content, status, createdAt, runId, parentId, revisionOf, error, providerId, model, modelName, reasoning) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    this.query('INSERT INTO messages (id, role, content, status, createdAt, runId, parentId, revisionOf, error, providerId, model, modelName, reasoning, streamVersion, durableOffset) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       message.id, message.role, message.content, message.status, message.createdAt, message.runId, message.parentId, message.revisionOf, message.error,
-      message.providerId ?? null, message.model ?? null, message.modelName ?? null, message.reasoning ?? null);
+      message.providerId ?? null, message.model ?? null, message.modelName ?? null, message.reasoning ?? null, message.streamVersion ?? null, message.durableOffset ?? 0);
   }
   async submit(conversationId: string, input: SubmitInput, config: ProviderConfig | null): Promise<Submission | Failure> {
     // Keep the old fingerprint for requests accepted before model selection was available.
@@ -112,6 +110,7 @@ export class Conversation extends DurableObject<Env> {
       id: crypto.randomUUID(), role: 'assistant', content: '', status: 'queued', createdAt: Date.now(),
       runId, parentId: user.id, revisionOf: previous?.id ?? null, error: null,
       providerId: config.providerId, model: config.model, modelName: config.modelName || config.model,
+      streamVersion: STREAM_VERSION, durableOffset: 0,
     };
     const cutoff = parent ?? original;
     const history = cutoff ? messages.slice(0, messages.findIndex((m) => m.id === cutoff.id)) : messages;
@@ -125,10 +124,10 @@ export class Conversation extends DurableObject<Env> {
     const change = this.ctx.storage.transactionSync(() => {
       if (!parent) this.insert(user);
       this.insert(assistant);
-      this.query('INSERT INTO runs (id, conversationId, assistantId, context, chunkSeq, updatedAt, config) VALUES (?, ?, ?, ?, 0, ?, ?)',
-        runId, conversationId, assistant.id, JSON.stringify(context), Date.now(), JSON.stringify(config));
+      this.query('INSERT INTO runs (id, conversationId, assistantId, context, chunkSeq, updatedAt, config, streamVersion) VALUES (?, ?, ?, ?, 0, ?, ?, ?)',
+        runId, conversationId, assistant.id, JSON.stringify(context), Date.now(), JSON.stringify(config), STREAM_VERSION);
       this.query('INSERT INTO submissions VALUES (?, ?, ?)', input.requestId, fingerprint, JSON.stringify(result));
-      return this.record(parent ? [assistant] : [user, assistant]);
+      return this.record(parent ? [this.rawMessage(assistant.id)!] : [this.rawMessage(user.id)!, this.rawMessage(assistant.id)!]);
     });
     this.broadcast(change);
     return result;
@@ -155,7 +154,7 @@ export class Conversation extends DurableObject<Env> {
     }
     if (this.all().some(isActive)) await this.ctx.storage.setAlarm(Date.now() + 60_000);
   }
-  claim(runId: string): { context: ChatInput[]; config?: ProviderConfig; claimed: boolean; status: MessageStatus } | null {
+  claim(runId: string): { context: ChatInput[]; config?: ProviderConfig; claimed: boolean; status: MessageStatus; streamVersion?: string; assistantId?: string } | null {
     const run = this.run(runId);
     const message = run && this.message(run.assistantId);
     if (!run || !message) return null;
@@ -167,12 +166,39 @@ export class Conversation extends DurableObject<Env> {
       return this.record([this.message(message.id)!]);
     });
     this.broadcast(change);
-    return { context: JSON.parse(run.context), ...(run.config ? { config: JSON.parse(run.config) as ProviderConfig } : {}), claimed: true, status: 'running' };
+    return { context: JSON.parse(run.context), ...(run.config ? { config: JSON.parse(run.config) as ProviderConfig } : {}), claimed: true, status: 'running',
+      streamVersion: run.streamVersion ?? undefined, assistantId: run.assistantId };
+  }
+  append(runId: string, batch: StreamBatch, counts?: StreamCounts): boolean {
+    const run = this.run(runId), message = run && this.rawMessage(run.assistantId);
+    if (!run || !message || message.status !== 'running') return false;
+    if (run.streamVersion !== STREAM_VERSION || batch.runId !== runId || batch.messageId !== run.assistantId) throw new Error('Stream identity mismatch');
+    validateBatch(batch);
+    if (batch.chunkSeq <= run.chunkSeq) {
+      this.ctx.storage.transactionSync(() => {
+        if (this.journal.append(batch)) throw new Error('Missing acknowledged stream batch');
+      });
+      return true;
+    }
+    if (batch.chunkSeq !== run.chunkSeq + 1 || batch.startOffset !== run.durableOffset) throw new Error('Stream sequence or offset gap');
+    const contentLength = run.contentLength + batch.content.length, reasoningLength = run.reasoningLength + batch.reasoning.length;
+    if (contentLength > 100_000 || reasoningLength > 100_000) throw new Error('Stream exceeds message limits');
+    if (this.env.GENERATION_METRICS === '1' && !this.meter) this.meter = new GenerationMeter(runId, Date.now, 'since-last-resume');
+    const change = this.ctx.storage.transactionSync(() => {
+      if (!this.journal.append(batch)) throw new Error('Conflicting stream sequence');
+      this.query('UPDATE runs SET chunkSeq = ?, durableOffset = ?, contentLength = ?, reasoningLength = ?, updatedAt = ? WHERE id = ?',
+        batch.chunkSeq, batch.endOffset, contentLength, reasoningLength, Date.now(), runId);
+      return { type: 'append' as const, ...batch, seq: this.recordPayload(JSON.stringify(batch)) };
+    });
+    this.meter?.checkpoint(batch.content.length, batch.reasoning.length, counts);
+    this.broadcast(change);
+    return true;
   }
   checkpoint(runId: string, content: string, chunkSeq: number, reasoning = '', counts?: StreamCounts): boolean {
     const run = this.run(runId);
     const message = run && this.message(run.assistantId);
     if (!run || !message || !isActive(message)) return false;
+    if (run.streamVersion === STREAM_VERSION) throw new Error('Incremental runs require append');
     if (chunkSeq <= run.chunkSeq) return true;
     if (content.length > 100_000) throw new Error('回答超出 100,000 字限制。');
     if (reasoning.length > 100_000) throw new Error('思考内容超出 100,000 字限制。');
@@ -192,6 +218,7 @@ export class Conversation extends DurableObject<Env> {
     if (!message || !isActive(message)) return;
     if (this.env.GENERATION_METRICS === '1' && !this.meter) this.meter = new GenerationMeter(runId, Date.now, 'since-last-resume');
     const change = this.ctx.storage.transactionSync(() => {
+      if (message.streamVersion === STREAM_VERSION) this.journal.compact(message);
       this.query('UPDATE messages SET status = ?, error = ? WHERE id = ?', status, error, message.id);
       this.query('UPDATE runs SET config = NULL WHERE id = ?', runId);
       return this.record([this.message(message.id)!]);
@@ -215,15 +242,17 @@ export class Conversation extends DurableObject<Env> {
     const [client, server] = Object.values(new WebSocketPair());
     this.ctx.acceptWebSocket(server);
     const expires = Number(request.headers.get('X-Session-Expires'));
-    server.serializeAttachment({ expires });
+    const url = new URL(request.url), protocol = url.searchParams.get('protocol') === '2' ? 2 : 1;
+    server.serializeAttachment({ expires, protocol });
     const cursor = Number(new URL(request.url).searchParams.get('after'));
     const current = this.seq();
     const first = this.query<{ seq: number }>('SELECT COALESCE(MIN(seq), 0) AS seq FROM events').one().seq;
-    if (!Number.isSafeInteger(cursor) || cursor < first - 1 || cursor > current) {
+    if (protocol === 1 || !Number.isSafeInteger(cursor) || cursor < first - 1 || cursor > current) {
       server.send(JSON.stringify({ type: 'snapshot', snapshot: this.snapshot() }));
     } else {
       for (const row of this.query<{ seq: number; payload: string }>('SELECT * FROM events WHERE seq > ? ORDER BY seq', cursor)) {
-        server.send(JSON.stringify({ type: 'change', seq: row.seq, messages: JSON.parse(row.payload) }));
+        const payload = JSON.parse(row.payload) as Message[] | StreamBatch;
+        server.send(JSON.stringify(Array.isArray(payload) ? { type: 'change', seq: row.seq, messages: payload } : { type: 'append', seq: row.seq, ...payload }));
       }
     }
     server.send(JSON.stringify({ type: 'ready', seq: current }));
@@ -233,6 +262,9 @@ export class Conversation extends DurableObject<Env> {
     const attachment = socket.deserializeAttachment() as { expires: number };
     if (attachment.expires <= Date.now() / 1000) socket.close(4001, 'Session expired');
   }
-  webSocketClose(socket: WebSocket, code: number, reason: string) { socket.close(code, reason); }
+  webSocketClose(socket: WebSocket, code: number, reason: string) {
+    // Reserved status codes describe a missing close frame; they cannot be sent back on the wire.
+    socket.close([1005, 1006, 1015].includes(code) ? 1000 : code, reason);
+  }
   webSocketError(socket: WebSocket) { socket.close(1011, 'Reconnect to sync'); }
 }

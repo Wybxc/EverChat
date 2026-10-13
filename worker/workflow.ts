@@ -2,6 +2,7 @@ import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from 'cloud
 import type { Env } from './env';
 import type { GenerationParams } from '../shared/types';
 import { generate, GenerationCancelled, ProviderError } from './provider';
+import { STREAM_VERSION, streamBatches } from '../shared/stream-batches';
 
 export class GenerationWorkflow extends WorkflowEntrypoint<Env, GenerationParams> {
   async run(event: WorkflowEvent<GenerationParams>, step: WorkflowStep) {
@@ -17,9 +18,16 @@ export class GenerationWorkflow extends WorkflowEntrypoint<Env, GenerationParams
         const abort = new AbortController();
         const timer = setTimeout(() => abort.abort(), 14 * 60_000);
         let content = '', reasoning = '', chunkSeq = 0, lastFlush = 0;
+        let flushedContent = 0, flushedReasoning = 0, offset = 0;
         const counts = this.env.GENERATION_METRICS === '1' ? { textDeltas: 0, reasoningDeltas: 0 } : undefined;
         const flush = async () => {
-          if (!await conversation.checkpoint(runId, content, ++chunkSeq, reasoning, counts)) throw new GenerationCancelled();
+          if (claim.streamVersion === STREAM_VERSION && claim.assistantId) {
+            for (const batch of streamBatches(runId, claim.assistantId, chunkSeq, offset, content.slice(flushedContent), reasoning.slice(flushedReasoning))) {
+              if (!await conversation.append(runId, batch, counts)) throw new GenerationCancelled();
+              chunkSeq = batch.chunkSeq; offset = batch.endOffset;
+              flushedContent += batch.content.length; flushedReasoning += batch.reasoning.length;
+            }
+          } else if (!await conversation.checkpoint(runId, content, ++chunkSeq, reasoning, counts)) throw new GenerationCancelled();
           lastFlush = Date.now();
         };
         try {
@@ -43,7 +51,8 @@ export class GenerationWorkflow extends WorkflowEntrypoint<Env, GenerationParams
         } catch (error) {
           if (!(error instanceof GenerationCancelled)) {
             // Flush buffered text on an upstream error before marking the run failed.
-            await conversation.checkpoint(runId, content.slice(0, 100_000), ++chunkSeq, reasoning.slice(0, 100_000), counts);
+            content = content.slice(0, 100_000); reasoning = reasoning.slice(0, 100_000);
+            await flush();
             await conversation.finish(runId, 'failed', error instanceof ProviderError ? error.message : '生成中断或超时。已保存部分内容，请主动重新生成。');
           }
         } finally { clearTimeout(timer); abort.abort(); }

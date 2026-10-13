@@ -1,3 +1,5 @@
+import { validateBatch } from './stream-batches';
+
 export type MessageStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 export interface Message {
   id: string;
@@ -13,11 +15,19 @@ export interface Message {
   providerId?: string | null;
   model?: string | null;
   modelName?: string | null;
+  streamVersion?: 'semantic-delta-v1' | null;
+  durableOffset?: number;
 }
 export interface ConversationInfo { id: string; title: string; createdAt: number; updatedAt: number }
 export interface Snapshot { messages: Message[]; seq: number }
 export interface Change { type: 'change'; seq: number; messages: Message[] }
-export type SyncPacket = Change | { type: 'snapshot'; snapshot: Snapshot } | { type: 'ready'; seq: number };
+export interface StreamBatch {
+  version: 'semantic-delta-v1'; runId: string; messageId: string; chunkSeq: number;
+  startOffset: number; endOffset: number; content: string; reasoning: string;
+}
+export interface Append extends StreamBatch { type: 'append'; seq: number }
+export type DurableChange = Change | Append;
+export type SyncPacket = DurableChange | { type: 'snapshot'; snapshot: Snapshot } | { type: 'ready'; seq: number };
 export interface ModelSelection { providerId: string; model: string }
 export interface SubmitInput { requestId: string; content?: string; retryOf?: string; revisionOf?: string; selection?: ModelSelection; showReasoning?: boolean; reasoningEffort?: ReasoningEffort }
 export interface Submission { runId: string; userId: string; assistantId: string }
@@ -81,14 +91,31 @@ export interface ProviderModelConfig extends Omit<ProviderProfile, 'hasApiKey'> 
 }
 export const isActive = (message: Message) => message.status === 'queued' || message.status === 'running';
 
-export function applyChange(snapshot: Snapshot, change: Change): Snapshot {
+export function applyChange(snapshot: Snapshot, change: DurableChange): Snapshot {
   if (change.seq <= snapshot.seq) return snapshot;
   if (change.seq !== snapshot.seq + 1) throw new Error('Sync sequence gap');
   const messages = [...snapshot.messages];
+  if (change.type === 'append') {
+    const index = messages.findIndex((message) => message.id === change.messageId);
+    if (index === -1) throw new Error('Missing streamed message');
+    messages[index] = appendMessage(messages[index], change);
+    return { messages, seq: change.seq };
+  }
   for (const message of change.messages) {
     const index = messages.findIndex((existing) => existing.id === message.id);
     if (index === -1) messages.push(message);
     else messages[index] = message;
   }
   return { messages, seq: change.seq };
+}
+
+export function appendMessage(message: Message, batch: StreamBatch): Message {
+  validateBatch(batch);
+  if (batch.version !== 'semantic-delta-v1' || message.streamVersion !== batch.version || message.role !== 'assistant'
+    || message.id !== batch.messageId || message.runId !== batch.runId) throw new Error('Stream identity mismatch');
+  if (message.status !== 'running') throw new Error('Streamed message is not running');
+  if (batch.startOffset !== (message.durableOffset ?? 0) || batch.endOffset <= batch.startOffset) throw new Error('Stream offset gap');
+  const content = message.content + batch.content, reasoning = (message.reasoning ?? '') + batch.reasoning;
+  if (content.length > 100_000 || reasoning.length > 100_000) throw new Error('Stream exceeds message limits');
+  return { ...message, content, reasoning, durableOffset: batch.endOffset };
 }
