@@ -2,12 +2,15 @@ import { DurableObject } from 'cloudflare:workers';
 import type { Env } from './env';
 import type { ChatInput, Change, Message, MessageStatus, ProviderConfig, Snapshot, Submission, SubmitInput } from '../shared/types';
 import { isActive } from '../shared/types';
+import type { GenerationMeasurements, StreamCounts } from '../shared/generation-metrics';
+import { GenerationMeter, measuredQuery } from './generation-metrics';
 
 type Row = Message & Record<string, SqlStorageValue>;
 type Run = { id: string; conversationId: string; assistantId: string; context: string; config: string | null; chunkSeq: number; updatedAt: number } & Record<string, SqlStorageValue>;
 type Failure = { error: string; status: number };
 
 export class Conversation extends DurableObject<Env> {
+  private meter?: GenerationMeter;
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     const sql = ctx.storage.sql;
@@ -28,30 +31,43 @@ export class Conversation extends DurableObject<Env> {
     if (!sql.exec<{ name: string }>('PRAGMA table_info(runs)').toArray().some((row) => row.name === 'config')) {
       sql.exec('ALTER TABLE runs ADD COLUMN config TEXT');
     }
+    if (env.GENERATION_METRICS === '1') sql.exec('CREATE TABLE IF NOT EXISTS generation_measurements (id INTEGER PRIMARY KEY, payload TEXT NOT NULL)');
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
   }
-  private all(): Message[] { return this.ctx.storage.sql.exec<Row>('SELECT * FROM messages ORDER BY rowid').toArray(); }
-  private message(id: string): Message | undefined { return this.ctx.storage.sql.exec<Row>('SELECT * FROM messages WHERE id = ?', id).toArray()[0]; }
-  private run(id: string): Run | undefined { return this.ctx.storage.sql.exec<Run>('SELECT * FROM runs WHERE id = ?', id).toArray()[0]; }
-  private seq(): number { return this.ctx.storage.sql.exec<{ seq: number }>('SELECT COALESCE(MAX(seq), 0) AS seq FROM events').one().seq; }
+  private query<T extends Record<string, SqlStorageValue> = Record<string, SqlStorageValue>>(statement: string, ...bindings: SqlStorageValue[]) {
+    return measuredQuery<T>(this.ctx.storage.sql, this.meter, statement, ...bindings);
+  }
+  generationMeasurements(): GenerationMeasurements | null {
+    if (this.env.GENERATION_METRICS !== '1') return null;
+    const row = this.ctx.storage.sql.exec<{ payload: string }>('SELECT payload FROM generation_measurements WHERE id = 1').toArray()[0];
+    return row ? JSON.parse(row.payload) as GenerationMeasurements : null;
+  }
+  private all(): Message[] { return this.query<Row>('SELECT * FROM messages ORDER BY rowid').toArray(); }
+  private message(id: string): Message | undefined { return this.query<Row>('SELECT * FROM messages WHERE id = ?', id).toArray()[0]; }
+  private run(id: string): Run | undefined { return this.query<Run>('SELECT * FROM runs WHERE id = ?', id).toArray()[0]; }
+  private seq(): number { return this.query<{ seq: number }>('SELECT COALESCE(MAX(seq), 0) AS seq FROM events').one().seq; }
   snapshot(): Snapshot { return { messages: this.all(), seq: this.seq() }; }
   private record(messages: Message[]): Change {
-    this.ctx.storage.sql.exec('INSERT INTO events (payload) VALUES (?)', JSON.stringify(messages));
+    const payload = JSON.stringify(messages);
+    this.meter?.event(payload);
+    this.query('INSERT INTO events (payload) VALUES (?)', payload);
     const seq = this.seq();
-    this.ctx.storage.sql.exec('DELETE FROM events WHERE seq < ?', seq - 500);
+    this.query('DELETE FROM events WHERE seq < ?', seq - 500);
     return { type: 'change', seq, messages };
   }
   private broadcast(change: Change) {
     // SQLite writes and events commit before the output gate releases socket sends.
     const packet = JSON.stringify(change);
+    let recipients = 0;
     for (const socket of this.ctx.getWebSockets()) {
       const attachment = socket.deserializeAttachment() as { expires: number };
       if (attachment.expires <= Date.now() / 1000) { socket.close(4001, 'Session expired'); continue; }
-      try { socket.send(packet); } catch { socket.close(1011, 'Reconnect to sync'); }
+      try { socket.send(packet); recipients++; } catch { socket.close(1011, 'Reconnect to sync'); }
     }
+    this.meter?.broadcast(packet, recipients);
   }
   private insert(message: Message) {
-    this.ctx.storage.sql.exec('INSERT INTO messages (id, role, content, status, createdAt, runId, parentId, revisionOf, error, providerId, model, modelName, reasoning) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    this.query('INSERT INTO messages (id, role, content, status, createdAt, runId, parentId, revisionOf, error, providerId, model, modelName, reasoning) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       message.id, message.role, message.content, message.status, message.createdAt, message.runId, message.parentId, message.revisionOf, message.error,
       message.providerId ?? null, message.model ?? null, message.modelName ?? null, message.reasoning ?? null);
   }
@@ -62,7 +78,7 @@ export class Conversation extends DurableObject<Env> {
     if (input.showReasoning !== undefined || input.reasoningEffort) parts.push(input.showReasoning === true ? 'show-reasoning' : 'hide-reasoning', input.reasoningEffort ?? null);
     const fingerprint = JSON.stringify(parts);
     const duplicate = () => {
-      const existing = this.ctx.storage.sql.exec<{ fingerprint: string; result: string }>('SELECT * FROM submissions WHERE id = ?', input.requestId).toArray()[0];
+      const existing = this.query<{ fingerprint: string; result: string }>('SELECT * FROM submissions WHERE id = ?', input.requestId).toArray()[0];
       if (!existing) return null;
       return existing.fingerprint === fingerprint ? JSON.parse(existing.result) as Submission : { error: '此请求 ID 已用于另一条消息。', status: 409 };
     };
@@ -109,9 +125,9 @@ export class Conversation extends DurableObject<Env> {
     const change = this.ctx.storage.transactionSync(() => {
       if (!parent) this.insert(user);
       this.insert(assistant);
-      this.ctx.storage.sql.exec('INSERT INTO runs (id, conversationId, assistantId, context, chunkSeq, updatedAt, config) VALUES (?, ?, ?, ?, 0, ?, ?)',
+      this.query('INSERT INTO runs (id, conversationId, assistantId, context, chunkSeq, updatedAt, config) VALUES (?, ?, ?, ?, 0, ?, ?)',
         runId, conversationId, assistant.id, JSON.stringify(context), Date.now(), JSON.stringify(config));
-      this.ctx.storage.sql.exec('INSERT INTO submissions VALUES (?, ?, ?)', input.requestId, fingerprint, JSON.stringify(result));
+      this.query('INSERT INTO submissions VALUES (?, ?, ?)', input.requestId, fingerprint, JSON.stringify(result));
       return this.record(parent ? [assistant] : [user, assistant]);
     });
     this.broadcast(change);
@@ -119,7 +135,7 @@ export class Conversation extends DurableObject<Env> {
   }
   async alarm() {
     // Persistent outbox retries launching only, never the paid provider call.
-    for (const run of this.ctx.storage.sql.exec<Run>(`SELECT runs.* FROM runs JOIN messages ON messages.id = runs.assistantId WHERE messages.status IN ('queued', 'running')`).toArray()) {
+    for (const run of this.query<Run>(`SELECT runs.* FROM runs JOIN messages ON messages.id = runs.assistantId WHERE messages.status IN ('queued', 'running')`).toArray()) {
       const message = this.message(run.assistantId)!;
       if (Date.now() - run.updatedAt > 20 * 60_000) {
         this.finish(run.id, 'failed', '后台任务已超时。已保存的内容仍可阅读，请主动重新生成。');
@@ -144,24 +160,27 @@ export class Conversation extends DurableObject<Env> {
     const message = run && this.message(run.assistantId);
     if (!run || !message) return null;
     if (message.status !== 'queued') return { context: [], claimed: false, status: message.status };
+    if (this.env.GENERATION_METRICS === '1') this.meter = new GenerationMeter(runId);
     const change = this.ctx.storage.transactionSync(() => {
-      this.ctx.storage.sql.exec('UPDATE messages SET status = ? WHERE id = ?', 'running', message.id);
-      this.ctx.storage.sql.exec('UPDATE runs SET updatedAt = ? WHERE id = ?', Date.now(), runId);
+      this.query('UPDATE messages SET status = ? WHERE id = ?', 'running', message.id);
+      this.query('UPDATE runs SET updatedAt = ? WHERE id = ?', Date.now(), runId);
       return this.record([this.message(message.id)!]);
     });
     this.broadcast(change);
     return { context: JSON.parse(run.context), ...(run.config ? { config: JSON.parse(run.config) as ProviderConfig } : {}), claimed: true, status: 'running' };
   }
-  checkpoint(runId: string, content: string, chunkSeq: number, reasoning = ''): boolean {
+  checkpoint(runId: string, content: string, chunkSeq: number, reasoning = '', counts?: StreamCounts): boolean {
     const run = this.run(runId);
     const message = run && this.message(run.assistantId);
     if (!run || !message || !isActive(message)) return false;
     if (chunkSeq <= run.chunkSeq) return true;
     if (content.length > 100_000) throw new Error('回答超出 100,000 字限制。');
     if (reasoning.length > 100_000) throw new Error('思考内容超出 100,000 字限制。');
+    if (this.env.GENERATION_METRICS === '1' && !this.meter) this.meter = new GenerationMeter(runId, Date.now, 'since-last-resume');
+    this.meter?.checkpoint(content.length, reasoning.length, counts);
     const change = this.ctx.storage.transactionSync(() => {
-      this.ctx.storage.sql.exec('UPDATE messages SET content = ?, reasoning = ? WHERE id = ?', content, reasoning, message.id);
-      this.ctx.storage.sql.exec('UPDATE runs SET chunkSeq = ?, updatedAt = ? WHERE id = ?', chunkSeq, Date.now(), runId);
+      this.query('UPDATE messages SET content = ?, reasoning = ? WHERE id = ?', content, reasoning, message.id);
+      this.query('UPDATE runs SET chunkSeq = ?, updatedAt = ? WHERE id = ?', chunkSeq, Date.now(), runId);
       return this.record([this.message(message.id)!]);
     });
     this.broadcast(change);
@@ -171,12 +190,23 @@ export class Conversation extends DurableObject<Env> {
     const run = this.run(runId);
     const message = run && this.message(run.assistantId);
     if (!message || !isActive(message)) return;
+    if (this.env.GENERATION_METRICS === '1' && !this.meter) this.meter = new GenerationMeter(runId, Date.now, 'since-last-resume');
     const change = this.ctx.storage.transactionSync(() => {
-      this.ctx.storage.sql.exec('UPDATE messages SET status = ?, error = ? WHERE id = ?', status, error, message.id);
-      this.ctx.storage.sql.exec('UPDATE runs SET config = NULL WHERE id = ?', runId);
+      this.query('UPDATE messages SET status = ?, error = ? WHERE id = ?', status, error, message.id);
+      this.query('UPDATE runs SET config = NULL WHERE id = ?', runId);
       return this.record([this.message(message.id)!]);
     });
     this.broadcast(change);
+    if (this.meter?.runId === runId) {
+      const final = this.message(message.id)!;
+      const report = this.meter.report(status, this.ctx.storage.sql.databaseSize, final.content.length, final.reasoning?.length ?? 0);
+      this.meter = undefined;
+      // One diagnostic row per generation, excluded from the measured application SQL window.
+      try {
+        this.ctx.storage.sql.exec('INSERT INTO generation_measurements (id, payload) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET payload = excluded.payload', JSON.stringify(report));
+      } catch { console.warn('EverChat generation measurements could not be saved'); }
+      console.info('EVERCHAT_GENERATION_METRICS', JSON.stringify(report));
+    }
   }
   cancel(runId: string) { this.finish(runId, 'cancelled'); }
   closeSessions() { for (const socket of this.ctx.getWebSockets()) socket.close(4001, 'Signed out'); }
@@ -188,11 +218,11 @@ export class Conversation extends DurableObject<Env> {
     server.serializeAttachment({ expires });
     const cursor = Number(new URL(request.url).searchParams.get('after'));
     const current = this.seq();
-    const first = this.ctx.storage.sql.exec<{ seq: number }>('SELECT COALESCE(MIN(seq), 0) AS seq FROM events').one().seq;
+    const first = this.query<{ seq: number }>('SELECT COALESCE(MIN(seq), 0) AS seq FROM events').one().seq;
     if (!Number.isSafeInteger(cursor) || cursor < first - 1 || cursor > current) {
       server.send(JSON.stringify({ type: 'snapshot', snapshot: this.snapshot() }));
     } else {
-      for (const row of this.ctx.storage.sql.exec<{ seq: number; payload: string }>('SELECT * FROM events WHERE seq > ? ORDER BY seq', cursor)) {
+      for (const row of this.query<{ seq: number; payload: string }>('SELECT * FROM events WHERE seq > ? ORDER BY seq', cursor)) {
         server.send(JSON.stringify({ type: 'change', seq: row.seq, messages: JSON.parse(row.payload) }));
       }
     }

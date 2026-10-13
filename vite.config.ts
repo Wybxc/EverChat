@@ -33,7 +33,10 @@ export default defineConfig({
   }), cloudflare({
     persistState: process.env.EVERCHAT_TEST_STATE ? { path: process.env.EVERCHAT_TEST_STATE } : true,
     ...(process.env.EVERCHAT_TEST_STATE ? { inspectorPort: false } : {}),
-    ...(process.env.EVERCHAT_MOCK_PROVIDER === '1' ? { config: { main: 'tests/fixtures/worker.ts' } } : {}),
+    ...(process.env.EVERCHAT_MOCK_PROVIDER === '1' ? { config: {
+      main: 'tests/fixtures/worker.ts',
+      ...(process.env.EVERCHAT_GENERATION_METRICS === '1' ? { vars: { GENERATION_METRICS: '1' } } : {}),
+    } } : {}),
   })],
   server: { port: 5173, strictPort: true },
 });

@@ -17,18 +17,23 @@ async function login(page: Page) {
 }
 
 test('provider settings and model discovery require a session and same-origin writes', async ({ request }) => {
+  expect((await request.get(`/api/conversations/${crypto.randomUUID()}/measurements`)).status()).toBe(404);
   expect((await request.get('/api/settings/providers')).status()).toBe(401);
   expect((await request.put('/api/settings/providers', { headers, data: {} })).status()).toBe(401);
   expect((await request.put('/api/settings/providers', { data: {} })).status()).toBe(403);
   expect((await request.get(`/api/settings/providers/${crypto.randomUUID()}/models`)).status()).toBe(401);
 });
 
-test('output limits start unset and can be configured or cleared with autosave', async ({ page, context }) => {
+test('omitted output limits default to unset and can be configured or cleared with autosave', async ({ page, context }) => {
   await login(page);
   const getSettings = () => context.request.get('/api/settings/providers').then((response) => response.json()) as Promise<ProviderSettings>;
   const initial = await getSettings();
   try {
-    expect(initial.maxOutputTokens).toBeNull();
+    // Other tests configure this shared server. Exercise the omitted-field default explicitly.
+    const { maxOutputTokens: _configuredLimit, ...withoutLimit } = initial;
+    expect((await context.request.put('/api/settings/providers', { headers, data: withoutLimit })).status()).toBe(200);
+    expect((await getSettings()).maxOutputTokens).toBeNull();
+    await page.reload();
     await page.getByRole('button', { name: '空间设置', exact: true }).click();
     await tab(page, '对话');
     const limit = page.getByLabel('输出上限（Tokens）');

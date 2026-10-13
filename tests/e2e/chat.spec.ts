@@ -51,6 +51,16 @@ test('generation survives offline, tab closure and a second device; retries are 
   await context.setOffline(false);
   await expect(page.getByTestId('assistant-message')).toHaveAttribute('data-status', 'completed');
   await expect(page.getByTestId('assistant-message')).toContainText('服务端生成完成');
+  // Reconnection can expose the plain-text Suspense fallback before the Markdown chunk loads.
+  // Wait for both devices to render before capturing the text used for comparison.
+  for (const device of [page, otherPage]) {
+    await expect(device.getByTestId('assistant-message').locator('[data-streamdown="strong"]')).toHaveText('集成测试回答。');
+  }
+  const [firstSnapshot, secondSnapshot] = await Promise.all([
+    context.request.get(`/api/conversations/${id}`).then((response) => response.json()),
+    second.request.get(`/api/conversations/${id}`).then((response) => response.json()),
+  ]);
+  expect(secondSnapshot).toEqual(firstSnapshot);
   const firstText = (await page.getByTestId('assistant-message').innerText()).replace(/\s+/g, '');
   await expect.poll(async () => (await otherPage.getByTestId('assistant-message').innerText()).replace(/\s+/g, '')).toBe(firstText);
 

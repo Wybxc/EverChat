@@ -131,6 +131,14 @@ app.get('/conversations/:id', async (context) => {
   return json(await context.env.CONVERSATIONS.getByName(id).snapshot());
 });
 
+app.get('/conversations/:id/measurements', async (context) => {
+  if (context.env.GENERATION_METRICS !== '1') throw new HttpError(404, '找不到这个接口。');
+  await requireAuth(context);
+  const id = conversationId(context);
+  if (!await context.env.LIBRARY.getByName('personal').get(id)) throw new HttpError(404, '找不到这个对话。');
+  return json(await context.env.CONVERSATIONS.getByName(id).generationMeasurements());
+});
+
 app.get('/conversations/:id/sync', async (context) => {
   await requireAuth(context);
   const id = conversationId(context);

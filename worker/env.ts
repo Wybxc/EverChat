@@ -15,4 +15,5 @@ export interface Env {
   AI_MODEL: string;
   SYSTEM_PROMPT: string;
   MAX_OUTPUT_TOKENS?: string;
+  GENERATION_METRICS?: string;
 }

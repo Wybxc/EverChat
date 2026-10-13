@@ -15,6 +15,27 @@ globalThis.fetch = async (input, init) => {
   if (!['/v1/chat/completions', '/v1/responses'].includes(url.pathname)) return new Response('Not found', { status: 404 });
   const requestBody = await request.clone().json() as { model: string; thinking?: { type: string }; reasoning_effort?: string; reasoning?: { effort?: string } };
   const encoder = new TextEncoder();
+  const benchmark = /^benchmark-(text|reasoning|long)-(\d+)-(\d+)-(\d+)$/.exec(requestBody.model);
+  if (benchmark) {
+    const [, kind, count, delay, size] = benchmark;
+    const chunks = Math.min(Number(count), 1000);
+    const interval = Math.min(Number(delay), 500);
+    const characters = Math.min(Number(size), Math.floor(90_000 / Math.max(1, chunks)));
+    let index = 0;
+    const text = '正文🙂'.repeat(Math.ceil(characters / 4)).slice(0, characters);
+    const reasoning = '思考🙂'.repeat(Math.ceil(characters / 4)).slice(0, characters);
+    return new Response(new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        await new Promise((resolve) => setTimeout(resolve, interval));
+        const done = index++ >= chunks;
+        const chunk = { id: 'benchmark', choices: [{ index: 0, delta: done ? {} : {
+          content: text, ...(kind === 'reasoning' ? { reasoning_content: reasoning } : {}),
+        }, finish_reason: done ? 'stop' : null }] };
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
+        if (done) { controller.enqueue(encoder.encode('data: [DONE]\n\n')); controller.close(); }
+      },
+    }), { headers: { 'Content-Type': 'text/event-stream' } });
+  }
   if (url.pathname === '/v1/responses') {
     const events = [
       ...(requestBody.reasoning?.effort !== 'none' ? [
