@@ -242,7 +242,7 @@ app.post('/backup/restore', async (context) => {
     const restored = await context.env.CONVERSATIONS.getByName(id).restore(id, backup.conversation);
     if ('error' in restored) throw new HttpError(restored.status, restored.error);
     const settings: BackupSettings = { ...backup.settings, activeProviderId: null, activeModel: '' };
-    const saved = await library.saveProviderSettings(settings, backup.settings.promptPresets);
+    const saved = await library.saveProviderSettings(settings, backup.settings.promptPresets, { restoreModelMetadata: true });
     if ('error' in saved) throw new HttpError(saved.status ?? 400, saved.error);
     await library.touch(id);
     return json({ id, conversation: await library.get(id), snapshot: restored }, 201);

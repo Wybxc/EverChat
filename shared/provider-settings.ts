@@ -1,14 +1,24 @@
 import * as v from 'valibot';
 import { providerOptions } from './providers';
 import type { ProviderApiKind, ProviderSettingsInput } from './types';
+import { MAX_MODEL_TOKENS, reasoningEfforts } from './model-metadata';
 
 export const providerTypes = providerOptions.map((option) => option.value) as [ProviderApiKind, ...ProviderApiKind[]];
 const modelId = v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(200));
-const modelSchema = v.object({
+const tokenLimit = v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(MAX_MODEL_TOKENS));
+const metadataFields = {
+  contextWindow: v.optional(tokenLimit), contextScope: v.optional(v.picklist(['combined', 'input'])),
+  maxOutputTokens: v.optional(tokenLimit), imageInput: v.optional(v.boolean()),
+  toolCalls: v.optional(v.boolean()), structuredOutput: v.optional(v.boolean()),
+  reasoningEfforts: v.optional(v.pipe(v.array(v.picklist(reasoningEfforts)), v.maxLength(reasoningEfforts.length), v.check((values) => new Set(values).size === values.length))),
+};
+export const modelSchema = v.object({
   id: modelId, name: v.pipe(v.string(), v.trim(), v.maxLength(200)), enabled: v.boolean(),
   useGlobalSystemPrompt: v.optional(v.boolean()),
   systemPrompt: v.optional(v.pipe(v.string(), v.maxLength(20_000))),
   reasoningSupport: v.optional(v.picklist(['auto', 'supported', 'unsupported'])),
+  reportedMetadata: v.optional(v.strictObject({ ...metadataFields, reasoning: v.optional(v.boolean()) })),
+  metadataOverrides: v.optional(v.strictObject(metadataFields)),
 });
 const profileSchema = v.object({
   id: v.pipe(v.string(), v.uuid()),
@@ -39,9 +49,9 @@ export function normalizeBaseUrl(value: string): string {
   return baseUrl;
 }
 
-export function mergeProviderSettings(current: ProviderSettingsInput, input: unknown): ProviderSettingsInput {
+export function mergeProviderSettings(current: ProviderSettingsInput, input: unknown, options: { restoreModelMetadata?: boolean } = {}): ProviderSettingsInput {
   const parsed = v.safeParse(providerSettingsSchema, input);
-  if (!parsed.success) throw new Error('请检查名称、模型 ID 和输出上限。');
+  if (!parsed.success) throw new Error('请检查名称、模型 ID 和 Token 限制（正整数）；模型能力配置无效。');
   const seenIds = new Set<string>();
   const providers = parsed.output.providers.map((profile) => {
     if (seenIds.has(profile.id)) throw new Error('供应商 ID 不能重复。');
@@ -52,7 +62,8 @@ export function mergeProviderSettings(current: ProviderSettingsInput, input: unk
     const apiKey = profile.apiKey || (sameEndpoint ? existing?.apiKey : undefined);
     if (apiKey && /[\r\n]/.test(apiKey)) throw new Error('API 密钥不能包含换行。');
     if (new Set(profile.models.map((model) => model.id)).size !== profile.models.length) throw new Error('模型 ID 不能重复。');
-    return { ...profile, baseUrl, apiKey };
+    const models = existing && !sameEndpoint && !options.restoreModelMetadata ? profile.models.map((model) => ({ ...model, reportedMetadata: undefined })) : profile.models;
+    return { ...profile, models, baseUrl, apiKey };
   });
   const settings = { ...parsed.output, showReasoning: parsed.output.showReasoning ?? false, providers };
   if (settings.activeProviderId) {

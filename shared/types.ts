@@ -53,7 +53,7 @@ export interface SubmitInput { requestId: string; content?: string; retryOf?: st
 export interface Submission { runId: string; userId: string; assistantId: string }
 export type GenerationExecutor = 'do-v1';
 export interface ChatInput { role: 'system' | 'user' | 'assistant'; content: string }
-export interface ChatModel extends ModelSelection { name: string; providerName: string; provider: ProviderApiKind; baseUrl: string; reasoningSupported: boolean; reasoningEfforts: ReasoningEffort[] }
+export interface ChatModel extends ModelSelection { name: string; providerName: string; provider: ProviderApiKind; baseUrl: string; reasoningSupported: boolean; reasoningEfforts: ReasoningEffort[]; metadata: ResolvedModelMetadata }
 export interface SessionInfo { authenticated: boolean; provider: string; model: string; modelName?: string; activeProviderId?: string | null; models?: ChatModel[]; configured: boolean; showReasoning?: boolean; systemPrompt?: string; maxOutputTokens?: number | null }
 
 export type ProviderKind = 'openai-chat' | 'anthropic' | 'openai-responses' | 'gemini';
@@ -72,13 +72,32 @@ export interface ProviderConfig {
   reasoningEnabled?: boolean;
   reasoningEffort?: ReasoningEffort;
   showReasoning?: boolean;
+  modelMetadata?: ResolvedModelMetadata;
 }
 export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+export interface ModelMetadata {
+  contextWindow: number;
+  contextScope: 'combined' | 'input';
+  maxOutputTokens: number;
+  imageInput: boolean;
+  toolCalls: boolean;
+  structuredOutput: boolean;
+  reasoning: boolean;
+  reasoningEfforts: ReasoningEffort[];
+}
+export type MetadataSource = 'manual' | 'provider' | 'catalog' | 'fallback';
+export interface ResolvedModelMetadata extends ModelMetadata {
+  sources: Record<keyof ModelMetadata, MetadataSource>;
+}
+export type ModelMetadataOverrides = Partial<Omit<ModelMetadata, 'reasoning'>>;
+export interface DiscoveredModel { id: string; name: string; reportedMetadata?: Partial<ModelMetadata> }
 export interface ProviderModel {
   id: string; name: string; enabled: boolean;
   useGlobalSystemPrompt?: boolean;
   systemPrompt?: string;
   reasoningSupport?: 'auto' | 'supported' | 'unsupported';
+  reportedMetadata?: Partial<ModelMetadata>;
+  metadataOverrides?: ModelMetadataOverrides;
 }
 export interface ProviderProfile {
   id: string;

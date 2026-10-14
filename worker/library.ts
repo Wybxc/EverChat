@@ -200,11 +200,11 @@ export class Library extends DurableObject<Env> {
   providerForModelList(id: string): ProviderModelConfig | null {
     return this.providerSettingsData().providers.find((profile) => profile.id === id) ?? null;
   }
-  saveProviderSettings(input: ProviderSettingsInput, importedPresets?: PromptPreset[]): { settings: ProviderSettings } | { error: string; status?: number } {
+  saveProviderSettings(input: ProviderSettingsInput, importedPresets?: PromptPreset[], options: { restoreModelMetadata?: boolean } = {}): { settings: ProviderSettings } | { error: string; status?: number } {
     let settings: ProviderSettingsInput;
     let presets: PromptPreset[] = [];
     try {
-      settings = mergeProviderSettings(this.providerSettingsData(), input);
+      settings = mergeProviderSettings(this.providerSettingsData(), input, options);
       if (importedPresets) presets = this.presets.prepareRestore(importedPresets);
     }
     catch (error) { return { error: error instanceof Error ? error.message : '供应商配置无效。', ...(error instanceof PromptPresetError ? { status: error.status } : {}) }; }

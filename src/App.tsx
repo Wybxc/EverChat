@@ -430,7 +430,7 @@ export function App() {
     }
     if (generationModel) {
       try { applyConversationSettings({ ...generationModel, reasoningEnabled: generationModel.reasoningSupported, reasoningEffort: input.reasoningEffort,
-        showReasoning: input.showReasoning, systemPrompt: '', maxOutputTokens: null }, settings.output); }
+        showReasoning: input.showReasoning, systemPrompt: '', maxOutputTokens: session?.maxOutputTokens ?? null, modelMetadata: generationModel.metadata }, settings.output); }
       catch (error) { setError(error instanceof Error ? error.message : '会话参数无效。'); return; }
     }
     const conversation: ConversationInfo = currentConversation ?? {
@@ -619,7 +619,7 @@ export function App() {
                 {models.filter((model) => model.providerId === providerId).map((model) => <option key={model.model} value={modelSelectionKey(model)}>{model.name}</option>)}
               </optgroup>)}
             </select> : <button type="button" className="btn btn-ghost btn-xs" onClick={openSettings}>配置模型</button>}
-            {selectedModel?.reasoningSupported && <select aria-label="思维强度" className="select select-ghost select-sm w-auto max-w-32 border-base-content/50 text-xs" value={reasoningEffort} onChange={(event) => { const value = event.target.value as ReasoningEffort | ''; setReasoningEffort(value); write(`reasoning-effort:${modelSelectionKey(selectedModel)}`, value); }}>
+            {selectedModel?.reasoningSupported && selectedModel.reasoningEfforts.length > 0 && <select aria-label="思维强度" className="select select-ghost select-sm w-auto max-w-32 border-base-content/50 text-xs" value={reasoningEffort} onChange={(event) => { const value = event.target.value as ReasoningEffort | ''; setReasoningEffort(value); write(`reasoning-effort:${modelSelectionKey(selectedModel)}`, value); }}>
               <option value="">思维强度：默认</option>{selectedModel.reasoningEfforts.map((effort) => <option key={effort} value={effort}>{effortLabels[effort]}</option>)}
             </select>}
             </div>{active ? <button type="button" className="btn btn-sm h-9 shrink-0 gap-2 px-3" onClick={cancel} disabled={!navigator.onLine}><Square size={12} />停止生成</button> : <button type="submit" className="btn btn-primary btn-square btn-sm h-9 w-9 shrink-0 rounded-xl" aria-label="发送消息" disabled={!draft.trim() || busy || !selectedModel}>{sending ? <span className="loading loading-spinner loading-xs" /> : <ArrowUp size={18} />}</button>}</div>

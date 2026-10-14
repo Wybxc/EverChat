@@ -280,6 +280,16 @@ globalThis.fetch = async (input, init) => {
     return Response.json({ error: { message: 'Unauthorized' } }, { status: 401 });
   }
   if (url.pathname === '/v1/models') {
+    if (request.headers.has('x-api-key')) return Response.json({ data: [
+      { id: 'test-model', display_name: 'Discovered Claude', max_input_tokens: 200000, max_tokens: 64000,
+        capabilities: { image_input: { supported: true }, structured_outputs: { supported: false }, thinking: { supported: true },
+          effort: { supported: true, low: { supported: true }, high: { supported: true } } } },
+      { id: 'test-model-2', display_name: 'Second Claude', max_input_tokens: 100000, max_tokens: 32000 },
+    ] });
+    if (request.headers.has('x-goog-api-key')) return Response.json({ models: [
+      { name: 'models/test-model', displayName: 'Discovered Gemini', inputTokenLimit: 1048576, outputTokenLimit: 65536, thinking: true, supportedGenerationMethods: ['generateContent'] },
+      { name: 'models/embedding-test', supportedGenerationMethods: ['embedContent'] },
+    ] });
     return Response.json({ data: [{ id: 'test-model' }, { id: 'test-model-2' }] });
   }
   if (!['/v1/chat/completions', '/v1/responses', '/v1/messages'].includes(url.pathname) && !url.pathname.includes(':streamGenerateContent')) return new Response('Not found', { status: 404 });

@@ -2,11 +2,11 @@ import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } fro
 import { Eye, EyeOff, LogOut, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { providerOptions } from '../shared/providers';
-import { modelReasoning } from '../shared/models';
-import type { ProviderApiKind, ProviderModel, ProviderProfile, ProviderSettings } from '../shared/types';
+import type { DiscoveredModel, ProviderApiKind, ProviderModel, ProviderProfile, ProviderSettings } from '../shared/types';
 import { api } from './api';
 import { SettingsAutosave } from './settings-autosave';
 import { PromptPresetsPanel } from './PromptPresets';
+import { ModelMetadataFields } from './ModelMetadataFields';
 
 type PanelProps = { open: boolean; requestedTab?: SettingsTab; onSaved: (settings: ProviderSettings) => void; themeControl: ReactNode; onLogout: () => void };
 const tabs = [{ id: 'general', label: '通用' }, { id: 'providers', label: '供应商' }, { id: 'chat', label: '对话' }, { id: 'presets', label: '预设' }] as const;
@@ -20,11 +20,7 @@ function ModelOptions({ model, index, provider, globalPrompt, onChange }: {
     <div className="collapse-content space-y-4">
       <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="checkbox checkbox-sm" aria-label={`继承统一提示词 ${index + 1}`} checked={model.useGlobalSystemPrompt !== false} onChange={(event) => onChange({ useGlobalSystemPrompt: event.target.checked, systemPrompt: model.systemPrompt ?? globalPrompt })} />使用统一系统提示词</label>
       {model.useGlobalSystemPrompt === false && <label className="block space-y-2"><span className="text-sm">模型专属提示词</span><textarea aria-label={`模型专属提示词 ${index + 1}`} rows={4} maxLength={20000} className="textarea w-full border-base-content/50" value={model.systemPrompt ?? ''} onChange={(event) => onChange({ systemPrompt: event.target.value })} /></label>}
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="block min-w-0 space-y-2"><span className="text-sm">思考能力</span><select aria-label={`思考能力 ${index + 1}`} className="select select-sm w-full border-base-content/50" value={model.reasoningSupport ?? 'auto'} onChange={(event) => onChange({ reasoningSupport: event.target.value as ProviderModel['reasoningSupport'] })}>
-          <option value="auto">自动（{modelReasoning(provider, { ...model, reasoningSupport: 'auto' }).supported ? '支持' : '未识别'}）</option><option value="supported">支持</option><option value="unsupported">不支持</option>
-        </select></label>
-      </div>
+      <ModelMetadataFields provider={provider} model={model} index={index} onChange={onChange} />
     </div>
   </details>;
 }
@@ -94,7 +90,8 @@ function ProviderManager({ initial, open, requestedTab, onSaved, themeControl, o
       (patch.baseUrl !== undefined && patch.baseUrl.trim().replace(/\/+$/, '') !== profile.baseUrl.trim().replace(/\/+$/, '')));
     if (endpointChanged) setShowKey(false);
     update({ ...current, providers: current.providers.map((profile) => profile.id === id
-      ? { ...profile, ...(endpointChanged ? { apiKey: undefined, hasApiKey: false } : {}), ...patch } : profile) });
+      ? { ...profile, ...(endpointChanged ? { apiKey: undefined, hasApiKey: false } : {}), ...patch,
+        models: (patch.models ?? profile.models).map((model) => endpointChanged ? { ...model, reportedMetadata: undefined } : model) } : profile) });
   };
   const changeModel = (index: number, patch: Partial<ProviderModel>) => {
     if (!selected) return;
@@ -102,7 +99,8 @@ function ProviderManager({ initial, open, requestedTab, onSaved, themeControl, o
     const profile = current.providers.find((profile) => profile.id === selected.id)!;
     const previous = profile.models[index];
     update({ ...current, providers: current.providers.map((item) => item.id === profile.id
-      ? { ...item, models: item.models.map((model, i) => i === index ? { ...model, ...patch } : model) } : item),
+      ? { ...item, models: item.models.map((model, i) => i === index ? { ...model, ...patch,
+        ...(patch.id !== undefined && patch.id.trim() !== model.id ? { reportedMetadata: undefined } : {}) } : model) } : item),
       ...(current.activeProviderId === profile.id && current.activeModel === previous.id && patch.id !== undefined ? { activeModel: patch.id } : {}),
     }, patch.enabled === true);
   };
@@ -124,12 +122,14 @@ function ProviderManager({ initial, open, requestedTab, onSaved, themeControl, o
     setNotice(''); setFetchingId(target.id);
     try {
       await store.flush();
-      const result = await api<{ models: string[] }>(`/settings/providers/${target.id}/models`);
+      const result = await api<{ models: DiscoveredModel[] }>(`/settings/providers/${target.id}/models`);
       const current = store.getSnapshot().settings;
       const profile = current.providers.find((profile) => profile.id === target.id);
       if (!profile || profile.provider !== target.provider || profile.baseUrl !== target.baseUrl) return;
       const existing = new Set(profile.models.map((model) => model.id));
-      const models = [...profile.models, ...result.models.filter((id) => !existing.has(id)).map((id) => ({ id, name: id, enabled: false }))].slice(0, 200);
+      const discovered = new Map(result.models.map((model) => [model.id, model]));
+      const models = [...profile.models.map((model) => discovered.has(model.id) ? { ...model, reportedMetadata: discovered.get(model.id)!.reportedMetadata } : model),
+        ...result.models.filter((model) => !existing.has(model.id)).map((model) => ({ ...model, enabled: false }))].slice(0, 200);
       update({ ...current, providers: current.providers.map((profile) => profile.id === target.id ? { ...profile, models } : profile) });
       await store.flush();
       setNotice(`已获取 ${result.models.length} 个模型`);

@@ -4,6 +4,7 @@ import { conversationSettingsSchema } from './conversation-settings';
 import { promptPresetListSchema } from './prompt-presets';
 import { generationSchema } from './generation';
 import { messagePartsSchema } from './message-content';
+import { modelSchema } from './provider-settings';
 
 export const BACKUP_FORMAT = 'everchat-backup';
 export const BACKUP_VERSION = 1 as const;
@@ -102,9 +103,9 @@ export function validateBackup(value: unknown): EverChatBackup {
       || !isString(provider.baseUrl, 2048) || !Array.isArray(provider.models) || provider.models.length > 200) throw new Error('备份中的供应商配置无效。');
     const models = provider.models.map((model) => {
       if (!model || typeof model !== 'object') throw new Error('备份中的模型配置无效。');
-      const candidate = model as Record<string, unknown>;
-      if (!isString(candidate.id, 200) || !isString(candidate.name, 200) || typeof candidate.enabled !== 'boolean') throw new Error('备份中的模型配置无效。');
-      return candidate as unknown as ProviderModel;
+      const candidate = v.safeParse(modelSchema, model);
+      if (!candidate.success) throw new Error('备份中的模型配置无效。');
+      return candidate.output;
     });
     return { id: provider.id, name: provider.name, provider: provider.provider as ProviderApiKind, baseUrl: provider.baseUrl, models };
   });

@@ -1,5 +1,6 @@
 import * as v from 'valibot';
 import type { ConversationSettings, ProviderConfig } from './types';
+import { validateOutputLimit } from './model-metadata';
 
 export const DEFAULT_CONVERSATION_SETTINGS: ConversationSettings = {
   systemPrompt: null, temperature: null, topP: null, useGlobalMaxOutputTokens: true, maxOutputTokens: null,
@@ -41,6 +42,8 @@ export function samplingSupport(config: Pick<ProviderConfig, 'provider' | 'baseU
 }
 
 export function applyConversationSettings(config: ProviderConfig, settings: ConversationSettings): ProviderConfig {
+  const maxOutputTokens = settings.useGlobalMaxOutputTokens ? config.maxOutputTokens : settings.maxOutputTokens;
+  validateOutputLimit(config.modelMetadata, maxOutputTokens);
   const support = samplingSupport(config);
   const temperature = support.temperatureMax === null ? undefined : settings.temperature ?? undefined;
   const topP = support.topPMin === null ? undefined : settings.topP ?? undefined;
@@ -48,6 +51,6 @@ export function applyConversationSettings(config: ProviderConfig, settings: Conv
   if (topP !== undefined && topP < support.topPMin!) throw new Error(`当前模型的 Top P 不能低于 ${support.topPMin}。`);
   if (support.exclusive && temperature !== undefined && topP !== undefined) throw new Error('当前模型的 Temperature 和 Top P 只能设置一项。');
   return { ...config, systemPrompt: settings.systemPrompt ?? config.systemPrompt,
-    maxOutputTokens: settings.useGlobalMaxOutputTokens ? config.maxOutputTokens : settings.maxOutputTokens,
+    maxOutputTokens,
     temperature, topP };
 }

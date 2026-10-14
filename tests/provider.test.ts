@@ -197,8 +197,9 @@ for (const provider of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
       assert.equal(headers.get('authorization'), 'Bearer private-key');
       return Response.json({ data: [{ id: 'gpt-z' }, { id: 'gpt-a' }, { id: 'gpt-z' }] });
     });
-    const ids = await fetchProviderModels(profile);
-    assert.deepEqual(ids, provider === 'anthropic' ? ['claude-haiku', 'claude-sonnet'] : provider === 'gemini' ? ['gemini-2.5-flash'] : ['gpt-a', 'gpt-z']);
+    const models = await fetchProviderModels(profile);
+    const ids = provider === 'anthropic' ? ['claude-haiku', 'claude-sonnet'] : provider === 'gemini' ? ['gemini-2.5-flash'] : ['gpt-a', 'gpt-z'];
+    assert.deepEqual(models, ids.map((id) => ({ id, name: id })));
   });
 }
 

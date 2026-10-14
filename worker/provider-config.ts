@@ -1,5 +1,5 @@
 import type { ModelSelection, ProviderApiKind, ProviderConfig, ProviderKind, ProviderProfileInput, ProviderSettings, ProviderSettingsInput } from '../shared/types';
-import { modelReasoning } from '../shared/models';
+import { resolveModelMetadata } from '../shared/model-metadata';
 import { providerOptions } from '../shared/providers';
 import type { Env } from './env';
 import { providerTypes } from '../shared/provider-settings';
@@ -63,11 +63,11 @@ export function runtimeProviderConfig(settings: ProviderSettingsInput, selection
     : undefined;
   const model = selected?.models.find((model) => model.id === modelId && model.enabled);
   if (selected?.apiKey && model) {
-    const reasoning = modelReasoning(selected.provider, model);
-    if (effort && (!reasoning.supported || !reasoning.efforts.includes(effort))) return null;
+    const metadata = resolveModelMetadata(selected.provider, model);
+    if (effort && (!metadata.reasoning || !metadata.reasoningEfforts.includes(effort))) return null;
     return { provider: selected.provider, providerId: selected.id, baseUrl: selected.baseUrl, model: model.id, modelName: model.name || model.id,
       systemPrompt: model.useGlobalSystemPrompt === false ? model.systemPrompt ?? '' : settings.systemPrompt,
-      reasoningEnabled: reasoning.supported,
+      reasoningEnabled: metadata.reasoning, modelMetadata: metadata,
       reasoningEffort: effort,
       maxOutputTokens: settings.maxOutputTokens, showReasoning: settings.showReasoning, apiKey: selected.apiKey };
   }
