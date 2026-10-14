@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type SubmitEvent } from 'react';
 import { X } from 'lucide-react';
 import type { Message } from '../shared/types';
 
@@ -12,7 +12,7 @@ export function MessageMutationDialog({ message, mode, confirm, close }: {
     dialog.current?.showModal();
     if (mode === 'edit') input.current?.focus(); else cancel.current?.focus();
   }, [mode]);
-  const submit = async (event: FormEvent) => {
+  const submit = async (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (busy || (mode === 'edit' && !content.trim())) return;
     if (request.current.content !== content.trim()) request.current = { id: crypto.randomUUID(), content: content.trim() };

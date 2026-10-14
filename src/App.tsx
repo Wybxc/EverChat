@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type SubmitEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowDown, ArrowRight, ArrowUp, Check, CheckCheck, CloudOff, Copy, Download, Feather, Infinity as InfinityIcon, Lightbulb, LockKeyhole, Menu, MessageCircle, Monitor, Moon, Pencil, Pin, Plus, Quote, RefreshCw, Search, Settings, Sparkles, Square, Sun, Trash2, WifiOff, X } from 'lucide-react';
 import 'streamdown/styles.css';
@@ -101,7 +101,7 @@ function Login({ session, onLogin }: { session: SessionInfo; onLogin: () => Prom
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const local = ['localhost', '127.0.0.1'].includes(location.hostname);
-  const submit = async (event: FormEvent) => {
+  const submit = async (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault(); setError(''); setBusy(true);
     try { await api('/login', 'POST', { password }); await onLogin(); }
     catch (error) { setError(error instanceof Error ? error.message : '登录失败。'); }
@@ -387,7 +387,7 @@ export function App() {
     scrollToBottom();
     await deliver(item);
   };
-  const submit = async (event?: FormEvent) => {
+  const submit = async (event?: SubmitEvent<HTMLFormElement>) => {
     event?.preventDefault();
     if (!draft.trim() || busy || !selectedModel) return;
     setError(''); setSending(true);

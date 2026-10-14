@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type SubmitEvent } from 'react';
 import { Archive, ArchiveRestore, Copy, MoreHorizontal, Pencil, Pin, PinOff, Trash2 } from 'lucide-react';
 import type { ConversationInfo } from '../shared/types';
 
@@ -28,7 +28,7 @@ export function ConversationActions({ conversation, disabled, update, remove, du
     catch (failure) { setError(failure instanceof Error ? failure.message : '修改失败，请重试。'); if (!mode) menu.current?.showPopover(); }
     finally { setBusy(false); }
   };
-  const submit = (event: FormEvent) => {
+  const submit = (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (mode === 'rename' && title.trim()) void perform(() => update({ title: title.trim() }));
     if (mode === 'delete') void perform(remove);
