@@ -27,6 +27,7 @@ const submitSchema = v.object({
   retryOf: v.optional(uuidSchema),
   revisionOf: v.optional(uuidSchema),
   branchHead: v.optional(uuidSchema),
+  summaryThrough: v.optional(uuidSchema),
   selection: v.optional(v.object({ providerId: uuidSchema, model: v.pipe(v.string(), v.minLength(1), v.maxLength(200)) })),
   showReasoning: v.optional(v.boolean()),
   reasoningEffort: v.optional(v.picklist(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])),
@@ -279,6 +280,7 @@ app.post('/conversations/:id/messages', async (context) => {
   const id = conversationId(context);
   const library = await requireConversation(context, id);
   const input = await parseBody(context, submitSchema, { maxBytes: 240_000, tooLarge: '消息或会话参数太长。' }) as SubmitInput;
+  if (input.summaryThrough && (input.content !== undefined || input.retryOf || input.revisionOf || input.branchHead || input.settings || input.reasoningEffort || input.showReasoning !== undefined)) throw new HttpError(400, '摘要请求不能同时指定聊天内容或会话参数。');
   if (input.retryOf && (input.content !== undefined || input.revisionOf !== undefined)) throw new HttpError(400, '消息参数无效。');
   if (input.branchHead && input.revisionOf) throw new HttpError(400, '编辑消息不能同时指定分支。');
   if (input.branchHead && input.retryOf && input.branchHead !== input.retryOf) throw new HttpError(400, '重新生成的分支必须对应原回答。');

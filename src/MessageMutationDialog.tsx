@@ -3,8 +3,8 @@ import { useEffect, useId, useRef, useState, type SubmitEvent } from 'react';
 import { X } from 'lucide-react';
 import type { Message } from '../shared/types';
 
-export function MessageMutationDialog({ message, mode, confirm, close }: {
-  message: Message; mode: 'edit' | 'delete'; confirm: (content: string, requestId: string) => Promise<void>; close: () => void;
+export function MessageMutationDialog({ message, mode, affectsSummaries = false, confirm, close }: {
+  message: Message; mode: 'edit' | 'delete'; affectsSummaries?: boolean; confirm: (content: string, requestId: string) => Promise<void>; close: () => void;
 }) {
   const titleId = useId(), dialog = useRef<HTMLDialogElement>(null), input = useRef<HTMLTextAreaElement>(null), cancel = useRef<HTMLButtonElement>(null);
   const [content, setContent] = useState(messageText(message)), [busy, setBusy] = useState(false), [error, setError] = useState('');
@@ -25,11 +25,11 @@ export function MessageMutationDialog({ message, mode, confirm, close }: {
   return <dialog ref={dialog} className="modal" aria-labelledby={titleId} onClose={close} onCancel={(event) => { if (busy) event.preventDefault(); }}>
     <div className="modal-box flex max-h-[85dvh] max-w-2xl flex-col overflow-hidden">
       <div className="mb-4 flex shrink-0 items-center justify-between gap-3">
-        <h2 id={titleId} className="text-lg font-semibold">{mode === 'edit' ? '编辑回答' : '删除消息'}</h2>
+        <h2 id={titleId} className="text-lg font-semibold">{mode === 'edit' ? '编辑回答' : message.summary ? '删除摘要' : '删除消息'}</h2>
         <form method="dialog"><button type="submit" className="btn btn-ghost btn-sm btn-square" aria-label="关闭消息操作" disabled={busy}><X size={18} /></button></form>
       </div>
       <form className="flex min-h-0 flex-col" onSubmit={(event) => void submit(event)}>
-        {mode === 'edit' ? <textarea ref={input} aria-label="回答内容" className="textarea h-72 min-h-32 w-full shrink overflow-y-auto" maxLength={100000} value={content} onChange={(event) => setContent(event.target.value)} disabled={busy} /> : <p>删除这条消息？</p>}
+        {mode === 'edit' ? <textarea ref={input} aria-label="回答内容" className="textarea h-72 min-h-32 w-full shrink overflow-y-auto" maxLength={100000} value={content} onChange={(event) => setContent(event.target.value)} disabled={busy} /> : <p>{message.summary ? '删除摘要？原始消息仍保留。' : affectsSummaries ? '删除这条消息？覆盖它的历史摘要也会清除。' : '删除这条消息？'}</p>}
         {error && <p role="alert" className="mt-3 shrink-0 text-sm">{error}</p>}
         <div className="modal-action shrink-0">
           <button ref={cancel} type="button" className="btn" disabled={busy} onClick={() => dialog.current?.close()}>取消</button>

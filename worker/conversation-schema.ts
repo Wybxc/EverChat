@@ -22,6 +22,7 @@ export function initializeConversation(sql: SqlStorage, metrics: boolean) {
   sql.exec('CREATE TABLE IF NOT EXISTS events (seq INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL)');
   sql.exec(STREAM_JOURNAL_SCHEMA);
   sql.exec('CREATE TABLE IF NOT EXISTS message_generations (messageId TEXT PRIMARY KEY, payload TEXT NOT NULL)');
+  sql.exec('CREATE TABLE IF NOT EXISTS message_summaries (messageId TEXT PRIMARY KEY, payload TEXT NOT NULL)');
   sql.exec('CREATE TABLE IF NOT EXISTS generation_timings (runId TEXT PRIMARY KEY, providerStartedAt INTEGER NOT NULL, firstTokenAt INTEGER)');
   sql.exec('CREATE TABLE IF NOT EXISTS message_search_versions (messageId TEXT PRIMARY KEY, version INTEGER NOT NULL)');
   sql.exec('CREATE TABLE IF NOT EXISTS search_outbox (messageId TEXT PRIMARY KEY, conversationId TEXT NOT NULL, version INTEGER NOT NULL)');

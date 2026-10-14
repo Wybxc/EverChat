@@ -33,6 +33,7 @@ export const contextEstimateSchema = v.strictObject({
   inputBudget: count, contextWindow: count, outputReserve: count, safetyMargin: count,
   contextScope: v.picklist(['combined', 'input']), windowSource: v.picklist(['manual', 'provider', 'catalog', 'fallback']),
   retainedMessages: count, omittedMessages: count,
+  summaryTokens: v.optional(count), summarizedMessages: v.optional(count), summaryId: v.optional(v.pipe(v.string(), v.uuid())),
 });
 export type ContextEstimate = v.InferOutput<typeof contextEstimateSchema>;
 export class ContextBudgetError extends Error {}
@@ -41,7 +42,7 @@ export function contextSource(messages: Message[], input: Pick<SubmitInput, 'con
   const previous = input.retryOf ? messages.find((message) => message.id === input.retryOf) : undefined;
   const parent = previous ? messages.find((message) => message.id === previous.parentId) : undefined;
   const original = input.revisionOf ? messages.find((message) => message.id === input.revisionOf) : undefined;
-  const latest = [...messages].reverse().find((message) => message.status === 'completed' && !message.deletedAt);
+  const latest = [...messages].reverse().find((message) => message.status === 'completed' && !message.deletedAt && !message.summary);
   return { content: parent ? messageText(parent) : input.content?.trim() ?? '',
     parentId: parent ? parent.parentId : original ? original.parentId : input.branchHead ?? latest?.id ?? null };
 }
@@ -49,7 +50,7 @@ export function contextSource(messages: Message[], input: Pick<SubmitInput, 'con
 export function contextHistory(messages: Message[], parentId: string | null): ChatInput[] {
   const history = parentId ? branchPath(messages, parentId) : [];
   const deletedUsers = new Set(history.filter((message) => message.role === 'user' && message.deletedAt).map(({ id }) => id));
-  return history.filter((message) => message.status === 'completed' && !message.deletedAt
+  return history.filter((message) => message.status === 'completed' && !message.deletedAt && !message.summary
     && !(message.role === 'assistant' && message.parentId && deletedUsers.has(message.parentId)))
     .map((message) => ({ role: message.role, content: messageText(message) }));
 }
@@ -65,7 +66,8 @@ function historyTokens(message: ChatInput): number {
   return tokens;
 }
 export function buildContext(history: ChatInput[], content: string, config: Pick<ProviderConfig, 'systemPrompt' | 'maxOutputTokens' | 'modelMetadata'>,
-  settings: Pick<ConversationSettings, 'recentMessages' | 'contextBudget'>): { messages: ChatInput[]; estimate: ContextEstimate } {
+  settings: Pick<ConversationSettings, 'recentMessages' | 'contextBudget'>,
+  summary?: { id: string; content: string; coveredMessages: number }): { messages: ChatInput[]; estimate: ContextEstimate } {
   const metadata = config.modelMetadata ?? { ...FALLBACK_MODEL_METADATA, sources: { contextWindow: 'fallback' as const } };
   const { contextWindow, contextScope } = metadata;
   // Planning reserve only: never turn an unset request output limit into a supplier parameter.
@@ -75,7 +77,8 @@ export function buildContext(history: ChatInput[], content: string, config: Pick
   const inputBudget = Math.min(capacity, settings.contextBudget ?? capacity);
   const inputTokens = estimateTextTokens(content);
   const systemTokens = config.systemPrompt ? estimateTextTokens(config.systemPrompt) + MESSAGE_OVERHEAD : 0;
-  const fixed = inputTokens + MESSAGE_OVERHEAD + systemTokens + REQUEST_OVERHEAD;
+  const summaryTokens = summary ? estimateTextTokens(summary.content) + MESSAGE_OVERHEAD : 0;
+  const fixed = inputTokens + MESSAGE_OVERHEAD + systemTokens + REQUEST_OVERHEAD + summaryTokens;
   const selected: ChatInput[] = [];
   let retainedTokens = 0;
   // Select a suffix of complete user-led turns. Never cut a message or start on an orphaned answer.
@@ -92,10 +95,11 @@ export function buildContext(history: ChatInput[], content: string, config: Pick
   }
   const estimate: ContextEstimate = { method: 'approximate-v1', inputTokens, systemTokens, historyTokens: retainedTokens, totalTokens: fixed + retainedTokens,
     inputBudget, contextWindow, contextScope, outputReserve, safetyMargin, windowSource: metadata.sources.contextWindow,
-    retainedMessages: selected.length, omittedMessages: history.length - selected.length };
-  return { messages: [...selected, { role: 'user', content }], estimate };
+    retainedMessages: selected.length, omittedMessages: history.length - selected.length,
+    ...(summary ? { summaryTokens, summarizedMessages: summary.coveredMessages, summaryId: summary.id } : {}) };
+  return { messages: [...(summary ? [{ role: 'user' as const, content: summary.content }] : []), ...selected, { role: 'user', content }], estimate };
 }
 
 export function assertContextFits(estimate: ContextEstimate) {
-  if (estimate.totalTokens > estimate.inputBudget) throw new ContextBudgetError(`系统提示词与本次输入约需 ${estimate.totalTokens.toLocaleString('zh-CN')} Tokens，超过上下文预算 ${estimate.inputBudget.toLocaleString('zh-CN')}。请缩短输入或调整预算／输出预留。`);
+  if (estimate.totalTokens > estimate.inputBudget) throw new ContextBudgetError(`${estimate.summaryTokens ? '系统提示词、摘要与本次输入' : '系统提示词与本次输入'}约需 ${estimate.totalTokens.toLocaleString('zh-CN')} Tokens，超过上下文预算 ${estimate.inputBudget.toLocaleString('zh-CN')}。请缩短输入${estimate.summaryTokens ? '、停用历史摘要' : ''}或调整预算／输出预留。`);
 }

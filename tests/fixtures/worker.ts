@@ -7,6 +7,7 @@ import type { StreamBatch } from '../../shared/types';
 import { providerStreams } from './provider-streams';
 import type { ProviderKind } from '../../shared/types';
 import { MAX_CONVERSATIONS, MAX_DATABASE_BYTES } from '../../worker/resource-limits';
+import { SUMMARY_SYSTEM_PROMPT } from '../../shared/summaries';
 
 export class Library extends ProductionLibrary {
   override applySearchDocuments(id: string, documents: Parameters<ProductionLibrary['applySearchDocuments']>[1]) {
@@ -295,6 +296,27 @@ globalThis.fetch = async (input, init) => {
   if (!['/v1/chat/completions', '/v1/responses', '/v1/messages'].includes(url.pathname) && !url.pathname.includes(':streamGenerateContent')) return new Response('Not found', { status: 404 });
   const requestBody = await request.clone().json() as { model: string; thinking?: { type: string }; reasoning_effort?: string; reasoning?: { effort?: string } };
   const encoder = new TextEncoder();
+  if (requestBody.model?.startsWith('benchmark-summary-')) {
+    const serialized = JSON.stringify(requestBody);
+    if (!serialized.includes(SUMMARY_SYSTEM_PROMPT)) return Response.json({ error: { message: 'Summary instructions missing' } }, { status: 400 });
+    const kind = requestBody.model.slice('benchmark-summary-'.length);
+    const text = kind === 'empty' ? '' : `# 历史摘要\n\n${serialized.includes('__SUMMARY_FACT_42__') ? '- 预算 **42 元**，标识 __SUMMARY_FACT_42__。\n' : '- 没有旧预算资料。\n'}- 保留原始约束，继续处理后续问题。`;
+    const chunks = text.match(/.{1,12}/gs) ?? [];
+    let index = 0;
+    return new Response(new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        await new Promise((resolve) => setTimeout(resolve, kind === 'slow' ? 400 : 180));
+        const done = index >= chunks.length;
+        const chunk = { id: 'summary', choices: [{ index: 0, delta: done ? {} : { content: chunks[index++] }, finish_reason: done && kind !== 'error' ? kind === 'length' ? 'length' : 'stop' : null }],
+          ...(done ? { usage: { prompt_tokens: 55, completion_tokens: 19, total_tokens: 74 } } : {}) };
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
+        if (done) {
+          if (kind !== 'error') controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+          controller.close();
+        }
+      },
+    }), { headers: { 'Content-Type': 'text/event-stream' } });
+  }
   const rawKind = requestBody.model?.startsWith('raw-') ? requestBody.model.slice(4) as ProviderKind
     : url.pathname.includes('/models/raw-gemini:') ? 'gemini' : undefined;
   if (rawKind && providerStreams[rawKind]) {

@@ -1,5 +1,6 @@
 import { ProviderStream, type StreamState } from './provider-stream';
 import type { GenerationResult } from './generation';
+import type { SummaryCoverage } from './summaries';
 import { validateBatch, validateCommit } from './stream-batches';
 import { messageParts, messageText, type MessagePart } from './message-content';
 export type { MessagePart } from './message-content';
@@ -22,6 +23,7 @@ export interface Message {
   streamVersion?: 'raw-sse-v1' | null;
   streamState?: StreamState;
   generation?: GenerationResult;
+  summary?: SummaryCoverage;
   durableOffset?: number;
   liveOffset?: number;
 }
@@ -31,6 +33,7 @@ export interface ConversationSettings {
   systemPrompt: string | null; temperature: number | null; topP: number | null;
   useGlobalMaxOutputTokens: boolean; maxOutputTokens: number | null;
   recentMessages: number | null; contextBudget: number | null;
+  useSummaries: boolean;
 }
 export interface PromptPreset { id: string; name: string; systemPrompt: string; updatedAt: number }
 export type PromptPresetInput = Pick<PromptPreset, 'name' | 'systemPrompt'>;
@@ -50,7 +53,7 @@ export interface Preview { type: 'preview'; batch: StreamBatch }
 export type DurableChange = Change | Commit;
 export type SyncPacket = DurableChange | Preview | CommitAck | { type: 'snapshot'; snapshot: Snapshot } | { type: 'ready'; seq: number } | { type: 'deleted'; deletedAt: number };
 export interface ModelSelection { providerId: string; model: string }
-export interface SubmitInput { requestId: string; content?: string; retryOf?: string; revisionOf?: string; branchHead?: string; selection?: ModelSelection; showReasoning?: boolean; reasoningEffort?: ReasoningEffort; settings?: ConversationSettings }
+export interface SubmitInput { requestId: string; content?: string; retryOf?: string; revisionOf?: string; branchHead?: string; summaryThrough?: string; selection?: ModelSelection; showReasoning?: boolean; reasoningEffort?: ReasoningEffort; settings?: ConversationSettings }
 export interface Submission { runId: string; userId: string; assistantId: string }
 export type GenerationExecutor = 'do-v1';
 export interface ChatInput { role: 'system' | 'user' | 'assistant'; content: string }

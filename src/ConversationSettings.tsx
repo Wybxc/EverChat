@@ -8,7 +8,7 @@ import { api } from './api';
 import { read, storageEpoch, write } from './storage';
 import { PromptPresetPicker } from './PromptPresets';
 
-const withContextDefaults = (settings: ConversationSettings) => settings.recentMessages === undefined || settings.contextBudget === undefined
+const withContextDefaults = (settings: ConversationSettings) => settings.recentMessages === undefined || settings.contextBudget === undefined || settings.useSummaries === undefined
   ? { ...DEFAULT_CONVERSATION_SETTINGS, ...settings } : settings;
 
 function NumberSetting({ label, value, min, max, integer = false, change }: {
@@ -90,6 +90,7 @@ export function ConversationSettingsDialog({ id, initial, model, effort, showRea
         {limitMode === 'custom' && <NumberSetting label="输出 Token 上限" value={settings.maxOutputTokens} min={1} max={100000} integer change={(maxOutputTokens) => update({ maxOutputTokens })} />}
         <fieldset className="fieldset border-t border-base-content/20 pt-3">
           <legend className="fieldset-legend">上下文</legend>
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="checkbox checkbox-sm" checked={settings.useSummaries} onChange={(event) => update({ useSummaries: event.currentTarget.checked })} />使用历史摘要</label>
           <div className="grid gap-4 sm:grid-cols-2">
             <NumberSetting label="上下文 Token 预算" value={settings.contextBudget} min={1} max={10000000} integer change={(contextBudget) => update({ contextBudget })} />
             <NumberSetting label="最近历史消息条数" value={settings.recentMessages} min={1} max={1000} integer change={(recentMessages) => update({ recentMessages })} />

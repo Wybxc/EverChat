@@ -9,6 +9,7 @@ export function ContextEstimateView({ estimate }: { estimate: ContextEstimate })
       <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-2">
         <dt>系统提示词（估算）</dt><dd>{number.format(estimate.systemTokens)}</dd>
         <dt>历史（估算）</dt><dd>{number.format(estimate.historyTokens)} · {estimate.retainedMessages} 条</dd>
+        {estimate.summaryTokens !== undefined && <><dt>摘要（估算）</dt><dd>{number.format(estimate.summaryTokens)} · 覆盖 {estimate.summarizedMessages} 条</dd></>}
         <dt>模型窗口</dt><dd>{number.format(estimate.contextWindow)} · {metadataSourceLabels[estimate.windowSource]}</dd>
         <dt>输出预留</dt><dd>{number.format(estimate.outputReserve)}{estimate.contextScope === 'input' ? '（独立窗口）' : ''}</dd>
         <dt>估算余量</dt><dd>{number.format(estimate.safetyMargin)}</dd>
@@ -16,6 +17,6 @@ export function ContextEstimateView({ estimate }: { estimate: ContextEstimate })
       <p className="mt-2">近似值；输出预留不设置请求上限，实际用量以供应商报告为准。</p>
     </details>
     {estimate.omittedMessages > 0 && <p className="mt-1" data-testid="context-omission">将省略 {estimate.omittedMessages} 条历史消息，原文仍保留。</p>}
-    {estimate.totalTokens > estimate.inputBudget && <p className="mt-1">系统提示词与输入超过预算，请调整后发送。</p>}
+    {estimate.totalTokens > estimate.inputBudget && <p className="mt-1">{estimate.summaryTokens ? '系统提示词、摘要与输入' : '系统提示词与输入'}超过预算，请调整后发送。</p>}
   </div>;
 }
