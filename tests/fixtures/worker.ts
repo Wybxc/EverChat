@@ -147,6 +147,20 @@ export class Conversation extends ProductionConversation {
     return { messages: pairs * 2, contentCharacters: pairs * (input.length + content.length), reasoningCharacters: pairs * reasoning.length,
       databaseBytes: sql.databaseSize };
   }
+  fixtureSearchHistory() {
+    const sql = this.ctx.storage.sql;
+    if (sql.exec<{ count: number }>('SELECT COUNT(*) AS count FROM messages').one().count) throw new Error('Seed only an empty test conversation');
+    const user = crypto.randomUUID(), assistant = crypto.randomUUID(), last = crypto.randomUUID();
+    const filler = Array.from({ length: 80 }, (_, index) => `阅读段落 ${index + 1}，用于验证长消息中的搜索定位。`).join('\n\n');
+    this.ctx.storage.transactionSync(() => {
+      sql.exec('INSERT INTO messages (id, role, content, status, createdAt) VALUES (?, ?, ?, ?, ?)', user, 'user', '用户 TARGET 与 [a+b] 😀', 'completed', 1);
+      sql.exec('INSERT INTO messages (id, role, content, reasoning, status, createdAt, modelName) VALUES (?, ?, ?, ?, ?, ?, ?)', assistant, 'assistant',
+        `## 章节\n\n跨越 **格式** 搜索。\n\nTARGET 起点\n\n${filler}\n\n\`\`\`js\nconst TARGET = 1;\n\`\`\`\n\n尾部 TARGET 与 [a+b]`,
+        `隐藏目标在开头\n\n${filler}\n\n末尾思考终点`, 'completed', 2, 'TARGET 模型名');
+      sql.exec('INSERT INTO messages (id, role, content, status, createdAt) VALUES (?, ?, ?, ?, ?)', last, 'assistant', '第二个回答 target，Unicode 😀 中文。', 'completed', 3);
+    });
+    return { user, assistant, last };
+  }
 }
 
 export default {
@@ -173,13 +187,14 @@ export default {
       if (begin) return Response.json(await library.beginDelete(id));
       return Response.json({ deletedAt: await library.deletedAt(id), calls: await library.fixtureSupplierCalls(id) });
     }
-    const match = /^\/api\/__test\/conversations\/([0-9a-f-]{36})\/(state|alarm|abort|abort-stop|history|fill|resources|storage-error|delete-failure|delete-reset|deletion-state|late-submit)$/.exec(url.pathname);
+    const match = /^\/api\/__test\/conversations\/([0-9a-f-]{36})\/(state|alarm|abort|abort-stop|history|search-history|fill|resources|storage-error|delete-failure|delete-reset|deletion-state|late-submit)$/.exec(url.pathname);
     if (!match) return production.fetch(request, env, ctx);
     if (request.method !== 'POST' || request.headers.get('Origin') !== url.origin) return new Response('Forbidden', { status: 403 });
     if (!await authenticated(request, env)) return new Response('Unauthorized', { status: 401 });
     const { runId, pairs, target } = await request.json() as { runId: string; pairs: number; target: number };
     const conversation = (env.CONVERSATIONS as unknown as DurableObjectNamespace<Conversation>).getByName(match[1]);
     switch (match[2]) {
+      case 'search-history': return Response.json(await conversation.fixtureSearchHistory());
       case 'late-submit': {
         const result = await conversation.submit(match[1], { requestId: runId, content: '迟到的 RPC' }, await env.LIBRARY.getByName('personal').providerConfig());
         return Response.json(result, { status: 'error' in result ? result.status : 202 });

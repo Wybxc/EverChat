@@ -167,6 +167,9 @@ test('browser rendering streams ahead of saving, while export and throttled cach
   expect((await context.request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok()).toBe(true);
   const initial = await context.request.get('/api/settings/providers').then((response) => response.json()) as ProviderSettings;
   try {
+    const deletedId = crypto.randomUUID();
+    expect((await context.request.post('/api/conversations', { headers, data: { id: deletedId, title: 'Unrelated deleted conversation' } })).status()).toBe(201);
+    expect((await context.request.delete(`/api/conversations/${deletedId}`, { headers })).ok()).toBe(true);
     const providerId = crypto.randomUUID();
     expect((await context.request.put('/api/settings/providers', { headers, data: {
       providers: [{ id: providerId, name: 'Browser preview', provider: 'openai-chat', baseUrl: 'https://provider.test/v1', apiKey: 'integration-test-key',
@@ -177,7 +180,7 @@ test('browser rendering streams ahead of saving, while export and throttled cach
       const original = Storage.prototype.setItem;
       (window as unknown as { snapshotWrites: unknown[] }).snapshotWrites = [];
       Storage.prototype.setItem = function(key, value) {
-        if (key.startsWith('everchat:snapshot:')) (window as unknown as { snapshotWrites: unknown[] }).snapshotWrites.push(JSON.parse(value));
+        if (key.startsWith('everchat:snapshot:')) (window as unknown as { snapshotWrites: unknown[] }).snapshotWrites.push({ key, snapshot: JSON.parse(value) });
         return original.call(this, key, value);
       };
     });
@@ -199,7 +202,9 @@ test('browser rendering streams ahead of saving, while export and throttled cach
     const stored = await context.request.get(`/api/conversations/${id}`).then((response) => response.json()) as Snapshot;
     const cached = await page.evaluate((id) => JSON.parse(localStorage.getItem(`everchat:snapshot:${id}`)!), id) as Snapshot;
     expect(cached).toEqual(stored);
-    const writes = await page.evaluate(() => (window as unknown as { snapshotWrites: Snapshot[] }).snapshotWrites);
+    const captured = await page.evaluate(() => (window as unknown as { snapshotWrites: { key: string; snapshot: Snapshot }[] }).snapshotWrites);
+    expect(captured.some((write) => write.key === `everchat:snapshot:${deletedId}`)).toBe(true);
+    const writes = captured.filter((write) => write.key === `everchat:snapshot:${id}`).map((write) => write.snapshot);
     expect(writes.length).toBeLessThan(10);
     for (const write of writes) for (const message of write.messages) expect(message.liveOffset).toBeUndefined();
     expect(stored.messages[1].content).toBe('正文🙂'.repeat(2000));

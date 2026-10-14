@@ -12,9 +12,11 @@
   * { letter-spacing: 0; }
   button, a { -webkit-tap-highlight-color: transparent; }
   ::selection { background: var(--color-secondary); }
+  ::highlight(everchat-search) { background-color: var(--color-warning); color: var(--color-warning-content); }
 }
 
 @layer components {
+  [data-search-current] { outline: 2px solid var(--color-base-content); outline-offset: 8px; border-radius: var(--radius-box); }
   .markdown { overflow-wrap: anywhere; font-size: 15px; line-height: 1.9; }
   .markdown > * + * { margin-top: 1rem; }
   .markdown h1, .markdown h2, .markdown h3 { font-weight: 650; line-height: 1.5; margin-top: 1.4rem; }
