@@ -1,8 +1,9 @@
+import type { DocumentPart } from '../shared/documents';
 import type { ImagePart } from '../shared/images';
 import { delMany, entries, set, setMany } from 'idb-keyval';
 import type { ConversationInfo, Snapshot, SubmitInput } from '../shared/types';
 
-export interface Pending { conversation: ConversationInfo; input: SubmitInput; error?: string; images?: ImagePart[] }
+export interface Pending { conversation: ConversationInfo; input: SubmitInput; error?: string; images?: ImagePart[]; files?: DocumentPart[] }
 
 const PREFIX = 'everchat:';
 const cache = new Map<string, unknown>();

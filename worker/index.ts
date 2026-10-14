@@ -12,8 +12,9 @@ import { storageErrorMessage } from './resource-limits';
 import { SEARCH_QUERY_LIMIT } from '../shared/search';
 import { conversationSettingsSchema } from '../shared/conversation-settings';
 import { promptPresetInputSchema } from '../shared/prompt-presets';
+import { MAX_MESSAGE_DOCUMENTS } from '../shared/documents';
 import { MAX_MESSAGE_IMAGES } from '../shared/images';
-import { messageImages } from '../shared/message-content';
+import { messageAttachments } from '../shared/message-content';
 import { attachmentInputSchema } from '../shared/attachments';
 
 export { Conversation } from './conversation';
@@ -27,6 +28,7 @@ const conversationSchema = v.object({ id: uuidSchema, title: v.pipe(v.string(), 
 const submitSchema = v.object({
   requestId: uuidSchema,
   content: v.optional(v.string()),
+  fileIds: v.optional(v.pipe(v.array(uuidSchema), v.maxLength(MAX_MESSAGE_DOCUMENTS), v.check((ids) => new Set(ids).size === ids.length))),
   imageIds: v.optional(v.pipe(v.array(uuidSchema), v.maxLength(MAX_MESSAGE_IMAGES), v.check((ids) => new Set(ids).size === ids.length))),
   retryOf: v.optional(uuidSchema),
   revisionOf: v.optional(uuidSchema),
@@ -191,7 +193,7 @@ app.get('/conversations/:id/backup', async (context) => {
   const conversation = await library.get(id);
   if (!conversation) throw new HttpError(404, '找不到这个对话。');
   const messages = await context.env.CONVERSATIONS.getByName(id).backup();
-  if (messages.some((message) => messageImages(message).length)) throw new HttpError(409, '含图片的备份将在附件备份步骤接入；当前可导出文本。');
+  if (messages.some((message) => messageAttachments(message).length)) throw new HttpError(409, '含附件的备份将在附件备份步骤接入；当前可导出文本。');
   return json({ format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: Date.now(),
     conversation: { ...conversation, messages, settings: await context.env.CONVERSATIONS.getByName(id).settings() },
     settings: await library.backupSettings() });
@@ -216,7 +218,7 @@ async function duplicateConversation(context: AppContext, messageId?: string) {
   if (!source) throw new HttpError(404, '找不到这个对话。');
   const saved = await context.env.CONVERSATIONS.getByName(id).copySource(messageId);
   if ('error' in saved) throw new HttpError(saved.status, saved.error);
-  if (saved.messages.some((message) => messageImages(message).length)) throw new HttpError(409, '含图片的复制将在附件引用步骤接入。');
+  if (saved.messages.some((message) => messageAttachments(message).length)) throw new HttpError(409, '含附件的复制将在附件引用步骤接入。');
   const copyId = crypto.randomUUID();
   const title = `${source.title} 副本`.slice(0, 80);
   const created = await library.create(copyId, title);
@@ -243,7 +245,7 @@ app.post('/conversations/:id/messages/:messageId/duplicate', (context) => duplic
 app.post('/backup/restore', async (context) => {
   await requireAuth(context);
   const backup = await parseBackup(context);
-  if (backup.conversation.messages.some((message) => messageImages(message).length)) throw new HttpError(400, '此备份缺少图片文件，无法恢复。');
+  if (backup.conversation.messages.some((message) => messageAttachments(message).length)) throw new HttpError(400, '此备份缺少附件文件，无法恢复。');
   const library = context.env.LIBRARY.getByName('personal');
   const id = crypto.randomUUID();
   const created = await library.create(id, backup.conversation.title.trim());
@@ -310,6 +312,16 @@ app.on(['GET', 'HEAD'], '/conversations/:id/attachments/:attachmentId/content', 
   await requireAuth(context); const id = conversationId(context), library = await requireConversation(context, id);
   return library.attachmentResponse(id, attachmentId(context), context.req.method === 'HEAD');
 });
+app.post('/conversations/:id/attachments/:attachmentId/document', async (context) => {
+  await requireAuth(context); const id = conversationId(context), library = await requireConversation(context, id);
+  const result = await library.parseDocument(id, attachmentId(context));
+  return 'error' in result ? json({ error: result.error }, result.status) : json(result.value);
+});
+app.get('/conversations/:id/attachments/:attachmentId/document', async (context) => {
+  await requireAuth(context); const id = conversationId(context), library = await requireConversation(context, id);
+  const result = await library.documentText(id, attachmentId(context));
+  return 'error' in result ? json({ error: result.error }, result.status) : json(result.value);
+});
 app.delete('/conversations/:id/attachments/:attachmentId', async (context) => {
   await requireAuth(context); const id = conversationId(context), library = await requireConversation(context, id);
   const result = await library.removeAttachment(id, attachmentId(context));
@@ -321,8 +333,8 @@ app.post('/conversations/:id/messages', async (context) => {
   const id = conversationId(context);
   const library = await requireConversation(context, id);
   const input = await parseBody(context, submitSchema, { maxBytes: 240_000, tooLarge: '消息或会话参数太长。' }) as SubmitInput;
-  if (input.summaryThrough && (input.content !== undefined || input.retryOf || input.revisionOf || input.branchHead || input.settings || input.reasoningEffort || input.showReasoning !== undefined || input.imageIds !== undefined)) throw new HttpError(400, '摘要请求不能同时指定聊天内容或会话参数。');
-  if (input.retryOf && (input.content !== undefined || input.revisionOf !== undefined || input.imageIds !== undefined)) throw new HttpError(400, '消息参数无效。');
+  if (input.summaryThrough && (input.content !== undefined || input.retryOf || input.revisionOf || input.branchHead || input.settings || input.reasoningEffort || input.showReasoning !== undefined || input.imageIds !== undefined || input.fileIds !== undefined)) throw new HttpError(400, '摘要请求不能同时指定聊天内容或会话参数。');
+  if (input.retryOf && (input.content !== undefined || input.revisionOf !== undefined || input.imageIds !== undefined || input.fileIds !== undefined)) throw new HttpError(400, '消息参数无效。');
   if (input.branchHead && input.revisionOf) throw new HttpError(400, '编辑消息不能同时指定分支。');
   if (input.branchHead && input.retryOf && input.branchHead !== input.retryOf) throw new HttpError(400, '重新生成的分支必须对应原回答。');
   const baseConfig = await library.providerConfig(input.selection);

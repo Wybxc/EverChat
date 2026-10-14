@@ -1,3 +1,5 @@
+import { DocumentStore } from './documents';
+import type { DocumentPart } from '../shared/documents';
 import { ATTACHMENT_LEASE, ATTACHMENT_UPLOAD_TIMEOUT, attachmentSignatureMatches, MAX_DAILY_ATTACHMENT_UPLOADS, MAX_CONVERSATION_ATTACHMENTS, MAX_CONVERSATION_ATTACHMENT_BYTES,
   MAX_SPACE_ATTACHMENTS, MAX_SPACE_ATTACHMENT_BYTES, type Attachment, type AttachmentInput } from '../shared/attachments';
 import { HttpError } from './http';
@@ -6,6 +8,7 @@ import * as v from 'valibot';
 
 type Row = Attachment & { key: string; lease: number; token: string | null; removed: number } & Record<string, SqlStorageValue>;
 export class AttachmentStore {
+  readonly documents: DocumentStore;
   private active = new Set<string>();
   constructor(private storage: DurableObjectStorage, private bucket: R2Bucket | undefined, private exists: (id: string) => boolean) {
     storage.sql.exec(`CREATE TABLE IF NOT EXISTS attachments (id TEXT PRIMARY KEY, conversationId TEXT NOT NULL, name TEXT NOT NULL,
@@ -13,6 +16,9 @@ export class AttachmentStore {
       error TEXT, key TEXT NOT NULL, lease INTEGER NOT NULL, token TEXT, removed INTEGER NOT NULL DEFAULT 0)`);
     storage.sql.exec('CREATE TABLE IF NOT EXISTS attachment_daily_uploads (date TEXT PRIMARY KEY, count INTEGER NOT NULL)');
     storage.sql.exec('CREATE TABLE IF NOT EXISTS attachment_usage (id TEXT PRIMARY KEY, token TEXT NOT NULL)');
+    this.documents = new DocumentStore(storage, bucket, this.require.bind(this), this.response.bind(this), (id) => {
+      const row = this.row(id); if (row?.removed && row.status !== 'uploading') this.storage.sql.exec('UPDATE attachments SET lease = ? WHERE id = ?', Date.now(), id);
+    });
   }
   private configuredBucket() {
     if (!this.bucket) throw new HttpError(503, '文件存储未配置，请先绑定私有 R2 桶。');
@@ -45,7 +51,7 @@ export class AttachmentStore {
       return { type: 'image', attachmentId: row.id, name: row.name, size: row.size, mediaType: type.output, sha256: row.sha256 };
     });
   }
-  async pinImages(conversationId: string, images: ImagePart[]) {
+  async pinAttachments(conversationId: string, images: ImagePart[], files: DocumentPart[]) {
     const unique = new Map(images.map((image) => [image.attachmentId, image]));
     for (const image of unique.values()) {
       const row = this.require(conversationId, image.attachmentId);
@@ -54,10 +60,13 @@ export class AttachmentStore {
       try { assertChatImage(new Uint8Array(await response.arrayBuffer()), image.mediaType); }
       catch (error) { throw new HttpError(415, error instanceof Error ? error.message : '图片无效。'); }
     }
+    const documents = new Map(files.map((file) => [file.attachmentId, file]));
+    for (const file of documents.values()) await this.documents.validate(conversationId, file);
+    const references = [...unique.values(), ...documents.values()];
     // Recheck every row after the last R2 await. A concurrent deletion must win before acceptance.
-    for (const image of unique.values()) this.require(conversationId, image.attachmentId);
+    for (const image of references) this.require(conversationId, image.attachmentId);
     this.storage.transactionSync(() => {
-      for (const image of unique.values()) this.storage.sql.exec('INSERT INTO attachment_usage VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET token = excluded.token', image.attachmentId, crypto.randomUUID());
+      for (const image of references) this.storage.sql.exec('INSERT INTO attachment_usage VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET token = excluded.token', image.attachmentId, crypto.randomUUID());
     });
     await this.storage.sync();
   }
@@ -164,33 +173,37 @@ export class AttachmentStore {
   }
   remove(conversationId: string, id: string, usage = this.usage(id)) {
     const row = this.require(conversationId, id);
-    if (usage !== this.usage(id)) throw new HttpError(409, '图片刚被对话使用，请稍后重试。');
-    this.storage.sql.exec('UPDATE attachments SET removed = 1, lease = ? WHERE id = ?', row.status === 'uploading' ? row.lease : Date.now(), id);
+    if (usage !== this.usage(id)) throw new HttpError(409, '文件刚被对话使用，请稍后重试。');
+    this.storage.sql.exec('UPDATE attachments SET removed = 1, lease = ? WHERE id = ?', Math.max(row.status === 'uploading' ? row.lease : Date.now(), this.documents.lease(id)), id);
   }
   removeConversation(conversationId: string) {
-    this.storage.sql.exec("UPDATE attachments SET removed = 1, lease = CASE WHEN status = 'uploading' THEN lease ELSE ? END WHERE conversationId = ?", Date.now(), conversationId);
+    this.storage.sql.exec("UPDATE attachments SET removed = 1, lease = MAX(CASE WHEN status = 'uploading' THEN lease ELSE ? END, COALESCE((SELECT lease FROM attachment_documents WHERE attachment_documents.id = attachments.id AND status = 'parsing'), 0)) WHERE conversationId = ?", Date.now(), conversationId);
   }
   nextCleanup() {
     if (!this.bucket) return undefined;
-    return this.storage.sql.exec<{ next: number }>("SELECT MIN(lease) AS next FROM attachments WHERE removed = 1 OR status != 'ready' HAVING COUNT(*) > 0").toArray()[0]?.next;
+    const next = this.storage.sql.exec<{ next: number }>("SELECT MIN(lease) AS next FROM attachments WHERE removed = 1 OR status != 'ready' HAVING COUNT(*) > 0").toArray()[0]?.next;
+    const document = this.documents.nextCleanup();
+    return next === undefined ? document : document === undefined ? next : Math.min(next, document);
   }
   async cleanup() {
     if (!this.bucket) return true;
+    await this.documents.cleanup();
     let failed = false;
     const rows = this.storage.sql.exec<Row>("SELECT * FROM attachments WHERE (removed = 1 OR status != 'ready') AND lease <= ? ORDER BY lease LIMIT 4", Date.now()).toArray();
     for (const row of rows) {
       // Earlier R2 deletes yield to uploads. Recheck each row before claiming cleanup.
       const current = this.row(row.id);
       if (!current || current.key !== row.key || current.lease > Date.now() || (!current.removed && current.status === 'ready')) continue;
-      if (this.active.has(row.id)) { this.storage.sql.exec('UPDATE attachments SET lease = ? WHERE id = ?', Date.now() + 30_000, row.id); continue; }
+      if (this.active.has(row.id) || this.documents.isActive(row.id)) { this.storage.sql.exec('UPDATE attachments SET lease = ? WHERE id = ?', Date.now() + 30_000, row.id); continue; }
       // Close the registration synchronously so it cannot be uploaded while deletion awaits R2.
       this.storage.sql.exec('UPDATE attachments SET removed = 1 WHERE id = ?', row.id);
       try {
-        await this.bucket.delete(row.key);
+        await this.bucket.delete([row.key, `${row.key}/text-v1`]);
         const current = this.row(row.id);
         if (current && current.lease <= Date.now() && (current.removed || current.status !== 'ready')) {
           this.storage.sql.exec('DELETE FROM attachments WHERE id = ?', row.id);
           this.storage.sql.exec('DELETE FROM attachment_usage WHERE id = ?', row.id);
+          this.documents.erase(row.id);
         }
       } catch { failed = true; this.storage.sql.exec('UPDATE attachments SET lease = ? WHERE id = ?', Date.now() + 30_000, row.id); }
     }

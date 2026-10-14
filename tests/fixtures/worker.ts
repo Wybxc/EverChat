@@ -12,11 +12,13 @@ import { AttachmentStore } from '../../worker/attachments';
 import { HttpError } from '../../worker/http';
 
 type AttachmentControl = { id?: string; expire?: boolean; count?: number; reset?: boolean; holdDelete?: string; releaseDelete?: boolean;
-  failDelete?: string; resetLibrary?: boolean; unconfigured?: boolean };
+  failDelete?: string; holdTextPut?: string; holdTextRead?: string; releaseText?: boolean; resetLibrary?: boolean; unconfigured?: boolean };
 
 export class Library extends ProductionLibrary {
   private attachmentDeletes: { id: string; waiting: boolean; wait: Promise<void>; release: () => void }[];
+  private attachmentText: { id: string; kind: 'put' | 'get'; waiting: boolean; wait: Promise<void>; release: () => void }[];
   constructor(ctx: DurableObjectState, env: Env) {
+    const attachmentText: Library['attachmentText'] = [];
     const attachmentDeletes: Library['attachmentDeletes'] = [];
     const bucket = new Proxy(env.ATTACHMENTS!, { get(target, property) {
       if (property === 'delete') return async (keys: string | string[]) => {
@@ -30,7 +32,14 @@ export class Library extends ProductionLibrary {
         if (pause) { pause.waiting = true; await pause.wait; }
         return target.delete(keys);
       };
+      if (property === 'get') return async (...args: Parameters<R2Bucket['get']>) => {
+        const pause = attachmentText.find((item) => item.kind === 'get' && args[0].endsWith('/text-v1') && args[0].includes(`/${item.id}/`));
+        if (pause) { pause.waiting = true; await pause.wait; }
+        return target.get(...args);
+      };
       if (property === 'put') return async (...args: Parameters<R2Bucket['put']>) => {
+        const pause = attachmentText.find((item) => item.kind === 'put' && args[0].endsWith('/text-v1') && args[0].includes(`/${item.id}/`));
+        if (pause) { pause.waiting = true; await pause.wait; }
         const object = await target.put(...args);
         const exists = ctx.storage.sql.exec("SELECT name FROM sqlite_master WHERE name = 'fixture_attachment_reset'").toArray().length;
         if (exists && ctx.storage.sql.exec<{ enabled: number }>('SELECT enabled FROM fixture_attachment_reset WHERE id = 1').toArray()[0]?.enabled) {
@@ -42,7 +51,7 @@ export class Library extends ProductionLibrary {
       const value = Reflect.get(target, property, target); return typeof value === 'function' ? value.bind(target) : value;
     } });
     super(ctx, { ...env, ATTACHMENTS: bucket });
-    this.attachmentDeletes = attachmentDeletes;
+    this.attachmentDeletes = attachmentDeletes; this.attachmentText = attachmentText;
   }
   override applySearchDocuments(id: string, documents: Parameters<ProductionLibrary['applySearchDocuments']>[1]) {
     this.ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS fixture_index_fault (id INTEGER PRIMARY KEY, enabled INTEGER)');
@@ -94,15 +103,20 @@ export class Library extends ProductionLibrary {
     });
     return { count: sql.exec<{ count: number }>('SELECT COUNT(*) AS count FROM conversations').one().count };
   }
-  async fixtureAttachments({ id, expire, count, reset, holdDelete, releaseDelete, failDelete, resetLibrary, unconfigured }: AttachmentControl) {
+  async fixtureAttachments({ id, expire, count, reset, holdDelete, releaseDelete, failDelete, holdTextPut, holdTextRead, releaseText, resetLibrary, unconfigured }: AttachmentControl) {
     const date = new Date().toISOString().slice(0, 10), sql = this.ctx.storage.sql;
+    if (releaseText) this.attachmentText.splice(0).forEach((pause) => pause.release());
+    for (const [kind, id] of [['put', holdTextPut], ['get', holdTextRead]] as const) if (id) {
+      let release!: () => void; const wait = new Promise<void>((resolve) => { release = resolve; });
+      this.attachmentText.push({ id, kind, waiting: false, wait, release });
+    }
     if (releaseDelete) this.attachmentDeletes.splice(0).forEach((pause) => pause.release());
     if (holdDelete) {
       let release!: () => void;
       const wait = new Promise<void>((resolve) => { release = resolve; });
       this.attachmentDeletes.push({ id: holdDelete, waiting: false, wait, release });
     }
-    if (expire && id) { sql.exec('UPDATE attachments SET lease = 0 WHERE id = ?', id); await this.ctx.storage.setAlarm(Date.now() + 1000); }
+    if (expire && id) { sql.exec('UPDATE attachments SET lease = 0 WHERE id = ?', id); sql.exec("UPDATE attachment_documents SET lease = 0 WHERE id = ? AND status IN ('parsing', 'cleaning')", id); await this.ctx.storage.setAlarm(Date.now() + 1000); }
     if (count !== undefined) sql.exec('INSERT INTO attachment_daily_uploads VALUES (?, ?) ON CONFLICT(date) DO UPDATE SET count = excluded.count', date, count);
     if (reset !== undefined) { sql.exec('CREATE TABLE IF NOT EXISTS fixture_attachment_reset (id INTEGER PRIMARY KEY, enabled INTEGER)'); sql.exec('INSERT INTO fixture_attachment_reset VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET enabled = excluded.enabled', Number(reset)); }
     sql.exec('CREATE TABLE IF NOT EXISTS fixture_attachment_delete_fault (id TEXT PRIMARY KEY, remaining INTEGER, failed INTEGER)');
@@ -116,7 +130,7 @@ export class Library extends ProductionLibrary {
         catch (error) { if (!(error instanceof HttpError)) throw error; unconfiguredStatus.push(error.status); }
       }
     }
-    return { rows: sql.exec('SELECT id, conversationId, status, removed, lease FROM attachments').toArray(), deleteWaiting: this.attachmentDeletes.some((pause) => pause.waiting),
+    return { documents: sql.exec('SELECT id, status, lease, characters, tokens, bytes FROM attachment_documents').toArray(), textWaiting: this.attachmentText.some((pause) => pause.waiting), rows: sql.exec('SELECT id, conversationId, status, removed, lease FROM attachments').toArray(), deleteWaiting: this.attachmentDeletes.some((pause) => pause.waiting),
       failedDeletes: sql.exec<{ count: number }>('SELECT COALESCE(SUM(failed), 0) AS count FROM fixture_attachment_delete_fault').one().count, unconfiguredStatus,
       dailyCount: sql.exec<{ count: number }>('SELECT count FROM attachment_daily_uploads WHERE date = ?', date).toArray()[0]?.count ?? 0,
       objects: (await this.env.ATTACHMENTS!.list({ limit: 1000 })).objects.map((object) => ({ key: object.key, size: object.size })) };
@@ -180,7 +194,7 @@ export class Conversation extends ProductionConversation {
   }
   protected override async openModelStream(...args: Parameters<typeof openProviderStream>) {
     if (args[0].model === 'benchmark-summary-write-failure') this.failNextCommit = true;
-    if (args[0].model.startsWith('alarm-') || args[0].model.startsWith('benchmark-') || args[0].model.startsWith('vision-')) {
+    if (args[0].model.startsWith('alarm-') || args[0].model.startsWith('benchmark-') || args[0].model.startsWith('vision-') || args[0].model.startsWith('documents-')) {
       this.ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS fixture_calls (runId TEXT PRIMARY KEY, calls INTEGER NOT NULL)');
       const run = this.ctx.storage.sql.exec<{ id: string; conversationId: string }>(`SELECT runs.id, runs.conversationId FROM runs JOIN messages ON messages.id = runs.assistantId WHERE messages.status = 'running'`).one();
       this.ctx.storage.sql.exec('INSERT INTO fixture_calls VALUES (?, 1) ON CONFLICT(runId) DO UPDATE SET calls = calls + 1', run.id);
@@ -391,8 +405,10 @@ globalThis.fetch = async (input, init) => {
     const text = JSON.stringify(requestBody).includes('__SUMMARY_FACT_42__') ? '记得预算 42 元。' : '未收到旧预算。';
     return new Response(`data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: text }, finish_reason: null }] })}\n\ndata: ${JSON.stringify({ choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`, { headers: { 'Content-Type': 'text/event-stream' } });
   }
-  const visionKind = requestBody.model?.startsWith('vision-') ? requestBody.model.slice(7) as ProviderKind
-    : url.pathname.includes('/models/vision-gemini:') ? 'gemini' : undefined;
+  const documentKind = requestBody.model?.startsWith('documents-') ? requestBody.model.slice(10) as ProviderKind
+    : url.pathname.includes('/models/documents-gemini:') ? 'gemini' : undefined;
+  const visionKind = documentKind ?? (requestBody.model?.startsWith('vision-') ? requestBody.model.slice(7) as ProviderKind
+    : url.pathname.includes('/models/vision-gemini:') ? 'gemini' : undefined);
   if (visionKind && providerStreams[visionKind]) {
     const body = requestBody as unknown as { messages?: { content: { type: string; image_url?: { url: string }; source?: { type: string; media_type: string; data: string } }[] }[];
       input?: { content: { type: string; image_url?: string }[] }[]; contents?: { parts: { inlineData?: { mimeType: string; data: string } }[] }[] };
@@ -400,7 +416,13 @@ globalThis.fetch = async (input, init) => {
       : visionKind === 'openai-responses' ? body.input?.flatMap((message) => Array.isArray(message.content) ? message.content.filter((part) => part.type === 'input_image').map((part) => part.image_url) : [])
       : visionKind === 'anthropic' ? body.messages?.flatMap((message) => Array.isArray(message.content) ? message.content.filter((part) => part.type === 'image').map((part) => part.source?.type === 'base64' ? `data:${part.source.media_type};base64,${part.source.data}` : undefined) : [])
       : body.contents?.flatMap((message) => message.parts.filter((part) => part.inlineData).map((part) => `data:${part.inlineData!.mimeType};base64,${part.inlineData!.data}`));
-    const expected = Number(/expect-images:(\d+)/.exec(JSON.stringify(body))?.[1] ?? 1);
+    const expected = Number(/expect-images:(\d+)/.exec(JSON.stringify(body))?.[1] ?? (documentKind ? 0 : 1));
+    if (documentKind) {
+      const bodyText = JSON.stringify(body);
+      const expectedFiles = Number(/expect-files:(\d+)/.exec(bodyText)?.[1] ?? 1);
+      const actualFiles = (bodyText.match(/以下是用户附带的文件资料/g) ?? []).length;
+      if (actualFiles !== expectedFiles || bodyText.includes('/api/conversations/')) return Response.json({ error: { message: 'Missing native private document text' } }, { status: 400 });
+    }
     if (encoded?.length !== expected || encoded.some((data) => !data || !/^data:image\/(png|webp|jpeg);base64,[A-Za-z0-9+/]+=*$/.test(data))) return Response.json({ error: { message: 'Missing native private image bytes' } }, { status: 400 });
     const { partial, finish } = providerStreams[visionKind]; let step = 0;
     return new Response(new ReadableStream<Uint8Array>({ async pull(controller) {

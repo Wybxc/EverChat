@@ -11,6 +11,7 @@ export function ContextEstimateView({ estimate, compressing = false }: { estimat
         <dt>历史（估算）</dt><dd>{number.format(estimate.historyTokens)} · {estimate.retainedMessages} 条</dd>
         {estimate.imageTokens !== undefined && <><dt>其中图片规划额度</dt><dd>{number.format(estimate.imageTokens)}</dd></>}
         {estimate.summaryTokens !== undefined && <><dt>摘要（估算）</dt><dd>{number.format(estimate.summaryTokens)} · 覆盖 {estimate.summarizedMessages} 条</dd></>}
+        {estimate.documentTokens !== undefined && <><dt>其中文件（估算）</dt><dd>{number.format(estimate.documentTokens)}</dd></>}
         <dt>模型窗口</dt><dd>{number.format(estimate.contextWindow)} · {metadataSourceLabels[estimate.windowSource]}</dd>
         <dt>输出预留</dt><dd>{number.format(estimate.outputReserve)}{estimate.contextScope === 'input' ? '（独立窗口）' : ''}</dd>
         <dt>估算余量</dt><dd>{number.format(estimate.safetyMargin)}</dd>

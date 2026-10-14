@@ -1,3 +1,4 @@
+import type { DocumentPart } from '../shared/documents';
 import { DurableObject } from 'cloudflare:workers';
 import type { Env } from './env';
 import type { ConversationInfo, ModelSelection, PromptPreset, PromptPresetInput, ProviderConfig, ProviderModelConfig, ProviderSettings, ProviderSettingsInput, ReasoningEffort } from '../shared/types';
@@ -199,7 +200,14 @@ export class Library extends DurableObject<Env> {
   }
   listAttachments(conversationId: string) { return this.attachmentAction(() => this.attachments.list(conversationId)); }
   imageReferences(conversationId: string, ids: string[]) { return this.attachmentAction(() => this.attachments.images(conversationId, ids)); }
-  pinImages(conversationId: string, images: ImagePart[]) { return this.attachmentAction(() => this.attachments.pinImages(conversationId, images)); }
+  pinAttachments(conversationId: string, images: ImagePart[], files: DocumentPart[]) { return this.attachmentAction(() => this.attachments.pinAttachments(conversationId, images, files)); }
+  documentReferences(conversationId: string, ids: string[]) { return this.attachmentAction(() => this.attachments.documents.references(conversationId, ids)); }
+  async parseDocument(conversationId: string, id: string) {
+    const action = this.attachmentAction(() => this.attachments.documents.parse(conversationId, id));
+    await this.scheduleMaintenance();
+    try { return await action; } finally { await this.scheduleMaintenance(); }
+  }
+  documentText(conversationId: string, id: string) { return this.attachmentAction(() => this.attachments.documents.read(conversationId, id)); }
   async registerAttachment(conversationId: string, input: AttachmentInput) {
     const result = await this.attachmentAction(() => this.attachments.register(conversationId, input));
     await this.scheduleMaintenance(); return result;
@@ -215,7 +223,7 @@ export class Library extends DurableObject<Env> {
   async removeAttachment(conversationId: string, id: string) {
     const result = await this.attachmentAction(async () => {
       const usage = this.attachments.usage(id);
-      if (usage && await this.env.CONVERSATIONS.getByName(conversationId).usesAttachment(id)) throw new HttpError(409, '图片仍被消息或生成任务使用，请先删除相关消息。');
+      if (usage && await this.env.CONVERSATIONS.getByName(conversationId).usesAttachment(id)) throw new HttpError(409, '文件仍被消息或生成任务使用，请先删除相关消息。');
       this.attachments.remove(conversationId, id, usage);
     });
     await this.scheduleMaintenance(); return result;

@@ -78,7 +78,7 @@ export function validateBackup(value: unknown): EverChatBackup {
     if (summary && (!summary.success || message.role !== 'assistant')) throw new Error('备份中的摘要覆盖范围无效。');
     if (!isUuid(message.id) || !['user', 'assistant'].includes(String(message.role)) || !parts.success
       || (message.role === 'user' && parts.output.some((part) => part.type === 'reasoning'))
-      || (message.role === 'assistant' && parts.output.some((part) => part.type === 'image'))
+      || (message.role === 'assistant' && parts.output.some((part) => (part.type === 'image' || part.type === 'file')))
       || 'content' in message || 'reasoning' in message || !['completed', 'failed', 'cancelled'].includes(String(message.status))
       || !Number.isSafeInteger(message.createdAt) || !nullableString(message.parentId, 64) || !nullableString(message.revisionOf, 64)
       || !nullableString(message.error, 4096) || !nullableString(message.providerId, 64) || !nullableString(message.model, 200)
