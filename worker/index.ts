@@ -3,7 +3,8 @@ import * as v from 'valibot';
 import type { Env } from './env';
 import type { SubmitInput } from '../shared/types';
 import { authenticated, logoutCookie, passwordMatches, sessionCookie } from './auth';
-import { HttpError, json, parseBody, type AppContext } from './http';
+import { HttpError, json, parseBackup, parseBody, type AppContext } from './http';
+import { BACKUP_FORMAT, BACKUP_VERSION, type BackupSettings } from '../shared/backup';
 import { providerSettingsSchema } from './provider-config';
 import { chatModels } from '../shared/models';
 import { ProviderModelError, fetchProviderModels } from './provider-models';
@@ -150,6 +151,41 @@ app.get('/conversations/:id', async (context) => {
   const id = conversationId(context);
   await requireConversation(context, id);
   return context.env.CONVERSATIONS.getByName(id).snapshotResponse();
+});
+
+app.get('/conversations/:id/backup', async (context) => {
+  await requireAuth(context);
+  const id = conversationId(context);
+  const library = await requireConversation(context, id);
+  const conversation = library.get(id)!;
+  return json({ format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: Date.now(),
+    conversation: { ...conversation, messages: await context.env.CONVERSATIONS.getByName(id).backup() },
+    settings: await library.backupSettings() });
+});
+
+app.post('/backup/restore', async (context) => {
+  await requireAuth(context);
+  const backup = await parseBackup(context);
+  const library = context.env.LIBRARY.getByName('personal');
+  const id = crypto.randomUUID();
+  const created = await library.create(id, backup.conversation.title.trim());
+  if ('error' in created) return json({ error: created.error }, created.status);
+  try {
+    const restored = await context.env.CONVERSATIONS.getByName(id).restore(id, backup.conversation);
+    if ('error' in restored) throw new HttpError(restored.status, restored.error);
+    const settings: BackupSettings = { ...backup.settings, activeProviderId: null, activeModel: '' };
+    const saved = await library.saveProviderSettings(settings);
+    if ('error' in saved) throw new HttpError(400, saved.error);
+    await library.touch(id);
+    return json({ id, conversation: library.get(id), snapshot: restored }, 201);
+  } catch (error) {
+    try {
+      const deletion = await library.beginDelete(id);
+      await context.env.CONVERSATIONS.getByName(id).deleteConversation(deletion.deletedAt);
+      await library.completeDelete(id);
+    } catch { /* The next library alarm will retry cleanup. */ }
+    throw error;
+  }
 });
 
 app.get('/conversations/:id/measurements', async (context) => {

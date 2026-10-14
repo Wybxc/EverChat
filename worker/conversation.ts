@@ -15,6 +15,7 @@ import { json } from './http';
 import { DATABASE_LIMIT_MESSAGE, HISTORY_LIMIT_MESSAGE, MAX_DATABASE_BYTES, MAX_DATABASE_START_BYTES, MAX_DATABASE_WRITE_BYTES, MAX_HISTORY_START_BYTES, MAX_MESSAGES, storageErrorMessage } from './resource-limits';
 import type { SearchDocument, SearchPage } from '../shared/search';
 import { searchRetryDelay } from './search-index';
+import { backupMessage, type BackupMessage, type ConversationBackup } from '../shared/backup';
 
 type Row = Message & { generationResult: string | null } & Record<string, SqlStorageValue>;
 type Run = { id: string; conversationId: string; assistantId: string; context: string; config: string | null; chunkSeq: number; updatedAt: number;
@@ -72,6 +73,29 @@ export class Conversation extends DurableObject<Env> {
   }
   private rows() { return this.query<Row>('SELECT messages.*, generation_results.payload AS generationResult FROM messages LEFT JOIN generation_results ON generation_results.runId = messages.runId ORDER BY messages.rowid'); }
   private all(): Message[] { return Array.from(this.rows(), (row) => this.materialize(this.decorate(row))); }
+  backup(): BackupMessage[] {
+    if (this.deletedAt) return [];
+    return this.all().map(backupMessage);
+  }
+  restore(conversationId: string, backup: ConversationBackup): Snapshot | Failure {
+    if (this.deletedAt) return { error: '这个对话已删除。', status: 410 };
+    if (this.query('SELECT id FROM messages LIMIT 1').toArray().length) return { error: '目标对话已有消息。', status: 409 };
+    const ids = new Map(backup.messages.map((message) => [message.id, crypto.randomUUID()]));
+    const messages: Message[] = backup.messages.map((source) => ({
+      id: ids.get(source.id)!, role: source.role, content: source.content, reasoning: source.reasoning,
+      status: source.status, createdAt: source.createdAt, runId: null,
+      parentId: source.parentId ? ids.get(source.parentId) ?? null : null,
+      revisionOf: source.revisionOf ? ids.get(source.revisionOf) ?? null : null,
+      error: source.error, providerId: source.providerId, model: source.model, modelName: source.modelName,
+    }));
+    const change = this.ctx.storage.transactionSync(() => {
+      for (const message of messages) this.insert(message);
+      return this.record(messages, conversationId);
+    });
+    this.broadcast(change);
+    this.updateSearchSoon();
+    return this.snapshot();
+  }
   private rawMessage(id: string): Message | undefined {
     const row = this.query<Row>('SELECT messages.*, generation_results.payload AS generationResult FROM messages LEFT JOIN generation_results ON generation_results.runId = messages.runId WHERE messages.id = ?', id).toArray()[0];
     return row && this.decorate(row);

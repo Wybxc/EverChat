@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowDown, ArrowRight, ArrowUp, Check, CheckCheck, CloudOff, Copy, Download, Feather, Infinity as InfinityIcon, Lightbulb, LockKeyhole, Menu, MessageCircle, Monitor, Moon, Pencil, Pin, Plus, RefreshCw, Search, Settings, Sparkles, Square, Sun, WifiOff, X } from 'lucide-react';
 import 'streamdown/styles.css';
@@ -17,6 +17,7 @@ import { ConversationActions } from './ConversationActions';
 import { ConversationSearch } from './ConversationSearch';
 import { LibrarySearch } from './LibrarySearch';
 import type { SearchResult } from '../shared/search';
+import type { EverChatBackup } from '../shared/backup';
 
 const EMPTY_SESSION: SessionInfo = { authenticated: false, configured: false, provider: '', model: '' };
 const Streamdown = lazy(() => import('streamdown').then(({ Streamdown: Component }) => ({ default: Component })));
@@ -68,6 +69,13 @@ function ThemeControl() {
     <label className={`join-item btn btn-sm gap-2 ${theme === 'system' ? 'btn-active' : ''}`}><input type="radio" name="theme" value="system" className="sr-only" checked={theme === 'system'} onChange={() => choose('system')} /><Monitor size={14} />系统</label>
   </div></fieldset>;
 }
+
+const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]!));
+const downloadFile = (filename: string, content: string, type: string) => {
+  const url = URL.createObjectURL(new Blob([content], { type }));
+  const link = document.createElement('a'); link.href = url; link.download = filename; link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+};
 
 function Login({ session, onLogin }: { session: SessionInfo; onLogin: () => Promise<void> }) {
   const [password, setPassword] = useState('');
@@ -154,6 +162,7 @@ export function App() {
   const [conversationSearchFor, setConversationSearchFor] = useState<string | null>(null);
   const [searchJump, setSearchJump] = useState<{ id: string; query: string; key: string; token: number } | null>(null);
   const searchTrigger = useRef<HTMLButtonElement>(null);
+  const backupInput = useRef<HTMLInputElement>(null);
   const editor = useRef<HTMLTextAreaElement>(null);
   const mobileSidebarTrigger = useRef<HTMLButtonElement>(null);
   const settings = useRef<HTMLDialogElement>(null);
@@ -364,10 +373,40 @@ export function App() {
       setLocalConversations([]); queryClient.clear(); navigate(null, true); setDraft(''); setRevisionOf(undefined); loggedOut(); settings.current?.close();
     } catch (error) { setError(error instanceof Error ? error.message : '退出失败，请联网后重试。'); settings.current?.close(); }
   };
-  const exportChat = () => {
-    const text = `# ${currentConversation?.title ?? 'EverChat'}\n\n` + durableSnapshot.messages.map((message) => `## ${message.role === 'user' ? '你' : 'EverChat'}${message.revisionOf ? ' · 新版本' : ''}\n\n${message.content}\n\n${message.error ? `> ${message.error}\n\n` : ''}`).join('');
-    const url = URL.createObjectURL(new Blob([text], { type: 'text/markdown;charset=utf-8' }));
-    const link = document.createElement('a'); link.href = url; link.download = `EverChat-${selected}.md`; link.click(); URL.revokeObjectURL(url);
+  const exportChat = (format: 'md' | 'txt' | 'html') => {
+    if (!selected) return;
+    const title = currentConversation?.title ?? 'EverChat';
+    const messages = durableSnapshot.messages;
+    const markdown = `# ${title}\n\n${messages.map((message) => {
+      const role = message.role === 'user' ? '你' : 'EverChat';
+      const model = message.role === 'assistant' && (message.modelName || message.model) ? `\n模型：${message.modelName || message.model}\n` : '';
+      const reasoning = message.reasoning ? `\n### 思考过程\n\n${message.reasoning}\n` : '';
+      const status = message.status === 'completed' ? '' : `\n状态：${message.status}${message.error ? `（${message.error}）` : ''}\n`;
+      return `## ${role}${message.revisionOf ? ' · 新版本' : ''}${model}\n\n${message.content}${reasoning}${status}\n`;
+    }).join('\n')}`;
+    if (format === 'md') downloadFile(`EverChat-${selected}.md`, markdown, 'text/markdown;charset=utf-8');
+    else if (format === 'txt') downloadFile(`EverChat-${selected}.txt`, markdown.replace(/^#{1,6} /gm, '').replace(/^\n### /gm, '\n'), 'text/plain;charset=utf-8');
+    else {
+      const body = messages.map((message) => `<article><h2>${escapeHtml(message.role === 'user' ? '你' : 'EverChat')}${message.revisionOf ? ' · 新版本' : ''}</h2>${message.role === 'assistant' && (message.modelName || message.model) ? `<p class="meta">模型：${escapeHtml(message.modelName || message.model || '')}</p>` : ''}<pre>${escapeHtml(message.content)}</pre>${message.reasoning ? `<details open><summary>思考过程</summary><pre>${escapeHtml(message.reasoning)}</pre></details>` : ''}${message.status !== 'completed' ? `<p class="error">状态：${escapeHtml(message.status)}${message.error ? `（${escapeHtml(message.error)}）` : ''}</p>` : ''}</article>`).join('');
+      const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${escapeHtml(title)}</title><style>body{font:16px/1.7 system-ui,sans-serif;max-width:54rem;margin:2rem auto;padding:0 1rem;color:#1f2937}article{border-top:1px solid #d1d5db;padding:1.5rem 0}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}.meta{color:#6b7280;font-size:.875rem}.error{color:#b91c1c}summary{cursor:pointer}</style></head><body><h1>${escapeHtml(title)}</h1>${body}</body></html>`;
+      downloadFile(`EverChat-${selected}.html`, html, 'text/html;charset=utf-8');
+    }
+  };
+  const exportBackup = async () => {
+    if (!selected) return;
+    try {
+      const backup = await api<EverChatBackup>(`/conversations/${selected}/backup`);
+      downloadFile(`EverChat-${selected}.everchat.json`, JSON.stringify(backup, null, 2), 'application/json;charset=utf-8');
+    } catch (cause) { setError(cause instanceof Error ? cause.message : '备份失败，请稍后重试。'); }
+  };
+  const importBackup = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]; event.target.value = '';
+    if (!file) return;
+    setError('');
+    try {
+      const result = await api<{ id: string }>('/backup/restore', 'POST', JSON.parse(await file.text()));
+      refreshLibrary(); select(result.id);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : '恢复备份失败，请检查文件。'); }
   };
   const updateConversation = async (patch: { title?: string; pinned?: boolean; archived?: boolean }) => {
     if (!selected) return;
@@ -410,7 +449,7 @@ export function App() {
     <div className="flex min-w-0 flex-1 flex-col">
       <header className="flex h-18 shrink-0 items-center justify-between border-b border-base-content/50 px-5 sm:px-8">
         <div className="flex min-w-0 items-center gap-3"><button ref={mobileSidebarTrigger} className="btn btn-ghost btn-sm btn-square lg:hidden" onClick={() => setSidebarOpen(true)} aria-label="打开对话列表"><Menu size={19} /></button><div className="min-w-0"><p className="truncate text-sm font-medium">{invalidRoute ? '页面不可用' : currentConversation?.title ?? (selected ? '对话' : '新对话')}</p><p className="mt-1 text-[10px] text-base-content/60">{selectedModel?.name || session.modelName || session.model || '未选择模型'}</p></div></div>
-        <div className="flex shrink-0 items-center gap-3"><span aria-live="polite" className="hidden items-center gap-1.5 text-[11px] text-base-content/60 sm:flex" title={syncedAt ? `上次同步 ${new Date(syncedAt).toLocaleTimeString('zh-CN')}` : undefined}>{connection === 'offline' ? <CloudOff size={14} /> : <span className={`status status-xs ${connection === 'connected' && !hasUnconfirmed ? 'status-success' : 'status-warning'}`} />}{statusText}</span>{canSearch && <button ref={searchTrigger} type="button" aria-label="搜索当前对话" aria-expanded={searchOpen} aria-controls={searchOpen ? 'conversation-search' : undefined} title="搜索当前对话（Ctrl / ⌘ F）" className="btn btn-ghost btn-sm btn-square" onClick={() => searchOpen ? closeConversationSearch() : setConversationSearchFor(selected)}><Search size={16} /></button>}{currentConversation && <ConversationActions key={currentConversation.id} conversation={currentConversation} disabled={connection === 'offline'} update={updateConversation} remove={deleteConversation} />}{snapshot.messages.length > 0 && <button aria-label="导出对话" title="导出 Markdown" className="btn btn-ghost btn-sm btn-square" onClick={exportChat}><Download size={16} /></button>}<button aria-label="空间设置" className="btn btn-ghost btn-sm btn-square" onClick={openSettings}><Settings size={17} /></button></div>
+        <div className="flex shrink-0 items-center gap-3"><span aria-live="polite" className="hidden items-center gap-1.5 text-[11px] text-base-content/60 sm:flex" title={syncedAt ? `上次同步 ${new Date(syncedAt).toLocaleTimeString('zh-CN')}` : undefined}>{connection === 'offline' ? <CloudOff size={14} /> : <span className={`status status-xs ${connection === 'connected' && !hasUnconfirmed ? 'status-success' : 'status-warning'}`} />}{statusText}</span>{canSearch && <button ref={searchTrigger} type="button" aria-label="搜索当前对话" aria-expanded={searchOpen} aria-controls={searchOpen ? 'conversation-search' : undefined} title="搜索当前对话（Ctrl / ⌘ F）" className="btn btn-ghost btn-sm btn-square" onClick={() => searchOpen ? closeConversationSearch() : setConversationSearchFor(selected)}><Search size={16} /></button>}{currentConversation && <ConversationActions key={currentConversation.id} conversation={currentConversation} disabled={connection === 'offline'} update={updateConversation} remove={deleteConversation} />}<div className="dropdown dropdown-end"><button type="button" aria-label="对话文件操作" title="导出或导入对话" className="btn btn-ghost btn-sm btn-square"><Download size={16} /></button><ul tabIndex={0} className="dropdown-content menu z-50 mt-2 w-48 rounded-box border border-base-content/20 bg-base-100 p-2 shadow"><li className="menu-title">导出对话</li><li><button type="button" disabled={!snapshot.messages.length} onClick={() => exportChat('md')}>Markdown</button></li><li><button type="button" disabled={!snapshot.messages.length} onClick={() => exportChat('txt')}>纯文本</button></li><li><button type="button" disabled={!snapshot.messages.length} onClick={() => exportChat('html')}>HTML</button></li><li><button type="button" disabled={!currentConversation || !snapshot.messages.length} onClick={() => void exportBackup()}>下载备份</button></li><li className="menu-title mt-1">恢复</li><li><button type="button" onClick={() => backupInput.current?.click()}>导入备份</button></li></ul></div><input ref={backupInput} type="file" accept=".json,application/json" className="hidden" onChange={(event) => void importBackup(event)} /><button aria-label="空间设置" className="btn btn-ghost btn-sm btn-square" onClick={openSettings}><Settings size={17} /></button></div>
       </header>
       {searchOpen && <ConversationSearch key={`${selected}:${searchJump?.token ?? ''}`} content={content} viewport={viewport} close={closeConversationSearch} initial={searchJump ?? undefined} />}
       {connection === 'offline' && <div role="status" className="flex items-center justify-center gap-2 border-b border-base-content/50 bg-base-200 px-4 py-2 text-xs text-base-content"><WifiOff size={13} />你现在离线，已保存的对话仍可阅读。新消息将在联网后发送。</div>}

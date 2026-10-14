@@ -1,6 +1,7 @@
 import type { Context } from 'hono';
 import * as v from 'valibot';
 import type { Env } from './env';
+import { MAX_BACKUP_BYTES, validateBackup, type EverChatBackup } from '../shared/backup';
 
 export class HttpError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -35,4 +36,28 @@ export async function parseBody<TSchema extends v.GenericSchema>(context: AppCon
     if (!result.success) throw new Error();
     return result.output;
   } catch { throw new HttpError(400, '请求内容不是有效的 JSON 对象。'); }
+}
+
+export async function parseBackup(context: AppContext): Promise<EverChatBackup> {
+  const request = context.req.raw;
+  if (!request.headers.get('Content-Type')?.includes('application/json')) throw new HttpError(415, '请使用 JSON 请求。');
+  const reader = request.body?.getReader();
+  if (!reader) throw new HttpError(400, '请求内容为空。');
+  const decoder = new TextDecoder();
+  let text = '';
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_BACKUP_BYTES) { await reader.cancel(); throw new HttpError(413, '备份文件过大，请拆分后重试。'); }
+      text += decoder.decode(value, { stream: true });
+    }
+    const value = JSON.parse(text + decoder.decode());
+    return validateBackup(value);
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
+    throw new HttpError(400, '备份文件格式无效或版本不受支持。');
+  }
 }

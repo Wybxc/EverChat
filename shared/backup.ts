@@ -1,0 +1,89 @@
+import type { ConversationInfo, Message, ProviderApiKind, ProviderModel } from './types';
+
+export const BACKUP_FORMAT = 'everchat-backup';
+export const BACKUP_VERSION = 1 as const;
+export const MAX_BACKUP_BYTES = 12 * 1024 * 1024;
+export const MAX_BACKUP_MESSAGES = 1000;
+
+export interface BackupProvider {
+  id: string; name: string; provider: ProviderApiKind; baseUrl: string; models: ProviderModel[];
+}
+export interface BackupSettings {
+  providers: BackupProvider[]; activeProviderId: string | null; activeModel: string;
+  systemPrompt: string; maxOutputTokens: number | null; showReasoning: boolean;
+}
+export interface BackupMessage {
+  id: string; role: Message['role']; content: string; reasoning: string | null; status: Message['status'];
+  createdAt: number; parentId: string | null; revisionOf: string | null; error: string | null;
+  providerId: string | null; model: string | null; modelName: string | null;
+  generation?: Message['generation'];
+}
+export interface ConversationBackup {
+  id: string; title: string; createdAt: number; updatedAt: number; messages: BackupMessage[];
+}
+export interface EverChatBackup {
+  format: typeof BACKUP_FORMAT; version: typeof BACKUP_VERSION; exportedAt: number;
+  conversation: ConversationBackup; settings: BackupSettings;
+}
+
+export function backupMessage(message: Message): BackupMessage {
+  const partial = message.status === 'queued' || message.status === 'running';
+  return {
+    id: message.id, role: message.role, content: message.content, reasoning: message.reasoning ?? null,
+    status: partial ? 'failed' : message.status, createdAt: message.createdAt,
+    parentId: message.parentId, revisionOf: message.revisionOf,
+    error: partial ? (message.error ?? '导出时生成尚未完成，已恢复已保存的部分内容。') : message.error,
+    providerId: message.providerId ?? null, model: message.model ?? null, modelName: message.modelName ?? null,
+    ...(message.generation ? { generation: message.generation } : {}),
+  };
+}
+
+export function backupConversation(info: ConversationInfo, messages: Message[]): ConversationBackup {
+  return { id: info.id, title: info.title, createdAt: info.createdAt, updatedAt: info.updatedAt, messages: messages.map(backupMessage) };
+}
+
+const isString = (value: unknown, max: number): value is string => typeof value === 'string' && value.length <= max;
+const nullableString = (value: unknown, max: number) => value === null || isString(value, max);
+const isUuid = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value);
+
+export function validateBackup(value: unknown): EverChatBackup {
+  if (!value || typeof value !== 'object') throw new Error('备份文件格式无效。');
+  const input = value as Record<string, unknown>, conversation = input.conversation as Record<string, unknown>;
+  if (input.format !== BACKUP_FORMAT || input.version !== BACKUP_VERSION || !conversation || typeof conversation !== 'object') throw new Error('备份文件版本不受支持。');
+  if (!isUuid(conversation.id) || !isString(conversation.title, 80) || !conversation.title.trim() || !Number.isSafeInteger(conversation.createdAt) || !Number.isSafeInteger(conversation.updatedAt)) throw new Error('备份中的对话信息无效。');
+  if (!Array.isArray(conversation.messages) || conversation.messages.length > MAX_BACKUP_MESSAGES) throw new Error('备份中的消息数量无效。');
+  const messages = conversation.messages.map((raw) => {
+    if (!raw || typeof raw !== 'object') throw new Error('备份中的消息无效。');
+    const message = raw as Record<string, unknown>;
+    if (!isUuid(message.id) || !['user', 'assistant'].includes(String(message.role)) || !isString(message.content, 100_000)
+      || !nullableString(message.reasoning, 100_000) || !['completed', 'failed', 'cancelled'].includes(String(message.status))
+      || !Number.isSafeInteger(message.createdAt) || !nullableString(message.parentId, 64) || !nullableString(message.revisionOf, 64)
+      || !nullableString(message.error, 4096) || !nullableString(message.providerId, 64) || !nullableString(message.model, 200)
+      || !nullableString(message.modelName, 200)) throw new Error('备份中的消息字段无效。');
+    return message as unknown as BackupMessage;
+  });
+  const settings = input.settings as Record<string, unknown>;
+  if (!settings || typeof settings !== 'object' || !Array.isArray(settings.providers) || settings.providers.length > 50
+    || !nullableString(settings.activeProviderId, 64) || !isString(settings.activeModel, 200) || !isString(settings.systemPrompt, 20_000)
+    || !(settings.maxOutputTokens === null || (Number.isSafeInteger(settings.maxOutputTokens) && Number(settings.maxOutputTokens) > 0 && Number(settings.maxOutputTokens) <= 100_000))
+    || typeof settings.showReasoning !== 'boolean') throw new Error('备份中的配置无效。');
+  const providers = settings.providers.map((raw) => {
+    if (!raw || typeof raw !== 'object') throw new Error('备份中的供应商配置无效。');
+    const provider = raw as Record<string, unknown>;
+    if (!isUuid(provider.id) || !isString(provider.name, 100) || !['openai-chat', 'anthropic', 'openai-responses', 'gemini'].includes(String(provider.provider))
+      || !isString(provider.baseUrl, 2048) || !Array.isArray(provider.models) || provider.models.length > 200) throw new Error('备份中的供应商配置无效。');
+    const models = provider.models.map((model) => {
+      if (!model || typeof model !== 'object') throw new Error('备份中的模型配置无效。');
+      const candidate = model as Record<string, unknown>;
+      if (!isString(candidate.id, 200) || !isString(candidate.name, 200) || typeof candidate.enabled !== 'boolean') throw new Error('备份中的模型配置无效。');
+      return candidate as unknown as ProviderModel;
+    });
+    return { id: provider.id, name: provider.name, provider: provider.provider as ProviderApiKind, baseUrl: provider.baseUrl, models };
+  });
+  return {
+    format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: Number.isSafeInteger(input.exportedAt) ? Number(input.exportedAt) : Date.now(),
+    conversation: { id: conversation.id, title: conversation.title, createdAt: Number(conversation.createdAt), updatedAt: Number(conversation.updatedAt), messages },
+    settings: { providers, activeProviderId: settings.activeProviderId as string | null, activeModel: settings.activeModel,
+      systemPrompt: settings.systemPrompt, maxOutputTokens: settings.maxOutputTokens as number | null, showReasoning: settings.showReasoning },
+  };
+}

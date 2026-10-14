@@ -5,6 +5,7 @@ import { defaultProviderSettings, mergeProviderSettings, publicProviderSettings,
 import { MAX_CONVERSATIONS } from './resource-limits';
 import { SearchIndex, SearchChanged, SEARCH_CAPACITY_MESSAGE, searchRetryDelay } from './search-index';
 import type { SearchDocument } from '../shared/search';
+import type { BackupSettings } from '../shared/backup';
 
 type Deletion = { id: string; deletedAt: number; completed: number } & Record<string, SqlStorageValue>;
 const conversationSelect = `SELECT conversations.*, COALESCE(metadata.pinned, 0) AS pinned, COALESCE(metadata.archived, 0) AS archived
@@ -178,6 +179,14 @@ export class Library extends DurableObject<Env> {
     return runtimeProviderConfig(this.providerSettingsData(), selection, effort);
   }
   providerSettings(): ProviderSettings { return publicProviderSettings(this.providerSettingsData()); }
+  backupSettings(): BackupSettings {
+    const settings = this.providerSettingsData();
+    return {
+      providers: settings.providers.map(({ id, name, provider, baseUrl, models }) => ({ id, name, provider, baseUrl, models })),
+      activeProviderId: settings.activeProviderId, activeModel: settings.activeModel,
+      systemPrompt: settings.systemPrompt, maxOutputTokens: settings.maxOutputTokens, showReasoning: settings.showReasoning,
+    };
+  }
   providerForModelList(id: string): ProviderModelConfig | null {
     return this.providerSettingsData().providers.find((profile) => profile.id === id) ?? null;
   }
