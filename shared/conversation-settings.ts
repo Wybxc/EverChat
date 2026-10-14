@@ -6,8 +6,9 @@ export const DEFAULT_CONVERSATION_SETTINGS: ConversationSettings = {
   systemPrompt: null, temperature: null, topP: null, useGlobalMaxOutputTokens: true, maxOutputTokens: null,
   recentMessages: null, contextBudget: null,
   useSummaries: true,
+  autoCompression: { enabled: false, threshold: 80, model: null },
 };
-export const conversationSettingsSchema = v.strictObject({
+export const conversationSettingsSchema = v.pipe(v.strictObject({
   systemPrompt: v.nullable(v.pipe(v.string(), v.maxLength(20_000))),
   temperature: v.nullable(v.pipe(v.number(), v.finite(), v.minValue(0), v.maxValue(2))),
   topP: v.nullable(v.pipe(v.number(), v.finite(), v.minValue(0), v.maxValue(1))),
@@ -16,7 +17,9 @@ export const conversationSettingsSchema = v.strictObject({
   recentMessages: v.nullable(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(1000))),
   contextBudget: v.nullable(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(10_000_000))),
   useSummaries: v.boolean(),
-});
+  autoCompression: v.strictObject({ enabled: v.boolean(), threshold: v.pipe(v.number(), v.integer(), v.minValue(50), v.maxValue(95)),
+    model: v.nullable(v.strictObject({ providerId: v.pipe(v.string(), v.uuid()), model: v.pipe(v.string(), v.minLength(1), v.maxLength(200)) })) }),
+}), v.check((settings) => !settings.autoCompression.enabled || settings.useSummaries, '自动压缩需要启用历史摘要。'));
 
 // These gates also run on the server. Hidden settings remain available when switching back to a supported model.
 export function samplingSupport(config: Pick<ProviderConfig, 'provider' | 'baseUrl' | 'model' | 'reasoningEnabled' | 'reasoningEffort' | 'showReasoning'>) {

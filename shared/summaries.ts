@@ -1,13 +1,14 @@
 import * as v from 'valibot';
-import { branchPath, type Message, type ProviderConfig } from './types';
+import { branchPath, type ConversationSettings, type Message, type ProviderConfig } from './types';
 import { messageText } from './message-content';
-import { assertContextFits, buildContext, contextHistory, ContextBudgetError } from './context-budget';
+import { assertContextFits, buildContext, contextHistory, ContextBudgetError, historyCountWithinLimit, measureContextDemand } from './context-budget';
 import { FALLBACK_MODEL_METADATA } from './model-metadata';
 
 export const MAX_SUMMARIES = 20, MAX_SUMMARY_CHARACTERS = 20_000;
 export const summaryCoverageSchema = v.pipe(v.strictObject({
   throughId: v.pipe(v.string(), v.uuid()),
   sourceIds: v.pipe(v.array(v.pipe(v.string(), v.uuid())), v.minLength(1), v.maxLength(1000)),
+  automatic: v.optional(v.boolean()),
 }), v.check((coverage) => new Set(coverage.sourceIds).size === coverage.sourceIds.length
   && coverage.sourceIds.at(-1) === coverage.throughId, '摘要覆盖范围无效。'));
 export type SummaryCoverage = v.InferOutput<typeof summaryCoverageSchema>;
@@ -39,6 +40,31 @@ export function summaryContext(messages: Message[], parentId: string | null, ena
     && !(message.role === 'assistant' && message.parentId && deletedUsers.has(message.parentId)))
     .map((message) => ({ role: message.role, content: messageText(message) }));
   return { history: suffix, summary };
+}
+
+export function prepareChatContext(messages: Message[], parentId: string | null, content: string, config: ProviderConfig, settings: ConversationSettings) {
+  const prepared = summaryContext(messages, parentId, settings.useSummaries), prefix = prepared.summary ? summaryPrefix(prepared.summary) : undefined;
+  const built = buildContext(prepared.history, content, config, settings, prefix);
+  let automatic: { throughId: string; demand: ReturnType<typeof measureContextDemand> } | undefined;
+  if (settings.useSummaries && settings.autoCompression.enabled) {
+    // Compression cannot reduce the current question or the system instructions.
+    assertContextFits(buildContext([], content, config, settings).estimate);
+    const demand = measureContextDemand(prepared.history, content, config, settings, prefix);
+    if (demand.totalTokens >= Math.ceil(demand.inputBudget * settings.autoCompression.threshold / 100)) {
+      const path = parentId ? branchPath(messages, parentId) : [], covered = prepared.summary?.summary!.sourceIds.length ?? 0;
+      const deletedUsers = new Set(path.filter((message) => message.role === 'user' && message.deletedAt).map(({ id }) => id));
+      const boundaries = path.map((message, index) => ({ message, index })).filter(({ message, index }) => index + 1 > covered
+        && message.role === 'assistant' && message.status === 'completed' && !message.deletedAt && !message.summary && !deletedUsers.has(message.parentId ?? ''));
+      // Prefer keeping the latest complete turn; still advance past prior coverage when only one new turn exists.
+      const boundary = boundaries.at(-2) ?? boundaries.at(-1);
+      if (boundary) automatic = { throughId: boundary.message.id, demand };
+    }
+  }
+  if (settings.autoCompression.enabled && !automatic && built.estimate.retainedMessages < historyCountWithinLimit(prepared.history, settings.recentMessages)) {
+    throw new ContextBudgetError('没有可继续压缩的完整历史，回答未调用模型。请提高预算或关闭自动压缩后重试。');
+  }
+  if (!automatic) assertContextFits(built.estimate);
+  return { ...built, automatic };
 }
 
 export function summaryPrefix(summary: Message) {

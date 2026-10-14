@@ -65,6 +65,21 @@ function historyTokens(message: ChatInput): number {
   historyTokenCache.set(message, { content: message.content, tokens });
   return tokens;
 }
+function turnStart(history: ChatInput[], end: number) {
+  let start = end - 1;
+  while (start > 0 && history[start].role !== 'user') start--;
+  return history[start]?.role === 'user' ? start : -1;
+}
+// Count the complete-turn suffix requested by the user, independently of the token budget.
+export function historyCountWithinLimit(history: ChatInput[], recentMessages: number | null) {
+  let end = history.length, retained = 0;
+  while (end > 0) {
+    const start = turnStart(history, end);
+    if (start < 0 || recentMessages !== null && retained + end - start > recentMessages) break;
+    retained += end - start; end = start;
+  }
+  return retained;
+}
 export function buildContext(history: ChatInput[], content: string, config: Pick<ProviderConfig, 'systemPrompt' | 'maxOutputTokens' | 'modelMetadata'>,
   settings: Pick<ConversationSettings, 'recentMessages' | 'contextBudget'>,
   summary?: { id: string; content: string; coveredMessages: number }): { messages: ChatInput[]; estimate: ContextEstimate } {
@@ -84,9 +99,8 @@ export function buildContext(history: ChatInput[], content: string, config: Pick
   // Select a suffix of complete user-led turns. Never cut a message or start on an orphaned answer.
   let end = history.length;
   while (end > 0) {
-    let start = end - 1;
-    while (start > 0 && history[start].role !== 'user') start--;
-    if (history[start].role !== 'user') break;
+    const start = turnStart(history, end);
+    if (start < 0) break;
     if (settings.recentMessages !== null && selected.length + end - start > settings.recentMessages) break;
     let tokens = 0;
     for (let i = start; i < end; i++) tokens += historyTokens(history[i]);
@@ -102,4 +116,12 @@ export function buildContext(history: ChatInput[], content: string, config: Pick
 
 export function assertContextFits(estimate: ContextEstimate) {
   if (estimate.totalTokens > estimate.inputBudget) throw new ContextBudgetError(`${estimate.summaryTokens ? '系统提示词、摘要与本次输入' : '系统提示词与本次输入'}约需 ${estimate.totalTokens.toLocaleString('zh-CN')} Tokens，超过上下文预算 ${estimate.inputBudget.toLocaleString('zh-CN')}。请缩短输入${estimate.summaryTokens ? '、停用历史摘要' : ''}或调整预算／输出预留。`);
+}
+
+// Measure the whole available branch for compression, before selecting a bounded raw-history tail.
+export function measureContextDemand(history: ChatInput[], content: string, config: Pick<ProviderConfig, 'systemPrompt' | 'maxOutputTokens' | 'modelMetadata'>,
+  settings: Pick<ConversationSettings, 'recentMessages' | 'contextBudget'>, summary?: { id: string; content: string; coveredMessages: number }): ContextEstimate {
+  const fixed = buildContext([], content, config, settings, summary).estimate;
+  const tokens = history.reduce((total, message) => total + historyTokens(message), 0);
+  return { ...fixed, historyTokens: tokens, totalTokens: fixed.totalTokens + tokens, retainedMessages: history.length, omittedMessages: 0 };
 }

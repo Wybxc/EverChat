@@ -12,7 +12,7 @@ import { useConversation } from './useConversation';
 import { ProviderSettingsPanel, type SettingsTab } from './ProviderSettings';
 import { GenerationMetadata } from './GenerationMetadata';
 import { ContextEstimateView } from './ContextEstimate';
-import { assertContextFits, buildContext, contextSource } from '../shared/context-budget';
+import { buildContext, contextSource } from '../shared/context-budget';
 import { chatModels, effortLabels, modelSelectionKey } from '../shared/models';
 import { useThemeMode } from './theme';
 import { useFollowScroll } from './useFollowScroll';
@@ -25,7 +25,7 @@ import type { EverChatBackup } from '../shared/backup';
 import { MessageMutationDialog } from './MessageMutationDialog';
 import { ConversationSettingsDialog } from './ConversationSettings';
 import { SummaryDialog } from './SummaryDialog';
-import { summaryContext, summaryGeneration, summaryPrefix } from '../shared/summaries';
+import { prepareChatContext, summaryContext, summaryGeneration, summaryPrefix } from '../shared/summaries';
 import { applyConversationSettings, conversationSettingsSchema, DEFAULT_CONVERSATION_SETTINGS } from '../shared/conversation-settings';
 import * as v from 'valibot';
 
@@ -161,7 +161,7 @@ function SummaryView({ message, busy, onRetry, onDelete, selected }: { message: 
   if (message.deletedAt) return <article data-testid="summary-message" data-message-id={message.id} className="text-xs text-base-content/70">摘要已删除或失效</article>;
   return <article data-testid="summary-message" data-message-id={message.id} data-status={message.status} className="space-y-2">
     <details className="collapse collapse-arrow border border-base-content/30 bg-base-200" open={open || isActive(message)} onToggle={(event) => setOpen(event.currentTarget.open)}>
-      <summary className="collapse-title min-h-0 py-3 text-sm">历史摘要 · 覆盖 {message.summary!.sourceIds.length} 条{isActive(message) ? ' · 生成中' : message.status === 'failed' ? ' · 生成失败' : message.status === 'cancelled' ? ' · 已停止' : selected ? ' · 当前分支使用' : ' · 未用于当前分支'}</summary>
+      <summary className="collapse-title min-h-0 py-3 text-sm">{message.summary!.automatic ? '自动历史摘要' : '历史摘要'} · 覆盖 {message.summary!.sourceIds.length} 条{isActive(message) ? ' · 生成中' : message.status === 'failed' ? ' · 生成失败' : message.status === 'cancelled' ? ' · 已停止' : selected ? ' · 当前分支使用' : ' · 未用于当前分支'}</summary>
       <div className="collapse-content"><div ref={scroll.viewportRef} className="max-h-80 overflow-y-auto"><div ref={scroll.contentRef}>{messageText(message) && <MarkdownContent content={messageText(message)} streaming={isActive(message)} />}</div></div>
         {message.error && <p role="alert" className="mt-3 text-sm">{message.error}</p>}
         {message.status === 'cancelled' && <p className="mt-3 text-sm">已停止，摘要未用于上下文。</p>}
@@ -212,12 +212,12 @@ function MessageView({ message, busy, onRetry, onEdit, onQuote, onDelete, canRet
   return <article data-testid="assistant-message" data-message-id={message.id} data-status={message.status} data-durable-offset={message.durableOffset ?? 0} data-live-offset={message.liveOffset ?? message.durableOffset ?? 0} className="group flex gap-3 sm:gap-4">
     <span className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-base-content/50 bg-base-100"><InfinityIcon size={20} strokeWidth={1.7} /></span>
     <div className="min-w-0 flex-1 pt-1">
-      <div className="mb-3 flex items-center gap-3 text-xs"><span className="font-semibold">{message.modelName || message.model || 'EverChat'}</span>{message.revisionOf && <span className="text-base-content/60">新版本</span>}{isActive(message) && <span className="flex items-center gap-1.5 text-base-content/60"><span className="loading loading-dots loading-xs" />{message.status === 'queued' ? '排队中' : '生成中'}</span>}</div>
+      <div className="mb-3 flex items-center gap-3 text-xs"><span className="font-semibold">{message.modelName || message.model || 'EverChat'}</span>{message.revisionOf && <span className="text-base-content/60">新版本</span>}{isActive(message) && <span className="flex items-center gap-1.5 text-base-content/60"><span className="loading loading-dots loading-xs" />{message.waitingForSummary ? '等待历史摘要' : message.status === 'queued' ? '排队中' : '生成中'}</span>}</div>
       {messageText(message, 'reasoning') && <details open={reasoningOpen || isActive(message)} onToggle={(event) => setReasoningOpen(event.currentTarget.open)} className="collapse collapse-arrow mb-4 border border-base-content/30 bg-base-200" data-testid="message-reasoning">
         <summary className="collapse-title min-h-0 py-3 text-sm font-medium">思考过程</summary>
         <div className="collapse-content text-sm"><div ref={reasoningScroll.viewportRef} className="max-h-80 overflow-y-auto break-words"><div ref={reasoningScroll.contentRef}><MarkdownContent content={messageText(message, 'reasoning')} searchId={`${message.id}:reasoning`} streaming={isActive(message)} /></div></div></div>
       </details>}
-      {messageText(message) ? <MarkdownContent content={messageText(message)} searchId={`${message.id}:content`} streaming={isActive(message)} /> : isActive(message) && !messageText(message, 'reasoning') ? <p className="py-2 text-sm text-base-content/60">准备中…</p> : null}
+      {messageText(message) ? <MarkdownContent content={messageText(message)} searchId={`${message.id}:content`} streaming={isActive(message)} /> : isActive(message) && !messageText(message, 'reasoning') ? <p className="py-2 text-sm text-base-content/60">{message.waitingForSummary ? '压缩历史后开始回答…' : '准备中…'}</p> : null}
       {message.status === 'failed' && <p role="alert" className="mt-4 rounded-lg bg-error/5 px-3 py-2 text-xs font-medium leading-6 text-base-content">{message.error ?? '生成失败，已保存部分内容。'}</p>}
       {message.status === 'cancelled' && <p className="mt-4 text-xs text-base-content/60">已停止</p>}
       {!isActive(message) && <GenerationMetadata generation={message.generation} />}
@@ -355,17 +355,26 @@ export function App() {
   const previewHistory = useMemo(() => {
     try { return summaryContext(snapshot.messages, previewSource.parentId, conversationSettings.useSummaries); } catch { return null; }
   }, [snapshot.messages, previewSource.parentId, conversationSettings.useSummaries]);
-  const contextEstimate = useMemo(() => {
+  const contextPreview = useMemo(() => {
     if (!selectedModel || !previewHistory) return null;
     const settings = v.safeParse(conversationSettingsSchema, conversationSettings);
     if (!settings.success) return null;
+    let estimate;
     try {
       const config = applyConversationSettings({ ...selectedModel, systemPrompt: selectedModel.systemPrompt ?? session?.systemPrompt ?? '',
         maxOutputTokens: session?.maxOutputTokens ?? null, modelMetadata: selectedModel.metadata, reasoningEnabled: selectedModel.reasoningSupported,
         reasoningEffort: reasoningEffort || undefined, showReasoning: session?.showReasoning }, settings.output);
-      return buildContext(previewHistory.history, draft.trim(), config, settings.output, previewHistory.summary ? summaryPrefix(previewHistory.summary) : undefined).estimate;
-    } catch { return null; }
-  }, [selectedModel, previewHistory, conversationSettings, draft, reasoningEffort, session?.systemPrompt, session?.maxOutputTokens, session?.showReasoning]);
+      estimate = buildContext(previewHistory.history, draft.trim(), config, settings.output, previewHistory.summary ? summaryPrefix(previewHistory.summary) : undefined).estimate;
+      const prepared = prepareChatContext(snapshot.messages, previewSource.parentId, draft.trim(), config, settings.output);
+      if (prepared.automatic) {
+        const selection = settings.output.autoCompression.model;
+        const model = selection ? models.find((item) => modelSelectionKey(item) === modelSelectionKey(selection)) : selectedModel;
+        if (!model) throw new Error('自动压缩模型不可用，请启用所选模型或关闭自动压缩。');
+        summaryGeneration(snapshot.messages, prepared.automatic.throughId, { ...model, systemPrompt: '', maxOutputTokens: null, modelMetadata: model.metadata });
+      }
+      return { estimate: prepared.automatic?.demand ?? prepared.estimate, compressing: Boolean(prepared.automatic), error: '' };
+    } catch (error) { return { estimate, error: error instanceof Error ? error.message : '无法预览上下文。' }; }
+  }, [selectedModel, models, snapshot.messages, previewSource.parentId, previewHistory, conversationSettings, draft, reasoningEffort, session?.systemPrompt, session?.maxOutputTokens, session?.showReasoning]);
   const visibleConversations = conversations.filter((item) => Boolean(item.archived) === archivedList && item.title.toLowerCase().includes(search.toLowerCase()));
 
   const boot = useCallback(async () => {
@@ -490,8 +499,13 @@ export function App() {
         const config = applyConversationSettings({ ...generationModel, reasoningEnabled: generationModel.reasoningSupported, reasoningEffort: input.reasoningEffort,
           showReasoning: input.showReasoning, systemPrompt: generationModel.systemPrompt ?? session?.systemPrompt ?? '', maxOutputTokens: session?.maxOutputTokens ?? null, modelMetadata: generationModel.metadata }, settings.output);
         const source = contextSource(snapshot.messages, input);
-        const prepared = summaryContext(snapshot.messages, source.parentId, settings.output.useSummaries);
-        assertContextFits(buildContext(prepared.history, source.content, config, settings.output, prepared.summary ? summaryPrefix(prepared.summary) : undefined).estimate);
+        const prepared = prepareChatContext(snapshot.messages, source.parentId, source.content, config, settings.output);
+        if (prepared.automatic) {
+          const selection = settings.output.autoCompression.model;
+          const model = selection ? models.find((item) => modelSelectionKey(item) === modelSelectionKey(selection)) : generationModel;
+          if (!model) throw new Error('自动压缩模型不可用，请启用所选模型或关闭自动压缩。');
+          summaryGeneration(snapshot.messages, prepared.automatic.throughId, { ...model, systemPrompt: '', maxOutputTokens: null, modelMetadata: model.metadata });
+        }
       }
       catch (error) { setError(error instanceof Error ? error.message : '会话参数无效。'); return; }
     }
@@ -700,7 +714,8 @@ export function App() {
               <option value="">思维强度：默认</option>{selectedModel.reasoningEfforts.map((effort) => <option key={effort} value={effort}>{effortLabels[effort]}</option>)}
             </select>}
             </div>{active ? <button type="button" className="btn btn-sm h-9 shrink-0 gap-2 px-3" onClick={cancel} disabled={!navigator.onLine}><Square size={12} />停止生成</button> : <button type="submit" className="btn btn-primary btn-square btn-sm h-9 w-9 shrink-0 rounded-xl" aria-label="发送消息" disabled={!draft.trim() || busy || !selectedModel}>{sending ? <span className="loading loading-spinner loading-xs" /> : <ArrowUp size={18} />}</button>}</div>
-            {contextEstimate && <ContextEstimateView estimate={contextEstimate} />}
+            {contextPreview?.estimate && <ContextEstimateView estimate={contextPreview.estimate} compressing={contextPreview.compressing} />}
+            {contextPreview?.error && <p className="mt-2 text-xs text-base-content/80">{contextPreview.error}</p>}
           </form>
         </div>
       </div>
@@ -715,7 +730,7 @@ export function App() {
       </div>
       <form method="dialog" className="modal-backdrop"><button>关闭</button></form>
     </dialog>
-    {session?.authenticated && <ConversationSettingsDialog key={selected ?? 'new'} id={selected} initial={selected ? snapshot.settings ?? DEFAULT_CONVERSATION_SETTINGS : newConversationSettings} model={selectedModel} effort={reasoningEffort} showReasoning={session.showReasoning ?? false} open={conversationSettingsOpen} close={() => setConversationSettingsOpen(false)} onDraft={settingsDraftChanged} managePresets={() => { returnToConversationSettings.current = true; setRequestedSettingsTab('presets'); openSettings(); }} />}
+    {session?.authenticated && <ConversationSettingsDialog key={selected ?? 'new'} id={selected} initial={selected ? snapshot.settings ?? DEFAULT_CONVERSATION_SETTINGS : newConversationSettings} model={selectedModel} models={models} effort={reasoningEffort} showReasoning={session.showReasoning ?? false} open={conversationSettingsOpen} close={() => setConversationSettingsOpen(false)} onDraft={settingsDraftChanged} managePresets={() => { returnToConversationSettings.current = true; setRequestedSettingsTab('presets'); openSettings(); }} />}
     {summaryOpen && selected && <SummaryDialog messages={snapshot.messages} headId={summaryTarget?.throughId ?? contextSource(snapshot.messages, { branchHead: validBranchHead }).parentId} models={models} preferred={selectedModel} target={summaryTarget ?? undefined} busy={busy} submit={queueSummary} close={() => { setSummaryOpen(false); setSummaryTarget(null); }} />}
     {messageMutation && mutationMessage && <MessageMutationDialog key={`${selected}:${messageMutation.id}:${messageMutation.mode}`} message={mutationMessage} mode={messageMutation.mode} affectsSummaries={snapshot.messages.some((message) => !message.deletedAt && message.summary?.sourceIds.includes(mutationMessage.id))} confirm={confirmMessageMutation} close={() => setMessageMutation(null)} />}
   </div>;

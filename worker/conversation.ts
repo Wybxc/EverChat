@@ -17,16 +17,17 @@ import { DATABASE_LIMIT_MESSAGE, HISTORY_LIMIT_MESSAGE, MAX_DATABASE_BYTES, MAX_
 import type { SearchDocument, SearchPage } from '../shared/search';
 import { searchRetryDelay } from './search-index';
 import { backupMessage, type BackupMessage, type ConversationBackup } from '../shared/backup';
-import { assertContextFits, buildContext, ContextBudgetError } from '../shared/context-budget';
+import { assertContextFits, buildContext, ContextBudgetError, historyCountWithinLimit } from '../shared/context-budget';
 import { applyConversationSettings, DEFAULT_CONVERSATION_SETTINGS } from '../shared/conversation-settings';
 import { messageParts, messageText } from '../shared/message-content';
-import { MAX_SUMMARIES, MAX_SUMMARY_CHARACTERS, summaryContext, summaryGeneration, summaryPrefix } from '../shared/summaries';
+import { MAX_SUMMARIES, MAX_SUMMARY_CHARACTERS, prepareChatContext, summaryContext, summaryGeneration, summaryPrefix } from '../shared/summaries';
 
-type Row = Omit<Message, 'parts'> & { content: string; reasoning: string | null; generationResult: string | null; summaryResult: string | null } & Record<string, SqlStorageValue>;
+type Row = Omit<Message, 'parts' | 'waitingForSummary'> & { content: string; reasoning: string | null; generationResult: string | null; summaryResult: string | null; waitingForSummary?: string | null } & Record<string, SqlStorageValue>;
 type Run = { id: string; conversationId: string; assistantId: string; context: string; config: string | null; chunkSeq: number; updatedAt: number;
   streamVersion: string | null; durableOffset: number;
   executor: GenerationExecutor; startedAt: number | null; cancelRequested: number } & Record<string, SqlStorageValue>;
 type Attachment = { expires: number; blocked?: boolean; runId?: string; messageId?: string; sentOffset?: number; ackedOffset?: number; ackAt?: number };
+type Dependency = { runId: string; summaryRunId: string; summaryId: string; payload: string } & Record<string, SqlStorageValue>;
 export const SUBSCRIBER_WINDOW_BYTES = 128 * 1024;
 type Failure = { error: string; status: number };
 type Claim = { context: ChatInput[]; config?: ProviderConfig; claimed: boolean; status: MessageStatus; streamVersion?: string; assistantId?: string };
@@ -66,9 +67,9 @@ export class Conversation extends DurableObject<Env> {
     return row ? JSON.parse(row.payload) as GenerationMeasurements : null;
   }
   private decorate(row: Row): Message {
-    const { generationResult, summaryResult, content, reasoning, ...message } = row;
+    const { generationResult, summaryResult, waitingForSummary, content, reasoning, ...message } = row;
     return { ...message, parts: messageParts(content, reasoning ?? ''), ...(generationResult ? { generation: JSON.parse(generationResult) as Message['generation'] } : {}),
-      ...(summaryResult ? { summary: JSON.parse(summaryResult) as Message['summary'] } : {}) };
+      ...(summaryResult ? { summary: JSON.parse(summaryResult) as Message['summary'] } : {}), ...(waitingForSummary ? { waitingForSummary } : {}) };
   }
   private materialize(message: Message): Message {
     if (!isActive(message) || !message.runId || message.streamVersion !== STREAM_VERSION) return message;
@@ -77,7 +78,7 @@ export class Conversation extends DurableObject<Env> {
     const descriptor = JSON.parse(config) as ProviderConfig;
     return this.journal.materialize(message, { protocol: descriptor.provider, showReasoning: descriptor.showReasoning === true });
   }
-  private rows() { return this.query<Row>('SELECT messages.*, message_deletions.deletedAt, message_generations.payload AS generationResult, message_summaries.payload AS summaryResult FROM messages LEFT JOIN message_deletions ON message_deletions.id = messages.id LEFT JOIN message_generations ON message_generations.messageId = messages.id LEFT JOIN message_summaries ON message_summaries.messageId = messages.id ORDER BY messages.rowid'); }
+  private rows() { return this.query<Row>('SELECT messages.*, message_deletions.deletedAt, message_generations.payload AS generationResult, message_summaries.payload AS summaryResult, run_dependencies.summaryId AS waitingForSummary FROM messages LEFT JOIN message_deletions ON message_deletions.id = messages.id LEFT JOIN message_generations ON message_generations.messageId = messages.id LEFT JOIN message_summaries ON message_summaries.messageId = messages.id LEFT JOIN run_dependencies ON run_dependencies.runId = messages.runId ORDER BY messages.rowid'); }
   private all(): Message[] { return Array.from(this.rows(), (row) => this.materialize(this.decorate(row))); }
   backup(): BackupMessage[] {
     if (this.deletedAt) return [];
@@ -137,7 +138,7 @@ export class Conversation extends DurableObject<Env> {
       revisionOf: source.revisionOf ? ids.get(source.revisionOf) ?? null : null,
       error: source.error, providerId: source.providerId, model: source.model, modelName: source.modelName,
       ...(!source.deletedAt && source.role === 'assistant' && source.generation ? { generation: copiedGeneration(source) } : {}),
-      ...(source.summary ? { summary: { throughId: ids.get(source.summary.throughId)!, sourceIds: source.summary.sourceIds.map((id) => ids.get(id)!) } } : {}),
+      ...(source.summary ? { summary: { ...source.summary, throughId: ids.get(source.summary.throughId)!, sourceIds: source.summary.sourceIds.map((id) => ids.get(id)!) } } : {}),
     }));
     const change = this.ctx.storage.transactionSync(() => {
       for (const message of messages) {
@@ -152,7 +153,7 @@ export class Conversation extends DurableObject<Env> {
     return this.snapshot();
   }
   private rawMessage(id: string): Message | undefined {
-    const row = this.query<Row>('SELECT messages.*, message_deletions.deletedAt, message_generations.payload AS generationResult, message_summaries.payload AS summaryResult FROM messages LEFT JOIN message_deletions ON message_deletions.id = messages.id LEFT JOIN message_generations ON message_generations.messageId = messages.id LEFT JOIN message_summaries ON message_summaries.messageId = messages.id WHERE messages.id = ?', id).toArray()[0];
+    const row = this.query<Row>('SELECT messages.*, message_deletions.deletedAt, message_generations.payload AS generationResult, message_summaries.payload AS summaryResult, run_dependencies.summaryId AS waitingForSummary FROM messages LEFT JOIN message_deletions ON message_deletions.id = messages.id LEFT JOIN message_generations ON message_generations.messageId = messages.id LEFT JOIN message_summaries ON message_summaries.messageId = messages.id LEFT JOIN run_dependencies ON run_dependencies.runId = messages.runId WHERE messages.id = ?', id).toArray()[0];
     return row && this.decorate(row);
   }
   private message(id: string): Message | undefined { const message = this.rawMessage(id); return message && this.materialize(message); }
@@ -385,10 +386,17 @@ export class Conversation extends DurableObject<Env> {
       const userParentId = original ? original.parentId : requestedHead?.id ?? latestCompleted?.id ?? null;
       let context: ChatInput[];
       let contextEstimate;
+      let automatic: ReturnType<typeof summaryGeneration> | undefined;
       try {
-        const prepared = summaryContext(messages, parent ? parent.parentId : userParentId, settings.useSummaries);
-        const built = buildContext(prepared.history, content, generationConfig, settings, prepared.summary ? summaryPrefix(prepared.summary) : undefined);
-        assertContextFits(built.estimate); context = built.messages; contextEstimate = built.estimate;
+        const built = prepareChatContext(messages, parent ? parent.parentId : userParentId, content, generationConfig, settings);
+        context = built.messages; contextEstimate = built.estimate;
+        if (built.automatic) {
+          if (messages.length + (parent ? 2 : 3) > MAX_MESSAGES) return { error: '此对话已达到原型的消息上限，请新建对话。', status: 507 };
+          if (messages.filter((message) => message.summary && !message.deletedAt).length >= MAX_SUMMARIES) return { error: '摘要数量已达到原型上限，请删除旧摘要或关闭自动压缩。', status: 507 };
+          const summaryConfig = settings.autoCompression.model ? await this.env.LIBRARY.getByName('personal').providerConfig(settings.autoCompression.model) : config;
+          if (!summaryConfig) return { error: '自动压缩模型不可用，请启用所选模型或关闭自动压缩。', status: 400 };
+          automatic = summaryGeneration(messages, built.automatic.throughId, summaryConfig);
+        }
       } catch (error) { return error instanceof ContextBudgetError ? { error: error.message, status: 400 }
         : { error: '消息分支关系无效，无法构建上下文。', status: 409 }; }
       const user: Message = parent ?? {
@@ -400,17 +408,20 @@ export class Conversation extends DurableObject<Env> {
         runId, parentId: user.id, revisionOf: previous?.id ?? null, error: null,
         providerId: generationConfig.providerId, model: generationConfig.model, modelName: generationConfig.modelName || generationConfig.model,
         streamVersion: STREAM_VERSION, durableOffset: 0,
-        generation: { usage: {}, usageIsFinal: false, context: contextEstimate },
+        generation: { usage: {}, usageIsFinal: false, ...(!automatic ? { context: contextEstimate } : {}) },
       };
-      const result = { runId, userId: user.id, assistantId: assistant.id };
       const initializeSettings = messages.length === 0 && !this.query('SELECT id FROM conversation_settings WHERE id = 1').toArray().length;
       if (initializeSettings) this.writeSettings(settings);
       if (!parent) this.insert(user);
+      const summary = automatic ? this.queueSummary(conversationId, automatic, true) : undefined;
       this.insert(assistant);
       this.query('INSERT INTO runs (id, conversationId, assistantId, context, chunkSeq, updatedAt, config, streamVersion, executor) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)',
-        runId, conversationId, assistant.id, JSON.stringify(context), Date.now(), JSON.stringify(generationConfig), STREAM_VERSION, 'do-v1');
+        runId, conversationId, assistant.id, JSON.stringify(automatic ? [] : context), Date.now(), JSON.stringify(generationConfig), STREAM_VERSION, 'do-v1');
+      if (summary) this.query('INSERT INTO run_dependencies VALUES (?, ?, ?, ?)', runId, summary.runId!, summary.id,
+        JSON.stringify({ parentId: parent ? parent.parentId : userParentId, content, settings }));
+      const result = { runId, userId: user.id, assistantId: assistant.id, ...(summary ? { summaryId: summary.id } : {}) };
       this.query('INSERT INTO submissions VALUES (?, ?, ?)', input.requestId, fingerprint, JSON.stringify(result));
-      const change = this.record(parent ? [this.rawMessage(assistant.id)!] : [this.rawMessage(user.id)!, this.rawMessage(assistant.id)!], conversationId, messages.length === 0 ? this.settings() : undefined);
+      const change = this.record([...(parent ? [] : [this.rawMessage(user.id)!]), ...(summary ? [this.rawMessage(summary.id)!] : []), this.rawMessage(assistant.id)!], conversationId, messages.length === 0 ? this.settings() : undefined);
       // The outbox, input/configuration and its alarm commit together before acceptance.
       await this.ctx.storage.setAlarm(Date.now() + 1000);
       return { result, change };
@@ -418,12 +429,23 @@ export class Conversation extends DurableObject<Env> {
     if ('change' in accepted) { this.broadcast(accepted.change); this.updateSearchSoon(); return accepted.result; }
     return accepted;
   }
+  private queueSummary(conversationId: string, prepared: ReturnType<typeof summaryGeneration>, automatic: boolean) {
+    const runId = crypto.randomUUID();
+    const summary: Message = { id: crypto.randomUUID(), role: 'assistant', parts: [], status: 'queued', createdAt: Date.now(), runId,
+      parentId: prepared.coverage.throughId, revisionOf: null, error: null, summary: { ...prepared.coverage, ...(automatic ? { automatic: true } : {}) },
+      providerId: prepared.config.providerId, model: prepared.config.model, modelName: prepared.config.modelName || prepared.config.model,
+      streamVersion: STREAM_VERSION, durableOffset: 0, generation: { usage: {}, usageIsFinal: false, context: prepared.estimate } };
+    this.insert(summary);
+    this.query('INSERT INTO runs (id, conversationId, assistantId, context, chunkSeq, updatedAt, config, streamVersion, executor) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)',
+      runId, conversationId, summary.id, JSON.stringify(prepared.context), Date.now(), JSON.stringify(prepared.config), STREAM_VERSION, 'do-v1');
+    return summary;
+  }
   async alarm() {
     if (this.deletedAt) return;
     // An RPC re-entry during a live alarm never starts a second upstream call.
     if (this.activeGeneration) return;
     const searchSuccess = await this.flushSearchIndex();
-    for (const run of this.query<Run>(`SELECT runs.* FROM runs JOIN messages ON messages.id = runs.assistantId WHERE messages.status IN ('queued', 'running')`).toArray()) {
+    for (const run of this.query<Run>(`SELECT runs.* FROM runs JOIN messages ON messages.id = runs.assistantId WHERE messages.status IN ('queued', 'running') AND NOT EXISTS (SELECT 1 FROM run_dependencies WHERE run_dependencies.runId = runs.id)`).toArray()) {
       const deletion = await this.env.LIBRARY.getByName('personal').deletedAt(run.conversationId);
       if (this.deletedAt) return;
       if (deletion) { await this.deleteConversation(deletion); return; }
@@ -589,7 +611,7 @@ export class Conversation extends DurableObject<Env> {
       this.query('INSERT INTO message_generations (messageId, payload) VALUES (?, ?) ON CONFLICT(messageId) DO UPDATE SET payload = excluded.payload', message.id, JSON.stringify(message.generation));
       this.query('UPDATE messages SET status = ?, error = ? WHERE id = ?', status, error, message.id);
       this.query("UPDATE runs SET config = NULL, context = '[]' WHERE id = ?", runId);
-      const terminal = this.record([this.message(message.id)!], run.conversationId);
+      const terminal = this.record([this.message(message.id)!, ...this.resolveDependentAnswers(runId, status)], run.conversationId);
       if (this.ctx.storage.sql.databaseSize > MAX_DATABASE_BYTES) throw new ProviderError(DATABASE_LIMIT_MESSAGE);
       return terminal;
     });
@@ -606,12 +628,46 @@ export class Conversation extends DurableObject<Env> {
       console.info('EVERCHAT_GENERATION_METRICS', JSON.stringify(report));
     }
   }
+  private resolveDependentAnswers(summaryRunId: string, summaryStatus: MessageStatus): Message[] {
+    const updated: Message[] = [];
+    for (const dependency of this.query<Dependency>('SELECT * FROM run_dependencies WHERE summaryRunId = ?', summaryRunId).toArray()) {
+      const run = this.run(dependency.runId), answer = run && this.rawMessage(run.assistantId);
+      if (!run || !answer || !isActive(answer)) { this.query('DELETE FROM run_dependencies WHERE runId = ?', dependency.runId); continue; }
+      let status: MessageStatus = run.cancelRequested || summaryStatus === 'cancelled' ? 'cancelled' : 'failed';
+      let error: string | null = status === 'cancelled' ? null : '自动摘要失败，回答未调用模型。原始历史保留，请调整配置后主动重试。';
+      if (summaryStatus === 'completed' && !run.cancelRequested) {
+        try {
+          const { parentId, content, settings } = JSON.parse(dependency.payload) as { parentId: string | null; content: string; settings: ConversationSettings };
+          if (!run.config) throw new Error('回答配置已丢失。');
+          const prepared = summaryContext(this.all(), parentId, true);
+          if (prepared.summary?.id !== dependency.summaryId) throw new Error('自动摘要覆盖范围不匹配。');
+          const built = buildContext(prepared.history, content, JSON.parse(run.config) as ProviderConfig, settings, summaryPrefix(prepared.summary));
+          assertContextFits(built.estimate);
+          // Count limits can intentionally omit raw history; token pressure after compression must be explicit.
+          if (built.estimate.retainedMessages < historyCountWithinLimit(prepared.history, settings.recentMessages)) throw new ContextBudgetError('自动摘要后仍无法容纳最近历史。请提高预算、手动压缩或关闭自动压缩后重试。');
+          this.query('UPDATE runs SET context = ? WHERE id = ?', JSON.stringify(built.messages), run.id);
+          this.query('UPDATE message_generations SET payload = ? WHERE messageId = ?', JSON.stringify({ usage: {}, usageIsFinal: false, context: built.estimate }), answer.id);
+          status = 'queued'; error = null;
+        } catch (failure) { error = failure instanceof Error ? failure.message : error; }
+      }
+      if (status !== 'queued') {
+        this.query("UPDATE runs SET config = NULL, context = '[]' WHERE id = ?", run.id);
+        this.query('DELETE FROM generation_timings WHERE runId = ?', run.id);
+      }
+      this.query('UPDATE messages SET status = ?, error = ? WHERE id = ?', status, error, answer.id);
+      this.query('DELETE FROM run_dependencies WHERE runId = ?', run.id);
+      updated.push(this.rawMessage(answer.id)!);
+    }
+    return updated;
+  }
   async cancel(runId: string) {
     if (this.deletedAt) return;
     const run = this.run(runId), message = run && this.rawMessage(run.assistantId);
     if (!run || !message || !isActive(message)) return;
-    this.query('UPDATE runs SET cancelRequested = 1 WHERE id = ?', runId);
-    const active = this.activeGeneration?.runId === runId ? this.activeGeneration : undefined;
+    const dependency = this.query<Dependency>('SELECT * FROM run_dependencies WHERE runId = ? OR summaryRunId = ?', runId, runId).toArray()[0];
+    const ids = dependency ? [dependency.summaryRunId, dependency.runId] : [runId];
+    this.ctx.storage.transactionSync(() => { for (const id of ids) this.query('UPDATE runs SET cancelRequested = 1 WHERE id = ?', id); });
+    const active = this.activeGeneration && ids.includes(this.activeGeneration.runId) ? this.activeGeneration : undefined;
     if (active) {
       active.cancelled = true; active.endedAt ??= Date.now(); active.abort.abort();
       if (active.timer) clearInterval(active.timer);
@@ -622,7 +678,7 @@ export class Conversation extends DurableObject<Env> {
     try { active?.buffer.flush(); } catch (failure) {
       if (!(failure instanceof GenerationCancelled)) error = '停止时未能保存尾部。已保留最近检查点，请主动重新生成。';
     }
-    this.finish(runId, error ? 'failed' : 'cancelled', error);
+    for (const id of ids) this.finish(id, error && active?.runId === id ? 'failed' : 'cancelled', error && active?.runId === id ? error : null);
     await this.ctx.storage.sync();
   }
   closeSessions() { for (const socket of this.ctx.getWebSockets()) socket.close(4001, 'Signed out'); }

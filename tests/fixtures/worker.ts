@@ -50,6 +50,8 @@ export class Library extends ProductionLibrary {
   fixtureCapacity(seed: boolean) {
     const sql = this.ctx.storage.sql;
     this.ctx.storage.transactionSync(() => {
+      // Remove derived jobs before deleting their fixture owners; otherwise Library Alarm keeps selecting an orphan.
+      sql.exec("DELETE FROM search_backfill WHERE conversationId IN (SELECT id FROM conversations WHERE title = '__capacity_fixture__')");
       sql.exec("DELETE FROM conversations WHERE title = '__capacity_fixture__'");
       if (seed) {
         const count = sql.exec<{ count: number }>('SELECT COUNT(*) AS count FROM conversations').one().count;
@@ -107,6 +109,7 @@ export class Conversation extends ProductionConversation {
     const sql = this.ctx.storage.sql;
     const hasCalls = sql.exec("SELECT name FROM sqlite_master WHERE name = 'fixture_calls'").toArray().length;
     return { databaseBytes: sql.databaseSize, messages: this.fixtureCount('messages'), runs: this.fixtureCount('runs'),
+      dependencies: this.fixtureCount('run_dependencies'),
       retainedContexts: this.fixtureCount('runs', "WHERE context != '[]'"), journalRows: this.fixtureCount('stream_commits'),
       calls: hasCalls ? sql.exec<{ calls: number }>('SELECT COALESCE(SUM(calls), 0) AS calls FROM fixture_calls').one().calls : 0 };
   }
@@ -115,6 +118,7 @@ export class Conversation extends ProductionConversation {
     return this.ctx.storage.sql.exec<{ count: number }>(`SELECT COUNT(*) AS count FROM ${table} ${where}`).one().count;
   }
   protected override async openModelStream(...args: Parameters<typeof openProviderStream>) {
+    if (args[0].model === 'benchmark-summary-write-failure') this.failNextCommit = true;
     if (args[0].model.startsWith('alarm-') || args[0].model.startsWith('benchmark-')) {
       this.ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS fixture_calls (runId TEXT PRIMARY KEY, calls INTEGER NOT NULL)');
       const run = this.ctx.storage.sql.exec<{ id: string; conversationId: string }>(`SELECT runs.id, runs.conversationId FROM runs JOIN messages ON messages.id = runs.assistantId WHERE messages.status = 'running'`).one();
@@ -316,6 +320,10 @@ globalThis.fetch = async (input, init) => {
         }
       },
     }), { headers: { 'Content-Type': 'text/event-stream' } });
+  }
+  if (requestBody.model === 'benchmark-answer-fact') {
+    const text = JSON.stringify(requestBody).includes('__SUMMARY_FACT_42__') ? '记得预算 42 元。' : '未收到旧预算。';
+    return new Response(`data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: text }, finish_reason: null }] })}\n\ndata: ${JSON.stringify({ choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`, { headers: { 'Content-Type': 'text/event-stream' } });
   }
   const rawKind = requestBody.model?.startsWith('raw-') ? requestBody.model.slice(4) as ProviderKind
     : url.pathname.includes('/models/raw-gemini:') ? 'gemini' : undefined;

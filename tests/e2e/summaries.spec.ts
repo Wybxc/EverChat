@@ -1,6 +1,6 @@
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import type { EverChatBackup } from '../../shared/backup';
-import type { ChatInput, ProviderSettings, ProviderSettingsInput, Snapshot, Submission, SubmitInput, SyncPacket } from '../../shared/types';
+import type { ChatInput, ConversationSettings, ProviderSettings, ProviderSettingsInput, Snapshot, Submission, SubmitInput, SyncPacket } from '../../shared/types';
 import WebSocket from 'ws';
 import type { LibrarySearch } from '../../shared/search';
 import { messageParts, messageText } from '../../shared/message-content';
@@ -25,12 +25,12 @@ async function replay(request: APIRequestContext, id: string) {
     return packets;
   } finally { socket.terminate(); }
 }
-async function setup(request: APIRequestContext, branch = false) {
+async function setup(request: APIRequestContext, branch = false, longTail = false) {
   expect((await request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok()).toBe(true);
   const original = await request.get('/api/settings/providers').then((response) => response.json()) as ProviderSettings;
   const providerId = crypto.randomUUID(), empty = crypto.randomUUID(), ids: string[] = [empty];
   const configuration: ProviderSettingsInput = { providers: [{ id: providerId, name: 'Summary fixture', provider: 'openai-chat', baseUrl: 'https://provider.test/v1', apiKey: 'integration-test-key',
-    models: ['alarm-stall', 'benchmark-summary-ok', 'benchmark-summary-slow', 'benchmark-summary-empty', 'benchmark-summary-length', 'benchmark-summary-error', 'benchmark-summary-small'].map((id) => ({
+    models: ['alarm-stall', 'benchmark-answer-fact', 'benchmark-summary-ok', 'benchmark-summary-slow', 'benchmark-summary-empty', 'benchmark-summary-length', 'benchmark-summary-error', 'benchmark-summary-write-failure', 'benchmark-summary-small'].map((id) => ({
       id, name: id, enabled: true, metadataOverrides: { contextWindow: id === 'alarm-stall' ? 4096 : id.endsWith('small') ? 1024 : 65536, maxOutputTokens: 4096 },
     })) }], activeProviderId: providerId, activeModel: 'alarm-stall', systemPrompt: 'CHAT SYSTEM', maxOutputTokens: null, showReasoning: false };
   const configure = (input = configuration) => request.put('/api/settings/providers', { headers, data: input });
@@ -39,7 +39,7 @@ async function setup(request: APIRequestContext, branch = false) {
   const backup = await request.get(`/api/conversations/${empty}/backup`).then((response) => response.json()) as EverChatBackup;
   let parentId: string | null = null;
   backup.conversation.settings = { ...defaults, contextBudget: 400 };
-  backup.conversation.messages = [`预算 42 元，标识 ${fact}。${'旧资料 '.repeat(500)}`, '已确认预算和约束。', '最近问题', '最近回答', '后续问题', '后续回答'].map((text, index) => {
+  backup.conversation.messages = [`预算 42 元，标识 ${fact}。${'旧资料 '.repeat(500)}`, '已确认预算和约束。', '最近问题', '最近回答', longTail ? '后续问题'.repeat(500) : '后续问题', '后续回答'].map((text, index) => {
     const id = crypto.randomUUID(), message = { id, role: index % 2 ? 'assistant' as const : 'user' as const, parts: messageParts(text), status: 'completed' as const,
       createdAt: index + 1, parentId, revisionOf: null, error: null, providerId: null, model: null, modelName: null };
     parentId = id; return message;
@@ -70,6 +70,195 @@ async function setup(request: APIRequestContext, branch = false) {
     expect((await request.put('/api/settings/providers', { headers, data: original })).status()).toBe(200);
   } };
 }
+
+function automaticInput(fixture: Awaited<ReturnType<typeof setup>>, summaryModel = 'benchmark-summary-ok', budget = 400): SubmitInput {
+  return { requestId: crypto.randomUUID(), content: '还记得早先的预算吗？', selection: { providerId: fixture.providerId, model: 'benchmark-answer-fact' },
+    settings: { ...defaults, contextBudget: budget, autoCompression: { enabled: true, threshold: 80, model: { providerId: fixture.providerId, model: summaryModel } } } };
+}
+const action = (request: APIRequestContext, id: string, name: string, runId: string) => request.post(`/api/__test/conversations/${id}/${name}`, { headers, data: { runId } });
+
+test('automatic compression saves coverage before answering, retains early facts and is idempotent across refresh and a second device', async ({ request, browser }) => {
+  const fixture = await setup(request), other = await browser.newContext();
+  try {
+    const input = automaticInput(fixture);
+    const responses = await Promise.all([fixture.submit(input), fixture.submit(input)]);
+    for (const response of responses) expect(response.status()).toBe(202);
+    const task = await responses[0].json() as Submission; expect(await responses[1].json()).toEqual(task);
+    const queued = await fixture.snapshot(), summary = queued.messages.find(({ id }) => id === task.summaryId)!;
+    expect(summary.summary).toEqual({ throughId: fixture.seeded.messages[3].id, sourceIds: fixture.seeded.messages.slice(0, 4).map(({ id }) => id), automatic: true });
+    expect(queued.messages.at(-1)).toMatchObject({ waitingForSummary: summary.id, status: 'queued' });
+    expect((await fixture.run(task.runId)).context).toEqual([]);
+    expect((await action(request, fixture.id, 'state', task.runId).then((response) => response.json())).calls).toBe(0);
+    await other.request.post('/api/login', { headers, data: { password: 'everchat-local' } });
+    const page = await other.newPage(); await page.goto(`/c/${fixture.id}`); await page.reload(); await page.close();
+    const answer = await fixture.terminal(task); expect(messageText(answer)).toBe('记得预算 42 元。');
+    expect(answer.waitingForSummary).toBeUndefined(); expect(answer.generation!.context).toMatchObject({ summaryId: summary.id, summarizedMessages: 4, omittedMessages: 0, retainedMessages: 2 });
+    const saved = await fixture.snapshot(); expect(saved.messages.slice(0, 6)).toEqual(fixture.seeded.messages);
+    expect(saved.messages.find(({ id }) => id === summary.id)?.status).toBe('completed');
+    expect(await fixture.resources()).toMatchObject({ calls: 2, dependencies: 0, retainedContexts: 0 });
+    await action(request, fixture.id, 'alarm', task.runId);
+    const disabled = { ...fixture.configuration, providers: fixture.configuration.providers.map((provider) => ({ ...provider, models: provider.models.map((model) => ({ ...model, enabled: false })) })) };
+    await fixture.configure(disabled);
+    const duplicate = await fixture.submit(input); expect(duplicate.status()).toBe(202); expect(await duplicate.json()).toEqual(task);
+    expect((await replay(other.request, fixture.id)).some((packet) => (packet.type === 'snapshot' ? packet.snapshot.messages : packet.type === 'change' ? packet.messages : []).some((message) => message.id === summary.id && message.status === 'completed'))).toBe(true);
+    expect(await fixture.resources()).toMatchObject({ calls: 2 });
+  } finally { await other.close(); await fixture.cleanup(); }
+});
+
+test('automatic compression pins both models and chat settings before the summary finishes', async ({ request }) => {
+  const fixture = await setup(request);
+  try {
+    const input = automaticInput(fixture, 'benchmark-summary-slow'); input.selection!.model = 'alarm-stall';
+    const response = await fixture.submit(input); expect(response.status()).toBe(202); const task = await response.json() as Submission;
+    const summary = (await fixture.snapshot()).messages.find(({ id }) => id === task.summaryId)!;
+    expect((await fixture.run(summary.runId!)).config).toMatchObject({ model: 'benchmark-summary-slow', systemPrompt: SUMMARY_SYSTEM_PROMPT });
+    const changed: ConversationSettings = { ...defaults, contextBudget: 100, recentMessages: 1, systemPrompt: 'CHANGED', autoCompression: defaults.autoCompression };
+    expect((await request.put(`/api/conversations/${fixture.id}/settings`, { headers, data: changed })).status()).toBe(200);
+    await fixture.configure({ ...fixture.configuration, systemPrompt: 'ALSO CHANGED', providers: fixture.configuration.providers.map((provider) => ({ ...provider, models: provider.models.map((model) => ({ ...model, enabled: false })) })) });
+    await expect.poll(async () => (await fixture.snapshot()).messages.at(-1)!.status).toBe('running');
+    const answerRun = await fixture.run(task.runId);
+    expect(answerRun.config).toMatchObject({ model: 'alarm-stall', systemPrompt: 'CHAT SYSTEM', maxOutputTokens: null });
+    expect(answerRun.context).toHaveLength(4); expect(answerRun.context[0].content).toContain(fact);
+    expect(answerRun.context[1].content).toBe('后续问题'); expect(answerRun.context.at(-1)!.content).toBe(input.content);
+    expect((await fixture.snapshot()).messages.at(-1)!.generation!.context!.inputBudget).toBe(400);
+    expect(await fixture.resources()).toMatchObject({ calls: 2, dependencies: 0 }); await fixture.stop(task.runId);
+  } finally { await fixture.cleanup(); }
+});
+
+test('distinct concurrent automatic requests accept only one paid pipeline, and copying a waiting pipeline cannot restart it', async ({ request }) => {
+  const fixture = await setup(request);
+  try {
+    const responses = await Promise.all([fixture.submit(automaticInput(fixture, 'benchmark-summary-slow')), fixture.submit(automaticInput(fixture, 'benchmark-summary-slow'))]);
+    expect(responses.map((response) => response.status()).sort()).toEqual([202, 409]);
+    const task = await responses.find((response) => response.status() === 202)!.json() as Submission;
+    const copied = await request.post(`/api/conversations/${fixture.id}/duplicate`, { headers }); expect(copied.status()).toBe(201);
+    const { id, snapshot } = await copied.json() as { id: string; snapshot: Snapshot }; fixture.ids.push(id);
+    const summary = snapshot.messages.find((message) => message.summary)!;
+    expect(summary).toMatchObject({ status: 'failed', summary: { automatic: true } });
+    expect(snapshot.messages.at(-1)).toMatchObject({ status: 'failed' }); expect(snapshot.messages.at(-1)!.waitingForSummary).toBeUndefined();
+    expect(summary.summary!.sourceIds).toEqual(snapshot.messages.slice(0, 4).map(({ id }) => id));
+    expect(snapshot.messages.some((message) => message.status === 'queued' || message.status === 'running')).toBe(false);
+    await action(request, id, 'alarm', task.runId);
+    expect(await action(request, id, 'resources', task.runId).then((response) => response.json())).toMatchObject({ calls: 0, runs: 0, dependencies: 0 });
+    await fixture.stop(task.runId); expect(await fixture.resources()).toMatchObject({ dependencies: 0 });
+    const backup = await request.get(`/api/conversations/${id}/backup`).then((response) => response.json()) as EverChatBackup;
+    expect(backup.conversation.messages.find((message) => message.summary)?.summary?.automatic).toBe(true);
+    expect(JSON.stringify(backup)).not.toContain('waitingForSummary');
+  } finally { await fixture.cleanup(); }
+});
+
+for (const model of ['benchmark-summary-empty', 'benchmark-summary-length', 'benchmark-summary-error', 'benchmark-summary-write-failure']) test(`automatic ${model} failure retains originals, skips the answer and never retries on Alarm`, async ({ request }) => {
+  const fixture = await setup(request);
+  try {
+    const input = automaticInput(fixture, model), response = await fixture.submit(input); expect(response.status()).toBe(202);
+    const task = await response.json() as Submission, answer = await fixture.terminal(task, 'failed');
+    expect(answer.error).toContain('回答未调用模型'); expect(answer.generation!.timing).toBeUndefined(); expect(answer.waitingForSummary).toBeUndefined();
+    const saved = await fixture.snapshot(); expect(saved.messages.slice(0, 6)).toEqual(fixture.seeded.messages);
+    expect(saved.messages.find(({ id }) => id === task.summaryId)?.status).toBe('failed');
+    expect(await fixture.resources()).toMatchObject({ calls: 1, dependencies: 0, retainedContexts: 0 });
+    await action(request, fixture.id, 'alarm', task.runId); expect(await (await fixture.submit(input)).json()).toEqual(task);
+    expect(await fixture.resources()).toMatchObject({ calls: 1 });
+  } finally { await fixture.cleanup(); }
+});
+
+for (const running of [false, true]) test(`automatic compression can stop ${running ? 'a live summary' : 'a waiting answer'} without starting the answer`, async ({ request }) => {
+  const fixture = await setup(request);
+  try {
+    const response = await fixture.submit(automaticInput(fixture, 'benchmark-summary-slow')); expect(response.status()).toBe(202);
+    const task = await response.json() as Submission, summary = (await fixture.snapshot()).messages.find(({ id }) => id === task.summaryId)!;
+    if (running) await expect.poll(async () => messageText((await fixture.snapshot()).messages.find(({ id }) => id === summary.id)!).length).toBeGreaterThan(0);
+    expect((await fixture.stop(running ? summary.runId! : task.runId)).ok()).toBe(true);
+    await fixture.terminal(task, 'cancelled'); const saved = await fixture.snapshot();
+    expect(saved.messages.find(({ id }) => id === summary.id)?.status).toBe('cancelled');
+    expect(saved.messages.slice(0, 6)).toEqual(fixture.seeded.messages);
+    await action(request, fixture.id, 'alarm', task.runId);
+    expect(await fixture.resources()).toMatchObject({ calls: running ? 1 : 0, dependencies: 0, retainedContexts: 0 });
+  } finally { await fixture.cleanup(); }
+});
+
+test('resetting a live automatic summary preserves its checkpoint and fails its waiting answer without a paid retry', async ({ request }) => {
+  const fixture = await setup(request);
+  try {
+    const input = automaticInput(fixture, 'benchmark-summary-slow'), response = await fixture.submit(input); expect(response.status()).toBe(202);
+    const task = await response.json() as Submission, summary = (await fixture.snapshot()).messages.find(({ id }) => id === task.summaryId)!;
+    await expect.poll(async () => messageText((await fixture.snapshot()).messages.find(({ id }) => id === summary.id)!).length).toBeGreaterThan(0);
+    const prefix = messageText((await fixture.snapshot()).messages.find(({ id }) => id === summary.id)!);
+    try { await action(request, fixture.id, 'abort', summary.runId!); } catch { /* A deliberate reset can close this request. */ }
+    await fixture.terminal(task, 'failed'); const saved = await fixture.snapshot();
+    expect(messageText(saved.messages.find(({ id }) => id === summary.id)!)).toContain(prefix);
+    expect(saved.messages.slice(0, 6)).toEqual(fixture.seeded.messages); expect(await fixture.resources()).toMatchObject({ calls: 1, dependencies: 0 });
+    await action(request, fixture.id, 'alarm', task.runId); expect(await (await fixture.submit(input)).json()).toEqual(task);
+    expect(await fixture.resources()).toMatchObject({ calls: 1 });
+  } finally { await fixture.cleanup(); }
+});
+
+test('a reset after the automatic summary is saved resumes only the accepted answer', async ({ request }) => {
+  const fixture = await setup(request);
+  try {
+    const response = await fixture.submit(automaticInput(fixture)); expect(response.status()).toBe(202); const task = await response.json() as Submission;
+    await expect.poll(async () => (await fixture.snapshot()).messages.find(({ id }) => id === task.summaryId)?.status, { intervals: [50] }).toBe('completed');
+    expect((await fixture.snapshot()).messages.at(-1)!.status).toBe('queued');
+    try { await action(request, fixture.id, 'abort', task.runId); } catch { /* A deliberate reset can close this request. */ }
+    expect(messageText(await fixture.terminal(task))).toBe('记得预算 42 元。');
+    expect(await fixture.resources()).toMatchObject({ calls: 2, dependencies: 0, retainedContexts: 0 });
+  } finally { await fixture.cleanup(); }
+});
+
+test('automatic compression rejects unavailable or undersized summary models before writes, and stops when the resulting summary still cannot fit', async ({ request }) => {
+  const fixture = await setup(request);
+  try {
+    const before = await fixture.snapshot();
+    for (const model of ['not-enabled', 'benchmark-summary-small']) {
+      const response = await fixture.submit(automaticInput(fixture, model)); expect(response.status()).toBe(400);
+      expect(await fixture.snapshot()).toEqual(before); expect(await fixture.resources()).toMatchObject({ calls: 0, runs: 0 });
+    }
+    const fixed = automaticInput(fixture); fixed.content = '超长输入'.repeat(300);
+    expect((await fixture.submit(fixed)).status()).toBe(400); expect(await fixture.resources()).toMatchObject({ calls: 0, runs: 0 });
+    const response = await fixture.submit(automaticInput(fixture, 'benchmark-summary-ok', 100)); expect(response.status()).toBe(202);
+    const task = await response.json() as Submission, answer = await fixture.terminal(task, 'failed'); expect(answer.error).toContain('超过上下文预算');
+    expect((await fixture.snapshot()).messages.find(({ id }) => id === task.summaryId)?.status).toBe('completed');
+    expect((await fixture.snapshot()).messages.slice(0, 6)).toEqual(fixture.seeded.messages);
+    await action(request, fixture.id, 'alarm', task.runId); expect(await fixture.resources()).toMatchObject({ calls: 1, dependencies: 0, retainedContexts: 0 });
+  } finally { await fixture.cleanup(); }
+});
+
+test('automatic compression preferences autosave with fee disclosure, offline edits, cross-device sync and an actionable chat preview', async ({ page, request, context, browser }) => {
+  const fixture = await setup(page.request), other = await browser.newContext();
+  try {
+    await page.goto(`/c/${fixture.id}`); const composer = page.getByLabel('消息', { exact: true }); await composer.fill('待发送草稿');
+    await page.getByRole('button', { name: '会话参数', exact: true }).click(); const modal = page.getByRole('dialog', { name: '会话参数', exact: true });
+    await expect(modal.getByLabel('自动压缩历史', { exact: true })).not.toBeChecked(); await expect(modal).toContainText('额外调用摘要模型');
+    await modal.getByLabel('自动压缩历史', { exact: true }).check();
+    await modal.getByLabel('自动摘要模型', { exact: true }).selectOption(modelSelectionKey({ providerId: fixture.providerId, model: 'benchmark-summary-slow' }));
+    await expect(modal.getByRole('status')).toHaveText('已保存');
+    await other.request.post('/api/login', { headers, data: { password: 'everchat-local' } });
+    const second = await other.newPage(); await second.goto(`/c/${fixture.id}`); await second.getByRole('button', { name: '会话参数', exact: true }).click();
+    await expect(second.getByLabel('自动压缩历史', { exact: true })).toBeChecked();
+    await context.setOffline(true); await modal.getByLabel('自动压缩阈值（%）', { exact: true }).fill('70'); await expect(modal.getByRole('alert')).toBeVisible();
+    await modal.getByRole('button', { name: '关闭会话参数' }).click(); await expect(composer).toHaveValue('待发送草稿');
+    await expect(page.getByTestId('automatic-compression-preview')).toContainText('额外调用摘要模型');
+    await context.setOffline(false); await expect.poll(async () => (await fixture.snapshot()).settings?.autoCompression.threshold).toBe(70);
+    await expect(second.getByLabel('自动压缩阈值（%）', { exact: true })).toHaveValue('70');
+    await page.reload(); await expect(composer).toHaveValue('待发送草稿');
+    await page.getByRole('button', { name: '发送消息', exact: true }).click();
+    await expect(page.getByText('等待历史摘要', { exact: true })).toBeVisible(); await expect(page.getByTestId('summary-message')).toContainText('自动历史摘要');
+    await page.getByRole('button', { name: '停止生成', exact: true }).click(); await expect.poll(async () => (await fixture.snapshot()).messages.at(-1)!.status).toBe('cancelled');
+    await page.getByRole('button', { name: '会话参数', exact: true }).click(); await modal.getByLabel('使用历史摘要', { exact: true }).uncheck();
+    await expect(modal.getByLabel('自动压缩历史', { exact: true })).not.toBeChecked(); await expect(modal.getByRole('status')).toHaveText('已保存');
+    expect((await fixture.snapshot()).settings?.autoCompression.enabled).toBe(false);
+  } finally { await context.setOffline(false); await other.close(); await fixture.cleanup(); }
+});
+
+test('automatic compression does not silently discard an oversized uncompressed recent turn', async ({ request }) => {
+  const fixture = await setup(request, false, true);
+  try {
+    const response = await fixture.submit(automaticInput(fixture)); expect(response.status()).toBe(202);
+    const task = await response.json() as Submission, answer = await fixture.terminal(task, 'failed');
+    expect(answer.error).toContain('自动摘要后仍无法容纳最近历史');
+    expect((await fixture.snapshot()).messages.slice(0, 6)).toEqual(fixture.seeded.messages);
+    expect(await fixture.resources()).toMatchObject({ calls: 1, dependencies: 0 });
+  } finally { await fixture.cleanup(); }
+});
 
 test('manual summaries pin complete input, are idempotent after model changes, and preserve old facts in bounded chat context', async ({ request }) => {
   const fixture = await setup(request);

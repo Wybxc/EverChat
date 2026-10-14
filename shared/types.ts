@@ -24,6 +24,7 @@ export interface Message {
   streamState?: StreamState;
   generation?: GenerationResult;
   summary?: SummaryCoverage;
+  waitingForSummary?: string;
   durableOffset?: number;
   liveOffset?: number;
 }
@@ -34,6 +35,7 @@ export interface ConversationSettings {
   useGlobalMaxOutputTokens: boolean; maxOutputTokens: number | null;
   recentMessages: number | null; contextBudget: number | null;
   useSummaries: boolean;
+  autoCompression: { enabled: boolean; threshold: number; model: ModelSelection | null };
 }
 export interface PromptPreset { id: string; name: string; systemPrompt: string; updatedAt: number }
 export type PromptPresetInput = Pick<PromptPreset, 'name' | 'systemPrompt'>;
@@ -54,7 +56,7 @@ export type DurableChange = Change | Commit;
 export type SyncPacket = DurableChange | Preview | CommitAck | { type: 'snapshot'; snapshot: Snapshot } | { type: 'ready'; seq: number } | { type: 'deleted'; deletedAt: number };
 export interface ModelSelection { providerId: string; model: string }
 export interface SubmitInput { requestId: string; content?: string; retryOf?: string; revisionOf?: string; branchHead?: string; summaryThrough?: string; selection?: ModelSelection; showReasoning?: boolean; reasoningEffort?: ReasoningEffort; settings?: ConversationSettings }
-export interface Submission { runId: string; userId: string; assistantId: string }
+export interface Submission { runId: string; userId: string; assistantId: string; summaryId?: string }
 export type GenerationExecutor = 'do-v1';
 export interface ChatInput { role: 'system' | 'user' | 'assistant'; content: string }
 export interface ChatModel extends ModelSelection { name: string; providerName: string; provider: ProviderApiKind; baseUrl: string; systemPrompt?: string; reasoningSupported: boolean; reasoningEfforts: ReasoningEffort[]; metadata: ResolvedModelMetadata }

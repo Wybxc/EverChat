@@ -69,6 +69,7 @@ test('capacity reached during generation terminates without retrying, retains th
 test('Library serializes concurrent creations at the limit and allows idempotent retries when full', async ({ request }) => {
   expect((await request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok()).toBe(true);
   const capacity = (seed: boolean) => request.post('/api/__test/library/capacity', { headers, data: { seed } });
+  let createdId: string | undefined;
   try {
     expect(await capacity(true).then((response) => response.json())).toEqual({ count: MAX_CONVERSATIONS - 1 });
     const ids = Array.from({ length: 12 }, () => crypto.randomUUID());
@@ -76,10 +77,17 @@ test('Library serializes concurrent creations at the limit and allows idempotent
     expect(responses.filter((response) => response.status() === 201)).toHaveLength(1);
     expect(responses.filter((response) => response.status() === 507)).toHaveLength(11);
     const index = responses.findIndex((response) => response.status() === 201);
+    createdId = ids[index];
     const repeated = await request.post('/api/conversations', { headers, data: { id: ids[index], title: '__capacity_fixture__' } });
     expect(repeated.status()).toBe(201); expect((await repeated.json()).id).toBe(ids[index]);
     expect(await request.get('/api/conversations').then((response) => response.json()).then((items) => items.conversations.length)).toBe(MAX_CONVERSATIONS);
-  } finally { expect((await capacity(false)).ok()).toBe(true); }
+  } finally {
+    expect((await capacity(false)).ok()).toBe(true);
+    if (createdId) {
+      const search = await request.post('/api/__test/library/search', { headers, data: { id: createdId } }).then((response) => response.json());
+      expect(search.progress).toBeNull();
+    }
+  }
 });
 
 test('a native storage error crosses RPC as a sanitized 507 response', async ({ request }) => {

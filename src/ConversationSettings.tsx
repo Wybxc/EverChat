@@ -7,8 +7,9 @@ import { Autosave } from './autosave';
 import { api } from './api';
 import { read, storageEpoch, write } from './storage';
 import { PromptPresetPicker } from './PromptPresets';
+import { modelSelectionKey } from '../shared/models';
 
-const withContextDefaults = (settings: ConversationSettings) => settings.recentMessages === undefined || settings.contextBudget === undefined || settings.useSummaries === undefined
+const withContextDefaults = (settings: ConversationSettings) => settings.recentMessages === undefined || settings.contextBudget === undefined || settings.useSummaries === undefined || settings.autoCompression === undefined
   ? { ...DEFAULT_CONVERSATION_SETTINGS, ...settings } : settings;
 
 function NumberSetting({ label, value, min, max, integer = false, change }: {
@@ -27,8 +28,8 @@ function NumberSetting({ label, value, min, max, integer = false, change }: {
   </label>;
 }
 
-export function ConversationSettingsDialog({ id, initial, model, effort, showReasoning, open, close, onDraft, managePresets }: {
-  id: string | null; initial: ConversationSettings; model?: ChatModel; effort: ReasoningEffort | ''; showReasoning: boolean;
+export function ConversationSettingsDialog({ id, initial, model, models, effort, showReasoning, open, close, onDraft, managePresets }: {
+  id: string | null; initial: ConversationSettings; model?: ChatModel; models: ChatModel[]; effort: ReasoningEffort | ''; showReasoning: boolean;
   open: boolean; close: () => void; onDraft: (settings: ConversationSettings) => void;
   managePresets: () => void;
 }) {
@@ -45,7 +46,7 @@ export function ConversationSettingsDialog({ id, initial, model, effort, showRea
       if (epoch === storageEpoch() && autosave.getSnapshot().status === 'saved') write(draftKey, { settings, dirty: false });
     }, (_saved, draft) => {
       const result = v.safeParse(conversationSettingsSchema, draft);
-      if (!result.success) throw new Error('请检查参数：Temperature 为 0–2，Top P 为 0–1；Token 预算和消息条数须为范围内的正整数。');
+      if (!result.success) throw new Error('请检查参数：Temperature 为 0–2，Top P 为 0–1；预算和条数须为正整数，自动压缩阈值为 50–95%。');
       return result.output;
     });
     return autosave;
@@ -70,6 +71,9 @@ export function ConversationSettingsDialog({ id, initial, model, effort, showRea
   };
   const support = model ? samplingSupport({ ...model, reasoningEnabled: model.reasoningSupported, reasoningEffort: effort || undefined, showReasoning }) : null;
   const limitMode = settings.useGlobalMaxOutputTokens ? 'inherit' : settings.maxOutputTokens === null ? 'unset' : 'custom';
+  const compression = settings.autoCompression;
+  const compressionModel = compression.model ? modelSelectionKey(compression.model) : '';
+  const compressionModelAvailable = !compression.model || models.some((item) => modelSelectionKey(item) === compressionModel);
   return <dialog id={`conversation-settings-${titleId}`} ref={dialog} className="modal" aria-labelledby={titleId} onClose={close}>
     <div className="modal-box flex max-h-[85dvh] max-w-xl flex-col overflow-hidden p-0">
       <div className="flex shrink-0 items-center justify-between gap-3 p-5">
@@ -90,12 +94,26 @@ export function ConversationSettingsDialog({ id, initial, model, effort, showRea
         {limitMode === 'custom' && <NumberSetting label="输出 Token 上限" value={settings.maxOutputTokens} min={1} max={100000} integer change={(maxOutputTokens) => update({ maxOutputTokens })} />}
         <fieldset className="fieldset border-t border-base-content/20 pt-3">
           <legend className="fieldset-legend">上下文</legend>
-          <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="checkbox checkbox-sm" checked={settings.useSummaries} onChange={(event) => update({ useSummaries: event.currentTarget.checked })} />使用历史摘要</label>
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="checkbox checkbox-sm" checked={settings.useSummaries} onChange={(event) => update({ useSummaries: event.currentTarget.checked, ...(!event.currentTarget.checked ? { autoCompression: { ...compression, enabled: false } } : {}) })} />使用历史摘要</label>
           <div className="grid gap-4 sm:grid-cols-2">
             <NumberSetting label="上下文 Token 预算" value={settings.contextBudget} min={1} max={10000000} integer change={(contextBudget) => update({ contextBudget })} />
             <NumberSetting label="最近历史消息条数" value={settings.recentMessages} min={1} max={1000} integer change={(recentMessages) => update({ recentMessages })} />
           </div>
           <p className="text-xs text-base-content/70">留空按模型窗口；预算包含系统提示词和本次输入，历史按完整轮次选取。</p>
+          <label className="mt-2 flex items-center gap-2 text-sm"><input type="checkbox" className="checkbox checkbox-sm" checked={compression.enabled} onChange={(event) => update({ useSummaries: event.currentTarget.checked || settings.useSummaries, autoCompression: { ...compression, enabled: event.currentTarget.checked } })} />自动压缩历史</label>
+          <p className="text-xs text-base-content/70">开启后会额外调用摘要模型，产生供应商费用。原始消息保留。</p>
+          {compression.enabled && <div className="space-y-3">
+            <NumberSetting label="自动压缩阈值（%）" value={compression.threshold} min={50} max={95} integer change={(threshold) => update({ autoCompression: { ...compression, threshold: threshold ?? Number.NaN } })} />
+            <label className="block space-y-2 text-sm"><span>自动摘要模型</span><select className="select w-full" aria-label="自动摘要模型" value={compressionModel} onChange={(event) => {
+              const selected = models.find((item) => modelSelectionKey(item) === event.currentTarget.value);
+              update({ autoCompression: { ...compression, model: selected ? { providerId: selected.providerId, model: selected.model } : null } });
+            }}>
+              <option value="">当前聊天模型</option>
+              {!compressionModelAvailable && <option value={compressionModel}>所选模型不可用</option>}
+              {models.map((item) => <option key={modelSelectionKey(item)} value={modelSelectionKey(item)}>{item.providerName} · {item.name}</option>)}
+            </select></label>
+            <p className="text-xs text-base-content/70">按摘要及未覆盖的完整历史估算触发；条数限制只用于压缩后的原文。失败后须主动重试。</p>
+          </div>}
         </fieldset>
         {error && <p role="alert" className="text-sm">{error}</p>}
       </div>
