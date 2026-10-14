@@ -10,6 +10,7 @@ import { chatModels } from '../shared/models';
 import { ProviderModelError, fetchProviderModels } from './provider-models';
 import { storageErrorMessage } from './resource-limits';
 import { SEARCH_QUERY_LIMIT } from '../shared/search';
+import { conversationSettingsSchema } from '../shared/conversation-settings';
 
 export { Conversation } from './conversation';
 export { Library } from './library';
@@ -28,6 +29,7 @@ const submitSchema = v.object({
   selection: v.optional(v.object({ providerId: uuidSchema, model: v.pipe(v.string(), v.minLength(1), v.maxLength(200)) })),
   showReasoning: v.optional(v.boolean()),
   reasoningEffort: v.optional(v.picklist(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])),
+  settings: v.optional(conversationSettingsSchema),
 });
 const cancelSchema = v.object({ runId: uuidSchema });
 const conversationPatchSchema = v.object({ title: v.optional(v.pipe(v.string(), v.maxLength(80))), pinned: v.optional(v.boolean()), archived: v.optional(v.boolean()) });
@@ -162,8 +164,18 @@ app.get('/conversations/:id/backup', async (context) => {
   const conversation = await library.get(id);
   if (!conversation) throw new HttpError(404, '找不到这个对话。');
   return json({ format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: Date.now(),
-    conversation: { ...conversation, messages: await context.env.CONVERSATIONS.getByName(id).backup() },
+    conversation: { ...conversation, messages: await context.env.CONVERSATIONS.getByName(id).backup(), settings: await context.env.CONVERSATIONS.getByName(id).settings() },
     settings: await library.backupSettings() });
+});
+
+app.put('/conversations/:id/settings', async (context) => {
+  await requireAuth(context);
+  const id = conversationId(context);
+  await requireConversation(context, id);
+  const settings = await parseBody(context, conversationSettingsSchema, { maxBytes: 160_000, tooLarge: '会话参数太长。' });
+  const result = await context.env.CONVERSATIONS.getByName(id).saveSettings(id, settings);
+  if ('error' in result) return json({ error: result.error }, result.status);
+  return json(result);
 });
 
 app.post('/conversations/:id/duplicate', async (context) => {
@@ -178,8 +190,9 @@ app.post('/conversations/:id/duplicate', async (context) => {
   if ('error' in created) return json({ error: created.error }, created.status);
   try {
     const messages = await context.env.CONVERSATIONS.getByName(id).backup();
+    const settings = await context.env.CONVERSATIONS.getByName(id).settings();
     const restored = await context.env.CONVERSATIONS.getByName(copyId).restore(copyId, {
-      id: source.id, title: source.title, createdAt: source.createdAt, updatedAt: source.updatedAt, messages,
+      id: source.id, title: source.title, createdAt: source.createdAt, updatedAt: source.updatedAt, messages, settings,
     });
     if ('error' in restored) throw new HttpError(restored.status, restored.error);
     await library.touch(copyId);
@@ -241,7 +254,7 @@ app.post('/conversations/:id/messages', async (context) => {
   await requireAuth(context);
   const id = conversationId(context);
   const library = await requireConversation(context, id);
-  const input = await parseBody(context, submitSchema) as SubmitInput;
+  const input = await parseBody(context, submitSchema, { maxBytes: 240_000, tooLarge: '消息或会话参数太长。' }) as SubmitInput;
   if (input.retryOf && (input.content !== undefined || input.revisionOf !== undefined)) throw new HttpError(400, '消息参数无效。');
   if (input.branchHead && input.revisionOf) throw new HttpError(400, '编辑消息不能同时指定分支。');
   if (input.branchHead && input.retryOf && input.branchHead !== input.retryOf) throw new HttpError(400, '重新生成的分支必须对应原回答。');

@@ -121,7 +121,7 @@ test('cached search works offline on mobile, resets on navigation and clears whe
   try {
     await page.goto(`/c/${fixture.id}`); await expect(page.getByTestId('assistant-message')).toHaveCount(2);
     // Development has no Service Worker; finish loading the lazily rendered code block before disconnecting.
-    await expect(page.getByTestId('assistant-message').first().locator('pre')).toContainText('const TARGET = 1;');
+    await expect(page.getByTestId('assistant-message').first().locator('pre.language-js')).toContainText('const TARGET = 1;');
     await context.setOffline(true);
     await page.keyboard.press('ControlOrMeta+f'); await expect(input(page)).toBeFocused();
     await input(page).fill('target'); await expect(status(page)).toContainText('1 / 5');

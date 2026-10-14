@@ -79,6 +79,16 @@ for (const [kind, fixture] of Object.entries(streams)) {
     await assert.rejects(() => generate({ ...config, provider }, history, async (delta) => { text += delta; }, new AbortController().signal));
     assert.equal(text, '你好'); assert.equal(calls, 1);
   });
+  test(`${provider} maps optional sampling controls to the actual supplier request`, async (t) => {
+    t.mock.method(globalThis, 'fetch', async (_input: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string);
+      if (provider === 'gemini') {
+        assert.equal(body.generationConfig.temperature, 0); assert.equal(body.generationConfig.topP, 0.8);
+      } else { assert.equal(body.temperature, 0); assert.equal(body.top_p, provider === 'anthropic' ? undefined : 0.8); }
+      return new Response(fixture.partial + fixture.finish, { headers: { 'Content-Type': 'text/event-stream' } });
+    });
+    await generate({ ...config, provider, temperature: 0, topP: provider === 'anthropic' ? undefined : 0.8 }, history, async () => {}, new AbortController().signal);
+  });
   test(`${provider} uses provider defaults when no output limit is configured`, async (t) => {
     t.mock.method(globalThis, 'fetch', async (_input: string, init: RequestInit) => {
       const body = JSON.parse(init.body as string);

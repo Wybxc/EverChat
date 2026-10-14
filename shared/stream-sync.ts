@@ -44,7 +44,7 @@ export class StreamSync {
     const appended = appendMessage({ ...message, durableOffset: message.liveOffset ?? message.durableOffset }, batch);
     const messages = [...this.view.messages];
     messages[index] = { ...appended, durableOffset: durable.durableOffset, liveOffset: batch.endOffset };
-    this.view = { messages, seq: this.durable.seq };
+    this.view = { ...this.durable, messages };
     this.pending.set(batch.messageId, [...pending, batch]);
   }
   private confirm(ack: CommitAck): Commit | null {

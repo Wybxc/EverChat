@@ -1,6 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
 import type { Env } from './env';
-import type { ChatInput, Change, Commit, DurableChange, GenerationExecutor, Message, MessageStatus, ProviderConfig, Snapshot, StreamBatch, StreamCommit, Submission, SubmitInput } from '../shared/types';
+import type { ChatInput, Change, Commit, ConversationSettings, DurableChange, GenerationExecutor, Message, MessageStatus, ProviderConfig, Snapshot, StreamBatch, StreamCommit, Submission, SubmitInput } from '../shared/types';
 import { isActive } from '../shared/types';
 import { commitAck, payloadBytes, STREAM_VERSION, validateCommit } from '../shared/stream-batches';
 import type { GenerationMeasurements } from '../shared/generation-metrics';
@@ -17,6 +17,7 @@ import type { SearchDocument, SearchPage } from '../shared/search';
 import { searchRetryDelay } from './search-index';
 import { backupMessage, type BackupMessage, type ConversationBackup } from '../shared/backup';
 import { messageContext } from './message-context';
+import { applyConversationSettings, DEFAULT_CONVERSATION_SETTINGS } from '../shared/conversation-settings';
 
 type Row = Message & { generationResult: string | null } & Record<string, SqlStorageValue>;
 type Run = { id: string; conversationId: string; assistantId: string; context: string; config: string | null; chunkSeq: number; updatedAt: number;
@@ -78,6 +79,28 @@ export class Conversation extends DurableObject<Env> {
     if (this.deletedAt) return [];
     return this.all().map(backupMessage);
   }
+  settings(): ConversationSettings {
+    const row = this.query<{ payload: string }>('SELECT payload FROM conversation_settings WHERE id = 1').toArray()[0];
+    return row ? JSON.parse(row.payload) as ConversationSettings : { ...DEFAULT_CONVERSATION_SETTINGS };
+  }
+  private writeSettings(settings: ConversationSettings) {
+    this.query('INSERT INTO conversation_settings VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET payload = excluded.payload', JSON.stringify(settings));
+  }
+  async saveSettings(conversationId: string, settings: ConversationSettings): Promise<ConversationSettings | Failure> {
+    if (this.deletedAt || await this.env.LIBRARY.getByName('personal').deletedAt(conversationId)) return { error: '这个对话已删除。', status: 410 };
+    const result = this.ctx.storage.transactionSync(() => {
+      if (this.deletedAt) return { error: '这个对话已删除。', status: 410 };
+      if (JSON.stringify(this.settings()) === JSON.stringify(settings)) {
+        // An explicit choice of inherited defaults still counts as configured.
+        if (!this.query('SELECT id FROM conversation_settings WHERE id = 1').toArray().length) this.writeSettings(settings);
+        return null;
+      }
+      this.writeSettings(settings); return this.record([], undefined, settings);
+    });
+    if (result && 'error' in result) return result;
+    if (result) this.broadcast(result);
+    return settings;
+  }
   restore(conversationId: string, backup: ConversationBackup): Snapshot | Failure {
     if (this.deletedAt) return { error: '这个对话已删除。', status: 410 };
     if (this.query('SELECT id FROM messages LIMIT 1').toArray().length) return { error: '目标对话已有消息。', status: 409 };
@@ -94,7 +117,8 @@ export class Conversation extends DurableObject<Env> {
         this.insert(message);
         if (message.deletedAt) this.query('INSERT INTO message_deletions VALUES (?, ?)', message.id, message.deletedAt);
       }
-      return this.record(messages, conversationId);
+      this.writeSettings(backup.settings ?? DEFAULT_CONVERSATION_SETTINGS);
+      return this.record(messages, conversationId, this.settings());
     });
     this.broadcast(change);
     this.updateSearchSoon();
@@ -107,19 +131,19 @@ export class Conversation extends DurableObject<Env> {
   private message(id: string): Message | undefined { const message = this.rawMessage(id); return message && this.materialize(message); }
   private run(id: string): Run | undefined { return this.query<Run>('SELECT * FROM runs WHERE id = ?', id).toArray()[0]; }
   private seq(): number { return this.query<{ seq: number }>('SELECT COALESCE(MAX(seq), 0) AS seq FROM events').one().seq; }
-  private snapshot(): Snapshot { return { messages: this.all(), seq: this.seq() }; }
+  private snapshot(): Snapshot { return { messages: this.all(), seq: this.seq(), settings: this.settings() }; }
   snapshotResponse(): Response {
     if (this.deletedAt) return json({ error: '这个对话已删除。' }, 410);
     // RPC transfers a Response body as a stream, keeping history decoding and JSON work out of the Free Worker.
     return json(this.snapshot());
   }
-  private record(messages: Message[], conversationId?: string): Change {
-    const seq = this.recordPayload(JSON.stringify(messages));
+  private record(messages: Message[], conversationId?: string, settings?: ConversationSettings): Change {
+    const seq = this.recordPayload(JSON.stringify(settings ? { messages, settings } : messages));
     if (conversationId) for (const message of messages) if (!isActive(message)) {
       this.query('INSERT INTO message_search_versions VALUES (?, ?) ON CONFLICT(messageId) DO UPDATE SET version = excluded.version', message.id, seq);
       this.query('INSERT INTO search_outbox VALUES (?, ?, ?) ON CONFLICT(messageId) DO UPDATE SET version = excluded.version', message.id, conversationId, seq);
     }
-    return { type: 'change', seq, messages };
+    return { type: 'change', seq, messages, ...(settings ? { settings } : {}) };
   }
   private searchDocument(message: Message, version: number): SearchDocument {
     return { messageId: message.id, version, role: message.role, content: message.content, reasoning: message.reasoning ?? '' };
@@ -265,7 +289,7 @@ export class Conversation extends DurableObject<Env> {
     const accepted = await this.ctx.storage.transaction<Submission | Failure | { result: Submission; change: Change }>(async () => {
       if (this.deletedAt) return { error: '这个对话已删除。', status: 410 };
       const fingerprint = JSON.stringify([input.content ?? null, input.retryOf ?? null, input.revisionOf ?? null, input.branchHead ?? null,
-        input.selection?.providerId ?? null, input.selection?.model ?? null, input.showReasoning ?? null, input.reasoningEffort ?? null]);
+        input.selection?.providerId ?? null, input.selection?.model ?? null, input.showReasoning ?? null, input.reasoningEffort ?? null, input.settings ?? null]);
       const duplicate = () => {
         const existing = this.query<{ fingerprint: string; result: string }>('SELECT * FROM submissions WHERE id = ?', input.requestId).toArray()[0];
         if (!existing) return null;
@@ -298,6 +322,10 @@ export class Conversation extends DurableObject<Env> {
       if (messages.length + (parent ? 1 : 2) > MAX_MESSAGES) return { error: '此对话已达到原型的消息上限，请新建对话。', status: 507 };
       const content = parent?.content ?? input.content?.trim();
       if (!content || content.length > 16_000) return { error: '请输入 1 到 16,000 字的消息。', status: 400 };
+      const settings = input.settings ?? this.settings();
+      let generationConfig: ProviderConfig;
+      try { generationConfig = applyConversationSettings(config, settings); }
+      catch (error) { return { error: error instanceof Error ? error.message : '会话参数无效。', status: 400 }; }
       const runId = crypto.randomUUID();
       const latestAssistant = [...messages].reverse().find((message) => message.role === 'assistant' && message.status === 'completed' && !message.deletedAt);
       const userParentId = original ? original.parentId : requestedHead?.id ?? latestAssistant?.id ?? null;
@@ -311,16 +339,18 @@ export class Conversation extends DurableObject<Env> {
       const assistant: Message = {
         id: crypto.randomUUID(), role: 'assistant', content: '', status: 'queued', createdAt: Date.now(),
         runId, parentId: user.id, revisionOf: previous?.id ?? null, error: null,
-        providerId: config.providerId, model: config.model, modelName: config.modelName || config.model,
+        providerId: generationConfig.providerId, model: generationConfig.model, modelName: generationConfig.modelName || generationConfig.model,
         streamVersion: STREAM_VERSION, durableOffset: 0,
       };
       const result = { runId, userId: user.id, assistantId: assistant.id };
+      const initializeSettings = messages.length === 0 && !this.query('SELECT id FROM conversation_settings WHERE id = 1').toArray().length;
+      if (initializeSettings) this.writeSettings(settings);
       if (!parent) this.insert(user);
       this.insert(assistant);
       this.query('INSERT INTO runs (id, conversationId, assistantId, context, chunkSeq, updatedAt, config, streamVersion, executor) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)',
-        runId, conversationId, assistant.id, JSON.stringify(context), Date.now(), JSON.stringify(config), STREAM_VERSION, 'do-v1');
+        runId, conversationId, assistant.id, JSON.stringify(context), Date.now(), JSON.stringify(generationConfig), STREAM_VERSION, 'do-v1');
       this.query('INSERT INTO submissions VALUES (?, ?, ?)', input.requestId, fingerprint, JSON.stringify(result));
-      const change = this.record(parent ? [this.rawMessage(assistant.id)!] : [this.rawMessage(user.id)!, this.rawMessage(assistant.id)!], conversationId);
+      const change = this.record(parent ? [this.rawMessage(assistant.id)!] : [this.rawMessage(user.id)!, this.rawMessage(assistant.id)!], conversationId, messages.length === 0 ? this.settings() : undefined);
       // The outbox, input/configuration and its alarm commit together before acceptance.
       await this.ctx.storage.setAlarm(Date.now() + 1000);
       return { result, change };
@@ -559,8 +589,9 @@ export class Conversation extends DurableObject<Env> {
       server.send(JSON.stringify({ type: 'snapshot', snapshot: this.snapshot() }));
     } else {
       for (const row of this.query<{ seq: number; payload: string }>('SELECT * FROM events WHERE seq > ? ORDER BY seq', cursor)) {
-        const payload = JSON.parse(row.payload) as Message[] | StreamCommit;
-        server.send(JSON.stringify(Array.isArray(payload) ? { type: 'change', seq: row.seq, messages: payload } : { type: 'commit', seq: row.seq, ...payload }));
+        const payload = JSON.parse(row.payload) as Message[] | StreamCommit | Pick<Change, 'messages' | 'settings'>;
+        server.send(JSON.stringify(Array.isArray(payload) ? { type: 'change', seq: row.seq, messages: payload }
+          : { type: 'runId' in payload ? 'commit' : 'change', seq: row.seq, ...payload }));
       }
     }
     server.send(JSON.stringify({ type: 'ready', seq: current }));

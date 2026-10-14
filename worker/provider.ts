@@ -46,6 +46,8 @@ export async function openProviderStream(config: ProviderConfig, context: ChatIn
     const options: LanguageModelV4CallOptions = {
       prompt,
       maxOutputTokens: config.maxOutputTokens ?? undefined,
+      temperature: config.temperature,
+      topP: config.topP,
       reasoning: deepseek ? undefined : effort,
       providerOptions: compatible ? { compatible: {
         store: false,

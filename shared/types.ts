@@ -25,8 +25,12 @@ export interface Message {
 }
 export interface ConversationInfo { id: string; title: string; createdAt: number; updatedAt: number; pinned: boolean; archived: boolean }
 export interface LibrarySnapshot { conversations: ConversationInfo[]; deletions: { id: string; deletedAt: number }[]; deletionCursor: number; hasMoreDeletions: boolean }
-export interface Snapshot { messages: Message[]; seq: number; deletedAt?: number }
-export interface Change { type: 'change'; seq: number; messages: Message[] }
+export interface ConversationSettings {
+  systemPrompt: string | null; temperature: number | null; topP: number | null;
+  useGlobalMaxOutputTokens: boolean; maxOutputTokens: number | null;
+}
+export interface Snapshot { messages: Message[]; seq: number; deletedAt?: number; settings?: ConversationSettings }
+export interface Change { type: 'change'; seq: number; messages: Message[]; settings?: ConversationSettings }
 export interface StreamBatch {
   version: 'raw-sse-v1'; runId: string; messageId: string; chunkSeq: number;
   startOffset: number; endOffset: number; data: string;
@@ -41,11 +45,11 @@ export interface Preview { type: 'preview'; batch: StreamBatch }
 export type DurableChange = Change | Commit;
 export type SyncPacket = DurableChange | Preview | CommitAck | { type: 'snapshot'; snapshot: Snapshot } | { type: 'ready'; seq: number } | { type: 'deleted'; deletedAt: number };
 export interface ModelSelection { providerId: string; model: string }
-export interface SubmitInput { requestId: string; content?: string; retryOf?: string; revisionOf?: string; branchHead?: string; selection?: ModelSelection; showReasoning?: boolean; reasoningEffort?: ReasoningEffort }
+export interface SubmitInput { requestId: string; content?: string; retryOf?: string; revisionOf?: string; branchHead?: string; selection?: ModelSelection; showReasoning?: boolean; reasoningEffort?: ReasoningEffort; settings?: ConversationSettings }
 export interface Submission { runId: string; userId: string; assistantId: string }
 export type GenerationExecutor = 'do-v1';
 export interface ChatInput { role: 'system' | 'user' | 'assistant'; content: string }
-export interface ChatModel extends ModelSelection { name: string; providerName: string; reasoningSupported: boolean; reasoningEfforts: ReasoningEffort[] }
+export interface ChatModel extends ModelSelection { name: string; providerName: string; provider: ProviderApiKind; baseUrl: string; reasoningSupported: boolean; reasoningEfforts: ReasoningEffort[] }
 export interface SessionInfo { authenticated: boolean; provider: string; model: string; modelName?: string; activeProviderId?: string | null; models?: ChatModel[]; configured: boolean; showReasoning?: boolean; systemPrompt?: string; maxOutputTokens?: number | null }
 
 export type ProviderKind = 'openai-chat' | 'anthropic' | 'openai-responses' | 'gemini';
@@ -57,6 +61,8 @@ export interface ProviderConfig {
   modelName?: string;
   systemPrompt: string;
   maxOutputTokens: number | null;
+  temperature?: number;
+  topP?: number;
   apiKey?: string;
   providerId?: string;
   reasoningEnabled?: boolean;
@@ -129,14 +135,14 @@ export function applyChange(snapshot: Snapshot, change: DurableChange): Snapshot
     if (index === -1) throw new Error('Missing streamed message');
     validateCommit(change);
     for (const batch of change.batches) messages[index] = appendMessage(messages[index], batch);
-    return { messages, seq: change.seq };
+    return { ...snapshot, messages, seq: change.seq };
   }
   for (const message of change.messages) {
     const index = messages.findIndex((existing) => existing.id === message.id);
     if (index === -1) messages.push(message);
     else messages[index] = message;
   }
-  return { messages, seq: change.seq };
+  return { ...snapshot, messages, seq: change.seq, ...(change.settings ? { settings: change.settings } : {}) };
 }
 
 export function appendMessage(message: Message, batch: StreamBatch): Message {

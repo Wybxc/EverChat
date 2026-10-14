@@ -107,7 +107,7 @@ test('tabbed settings autosave model names and enabled choices; the close button
     const profileId = (await getSettings()).providers[0].id;
     await page.getByLabel('显示思考内容', { exact: true }).check();
     await page.getByLabel('默认模型').selectOption(JSON.stringify([profileId, 'test-model']));
-    await page.getByLabel('系统提示词').fill('自动保存的提示词');
+    await page.getByLabel('系统提示词', { exact: true }).fill('自动保存的提示词');
     await page.getByLabel('输出上限（Tokens）').fill('256');
     await saved(page);
     expect(await context.request.get('/api/session').then((response) => response.json())).toMatchObject({ model: 'test-model', modelName: '快速模型' });
@@ -181,7 +181,7 @@ test('tabbed settings autosave model names and enabled choices; the close button
     expect((await context.request.put('/api/settings/providers', { headers, data: { ...settings, systemPrompt: '其他设备更新' } })).status()).toBe(200);
     await page.getByRole('button', { name: '空间设置', exact: true }).click();
     await tab(page, '对话');
-    await expect(page.getByLabel('系统提示词')).toHaveValue('其他设备更新');
+    await expect(page.getByLabel('系统提示词', { exact: true })).toHaveValue('其他设备更新');
     await tab(page, '供应商');
 
     await page.getByRole('button', { name: '删除供应商 Gemini 备用' }).click();
@@ -223,9 +223,9 @@ test('autosave validation and network failures preserve drafts and allow retry',
       if (route.request().method() === 'PUT') await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '暂时无法保存' }) });
       else await route.continue();
     });
-    await page.getByLabel('系统提示词').fill('失败后保留的草稿');
+    await page.getByLabel('系统提示词', { exact: true }).fill('失败后保留的草稿');
     await expect(page.getByTestId('settings-save-status')).toContainText('暂时无法保存');
-    await expect(page.getByLabel('系统提示词')).toHaveValue('失败后保留的草稿');
+    await expect(page.getByLabel('系统提示词', { exact: true })).toHaveValue('失败后保留的草稿');
     await page.unroute('**/api/settings/providers');
     await page.getByRole('button', { name: '重试', exact: true }).click();
     await saved(page);

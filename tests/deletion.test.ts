@@ -23,12 +23,16 @@ test('a deletion marker prevents a delayed cache write or draft from restoring a
   try {
   const id = crypto.randomUUID();
   write(`draft:${id}`, { text: 'old draft' });
+  write(`conversation-settings-draft:${id}`, { settings: { systemPrompt: 'old private prompt' }, dirty: true });
   markConversationDeleted(id, 100);
   write(`snapshot:${id}`, { messages: ['stale body'], seq: 5 });
   write(`draft:${id}`, { text: 'stale draft' });
+  write(`conversation-settings-draft:${id}`, { settings: { systemPrompt: 'stale private prompt' }, dirty: true });
   assert.equal(deletedAt(id), 100);
   assert.deepEqual(cachedSnapshot(id), { messages: [], seq: 0, deletedAt: 100 });
   assert.deepEqual(read(`draft:${id}`, { text: '' }), { text: '' });
   assert.equal(fallback.has(`everchat:draft:${id}`), false);
+  assert.equal(read(`conversation-settings-draft:${id}`, null), null);
+  assert.equal(fallback.has(`everchat:conversation-settings-draft:${id}`), false);
   } finally { if (descriptor) Object.defineProperty(globalThis, 'localStorage', descriptor); else Reflect.deleteProperty(globalThis, 'localStorage'); }
 });

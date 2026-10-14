@@ -59,6 +59,7 @@ function persist(key: string, value: unknown) {
     if (epoch !== persistEpoch) return;
     if (key.startsWith('snapshot:') && deletedAt(key.slice(9)) && !(value as Snapshot).deletedAt) return;
     if (key.startsWith('draft:') && deletedAt(key.slice(6))) return;
+    if (key.startsWith('conversation-settings-draft:') && deletedAt(key.slice(28))) return;
     try { localStorage.setItem(fullKey, JSON.stringify(value)); } catch { /* Cloud remains authoritative. */ }
   };
   try { void set(fullKey, value).catch(fallback); }
@@ -74,15 +75,18 @@ export const deletedAt = (id: string) => read<number | null>(`deleted:${id}`, nu
 export function write(key: string, value: unknown) {
   if (key.startsWith('snapshot:') && deletedAt(key.slice(9)) && !(value as Snapshot).deletedAt) return;
   if (key.startsWith('draft:') && deletedAt(key.slice(6))) return;
+  if (key.startsWith('conversation-settings-draft:') && deletedAt(key.slice(28))) return;
   persist(key, value);
 }
 export function markConversationDeleted(id: string, time: number) {
   persist(`deleted:${id}`, time);
   persist(`snapshot:${id}`, { messages: [], seq: 0, deletedAt: time });
-  const draft = storageKey(`draft:${id}`);
-  cache.delete(draft);
-  try { localStorage.removeItem(draft); } catch { /* The deletion marker also prevents recovering the draft. */ }
-  discard([draft]);
+  const keys = [storageKey(`draft:${id}`), storageKey(`conversation-settings-draft:${id}`)];
+  for (const key of keys) {
+    cache.delete(key);
+    try { localStorage.removeItem(key); } catch { /* The deletion marker also prevents recovering the draft. */ }
+  }
+  discard(keys);
 }
 
 export function writePending(items: Pending[]): boolean {

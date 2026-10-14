@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { BACKUP_FORMAT, BACKUP_VERSION, backupMessage, validateBackup } from '../shared/backup';
 import type { Message } from '../shared/types';
+import { DEFAULT_CONVERSATION_SETTINGS } from '../shared/conversation-settings';
 
 const assistant: Message = {
   id: crypto.randomUUID(), role: 'assistant', content: '已保存的回答', reasoning: '思考过程', status: 'running', createdAt: 2,
@@ -43,4 +44,7 @@ test('validateBackup accepts version 1 backups and rejects malformed messages', 
   assert.equal(backup.conversation.messages[0].reasoning, '思考');
   assert.throws(() => validateBackup({ ...backup, conversation: { ...backup.conversation, messages: [{ ...backup.conversation.messages[0], status: 'running' }] } }), /消息字段无效/);
   assert.throws(() => validateBackup({ ...backup, version: 2 }), /版本不受支持/);
+  const settings = { ...DEFAULT_CONVERSATION_SETTINGS, systemPrompt: '会话提示', useGlobalMaxOutputTokens: false };
+  assert.deepEqual(validateBackup({ ...backup, conversation: { ...backup.conversation, settings } }).conversation.settings, settings);
+  assert.throws(() => validateBackup({ ...backup, conversation: { ...backup.conversation, settings: { ...settings, temperature: 8 } } }), /会话参数无效/);
 });

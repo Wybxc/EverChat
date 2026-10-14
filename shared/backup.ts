@@ -1,4 +1,6 @@
-import type { ConversationInfo, Message, ProviderApiKind, ProviderModel } from './types';
+import type { ConversationInfo, ConversationSettings, Message, ProviderApiKind, ProviderModel } from './types';
+import * as v from 'valibot';
+import { conversationSettingsSchema } from './conversation-settings';
 
 export const BACKUP_FORMAT = 'everchat-backup';
 export const BACKUP_VERSION = 1 as const;
@@ -21,6 +23,7 @@ export interface BackupMessage {
 }
 export interface ConversationBackup {
   id: string; title: string; createdAt: number; updatedAt: number; messages: BackupMessage[];
+  settings?: ConversationSettings;
 }
 export interface EverChatBackup {
   format: typeof BACKUP_FORMAT; version: typeof BACKUP_VERSION; exportedAt: number;
@@ -40,8 +43,8 @@ export function backupMessage(message: Message): BackupMessage {
   };
 }
 
-export function backupConversation(info: ConversationInfo, messages: Message[]): ConversationBackup {
-  return { id: info.id, title: info.title, createdAt: info.createdAt, updatedAt: info.updatedAt, messages: messages.map(backupMessage) };
+export function backupConversation(info: ConversationInfo, messages: Message[], settings?: ConversationSettings): ConversationBackup {
+  return { id: info.id, title: info.title, createdAt: info.createdAt, updatedAt: info.updatedAt, messages: messages.map(backupMessage), ...(settings ? { settings } : {}) };
 }
 
 const isString = (value: unknown, max: number): value is string => typeof value === 'string' && value.length <= max;
@@ -54,6 +57,8 @@ export function validateBackup(value: unknown): EverChatBackup {
   if (input.format !== BACKUP_FORMAT || input.version !== BACKUP_VERSION || !conversation || typeof conversation !== 'object') throw new Error('备份文件版本不受支持。');
   if (!isUuid(conversation.id) || !isString(conversation.title, 80) || !conversation.title.trim() || !Number.isSafeInteger(conversation.createdAt) || !Number.isSafeInteger(conversation.updatedAt)) throw new Error('备份中的对话信息无效。');
   if (!Array.isArray(conversation.messages) || conversation.messages.length > MAX_BACKUP_MESSAGES) throw new Error('备份中的消息数量无效。');
+  const conversationSettings = conversation.settings === undefined ? undefined : v.safeParse(conversationSettingsSchema, conversation.settings);
+  if (conversationSettings && !conversationSettings.success) throw new Error('备份中的会话参数无效。');
   const messages = conversation.messages.map((raw) => {
     if (!raw || typeof raw !== 'object') throw new Error('备份中的消息无效。');
     const message = raw as Record<string, unknown>;
@@ -86,7 +91,8 @@ export function validateBackup(value: unknown): EverChatBackup {
   });
   return {
     format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: Number.isSafeInteger(input.exportedAt) ? Number(input.exportedAt) : Date.now(),
-    conversation: { id: conversation.id, title: conversation.title, createdAt: Number(conversation.createdAt), updatedAt: Number(conversation.updatedAt), messages },
+    conversation: { id: conversation.id, title: conversation.title, createdAt: Number(conversation.createdAt), updatedAt: Number(conversation.updatedAt), messages,
+      ...(conversationSettings?.success ? { settings: conversationSettings.output } : {}) },
     settings: { providers, activeProviderId: settings.activeProviderId as string | null, activeModel: settings.activeModel,
       systemPrompt: settings.systemPrompt, maxOutputTokens: settings.maxOutputTokens as number | null, showReasoning: settings.showReasoning },
   };

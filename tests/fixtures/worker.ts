@@ -151,8 +151,10 @@ export class Conversation extends ProductionConversation {
     return { ...run, calls };
   }
   fixtureContext(runId: string) {
-    const run = this.ctx.storage.sql.exec<{ assistantId: string; context: string }>('SELECT assistantId, context FROM runs WHERE id = ?', runId).one();
-    return { assistantId: run.assistantId, context: JSON.parse(run.context) };
+    const run = this.ctx.storage.sql.exec<{ assistantId: string; context: string; config: string | null }>('SELECT assistantId, context, config FROM runs WHERE id = ?', runId).one();
+    const config = run.config ? JSON.parse(run.config) : null;
+    if (config) delete config.apiKey;
+    return { assistantId: run.assistantId, context: JSON.parse(run.context), config };
   }
   fixtureReenterAlarm() { return this.alarm(); }
   fixtureRetrySearch() { this.ctx.storage.sql.exec('UPDATE search_retry SET nextAt = 0'); return this.alarm(); }

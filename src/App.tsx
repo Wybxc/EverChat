@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type SubmitEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowDown, ArrowRight, ArrowUp, Check, CheckCheck, CloudOff, Copy, Download, Feather, Infinity as InfinityIcon, Lightbulb, LockKeyhole, Menu, MessageCircle, Monitor, Moon, Pencil, Pin, Plus, Quote, RefreshCw, Search, Settings, Sparkles, Square, Sun, Trash2, WifiOff, X } from 'lucide-react';
+import { ArrowDown, ArrowRight, ArrowUp, Check, CheckCheck, CloudOff, Copy, Download, Feather, Infinity as InfinityIcon, Lightbulb, LockKeyhole, Menu, MessageCircle, Monitor, Moon, Pencil, Pin, Plus, Quote, RefreshCw, Search, Settings, SlidersHorizontal, Sparkles, Square, Sun, Trash2, WifiOff, X } from 'lucide-react';
 import 'streamdown/styles.css';
 import 'katex/dist/katex.min.css';
 import type { PluginConfig } from 'streamdown';
-import { isActive, type ConversationInfo, type LibrarySnapshot, type Message, type ProviderSettings, type ReasoningEffort, type SessionInfo, type Submission, type SubmitInput } from '../shared/types';
+import { isActive, type ConversationInfo, type ConversationSettings, type LibrarySnapshot, type Message, type ProviderSettings, type ReasoningEffort, type SessionInfo, type Submission, type SubmitInput } from '../shared/types';
 import { api, ApiError } from './api';
 import { clearLocal, deletedAt, markConversationDeleted, read, write, writePending, type Pending } from './storage';
 import { useConversation } from './useConversation';
@@ -19,6 +19,9 @@ import { LibrarySearch } from './LibrarySearch';
 import type { SearchResult } from '../shared/search';
 import type { EverChatBackup } from '../shared/backup';
 import { MessageMutationDialog } from './MessageMutationDialog';
+import { ConversationSettingsDialog } from './ConversationSettings';
+import { applyConversationSettings, conversationSettingsSchema, DEFAULT_CONVERSATION_SETTINGS } from '../shared/conversation-settings';
+import * as v from 'valibot';
 
 const EMPTY_SESSION: SessionInfo = { authenticated: false, configured: false, provider: '', model: '' };
 type MarkdownRenderer = typeof import('streamdown')['Streamdown'];
@@ -198,6 +201,13 @@ export function App() {
   const [modelChoice, setModelChoice] = useState<string>(() => read('chat-model', ''));
   const [branchHead, setBranchHead] = useState<string | null>(null);
   const [messageMutation, setMessageMutation] = useState<{ id: string; mode: 'edit' | 'delete' } | null>(null);
+  const [conversationSettingsOpen, setConversationSettingsOpen] = useState(false);
+  const [newConversationSettings, setNewConversationSettings] = useState(() => read('conversation-settings:new', DEFAULT_CONVERSATION_SETTINGS));
+  const [settingsDraft, setSettingsDraft] = useState<{ id: string | null; settings: ConversationSettings } | null>(null);
+  const settingsDraftChanged = useCallback((settings: ConversationSettings) => {
+    setSettingsDraft({ id: selected, settings });
+    if (!selected) setNewConversationSettings(settings);
+  }, [selected]);
   const models = session?.models ?? [];
   const selectedModel = models.find((model) => modelSelectionKey(model) === modelChoice)
     ?? models.find((model) => model.providerId === session?.activeProviderId && model.model === session?.model)
@@ -332,6 +342,7 @@ export function App() {
     setDraft(saved.text); setRevisionOf(saved.revisionOf); setError('');
   }, [selected]);
   useEffect(() => { setBranchHead(selected ? read<string | null>(`branch-head:${selected}`, null) : null); }, [selected]);
+  useEffect(() => { setConversationSettingsOpen(false); }, [selected]);
   useEffect(() => {
     if (!selectedModel?.reasoningSupported) { setReasoningEffort(''); return; }
     const saved = read<ReasoningEffort | ''>(`reasoning-effort:${modelSelectionKey(selectedModel)}`, '');
@@ -362,6 +373,9 @@ export function App() {
   };
 
   const queue = async (input: SubmitInput) => {
+    const settings = v.safeParse(conversationSettingsSchema, settingsDraft?.id === selected ? settingsDraft.settings : selected ? snapshot.settings ?? DEFAULT_CONVERSATION_SETTINGS : newConversationSettings);
+    if (!settings.success) { setError('请先修正会话参数。'); return; }
+    input = { ...input, settings: settings.output };
     if (!input.selection && selectedModel) input = { ...input, selection: { providerId: selectedModel.providerId, model: selectedModel.model } };
     const selectedBranch = branchHead && snapshot.messages.some((message) => message.id === branchHead && message.role === 'assistant' && message.status === 'completed' && !message.deletedAt) ? branchHead : undefined;
     if (input.content !== undefined && input.revisionOf === undefined && selectedBranch && input.branchHead === undefined) input = { ...input, branchHead: selectedBranch };
@@ -372,6 +386,11 @@ export function App() {
       : generationModel ? read<ReasoningEffort | ''>(`reasoning-effort:${modelSelectionKey(generationModel)}`, '') : '';
     if (input.reasoningEffort === undefined && generationModel?.reasoningSupported && generationEffort && generationModel.reasoningEfforts.includes(generationEffort)) {
       input = { ...input, reasoningEffort: generationEffort };
+    }
+    if (generationModel) {
+      try { applyConversationSettings({ ...generationModel, reasoningEnabled: generationModel.reasoningSupported, reasoningEffort: input.reasoningEffort,
+        showReasoning: input.showReasoning, systemPrompt: '', maxOutputTokens: null }, settings.output); }
+      catch (error) { setError(error instanceof Error ? error.message : '会话参数无效。'); return; }
     }
     const conversation: ConversationInfo = currentConversation ?? {
       id: selected ?? crypto.randomUUID(), title: (input.content ?? '新对话').trim().slice(0, 26), createdAt: Date.now(), updatedAt: Date.now(), pinned: false, archived: false,
@@ -438,7 +457,9 @@ export function App() {
   const logout = async () => {
     try {
       await api('/logout', 'POST'); clearLocal(); pendingRef.current = []; setPending([]);
-      setLocalConversations([]); queryClient.clear(); navigate(null, true); setDraft(''); setRevisionOf(undefined); loggedOut(); settings.current?.close();
+      setLocalConversations([]); queryClient.clear(); navigate(null, true); setDraft(''); setRevisionOf(undefined);
+      setNewConversationSettings({ ...DEFAULT_CONVERSATION_SETTINGS }); setSettingsDraft(null); setConversationSettingsOpen(false);
+      loggedOut(); settings.current?.close();
     } catch (error) { setError(error instanceof Error ? error.message : '退出失败，请联网后重试。'); settings.current?.close(); }
   };
   const exportChat = (format: 'md' | 'txt' | 'html') => {
@@ -522,7 +543,7 @@ export function App() {
     <div className="flex min-w-0 flex-1 flex-col">
       <header className="flex h-18 shrink-0 items-center justify-between border-b border-base-content/50 px-5 sm:px-8">
         <div className="flex min-w-0 items-center gap-3"><button ref={mobileSidebarTrigger} className="btn btn-ghost btn-sm btn-square lg:hidden" onClick={() => setSidebarOpen(true)} aria-label="打开对话列表"><Menu size={19} /></button><div className="min-w-0"><p className="truncate text-sm font-medium">{invalidRoute ? '页面不可用' : currentConversation?.title ?? (selected ? '对话' : '新对话')}</p><p className="mt-1 text-[10px] text-base-content/60">{selectedModel?.name || session.modelName || session.model || '未选择模型'}</p></div></div>
-        <div className="flex shrink-0 items-center gap-3"><span aria-live="polite" className="hidden items-center gap-1.5 text-[11px] text-base-content/60 sm:flex" title={syncedAt ? `上次同步 ${new Date(syncedAt).toLocaleTimeString('zh-CN')}` : undefined}>{connection === 'offline' ? <CloudOff size={14} /> : <span className={`status status-xs ${connection === 'connected' && !hasUnconfirmed ? 'status-success' : 'status-warning'}`} />}{statusText}</span>{canSearch && <button ref={searchTrigger} type="button" aria-label="搜索当前对话" aria-expanded={searchOpen} aria-controls={searchOpen ? 'conversation-search' : undefined} title="搜索当前对话（Ctrl / ⌘ F）" className="btn btn-ghost btn-sm btn-square" onClick={() => searchOpen ? closeConversationSearch() : setConversationSearchFor(selected)}><Search size={16} /></button>}{currentConversation && <ConversationActions key={currentConversation.id} conversation={currentConversation} disabled={connection === 'offline'} update={updateConversation} remove={deleteConversation} duplicate={duplicateConversation} />}<div className="dropdown dropdown-end"><button type="button" aria-label="对话文件操作" title="导出或导入对话" className="btn btn-ghost btn-sm btn-square"><Download size={16} /></button><ul tabIndex={0} className="dropdown-content menu z-50 mt-2 w-48 rounded-box border border-base-content/20 bg-base-100 p-2 shadow"><li className="menu-title">导出对话</li><li><button type="button" disabled={!snapshot.messages.length} onClick={() => exportChat('md')}>Markdown</button></li><li><button type="button" disabled={!snapshot.messages.length} onClick={() => exportChat('txt')}>纯文本</button></li><li><button type="button" disabled={!snapshot.messages.length} onClick={() => exportChat('html')}>HTML</button></li><li><button type="button" disabled={!currentConversation || !snapshot.messages.length} onClick={() => void exportBackup()}>下载备份</button></li><li className="menu-title mt-1">恢复</li><li><button type="button" onClick={() => backupInput.current?.click()}>导入备份</button></li></ul></div><input ref={backupInput} type="file" accept=".json,application/json" className="hidden" onChange={(event) => void importBackup(event)} /><button aria-label="空间设置" className="btn btn-ghost btn-sm btn-square" onClick={openSettings}><Settings size={17} /></button></div>
+        <div className="flex shrink-0 items-center gap-3"><span aria-live="polite" className="hidden items-center gap-1.5 text-[11px] text-base-content/60 sm:flex" title={syncedAt ? `上次同步 ${new Date(syncedAt).toLocaleTimeString('zh-CN')}` : undefined}>{connection === 'offline' ? <CloudOff size={14} /> : <span className={`status status-xs ${connection === 'connected' && !hasUnconfirmed ? 'status-success' : 'status-warning'}`} />}{statusText}</span>{canSearch && <button ref={searchTrigger} type="button" aria-label="搜索当前对话" aria-expanded={searchOpen} aria-controls={searchOpen ? 'conversation-search' : undefined} title="搜索当前对话（Ctrl / ⌘ F）" className="btn btn-ghost btn-sm btn-square" onClick={() => searchOpen ? closeConversationSearch() : setConversationSearchFor(selected)}><Search size={16} /></button>}<button type="button" aria-label="会话参数" title="会话参数" className="btn btn-ghost btn-sm btn-square" disabled={Boolean(invalidRoute || syncError)} onClick={() => setConversationSettingsOpen(true)}><SlidersHorizontal size={16} /></button>{currentConversation && <ConversationActions key={currentConversation.id} conversation={currentConversation} disabled={connection === 'offline'} update={updateConversation} remove={deleteConversation} duplicate={duplicateConversation} />}<div className="dropdown dropdown-end"><button type="button" aria-label="对话文件操作" title="导出或导入对话" className="btn btn-ghost btn-sm btn-square"><Download size={16} /></button><ul tabIndex={0} className="dropdown-content menu z-50 mt-2 w-48 rounded-box border border-base-content/20 bg-base-100 p-2 shadow"><li className="menu-title">导出对话</li><li><button type="button" disabled={!snapshot.messages.length} onClick={() => exportChat('md')}>Markdown</button></li><li><button type="button" disabled={!snapshot.messages.length} onClick={() => exportChat('txt')}>纯文本</button></li><li><button type="button" disabled={!snapshot.messages.length} onClick={() => exportChat('html')}>HTML</button></li><li><button type="button" disabled={!currentConversation || !snapshot.messages.length} onClick={() => void exportBackup()}>下载备份</button></li><li className="menu-title mt-1">恢复</li><li><button type="button" onClick={() => backupInput.current?.click()}>导入备份</button></li></ul></div><input ref={backupInput} type="file" accept=".json,application/json" className="hidden" onChange={(event) => void importBackup(event)} /><button aria-label="空间设置" className="btn btn-ghost btn-sm btn-square" onClick={openSettings}><Settings size={17} /></button></div>
       </header>
       {searchOpen && <ConversationSearch key={`${selected}:${searchJump?.token ?? ''}`} content={content} viewport={viewport} close={closeConversationSearch} initial={searchJump ?? undefined} />}
       {connection === 'offline' && <div role="status" className="flex items-center justify-center gap-2 border-b border-base-content/50 bg-base-200 px-4 py-2 text-xs text-base-content"><WifiOff size={13} />你现在离线，已保存的对话仍可阅读。新消息将在联网后发送。</div>}
@@ -568,6 +589,7 @@ export function App() {
       </div>
       <form method="dialog" className="modal-backdrop"><button>关闭</button></form>
     </dialog>
+    {session?.authenticated && <ConversationSettingsDialog key={selected ?? 'new'} id={selected} initial={selected ? snapshot.settings ?? DEFAULT_CONVERSATION_SETTINGS : newConversationSettings} model={selectedModel} effort={reasoningEffort} showReasoning={session.showReasoning ?? false} open={conversationSettingsOpen} close={() => setConversationSettingsOpen(false)} onDraft={settingsDraftChanged} />}
     {messageMutation && mutationMessage && <MessageMutationDialog key={`${selected}:${messageMutation.id}:${messageMutation.mode}`} message={mutationMessage} mode={messageMutation.mode} confirm={confirmMessageMutation} close={() => setMessageMutation(null)} />}
   </div>;
 }

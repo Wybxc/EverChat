@@ -4,6 +4,7 @@ import { StreamSync } from '../shared/stream-sync';
 import { commitAck, streamBatches } from '../shared/stream-batches';
 import { ProviderStream, encodeBytes } from '../shared/provider-stream';
 import type { Commit, Message } from '../shared/types';
+import { DEFAULT_CONVERSATION_SETTINGS } from '../shared/conversation-settings';
 
 const message: Message = { id: 'answer', role: 'assistant', content: '', reasoning: '', status: 'running', createdAt: 1,
   runId: 'run', parentId: 'user', revisionOf: null, error: null, streamVersion: 'raw-sse-v1', durableOffset: 0, streamState: new ProviderStream('openai-chat', true).checkpoint() };
@@ -11,6 +12,17 @@ const wire = (content: string, reasoning: string) => new TextEncoder().encode(`d
 const first = [...streamBatches('run', 'answer', 0, 0, wire('**正文🙂**', '先思考'))][0];
 const second = [...streamBatches('run', 'answer', 1, first.endOffset, wire('第二段', '**结论**'))][0];
 const commit: Commit = { type: 'commit', seq: 1, runId: 'run', messageId: 'answer', batches: [first] };
+
+test('settings changes survive live previews, confirmation and message-only updates', () => {
+  const settings = { ...DEFAULT_CONVERSATION_SETTINGS, systemPrompt: 'conversation prompt' };
+  const sync = new StreamSync({ messages: [message], seq: 0, settings: DEFAULT_CONVERSATION_SETTINGS });
+  sync.receive({ type: 'preview', batch: first });
+  sync.receive({ type: 'change', seq: 1, messages: [], settings });
+  assert.deepEqual(sync.view.settings, settings); assert.equal(sync.hasPreview, true);
+  sync.receive(commitAck({ ...commit, seq: 2 }));
+  sync.receive({ type: 'change', seq: 3, messages: [{ ...sync.durable.messages[0], status: 'completed' }] });
+  assert.deepEqual(sync.durable.settings, settings); assert.deepEqual(sync.view.settings, settings);
+});
 
 test('only confirmed output enters the durable snapshot; confirming a prefix preserves its live tail', () => {
   const sync = new StreamSync({ messages: [message], seq: 0 });

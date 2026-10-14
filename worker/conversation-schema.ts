@@ -12,6 +12,7 @@ export function initializeConversation(sql: SqlStorage, metrics: boolean) {
   )`);
   sql.exec('CREATE TABLE IF NOT EXISTS submissions (id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, result TEXT NOT NULL)');
   sql.exec('CREATE TABLE IF NOT EXISTS message_deletions (id TEXT PRIMARY KEY, deletedAt INTEGER NOT NULL)');
+  sql.exec('CREATE TABLE IF NOT EXISTS conversation_settings (id INTEGER PRIMARY KEY CHECK (id = 1), payload TEXT NOT NULL)');
   sql.exec(`CREATE TABLE IF NOT EXISTS runs (
     id TEXT PRIMARY KEY, conversationId TEXT NOT NULL, assistantId TEXT NOT NULL,
     context TEXT NOT NULL, chunkSeq INTEGER NOT NULL DEFAULT 0, updatedAt INTEGER NOT NULL,

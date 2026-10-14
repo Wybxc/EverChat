@@ -33,6 +33,7 @@ export function chatModels(settings: ProviderSettings | ProviderSettingsInput): 
   return settings.providers.flatMap((profile) => profile.apiKey || ('hasApiKey' in profile && profile.hasApiKey)
     ? profile.models.filter((model) => model.enabled).map((model) => ({
       providerId: profile.id, providerName: profile.name, model: model.id, name: model.name || model.id,
+      provider: profile.provider, baseUrl: profile.baseUrl,
       reasoningSupported: modelReasoning(profile.provider, model).supported,
       reasoningEfforts: modelReasoning(profile.provider, model).efforts,
     })) : []);
