@@ -29,6 +29,8 @@ export interface ConversationSettings {
   systemPrompt: string | null; temperature: number | null; topP: number | null;
   useGlobalMaxOutputTokens: boolean; maxOutputTokens: number | null;
 }
+export interface PromptPreset { id: string; name: string; systemPrompt: string; updatedAt: number }
+export type PromptPresetInput = Pick<PromptPreset, 'name' | 'systemPrompt'>;
 export interface Snapshot { messages: Message[]; seq: number; deletedAt?: number; settings?: ConversationSettings }
 export interface Change { type: 'change'; seq: number; messages: Message[]; settings?: ConversationSettings }
 export interface StreamBatch {

@@ -1,11 +1,12 @@
 import { DurableObject } from 'cloudflare:workers';
 import type { Env } from './env';
-import type { ConversationInfo, ModelSelection, ProviderConfig, ProviderModelConfig, ProviderSettings, ProviderSettingsInput, ReasoningEffort } from '../shared/types';
+import type { ConversationInfo, ModelSelection, PromptPreset, PromptPresetInput, ProviderConfig, ProviderModelConfig, ProviderSettings, ProviderSettingsInput, ReasoningEffort } from '../shared/types';
 import { defaultProviderSettings, mergeProviderSettings, publicProviderSettings, runtimeProviderConfig } from './provider-config';
 import { MAX_CONVERSATIONS } from './resource-limits';
 import { SearchIndex, SearchChanged, SEARCH_CAPACITY_MESSAGE, searchRetryDelay } from './search-index';
 import type { SearchDocument } from '../shared/search';
 import type { BackupSettings } from '../shared/backup';
+import { PromptPresets, PromptPresetError } from './prompt-presets';
 
 type Deletion = { id: string; deletedAt: number; completed: number } & Record<string, SqlStorageValue>;
 const conversationSelect = `SELECT conversations.*, COALESCE(metadata.pinned, 0) AS pinned, COALESCE(metadata.archived, 0) AS archived
@@ -15,8 +16,10 @@ const decorate = (row: Record<string, SqlStorageValue>) => ({ ...row, pinned: Bo
 
 export class Library extends DurableObject<Env> {
   private readonly searchIndex: SearchIndex;
+  private readonly presets: PromptPresets;
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
+    this.presets = new PromptPresets(ctx.storage);
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS conversations (id TEXT PRIMARY KEY, title TEXT NOT NULL, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL)`);
     ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS conversation_metadata (id TEXT PRIMARY KEY, pinned INTEGER NOT NULL, archived INTEGER NOT NULL)');
     ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS conversation_deletions (id TEXT PRIMARY KEY, deletedAt INTEGER NOT NULL, completed INTEGER NOT NULL DEFAULT 0)');
@@ -179,22 +182,34 @@ export class Library extends DurableObject<Env> {
     return runtimeProviderConfig(this.providerSettingsData(), selection, effort);
   }
   providerSettings(): ProviderSettings { return publicProviderSettings(this.providerSettingsData()); }
+  promptPresets() { return this.presets.list(); }
+  savePromptPreset(id: string, input: PromptPresetInput) {
+    try { return this.presets.save(id, input); }
+    catch (error) { if (error instanceof PromptPresetError) return { error: error.message, status: error.status }; throw error; }
+  }
+  deletePromptPreset(id: string) { return this.presets.remove(id); }
   backupSettings(): BackupSettings {
     const settings = this.providerSettingsData();
     return {
       providers: settings.providers.map(({ id, name, provider, baseUrl, models }) => ({ id, name, provider, baseUrl, models })),
       activeProviderId: settings.activeProviderId, activeModel: settings.activeModel,
       systemPrompt: settings.systemPrompt, maxOutputTokens: settings.maxOutputTokens, showReasoning: settings.showReasoning,
+      promptPresets: this.presets.list(),
     };
   }
   providerForModelList(id: string): ProviderModelConfig | null {
     return this.providerSettingsData().providers.find((profile) => profile.id === id) ?? null;
   }
-  saveProviderSettings(input: ProviderSettingsInput): { settings: ProviderSettings } | { error: string } {
+  saveProviderSettings(input: ProviderSettingsInput, importedPresets?: PromptPreset[]): { settings: ProviderSettings } | { error: string; status?: number } {
     let settings: ProviderSettingsInput;
-    try { settings = mergeProviderSettings(this.providerSettingsData(), input); }
-    catch (error) { return { error: error instanceof Error ? error.message : '供应商配置无效。' }; }
+    let presets: PromptPreset[] = [];
+    try {
+      settings = mergeProviderSettings(this.providerSettingsData(), input);
+      if (importedPresets) presets = this.presets.prepareRestore(importedPresets);
+    }
+    catch (error) { return { error: error instanceof Error ? error.message : '供应商配置无效。', ...(error instanceof PromptPresetError ? { status: error.status } : {}) }; }
     this.ctx.storage.transactionSync(() => {
+      this.presets.insertRestored(presets);
       this.ctx.storage.sql.exec('DELETE FROM provider_profiles');
       for (const profile of settings.providers) {
         this.ctx.storage.sql.exec('INSERT INTO provider_profiles (id, name, provider, baseUrl, models, apiKey) VALUES (?, ?, ?, ?, ?, ?)',

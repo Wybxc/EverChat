@@ -1,6 +1,7 @@
-import type { ConversationInfo, ConversationSettings, Message, ProviderApiKind, ProviderModel } from './types';
+import type { ConversationInfo, ConversationSettings, Message, PromptPreset, ProviderApiKind, ProviderModel } from './types';
 import * as v from 'valibot';
 import { conversationSettingsSchema } from './conversation-settings';
+import { promptPresetListSchema } from './prompt-presets';
 
 export const BACKUP_FORMAT = 'everchat-backup';
 export const BACKUP_VERSION = 1 as const;
@@ -13,6 +14,7 @@ export interface BackupProvider {
 export interface BackupSettings {
   providers: BackupProvider[]; activeProviderId: string | null; activeModel: string;
   systemPrompt: string; maxOutputTokens: number | null; showReasoning: boolean;
+  promptPresets: PromptPreset[];
 }
 export interface BackupMessage {
   id: string; role: Message['role']; content: string; reasoning: string | null; status: Message['status'];
@@ -72,6 +74,8 @@ export function validateBackup(value: unknown): EverChatBackup {
     return message as unknown as BackupMessage;
   });
   const settings = input.settings as Record<string, unknown>;
+  const promptPresets = v.safeParse(promptPresetListSchema, settings?.promptPresets);
+  if (!promptPresets.success) throw new Error('备份中的提示词预设无效。');
   if (!settings || typeof settings !== 'object' || !Array.isArray(settings.providers) || settings.providers.length > 50
     || !nullableString(settings.activeProviderId, 64) || !isString(settings.activeModel, 200) || !isString(settings.systemPrompt, 20_000)
     || !(settings.maxOutputTokens === null || (Number.isSafeInteger(settings.maxOutputTokens) && Number(settings.maxOutputTokens) > 0 && Number(settings.maxOutputTokens) <= 100_000))
@@ -94,6 +98,6 @@ export function validateBackup(value: unknown): EverChatBackup {
     conversation: { id: conversation.id, title: conversation.title, createdAt: Number(conversation.createdAt), updatedAt: Number(conversation.updatedAt), messages,
       ...(conversationSettings?.success ? { settings: conversationSettings.output } : {}) },
     settings: { providers, activeProviderId: settings.activeProviderId as string | null, activeModel: settings.activeModel,
-      systemPrompt: settings.systemPrompt, maxOutputTokens: settings.maxOutputTokens as number | null, showReasoning: settings.showReasoning },
+      systemPrompt: settings.systemPrompt, maxOutputTokens: settings.maxOutputTokens as number | null, showReasoning: settings.showReasoning, promptPresets: promptPresets.output },
   };
 }

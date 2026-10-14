@@ -38,7 +38,7 @@ test('validateBackup accepts version 1 backups and rejects malformed messages', 
       id: crypto.randomUUID(), role: 'assistant', content: '正文', reasoning: '思考', status: 'completed', createdAt: 2,
       parentId: null, revisionOf: null, error: null, providerId: null, model: null, modelName: null,
     }] },
-    settings: { providers: [{ id: crypto.randomUUID(), name: '测试供应商', provider: 'openai-chat', baseUrl: 'https://provider.example/v1', models: [{ id: 'test', name: 'Test', enabled: true }] }], activeProviderId: null, activeModel: '', systemPrompt: '', maxOutputTokens: null, showReasoning: true },
+    settings: { providers: [{ id: crypto.randomUUID(), name: '测试供应商', provider: 'openai-chat', baseUrl: 'https://provider.example/v1', models: [{ id: 'test', name: 'Test', enabled: true }] }], activeProviderId: null, activeModel: '', systemPrompt: '', maxOutputTokens: null, showReasoning: true, promptPresets: [] },
   });
   assert.equal(backup.conversation.title, '测试备份');
   assert.equal(backup.conversation.messages[0].reasoning, '思考');
@@ -47,4 +47,8 @@ test('validateBackup accepts version 1 backups and rejects malformed messages', 
   const settings = { ...DEFAULT_CONVERSATION_SETTINGS, systemPrompt: '会话提示', useGlobalMaxOutputTokens: false };
   assert.deepEqual(validateBackup({ ...backup, conversation: { ...backup.conversation, settings } }).conversation.settings, settings);
   assert.throws(() => validateBackup({ ...backup, conversation: { ...backup.conversation, settings: { ...settings, temperature: 8 } } }), /会话参数无效/);
+  const preset = { id: crypto.randomUUID(), name: '写作', systemPrompt: '你是写作助手。', updatedAt: 1 };
+  assert.deepEqual(validateBackup({ ...backup, settings: { ...backup.settings, promptPresets: [preset] } }).settings.promptPresets, [preset]);
+  assert.throws(() => validateBackup({ ...backup, settings: { ...backup.settings, promptPresets: [preset, preset] } }), /提示词预设无效/);
+  assert.throws(() => validateBackup({ ...backup, settings: { ...backup.settings, promptPresets: [{ ...preset, apiKey: 'unexpected' }] } }), /提示词预设无效/);
 });

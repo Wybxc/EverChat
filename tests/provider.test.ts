@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { ProviderConfig, ProviderKind } from '../shared/types';
+import type { ProviderConfig, ProviderKind, ProviderSettingsInput } from '../shared/types';
 import { GenerationCancelled } from '../worker/provider';
 import { generate } from './fixtures/generate';
 import { defaultProviderSettings, mergeProviderSettings, providerConfigFromEnv, publicProviderSettings, runtimeProviderConfig } from '../worker/provider-config';
@@ -114,7 +114,7 @@ for (const [kind, fixture] of Object.entries(streams)) {
 const profileId = '00000000-0000-4000-8000-000000000012';
 const settings = {
   providers: [{ id: profileId, name: 'Test', provider: 'openai-chat' as const, baseUrl: 'https://provider.example/v1', models: [{ id: 'test-model', name: '测试模型', enabled: true }], apiKey: 'private-key' }],
-  activeProviderId: profileId, activeModel: 'test-model', systemPrompt: 'system', maxOutputTokens: 128,
+  activeProviderId: profileId, activeModel: 'test-model', systemPrompt: 'system', maxOutputTokens: 128, showReasoning: false,
 };
 
 test('output limits default to unset while explicit configured limits remain available', () => {
@@ -161,7 +161,7 @@ test('enabled model names survive persistence while disabled models cannot gener
   assert.equal(runtimeProviderConfig(saved)?.modelName, '测试模型');
   const blankName = { ...settings, providers: [{ ...settings.providers[0], models: [{ id: 'test-model', name: '', enabled: true }] }] };
   assert.equal(runtimeProviderConfig(blankName)?.modelName, 'test-model');
-  assert.throws(() => mergeProviderSettings(settings, { ...settings, providers: [{ ...settings.providers[0], models: ['test-model'] }] }), /请检查/);
+  assert.throws(() => mergeProviderSettings(settings, { ...settings, providers: [{ ...settings.providers[0], models: ['test-model'] }] } as unknown as ProviderSettingsInput), /请检查/);
 });
 
 test('provider profiles reject insecure endpoints, duplicate models and invalid limits', () => {
@@ -231,7 +231,7 @@ test('DeepSeek reasoning uses its OpenAI-compatible fields and stays separate fr
 });
 
 // Responses event structure captured from a real DeepSeek Flash request.
-const deepseekResponses = (terminal = 'response.completed') => [
+const deepseekResponses = (terminal = 'response.completed'): Array<{ type: string } & Record<string, unknown>> => [
   { type: 'response.output_item.added', output_index: 0, item: { type: 'reasoning', id: 'thought', summary: [], content: [] } },
   { type: 'response.content_part.added', item_id: 'thought', output_index: 0, content_index: 0, part: { type: 'reasoning_text', text: '' } },
   { type: 'response.reasoning_text.delta', item_id: 'thought', output_index: 0, content_index: 0, delta: '**先分析' },
@@ -264,7 +264,7 @@ test('DeepSeek Responses streams reasoning_text before the answer without repeat
 
 test('compatible Responses keep native reasoning summaries and do not double append raw reasoning', async (t) => {
   const events = deepseekResponses();
-  events.splice(4, 0, { type: 'response.reasoning_summary_text.delta', item_id: 'thought', output_index: 0, summary_index: 0, delta: '**先分析。**' } as typeof events[number]);
+  events.splice(4, 0, { type: 'response.reasoning_summary_text.delta', item_id: 'thought', output_index: 0, summary_index: 0, delta: '**先分析。**' });
   t.mock.method(globalThis, 'fetch', async () => new Response(events.map(frame).join(''), { headers: { 'Content-Type': 'text/event-stream' } }));
   let thought = '';
   await generate({ ...config, provider: 'openai-responses' }, history, async () => {}, new AbortController().signal, async (delta) => { thought += delta; });
@@ -302,5 +302,5 @@ test('model overrides pin their prompt and validate provider reasoning support',
   assert.equal(runtimeProviderConfig(custom, undefined, 'max'), null);
   assert.equal(runtimeProviderConfig(custom)?.showReasoning, true);
   const unknownField = { ...custom, providers: [{ ...custom.providers[0], models: [{ ...custom.providers[0].models[0], reasoningEffort: 'high' }] }] };
-  assert.equal(mergeProviderSettings(custom, unknownField).providers[0].models[0].reasoningEffort, undefined);
+  assert.equal(Object.hasOwn(mergeProviderSettings(custom, unknownField).providers[0].models[0], 'reasoningEffort'), false);
 });

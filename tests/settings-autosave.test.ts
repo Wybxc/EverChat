@@ -4,7 +4,7 @@ import { SettingsAutosave } from '../src/settings-autosave';
 import { publicProviderSettings } from '../worker/provider-config';
 import type { ProviderSettings, ProviderSettingsInput } from '../shared/types';
 
-const initial: ProviderSettings = { providers: [], activeProviderId: null, activeModel: '', systemPrompt: '', maxOutputTokens: 128 };
+const initial: ProviderSettings = { providers: [], activeProviderId: null, activeModel: '', systemPrompt: '', maxOutputTokens: 128, showReasoning: false };
 
 test('autosave serializes requests and preserves edits made before an older response returns', async () => {
   let finishFirst!: (value: ProviderSettings) => void;

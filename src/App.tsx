@@ -8,7 +8,7 @@ import { isActive, type ConversationInfo, type ConversationSettings, type Librar
 import { api, ApiError } from './api';
 import { clearLocal, deletedAt, markConversationDeleted, read, write, writePending, type Pending } from './storage';
 import { useConversation } from './useConversation';
-import { ProviderSettingsPanel } from './ProviderSettings';
+import { ProviderSettingsPanel, type SettingsTab } from './ProviderSettings';
 import { chatModels, effortLabels, modelSelectionKey } from '../shared/models';
 import { useThemeMode } from './theme';
 import { useFollowScroll } from './useFollowScroll';
@@ -198,6 +198,8 @@ export function App() {
   const mobileSidebarTrigger = useRef<HTMLButtonElement>(null);
   const settings = useRef<HTMLDialogElement>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [requestedSettingsTab, setRequestedSettingsTab] = useState<SettingsTab | undefined>();
+  const returnToConversationSettings = useRef(false);
   const [modelChoice, setModelChoice] = useState<string>(() => read('chat-model', ''));
   const [branchHead, setBranchHead] = useState<string | null>(null);
   const [messageMutation, setMessageMutation] = useState<{ id: string; mode: 'edit' | 'delete' } | null>(null);
@@ -459,6 +461,7 @@ export function App() {
       await api('/logout', 'POST'); clearLocal(); pendingRef.current = []; setPending([]);
       setLocalConversations([]); queryClient.clear(); navigate(null, true); setDraft(''); setRevisionOf(undefined);
       setNewConversationSettings({ ...DEFAULT_CONVERSATION_SETTINGS }); setSettingsDraft(null); setConversationSettingsOpen(false);
+      returnToConversationSettings.current = false;
       loggedOut(); settings.current?.close();
     } catch (error) { setError(error instanceof Error ? error.message : '退出失败，请联网后重试。'); settings.current?.close(); }
   };
@@ -582,14 +585,17 @@ export function App() {
         </div>
       </div>
     </div>
-    <dialog id="space-settings" ref={settings} className="modal" onClose={() => setSettingsOpen(false)} aria-labelledby="space-settings-title">
+    <dialog id="space-settings" ref={settings} className="modal" onClose={() => {
+      setSettingsOpen(false); setRequestedSettingsTab(undefined);
+      if (returnToConversationSettings.current) { returnToConversationSettings.current = false; setConversationSettingsOpen(true); }
+    }} aria-labelledby="space-settings-title">
       <div className="modal-box flex h-[min(48rem,92dvh)] max-h-[92dvh] max-w-5xl flex-col overflow-hidden p-0">
         <div className="flex shrink-0 items-center justify-between border-b border-base-content/30 px-6 py-4"><h2 id="space-settings-title" className="text-lg font-semibold">设置</h2><form method="dialog"><button className="btn btn-ghost btn-sm btn-square" aria-label="关闭设置"><X size={18} /></button></form></div>
-        <ProviderSettingsPanel open={settingsOpen} onSaved={providerSaved} themeControl={<ThemeControl />} onLogout={() => void logout()} />
+        <ProviderSettingsPanel open={settingsOpen} requestedTab={requestedSettingsTab} onSaved={providerSaved} themeControl={<ThemeControl />} onLogout={() => void logout()} />
       </div>
       <form method="dialog" className="modal-backdrop"><button>关闭</button></form>
     </dialog>
-    {session?.authenticated && <ConversationSettingsDialog key={selected ?? 'new'} id={selected} initial={selected ? snapshot.settings ?? DEFAULT_CONVERSATION_SETTINGS : newConversationSettings} model={selectedModel} effort={reasoningEffort} showReasoning={session.showReasoning ?? false} open={conversationSettingsOpen} close={() => setConversationSettingsOpen(false)} onDraft={settingsDraftChanged} />}
+    {session?.authenticated && <ConversationSettingsDialog key={selected ?? 'new'} id={selected} initial={selected ? snapshot.settings ?? DEFAULT_CONVERSATION_SETTINGS : newConversationSettings} model={selectedModel} effort={reasoningEffort} showReasoning={session.showReasoning ?? false} open={conversationSettingsOpen} close={() => setConversationSettingsOpen(false)} onDraft={settingsDraftChanged} managePresets={() => { returnToConversationSettings.current = true; setRequestedSettingsTab('presets'); openSettings(); }} />}
     {messageMutation && mutationMessage && <MessageMutationDialog key={`${selected}:${messageMutation.id}:${messageMutation.mode}`} message={mutationMessage} mode={messageMutation.mode} confirm={confirmMessageMutation} close={() => setMessageMutation(null)} />}
   </div>;
 }

@@ -6,6 +6,7 @@ import { conversationSettingsSchema, DEFAULT_CONVERSATION_SETTINGS, samplingSupp
 import { Autosave } from './autosave';
 import { api } from './api';
 import { read, storageEpoch, write } from './storage';
+import { PromptPresetPicker } from './PromptPresets';
 
 function NumberSetting({ label, value, min, max, integer = false, change }: {
   label: string; value: number | null; min: number; max: number; integer?: boolean; change: (value: number | null) => void;
@@ -23,9 +24,10 @@ function NumberSetting({ label, value, min, max, integer = false, change }: {
   </label>;
 }
 
-export function ConversationSettingsDialog({ id, initial, model, effort, showReasoning, open, close, onDraft }: {
+export function ConversationSettingsDialog({ id, initial, model, effort, showReasoning, open, close, onDraft, managePresets }: {
   id: string | null; initial: ConversationSettings; model?: ChatModel; effort: ReasoningEffort | ''; showReasoning: boolean;
   open: boolean; close: () => void; onDraft: (settings: ConversationSettings) => void;
+  managePresets: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null), titleId = useId();
   const draftKey = `conversation-settings-draft:${id ?? 'new'}`;
@@ -65,13 +67,14 @@ export function ConversationSettingsDialog({ id, initial, model, effort, showRea
   };
   const support = model ? samplingSupport({ ...model, reasoningEnabled: model.reasoningSupported, reasoningEffort: effort || undefined, showReasoning }) : null;
   const limitMode = settings.useGlobalMaxOutputTokens ? 'inherit' : settings.maxOutputTokens === null ? 'unset' : 'custom';
-  return <dialog ref={dialog} className="modal" aria-labelledby={titleId} onClose={close}>
+  return <dialog id={`conversation-settings-${titleId}`} ref={dialog} className="modal" aria-labelledby={titleId} onClose={close}>
     <div className="modal-box flex max-h-[85dvh] max-w-xl flex-col overflow-hidden p-0">
       <div className="flex shrink-0 items-center justify-between gap-3 p-5">
         <h2 id={titleId} className="text-lg font-semibold">{id ? '会话参数' : '新对话参数'}</h2>
         <form method="dialog"><button className="btn btn-ghost btn-sm btn-square" aria-label="关闭会话参数"><X size={18} /></button></form>
       </div>
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 pb-5" onBlur={() => void store.flush().catch(() => {})}>
+        <PromptPresetPicker open={open} apply={(systemPrompt) => update({ systemPrompt })} manage={() => { dialog.current?.close(); close(); managePresets(); }} />
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="checkbox checkbox-sm" checked={settings.systemPrompt !== null} onChange={(event) => update({ systemPrompt: event.currentTarget.checked ? '' : null })} />自定义会话系统提示词</label>
         {settings.systemPrompt !== null && <label className="block space-y-2 text-sm"><span>会话系统提示词</span><textarea className="textarea min-h-32 w-full" aria-label="会话系统提示词" maxLength={20000} value={settings.systemPrompt} onChange={(event) => update({ systemPrompt: event.currentTarget.value })} /></label>}
         {support && (support.temperatureMax !== null || support.topPMin !== null) && <div className="grid gap-4 sm:grid-cols-2">

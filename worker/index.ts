@@ -11,6 +11,7 @@ import { ProviderModelError, fetchProviderModels } from './provider-models';
 import { storageErrorMessage } from './resource-limits';
 import { SEARCH_QUERY_LIMIT } from '../shared/search';
 import { conversationSettingsSchema } from '../shared/conversation-settings';
+import { promptPresetInputSchema } from '../shared/prompt-presets';
 
 export { Conversation } from './conversation';
 export { Library } from './library';
@@ -82,6 +83,26 @@ app.get('/session', async (context) => {
 app.get('/settings/providers', async (context) => {
   await requireAuth(context);
   return json(await context.env.LIBRARY.getByName('personal').providerSettings());
+});
+
+app.get('/settings/presets', async (context) => {
+  await requireAuth(context);
+  return json(await context.env.LIBRARY.getByName('personal').promptPresets());
+});
+app.put('/settings/presets/:id', async (context) => {
+  await requireAuth(context);
+  const id = context.req.param('id');
+  if (!v.safeParse(uuidSchema, id).success) throw new HttpError(404, '找不到这个预设。');
+  const input = await parseBody(context, promptPresetInputSchema, { maxBytes: 160_000, tooLarge: '提示词预设太长。' });
+  const result = await context.env.LIBRARY.getByName('personal').savePromptPreset(id, input);
+  if ('error' in result) throw new HttpError(result.status, result.error);
+  return json(result);
+});
+app.delete('/settings/presets/:id', async (context) => {
+  await requireAuth(context);
+  const id = context.req.param('id');
+  if (!v.safeParse(uuidSchema, id).success) throw new HttpError(404, '找不到这个预设。');
+  return json(await context.env.LIBRARY.getByName('personal').deletePromptPreset(id));
 });
 
 app.put('/settings/providers', async (context) => {
@@ -218,8 +239,8 @@ app.post('/backup/restore', async (context) => {
     const restored = await context.env.CONVERSATIONS.getByName(id).restore(id, backup.conversation);
     if ('error' in restored) throw new HttpError(restored.status, restored.error);
     const settings: BackupSettings = { ...backup.settings, activeProviderId: null, activeModel: '' };
-    const saved = await library.saveProviderSettings(settings);
-    if ('error' in saved) throw new HttpError(400, saved.error);
+    const saved = await library.saveProviderSettings(settings, backup.settings.promptPresets);
+    if ('error' in saved) throw new HttpError(saved.status ?? 400, saved.error);
     await library.touch(id);
     return json({ id, conversation: await library.get(id), snapshot: restored }, 201);
   } catch (error) {

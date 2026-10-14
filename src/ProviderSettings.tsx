@@ -6,9 +6,11 @@ import { modelReasoning } from '../shared/models';
 import type { ProviderApiKind, ProviderModel, ProviderProfile, ProviderSettings } from '../shared/types';
 import { api } from './api';
 import { SettingsAutosave } from './settings-autosave';
+import { PromptPresetsPanel } from './PromptPresets';
 
-type PanelProps = { open: boolean; onSaved: (settings: ProviderSettings) => void; themeControl: ReactNode; onLogout: () => void };
-const tabs = [{ id: 'general', label: '通用' }, { id: 'providers', label: '供应商' }, { id: 'chat', label: '对话' }] as const;
+type PanelProps = { open: boolean; requestedTab?: SettingsTab; onSaved: (settings: ProviderSettings) => void; themeControl: ReactNode; onLogout: () => void };
+const tabs = [{ id: 'general', label: '通用' }, { id: 'providers', label: '供应商' }, { id: 'chat', label: '对话' }, { id: 'presets', label: '预设' }] as const;
+export type SettingsTab = (typeof tabs)[number]['id'];
 
 function ModelOptions({ model, index, provider, globalPrompt, onChange }: {
   model: ProviderModel; index: number; provider: ProviderApiKind; globalPrompt: string; onChange: (patch: Partial<ProviderModel>) => void;
@@ -48,7 +50,7 @@ function reconcile(settings: ProviderSettings, chooseIfEmpty = false): ProviderS
   return { ...settings, activeProviderId: models[0]?.profile.id ?? null, activeModel: models[0]?.model.id ?? '' };
 }
 
-function ProviderManager({ initial, open, onSaved, themeControl, onLogout }: PanelProps & { initial: ProviderSettings }) {
+function ProviderManager({ initial, open, requestedTab, onSaved, themeControl, onLogout }: PanelProps & { initial: ProviderSettings }) {
   const queryClient = useQueryClient();
   const onSavedRef = useRef(onSaved); onSavedRef.current = onSaved;
   const [store] = useState(() => new SettingsAutosave(initial,
@@ -64,6 +66,7 @@ function ProviderManager({ initial, open, onSaved, themeControl, onLogout }: Pan
   const [fetchingId, setFetchingId] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
   const wasOpen = useRef(open);
+  useEffect(() => { if (open && requestedTab) setTab(requestedTab); }, [open, requestedTab]);
   useEffect(() => () => store.dispose(), [store]);
   useEffect(() => {
     if (!open) { setShowKey(false); void store.flush().catch(() => {}); }
@@ -216,10 +219,13 @@ function ProviderManager({ initial, open, onSaved, themeControl, onLogout }: Pan
         <div className="space-y-2"><label htmlFor="provider-prompt" className="block text-sm font-medium">系统提示词</label><textarea id="provider-prompt" rows={6} maxLength={20000} className="textarea w-full border-base-content/50" value={settings.systemPrompt} onChange={(event) => update({ ...settings, systemPrompt: event.target.value })} /></div>
         <div className="space-y-2"><label htmlFor="provider-tokens" className="block text-sm font-medium">输出上限（Tokens）</label><input id="provider-tokens" type="number" min={1} max={100000} step={1} placeholder="不设置" className="input w-full border-base-content/50 sm:max-w-48" value={settings.maxOutputTokens ?? ''} onChange={(event) => update({ ...settings, maxOutputTokens: event.target.value === '' ? null : Number(event.target.value) })} /></div>
       </section>
+      <section id="settings-panel-presets" role="tabpanel" aria-labelledby="settings-tab-presets" hidden={tab !== 'presets'}>
+        <PromptPresetsPanel open={open && tab === 'presets'} />
+      </section>
     </div>
-    <div className="flex shrink-0 items-center justify-between gap-3 border-t border-base-content/30 px-6 py-3 text-xs text-base-content/70">
+    {tab !== 'presets' && <div className="flex shrink-0 items-center justify-between gap-3 border-t border-base-content/30 px-6 py-3 text-xs text-base-content/70">
       <p data-testid="settings-save-status" role={status === 'error' ? 'alert' : 'status'}>{status === 'error' ? error : status === 'saving' ? '保存中…' : status === 'waiting' ? '待保存' : '已自动保存'}</p>
       {status === 'error' && <button type="button" className="btn btn-ghost btn-xs" onClick={() => { void store.flush().catch(() => {}); }}>重试</button>}
-    </div>
+    </div>}
   </div>;
 }
