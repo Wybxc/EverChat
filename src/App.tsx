@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type SubmitEvent } from 'react';
+import { messageText } from '../shared/message-content';
+import { Component, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode, type SubmitEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowDown, ArrowRight, ArrowUp, Check, CheckCheck, CloudOff, Copy, Download, Feather, Infinity as InfinityIcon, Lightbulb, LockKeyhole, Menu, MessageCircle, Monitor, Moon, Pencil, Pin, Plus, Quote, RefreshCw, Search, Settings, SlidersHorizontal, Sparkles, Square, Sun, Trash2, WifiOff, X } from 'lucide-react';
 import 'streamdown/styles.css';
@@ -45,6 +46,27 @@ const starters = [
   { icon: Search, title: '解释概念', prompt: '用简单的语言和生活中的例子，向我解释什么是 Serverless。' },
 ];
 
+// Streamdown also loads internal React.lazy chunks, whose rejection escapes the plugin loaders.
+class MarkdownBoundary extends Component<{ children: ReactNode; fallback: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  render() { return this.state.failed ? this.props.fallback : this.props.children; }
+}
+
+function MarkdownFallback({ content, className }: { content: string; className: string }) {
+  const [online, setOnline] = useState(navigator.onLine);
+  useEffect(() => {
+    const update = () => setOnline(navigator.onLine);
+    window.addEventListener('online', update); window.addEventListener('offline', update);
+    return () => { window.removeEventListener('online', update); window.removeEventListener('offline', update); };
+  }, []);
+  return <div data-testid="markdown-fallback">
+    <div className={`${className} whitespace-pre-wrap`}>{content}</div>
+    {/* React.lazy retains a rejected promise. A new page runtime is needed to retry that chunk. */}
+    <button type="button" className="btn btn-ghost btn-xs mt-2" disabled={!online} onClick={() => location.reload()}>重新加载</button>
+  </div>;
+}
+
 function MarkdownContent({ content, streaming, searchId, className = 'markdown' }: { content: string; streaming: boolean; searchId?: string; className?: string }) {
   const [Renderer, setRenderer] = useState<MarkdownRenderer | null>(() => markdownRenderer);
   const [plugins, setPlugins] = useState<PluginConfig | null>(null);
@@ -72,12 +94,12 @@ function MarkdownContent({ content, streaming, searchId, className = 'markdown' 
     load(); window.addEventListener('online', load);
     return () => { active = false; window.removeEventListener('online', load); };
   }, [needsCode, needsMath, needsMermaid]);
-  return <div data-search-content={searchId}>{Renderer ?
+  return <div data-search-content={searchId}><MarkdownBoundary fallback={<MarkdownFallback content={content} className={className} />}>{Renderer ?
     <Renderer className={className} mode={streaming ? 'streaming' : 'static'} isAnimating={streaming} components={{
       a: ({ children, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer">{children}</a>,
       img: ({ alt }) => <span className="text-base-content/60">[图片：{alt ?? '附件'}]</span>,
     }} plugins={plugins ?? undefined} controls={{ code: { copy: true, download: false }, mermaid: { fullscreen: true, download: false, copy: false, panZoom: true } }}>{content}</Renderer>
-    : <div className={`${className} whitespace-pre-wrap`}>{content}</div>}</div>;
+    : <div className={`${className} whitespace-pre-wrap`}>{content}</div>}</MarkdownBoundary></div>;
 }
 
 function Brand({ small = false }: { small?: boolean }) {
@@ -134,7 +156,7 @@ function MessageView({ message, busy, onRetry, onEdit, onQuote, onDelete, canRet
   const [reasoningOpen, setReasoningOpen] = useState(true);
   const reasoningScroll = useFollowScroll(message.id);
   const copy = async () => {
-    try { await navigator.clipboard.writeText(message.content); setCopied(true); setTimeout(() => setCopied(false), 1800); } catch { /* Clipboard can be unavailable outside HTTPS. */ }
+    try { await navigator.clipboard.writeText(messageText(message)); setCopied(true); setTimeout(() => setCopied(false), 1800); } catch { /* Clipboard can be unavailable outside HTTPS. */ }
   };
   if (message.deletedAt) return <article data-testid={`${message.role}-message`} data-message-id={message.id} data-deleted="true" className={`py-2 text-xs text-base-content/60 ${message.role === 'user' ? 'text-right' : ''}`}>消息已删除</article>;
   const tools = <>
@@ -142,7 +164,7 @@ function MessageView({ message, busy, onRetry, onEdit, onQuote, onDelete, canRet
     <button className="btn btn-ghost btn-xs gap-1.5" onClick={onQuote} aria-label="引用消息"><Quote size={13} />引用</button>
   </>;
   if (message.role === 'user') return <article data-testid="user-message" data-message-id={message.id} className="group ml-auto w-fit max-w-[90%] sm:max-w-[82%]">
-    <div data-search-content={`${message.id}:content`} className="rounded-2xl rounded-br-md border border-base-content/50 bg-base-200 px-5 py-3.5 text-[15px] leading-7 whitespace-pre-wrap break-words">{message.content}</div>
+    <div data-search-content={`${message.id}:content`} className="rounded-2xl rounded-br-md border border-base-content/50 bg-base-200 px-5 py-3.5 text-[15px] leading-7 whitespace-pre-wrap break-words">{messageText(message)}</div>
     <div className="mt-1.5 flex flex-wrap items-center justify-end gap-2 text-[11px] text-base-content/60">
       {message.revisionOf && <span>新版本</span>}
       {tools}<CheckCheck size={13} /><span>已保存</span>
@@ -154,11 +176,11 @@ function MessageView({ message, busy, onRetry, onEdit, onQuote, onDelete, canRet
     <span className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-base-content/50 bg-base-100"><InfinityIcon size={20} strokeWidth={1.7} /></span>
     <div className="min-w-0 flex-1 pt-1">
       <div className="mb-3 flex items-center gap-3 text-xs"><span className="font-semibold">{message.modelName || message.model || 'EverChat'}</span>{message.revisionOf && <span className="text-base-content/60">新版本</span>}{isActive(message) && <span className="flex items-center gap-1.5 text-base-content/60"><span className="loading loading-dots loading-xs" />{message.status === 'queued' ? '排队中' : '生成中'}</span>}</div>
-      {message.reasoning && <details open={reasoningOpen || isActive(message)} onToggle={(event) => setReasoningOpen(event.currentTarget.open)} className="collapse collapse-arrow mb-4 border border-base-content/30 bg-base-200" data-testid="message-reasoning">
+      {messageText(message, 'reasoning') && <details open={reasoningOpen || isActive(message)} onToggle={(event) => setReasoningOpen(event.currentTarget.open)} className="collapse collapse-arrow mb-4 border border-base-content/30 bg-base-200" data-testid="message-reasoning">
         <summary className="collapse-title min-h-0 py-3 text-sm font-medium">思考过程</summary>
-        <div className="collapse-content text-sm"><div ref={reasoningScroll.viewportRef} className="max-h-80 overflow-y-auto break-words"><div ref={reasoningScroll.contentRef}><MarkdownContent content={message.reasoning} searchId={`${message.id}:reasoning`} streaming={isActive(message)} /></div></div></div>
+        <div className="collapse-content text-sm"><div ref={reasoningScroll.viewportRef} className="max-h-80 overflow-y-auto break-words"><div ref={reasoningScroll.contentRef}><MarkdownContent content={messageText(message, 'reasoning')} searchId={`${message.id}:reasoning`} streaming={isActive(message)} /></div></div></div>
       </details>}
-      {message.content ? <MarkdownContent content={message.content} searchId={`${message.id}:content`} streaming={isActive(message)} /> : isActive(message) && !message.reasoning ? <p className="py-2 text-sm text-base-content/60">准备中…</p> : null}
+      {messageText(message) ? <MarkdownContent content={messageText(message)} searchId={`${message.id}:content`} streaming={isActive(message)} /> : isActive(message) && !messageText(message, 'reasoning') ? <p className="py-2 text-sm text-base-content/60">准备中…</p> : null}
       {message.status === 'failed' && <p role="alert" className="mt-4 rounded-lg bg-error/5 px-3 py-2 text-xs font-medium leading-6 text-base-content">{message.error ?? '生成失败，已保存部分内容。'}</p>}
       {message.status === 'cancelled' && <p className="mt-4 text-xs text-base-content/60">已停止</p>}
       {!isActive(message) && <GenerationMetadata generation={message.generation} />}
@@ -433,8 +455,8 @@ export function App() {
   };
   const edit = (message: Message) => {
     if (message.role === 'assistant') { setMessageMutation({ id: message.id, mode: 'edit' }); return; }
-    setRevisionOf(message.id); setDraft(message.content);
-    write(`draft:${selected}`, { text: message.content, revisionOf: message.id }); editor.current?.focus();
+    setRevisionOf(message.id); setDraft(messageText(message));
+    write(`draft:${selected}`, { text: messageText(message), revisionOf: message.id }); editor.current?.focus();
   };
   const confirmMessageMutation = async (content: string, requestId: string) => {
     if (!selected || !messageMutation) return;
@@ -449,7 +471,7 @@ export function App() {
     requestAnimationFrame(() => editor.current?.focus());
   };
   const quote = (message: Message) => {
-    const source = message.content.trim();
+    const source = messageText(message).trim();
     if (!source) return;
     const prefix = draft.trim() ? `${draft.trim()}\n\n` : '';
     const available = Math.max(0, 16_000 - prefix.length);
@@ -474,14 +496,14 @@ export function App() {
     const markdown = `# ${title}\n\n${messages.map((message) => {
       const role = message.role === 'user' ? '你' : 'EverChat';
       const model = message.role === 'assistant' && (message.modelName || message.model) ? `\n模型：${message.modelName || message.model}\n` : '';
-      const reasoning = message.reasoning ? `\n### 思考过程\n\n${message.reasoning}\n` : '';
+      const reasoning = messageText(message, 'reasoning') ? `\n### 思考过程\n\n${messageText(message, 'reasoning')}\n` : '';
       const status = message.status === 'completed' ? '' : `\n状态：${message.status}${message.error ? `（${message.error}）` : ''}\n`;
-      return `## ${role}${message.revisionOf ? ' · 新版本' : ''}${model}\n\n${message.content}${reasoning}${status}\n`;
+      return `## ${role}${message.revisionOf ? ' · 新版本' : ''}${model}\n\n${messageText(message)}${reasoning}${status}\n`;
     }).join('\n')}`;
     if (format === 'md') downloadFile(`EverChat-${selected}.md`, markdown, 'text/markdown;charset=utf-8');
     else if (format === 'txt') downloadFile(`EverChat-${selected}.txt`, markdown.replace(/^#{1,6} /gm, '').replace(/^\n### /gm, '\n'), 'text/plain;charset=utf-8');
     else {
-      const body = messages.map((message) => `<article><h2>${escapeHtml(message.role === 'user' ? '你' : 'EverChat')}${message.revisionOf ? ' · 新版本' : ''}</h2>${message.role === 'assistant' && (message.modelName || message.model) ? `<p class="meta">模型：${escapeHtml(message.modelName || message.model || '')}</p>` : ''}<pre>${escapeHtml(message.content)}</pre>${message.reasoning ? `<details open><summary>思考过程</summary><pre>${escapeHtml(message.reasoning)}</pre></details>` : ''}${message.status !== 'completed' ? `<p class="error">状态：${escapeHtml(message.status)}${message.error ? `（${escapeHtml(message.error)}）` : ''}</p>` : ''}</article>`).join('');
+      const body = messages.map((message) => `<article><h2>${escapeHtml(message.role === 'user' ? '你' : 'EverChat')}${message.revisionOf ? ' · 新版本' : ''}</h2>${message.role === 'assistant' && (message.modelName || message.model) ? `<p class="meta">模型：${escapeHtml(message.modelName || message.model || '')}</p>` : ''}<pre>${escapeHtml(messageText(message))}</pre>${messageText(message, 'reasoning') ? `<details open><summary>思考过程</summary><pre>${escapeHtml(messageText(message, 'reasoning'))}</pre></details>` : ''}${message.status !== 'completed' ? `<p class="error">状态：${escapeHtml(message.status)}${message.error ? `（${escapeHtml(message.error)}）` : ''}</p>` : ''}</article>`).join('');
       const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${escapeHtml(title)}</title><style>body{font:16px/1.7 system-ui,sans-serif;max-width:54rem;margin:2rem auto;padding:0 1rem;color:#1f2937}article{border-top:1px solid #d1d5db;padding:1.5rem 0}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}.meta{color:#6b7280;font-size:.875rem}.error{color:#b91c1c}summary{cursor:pointer}</style></head><body><h1>${escapeHtml(title)}</h1>${body}</body></html>`;
       downloadFile(`EverChat-${selected}.html`, html, 'text/html;charset=utf-8');
     }

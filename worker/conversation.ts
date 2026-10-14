@@ -19,8 +19,9 @@ import { searchRetryDelay } from './search-index';
 import { backupMessage, type BackupMessage, type ConversationBackup } from '../shared/backup';
 import { messageContext } from './message-context';
 import { applyConversationSettings, DEFAULT_CONVERSATION_SETTINGS } from '../shared/conversation-settings';
+import { messageParts, messageText } from '../shared/message-content';
 
-type Row = Message & { generationResult: string | null } & Record<string, SqlStorageValue>;
+type Row = Omit<Message, 'parts'> & { content: string; reasoning: string | null; generationResult: string | null } & Record<string, SqlStorageValue>;
 type Run = { id: string; conversationId: string; assistantId: string; context: string; config: string | null; chunkSeq: number; updatedAt: number;
   streamVersion: string | null; durableOffset: number;
   executor: GenerationExecutor; startedAt: number | null; cancelRequested: number } & Record<string, SqlStorageValue>;
@@ -64,8 +65,8 @@ export class Conversation extends DurableObject<Env> {
     return row ? JSON.parse(row.payload) as GenerationMeasurements : null;
   }
   private decorate(row: Row): Message {
-    const { generationResult, ...message } = row;
-    return { ...message, ...(generationResult ? { generation: JSON.parse(generationResult) as Message['generation'] } : {}) };
+    const { generationResult, content, reasoning, ...message } = row;
+    return { ...message, parts: messageParts(content, reasoning ?? ''), ...(generationResult ? { generation: JSON.parse(generationResult) as Message['generation'] } : {}) };
   }
   private materialize(message: Message): Message {
     if (!isActive(message) || !message.runId || message.streamVersion !== STREAM_VERSION) return message;
@@ -107,7 +108,7 @@ export class Conversation extends DurableObject<Env> {
     if (this.query('SELECT id FROM messages LIMIT 1').toArray().length) return { error: '目标对话已有消息。', status: 409 };
     const ids = new Map(backup.messages.map((message) => [message.id, crypto.randomUUID()]));
     const messages: Message[] = backup.messages.map((source) => ({
-      id: ids.get(source.id)!, role: source.role, content: source.deletedAt ? '' : source.content, reasoning: source.deletedAt ? null : source.reasoning, deletedAt: source.deletedAt,
+      id: ids.get(source.id)!, role: source.role, parts: source.deletedAt ? [] : source.parts, deletedAt: source.deletedAt,
       status: source.status, createdAt: source.createdAt, runId: null,
       parentId: source.parentId ? ids.get(source.parentId) ?? null : null,
       revisionOf: source.revisionOf ? ids.get(source.revisionOf) ?? null : null,
@@ -148,14 +149,14 @@ export class Conversation extends DurableObject<Env> {
     return { type: 'change', seq, messages, ...(settings ? { settings } : {}) };
   }
   private searchDocument(message: Message, version: number): SearchDocument {
-    return { messageId: message.id, version, role: message.role, content: message.content, reasoning: message.reasoning ?? '' };
+    return { messageId: message.id, version, role: message.role, content: messageText(message), reasoning: messageText(message, 'reasoning') };
   }
   searchDocumentPage(after: number): SearchPage {
     if (this.deletedAt) return { documents: [], after, done: true };
     const rows = this.query<Row & { ordinal: number; version: number }>(`SELECT messages.*, messages.rowid AS ordinal, COALESCE(message_search_versions.version, 0) AS version, NULL AS generationResult
       FROM messages LEFT JOIN message_search_versions ON message_search_versions.messageId = messages.id WHERE messages.rowid > ? ORDER BY messages.rowid LIMIT 5`, after).toArray();
     const page = rows.slice(0, 4);
-    return { documents: page.filter((row) => !isActive(row)).map((row) => this.searchDocument(row, row.version)), after: page.at(-1)?.ordinal ?? after, done: rows.length <= 4 };
+    return { documents: page.filter((row) => !isActive(row)).map((row) => this.searchDocument(this.decorate(row), row.version)), after: page.at(-1)?.ordinal ?? after, done: rows.length <= 4 };
   }
   private flushSearchIndex(): Promise<boolean> {
     if (this.searchFlush) return this.searchFlush;
@@ -235,8 +236,8 @@ export class Conversation extends DurableObject<Env> {
   }
   private insert(message: Message) {
     this.query('INSERT INTO messages (id, role, content, status, createdAt, runId, parentId, revisionOf, error, providerId, model, modelName, reasoning, streamVersion, durableOffset) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      message.id, message.role, message.content, message.status, message.createdAt, message.runId, message.parentId, message.revisionOf, message.error,
-      message.providerId ?? null, message.model ?? null, message.modelName ?? null, message.reasoning ?? null, message.streamVersion ?? null, message.durableOffset ?? 0);
+      message.id, message.role, messageText(message), message.status, message.createdAt, message.runId, message.parentId, message.revisionOf, message.error,
+      message.providerId ?? null, message.model ?? null, message.modelName ?? null, messageText(message, 'reasoning'), message.streamVersion ?? null, message.durableOffset ?? 0);
     if (message.role === 'assistant' && !message.deletedAt && message.generation) this.query('INSERT INTO message_generations VALUES (?, ?)', message.id, JSON.stringify(message.generation));
   }
   async reviseAssistant(conversationId: string, messageId: string, requestId: string, content: string): Promise<{ messageId: string } | Failure> {
@@ -253,7 +254,7 @@ export class Conversation extends DurableObject<Env> {
       if (this.ctx.storage.sql.databaseSize > MAX_DATABASE_START_BYTES) return { error: DATABASE_LIMIT_MESSAGE, status: 507 };
       const messages = this.all();
       if (messages.length >= MAX_MESSAGES) return { error: '此对话已达到原型的消息上限，请新建对话。', status: 507 };
-      const revision: Message = { id: crypto.randomUUID(), role: 'assistant', content: content.trim(), status: 'completed', createdAt: Date.now(),
+      const revision: Message = { id: crypto.randomUUID(), role: 'assistant', parts: messageParts(content.trim()), status: 'completed', createdAt: Date.now(),
         runId: null, parentId: original.parentId, revisionOf: original.id, error: null,
         providerId: original.providerId, model: original.model, modelName: original.modelName };
       if (payloadBytes(JSON.stringify([...messages, revision])) > MAX_HISTORY_START_BYTES) return { error: HISTORY_LIMIT_MESSAGE, status: 507 };
@@ -324,7 +325,7 @@ export class Conversation extends DurableObject<Env> {
       const original = input.revisionOf ? messages.find((m) => m.id === input.revisionOf && m.role === 'user' && !m.deletedAt) : undefined;
       if (input.revisionOf && !original) return { error: '找不到要编辑的消息。', status: 404 };
       if (messages.length + (parent ? 1 : 2) > MAX_MESSAGES) return { error: '此对话已达到原型的消息上限，请新建对话。', status: 507 };
-      const content = parent?.content ?? input.content?.trim();
+      const content = parent ? messageText(parent) : input.content?.trim();
       if (!content || content.length > 16_000) return { error: '请输入 1 到 16,000 字的消息。', status: 400 };
       const settings = input.settings ?? this.settings();
       let generationConfig: ProviderConfig;
@@ -337,11 +338,11 @@ export class Conversation extends DurableObject<Env> {
       try { context = messageContext(messages, parent ? parent.parentId : userParentId, content); }
       catch { return { error: '消息分支关系无效，无法构建上下文。', status: 409 }; }
       const user: Message = parent ?? {
-        id: crypto.randomUUID(), role: 'user', content, status: 'completed', createdAt: Date.now(),
+        id: crypto.randomUUID(), role: 'user', parts: messageParts(content), status: 'completed', createdAt: Date.now(),
         runId: null, parentId: userParentId, revisionOf: original?.id ?? null, error: null,
       };
       const assistant: Message = {
-        id: crypto.randomUUID(), role: 'assistant', content: '', status: 'queued', createdAt: Date.now(),
+        id: crypto.randomUUID(), role: 'assistant', parts: [], status: 'queued', createdAt: Date.now(),
         runId, parentId: user.id, revisionOf: previous?.id ?? null, error: null,
         providerId: generationConfig.providerId, model: generationConfig.model, modelName: generationConfig.modelName || generationConfig.model,
         streamVersion: STREAM_VERSION, durableOffset: 0,
@@ -511,13 +512,13 @@ export class Conversation extends DurableObject<Env> {
     if (this.env.GENERATION_METRICS === '1' && !this.meter) this.meter = new GenerationMeter(runId, Date.now, 'since-last-resume', 'do-v1');
     if (message.streamState) {
       const state = message.streamState;
-      const parser = new ProviderStream(state.protocol, state.showReasoning, state, message.content, message.reasoning ?? '');
+      const parser = new ProviderStream(state.protocol, state.showReasoning, state, messageText(message), messageText(message, 'reasoning'));
       parser.end();
       if (status === 'completed') {
         try { parser.assertComplete(); }
         catch (failure) { status = 'failed'; error = failure instanceof StreamParseError ? failure.message : '无法验证供应商回答。'; }
       }
-      message.content = parser.content; message.reasoning = parser.reasoning; message.streamState = parser.checkpoint();
+      message.parts = messageParts(parser.content, parser.reasoning); message.streamState = parser.checkpoint();
       message.generation = { finishReason: message.streamState.finishReason, usage: message.streamState.usage,
         usageIsFinal: message.streamState.usageIsFinal && message.streamState.done && !message.streamState.failure && ['stop', 'length'].includes(message.streamState.finishReason ?? '') };
       this.meter?.streamCounts(message.streamState);
@@ -538,7 +539,7 @@ export class Conversation extends DurableObject<Env> {
     this.updateSearchSoon();
     if (this.meter?.runId === runId) {
       const final = this.message(message.id)!;
-      const report = this.meter.report(status, this.ctx.storage.sql.databaseSize, final.content.length, final.reasoning?.length ?? 0);
+      const report = this.meter.report(status, this.ctx.storage.sql.databaseSize, messageText(final).length, messageText(final, 'reasoning').length);
       this.meter = undefined;
       // One diagnostic row per generation, excluded from the measured application SQL window.
       try {

@@ -1,12 +1,14 @@
 import { ProviderStream, type StreamState } from './provider-stream';
 import type { GenerationResult } from './generation';
 import { validateBatch, validateCommit } from './stream-batches';
+import { messageParts, messageText, type MessagePart } from './message-content';
+export type { MessagePart } from './message-content';
 
 export type MessageStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 export interface Message {
   id: string;
   role: 'user' | 'assistant';
-  content: string;
+  parts: MessagePart[];
   status: MessageStatus;
   createdAt: number;
   runId: string | null;
@@ -14,7 +16,6 @@ export interface Message {
   revisionOf: string | null;
   deletedAt?: number | null;
   error: string | null;
-  reasoning?: string | null;
   providerId?: string | null;
   model?: string | null;
   modelName?: string | null;
@@ -110,7 +111,7 @@ export interface ProviderSettingsInput {
 export interface ProviderModelConfig extends Omit<ProviderProfile, 'hasApiKey'> {
   apiKey?: string;
 }
-export const isActive = (message: Message) => message.status === 'queued' || message.status === 'running';
+export const isActive = (message: Pick<Message, 'status'>) => message.status === 'queued' || message.status === 'running';
 
 /** Return the chronological message path that leads to a selected branch head. */
 export function branchPath(messages: Message[], headId: string): Message[] {
@@ -155,7 +156,7 @@ export function appendMessage(message: Message, batch: StreamBatch): Message {
   if (message.status !== 'running') throw new Error('Streamed message is not running');
   if (batch.startOffset !== (message.durableOffset ?? 0)) throw new Error('Stream offset gap');
   const state = message.streamState;
-  const parser = new ProviderStream(state.protocol, state.showReasoning, state, message.content, message.reasoning ?? '');
+  const parser = new ProviderStream(state.protocol, state.showReasoning, state, messageText(message), messageText(message, 'reasoning'));
   parser.feed(bytes);
-  return { ...message, content: parser.content, reasoning: parser.reasoning, streamState: parser.checkpoint(), durableOffset: batch.endOffset };
+  return { ...message, parts: messageParts(parser.content, parser.reasoning), streamState: parser.checkpoint(), durableOffset: batch.endOffset };
 }

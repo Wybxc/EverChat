@@ -1,3 +1,4 @@
+import { messageParts, messageText } from '../../shared/message-content';
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import type { ProviderSettings, Snapshot, Submission } from '../../shared/types';
 
@@ -31,12 +32,12 @@ async function setup(request: APIRequestContext, model = 'alarm-test') {
 test('a live DO owns the task and Alarm re-entry cannot generate twice', async ({ request }) => {
   const fixture = await setup(request);
   try {
-    await expect.poll(async () => (await fixture.snapshot()).messages[1].content.length).toBeGreaterThan(0);
+    await expect.poll(async () => messageText((await fixture.snapshot()).messages[1]).length).toBeGreaterThan(0);
     expect(await fixture.state()).toMatchObject({ executor: 'do-v1', calls: 1, cancelRequested: 0 });
     expect((await fixture.action('alarm')).ok()).toBe(true);
     await expect.poll(async () => (await fixture.snapshot()).messages[1].status).toBe('completed');
     const stored = await fixture.snapshot();
-    expect(stored.messages[1]).toMatchObject({ reasoning: '**集成思考。**', error: null });
+    expect(stored.messages[1]).toMatchObject({ error: null, parts: expect.arrayContaining([{ type: 'reasoning', text: '**集成思考。**' }]) });
     expect((await fixture.state()).calls).toBe(1);
     expect((await fixture.action('alarm')).ok()).toBe(true);
     expect(await fixture.snapshot()).toEqual(stored);
@@ -46,13 +47,13 @@ test('a live DO owns the task and Alarm re-entry cannot generate twice', async (
 for (const stopping of [false, true]) test(`resetting the native DO ${stopping ? 'during cancellation ' : ''}preserves its checkpoint and never repeats the supplier call`, async ({ request }) => {
   const fixture = await setup(request);
   try {
-    await expect.poll(async () => (await fixture.snapshot()).messages[1].content.length).toBeGreaterThan(0);
+    await expect.poll(async () => messageText((await fixture.snapshot()).messages[1]).length).toBeGreaterThan(0);
     const prefix = await fixture.snapshot();
     try { await fixture.action(stopping ? 'abort-stop' : 'abort'); } catch { /* The injected abort may close its own request. */ }
     await expect.poll(async () => (await fixture.snapshot()).messages[1].status).toBe('failed');
     const stored = await fixture.snapshot();
-    expect(stored.messages[1].content.startsWith(prefix.messages[1].content)).toBe(true);
-    expect(stored.messages[1].content).not.toContain('服务端生成完成');
+    expect(messageText(stored.messages[1]).startsWith(messageText(prefix.messages[1]))).toBe(true);
+    expect(messageText(stored.messages[1])).not.toContain('服务端生成完成');
     expect(stored.messages[1].error).toContain('主动重新生成');
     expect(await fixture.state()).toMatchObject({ calls: 1, cancelRequested: stopping ? 1 : 0 });
     expect((await fixture.action('alarm')).ok()).toBe(true);
@@ -68,7 +69,7 @@ test('cancelling an accepted task before its Alarm starts prevents all supplier 
   try {
     expect((await request.post(`/api/conversations/${fixture.id}/cancel`, { headers, data: { runId: fixture.submission.runId } })).ok()).toBe(true);
     expect((await fixture.action('alarm')).ok()).toBe(true);
-    expect((await fixture.snapshot()).messages[1]).toMatchObject({ status: 'cancelled', content: '', reasoning: '' });
+    expect((await fixture.snapshot()).messages[1]).toMatchObject({ status: 'cancelled', parts: messageParts('', '') });
     expect(await fixture.state()).toMatchObject({ executor: 'do-v1', calls: 0, cancelRequested: 1, startedAt: null });
   } finally { await fixture.restore(); }
 });
@@ -78,7 +79,7 @@ test('a cancellation tail write failure records failure rather than a false succ
   try {
     await expect.poll(async () => (await fixture.snapshot()).messages[1].status).toBe('failed');
     const stored = await fixture.snapshot();
-    expect(stored.messages[1].content).not.toContain('尚未保存的尾部');
+    expect(messageText(stored.messages[1])).not.toContain('尚未保存的尾部');
     expect(stored.messages[1].error).toContain('最近检查点');
     expect(await fixture.state()).toMatchObject({ executor: 'do-v1', calls: 1, cancelRequested: 1 });
     expect((await fixture.action('alarm')).ok()).toBe(true);
@@ -89,16 +90,16 @@ test('a cancellation tail write failure records failure rather than a false succ
 test('stopping a silent upstream aborts promptly and leaves the next task scheduled', async ({ request }) => {
   const fixture = await setup(request, 'alarm-stall');
   try {
-    await expect.poll(async () => (await fixture.snapshot()).messages[1].content).toBe('等待上游的正文');
+    await expect.poll(async () => messageText((await fixture.snapshot()).messages[1])).toBe('等待上游的正文');
     const started = Date.now();
     expect((await request.post(`/api/conversations/${fixture.id}/cancel`, { headers, data: { runId: fixture.submission.runId } })).ok()).toBe(true);
     expect(Date.now() - started).toBeLessThan(3000);
-    expect((await fixture.snapshot()).messages[1]).toMatchObject({ status: 'cancelled', content: '等待上游的正文', reasoning: '等待上游的思考' });
+    expect((await fixture.snapshot()).messages[1]).toMatchObject({ status: 'cancelled', parts: messageParts('等待上游的正文', '等待上游的思考') });
     expect(await fixture.state()).toMatchObject({ calls: 1, cancelRequested: 1 });
     const next = await request.post(`/api/conversations/${fixture.id}/messages`, { headers, data: { requestId: crypto.randomUUID(), content: '停止后继续' } });
     expect(next.status()).toBe(202);
     const submitted = await next.json() as Submission;
-    await expect.poll(async () => (await fixture.snapshot()).messages[3].content, { timeout: 5000 }).toBe('等待上游的正文');
+    await expect.poll(async () => messageText((await fixture.snapshot()).messages[3]), { timeout: 5000 }).toBe('等待上游的正文');
     expect((await request.post(`/api/conversations/${fixture.id}/cancel`, { headers, data: { runId: submitted.runId } })).ok()).toBe(true);
     expect((await fixture.snapshot()).messages.map((message) => message.status)).toEqual(['completed', 'cancelled', 'completed', 'cancelled']);
   } finally { await fixture.restore(); }
@@ -108,9 +109,9 @@ test('cancellation finalizes the last complete CR-delimited SSE event without in
   const fixture = await setup(request, 'alarm-stall-cr');
   try {
     await expect.poll(async () => (await fixture.snapshot()).messages[1].durableOffset ?? 0).toBeGreaterThan(0);
-    expect((await fixture.snapshot()).messages[1].content).toBe('');
+    expect(messageText((await fixture.snapshot()).messages[1])).toBe('');
     expect((await request.post(`/api/conversations/${fixture.id}/cancel`, { headers, data: { runId: fixture.submission.runId } })).ok()).toBe(true);
-    expect((await fixture.snapshot()).messages[1]).toMatchObject({ status: 'cancelled', content: '等待上游的正文', reasoning: '等待上游的思考', generation: { usage: {} } });
+    expect((await fixture.snapshot()).messages[1]).toMatchObject({ status: 'cancelled', generation: { usage: {} }, parts: messageParts('等待上游的正文', '等待上游的思考') });
     expect((await fixture.state()).calls).toBe(1);
   } finally { await fixture.restore(); }
 });

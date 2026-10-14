@@ -1,3 +1,4 @@
+import { messageText } from '../../shared/message-content';
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import type { ProviderSettings, Snapshot } from '../../shared/types';
 import { MAX_CONVERSATIONS, MAX_DATABASE_BYTES, MAX_DATABASE_START_BYTES, MAX_DATABASE_WRITE_BYTES, STORAGE_QUOTA_MESSAGE } from '../../worker/resource-limits';
@@ -46,13 +47,13 @@ test('capacity reached during generation terminates without retrying, retains th
     const response = await request.post(`/api/conversations/${fixture.id}/messages`, { headers, data: input });
     expect(response.status()).toBe(202); const accepted = await response.json();
     const snapshot = () => request.get(`/api/conversations/${fixture.id}`).then((result) => result.json()) as Promise<Snapshot>;
-    await expect.poll(async () => (await snapshot()).messages[1].content.length).toBeGreaterThan(0);
-    const prefix = (await snapshot()).messages[1].content;
+    await expect.poll(async () => messageText((await snapshot()).messages[1]).length).toBeGreaterThan(0);
+    const prefix = messageText((await snapshot()).messages[1]);
     expect((await action(request, fixture.id, 'fill', { target: MAX_DATABASE_WRITE_BYTES + 4096 })).ok()).toBe(true);
     await expect.poll(async () => (await snapshot()).messages[1].status).toBe('failed');
     const stored = await snapshot();
-    expect(stored.messages[1].content.startsWith(prefix)).toBe(true);
-    expect(stored.messages[1].content).not.toContain('服务端生成完成');
+    expect(messageText(stored.messages[1]).startsWith(prefix)).toBe(true);
+    expect(messageText(stored.messages[1])).not.toContain('服务端生成完成');
     expect(stored.messages[1].error).toContain('存储容量');
     const resources = await action(request, fixture.id, 'resources').then((result) => result.json());
     expect(resources).toMatchObject({ calls: 1, runs: 1, retainedContexts: 0, journalRows: 0 });

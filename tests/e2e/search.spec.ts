@@ -56,6 +56,32 @@ test('unavailable Markdown runtimes preserve messages and drafts, then recover o
   } finally { await context.setOffline(false); await fixture.cleanup(); }
 });
 
+for (const chunk of ['mermaid', 'highlighted-body']) test(`a failed internal ${chunk} chunk preserves the page, search and draft until rendering is reloaded`, async ({ page, context }) => {
+  const fixture = await setup(page.request), errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  const runtime = `**/node_modules/.vite/deps/${chunk}-*.js*`;
+  await page.route(runtime, (route) => route.abort());
+  try {
+    await page.goto(`/c/${fixture.id}`);
+    const fallback = page.getByTestId('markdown-fallback');
+    await expect(fallback).toContainText('跨越 **格式** 搜索。');
+    const composer = page.getByLabel('消息', { exact: true });
+    await composer.fill('模块加载失败时保留的草稿');
+    await context.setOffline(true);
+    await expect(fallback.getByRole('button', { name: '重新加载' })).toBeDisabled();
+    await page.getByRole('button', { name: '搜索当前对话', exact: true }).click();
+    await input(page).fill('target'); await expect(status(page)).toContainText('1 / 5');
+    await page.unroute(runtime); await context.setOffline(false);
+    await expect(fallback.getByRole('button', { name: '重新加载' })).toBeEnabled();
+    await fallback.getByRole('button', { name: '重新加载' }).click();
+    await expect(page.getByTestId('markdown-fallback')).toHaveCount(0);
+    await expect(page.getByTestId('assistant-message').first().locator('pre.language-js')).toContainText('const TARGET = 1;');
+    await expect(page.locator('[data-streamdown="mermaid"] svg').first()).toBeVisible();
+    await expect(composer).toHaveValue('模块加载失败时保留的草稿');
+    expect(errors).toEqual([]);
+  } finally { await context.setOffline(false); await fixture.cleanup(); }
+});
+
 test('search finds rendered Markdown and literal text, navigates occurrences, excludes controls, and restores focus', async ({ page }) => {
   const fixture = await setup(page.request);
   try {

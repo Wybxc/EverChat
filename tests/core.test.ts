@@ -1,3 +1,4 @@
+import { messageParts, messageText } from '../shared/message-content';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { applyChange, branchPath, type Message } from '../shared/types';
@@ -5,19 +6,17 @@ import { generate } from './fixtures/generate';
 import { providerConfigFromEnv } from '../worker/provider-config';
 import type { Env } from '../worker/env';
 
-const message: Message = { id: 'one', role: 'assistant', content: 'hello', status: 'running', createdAt: 1, runId: 'run', parentId: 'parent', revisionOf: null, error: null };
+const message: Message = { id: 'one', role: 'assistant', parts: messageParts('hello'), status: 'running', createdAt: 1, runId: 'run', parentId: 'parent', revisionOf: null, error: null };
 test('replayed events are idempotent and sequence gaps trigger resync', () => {
   const first = applyChange({ seq: 0, messages: [] }, { type: 'change', seq: 1, messages: [message] });
   assert.deepEqual(applyChange(first, { type: 'change', seq: 1, messages: [message] }), first);
-  const final = applyChange(first, { type: 'change', seq: 2, messages: [{ ...message, content: 'hello world', status: 'completed' }] });
+  const final = applyChange(first, { type: 'change', seq: 2, messages: [{ ...message, parts: messageParts('hello world'), status: 'completed' }] });
   assert.equal(final.messages.length, 1);
-  assert.equal(final.messages[0].content, 'hello world');
+  assert.equal(messageText(final.messages[0]), 'hello world');
   assert.throws(() => applyChange(final, { type: 'change', seq: 4, messages: [message] }), /sequence gap/);
 });
 test('branch paths keep the selected answer and its conversation prefix', () => {
-  const message = (id: string, role: Message['role'], parentId: string | null, revisionOf: string | null = null): Message => ({
-    id, role, parentId, revisionOf, content: id, status: 'completed', createdAt: 1, runId: null, error: null,
-  });
+  const message = (id: string, role: Message['role'], parentId: string | null, revisionOf: string | null = null): Message => ({ id, role, parentId, revisionOf, parts: messageParts(id), status: 'completed', createdAt: 1, runId: null, error: null });
   const messages = [
     message('user-1', 'user', null),
     message('assistant-1', 'assistant', 'user-1'),

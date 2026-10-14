@@ -6,7 +6,7 @@ test('production PWA restores a conversation URL offline without caching API res
   await expect(page.getByTestId('user-message')).toContainText('离线 URL 验证');
   await expect(page.getByTestId('assistant-message')).toContainText('已保存的正文');
   await expect.poll(() => page.evaluate(async () => (await navigator.serviceWorker.getRegistration())?.active?.state)).toBe('activated');
-  await expect.poll(() => page.evaluate((key) => Boolean(localStorage.getItem(key)), `everchat:snapshot:${id}`)).toBe(true);
+  await expect.poll(() => page.evaluate((key) => Boolean(localStorage.getItem(key)), `everchat:snapshot:parts-v1:${id}`)).toBe(true);
   // The first document predates installation; its next navigation is controlled by the active worker.
   await page.reload();
   await expect.poll(() => page.evaluate(() => navigator.serviceWorker.controller?.state)).toBe('activated');

@@ -1,11 +1,11 @@
+import { messageParts } from '../shared/message-content';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { StreamSync } from '../shared/stream-sync';
 import { cachedSnapshot, deletedAt, markConversationDeleted, read, write } from '../src/storage';
 
 test('a confirmed deletion removes saved and preview contents and rejects delayed snapshots', () => {
-  const before = { messages: [{ id: 'message', role: 'assistant' as const, content: 'saved', status: 'completed' as const,
-    createdAt: 1, runId: null, parentId: null, revisionOf: null, error: null }], seq: 2 };
+  const before = { messages: [{ id: 'message', role: 'assistant' as const, parts: messageParts('saved'), status: 'completed' as const, createdAt: 1, runId: null, parentId: null, revisionOf: null, error: null }], seq: 2 };
   const sync = new StreamSync(before);
   assert.equal(sync.receive({ type: 'deleted', deletedAt: 100 }), true);
   assert.deepEqual(sync.view, { messages: [], seq: 2, deletedAt: 100 });

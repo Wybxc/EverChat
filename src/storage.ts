@@ -7,7 +7,8 @@ const PREFIX = 'everchat:';
 const cache = new Map<string, unknown>();
 let epoch = 0;
 export const storageEpoch = () => epoch;
-const storageKey = (key: string) => `${PREFIX}${key}`;
+// Snapshot payloads have a new DTO. Refetch authoritative data instead of converting old caches.
+const storageKey = (key: string) => `${PREFIX}${key.startsWith('snapshot:') ? `snapshot:parts-v1:${key.slice(9)}` : key}`;
 
 export async function hydrateStorage() {
   try {

@@ -1,10 +1,11 @@
+import { messageParts } from '../shared/message-content';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { branchPath, type Message } from '../shared/types';
 import { messageContext } from '../worker/message-context';
 
 const message = (id: string, role: Message['role'], parentId: string | null, revisionOf: string | null = null): Message => ({
-  id, role, parentId, revisionOf, content: id, status: 'completed', createdAt: 1, runId: null, error: null,
+  id, role, parentId, revisionOf, parts: messageParts(id), status: 'completed', createdAt: 1, runId: null, error: null,
 });
 const history = [
   message('question', 'user', null), message('answer', 'assistant', 'question'),
@@ -38,10 +39,10 @@ test('provider context omits unfinished output and bounds a long branch without 
   let parent: string | null = null;
   for (let index = 0; index < 30; index++) {
     const user = message(`user-${index}`, 'user', parent), assistant = message(`assistant-${index}`, 'assistant', user.id);
-    user.content = 'u'.repeat(2000); assistant.content = 'a'.repeat(2000);
+    user.parts = messageParts('u'.repeat(2000)); assistant.parts = messageParts('a'.repeat(2000));
     messages.push(user, assistant); parent = assistant.id;
   }
-  messages.push({ ...message('unfinished', 'assistant', 'user-29'), status: 'failed', content: 'failed output' });
+  messages.push({ ...message('unfinished', 'assistant', 'user-29'), status: 'failed', parts: messageParts('failed output') });
   const context = messageContext(messages, parent, 'current');
   assert.equal(context.length, 41);
   assert.equal(context[0].role, 'user');
@@ -51,10 +52,10 @@ test('provider context omits unfinished output and bounds a long branch without 
 });
 
 test('deletion keeps descendant parent links but excludes a deleted question and its answers from context', () => {
-  const deletedQuestion = { ...history[0], content: '', deletedAt: 123 };
+  const deletedQuestion = { ...history[0], parts: messageParts(''), deletedAt: 123 };
   const messages = [deletedQuestion, ...history.slice(1)];
   assert.deepEqual(branchPath(messages, 'followup-answer').map(({ id }) => id), ['question', 'answer', 'followup', 'followup-answer']);
   assert.deepEqual(messageContext(messages, 'followup-answer', 'next').map(({ content }) => content), ['followup', 'followup-answer', 'next']);
-  const deletedAnswer = history.map((message) => message.id === 'answer' ? { ...message, content: '', deletedAt: 123 } : message);
+  const deletedAnswer = history.map((message) => message.id === 'answer' ? { ...message, parts: messageParts(''), deletedAt: 123 } : message);
   assert.deepEqual(messageContext(deletedAnswer, 'followup-answer', 'next').map(({ content }) => content), ['question', 'followup', 'followup-answer', 'next']);
 });

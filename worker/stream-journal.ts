@@ -2,6 +2,7 @@ import { type Message, type StreamBatch, type StreamCommit } from '../shared/typ
 import { ProviderStream, type StreamState } from '../shared/provider-stream';
 import { STREAM_VERSION, validateBatch, validateCommit } from '../shared/stream-batches';
 import type { SqlQuery } from './generation-metrics';
+import { messageParts, messageText } from '../shared/message-content';
 
 type CommitRow = { chunkSeq: number; endSeq: number; startOffset: number; endOffset: number; payload: string } & Record<string, SqlStorageValue>;
 
@@ -40,11 +41,11 @@ export class StreamJournal {
         parser.feed(validateBatch(batch)); parser.drainDeltas(); offset = batch.endOffset;
       }
     }
-    return { ...message, content: parser.content, reasoning: parser.reasoning, durableOffset: offset, streamState: parser.checkpoint() };
+    return { ...message, parts: messageParts(parser.content, parser.reasoning), durableOffset: offset, streamState: parser.checkpoint() };
   }
   compact(message: Message) {
     this.query('UPDATE messages SET content = ?, reasoning = ?, durableOffset = ? WHERE id = ?',
-      message.content, message.reasoning ?? '', message.durableOffset ?? 0, message.id);
+      messageText(message), messageText(message, 'reasoning'), message.durableOffset ?? 0, message.id);
     this.query('DELETE FROM stream_commits WHERE runId = ?', message.runId);
   }
 }

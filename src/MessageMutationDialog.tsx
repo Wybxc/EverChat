@@ -1,3 +1,4 @@
+import { messageText } from '../shared/message-content';
 import { useEffect, useId, useRef, useState, type SubmitEvent } from 'react';
 import { X } from 'lucide-react';
 import type { Message } from '../shared/types';
@@ -6,8 +7,8 @@ export function MessageMutationDialog({ message, mode, confirm, close }: {
   message: Message; mode: 'edit' | 'delete'; confirm: (content: string, requestId: string) => Promise<void>; close: () => void;
 }) {
   const titleId = useId(), dialog = useRef<HTMLDialogElement>(null), input = useRef<HTMLTextAreaElement>(null), cancel = useRef<HTMLButtonElement>(null);
-  const [content, setContent] = useState(message.content), [busy, setBusy] = useState(false), [error, setError] = useState('');
-  const request = useRef({ id: crypto.randomUUID(), content: message.content.trim() });
+  const [content, setContent] = useState(messageText(message)), [busy, setBusy] = useState(false), [error, setError] = useState('');
+  const request = useRef({ id: crypto.randomUUID(), content: messageText(message).trim() });
   useEffect(() => {
     dialog.current?.showModal();
     if (mode === 'edit') input.current?.focus(); else cancel.current?.focus();

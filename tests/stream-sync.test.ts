@@ -1,3 +1,4 @@
+import { messageParts, messageText } from '../shared/message-content';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { StreamSync } from '../shared/stream-sync';
@@ -6,8 +7,9 @@ import { ProviderStream, encodeBytes } from '../shared/provider-stream';
 import type { Commit, Message } from '../shared/types';
 import { DEFAULT_CONVERSATION_SETTINGS } from '../shared/conversation-settings';
 
-const message: Message = { id: 'answer', role: 'assistant', content: '', reasoning: '', status: 'running', createdAt: 1,
-  runId: 'run', parentId: 'user', revisionOf: null, error: null, streamVersion: 'raw-sse-v1', durableOffset: 0, streamState: new ProviderStream('openai-chat', true).checkpoint() };
+const message: Message = { id: 'answer', role: 'assistant', parts: [], status: 'running', createdAt: 1,
+  runId: 'run', parentId: 'user', revisionOf: null, error: null, streamVersion: 'raw-sse-v1', durableOffset: 0,
+  streamState: new ProviderStream('openai-chat', true).checkpoint() };
 const wire = (content: string, reasoning: string) => new TextEncoder().encode(`data: ${JSON.stringify({ choices: [{ delta: { content, reasoning_content: reasoning } }] })}\n\n`);
 const first = [...streamBatches('run', 'answer', 0, 0, wire('**正文🙂**', '先思考'))][0];
 const second = [...streamBatches('run', 'answer', 1, first.endOffset, wire('第二段', '**结论**'))][0];
@@ -28,16 +30,18 @@ test('only confirmed output enters the durable snapshot; confirming a prefix pre
   const sync = new StreamSync({ messages: [message], seq: 0 });
   assert.equal(sync.receive({ type: 'preview', batch: first }), false);
   sync.receive({ type: 'preview', batch: second });
-  assert.equal(sync.durable.messages[0].content, ''); assert.equal(sync.durable.seq, 0);
-  assert.equal(sync.view.messages[0].content, '**正文🙂**第二段');
+  assert.equal(messageText(sync.durable.messages[0]), ''); assert.equal(sync.durable.seq, 0);
+  assert.equal(messageText(sync.view.messages[0]), '**正文🙂**第二段');
+  assert.deepEqual(sync.view.messages[0].parts, messageParts('**正文🙂**第二段', '先思考**结论**'));
+  assert.equal('content' in sync.view.messages[0] || 'reasoning' in sync.view.messages[0], false);
   assert.equal(sync.view.messages[0].durableOffset, 0); assert.equal(sync.view.messages[0].liveOffset, second.endOffset);
   assert.equal(sync.receive(commitAck(commit)), true);
-  assert.equal(sync.durable.messages[0].content, '**正文🙂**'); assert.equal(sync.durable.messages[0].liveOffset, undefined);
-  assert.equal(sync.view.messages[0].content, '**正文🙂**第二段'); assert.equal(sync.hasPreview, true);
+  assert.equal(messageText(sync.durable.messages[0]), '**正文🙂**'); assert.equal(sync.durable.messages[0].liveOffset, undefined);
+  assert.equal(messageText(sync.view.messages[0]), '**正文🙂**第二段'); assert.equal(sync.hasPreview, true);
   const finalCommit: Commit = { ...commit, seq: 2, batches: [second] };
   sync.receive(commitAck(finalCommit));
   assert.equal(sync.hasPreview, false); assert.deepEqual(sync.view, sync.durable);
-  assert.equal(sync.durable.messages[0].reasoning, '先思考**结论**');
+  assert.equal(messageText(sync.durable.messages[0], 'reasoning'), '先思考**结论**');
   assert.equal(sync.receive(commitAck(finalCommit)), false);
 });
 
@@ -49,10 +53,10 @@ test('reconnection discards ephemeral output and accepts durable replay before t
   sync.receive(commit); sync.receive({ type: 'ready', seq: 1 });
   sync.receive({ type: 'preview', batch: first }); // Already saved, so no double append.
   sync.receive({ type: 'preview', batch: second }); sync.receive({ type: 'preview', batch: second });
-  assert.equal(sync.view.messages[0].content, '**正文🙂**第二段');
-  assert.equal(sync.durable.messages[0].content, '**正文🙂**');
+  assert.equal(messageText(sync.view.messages[0]), '**正文🙂**第二段');
+  assert.equal(messageText(sync.durable.messages[0]), '**正文🙂**');
   sync.receive(commitAck({ ...commit, seq: 2, batches: [second] }));
-  assert.equal(sync.view.messages[0].content, '**正文🙂**第二段');
+  assert.equal(messageText(sync.view.messages[0]), '**正文🙂**第二段');
 });
 
 test('missing previews, conflicting duplicates and gaps trigger recovery without advancing durability', () => {
@@ -76,7 +80,7 @@ test('a failed terminal snapshot drops the uncommitted tail and retains the save
   const saved = sync.durable.messages[0];
   sync.receive({ type: 'change', seq: 2, messages: [{ ...saved, status: 'failed', error: '尾部未保存' }] });
   assert.equal(sync.hasPreview, false); assert.deepEqual(sync.view, sync.durable);
-  assert.equal(sync.view.messages[0].content, '**正文🙂**');
+  assert.equal(messageText(sync.view.messages[0]), '**正文🙂**');
   assert.equal(sync.view.messages[0].liveOffset, undefined);
 });
 
@@ -97,6 +101,6 @@ test('unconfirmed previews are bounded even without persistence acknowledgements
   const batches = [...streamBatches('run', 'answer', 0, 0, new TextEncoder().encode(':'.repeat(140000)))];
   for (const batch of batches.slice(0, 16)) sync.receive({ type: 'preview', batch });
   assert.throws(() => sync.receive({ type: 'preview', batch: batches[16] }), /buffer limit/);
-  assert.equal(sync.durable.messages[0].content, ''); assert.equal(sync.durable.seq, 0);
-  sync.resetPreview(); assert.equal(sync.view.messages[0].content, '');
+  assert.equal(messageText(sync.durable.messages[0]), ''); assert.equal(sync.durable.seq, 0);
+  sync.resetPreview(); assert.equal(messageText(sync.view.messages[0]), '');
 });

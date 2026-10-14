@@ -1,6 +1,7 @@
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import type { ProviderSettings, Snapshot } from '../../shared/types';
 import type { EverChatBackup } from '../../shared/backup';
+import { readFile } from 'node:fs/promises';
 
 const headers = { Origin: 'http://127.0.0.1:5174' };
 const fixture = (request: APIRequestContext, id: string, name: string) => request.post(`/api/__test/conversations/${id}/${name}`, { headers, data: {} });
@@ -30,6 +31,10 @@ test('versioned backups exclude API keys and restore messages with model metadat
     expect(backup.format).toBe('everchat-backup');
     expect(backup.version).toBe(1);
     expect(backup.conversation.messages.length).toBeGreaterThan(0);
+    for (const message of backup.conversation.messages) {
+      expect(message.parts).toBeInstanceOf(Array);
+      expect(message).not.toHaveProperty('content'); expect(message).not.toHaveProperty('reasoning');
+    }
     expect(backup.settings.providers[0]).not.toHaveProperty('apiKey');
     expect(JSON.stringify(backup)).not.toContain('backup-test-secret');
     expect(backup.settings.showReasoning).toBe(true);
@@ -38,8 +43,11 @@ test('versioned backups exclude API keys and restore messages with model metadat
     expect(restoredResponse.status()).toBe(201);
     const restored = await restoredResponse.json() as { id: string; snapshot: Snapshot };
     expect(restored.id).not.toBe(source.id);
-    expect(restored.snapshot.messages.map(({ content, reasoning, modelName }) => ({ content, reasoning, modelName }))).toEqual(
-      backup.conversation.messages.map(({ content, reasoning, modelName }) => ({ content, reasoning, modelName })),
+    for (const message of restored.snapshot.messages) {
+      expect(message).not.toHaveProperty('content'); expect(message).not.toHaveProperty('reasoning');
+    }
+    expect(restored.snapshot.messages.map(({ parts, modelName }) => ({ parts, modelName }))).toEqual(
+      backup.conversation.messages.map(({ parts, modelName }) => ({ parts, modelName })),
     );
     const restoredSettings = await request.get('/api/settings/providers', { headers }).then((result) => result.json()) as ProviderSettings;
     expect(restoredSettings.activeProviderId).toBeNull();
@@ -59,13 +67,23 @@ test('the client can download text formats and import a backup into a new conver
     const menu = page.getByRole('button', { name: '对话文件操作', exact: true });
     await menu.click();
     const markdown = page.waitForEvent('download'); await page.getByRole('button', { name: 'Markdown', exact: true }).click();
-    expect((await markdown).suggestedFilename()).toMatch(/\.md$/);
+    const markdownFile = await markdown;
+    expect(markdownFile.suggestedFilename()).toMatch(/\.md$/);
+    const markdownText = await readFile((await markdownFile.path())!, 'utf8');
+    expect(markdownText).toContain('跨越 **格式** 搜索。'); expect(markdownText).toContain('末尾思考终点');
     await menu.click();
     const text = page.waitForEvent('download'); await page.getByRole('button', { name: '纯文本', exact: true }).click();
-    expect((await text).suggestedFilename()).toMatch(/\.txt$/);
+    const textFile = await text;
+    expect(textFile.suggestedFilename()).toMatch(/\.txt$/);
+    const plainText = await readFile((await textFile.path())!, 'utf8');
+    expect(plainText).toContain('用户 TARGET 与 [a+b] 😀'); expect(plainText).toContain('末尾思考终点');
     await menu.click();
     const html = page.waitForEvent('download'); await page.getByRole('button', { name: 'HTML', exact: true }).click();
-    expect((await html).suggestedFilename()).toMatch(/\.html$/);
+    const htmlFile = await html;
+    expect(htmlFile.suggestedFilename()).toMatch(/\.html$/);
+    const htmlText = await readFile((await htmlFile.path())!, 'utf8');
+    expect(htmlText).toContain('第二个回答 target，Unicode 😀 中文。'); expect(htmlText).toContain('<summary>思考过程</summary>');
+    expect(htmlText).toContain('末尾思考终点');
     await menu.click();
     const backupDownload = page.waitForEvent('download'); await page.getByRole('button', { name: '下载备份', exact: true }).click(); const backupFile = await backupDownload;
     expect(backupFile.suggestedFilename()).toMatch(/\.everchat\.json$/);

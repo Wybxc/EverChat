@@ -1,3 +1,4 @@
+import { messageParts, messageText } from '../../shared/message-content';
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import WebSocket from 'ws';
 import type { ProviderSettings, Snapshot, Submission, SyncPacket } from '../../shared/types';
@@ -60,7 +61,7 @@ test('assistant revisions are idempotent and message deletion redacts context, r
     expect((await request.patch(`/api/conversations/${fixture.id}/messages/${original.id}`, { headers, data: { ...input, content: 'different' } })).status()).toBe(409);
     const saved = await fixture.snapshot();
     expect(saved.messages).toHaveLength(3); expect(saved.messages[1]).toEqual(original);
-    expect(saved.messages[2]).toMatchObject({ id: revised.messageId, parentId: before.messages[0].id, revisionOf: original.id, content: editedText, runId: null, reasoning: null });
+    expect(saved.messages[2]).toMatchObject({ id: revised.messageId, parentId: before.messages[0].id, revisionOf: original.id, runId: null, parts: messageParts(editedText, '') });
     expect(saved.messages[2].generation).toBeUndefined();
     await expect.poll(async () => (await request.get(`/api/search?q=${encodeURIComponent(`MANUAL-${fixture.id}`)}`).then((response) => response.json())).results.length).toBe(1);
 
@@ -74,9 +75,9 @@ test('assistant revisions are idempotent and message deletion redacts context, r
     expect((await edit()).status()).toBe(409);
     expect((await request.delete(`/api/conversations/${fixture.id}/messages/${before.messages[0].id}`, { headers })).status()).toBe(200);
     const tombstones = await fixture.snapshot();
-    expect(tombstones.messages[2]).toMatchObject({ content: '', reasoning: null, parentId: before.messages[0].id });
+    expect(tombstones.messages[2]).toMatchObject({ parentId: before.messages[0].id, parts: [] });
     expect(tombstones.messages[2].deletedAt).toBeGreaterThan(0);
-    expect(tombstones.messages[0].content).toBe('');
+    expect(messageText(tombstones.messages[0])).toBe('');
     expect((await request.post(`/api/conversations/${fixture.id}/messages`, { headers, data: { requestId: crypto.randomUUID(), retryOf: original.id } })).status()).toBe(404);
     expect((await request.post(`/api/conversations/${fixture.id}/messages`, { headers, data: { requestId: crypto.randomUUID(), content: 'invalid head', branchHead: revised.messageId } })).status()).toBe(404);
     const next = await fixture.send('删除后继续', continued.assistantId);

@@ -1,3 +1,4 @@
+import { messageText } from '../../shared/message-content';
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import type { ProviderKind, ProviderSettings, Snapshot, Submission } from '../../shared/types';
 import type { EverChatBackup } from '../../shared/backup';
@@ -62,7 +63,7 @@ test('hidden thoughts determine first output before the visible answer, while ro
     await page.goto(`/c/${fixture.id}`); await fixture.send();
     await expect.poll(async () => (await fixture.snapshot()).messages[1]?.status).toBe('completed');
     const message = (await fixture.snapshot()).messages[1];
-    expect(message.reasoning).toBe(''); expect(message.content).toBe('正文后到');
+    expect(messageText(message, 'reasoning')).toBe(''); expect(messageText(message)).toBe('正文后到');
     expect(message.generation?.usage).toMatchObject({ inputTokens: 10, outputTokens: 5, reasoningTokens: 2, cachedInputTokens: 4 });
     expect(message.generation!.timing!.firstTokenMs).toBeGreaterThanOrEqual(200);
     expect(message.generation!.timing!.durationMs! - message.generation!.timing!.firstTokenMs!).toBeGreaterThan(1400);
@@ -95,7 +96,7 @@ test('cancellation retains partial reported usage and model observations; manual
   const fixture = await setup(page.request, 'anthropic', 'raw-anthropic');
   try {
     await page.goto(`/c/${fixture.id}`); const accepted = await fixture.send();
-    await expect.poll(async () => (await fixture.snapshot()).messages[1]?.content, { intervals: [50] }).toBe('**正文🙂**\n');
+    await expect.poll(async () => messageText((await fixture.snapshot()).messages[1]), { intervals: [50] }).toBe('**正文🙂**\n');
     await page.request.post(`/api/conversations/${fixture.id}/cancel`, { headers, data: { runId: accepted.runId } });
     const saved = (await fixture.snapshot()).messages[1];
     expect(saved.status).toBe('cancelled'); expect(saved.generation).toMatchObject({ usageIsFinal: false, usage: { inputTokens: 14, cachedInputTokens: 4 } });
@@ -114,7 +115,7 @@ test('an interrupted DO preserves the observed first output without inventing an
   const fixture = await setup(request, 'openai-chat', 'alarm-stall');
   try {
     const accepted = await fixture.send();
-    await expect.poll(async () => (await fixture.snapshot()).messages[1]?.content).toBe('等待上游的正文');
+    await expect.poll(async () => messageText((await fixture.snapshot()).messages[1])).toBe('等待上游的正文');
     const state = await request.post(`/api/__test/conversations/${fixture.id}/state`, { headers, data: { runId: accepted.runId } }).then((response) => response.json());
     expect(state.timing.firstTokenAt).not.toBeNull();
     await request.post(`/api/__test/conversations/${fixture.id}/abort`, { headers, data: { runId: accepted.runId } });

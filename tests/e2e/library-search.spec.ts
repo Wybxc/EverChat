@@ -1,3 +1,4 @@
+import { messageText } from '../../shared/message-content';
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import type { LibrarySearch } from '../../shared/search';
 import type { ProviderSettings, Snapshot, Submission } from '../../shared/types';
@@ -87,7 +88,7 @@ test('durable search outbox survives an RPC failure and object reset without ano
     await control(request, { fail: true });
     const response = await request.post(`/api/conversations/${id}/messages`, { headers, data: { requestId: crypto.randomUUID(), content: '索引提问TOKEN', showReasoning: true } });
     expect(response.status()).toBe(202); const submission = await response.json() as Submission;
-    await expect.poll(async () => (await request.get(`/api/conversations/${id}`).then((r) => r.json()) as Snapshot).messages.at(-1)?.content).toContain('等待上游的正文');
+    await expect.poll(async () => messageText((await request.get(`/api/conversations/${id}`).then((r) => r.json()) as Snapshot).messages.at(-1))).toContain('等待上游的正文');
     await request.post(`/api/conversations/${id}/cancel`, { headers, data: { runId: submission.runId } });
     const state = () => request.post(`/api/__test/conversations/${id}/search-state`, { headers, data: {} }).then((r) => r.json());
     await expect.poll(async () => (await state()).pending.length).toBe(2);

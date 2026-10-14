@@ -1,3 +1,4 @@
+import { messageParts } from '../../shared/message-content';
 // Serve the production shell with read-only synthetic API data; DO behavior is covered by the main E2E suite.
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
@@ -14,8 +15,8 @@ const server = createServer(async (request, response) => {
   if (path === '/api/settings/presets') return json([]);
   if (path === '/api/conversations') return json({ conversations: [{ id: conversationId, title, createdAt: 1, updatedAt: 1, pinned: false, archived: false }], deletions: [], deletionCursor: 0, hasMoreDeletions: false });
   if (path === `/api/conversations/${conversationId}`) return json({ seq: 1, messages: [
-    { id: 'user', role: 'user', content: title, status: 'completed', createdAt: 1, runId: null, parentId: null, revisionOf: null, error: null },
-    { id: 'assistant', role: 'assistant', content: '**已保存的正文**', reasoning: '**已保存的思考**', status: 'completed', createdAt: 2, runId: 'run', parentId: 'user', revisionOf: null, error: null },
+    { id: 'user', role: 'user', parts: messageParts(title), status: 'completed', createdAt: 1, runId: null, parentId: null, revisionOf: null, error: null },
+    { id: 'assistant', role: 'assistant', parts: messageParts('**已保存的正文**', '**已保存的思考**'), status: 'completed', createdAt: 2, runId: 'run', parentId: 'user', revisionOf: null, error: null },
   ] });
   if (path.startsWith('/api/')) { response.writeHead(404); response.end(); return; }
   const file = resolve(root, `.${decodeURIComponent(path)}`);

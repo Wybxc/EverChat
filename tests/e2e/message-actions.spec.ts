@@ -12,12 +12,22 @@ async function setup(request: APIRequestContext) {
 test('messages can be copied and quoted into the composer while preserving focus', async ({ page }) => {
   const fixture = await setup(page.request);
   try {
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
+        writeText: async (text: string) => { (window as unknown as { copiedMessage: string }).copiedMessage = text; },
+      } });
+    });
     await page.goto(`/c/${fixture.id}`);
     const editor = page.getByRole('textbox', { name: '消息', exact: true });
     const user = page.getByTestId('user-message').first();
     const assistant = page.getByTestId('assistant-message').first();
     await expect(page.getByRole('button', { name: '复制消息', exact: true })).toHaveCount(3);
     await expect(page.getByRole('button', { name: '引用消息', exact: true })).toHaveCount(3);
+    await user.getByRole('button', { name: '复制消息', exact: true }).click();
+    await expect.poll(() => page.evaluate(() => (window as unknown as { copiedMessage: string }).copiedMessage)).toBe('用户 TARGET 与 [a+b] 😀');
+    await assistant.getByRole('button', { name: '复制消息', exact: true }).click();
+    const copied = await page.evaluate(() => (window as unknown as { copiedMessage: string }).copiedMessage);
+    expect(copied).toContain('跨越 **格式** 搜索。'); expect(copied).not.toContain('末尾思考终点');
 
     await user.getByRole('button', { name: '引用消息', exact: true }).click();
     await expect(editor).toBeFocused();

@@ -3,6 +3,7 @@ import * as v from 'valibot';
 import { conversationSettingsSchema } from './conversation-settings';
 import { promptPresetListSchema } from './prompt-presets';
 import { generationSchema } from './generation';
+import { messagePartsSchema } from './message-content';
 
 export const BACKUP_FORMAT = 'everchat-backup';
 export const BACKUP_VERSION = 1 as const;
@@ -18,7 +19,7 @@ export interface BackupSettings {
   promptPresets: PromptPreset[];
 }
 export interface BackupMessage {
-  id: string; role: Message['role']; content: string; reasoning: string | null; status: Message['status'];
+  id: string; role: Message['role']; parts: Message['parts']; status: Message['status'];
   createdAt: number; parentId: string | null; revisionOf: string | null; error: string | null;
   providerId: string | null; model: string | null; modelName: string | null;
   generation?: Message['generation'];
@@ -38,10 +39,10 @@ export function backupMessage(message: Message): BackupMessage {
   const generation = message.generation ?? (partial && message.streamState && Object.keys(message.streamState.usage).length
     ? { usage: message.streamState.usage, usageIsFinal: false } : undefined);
   return {
-    id: message.id, role: message.role, content: message.deletedAt ? '' : message.content, reasoning: message.deletedAt ? null : message.reasoning ?? null,
+    id: message.id, role: message.role, parts: message.deletedAt ? [] : message.parts,
     status: partial ? 'failed' : message.status, createdAt: message.createdAt,
     parentId: message.parentId, revisionOf: message.revisionOf,
-    error: partial ? (message.error ?? '导出时生成尚未完成，已恢复已保存的部分内容。') : message.error,
+    error: message.deletedAt ? null : partial ? (message.error ?? '导出时生成尚未完成，已恢复已保存的部分内容。') : message.error,
     providerId: message.providerId ?? null, model: message.model ?? null, modelName: message.modelName ?? null,
     ...(!message.deletedAt && message.role === 'assistant' && generation ? { generation } : {}),
     ...(message.deletedAt ? { deletedAt: message.deletedAt } : {}),
@@ -67,14 +68,22 @@ export function validateBackup(value: unknown): EverChatBackup {
   const messages = conversation.messages.map((raw) => {
     if (!raw || typeof raw !== 'object') throw new Error('备份中的消息无效。');
     const message = raw as Record<string, unknown>;
-    if (!isUuid(message.id) || !['user', 'assistant'].includes(String(message.role)) || !isString(message.content, 100_000)
-      || !nullableString(message.reasoning, 100_000) || !['completed', 'failed', 'cancelled'].includes(String(message.status))
+    const parts = v.safeParse(messagePartsSchema, message.parts);
+    if (!isUuid(message.id) || !['user', 'assistant'].includes(String(message.role)) || !parts.success
+      || (message.role === 'user' && parts.output.some((part) => part.type === 'reasoning'))
+      || 'content' in message || 'reasoning' in message || !['completed', 'failed', 'cancelled'].includes(String(message.status))
       || !Number.isSafeInteger(message.createdAt) || !nullableString(message.parentId, 64) || !nullableString(message.revisionOf, 64)
       || !nullableString(message.error, 4096) || !nullableString(message.providerId, 64) || !nullableString(message.model, 200)
       || !nullableString(message.modelName, 200)
       || !(message.deletedAt === undefined || message.deletedAt === null || (Number.isSafeInteger(message.deletedAt) && Number(message.deletedAt) > 0))) throw new Error('备份中的消息字段无效。');
-    const { generation: rawGeneration, ...fields } = message;
-    if (message.deletedAt) return { ...fields, content: '', reasoning: null } as unknown as BackupMessage;
+    const fields = {
+      id: message.id, role: message.role, parts: parts.output, status: message.status, createdAt: message.createdAt,
+      parentId: message.parentId, revisionOf: message.revisionOf, error: message.error,
+      providerId: message.providerId, model: message.model, modelName: message.modelName,
+      ...(message.deletedAt ? { deletedAt: message.deletedAt } : {}),
+    } as BackupMessage;
+    const rawGeneration = message.generation;
+    if (message.deletedAt) return { ...fields, parts: [], error: null };
     const generation = rawGeneration === undefined ? undefined : v.safeParse(generationSchema, rawGeneration);
     if (generation && (!generation.success || message.role !== 'assistant')) throw new Error('备份中的生成元数据无效。');
     return { ...fields, ...(generation?.success ? { generation: generation.output } : {}) } as unknown as BackupMessage;

@@ -1,3 +1,4 @@
+import { messageText } from '../../shared/message-content';
 import { test, expect, type BrowserContext, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 
@@ -75,7 +76,7 @@ test('generation survives offline, tab closure and a second device; retries are 
   await expect(otherPage.getByTestId('assistant-message').last()).toHaveAttribute('data-status', 'completed', { timeout: 30_000 });
   const final = await second.request.get(`/api/conversations/${id}`).then((response) => response.json());
   expect(final.messages).toHaveLength(4);
-  expect(final.messages[3].content).toContain('服务端生成完成');
+  expect(messageText(final.messages[3])).toContain('服务端生成完成');
   const settings = await context.request.get('/api/settings/providers').then((response) => response.json());
   try {
     expect((await context.request.put('/api/settings/providers', { headers: { Origin: origin }, data: { ...settings, activeProviderId: null, activeModel: '' } })).status()).toBe(200);
@@ -186,7 +187,7 @@ test('the composer uses the selected model and shows opt-in provider thoughts', 
   await expect(answer.getByTestId('message-reasoning').locator('.collapse-content [data-streamdown="strong"]')).toContainText('集成思考。');
   const id = new URL(page.url()).pathname.split('/')[2];
   const snapshot = await context.request.get(`/api/conversations/${id}`).then((response) => response.json());
-  expect(snapshot.messages[1]).toMatchObject({ model: 'test-model-2', modelName: '第二模型', reasoning: '**集成思考。**' });
+  expect(snapshot.messages[1]).toMatchObject({ model: 'test-model-2', modelName: '第二模型', parts: expect.arrayContaining([{ type: 'reasoning', text: '**集成思考。**' }]) });
 
   await page.getByLabel('聊天模型').selectOption(JSON.stringify([settings.providers[0].id, 'test-model']));
   await answer.getByRole('button', { name: '重新生成' }).click();
@@ -221,7 +222,7 @@ test('DeepSeek-compatible Responses streams Markdown thoughts, persists them and
   await expect(answer).toHaveAttribute('data-status', 'completed');
   const id = new URL(page.url()).pathname.split('/')[2];
   const snapshot = await context.request.get(`/api/conversations/${id}`).then((response) => response.json());
-  expect(snapshot.messages[1]).toMatchObject({ model: 'deepseek-flash', reasoning: '**集成思考。**' });
+  expect(snapshot.messages[1]).toMatchObject({ model: 'deepseek-flash', parts: expect.arrayContaining([{ type: 'reasoning', text: '**集成思考。**' }]) });
   await page.reload();
   await expect(thoughts.locator('[data-streamdown="strong"]')).toBeVisible();
   await thoughts.getByText('思考过程', { exact: true }).click();

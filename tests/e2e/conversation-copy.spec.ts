@@ -21,8 +21,8 @@ test('copying a conversation creates a new URL with the same messages and indepe
     copyIds.push(result.id);
     expect(result.id).not.toBe(source.id);
     expect(result.conversation.title).toBe('复制源对话 副本');
-    expect(result.snapshot.messages.map(({ content, reasoning, modelName }) => ({ content, reasoning, modelName }))).toEqual(
-      original.messages.map(({ content, reasoning, modelName }) => ({ content, reasoning, modelName })),
+    expect(result.snapshot.messages.map(({ parts, modelName }) => ({ parts, modelName }))).toEqual(
+      original.messages.map(({ parts, modelName }) => ({ parts, modelName })),
     );
     expect(result.snapshot.messages.map(({ id }) => id)).not.toEqual(original.messages.map(({ id }) => id));
 

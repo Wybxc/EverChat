@@ -1,3 +1,4 @@
+import { messageParts, messageText } from '../shared/message-content';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { BACKUP_FORMAT, BACKUP_VERSION, backupMessage, validateBackup } from '../shared/backup';
@@ -6,7 +7,7 @@ import { DEFAULT_CONVERSATION_SETTINGS } from '../shared/conversation-settings';
 import { ProviderStream } from '../shared/provider-stream';
 
 const assistant: Message = {
-  id: crypto.randomUUID(), role: 'assistant', content: '已保存的回答', reasoning: '思考过程', status: 'running', createdAt: 2,
+  id: crypto.randomUUID(), role: 'assistant', parts: messageParts('已保存的回答', '思考过程'), status: 'running', createdAt: 2,
   runId: crypto.randomUUID(), parentId: crypto.randomUUID(), revisionOf: null, error: null,
   providerId: crypto.randomUUID(), model: 'deepseek-flash', modelName: 'DeepSeek Flash', durableOffset: 18, liveOffset: 24,
 };
@@ -14,8 +15,8 @@ const assistant: Message = {
 test('backupMessage converts an unfinished generation into recoverable partial content and strips stream state', () => {
   const result = backupMessage(assistant);
   assert.equal(result.status, 'failed');
-  assert.equal(result.content, assistant.content);
-  assert.equal(result.reasoning, assistant.reasoning);
+  assert.equal(messageText(result), messageText(assistant));
+  assert.equal(messageText(result, 'reasoning'), messageText(assistant, 'reasoning'));
   assert.match(result.error ?? '', /尚未完成/);
   assert.equal('runId' in result, false);
   assert.equal('durableOffset' in result, false);
@@ -27,8 +28,8 @@ test('a message tombstone preserves graph identity without exporting deleted tex
   assert.equal(result.deletedAt, 123);
   assert.equal(result.id, assistant.id);
   assert.equal(result.parentId, assistant.parentId);
-  assert.equal(result.content, '');
-  assert.equal(result.reasoning, null);
+  assert.equal(messageText(result), '');
+  assert.deepEqual(result.parts, []);
 });
 
 test('an unfinished backup retains only the supplier usage observed in its durable stream prefix', () => {
@@ -43,14 +44,23 @@ test('validateBackup accepts version 1 backups and rejects malformed messages', 
   const id = crypto.randomUUID();
   const backup = validateBackup({
     format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: Date.now(),
-    conversation: { id, title: '测试备份', createdAt: 1, updatedAt: 2, messages: [{
-      id: crypto.randomUUID(), role: 'assistant', content: '正文', reasoning: '思考', status: 'completed', createdAt: 2,
-      parentId: null, revisionOf: null, error: null, providerId: null, model: null, modelName: null,
-    }] },
+    conversation: { id, title: '测试备份', createdAt: 1, updatedAt: 2, messages: [{ id: crypto.randomUUID(), role: 'assistant', parts: messageParts('正文', '思考'), status: 'completed', createdAt: 2, parentId: null, revisionOf: null, error: null, providerId: null, model: null, modelName: null }] },
     settings: { providers: [{ id: crypto.randomUUID(), name: '测试供应商', provider: 'openai-chat', baseUrl: 'https://provider.example/v1', models: [{ id: 'test', name: 'Test', enabled: true }] }], activeProviderId: null, activeModel: '', systemPrompt: '', maxOutputTokens: null, showReasoning: true, promptPresets: [] },
   });
   assert.equal(backup.conversation.title, '测试备份');
-  assert.equal(backup.conversation.messages[0].reasoning, '思考');
+  assert.equal(messageText(backup.conversation.messages[0], 'reasoning'), '思考');
+  const saved = backup.conversation.messages[0];
+  assert.deepEqual(saved.parts, messageParts('正文', '思考'));
+  assert.equal('content' in saved || 'reasoning' in saved, false);
+  for (const invalid of [
+    { ...saved, content: 'old shape', reasoning: 'old shape' },
+    { ...saved, role: 'user' },
+    { ...saved, parts: [{ type: 'text', text: 'x' }, { type: 'text', text: 'y' }] },
+    { ...saved, parts: [{ type: 'image', url: 'https://example.com/image.png' }] },
+    { ...saved, parts: [{ type: 'text', text: 'x', apiKey: 'secret' }] },
+  ]) assert.throws(() => validateBackup({ ...backup, conversation: { ...backup.conversation, messages: [invalid] } }), /消息字段无效/);
+  const deleted = validateBackup({ ...backup, conversation: { ...backup.conversation, messages: [{ ...saved, deletedAt: 123, error: 'private error' }] } }).conversation.messages[0];
+  assert.deepEqual(deleted.parts, []); assert.equal(deleted.error, null);
   assert.throws(() => validateBackup({ ...backup, conversation: { ...backup.conversation, messages: [{ ...backup.conversation.messages[0], status: 'running' }] } }), /消息字段无效/);
   assert.throws(() => validateBackup({ ...backup, version: 2 }), /版本不受支持/);
   const settings = { ...DEFAULT_CONVERSATION_SETTINGS, systemPrompt: '会话提示', useGlobalMaxOutputTokens: false };

@@ -1,3 +1,4 @@
+import { messageParts, messageText } from '../../shared/message-content';
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import WebSocket from 'ws';
 import { readFile } from 'node:fs/promises';
@@ -45,8 +46,8 @@ test('large completed history crosses the DO response boundary and recovers from
   const stored = await response.json() as Snapshot;
   expect(stored.seq).toBe(501); expect(stored.messages).toHaveLength(32);
   for (const [index, message] of stored.messages.entries()) {
-    expect(message.content).toBe(index % 2 ? '正文🙂'.repeat(22500) : '历史🙂'.repeat(4000));
-    expect(message.reasoning ?? '').toBe(index % 2 ? '思考🙂'.repeat(22500) : '');
+    expect(messageText(message)).toBe(index % 2 ? '正文🙂'.repeat(22500) : '历史🙂'.repeat(4000));
+    expect(messageText(message, 'reasoning')).toBe(index % 2 ? '思考🙂'.repeat(22500) : '');
   }
   const full = await subscribe(request, id);
   try {
@@ -76,10 +77,10 @@ test('previews precede commits and reconnecting subscribers recover the same dur
       requestId: crypto.randomUUID(), content: '保存正文和思考', showReasoning: true,
     } }).then((response) => response.json());
     const answer = (snapshot: Snapshot) => snapshot.messages.find((message) => message.runId === submission.runId && message.role === 'assistant');
-    await expect.poll(() => answer(first.view())?.content.length ?? 0).toBeGreaterThan(0);
-    expect((answer(first.view())?.reasoning?.length ?? 0) > 0).toBe(true);
-    expect(answer(first.snapshot())!.content).toBe('');
-    expect((await request.get(`/api/conversations/${id}`).then((response) => response.json())).messages[1].content).toBe('');
+    await expect.poll(() => messageText(answer(first.view())).length).toBeGreaterThan(0);
+    expect((messageText(answer(first.view()), 'reasoning').length) > 0).toBe(true);
+    expect(messageText(answer(first.snapshot())!)).toBe('');
+    expect(messageText((await request.get(`/api/conversations/${id}`).then((response) => response.json())).messages[1])).toBe('');
     const prefix = first.snapshot();
     first.socket.terminate();
     const resumed = await subscribe(request, id, prefix);
@@ -88,7 +89,7 @@ test('previews precede commits and reconnecting subscribers recover the same dur
     const stored = await request.get(`/api/conversations/${id}`).then((response) => response.json()) as Snapshot;
     await expect.poll(() => second.snapshot()).toEqual(stored);
     expect(resumed.snapshot()).toEqual(stored);
-    expect(answer(stored)).toMatchObject({ content: '正文🙂'.repeat(2000), reasoning: '思考🙂'.repeat(2000), streamVersion: 'raw-sse-v1' });
+    expect(answer(stored)).toMatchObject({ streamVersion: 'raw-sse-v1', parts: messageParts('正文🙂'.repeat(2000), '思考🙂'.repeat(2000)) });
     expect(answer(stored)!.durableOffset).toBeGreaterThan(0);
     expect(resumed.packets.some((packet) => packet.type === 'commit-ack')).toBe(true);
     expect(resumed.packets.some((packet) => packet.type === 'preview')).toBe(true);
@@ -120,7 +121,7 @@ test('premature upstream EOF saves buffered text and thoughts, marks failure and
     await expect.poll(() => live.snapshot().messages.find((message) => message.runId === accepted.runId)?.status).toBe('failed');
     const stored = await request.get(`/api/conversations/${id}`).then((response) => response.json()) as Snapshot;
     expect(live.snapshot()).toEqual(stored);
-    expect(stored.messages[1]).toMatchObject({ content: '正文🙂'.repeat(400), reasoning: '思考🙂'.repeat(400), status: 'failed' });
+    expect(stored.messages[1]).toMatchObject({ status: 'failed', parts: messageParts('正文🙂'.repeat(400), '思考🙂'.repeat(400)) });
     expect(stored.messages[1].error).toBeTruthy();
     const repeated = await request.post(`/api/conversations/${id}/messages`, { headers, data: input });
     expect(repeated.status()).toBe(202); expect(await repeated.json()).toEqual(accepted);
@@ -151,7 +152,7 @@ test('an unacknowledged slow subscriber is bounded while other clients and persi
     await expect.poll(() => live.snapshot().messages[1]?.status).toBe('completed');
     const stored = await request.get(`/api/conversations/${id}`).then((response) => response.json()) as Snapshot;
     expect(live.snapshot()).toEqual(stored);
-    expect(stored.messages[1].content.length).toBe(90000); expect(stored.messages[1].reasoning!.length).toBe(90000);
+    expect(messageText(stored.messages[1]).length).toBe(90000); expect(messageText(stored.messages[1], 'reasoning').length).toBe(90000);
     const received = slow.packets.filter((packet) => packet.type === 'preview').map((packet) => packet.batch);
     expect(received.at(-1)!.endOffset).toBeLessThanOrEqual(128 * 1024);
     const recovered = await subscribe(request, id, slow.snapshot()); sockets.push(recovered.socket);
@@ -201,14 +202,14 @@ test('browser rendering streams ahead of saving, while export and throttled cach
     await expect(page.getByRole('banner')).toContainText('已同步');
     const id = new URL(page.url()).pathname.split('/')[2];
     const stored = await context.request.get(`/api/conversations/${id}`).then((response) => response.json()) as Snapshot;
-    const cached = await page.evaluate((id) => JSON.parse(localStorage.getItem(`everchat:snapshot:${id}`)!), id) as Snapshot;
+    const cached = await page.evaluate((id) => JSON.parse(localStorage.getItem(`everchat:snapshot:parts-v1:${id}`)!), id) as Snapshot;
     expect(cached).toEqual(stored);
     const captured = await page.evaluate(() => (window as unknown as { snapshotWrites: { key: string; snapshot: Snapshot }[] }).snapshotWrites);
-    expect(captured.some((write) => write.key === `everchat:snapshot:${deletedId}`)).toBe(true);
-    const writes = captured.filter((write) => write.key === `everchat:snapshot:${id}`).map((write) => write.snapshot);
+    expect(captured.some((write) => write.key === `everchat:snapshot:parts-v1:${deletedId}`)).toBe(true);
+    const writes = captured.filter((write) => write.key === `everchat:snapshot:parts-v1:${id}`).map((write) => write.snapshot);
     expect(writes.length).toBeLessThan(10);
     for (const write of writes) for (const message of write.messages) expect(message.liveOffset).toBeUndefined();
-    expect(stored.messages[1].content).toBe('正文🙂'.repeat(2000));
+    expect(messageText(stored.messages[1])).toBe('正文🙂'.repeat(2000));
   } finally {
     expect((await context.request.put('/api/settings/providers', { headers, data: initial })).ok()).toBe(true);
   }
@@ -234,7 +235,7 @@ test('failed persistence drops the preview tail without publishing a durable con
     expect(acknowledgements).toHaveLength(1);
     const previews = live.packets.filter((packet) => packet.type === 'preview');
     expect(acknowledgements[0].endOffset).toBeLessThan(previews.at(-1)!.batch.endOffset);
-    expect(live.view()).toEqual(live.snapshot()); expect(live.snapshot().messages[1].content).toBe('停止前的内容'.repeat(200));
+    expect(live.view()).toEqual(live.snapshot()); expect(messageText(live.snapshot().messages[1])).toBe('停止前的内容'.repeat(200));
     expect(live.snapshot()).toEqual(await request.get(`/api/conversations/${id}`).then((response) => response.json()));
   } finally {
     socket?.terminate();
@@ -310,7 +311,7 @@ for (const protocol of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
       expect((await request.post(`/api/conversations/${id}/messages`, { headers, data: { requestId: crypto.randomUUID(), content: '恢复事件', showReasoning: true } })).status()).toBe(202);
       await expect.poll(() => live.snapshot().messages[1]?.durableOffset ?? 0, { intervals: [50] }).toBeGreaterThan(0);
       const prefix = live.snapshot();
-      expect(prefix.messages[1].content).toBe('');
+      expect(messageText(prefix.messages[1])).toBe('');
       expect(prefix.messages[1].streamState?.utf8).toBeTruthy();
       expect(prefix.messages[1].streamState?.tail).toContain('data:');
       const saved = await request.get(`/api/conversations/${id}`).then((response) => response.json()) as Snapshot;
@@ -318,13 +319,12 @@ for (const protocol of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
       live.socket.terminate();
       // Resume from an API snapshot, whose parser state must include the two pending emoji bytes.
       const resumed = await subscribe(request, id, saved); sockets.push(resumed.socket);
-      await expect.poll(() => resumed.view().messages[1]?.content, { intervals: [50] }).toBe('**正文🙂**\n');
-      expect(resumed.view().messages[1].reasoning).toBe('**思考🙂**\n');
+      await expect.poll(() => messageText(resumed.view().messages[1]), { intervals: [50] }).toBe('**正文🙂**\n');
+      expect(messageText(resumed.view().messages[1], 'reasoning')).toBe('**思考🙂**\n');
       await expect.poll(() => resumed.snapshot().messages[1]?.status).toBe('completed');
       const final = await request.get(`/api/conversations/${id}`).then((response) => response.json()) as Snapshot;
       expect(resumed.snapshot()).toEqual(final); expect(resumed.view()).toEqual(final);
-      expect(final.messages[1]).toMatchObject({ content: '**正文🙂**\n答案。', reasoning: '**思考🙂**\n结论。',
-        generation: { finishReason: 'stop', usageIsFinal: true, usage: { inputTokens: protocol === 'anthropic' ? 14 : 10, outputTokens: protocol === 'gemini' ? 7 : 5, cachedInputTokens: 4 } } });
+      expect(final.messages[1]).toMatchObject({ generation: { finishReason: 'stop', usageIsFinal: true, usage: { inputTokens: protocol === 'anthropic' ? 14 : 10, outputTokens: protocol === 'gemini' ? 7 : 5, cachedInputTokens: 4 } }, parts: messageParts('**正文🙂**\n答案。', '**思考🙂**\n结论。') });
       expect(final.messages[1].streamState).toBeUndefined();
       const replay = await subscribe(request, id); sockets.push(replay.socket);
       expect(replay.snapshot()).toEqual(final);

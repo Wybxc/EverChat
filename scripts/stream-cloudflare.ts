@@ -1,3 +1,4 @@
+import { messageText } from '../shared/message-content';
 import assert from 'node:assert/strict';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
@@ -72,7 +73,7 @@ try {
     const item = source.results.find((result) => result.reasoningCharacters > 0); assert.ok(item);
     const stored = await api<Snapshot>(`/conversations/${item.conversationId}`);
     assert.equal(stored.messages[1].status, 'completed');
-    assert.equal(stored.messages[1].content.length, item.contentCharacters); assert.equal(stored.messages[1].reasoning?.length, item.reasoningCharacters);
+    assert.equal(messageText(stored.messages[1]).length, item.contentCharacters); assert.equal(messageText(stored.messages[1], 'reasoning').length, item.reasoningCharacters);
     for (let index = 0; index < expectedScenarios; index++) {
       let live: Awaited<ReturnType<typeof subscriber>> | undefined, handshakeAttempts = 0;
       while (!live) {
@@ -144,7 +145,7 @@ try {
           assert.equal(live.sync.view.messages[1]?.runId, accepted.runId);
         }
       } else if (item.mode === 'disconnect' || item.mode === 'cancel') {
-        await until(() => { live.check(); return (live.sync.view.messages[1]?.content.length ?? 0) > 0; }, item.name);
+        await until(() => { live.check(); return (messageText(live.sync.view.messages[1]).length) > 0; }, item.name);
         if (item.mode === 'disconnect') live.socket.close();
         else await api(`/conversations/${id}/cancel`, { runId: accepted.runId });
       }
@@ -159,14 +160,14 @@ try {
       const generationElapsedMs = Date.now() - acceptedAt;
       if (sustained) assert.ok(generationElapsedMs >= 60000, `${item.name}: exercise at least one minute of generation`);
       assert.equal(answer.status, item.mode === 'cancel' ? 'cancelled' : 'completed', `${item.name}: ${answer.error}`);
-      if (item.mode === 'cancel') assert.ok(answer.content.length > 0 && answer.content.length < 24000);
-      else { assert.equal(answer.content.length, item.characters); assert.equal(answer.reasoning?.length ?? 0, item.thoughts); }
+      if (item.mode === 'cancel') assert.ok(messageText(answer).length > 0 && messageText(answer).length < 24000);
+      else { assert.equal(messageText(answer).length, item.characters); assert.equal(messageText(answer, 'reasoning').length, item.thoughts); }
       if (item.mode !== 'disconnect') assert.deepEqual(live.sync.durable, stored);
       if (shadow) { await until(() => shadow.sync.durable.seq === stored.seq, 'second device'); shadow.check(); assert.deepEqual(shadow.sync.durable, stored); shadow.socket.close(); }
       if (slow) { await until(() => slow.code() === 4002, 'bounded slow subscriber'); slow.check(); const recovered = await subscriber(id, slow.sync.durable);
         assert.deepEqual(recovered.sync.durable, stored); recovered.socket.close(); }
       const replay = await subscriber(id); assert.deepEqual(replay.sync.durable, stored); replay.socket.close(); live.socket.close();
-      results.push({ scenario: item.name, conversationId: id, status: answer.status, contentCharacters: answer.content.length, reasoningCharacters: answer.reasoning?.length ?? 0,
+      results.push({ scenario: item.name, conversationId: id, status: answer.status, contentCharacters: messageText(answer).length, reasoningCharacters: messageText(answer, 'reasoning').length,
         elapsedMs: Date.now() - begin, generationElapsedMs, reconnects,
         client: { frames: earlierClient.frames + live.received.frames, bytes: earlierClient.bytes + live.received.bytes } });
       console.log(JSON.stringify(results.at(-1)));

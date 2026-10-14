@@ -1,3 +1,4 @@
+import { messageParts, messageText } from '../shared/message-content';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
@@ -8,8 +9,9 @@ import { ProviderStream, encodeBytes } from '../shared/provider-stream';
 import { applyChange, type Message } from '../shared/types';
 import type { SqlQuery } from '../worker/generation-metrics';
 
-const message: Message = { id: 'assistant', role: 'assistant', content: '', reasoning: '', status: 'running', createdAt: 1,
-  runId: 'run', parentId: 'user', revisionOf: null, error: null, streamVersion: STREAM_VERSION, durableOffset: 0, streamState: new ProviderStream('openai-chat', true).checkpoint() };
+const message: Message = { id: 'assistant', role: 'assistant', parts: [], status: 'running', createdAt: 1,
+  runId: 'run', parentId: 'user', revisionOf: null, error: null, streamVersion: STREAM_VERSION, durableOffset: 0,
+  streamState: new ProviderStream('openai-chat', true).checkpoint() };
 
 const descriptor = { protocol: 'openai-chat' as const, showReasoning: true };
 const wire = (content: string, reasoning: string) => new TextEncoder().encode(`data: ${JSON.stringify({ choices: [{ delta: { content, reasoning_content: reasoning } }] })}\n\n`);
@@ -39,7 +41,7 @@ test('stream batches preserve UTF-8, escaped JSON and separate thoughts within a
     assert.equal(batch.startOffset, index === 0 ? 0 : batches[index - 1].endOffset);
     snapshot = applyChange(snapshot, { type: 'commit', seq: index + 1, runId: batch.runId, messageId: batch.messageId, batches: [batch] });
   }
-  assert.equal(snapshot.messages[0].content, text); assert.equal(snapshot.messages[0].reasoning, thoughts);
+  assert.equal(messageText(snapshot.messages[0]), text); assert.equal(messageText(snapshot.messages[0], 'reasoning'), thoughts);
   assert.equal(snapshot.messages[0].durableOffset, batches.at(-1)!.endOffset);
   assert.throws(() => validateBatch({ ...batches[0], endOffset: batches[0].endOffset + 1 }), /size or offset/);
   assert.throws(() => validateBatch({ ...batches[0], data: encodeBytes(new Uint8Array(15_000)) }), /Invalid stream batch/);
@@ -84,14 +86,14 @@ test('SQLite journal survives a new reader, deduplicates batches and compacts on
     assert.throws(() => journal.append({ runId: conflict.runId, messageId: conflict.messageId, batches: [conflict] }), /Conflicting stream commit/);
     assert.equal(query<{ content: string }>('SELECT content FROM messages').one().content, '', 'streaming never rewrites the full message');
     const full = new StreamJournal(query).materialize(message, descriptor);
-    assert.equal(full.content, '正文🙂'.repeat(2000)); assert.equal(full.reasoning, '思考\n'.repeat(2000));
+    assert.equal(messageText(full), '正文🙂'.repeat(2000)); assert.equal(messageText(full, 'reasoning'), '思考\n'.repeat(2000));
     assert.throws(() => transaction(() => { journal.compact(full); throw new Error('Final status write failed'); }), /status write failed/);
     assert.equal(query<{ count: number }>('SELECT COUNT(*) AS count FROM stream_commits').one().count, batches.length);
     assert.equal(query<{ content: string }>('SELECT content FROM messages').one().content, '');
     transaction(() => { journal.compact(full); query('UPDATE messages SET status = ?', 'completed'); });
     assert.equal(query<{ count: number }>('SELECT COUNT(*) AS count FROM stream_commits').one().count, 0);
-    const stored = query('SELECT * FROM messages').one() as unknown as Message;
-    assert.equal(stored.content, full.content); assert.equal(stored.reasoning, full.reasoning); assert.equal(stored.durableOffset, full.durableOffset);
+    const stored = query<{ content: string; reasoning: string; durableOffset: number }>('SELECT * FROM messages').one();
+    assert.deepEqual(messageParts(stored.content, stored.reasoning), full.parts); assert.equal(stored.durableOffset, full.durableOffset);
   } finally { db.close(); }
 });
 
@@ -121,8 +123,8 @@ test('a grouped commit persists once, replays every boundary and rolls back with
     assert.equal(query<{ count: number }>('SELECT COUNT(*) AS count FROM events').one().count, 0);
     transaction(() => { journal.append(commit); query('INSERT INTO events (payload) VALUES (?)', JSON.stringify(commit)); });
     assert.equal(query<{ count: number }>('SELECT COUNT(*) AS count FROM stream_commits').one().count, 1);
-    assert.equal(journal.materialize(message, descriptor).content, '首段🙂末段');
-    assert.equal(journal.materialize(message, descriptor).reasoning, '思考结论');
+    assert.equal(messageText(journal.materialize(message, descriptor)), '首段🙂末段');
+    assert.equal(messageText(journal.materialize(message, descriptor), 'reasoning'), '思考结论');
     assert.throws(() => journal.append({ ...commit, batches: [first, { ...second, chunkSeq: 3 }] }), /gap/);
   } finally { db.close(); }
 });

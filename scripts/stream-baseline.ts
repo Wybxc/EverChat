@@ -1,3 +1,4 @@
+import { messageText } from '../shared/message-content';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
@@ -121,8 +122,8 @@ try {
     const snapshot = await api<Snapshot>(`/conversations/${id}`);
     const answer = snapshot.messages.find((message) => message.runId === submission.runId && message.role === 'assistant')!;
     assert.equal(answer.status, 'completed');
-    assert.equal(answer.content.length, chunks * Math.min(scenario.size, Math.floor(90_000 / chunks)));
-    assert.equal(answer.reasoning?.length ?? 0, scenario.kind === 'reasoning' ? answer.content.length : 0);
+    assert.equal(messageText(answer).length, chunks * Math.min(scenario.size, Math.floor(90_000 / chunks)));
+    assert.equal(messageText(answer, 'reasoning').length, scenario.kind === 'reasoning' ? messageText(answer).length : 0);
     if (scenario.disconnect) {
       assert.ok(observed.disconnected, 'The subscriber must disconnect during generation');
       assert.ok(report.broadcastFrames > 0, 'The subscriber must receive part of the answer before disconnecting');

@@ -1,3 +1,4 @@
+import { messageText } from '../shared/message-content';
 import assert from 'node:assert/strict';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
@@ -38,8 +39,8 @@ function validate(snapshot: Snapshot, history: History) {
   assert.equal(snapshot.seq, 501); assert.equal(snapshot.messages.length, history.seed.messages);
   for (const [index, message] of snapshot.messages.entries()) {
     assert.equal(message.status, 'completed'); assert.equal(message.createdAt, index);
-    assert.equal(message.content, index % 2 ? '正文🙂'.repeat(22500) : '历史🙂'.repeat(4000));
-    assert.equal(message.reasoning ?? '', index % 2 ? '思考🙂'.repeat(22500) : '');
+    assert.equal(messageText(message), index % 2 ? '正文🙂'.repeat(22500) : '历史🙂'.repeat(4000));
+    assert.equal(messageText(message, 'reasoning'), index % 2 ? '思考🙂'.repeat(22500) : '');
     if (index % 2) assert.equal(message.parentId, snapshot.messages[index - 1].id);
   }
 }

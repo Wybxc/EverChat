@@ -80,7 +80,7 @@ test('deleting a running conversation notifies subscribers, aborts generation, r
       await expect(client.getByRole('alert')).toContainText('这个对话已删除');
       await expect(client.getByTestId('assistant-message')).toHaveCount(0);
       await expect(client.getByRole('textbox', { name: '消息', exact: true })).toBeDisabled();
-      expect(await client.evaluate((id) => JSON.parse(localStorage.getItem(`everchat:snapshot:${id}`)!), fixture.id)).toMatchObject({ messages: [], deletedAt });
+      expect(await client.evaluate((id) => JSON.parse(localStorage.getItem(`everchat:snapshot:parts-v1:${id}`)!), fixture.id)).toMatchObject({ messages: [], deletedAt });
       expect(await client.evaluate((id) => localStorage.getItem(`everchat:draft:${id}`), fixture.id)).toBeNull();
     }
     const resources = await action(page.request, fixture.id, 'deletion-state').then((result) => result.json());
@@ -172,7 +172,7 @@ test('a device reconnects with a late outbox, clears an unselected deleted conve
     await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('everchat:pending')!))).toEqual([]);
     await expect(page.getByRole('textbox', { name: '消息', exact: true })).toHaveValue('保留新对话的草稿');
     await expect(page.locator('aside').getByRole('link', { name: fixture.title, exact: true })).toHaveCount(0);
-    await expect.poll(() => page.evaluate((id) => JSON.parse(localStorage.getItem(`everchat:snapshot:${id}`)!).messages.length, fixture.id)).toBe(0);
+    await expect.poll(() => page.evaluate((id) => JSON.parse(localStorage.getItem(`everchat:snapshot:parts-v1:${id}`)!).messages.length, fixture.id)).toBe(0);
     await page.goto(`/c/${fixture.id}`);
     await expect(page.getByRole('alert')).toContainText('这个对话已删除');
     await expect(page.getByTestId('assistant-message')).toHaveCount(0);
