@@ -1,7 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import type { Env } from './env';
 import type { ChatInput, Change, Commit, DurableChange, GenerationExecutor, Message, MessageStatus, ProviderConfig, Snapshot, StreamBatch, StreamCommit, Submission, SubmitInput } from '../shared/types';
-import { isActive } from '../shared/types';
+import { branchPath, isActive } from '../shared/types';
 import { commitAck, payloadBytes, STREAM_VERSION, validateCommit } from '../shared/stream-batches';
 import type { GenerationMeasurements } from '../shared/generation-metrics';
 import { GenerationMeter, measuredQuery } from './generation-metrics';
@@ -212,7 +212,7 @@ export class Conversation extends DurableObject<Env> {
     if (this.deletedAt || await this.env.LIBRARY.getByName('personal').deletedAt(conversationId)) return { error: '这个对话已删除。', status: 410 };
     const accepted = await this.ctx.storage.transaction<Submission | Failure | { result: Submission; change: Change }>(async () => {
       if (this.deletedAt) return { error: '这个对话已删除。', status: 410 };
-      const fingerprint = JSON.stringify([input.content ?? null, input.retryOf ?? null, input.revisionOf ?? null,
+      const fingerprint = JSON.stringify([input.content ?? null, input.retryOf ?? null, input.revisionOf ?? null, input.branchHead ?? null,
         input.selection?.providerId ?? null, input.selection?.model ?? null, input.showReasoning ?? null, input.reasoningEffort ?? null]);
       const duplicate = () => {
         const existing = this.query<{ fingerprint: string; result: string }>('SELECT * FROM submissions WHERE id = ?', input.requestId).toArray()[0];
@@ -232,6 +232,8 @@ export class Conversation extends DurableObject<Env> {
         if (historyBytes > MAX_HISTORY_START_BYTES) return { error: HISTORY_LIMIT_MESSAGE, status: 507 };
         messages.push(message);
       }
+      const requestedHead = input.branchHead ? messages.find((message) => message.id === input.branchHead && message.role === 'assistant' && message.status === 'completed') : undefined;
+      if (input.branchHead && !requestedHead) return { error: '找不到可继续的分支。', status: 404 };
       let parent: Message | undefined;
       let previous: Message | undefined;
       if (input.retryOf) {
@@ -245,9 +247,11 @@ export class Conversation extends DurableObject<Env> {
       const content = parent?.content ?? input.content?.trim();
       if (!content || content.length > 16_000) return { error: '请输入 1 到 16,000 字的消息。', status: 400 };
       const runId = crypto.randomUUID();
+      const latestAssistant = [...messages].reverse().find((message) => message.role === 'assistant' && message.status === 'completed');
+      const userParentId = input.branchHead ?? (input.revisionOf ? original?.parentId ?? null : latestAssistant?.id ?? null);
       const user: Message = parent ?? {
         id: crypto.randomUUID(), role: 'user', content, status: 'completed', createdAt: Date.now(),
-        runId: null, parentId: null, revisionOf: original?.id ?? null, error: null,
+        runId: null, parentId: userParentId, revisionOf: original?.id ?? null, error: null,
       };
       const assistant: Message = {
         id: crypto.randomUUID(), role: 'assistant', content: '', status: 'queued', createdAt: Date.now(),
@@ -256,8 +260,13 @@ export class Conversation extends DurableObject<Env> {
         streamVersion: STREAM_VERSION, durableOffset: 0,
       };
       const cutoff = parent ?? original;
-      const history = cutoff ? messages.slice(0, messages.findIndex((m) => m.id === cutoff.id)) : messages;
-      const superseded = new Set(messages.map((m) => m.revisionOf).filter(Boolean));
+      const revisionParent = original?.parentId ? messages.find((message) => message.id === original.parentId && message.role === 'assistant') : undefined;
+      const inferredHead = !requestedHead && !input.retryOf && !input.revisionOf && messages.some((message) => message.role === 'user' && message.parentId) ? latestAssistant : undefined;
+      const contextHead = requestedHead ?? previous ?? revisionParent ?? inferredHead;
+      const source = contextHead ? branchPath(messages, contextHead.id) : messages;
+      const cutoffIndex = cutoff ? source.findIndex((m) => m.id === cutoff.id) : -1;
+      const history = cutoff ? source.slice(0, cutoffIndex < 0 ? source.length : cutoffIndex) : source;
+      const superseded = new Set(history.map((m) => m.revisionOf).filter(Boolean));
       const context: ChatInput[] = history.filter((m) => m.status === 'completed' && !superseded.has(m.id)).map(({ role, content }) => ({ role, content }));
       // Bound provider context for a personal prototype. Keep the most recent complete turns.
       while (context.length > 40 || context.reduce((n, m) => n + m.content.length, 0) > 80_000) context.shift();

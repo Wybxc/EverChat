@@ -40,7 +40,7 @@ export interface Preview { type: 'preview'; batch: StreamBatch }
 export type DurableChange = Change | Commit;
 export type SyncPacket = DurableChange | Preview | CommitAck | { type: 'snapshot'; snapshot: Snapshot } | { type: 'ready'; seq: number } | { type: 'deleted'; deletedAt: number };
 export interface ModelSelection { providerId: string; model: string }
-export interface SubmitInput { requestId: string; content?: string; retryOf?: string; revisionOf?: string; selection?: ModelSelection; showReasoning?: boolean; reasoningEffort?: ReasoningEffort }
+export interface SubmitInput { requestId: string; content?: string; retryOf?: string; revisionOf?: string; branchHead?: string; selection?: ModelSelection; showReasoning?: boolean; reasoningEffort?: ReasoningEffort }
 export interface Submission { runId: string; userId: string; assistantId: string }
 export type GenerationExecutor = 'do-v1';
 export interface ChatInput { role: 'system' | 'user' | 'assistant'; content: string }
@@ -101,6 +101,26 @@ export interface ProviderModelConfig extends Omit<ProviderProfile, 'hasApiKey'> 
   apiKey?: string;
 }
 export const isActive = (message: Message) => message.status === 'queued' || message.status === 'running';
+
+/** Return the chronological message path that leads to a selected branch head. */
+export function branchPath(messages: Message[], headId: string): Message[] {
+  const byId = new Map(messages.map((message) => [message.id, message]));
+  const path: Message[] = [];
+  const seen = new Set<string>();
+  let current = byId.get(headId);
+  while (current && !seen.has(current.id)) {
+    path.push(current);
+    seen.add(current.id);
+    current = current.parentId ? byId.get(current.parentId) : undefined;
+  }
+  path.reverse();
+  // Older prototype rows may have a null parent on the first user message of
+  // a later turn. Preserve their chronological prefix while new rows use the
+  // explicit parent graph above.
+  const root = path[0];
+  const rootIndex = root ? messages.findIndex((message) => message.id === root.id) : -1;
+  return root && !root.parentId && rootIndex > 0 ? [...messages.slice(0, rootIndex), ...path] : path;
+}
 
 export function applyChange(snapshot: Snapshot, change: DurableChange): Snapshot {
   if (change.seq <= snapshot.seq) return snapshot;

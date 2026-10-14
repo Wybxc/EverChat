@@ -19,7 +19,7 @@ test('copying a conversation creates a new URL with the same messages and indepe
     expect(copied.status()).toBe(201);
     const result = await copied.json() as { id: string; snapshot: Snapshot; conversation: { title: string } };
     copyIds.push(result.id);
-    expect(copyId).not.toBe(source.id);
+    expect(result.id).not.toBe(source.id);
     expect(result.conversation.title).toBe('复制源对话 副本');
     expect(result.snapshot.messages.map(({ content, reasoning, modelName }) => ({ content, reasoning, modelName }))).toEqual(
       original.messages.map(({ content, reasoning, modelName }) => ({ content, reasoning, modelName })),

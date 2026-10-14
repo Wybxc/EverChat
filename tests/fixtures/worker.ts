@@ -150,6 +150,10 @@ export class Conversation extends ProductionConversation {
     const calls = hasCalls ? this.ctx.storage.sql.exec<{ calls: number }>('SELECT calls FROM fixture_calls WHERE runId = ?', runId).toArray()[0]?.calls ?? 0 : 0;
     return { ...run, calls };
   }
+  fixtureContext(runId: string) {
+    const run = this.ctx.storage.sql.exec<{ assistantId: string; context: string }>('SELECT assistantId, context FROM runs WHERE id = ?', runId).one();
+    return { assistantId: run.assistantId, context: JSON.parse(run.context) };
+  }
   fixtureReenterAlarm() { return this.alarm(); }
   fixtureRetrySearch() { this.ctx.storage.sql.exec('UPDATE search_retry SET nextAt = 0'); return this.alarm(); }
   async fixtureAbort(runId: string, stopping: boolean) {
@@ -222,7 +226,7 @@ export default {
       const { id, fail, rebuild } = await request.json() as { id?: string; fail?: boolean; rebuild?: boolean };
       return Response.json(await (env.LIBRARY as unknown as DurableObjectNamespace<Library>).getByName('personal').fixtureSearchControl(id, fail, rebuild));
     }
-    const match = /^\/api\/__test\/conversations\/([0-9a-f-]{36})\/(state|alarm|abort|abort-stop|history|search-history|indexed-history|search-state|search-reset|search-retry|fill|resources|storage-error|delete-failure|delete-reset|deletion-state|late-submit)$/.exec(url.pathname);
+    const match = /^\/api\/__test\/conversations\/([0-9a-f-]{36})\/(state|context|alarm|abort|abort-stop|history|search-history|indexed-history|search-state|search-reset|search-retry|fill|resources|storage-error|delete-failure|delete-reset|deletion-state|late-submit)$/.exec(url.pathname);
     if (!match) return production.fetch(request, env, ctx);
     if (request.method !== 'POST' || request.headers.get('Origin') !== url.origin) return new Response('Forbidden', { status: 403 });
     if (!await authenticated(request, env)) return new Response('Unauthorized', { status: 401 });
@@ -248,6 +252,7 @@ export default {
       case 'storage-error': await conversation.fixtureStorageError(); break;
       case 'history': return Response.json(await conversation.fixtureHistory(pairs));
       case 'state': return Response.json(await conversation.fixtureState(runId));
+      case 'context': return Response.json(conversation.fixtureContext(runId));
       case 'alarm': await conversation.fixtureReenterAlarm(); break;
       case 'abort':
       case 'abort-stop':

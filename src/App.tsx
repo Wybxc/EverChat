@@ -106,7 +106,7 @@ function Login({ session, onLogin }: { session: SessionInfo; onLogin: () => Prom
   </main>;
 }
 
-function MessageView({ message, busy, onRetry, onEdit, onQuote }: { message: Message; busy: boolean; onRetry: () => void; onEdit: () => void; onQuote: () => void }) {
+function MessageView({ message, busy, onRetry, onEdit, onQuote, branchSelected, onSelectBranch }: { message: Message; busy: boolean; onRetry: () => void; onEdit: () => void; onQuote: () => void; branchSelected: boolean; onSelectBranch: () => void }) {
   const [copied, setCopied] = useState(false);
   const [reasoningOpen, setReasoningOpen] = useState(true);
   const reasoningScroll = useFollowScroll(message.id);
@@ -138,6 +138,7 @@ function MessageView({ message, busy, onRetry, onEdit, onQuote }: { message: Mes
       {message.status === 'cancelled' && <p className="mt-4 text-xs text-base-content/60">已停止</p>}
       {!isActive(message) && <div className="mt-4 flex items-center gap-1 text-base-content/60">
         {tools}
+        {message.status === 'completed' && <button className={`btn btn-ghost btn-xs gap-1.5 ${branchSelected ? 'text-primary' : ''}`} disabled={busy || branchSelected} onClick={onSelectBranch} aria-label={branchSelected ? '当前分支' : '继续此分支'}>{branchSelected ? '当前分支' : '继续此分支'}</button>}
         <button className="btn btn-ghost btn-xs gap-1.5" disabled={busy} onClick={onRetry}><RefreshCw size={12} />重新生成</button>
       </div>}
     </div>
@@ -172,6 +173,7 @@ export function App() {
   const settings = useRef<HTMLDialogElement>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [modelChoice, setModelChoice] = useState<string>(() => read('chat-model', ''));
+  const [branchHead, setBranchHead] = useState<string | null>(null);
   const models = session?.models ?? [];
   const selectedModel = models.find((model) => modelSelectionKey(model) === modelChoice)
     ?? models.find((model) => model.providerId === session?.activeProviderId && model.model === session?.model)
@@ -240,6 +242,9 @@ export function App() {
   }, [libraryQuery.data, localConversations, pending]);
   const busy = Boolean(active || currentPending || sending || syncError || invalidRoute);
   const currentConversation = conversations.find((item) => item.id === selected);
+  const latestCompletedAssistant = useMemo(() => [...snapshot.messages].reverse().find((message) => message.role === 'assistant' && message.status === 'completed'), [snapshot.messages]);
+  const currentBranchHead = branchHead && snapshot.messages.some((message) => message.id === branchHead && message.role === 'assistant' && message.status === 'completed')
+    ? branchHead : latestCompletedAssistant?.id;
   const visibleConversations = conversations.filter((item) => Boolean(item.archived) === archivedList && item.title.toLowerCase().includes(search.toLowerCase()));
 
   const boot = useCallback(async () => {
@@ -300,6 +305,7 @@ export function App() {
     const saved: { text: string; revisionOf?: string } = selected && deletedAt(selected) ? { text: '' } : read(`draft:${selected ?? 'new'}`, { text: '' });
     setDraft(saved.text); setRevisionOf(saved.revisionOf); setError('');
   }, [selected]);
+  useEffect(() => { setBranchHead(selected ? read<string | null>(`branch-head:${selected}`, null) : null); }, [selected]);
   useEffect(() => {
     if (!selectedModel?.reasoningSupported) { setReasoningEffort(''); return; }
     const saved = read<ReasoningEffort | ''>(`reasoning-effort:${modelSelectionKey(selectedModel)}`, '');
@@ -315,6 +321,11 @@ export function App() {
     navigate(id); setSidebarOpen(false);
     requestAnimationFrame(() => editor.current?.focus());
   };
+  const selectBranch = (message: Message) => {
+    if (!selected || message.role !== 'assistant' || message.status !== 'completed') return;
+    setBranchHead(message.id); write(`branch-head:${selected}`, message.id); setError('');
+    requestAnimationFrame(() => editor.current?.focus());
+  };
   const openSearchResult = (result: SearchResult, query: string) => {
     navigate(result.conversationId); setSidebarOpen(false);
     setSearchJump({ id: result.conversationId, query, key: `${result.messageId}:${result.field}`, token: Date.now() });
@@ -326,6 +337,8 @@ export function App() {
 
   const queue = async (input: SubmitInput) => {
     if (!input.selection && selectedModel) input = { ...input, selection: { providerId: selectedModel.providerId, model: selectedModel.model } };
+    const selectedBranch = branchHead && snapshot.messages.some((message) => message.id === branchHead && message.role === 'assistant' && message.status === 'completed') ? branchHead : undefined;
+    if (input.content !== undefined && input.revisionOf === undefined && selectedBranch && input.branchHead === undefined) input = { ...input, branchHead: selectedBranch };
     if (input.showReasoning === undefined) input = { ...input, showReasoning: session?.showReasoning ?? false };
     const generationModel = input.selection ? models.find((model) => model.providerId === input.selection!.providerId && model.model === input.selection!.model) : selectedModel;
     const generationEffort = generationModel && generationModel === selectedModel
@@ -344,6 +357,7 @@ export function App() {
     }
     write(`draft:${selected ?? 'new'}`, { text: '' }); setDraft(''); setRevisionOf(undefined);
     select(conversation.id);
+    setBranchHead(null); write(`branch-head:${conversation.id}`, null);
     scrollToBottom();
     await deliver(item);
   };
@@ -363,6 +377,7 @@ export function App() {
     if (busy || !selectedModel) { openSettings(); return; }
     setSending(true);
     try { await queue({ requestId: crypto.randomUUID(), retryOf: message.id,
+      ...(message.status === 'completed' ? { branchHead: message.id } : {}),
       ...(message.providerId && message.model ? { selection: { providerId: message.providerId, model: message.model } } : {}),
     }); }
     finally { setSending(false); }
@@ -480,7 +495,7 @@ export function App() {
           </div>
         </section> : <section ref={contentRef} aria-label="对话消息" className="mx-auto w-full max-w-3xl space-y-8 px-5 py-8 sm:px-9 sm:py-10">
           {loading && !snapshot.messages.length && <div className="py-10 text-center text-xs text-base-content/60"><span className="loading loading-dots loading-sm" /><p className="mt-3">正在找回我们的对话…</p></div>}
-          {snapshot.messages.map((message) => <MessageView key={message.id} message={message} busy={busy} onRetry={() => void retry(message)} onEdit={() => edit(message)} onQuote={() => quote(message)} />)}
+          {snapshot.messages.map((message) => <MessageView key={message.id} message={message} busy={busy} onRetry={() => void retry(message)} onEdit={() => edit(message)} onQuote={() => quote(message)} branchSelected={message.role === 'assistant' && message.status === 'completed' && message.id === currentBranchHead} onSelectBranch={() => selectBranch(message)} />)}
           {currentPending && <article className="ml-auto max-w-[90%] rounded-2xl border border-dashed border-base-content/50 bg-base-200 px-5 py-4"><p className="text-sm leading-7 whitespace-pre-wrap">{currentPending.input.content ?? '新版本'}</p><div className="mt-2 flex items-center gap-2 text-[11px] text-base-content/60"><CloudOff size={12} />{currentPending.error ? '发送失败' : '等待发送'}</div>{currentPending.error && <p className="mt-2 text-xs font-medium leading-5 text-base-content">{currentPending.error}</p>}<div className="mt-2 flex gap-1"><button className="btn btn-ghost btn-xs" onClick={() => { const clean = { ...currentPending, error: undefined }; commitPending(pendingRef.current.map((item) => item.input.requestId === clean.input.requestId ? clean : item)); void deliver(clean); }}>重试</button><button className="btn btn-ghost btn-xs" onClick={() => { if (currentPending.input.content) updateDraft(currentPending.input.content); commitPending(pendingRef.current.filter((item) => item.input.requestId !== currentPending.input.requestId)); }}>编辑</button></div></article>}
         </section>}
       </div>
