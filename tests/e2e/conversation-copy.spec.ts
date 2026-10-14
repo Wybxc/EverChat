@@ -52,7 +52,7 @@ async function generationSource(request: APIRequestContext, model = 'metadata-co
     activeProviderId: providerId, activeModel: model, systemPrompt: 'Global prompt', maxOutputTokens: null, showReasoning: true,
   } })).ok()).toBe(true);
   expect((await request.post('/api/conversations', { headers, data: { id, title: '选定消息复制' } })).status()).toBe(201);
-  const settings: ConversationSettings = { systemPrompt: 'Conversation prompt', temperature: 0.6, topP: 0.8, useGlobalMaxOutputTokens: false, maxOutputTokens: 42 };
+  const settings: ConversationSettings = { systemPrompt: 'Conversation prompt', temperature: 0.6, topP: 0.8, useGlobalMaxOutputTokens: false, maxOutputTokens: 42, recentMessages: null, contextBudget: null };
   expect((await request.put(`/api/conversations/${id}/settings`, { headers, data: settings })).ok()).toBe(true);
   const snapshot = () => request.get(`/api/conversations/${id}`).then((response) => response.json()) as Promise<Snapshot>;
   const send = async (content: string, extra: { branchHead?: string; revisionOf?: string } = {}) => {

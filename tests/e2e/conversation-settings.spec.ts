@@ -10,7 +10,7 @@ async function setup(request: APIRequestContext, model = 'alarm-stall') {
   const original = await request.get('/api/settings/providers').then((response) => response.json()) as ProviderSettings;
   const providerId = crypto.randomUUID(), id = crypto.randomUUID();
   const config = { providers: [{ id: providerId, name: 'Parameters fixture', provider: 'openai-chat', baseUrl: 'https://provider.test/v1', apiKey: 'integration-test-key',
-    models: [{ id: model, name: 'Parameters fixture', enabled: true, useGlobalSystemPrompt: false, systemPrompt: 'MODEL' }, { id: 'o3', name: 'Reasoning fixture', enabled: true }] }],
+    models: [{ id: model, name: 'Parameters fixture', enabled: true, useGlobalSystemPrompt: false, systemPrompt: 'MODEL', metadataOverrides: { contextWindow: 131072 } }, { id: 'o3', name: 'Reasoning fixture', enabled: true }] }],
     activeProviderId: providerId, activeModel: model, systemPrompt: 'GLOBAL', maxOutputTokens: 128, showReasoning: false };
   expect((await request.put('/api/settings/providers', { headers, data: config })).ok()).toBe(true);
   expect((await request.post('/api/conversations', { headers, data: { id, title: '会话参数测试' } })).status()).toBe(201);

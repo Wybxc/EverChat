@@ -4,6 +4,7 @@ import { validateOutputLimit } from './model-metadata';
 
 export const DEFAULT_CONVERSATION_SETTINGS: ConversationSettings = {
   systemPrompt: null, temperature: null, topP: null, useGlobalMaxOutputTokens: true, maxOutputTokens: null,
+  recentMessages: null, contextBudget: null,
 };
 export const conversationSettingsSchema = v.strictObject({
   systemPrompt: v.nullable(v.pipe(v.string(), v.maxLength(20_000))),
@@ -11,6 +12,8 @@ export const conversationSettingsSchema = v.strictObject({
   topP: v.nullable(v.pipe(v.number(), v.finite(), v.minValue(0), v.maxValue(1))),
   useGlobalMaxOutputTokens: v.boolean(),
   maxOutputTokens: v.nullable(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(100_000))),
+  recentMessages: v.nullable(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(1000))),
+  contextBudget: v.nullable(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(10_000_000))),
 });
 
 // These gates also run on the server. Hidden settings remain available when switching back to a supported model.

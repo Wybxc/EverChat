@@ -1,8 +1,9 @@
 import { messageParts, messageText } from '../../shared/message-content';
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import WebSocket from 'ws';
-import type { ProviderSettings, Snapshot, Submission, SyncPacket } from '../../shared/types';
+import type { ConversationSettings, ProviderSettings, Snapshot, Submission, SyncPacket } from '../../shared/types';
 import type { EverChatBackup } from '../../shared/backup';
+import { DEFAULT_CONVERSATION_SETTINGS } from '../../shared/conversation-settings';
 
 const origin = 'http://127.0.0.1:5174', headers = { Origin: origin };
 async function setup(request: APIRequestContext) {
@@ -11,13 +12,13 @@ async function setup(request: APIRequestContext) {
   const providerId = crypto.randomUUID(), id = crypto.randomUUID();
   expect((await request.put('/api/settings/providers', { headers, data: {
     providers: [{ id: providerId, name: 'Mutation fixture', provider: 'openai-chat', baseUrl: 'https://provider.test/v1', apiKey: 'integration-test-key',
-      models: [{ id: 'benchmark-reasoning-2-10-32', name: 'Mutation fixture', enabled: true, reasoningSupport: 'supported' }] }],
+      models: [{ id: 'benchmark-reasoning-2-10-32', name: 'Mutation fixture', enabled: true, reasoningSupport: 'supported', metadataOverrides: { contextWindow: 200000 } }] }],
     activeProviderId: providerId, activeModel: 'benchmark-reasoning-2-10-32', systemPrompt: '', maxOutputTokens: null, showReasoning: true,
   } })).ok()).toBe(true);
   expect((await request.post('/api/conversations', { headers, data: { id, title: '消息修订验证' } })).status()).toBe(201);
   const snapshot = () => request.get(`/api/conversations/${id}`).then((response) => response.json()) as Promise<Snapshot>;
-  const send = async (content: string, branchHead?: string) => {
-    const response = await request.post(`/api/conversations/${id}/messages`, { headers, data: { requestId: crypto.randomUUID(), content, branchHead, showReasoning: true } });
+  const send = async (content: string, branchHead?: string, settings?: ConversationSettings) => {
+    const response = await request.post(`/api/conversations/${id}/messages`, { headers, data: { requestId: crypto.randomUUID(), content, branchHead, showReasoning: true, settings } });
     expect(response.status()).toBe(202);
     return await response.json() as Submission;
   };
@@ -64,6 +65,13 @@ test('assistant revisions are idempotent and message deletion redacts context, r
     expect(saved.messages[2]).toMatchObject({ id: revised.messageId, parentId: before.messages[0].id, revisionOf: original.id, runId: null, parts: messageParts(editedText, '') });
     expect(saved.messages[2].generation).toBeUndefined();
     await expect.poll(async () => (await request.get(`/api/search?q=${encodeURIComponent(`MANUAL-${fixture.id}`)}`).then((response) => response.json())).results.length).toBe(1);
+
+    const bounded = await fixture.send('预算限制的后续问题', revised.messageId, { ...DEFAULT_CONVERSATION_SETTINGS, contextBudget: 300 });
+    const boundedContext = await request.post(`/api/__test/conversations/${fixture.id}/context`, { headers, data: { runId: bounded.runId } }).then((response) => response.json());
+    expect(boundedContext.context).toEqual([{ role: 'user', content: '预算限制的后续问题' }]);
+    expect((await fixture.snapshot()).messages.at(-1)!.generation!.context).toMatchObject({ retainedMessages: 0, omittedMessages: 2 });
+    expect(messageText((await fixture.snapshot()).messages[2])).toBe(editedText);
+    await fixture.done();
 
     const continued = await fixture.send('保留的后续问题', revised.messageId);
     const context = await request.post(`/api/__test/conversations/${fixture.id}/context`, { headers, data: { runId: continued.runId } }).then((response) => response.json());

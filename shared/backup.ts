@@ -37,8 +37,8 @@ export interface EverChatBackup {
 
 export function backupMessage(message: Message): BackupMessage {
   const partial = message.status === 'queued' || message.status === 'running';
-  const generation = message.generation ?? (partial && message.streamState && Object.keys(message.streamState.usage).length
-    ? { usage: message.streamState.usage, usageIsFinal: false } : undefined);
+  const generation = partial && message.streamState
+    ? { ...message.generation, usage: message.streamState.usage, usageIsFinal: false } : message.generation;
   return {
     id: message.id, role: message.role, parts: message.deletedAt ? [] : message.parts,
     status: partial ? 'failed' : message.status, createdAt: message.createdAt,

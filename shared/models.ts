@@ -17,6 +17,7 @@ export function chatModels(settings: ProviderSettings | ProviderSettingsInput): 
       return {
       providerId: profile.id, providerName: profile.name, model: model.id, name: model.name || model.id,
       provider: profile.provider, baseUrl: profile.baseUrl,
+      ...(model.useGlobalSystemPrompt === false ? { systemPrompt: model.systemPrompt ?? '' } : {}),
       reasoningSupported: metadata.reasoning, reasoningEfforts: metadata.reasoningEfforts, metadata,
     }; }) : []);
 }

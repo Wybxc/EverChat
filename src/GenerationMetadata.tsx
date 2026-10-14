@@ -20,6 +20,10 @@ export function GenerationMetadata({ generation }: { generation?: GenerationResu
         <div className="flex items-baseline justify-between gap-4 sm:gap-6"><dt>Token 用量</dt><dd>{fields.length ? generation.usageIsFinal ? '供应商报告' : '部分报告' : '供应商未返回'}</dd></div>
         {fields.map(([key, label]) => <div key={key} className="flex items-baseline justify-between gap-4 sm:gap-6"><dt>{label}</dt><dd data-testid={`generation-${key}`}>{number.format(generation.usage[key]!)}</dd></div>)}
         {timings.filter(([key]) => generation.timing?.[key] !== undefined).map(([key, label]) => <div key={key} className="flex items-baseline justify-between gap-4 sm:gap-6"><dt>{label}</dt><dd data-testid={`generation-${key}`}>{duration(generation.timing![key]!)}</dd></div>)}
+        {generation.context && <>
+          <div className="flex items-baseline justify-between gap-4 sm:gap-6"><dt>发送上下文（估算）</dt><dd data-testid="generation-contextTokens">≈{number.format(generation.context.totalTokens)} / {number.format(generation.context.inputBudget)}</dd></div>
+          <div className="flex items-baseline justify-between gap-4 sm:gap-6"><dt>历史消息</dt><dd data-testid="generation-contextMessages">{generation.context.retainedMessages} 条 · 省略 {generation.context.omittedMessages} 条</dd></div>
+        </>}
       </dl>
     </div>
   </details>;

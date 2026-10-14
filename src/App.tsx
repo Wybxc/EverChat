@@ -11,6 +11,8 @@ import { clearLocal, deletedAt, markConversationDeleted, read, write, writePendi
 import { useConversation } from './useConversation';
 import { ProviderSettingsPanel, type SettingsTab } from './ProviderSettings';
 import { GenerationMetadata } from './GenerationMetadata';
+import { ContextEstimateView } from './ContextEstimate';
+import { assertContextFits, buildContext, contextHistory, contextSource } from '../shared/context-budget';
 import { chatModels, effortLabels, modelSelectionKey } from '../shared/models';
 import { useThemeMode } from './theme';
 import { useFollowScroll } from './useFollowScroll';
@@ -243,7 +245,7 @@ export function App() {
   const [branchHead, setBranchHead] = useState<string | null>(null);
   const [messageMutation, setMessageMutation] = useState<{ id: string; mode: 'edit' | 'delete' } | null>(null);
   const [conversationSettingsOpen, setConversationSettingsOpen] = useState(false);
-  const [newConversationSettings, setNewConversationSettings] = useState(() => read('conversation-settings:new', DEFAULT_CONVERSATION_SETTINGS));
+  const [newConversationSettings, setNewConversationSettings] = useState(() => ({ ...DEFAULT_CONVERSATION_SETTINGS, ...read('conversation-settings:new', DEFAULT_CONVERSATION_SETTINGS) }));
   const [settingsDraft, setSettingsDraft] = useState<{ id: string | null; settings: ConversationSettings } | null>(null);
   const settingsDraftChanged = useCallback((settings: ConversationSettings) => {
     setSettingsDraft({ id: selected, settings });
@@ -322,6 +324,23 @@ export function App() {
   const latestCompletedAssistant = useMemo(() => [...snapshot.messages].reverse().find((message) => message.role === 'assistant' && message.status === 'completed' && !message.deletedAt), [snapshot.messages]);
   const currentBranchHead = branchHead && snapshot.messages.some((message) => message.id === branchHead && message.role === 'assistant' && message.status === 'completed' && !message.deletedAt)
     ? branchHead : latestCompletedAssistant?.id;
+  const validBranchHead = branchHead && snapshot.messages.some((message) => message.id === branchHead && message.role === 'assistant' && message.status === 'completed' && !message.deletedAt) ? branchHead : undefined;
+  const conversationSettings = settingsDraft?.id === selected ? settingsDraft.settings : selected ? snapshot.settings ?? DEFAULT_CONVERSATION_SETTINGS : newConversationSettings;
+  const previewSource = contextSource(snapshot.messages, { content: draft, revisionOf, branchHead: validBranchHead });
+  const previewHistory = useMemo(() => {
+    try { return contextHistory(snapshot.messages, previewSource.parentId); } catch { return null; }
+  }, [snapshot.messages, previewSource.parentId]);
+  const contextEstimate = useMemo(() => {
+    if (!selectedModel || !previewHistory) return null;
+    const settings = v.safeParse(conversationSettingsSchema, conversationSettings);
+    if (!settings.success) return null;
+    try {
+      const config = applyConversationSettings({ ...selectedModel, systemPrompt: selectedModel.systemPrompt ?? session?.systemPrompt ?? '',
+        maxOutputTokens: session?.maxOutputTokens ?? null, modelMetadata: selectedModel.metadata, reasoningEnabled: selectedModel.reasoningSupported,
+        reasoningEffort: reasoningEffort || undefined, showReasoning: session?.showReasoning }, settings.output);
+      return buildContext(previewHistory, draft.trim(), config, settings.output).estimate;
+    } catch { return null; }
+  }, [selectedModel, previewHistory, conversationSettings, draft, reasoningEffort, session?.systemPrompt, session?.maxOutputTokens, session?.showReasoning]);
   const visibleConversations = conversations.filter((item) => Boolean(item.archived) === archivedList && item.title.toLowerCase().includes(search.toLowerCase()));
 
   const boot = useCallback(async () => {
@@ -414,11 +433,11 @@ export function App() {
   };
 
   const queue = async (input: SubmitInput) => {
-    const settings = v.safeParse(conversationSettingsSchema, settingsDraft?.id === selected ? settingsDraft.settings : selected ? snapshot.settings ?? DEFAULT_CONVERSATION_SETTINGS : newConversationSettings);
+    const settings = v.safeParse(conversationSettingsSchema, conversationSettings);
     if (!settings.success) { setError('请先修正会话参数。'); return; }
     input = { ...input, settings: settings.output };
     if (!input.selection && selectedModel) input = { ...input, selection: { providerId: selectedModel.providerId, model: selectedModel.model } };
-    const selectedBranch = branchHead && snapshot.messages.some((message) => message.id === branchHead && message.role === 'assistant' && message.status === 'completed' && !message.deletedAt) ? branchHead : undefined;
+    const selectedBranch = validBranchHead;
     if (input.content !== undefined && input.revisionOf === undefined && selectedBranch && input.branchHead === undefined) input = { ...input, branchHead: selectedBranch };
     if (input.showReasoning === undefined) input = { ...input, showReasoning: session?.showReasoning ?? false };
     const generationModel = input.selection ? models.find((model) => model.providerId === input.selection!.providerId && model.model === input.selection!.model) : selectedModel;
@@ -429,8 +448,12 @@ export function App() {
       input = { ...input, reasoningEffort: generationEffort };
     }
     if (generationModel) {
-      try { applyConversationSettings({ ...generationModel, reasoningEnabled: generationModel.reasoningSupported, reasoningEffort: input.reasoningEffort,
-        showReasoning: input.showReasoning, systemPrompt: '', maxOutputTokens: session?.maxOutputTokens ?? null, modelMetadata: generationModel.metadata }, settings.output); }
+      try {
+        const config = applyConversationSettings({ ...generationModel, reasoningEnabled: generationModel.reasoningSupported, reasoningEffort: input.reasoningEffort,
+          showReasoning: input.showReasoning, systemPrompt: generationModel.systemPrompt ?? session?.systemPrompt ?? '', maxOutputTokens: session?.maxOutputTokens ?? null, modelMetadata: generationModel.metadata }, settings.output);
+        const source = contextSource(snapshot.messages, input);
+        assertContextFits(buildContext(contextHistory(snapshot.messages, source.parentId), source.content, config, settings.output).estimate);
+      }
       catch (error) { setError(error instanceof Error ? error.message : '会话参数无效。'); return; }
     }
     const conversation: ConversationInfo = currentConversation ?? {
@@ -623,6 +646,7 @@ export function App() {
               <option value="">思维强度：默认</option>{selectedModel.reasoningEfforts.map((effort) => <option key={effort} value={effort}>{effortLabels[effort]}</option>)}
             </select>}
             </div>{active ? <button type="button" className="btn btn-sm h-9 shrink-0 gap-2 px-3" onClick={cancel} disabled={!navigator.onLine}><Square size={12} />停止生成</button> : <button type="submit" className="btn btn-primary btn-square btn-sm h-9 w-9 shrink-0 rounded-xl" aria-label="发送消息" disabled={!draft.trim() || busy || !selectedModel}>{sending ? <span className="loading loading-spinner loading-xs" /> : <ArrowUp size={18} />}</button>}</div>
+            {contextEstimate && <ContextEstimateView estimate={contextEstimate} />}
           </form>
         </div>
       </div>

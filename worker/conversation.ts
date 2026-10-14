@@ -17,7 +17,7 @@ import { DATABASE_LIMIT_MESSAGE, HISTORY_LIMIT_MESSAGE, MAX_DATABASE_BYTES, MAX_
 import type { SearchDocument, SearchPage } from '../shared/search';
 import { searchRetryDelay } from './search-index';
 import { backupMessage, type BackupMessage, type ConversationBackup } from '../shared/backup';
-import { messageContext } from './message-context';
+import { assertContextFits, buildContext, contextHistory, ContextBudgetError } from '../shared/context-budget';
 import { applyConversationSettings, DEFAULT_CONVERSATION_SETTINGS } from '../shared/conversation-settings';
 import { messageParts, messageText } from '../shared/message-content';
 
@@ -95,7 +95,7 @@ export class Conversation extends DurableObject<Env> {
   }
   settings(): ConversationSettings {
     const row = this.query<{ payload: string }>('SELECT payload FROM conversation_settings WHERE id = 1').toArray()[0];
-    return row ? JSON.parse(row.payload) as ConversationSettings : { ...DEFAULT_CONVERSATION_SETTINGS };
+    return { ...DEFAULT_CONVERSATION_SETTINGS, ...(row ? JSON.parse(row.payload) as ConversationSettings : {}) };
   }
   private writeSettings(settings: ConversationSettings) {
     this.query('INSERT INTO conversation_settings VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET payload = excluded.payload', JSON.stringify(settings));
@@ -347,8 +347,12 @@ export class Conversation extends DurableObject<Env> {
       const latestCompleted = [...messages].reverse().find((message) => message.status === 'completed' && !message.deletedAt);
       const userParentId = original ? original.parentId : requestedHead?.id ?? latestCompleted?.id ?? null;
       let context: ChatInput[];
-      try { context = messageContext(messages, parent ? parent.parentId : userParentId, content); }
-      catch { return { error: '消息分支关系无效，无法构建上下文。', status: 409 }; }
+      let contextEstimate;
+      try {
+        const built = buildContext(contextHistory(messages, parent ? parent.parentId : userParentId), content, generationConfig, settings);
+        assertContextFits(built.estimate); context = built.messages; contextEstimate = built.estimate;
+      } catch (error) { return error instanceof ContextBudgetError ? { error: error.message, status: 400 }
+        : { error: '消息分支关系无效，无法构建上下文。', status: 409 }; }
       const user: Message = parent ?? {
         id: crypto.randomUUID(), role: 'user', parts: messageParts(content), status: 'completed', createdAt: Date.now(),
         runId: null, parentId: userParentId, revisionOf: original?.id ?? null, error: null,
@@ -358,6 +362,7 @@ export class Conversation extends DurableObject<Env> {
         runId, parentId: user.id, revisionOf: previous?.id ?? null, error: null,
         providerId: generationConfig.providerId, model: generationConfig.model, modelName: generationConfig.modelName || generationConfig.model,
         streamVersion: STREAM_VERSION, durableOffset: 0,
+        generation: { usage: {}, usageIsFinal: false, context: contextEstimate },
       };
       const result = { runId, userId: user.id, assistantId: assistant.id };
       const initializeSettings = messages.length === 0 && !this.query('SELECT id FROM conversation_settings WHERE id = 1').toArray().length;
@@ -531,7 +536,7 @@ export class Conversation extends DurableObject<Env> {
         catch (failure) { status = 'failed'; error = failure instanceof StreamParseError ? failure.message : '无法验证供应商回答。'; }
       }
       message.parts = messageParts(parser.content, parser.reasoning); message.streamState = parser.checkpoint();
-      message.generation = { finishReason: message.streamState.finishReason, usage: message.streamState.usage,
+      message.generation = { ...message.generation, finishReason: message.streamState.finishReason, usage: message.streamState.usage,
         usageIsFinal: message.streamState.usageIsFinal && message.streamState.done && !message.streamState.failure && ['stop', 'length'].includes(message.streamState.finishReason ?? '') };
       this.meter?.streamCounts(message.streamState);
     }
@@ -540,7 +545,7 @@ export class Conversation extends DurableObject<Env> {
       timing: generationTiming(message.createdAt, run.startedAt, timing, this.activeGeneration?.runId === runId ? this.activeGeneration.endedAt : undefined) };
     const change = this.ctx.storage.transactionSync(() => {
       if (message.streamVersion === STREAM_VERSION) this.journal.compact(message);
-      this.query('INSERT INTO message_generations (messageId, payload) VALUES (?, ?)', message.id, JSON.stringify(message.generation));
+      this.query('INSERT INTO message_generations (messageId, payload) VALUES (?, ?) ON CONFLICT(messageId) DO UPDATE SET payload = excluded.payload', message.id, JSON.stringify(message.generation));
       this.query('UPDATE messages SET status = ?, error = ? WHERE id = ?', status, error, message.id);
       this.query("UPDATE runs SET config = NULL, context = '[]' WHERE id = ?", runId);
       const terminal = this.record([this.message(message.id)!], run.conversationId);

@@ -2,7 +2,11 @@ import { messageParts } from '../shared/message-content';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { branchPath, type Message } from '../shared/types';
-import { messageContext } from '../worker/message-context';
+import { buildContext, contextHistory } from '../shared/context-budget';
+import { DEFAULT_CONVERSATION_SETTINGS } from '../shared/conversation-settings';
+import { resolveModelMetadata } from '../shared/model-metadata';
+const config = { systemPrompt: '', maxOutputTokens: null };
+const messageContext = (messages: Message[], parentId: string | null, content: string) => buildContext(contextHistory(messages, parentId), content, config, DEFAULT_CONVERSATION_SETTINGS).messages;
 
 const message = (id: string, role: Message['role'], parentId: string | null, revisionOf: string | null = null): Message => ({
   id, role, parentId, revisionOf, parts: messageParts(id), status: 'completed', createdAt: 1, runId: null, error: null,
@@ -43,12 +47,19 @@ test('provider context omits unfinished output and bounds a long branch without 
     messages.push(user, assistant); parent = assistant.id;
   }
   messages.push({ ...message('unfinished', 'assistant', 'user-29'), status: 'failed', parts: messageParts('failed output') });
-  const context = messageContext(messages, parent, 'current');
-  assert.equal(context.length, 41);
+  const built = buildContext(contextHistory(messages, parent), 'current', config, DEFAULT_CONVERSATION_SETTINGS);
+  const context = built.messages;
+  assert.ok(context.length < 61);
+  assert.ok(built.estimate.totalTokens <= built.estimate.inputBudget);
+  assert.ok(built.estimate.omittedMessages > 0);
   assert.equal(context[0].role, 'user');
   assert.equal(context.at(-1)?.content, 'current');
-  assert.equal(context.slice(0, -1).reduce((total, message) => total + message.content.length, 0), 80_000);
   assert.ok(!context.some(({ content }) => content === 'failed output'));
+  const larger = buildContext(contextHistory(messages, parent), 'current', { ...config,
+    modelMetadata: resolveModelMetadata('openai-chat', { id: 'large', name: '', enabled: true, metadataOverrides: { contextWindow: 100_000 } }),
+  }, DEFAULT_CONVERSATION_SETTINGS);
+  assert.equal(larger.messages.length, 61);
+  assert.equal(larger.messages.slice(0, -1).reduce((total, message) => total + message.content.length, 0), 120_000);
 });
 
 test('deletion keeps descendant parent links but excludes a deleted question and its answers from context', () => {

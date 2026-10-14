@@ -30,6 +30,7 @@ export interface LibrarySnapshot { conversations: ConversationInfo[]; deletions:
 export interface ConversationSettings {
   systemPrompt: string | null; temperature: number | null; topP: number | null;
   useGlobalMaxOutputTokens: boolean; maxOutputTokens: number | null;
+  recentMessages: number | null; contextBudget: number | null;
 }
 export interface PromptPreset { id: string; name: string; systemPrompt: string; updatedAt: number }
 export type PromptPresetInput = Pick<PromptPreset, 'name' | 'systemPrompt'>;
@@ -53,7 +54,7 @@ export interface SubmitInput { requestId: string; content?: string; retryOf?: st
 export interface Submission { runId: string; userId: string; assistantId: string }
 export type GenerationExecutor = 'do-v1';
 export interface ChatInput { role: 'system' | 'user' | 'assistant'; content: string }
-export interface ChatModel extends ModelSelection { name: string; providerName: string; provider: ProviderApiKind; baseUrl: string; reasoningSupported: boolean; reasoningEfforts: ReasoningEffort[]; metadata: ResolvedModelMetadata }
+export interface ChatModel extends ModelSelection { name: string; providerName: string; provider: ProviderApiKind; baseUrl: string; systemPrompt?: string; reasoningSupported: boolean; reasoningEfforts: ReasoningEffort[]; metadata: ResolvedModelMetadata }
 export interface SessionInfo { authenticated: boolean; provider: string; model: string; modelName?: string; activeProviderId?: string | null; models?: ChatModel[]; configured: boolean; showReasoning?: boolean; systemPrompt?: string; maxOutputTokens?: number | null }
 
 export type ProviderKind = 'openai-chat' | 'anthropic' | 'openai-responses' | 'gemini';

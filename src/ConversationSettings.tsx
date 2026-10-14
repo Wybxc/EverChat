@@ -8,6 +8,9 @@ import { api } from './api';
 import { read, storageEpoch, write } from './storage';
 import { PromptPresetPicker } from './PromptPresets';
 
+const withContextDefaults = (settings: ConversationSettings) => settings.recentMessages === undefined || settings.contextBudget === undefined
+  ? { ...DEFAULT_CONVERSATION_SETTINGS, ...settings } : settings;
+
 function NumberSetting({ label, value, min, max, integer = false, change }: {
   label: string; value: number | null; min: number; max: number; integer?: boolean; change: (value: number | null) => void;
 }) {
@@ -34,7 +37,7 @@ export function ConversationSettingsDialog({ id, initial, model, effort, showRea
   const [cached] = useState(() => read<{ settings: ConversationSettings; dirty: boolean } | null>(draftKey, null));
   const [store] = useState(() => {
     const epoch = storageEpoch();
-    const autosave = new Autosave(cached?.dirty ? cached.settings : initial, async (settings: ConversationSettings) => {
+    const autosave = new Autosave(withContextDefaults(cached?.dirty ? cached.settings : initial), async (settings: ConversationSettings) => {
       if (epoch !== storageEpoch()) throw new Error('登录状态已改变。');
       if (id) return api<ConversationSettings>(`/conversations/${id}/settings`, 'PUT', settings);
       write('conversation-settings:new', settings); return settings;
@@ -42,14 +45,14 @@ export function ConversationSettingsDialog({ id, initial, model, effort, showRea
       if (epoch === storageEpoch() && autosave.getSnapshot().status === 'saved') write(draftKey, { settings, dirty: false });
     }, (_saved, draft) => {
       const result = v.safeParse(conversationSettingsSchema, draft);
-      if (!result.success) throw new Error('请检查参数：Temperature 为 0–2，Top P 为 0–1，输出上限为 1–100,000。');
+      if (!result.success) throw new Error('请检查参数：Temperature 为 0–2，Top P 为 0–1；Token 预算和消息条数须为范围内的正整数。');
       return result.output;
     });
     return autosave;
   });
   const { settings, status, error } = useSyncExternalStore(store.subscribe, store.getSnapshot);
-  useEffect(() => { if (cached?.dirty) store.update(cached.settings); }, [cached, store]);
-  useEffect(() => { store.receive(initial); }, [initial, store]);
+  useEffect(() => { if (cached?.dirty) store.update(withContextDefaults(cached.settings)); }, [cached, store]);
+  useEffect(() => { store.receive(withContextDefaults(initial)); }, [initial, store]);
   useEffect(() => { onDraft(settings); }, [settings, onDraft]);
   useEffect(() => {
     if (open) dialog.current?.showModal();
@@ -85,6 +88,14 @@ export function ConversationSettingsDialog({ id, initial, model, effort, showRea
           <option value="inherit">继承全局设置</option><option value="unset">未设置</option><option value="custom">自定义</option>
         </select></label>
         {limitMode === 'custom' && <NumberSetting label="输出 Token 上限" value={settings.maxOutputTokens} min={1} max={100000} integer change={(maxOutputTokens) => update({ maxOutputTokens })} />}
+        <fieldset className="fieldset border-t border-base-content/20 pt-3">
+          <legend className="fieldset-legend">上下文</legend>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <NumberSetting label="上下文 Token 预算" value={settings.contextBudget} min={1} max={10000000} integer change={(contextBudget) => update({ contextBudget })} />
+            <NumberSetting label="最近历史消息条数" value={settings.recentMessages} min={1} max={1000} integer change={(recentMessages) => update({ recentMessages })} />
+          </div>
+          <p className="text-xs text-base-content/70">留空按模型窗口；预算包含系统提示词和本次输入，历史按完整轮次选取。</p>
+        </fieldset>
         {error && <p role="alert" className="text-sm">{error}</p>}
       </div>
       <div className="flex shrink-0 items-center justify-between gap-3 border-t border-base-content/20 p-5">

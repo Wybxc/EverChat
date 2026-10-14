@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as v from 'valibot';
 import { messageParts, messagePartsSchema, messageText } from '../shared/message-content';
 import type { Message } from '../shared/types';
-import { messageContext } from '../worker/message-context';
+import { contextHistory } from '../shared/context-budget';
 import { cachedSnapshot, write } from '../src/storage';
 
 test('content parts preserve Markdown, Unicode and whitespace without duplicating either channel', () => {
@@ -32,8 +32,8 @@ test('provider context uses answer parts and never replays private reasoning as 
   const user: Message = { id: 'user', role: 'user', parts: messageParts('question'), status: 'completed',
     createdAt: 1, runId: null, parentId: null, revisionOf: null, error: null };
   const answer: Message = { ...user, id: 'answer', role: 'assistant', parentId: user.id, parts: messageParts('answer', 'private reasoning') };
-  assert.deepEqual(messageContext([user, answer], answer.id, 'next'), [
-    { role: 'user', content: 'question' }, { role: 'assistant', content: 'answer' }, { role: 'user', content: 'next' },
+  assert.deepEqual(contextHistory([user, answer], answer.id), [
+    { role: 'user', content: 'question' }, { role: 'assistant', content: 'answer' },
   ]);
 });
 
