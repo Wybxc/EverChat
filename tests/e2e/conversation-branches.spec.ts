@@ -8,8 +8,8 @@ async function configure(request: APIRequestContext) {
   const initial = await request.get('/api/settings/providers').then((response) => response.json());
   const providerId = '00000000-0000-4000-8000-000000000099';
   const settings = {
-    providers: [{ id: providerId, name: 'Integration', provider: 'openai-chat', baseUrl: 'https://provider.test/v1', models: [{ id: 'test-model', name: 'test-model', enabled: true }], apiKey: 'integration-test-key' }],
-    activeProviderId: providerId, activeModel: 'test-model', systemPrompt: '', maxOutputTokens: 128, showReasoning: false,
+    providers: [{ id: providerId, name: 'Integration', provider: 'openai-chat', baseUrl: 'https://provider.test/v1', models: [{ id: 'benchmark-text-2-10-32', name: 'test-model', enabled: true }], apiKey: 'integration-test-key' }],
+    activeProviderId: providerId, activeModel: 'benchmark-text-2-10-32', systemPrompt: '', maxOutputTokens: 128, showReasoning: false,
   };
   expect((await request.put('/api/settings/providers', { headers, data: settings })).status()).toBe(200);
   return { initial };
@@ -45,6 +45,22 @@ test('continuing an older branch keeps alternate answers out of the provider con
     const final = await request.get(`/api/conversations/${id}`).then((response) => response.json());
     expect(final.messages[3]).toMatchObject({ role: 'user', parentId: firstAssistant.id });
     expect(final.messages[4]).toMatchObject({ role: 'assistant', parentId: final.messages[3].id });
+
+    const edited = await request.post(`/api/conversations/${id}/messages`, { headers, data: { requestId: crypto.randomUUID(), content: '修改第一条消息', revisionOf: firstSnapshot.messages[0].id } });
+    expect(edited.status()).toBe(202);
+    const editedSubmission = await edited.json();
+    const editedContext = await request.post(`/api/__test/conversations/${id}/context`, { headers, data: { runId: editedSubmission.runId } }).then((response) => response.json());
+    expect(editedContext.context).toEqual([{ role: 'user', content: '修改第一条消息' }]);
+    await expect.poll(async () => (await request.get(`/api/conversations/${id}`).then((response) => response.json())).messages.at(-1)?.status).toBe('completed');
+
+    const continued = await request.post(`/api/conversations/${id}/messages`, { headers, data: { requestId: crypto.randomUUID(), content: '沿修改后的根继续' } });
+    expect(continued.status()).toBe(202);
+    const continuedSubmission = await continued.json();
+    const continuedContext = await request.post(`/api/__test/conversations/${id}/context`, { headers, data: { runId: continuedSubmission.runId } }).then((response) => response.json());
+    expect(continuedContext.context).toHaveLength(3);
+    expect(continuedContext.context[0].content).toBe('修改第一条消息');
+    expect(continuedContext.context[2].content).toBe('沿修改后的根继续');
+    expect(continuedContext.context.some(({ content }: { content: string }) => content === '第一条消息')).toBe(false);
   } finally {
     await request.delete(`/api/conversations/${id}`, { headers });
     expect((await request.put('/api/settings/providers', { headers, data: initial })).status()).toBe(200);

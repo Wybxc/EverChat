@@ -252,7 +252,7 @@ export default {
       case 'storage-error': await conversation.fixtureStorageError(); break;
       case 'history': return Response.json(await conversation.fixtureHistory(pairs));
       case 'state': return Response.json(await conversation.fixtureState(runId));
-      case 'context': return Response.json(conversation.fixtureContext(runId));
+      case 'context': return Response.json(await conversation.fixtureContext(runId));
       case 'alarm': await conversation.fixtureReenterAlarm(); break;
       case 'abort':
       case 'abort-stop':

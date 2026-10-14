@@ -1,7 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import type { Env } from './env';
 import type { ChatInput, Change, Commit, DurableChange, GenerationExecutor, Message, MessageStatus, ProviderConfig, Snapshot, StreamBatch, StreamCommit, Submission, SubmitInput } from '../shared/types';
-import { branchPath, isActive } from '../shared/types';
+import { isActive } from '../shared/types';
 import { commitAck, payloadBytes, STREAM_VERSION, validateCommit } from '../shared/stream-batches';
 import type { GenerationMeasurements } from '../shared/generation-metrics';
 import { GenerationMeter, measuredQuery } from './generation-metrics';
@@ -16,6 +16,7 @@ import { DATABASE_LIMIT_MESSAGE, HISTORY_LIMIT_MESSAGE, MAX_DATABASE_BYTES, MAX_
 import type { SearchDocument, SearchPage } from '../shared/search';
 import { searchRetryDelay } from './search-index';
 import { backupMessage, type BackupMessage, type ConversationBackup } from '../shared/backup';
+import { messageContext } from './message-context';
 
 type Row = Message & { generationResult: string | null } & Record<string, SqlStorageValue>;
 type Run = { id: string; conversationId: string; assistantId: string; context: string; config: string | null; chunkSeq: number; updatedAt: number;
@@ -248,7 +249,10 @@ export class Conversation extends DurableObject<Env> {
       if (!content || content.length > 16_000) return { error: '请输入 1 到 16,000 字的消息。', status: 400 };
       const runId = crypto.randomUUID();
       const latestAssistant = [...messages].reverse().find((message) => message.role === 'assistant' && message.status === 'completed');
-      const userParentId = input.branchHead ?? (input.revisionOf ? original?.parentId ?? null : latestAssistant?.id ?? null);
+      const userParentId = original ? original.parentId : requestedHead?.id ?? latestAssistant?.id ?? null;
+      let context: ChatInput[];
+      try { context = messageContext(messages, parent ? parent.parentId : userParentId, content); }
+      catch { return { error: '消息分支关系无效，无法构建上下文。', status: 409 }; }
       const user: Message = parent ?? {
         id: crypto.randomUUID(), role: 'user', content, status: 'completed', createdAt: Date.now(),
         runId: null, parentId: userParentId, revisionOf: original?.id ?? null, error: null,
@@ -259,19 +263,6 @@ export class Conversation extends DurableObject<Env> {
         providerId: config.providerId, model: config.model, modelName: config.modelName || config.model,
         streamVersion: STREAM_VERSION, durableOffset: 0,
       };
-      const cutoff = parent ?? original;
-      const revisionParent = original?.parentId ? messages.find((message) => message.id === original.parentId && message.role === 'assistant') : undefined;
-      const inferredHead = !requestedHead && !input.retryOf && !input.revisionOf && messages.some((message) => message.role === 'user' && message.parentId) ? latestAssistant : undefined;
-      const contextHead = requestedHead ?? previous ?? revisionParent ?? inferredHead;
-      const source = contextHead ? branchPath(messages, contextHead.id) : messages;
-      const cutoffIndex = cutoff ? source.findIndex((m) => m.id === cutoff.id) : -1;
-      const history = cutoff ? source.slice(0, cutoffIndex < 0 ? source.length : cutoffIndex) : source;
-      const superseded = new Set(history.map((m) => m.revisionOf).filter(Boolean));
-      const context: ChatInput[] = history.filter((m) => m.status === 'completed' && !superseded.has(m.id)).map(({ role, content }) => ({ role, content }));
-      // Bound provider context for a personal prototype. Keep the most recent complete turns.
-      while (context.length > 40 || context.reduce((n, m) => n + m.content.length, 0) > 80_000) context.shift();
-      while (context[0]?.role === 'assistant') context.shift();
-      context.push({ role: 'user', content });
       const result = { runId, userId: user.id, assistantId: assistant.id };
       if (!parent) this.insert(user);
       this.insert(assistant);

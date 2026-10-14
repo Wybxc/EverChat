@@ -108,18 +108,15 @@ export function branchPath(messages: Message[], headId: string): Message[] {
   const path: Message[] = [];
   const seen = new Set<string>();
   let current = byId.get(headId);
+  if (!current) throw new Error('消息分支不存在。');
   while (current && !seen.has(current.id)) {
     path.push(current);
     seen.add(current.id);
+    if (current.parentId && !byId.has(current.parentId)) throw new Error('消息分支的父消息不存在。');
     current = current.parentId ? byId.get(current.parentId) : undefined;
   }
-  path.reverse();
-  // Older prototype rows may have a null parent on the first user message of
-  // a later turn. Preserve their chronological prefix while new rows use the
-  // explicit parent graph above.
-  const root = path[0];
-  const rootIndex = root ? messages.findIndex((message) => message.id === root.id) : -1;
-  return root && !root.parentId && rootIndex > 0 ? [...messages.slice(0, rootIndex), ...path] : path;
+  if (current) throw new Error('消息分支存在循环。');
+  return path.reverse();
 }
 
 export function applyChange(snapshot: Snapshot, change: DurableChange): Snapshot {
