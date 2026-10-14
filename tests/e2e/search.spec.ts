@@ -32,6 +32,11 @@ test('search finds rendered Markdown and literal text, navigates occurrences, ex
   const fixture = await setup(page.request);
   try {
     await page.goto(`/c/${fixture.id}`);
+    await expect(page.locator('.katex')).toHaveCount(1);
+    await expect(page.locator('[data-streamdown="mermaid"]')).toHaveCount(1);
+    await expect(page.locator('[data-streamdown="mermaid"] svg').first()).toBeVisible();
+    expect(await page.locator('pre code span').filter({ hasText: 'TARGET' }).count()).toBeGreaterThan(0);
+    await expect(page.locator('[data-streamdown="code-block-copy-button"]')).toHaveCount(1);
     const trigger = page.getByRole('button', { name: '搜索当前对话', exact: true });
     await trigger.click(); await expect(input(page)).toBeFocused();
     await input(page).fill('target'); await expect(status(page)).toContainText('1 / 5');

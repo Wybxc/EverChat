@@ -88,7 +88,7 @@ pnpm test:pwa
 
 管理回归覆盖修改失败后保留输入、第二设备的改名／置顶／归档同步、删除确认与取消、生成中删除、清空大段存储、离线迟到请求和分页删除同步。故障注入分别在清理前返回失败、清空存储后重置原生 DO，验证 Library Alarm 能完成清理且不重复调用模型；测试只清理专门创建的测试对话。
 
-搜索回归覆盖 Markdown 跨格式匹配、特殊字符与 Unicode、排除模型标签和操作按钮、中文输入法、折叠思考区和嵌套滚动、移动端离线查找、导航／删除清理、跨对话分页、归档过滤、索引故障重试，以及生成中的匹配计数和阅读位置。生产 PWA 测试另行验证离线重开后的搜索与深浅主题高亮的实际对比度不低于 4.5:1。高亮使用 [CSS Custom Highlight API](https://developer.mozilla.org/en-US/docs/Web/API/CSS_Custom_Highlight_API)，不改写 Markdown DOM；旧浏览器没有该 API 时仍可定位和查看消息边框，关键词着色需要支持该 API 的浏览器。
+搜索回归覆盖 Markdown 跨格式匹配、特殊字符与 Unicode、排除模型标签和操作按钮、中文输入法、折叠思考区和嵌套滚动、移动端离线查找、导航／删除清理、跨对话分页、归档过滤、索引故障重试，以及生成中的匹配计数和阅读位置。Markdown 渲染回归还验证 Shiki 代码 token、代码复制、KaTeX 公式和 Mermaid SVG；这些插件按内容类型动态加载。生产 PWA 测试另行验证离线重开后的搜索与深浅主题高亮的实际对比度不低于 4.5:1。高亮使用 [CSS Custom Highlight API](https://developer.mozilla.org/en-US/docs/Web/API/CSS_Custom_Highlight_API)，不改写 Markdown DOM；旧浏览器没有该 API 时仍可定位和查看消息边框，关键词着色需要支持该 API 的浏览器。
 
 流式资源基线：
 

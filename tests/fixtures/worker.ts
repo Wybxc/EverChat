@@ -184,7 +184,7 @@ export class Conversation extends ProductionConversation {
     this.ctx.storage.transactionSync(() => {
       sql.exec('INSERT INTO messages (id, role, content, status, createdAt) VALUES (?, ?, ?, ?, ?)', user, 'user', '用户 TARGET 与 [a+b] 😀', 'completed', 1);
       sql.exec('INSERT INTO messages (id, role, content, reasoning, status, createdAt, modelName) VALUES (?, ?, ?, ?, ?, ?, ?)', assistant, 'assistant',
-        `## 章节\n\n跨越 **格式** 搜索。\n\nTARGET 起点\n\n${filler}\n\n\`\`\`js\nconst TARGET = 1;\n\`\`\`\n\n尾部 TARGET 与 [a+b]`,
+        `## 章节\n\n跨越 **格式** 搜索。\n\nTARGET 起点\n\n${filler}\n\n\`\`\`js\nconst TARGET = 1;\n\`\`\`\n\n数学：\n\n$$E = mc^2$$\n\n\`\`\`mermaid\ngraph TD\n  A[输入] --> B[回答]\n\`\`\`\n\n尾部 TARGET 与 [a+b]`,
         `隐藏目标在开头\n\n${filler}\n\n末尾思考终点`, 'completed', 2, 'TARGET 模型名');
       sql.exec('INSERT INTO messages (id, role, content, status, createdAt) VALUES (?, ?, ?, ?, ?)', last, 'assistant', '第二个回答 target，Unicode 😀 中文。', 'completed', 3);
     });

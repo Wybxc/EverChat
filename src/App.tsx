@@ -2,6 +2,8 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowDown, ArrowRight, ArrowUp, Check, CheckCheck, CloudOff, Copy, Download, Feather, Infinity as InfinityIcon, Lightbulb, LockKeyhole, Menu, MessageCircle, Monitor, Moon, Pencil, Pin, Plus, RefreshCw, Search, Settings, Sparkles, Square, Sun, WifiOff, X } from 'lucide-react';
 import 'streamdown/styles.css';
+import 'katex/dist/katex.min.css';
+import type { PluginConfig } from 'streamdown';
 import { isActive, type ConversationInfo, type LibrarySnapshot, type Message, type ProviderSettings, type ReasoningEffort, type SessionInfo, type Submission, type SubmitInput } from '../shared/types';
 import { api, ApiError } from './api';
 import { clearLocal, deletedAt, markConversationDeleted, read, write, writePending, type Pending } from './storage';
@@ -18,6 +20,11 @@ import type { SearchResult } from '../shared/search';
 
 const EMPTY_SESSION: SessionInfo = { authenticated: false, configured: false, provider: '', model: '' };
 const Streamdown = lazy(() => import('streamdown').then(({ Streamdown: Component }) => ({ default: Component })));
+const markdownPluginLoaders = {
+  code: () => import('@streamdown/code').then(({ createCodePlugin }) => createCodePlugin({ themes: ['github-light', 'github-dark'] })),
+  math: () => import('@streamdown/math').then(({ createMathPlugin }) => createMathPlugin({ singleDollarTextMath: false })),
+  mermaid: () => import('@streamdown/mermaid').then(({ createMermaidPlugin }) => createMermaidPlugin({ config: { securityLevel: 'strict', startOnLoad: false, suppressErrorRendering: true, theme: 'base' } })),
+};
 const starters = [
   { icon: Lightbulb, title: '梳理想法', prompt: '帮我梳理一个新项目的想法。请先问我三个能让方向更清晰的问题。' },
   { icon: Feather, title: '写一段文字', prompt: '我想写一个关于重逢的短篇故事，帮我构思一个有画面感的开头。' },
@@ -25,11 +32,27 @@ const starters = [
 ];
 
 function MarkdownContent({ content, streaming, searchId, className = 'markdown' }: { content: string; streaming: boolean; searchId?: string; className?: string }) {
+  const [plugins, setPlugins] = useState<PluginConfig | null>(null);
+  const needsCode = /```(?!mermaid\b)/iu.test(content);
+  const needsMath = /\$\$|\\\(|\\\[/u.test(content);
+  const needsMermaid = /```mermaid(?:\s|$)/imu.test(content);
+  useEffect(() => {
+    let active = true;
+    if (!needsCode && !needsMath && !needsMermaid) { setPlugins(null); return () => { active = false; }; }
+    void Promise.all([
+      needsCode ? markdownPluginLoaders.code() : Promise.resolve(null),
+      needsMath ? markdownPluginLoaders.math() : Promise.resolve(null),
+      needsMermaid ? markdownPluginLoaders.mermaid() : Promise.resolve(null),
+    ]).then(([code, math, mermaid]) => {
+      if (active) setPlugins({ ...(code ? { code } : {}), ...(math ? { math } : {}), ...(mermaid ? { mermaid } : {}) });
+    });
+    return () => { active = false; };
+  }, [needsCode, needsMath, needsMermaid]);
   return <div data-search-content={searchId}><Suspense fallback={<div className={`${className} whitespace-pre-wrap`}>{content}</div>}>
     <Streamdown className={className} mode={streaming ? 'streaming' : 'static'} isAnimating={streaming} components={{
       a: ({ children, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer">{children}</a>,
       img: ({ alt }) => <span className="text-base-content/60">[图片：{alt ?? '附件'}]</span>,
-    }}>{content}</Streamdown>
+    }} plugins={plugins ?? undefined} controls={{ code: { copy: true, download: false }, mermaid: { fullscreen: true, download: false, copy: false, panZoom: true } }}>{content}</Streamdown>
   </Suspense></div>;
 }
 
