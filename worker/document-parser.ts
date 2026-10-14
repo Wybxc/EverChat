@@ -2,7 +2,7 @@ import Papa from 'papaparse';
 import { MAX_CSV_COLUMNS, MAX_CSV_ROWS, MAX_DOCUMENT_BYTES, MAX_DOCUMENT_CHARACTERS, type DocumentPart } from '../shared/documents';
 import { HttpError } from './http';
 
-export function extractDocument(bytes: Uint8Array, mediaType: DocumentPart['mediaType']) {
+export function extractDocument(bytes: Uint8Array, mediaType: Exclude<DocumentPart['mediaType'], 'application/pdf'>) {
   if (!bytes.length || bytes.length > MAX_DOCUMENT_BYTES) throw new HttpError(413, '文本文件最多 128 KiB，请拆分文件或选择片段。');
   let text: string;
   try { text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes); }

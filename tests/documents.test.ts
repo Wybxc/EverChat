@@ -18,7 +18,7 @@ const file: DocumentPart = { type: 'file', attachmentId: crypto.randomUUID(), na
   sha256: hash(text), textSha256: hash(text), version: 1, characters: text.length, tokens: estimateDocumentTokens({ name: 'budget.ts', mediaType: 'text/plain' }, text) };
 const config: ProviderConfig = { provider: 'openai-chat', model: 'text', baseUrl: 'https://provider.test/v1', apiKey: 'unit-test-key', systemPrompt: '', maxOutputTokens: null,
   modelMetadata: resolveModelMetadata('openai-chat', { id: 'text', name: '', enabled: true, metadataOverrides: { imageInput: false, contextWindow: 200000 } }) };
-const parse = (value: string, mediaType: DocumentPart['mediaType'] = 'text/plain') => extractDocument(Buffer.from(value), mediaType);
+const parse = (value: string, mediaType: Exclude<DocumentPart['mediaType'], 'application/pdf'> = 'text/plain') => extractDocument(Buffer.from(value), mediaType);
 
 test('UTF-8 extraction preserves code, Markdown and line endings without executing or truncating text', () => {
   for (const mediaType of ['text/plain', 'text/markdown'] as const) assert.deepEqual(parse(`\ufeff${text}\r\n`, mediaType), { text: `${text}\r\n` });

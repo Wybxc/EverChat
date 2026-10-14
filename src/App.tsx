@@ -1,6 +1,8 @@
 import { documentMediaTypeSchema, MAX_DOCUMENT_BYTES, MAX_MESSAGE_DOCUMENTS, type DocumentPart } from '../shared/documents';
 import { fileMediaType } from '../shared/attachments';
 import { DocumentPreviews } from './DocumentPreviews';
+import { preparePdf } from './pdf-loader';
+import type { PDFExtraction } from '../shared/pdf';
 import { messageFiles, messageImages, messageText } from '../shared/message-content';
 import { Component, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode, type SubmitEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -488,24 +490,28 @@ export function App() {
     let conversation = currentConversation;
     const uploadedImages: ImagePart[] = [], uploadedFiles: DocumentPart[] = [], registered: string[] = [];
     try {
-      const preparedFiles: { file: File; input: Awaited<ReturnType<typeof prepareAttachment>> }[] = [];
+      const preparedFiles: { file: File; input: Awaited<ReturnType<typeof prepareAttachment>>; pdf?: PDFExtraction }[] = [];
       for (const file of inputFiles) {
         setImageProgress({ name: file.name, percent: 0, kind });
-        if (kind === 'file' && (!v.safeParse(documentMediaTypeSchema, fileMediaType(file.name)).success || !file.size || file.size > MAX_DOCUMENT_BYTES)) throw new Error('请选择不超过 128 KiB 的 UTF-8 文本、代码或 CSV 文件。');
+        const mediaType = fileMediaType(file.name);
+        if (kind === 'file' && (!v.safeParse(documentMediaTypeSchema, mediaType).success || !file.size || mediaType !== 'application/pdf' && file.size > MAX_DOCUMENT_BYTES)) throw new Error('请选择 PDF 或不超过 128 KiB 的 UTF-8 文本、代码、CSV 文件。');
         const prepared = kind === 'image' ? await prepareChatImage(file, controller.signal) : file;
-        preparedFiles.push({ file: prepared, input: await prepareAttachment(prepared, controller.signal) });
+        const input = await prepareAttachment(prepared, controller.signal);
+        const pdf = kind === 'file' && input.mediaType === 'application/pdf' ? await preparePdf(prepared, input.sha256, controller.signal,
+          (page, pages) => setImageProgress({ name: `正在提取 ${prepared.name} · ${page}/${pages}`, percent: Math.round(page / pages * 100), kind })) : undefined;
+        preparedFiles.push({ file: prepared, input, pdf });
       }
       if (!conversation) {
         conversation = { id: crypto.randomUUID(), title: (draft.trim() || inputFiles[0].name).slice(0, 26), createdAt: Date.now(), updatedAt: Date.now(), pinned: false, archived: false };
         await api('/conversations', 'POST', { id: conversation.id, title: conversation.title }, controller.signal);
       }
-      for (const { file: prepared, input } of preparedFiles) {
+      for (const { file: prepared, input, pdf } of preparedFiles) {
         setImageProgress({ name: prepared.name, percent: 0, kind }); registered.push(input.id);
         const saved = await uploadAttachment(conversation.id, input, prepared, controller.signal, (received) => setImageProgress({ name: prepared.name, percent: Math.round(received / input.size * 100), kind }));
         if (kind === 'image') uploadedImages.push({ type: 'image', attachmentId: saved.id, name: saved.name, sha256: saved.sha256, size: saved.size, mediaType: prepared.type as ImagePart['mediaType'] });
         else {
           setImageProgress({ name: `正在解析 ${prepared.name}`, percent: 100, kind });
-          uploadedFiles.push(await api<DocumentPart>(`/conversations/${conversation.id}/attachments/${saved.id}/document`, 'POST', undefined, controller.signal));
+          uploadedFiles.push(await api<DocumentPart>(`/conversations/${conversation.id}/attachments/${saved.id}/document`, 'POST', pdf, controller.signal));
         }
       }
       controller.signal.throwIfAborted();
@@ -784,7 +790,7 @@ export function App() {
             {selected && <ImagePreviews conversationId={selected} images={draftImages} remove={imageProgress ? undefined : removeImage} />}
             {imageProgress && <div className="flex items-center gap-2 py-2 text-xs" role="status"><span className="max-w-40 truncate">{imageProgress.name}</span><progress className="progress w-24" value={imageProgress.percent} max={100} aria-label={imageProgress.kind === 'image' ? '图片上传进度' : '文件上传进度'} /><button type="button" className="btn btn-ghost btn-xs" onClick={() => imageUpload.current?.controller.abort()}>取消上传</button></div>}
             <textarea onPaste={(event) => { const files = Array.from(event.clipboardData.files); if (files.length) { event.preventDefault(); void addImages(files); } }} ref={editor} disabled={Boolean(snapshot.deletedAt)} aria-label="消息" className="textarea textarea-ghost block min-h-13 w-full resize-none border-0 p-1 text-[15px] leading-6 placeholder:text-base-content/60 outline-none! focus:outline-none!" placeholder={active ? '生成中…' : '输入消息…'} value={draft} maxLength={16000} rows={2} onChange={(event) => updateDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void submit(); } }} />
-            <div className="mt-2 flex flex-wrap items-center justify-between gap-2"><div className="flex min-w-0 flex-wrap items-center gap-2 text-base-content"><Sparkles size={14} strokeWidth={1.5} className="shrink-0" />{session.attachmentsConfigured && <><button type="button" className="btn btn-ghost btn-square btn-sm" aria-label="添加文本文件" title="添加文本文件" disabled={busy || !navigator.onLine || draftFiles.length >= MAX_MESSAGE_DOCUMENTS} onClick={() => fileInput.current?.click()}><Paperclip size={16} /></button><input ref={fileInput} type="file" accept=".txt,.md,.csv,.js,.jsx,.ts,.tsx,.py,.rs,.go,.c,.cpp,.h,.css,.json,.yaml,.yml,.toml,.sh" multiple className="hidden" aria-label="选择聊天文件" onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ''; void addDocuments(files); }} /><button type="button" className="btn btn-ghost btn-square btn-sm" aria-label="添加图片" title="添加图片" disabled={busy || !navigator.onLine || draftImages.length >= MAX_MESSAGE_IMAGES} onClick={() => imageInput.current?.click()}><ImagePlus size={16} /></button><input ref={imageInput} type="file" accept="image/png,image/jpeg,image/webp" multiple className="hidden" aria-label="选择聊天图片" onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ''; void addImages(files); }} /></>}{selectedModel ? <select aria-label="聊天模型" className="select select-ghost select-sm min-w-0 max-w-48 border-base-content/50 text-xs sm:max-w-80" value={modelSelectionKey(selectedModel)} onChange={(event) => { setModelChoice(event.target.value); write('chat-model', event.target.value); }}>
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2"><div className="flex min-w-0 flex-wrap items-center gap-2 text-base-content"><Sparkles size={14} strokeWidth={1.5} className="shrink-0" />{session.attachmentsConfigured && <><button type="button" className="btn btn-ghost btn-square btn-sm" aria-label="添加文件" title="添加文件" disabled={busy || !navigator.onLine || draftFiles.length >= MAX_MESSAGE_DOCUMENTS} onClick={() => fileInput.current?.click()}><Paperclip size={16} /></button><input ref={fileInput} type="file" accept=".pdf,.txt,.md,.csv,.js,.jsx,.ts,.tsx,.py,.rs,.go,.c,.cpp,.h,.css,.json,.yaml,.yml,.toml,.sh" multiple className="hidden" aria-label="选择聊天文件" onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ''; void addDocuments(files); }} /><button type="button" className="btn btn-ghost btn-square btn-sm" aria-label="添加图片" title="添加图片" disabled={busy || !navigator.onLine || draftImages.length >= MAX_MESSAGE_IMAGES} onClick={() => imageInput.current?.click()}><ImagePlus size={16} /></button><input ref={imageInput} type="file" accept="image/png,image/jpeg,image/webp" multiple className="hidden" aria-label="选择聊天图片" onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ''; void addImages(files); }} /></>}{selectedModel ? <select aria-label="聊天模型" className="select select-ghost select-sm min-w-0 max-w-48 border-base-content/50 text-xs sm:max-w-80" value={modelSelectionKey(selectedModel)} onChange={(event) => { setModelChoice(event.target.value); write('chat-model', event.target.value); }}>
               {[...new Set(models.map((model) => model.providerId))].map((providerId) => <optgroup key={providerId} label={models.find((model) => model.providerId === providerId)!.providerName}>
                 {models.filter((model) => model.providerId === providerId).map((model) => <option key={model.model} value={modelSelectionKey(model)}>{model.name}</option>)}
               </optgroup>)}

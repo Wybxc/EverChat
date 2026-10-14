@@ -130,7 +130,7 @@ export class Library extends ProductionLibrary {
         catch (error) { if (!(error instanceof HttpError)) throw error; unconfiguredStatus.push(error.status); }
       }
     }
-    return { documents: sql.exec('SELECT id, status, lease, characters, tokens, bytes FROM attachment_documents').toArray(), textWaiting: this.attachmentText.some((pause) => pause.waiting), rows: sql.exec('SELECT id, conversationId, status, removed, lease FROM attachments').toArray(), deleteWaiting: this.attachmentDeletes.some((pause) => pause.waiting),
+    return { pdfMetadataIds: sql.exec('SELECT id FROM attachment_pdf_metadata').toArray(), documents: sql.exec('SELECT id, status, lease, characters, tokens, bytes FROM attachment_documents').toArray(), textWaiting: this.attachmentText.some((pause) => pause.waiting), rows: sql.exec('SELECT id, conversationId, status, removed, lease FROM attachments').toArray(), deleteWaiting: this.attachmentDeletes.some((pause) => pause.waiting),
       failedDeletes: sql.exec<{ count: number }>('SELECT COALESCE(SUM(failed), 0) AS count FROM fixture_attachment_delete_fault').one().count, unconfiguredStatus,
       dailyCount: sql.exec<{ count: number }>('SELECT count FROM attachment_daily_uploads WHERE date = ?', date).toArray()[0]?.count ?? 0,
       objects: (await this.env.ATTACHMENTS!.list({ limit: 1000 })).objects.map((object) => ({ key: object.key, size: object.size })) };

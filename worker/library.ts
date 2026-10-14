@@ -1,4 +1,5 @@
 import type { DocumentPart } from '../shared/documents';
+import type { PDFExtraction } from '../shared/pdf';
 import { DurableObject } from 'cloudflare:workers';
 import type { Env } from './env';
 import type { ConversationInfo, ModelSelection, PromptPreset, PromptPresetInput, ProviderConfig, ProviderModelConfig, ProviderSettings, ProviderSettingsInput, ReasoningEffort } from '../shared/types';
@@ -202,8 +203,8 @@ export class Library extends DurableObject<Env> {
   imageReferences(conversationId: string, ids: string[]) { return this.attachmentAction(() => this.attachments.images(conversationId, ids)); }
   pinAttachments(conversationId: string, images: ImagePart[], files: DocumentPart[]) { return this.attachmentAction(() => this.attachments.pinAttachments(conversationId, images, files)); }
   documentReferences(conversationId: string, ids: string[]) { return this.attachmentAction(() => this.attachments.documents.references(conversationId, ids)); }
-  async parseDocument(conversationId: string, id: string) {
-    const action = this.attachmentAction(() => this.attachments.documents.parse(conversationId, id));
+  async parseDocument(conversationId: string, id: string, input?: PDFExtraction) {
+    const action = this.attachmentAction(() => this.attachments.documents.parse(conversationId, id, input));
     await this.scheduleMaintenance();
     try { return await action; } finally { await this.scheduleMaintenance(); }
   }

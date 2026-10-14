@@ -7,7 +7,7 @@ import { extname, resolve, sep } from 'node:path';
 const root = resolve('dist/client');
 const conversationId = '00000000-0000-4000-8000-000000000101';
 const title = '离线 URL 验证';
-const types: Record<string, string> = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.webmanifest': 'application/manifest+json' };
+const types: Record<string, string> = { '.html': 'text/html', '.js': 'application/javascript', '.mjs': 'application/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.webmanifest': 'application/manifest+json' };
 const server = createServer(async (request, response) => {
   const path = new URL(request.url ?? '/', 'http://127.0.0.1:5175').pathname;
   const json = (data: unknown) => { response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); response.end(JSON.stringify(data)); };

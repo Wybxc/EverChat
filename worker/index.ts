@@ -13,6 +13,7 @@ import { SEARCH_QUERY_LIMIT } from '../shared/search';
 import { conversationSettingsSchema } from '../shared/conversation-settings';
 import { promptPresetInputSchema } from '../shared/prompt-presets';
 import { MAX_MESSAGE_DOCUMENTS } from '../shared/documents';
+import { pdfExtractionSchema } from '../shared/pdf';
 import { MAX_MESSAGE_IMAGES } from '../shared/images';
 import { messageAttachments } from '../shared/message-content';
 import { attachmentInputSchema } from '../shared/attachments';
@@ -314,7 +315,8 @@ app.on(['GET', 'HEAD'], '/conversations/:id/attachments/:attachmentId/content', 
 });
 app.post('/conversations/:id/attachments/:attachmentId/document', async (context) => {
   await requireAuth(context); const id = conversationId(context), library = await requireConversation(context, id);
-  const result = await library.parseDocument(id, attachmentId(context));
+  const input = context.req.header('Content-Type')?.includes('application/json') ? await parseBody(context, pdfExtractionSchema, { maxBytes: 264192, tooLarge: 'PDF 提取结果过大，请拆分文件。' }) : undefined;
+  const result = await library.parseDocument(id, attachmentId(context), input);
   return 'error' in result ? json({ error: result.error }, result.status) : json(result.value);
 });
 app.get('/conversations/:id/attachments/:attachmentId/document', async (context) => {

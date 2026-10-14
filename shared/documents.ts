@@ -1,22 +1,26 @@
 import * as v from 'valibot';
 import { attachmentInputSchema } from './attachments';
 import { estimateTextTokens } from './token-estimate';
+import { pdfMetadataSchema } from './pdf';
 import type { ChatInput } from './types';
 
 export const MAX_MESSAGE_DOCUMENTS = 4, MAX_CONTEXT_DOCUMENTS = 8;
 export const MAX_DOCUMENT_BYTES = 128 * 1024, MAX_DOCUMENT_CHARACTERS = 64_000, MAX_CONTEXT_DOCUMENT_CHARACTERS = 128_000;
 export const MAX_CSV_ROWS = 2000, MAX_CSV_COLUMNS = 100;
 export const DOCUMENT_VERSION = 1;
-export const documentMediaTypeSchema = v.picklist(['text/plain', 'text/markdown', 'text/csv']);
+export const documentMediaTypeSchema = v.picklist(['text/plain', 'text/markdown', 'text/csv', 'application/pdf']);
 const positive = (max: number) => v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(max));
 export const documentPartSchema = v.pipe(v.strictObject({
   type: v.literal('file'), attachmentId: attachmentInputSchema.entries.id,
   name: attachmentInputSchema.entries.name, sha256: attachmentInputSchema.entries.sha256,
-  size: positive(MAX_DOCUMENT_BYTES), mediaType: documentMediaTypeSchema,
+  size: attachmentInputSchema.entries.size, mediaType: documentMediaTypeSchema,
   version: v.literal(DOCUMENT_VERSION), textSha256: attachmentInputSchema.entries.sha256,
   characters: positive(MAX_DOCUMENT_CHARACTERS), tokens: positive(500_000),
   csv: v.optional(v.strictObject({ rows: positive(MAX_CSV_ROWS), columns: positive(MAX_CSV_COLUMNS) })),
-}), v.check((part) => part.mediaType === 'text/csv' ? Boolean(part.csv) : !part.csv, '文件解析元数据无效。'));
+  pdf: v.optional(pdfMetadataSchema),
+}), v.check((part) => (part.mediaType === 'text/csv' ? Boolean(part.csv) : !part.csv)
+  && (part.mediaType === 'application/pdf' ? Boolean(part.pdf) : !part.pdf)
+  && (part.mediaType === 'application/pdf' || part.size <= MAX_DOCUMENT_BYTES), '文件解析元数据无效。'));
 export type DocumentPart = v.InferOutput<typeof documentPartSchema>;
 export class DocumentError extends Error {}
 export const documentTokens = (files: readonly DocumentPart[] = []) => files.reduce((sum, file) => sum + file.tokens, 0);
