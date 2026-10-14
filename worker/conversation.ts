@@ -1,7 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import type { Env } from './env';
 import type { ChatInput, Change, Commit, ConversationSettings, DurableChange, GenerationExecutor, Message, MessageStatus, ProviderConfig, Snapshot, StreamBatch, StreamCommit, Submission, SubmitInput } from '../shared/types';
-import { isActive } from '../shared/types';
+import { branchPath, isActive } from '../shared/types';
 import { commitAck, payloadBytes, STREAM_VERSION, validateCommit } from '../shared/stream-batches';
 import type { GenerationMeasurements } from '../shared/generation-metrics';
 import { GenerationMeter, measuredQuery } from './generation-metrics';
@@ -80,6 +80,18 @@ export class Conversation extends DurableObject<Env> {
   backup(): BackupMessage[] {
     if (this.deletedAt) return [];
     return this.all().map(backupMessage);
+  }
+  copySource(headId?: string): { messages: BackupMessage[]; settings: ConversationSettings } | Failure {
+    if (this.deletedAt) return { error: '这个对话已删除。', status: 410 };
+    let messages = Array.from(this.rows(), (row) => this.decorate(row));
+    if (headId !== undefined) {
+      const head = messages.find((message) => message.id === headId);
+      if (!head || head.deletedAt) return { error: '找不到这条消息。', status: 404 };
+      try { messages = branchPath(messages, headId); }
+      catch { return { error: '消息分支关系无效，无法复制。', status: 409 }; }
+    }
+    // Read settings and the durable prefix together; never copy browser-only previews or start a generation.
+    return { messages: messages.map((message) => backupMessage(this.materialize(message))), settings: this.settings() };
   }
   settings(): ConversationSettings {
     const row = this.query<{ payload: string }>('SELECT payload FROM conversation_settings WHERE id = 1').toArray()[0];
@@ -332,8 +344,8 @@ export class Conversation extends DurableObject<Env> {
       try { generationConfig = applyConversationSettings(config, settings); }
       catch (error) { return { error: error instanceof Error ? error.message : '会话参数无效。', status: 400 }; }
       const runId = crypto.randomUUID();
-      const latestAssistant = [...messages].reverse().find((message) => message.role === 'assistant' && message.status === 'completed' && !message.deletedAt);
-      const userParentId = original ? original.parentId : requestedHead?.id ?? latestAssistant?.id ?? null;
+      const latestCompleted = [...messages].reverse().find((message) => message.status === 'completed' && !message.deletedAt);
+      const userParentId = original ? original.parentId : requestedHead?.id ?? latestCompleted?.id ?? null;
       let context: ChatInput[];
       try { context = messageContext(messages, parent ? parent.parentId : userParentId, content); }
       catch { return { error: '消息分支关系无效，无法构建上下文。', status: 409 }; }

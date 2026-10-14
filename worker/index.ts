@@ -199,21 +199,22 @@ app.put('/conversations/:id/settings', async (context) => {
   return json(result);
 });
 
-app.post('/conversations/:id/duplicate', async (context) => {
+async function duplicateConversation(context: AppContext, messageId?: string) {
   await requireAuth(context);
   const id = conversationId(context);
+  if (messageId !== undefined && !v.safeParse(uuidSchema, messageId).success) throw new HttpError(404, '找不到这条消息。');
   const library = await requireConversation(context, id);
   const source = await library.get(id);
   if (!source) throw new HttpError(404, '找不到这个对话。');
+  const saved = await context.env.CONVERSATIONS.getByName(id).copySource(messageId);
+  if ('error' in saved) throw new HttpError(saved.status, saved.error);
   const copyId = crypto.randomUUID();
   const title = `${source.title} 副本`.slice(0, 80);
   const created = await library.create(copyId, title);
   if ('error' in created) return json({ error: created.error }, created.status);
   try {
-    const messages = await context.env.CONVERSATIONS.getByName(id).backup();
-    const settings = await context.env.CONVERSATIONS.getByName(id).settings();
     const restored = await context.env.CONVERSATIONS.getByName(copyId).restore(copyId, {
-      id: source.id, title: source.title, createdAt: source.createdAt, updatedAt: source.updatedAt, messages, settings,
+      id: source.id, title: source.title, createdAt: source.createdAt, updatedAt: source.updatedAt, ...saved,
     });
     if ('error' in restored) throw new HttpError(restored.status, restored.error);
     await library.touch(copyId);
@@ -226,7 +227,9 @@ app.post('/conversations/:id/duplicate', async (context) => {
     } catch { /* The next library alarm will retry cleanup. */ }
     throw error;
   }
-});
+}
+app.post('/conversations/:id/duplicate', (context) => duplicateConversation(context));
+app.post('/conversations/:id/messages/:messageId/duplicate', (context) => duplicateConversation(context, context.req.param('messageId')));
 
 app.post('/backup/restore', async (context) => {
   await requireAuth(context);

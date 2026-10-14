@@ -42,7 +42,7 @@ export function backupMessage(message: Message): BackupMessage {
     id: message.id, role: message.role, parts: message.deletedAt ? [] : message.parts,
     status: partial ? 'failed' : message.status, createdAt: message.createdAt,
     parentId: message.parentId, revisionOf: message.revisionOf,
-    error: message.deletedAt ? null : partial ? (message.error ?? '导出时生成尚未完成，已恢复已保存的部分内容。') : message.error,
+    error: message.deletedAt ? null : partial ? (message.error ?? '生成尚未完成，已保留已保存的部分内容。') : message.error,
     providerId: message.providerId ?? null, model: message.model ?? null, modelName: message.modelName ?? null,
     ...(!message.deletedAt && message.role === 'assistant' && generation ? { generation } : {}),
     ...(message.deletedAt ? { deletedAt: message.deletedAt } : {}),

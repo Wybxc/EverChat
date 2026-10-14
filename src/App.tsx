@@ -151,14 +151,27 @@ function Login({ session, onLogin }: { session: SessionInfo; onLogin: () => Prom
   </main>;
 }
 
-function MessageView({ message, busy, onRetry, onEdit, onQuote, onDelete, canRetry, branchSelected, onSelectBranch }: { message: Message; busy: boolean; onRetry: () => void; onEdit: () => void; onQuote: () => void; onDelete: () => void; canRetry: boolean; branchSelected: boolean; onSelectBranch: () => void }) {
+function MessageView({ message, busy, onRetry, onEdit, onQuote, onDelete, canRetry, branchSelected, onSelectBranch, canFork, onFork }: { message: Message; busy: boolean; onRetry: () => void; onEdit: () => void; onQuote: () => void; onDelete: () => void; canRetry: boolean; branchSelected: boolean; onSelectBranch: () => void; canFork: boolean; onFork: () => Promise<void> }) {
   const [copied, setCopied] = useState(false);
+  const [forking, setForking] = useState(false), [forkError, setForkError] = useState('');
+  const forkLock = useRef(false);
   const [reasoningOpen, setReasoningOpen] = useState(true);
   const reasoningScroll = useFollowScroll(message.id);
   const copy = async () => {
     try { await navigator.clipboard.writeText(messageText(message)); setCopied(true); setTimeout(() => setCopied(false), 1800); } catch { /* Clipboard can be unavailable outside HTTPS. */ }
   };
+  const fork = async () => {
+    if (forkLock.current || !canFork) return;
+    forkLock.current = true; setForking(true); setForkError('');
+    try { await onFork(); }
+    catch (failure) { setForkError(failure instanceof Error ? failure.message : '复制失败，请重试。'); }
+    finally { forkLock.current = false; setForking(false); }
+  };
   if (message.deletedAt) return <article data-testid={`${message.role}-message`} data-message-id={message.id} data-deleted="true" className={`py-2 text-xs text-base-content/60 ${message.role === 'user' ? 'text-right' : ''}`}>消息已删除</article>;
+  const forkTool = <>
+    <button type="button" className="btn btn-ghost btn-xs gap-1.5" disabled={!canFork || forking} onClick={() => void fork()} aria-label="复制到新对话">{forking ? <span className="loading loading-spinner loading-xs" /> : <Copy size={13} />}复制到新对话</button>
+    {forkError && <span role="alert" className="text-xs text-base-content">{forkError}</span>}
+  </>;
   const tools = <>
     <button className="btn btn-ghost btn-xs gap-1.5" onClick={copy} aria-label="复制消息">{copied ? <Check size={13} /> : <Copy size={13} />}{copied ? '已复制' : '复制'}</button>
     <button className="btn btn-ghost btn-xs gap-1.5" onClick={onQuote} aria-label="引用消息"><Quote size={13} />引用</button>
@@ -167,7 +180,7 @@ function MessageView({ message, busy, onRetry, onEdit, onQuote, onDelete, canRet
     <div data-search-content={`${message.id}:content`} className="rounded-2xl rounded-br-md border border-base-content/50 bg-base-200 px-5 py-3.5 text-[15px] leading-7 whitespace-pre-wrap break-words">{messageText(message)}</div>
     <div className="mt-1.5 flex flex-wrap items-center justify-end gap-2 text-[11px] text-base-content/60">
       {message.revisionOf && <span>新版本</span>}
-      {tools}<CheckCheck size={13} /><span>已保存</span>
+      {tools}{forkTool}<CheckCheck size={13} /><span>已保存</span>
       <button className="btn btn-ghost btn-xs btn-square sm:opacity-0 sm:group-hover:opacity-100 sm:focus:opacity-100" aria-label="编辑为新版本" title="编辑为新版本" disabled={busy} onClick={onEdit}><Pencil size={12} /></button>
       <button className="btn btn-ghost btn-xs btn-square" aria-label="删除消息" title="删除消息" disabled={busy || !navigator.onLine} onClick={onDelete}><Trash2 size={12} /></button>
     </div>
@@ -184,13 +197,15 @@ function MessageView({ message, busy, onRetry, onEdit, onQuote, onDelete, canRet
       {message.status === 'failed' && <p role="alert" className="mt-4 rounded-lg bg-error/5 px-3 py-2 text-xs font-medium leading-6 text-base-content">{message.error ?? '生成失败，已保存部分内容。'}</p>}
       {message.status === 'cancelled' && <p className="mt-4 text-xs text-base-content/60">已停止</p>}
       {!isActive(message) && <GenerationMetadata generation={message.generation} />}
-      {!isActive(message) && <div className="mt-4 flex flex-wrap items-center gap-1 text-base-content/60">
-        {tools}
+      <div className="mt-4 flex flex-wrap items-center gap-1 text-base-content/60">
+        {forkTool}
+        {!isActive(message) && <>{tools}
         {message.status === 'completed' && <button className={`btn btn-ghost btn-xs gap-1.5 ${branchSelected ? 'text-primary' : ''}`} disabled={busy || branchSelected} onClick={onSelectBranch} aria-label={branchSelected ? '当前分支' : '继续此分支'}>{branchSelected ? '当前分支' : '继续此分支'}</button>}
         <button className="btn btn-ghost btn-xs gap-1.5" disabled={busy || !canRetry} onClick={onRetry}><RefreshCw size={12} />重新生成</button>
         <button className="btn btn-ghost btn-xs btn-square" aria-label="编辑回答" title="编辑回答" disabled={busy || !navigator.onLine} onClick={onEdit}><Pencil size={12} /></button>
         <button className="btn btn-ghost btn-xs btn-square" aria-label="删除消息" title="删除消息" disabled={busy || !navigator.onLine} onClick={onDelete}><Trash2 size={12} /></button>
-      </div>}
+        </>}
+      </div>
     </div>
   </article>;
 }
@@ -537,10 +552,13 @@ export function App() {
     if (selectedRef.current === id) select(null);
     refreshLibrary();
   };
-  const duplicateConversation = async () => {
+  const duplicateConversation = async (messageId?: string) => {
     if (!selected) return;
-    const result = await api<{ id: string }>(`/conversations/${selected}/duplicate`, 'POST');
-    refreshLibrary(); select(result.id);
+    const sourceId = selected;
+    const path = messageId ? `/messages/${messageId}/duplicate` : '/duplicate';
+    const result = await api<{ id: string }>(`/conversations/${sourceId}${path}`, 'POST');
+    refreshLibrary();
+    if (selectedRef.current === sourceId) select(result.id);
   };
 
   if (!session) return <main className="flex min-h-dvh flex-col items-center justify-center gap-6"><Brand />{bootError ? <><p className="max-w-sm px-5 text-center text-sm font-medium text-base-content" role="alert">{bootError}</p><button className="btn" onClick={boot}>重新连接</button></> : <span className="loading loading-dots loading-sm text-base-content/60" />}</main>;
@@ -582,7 +600,7 @@ export function App() {
           </div>
         </section> : <section ref={contentRef} aria-label="对话消息" className="mx-auto w-full max-w-3xl space-y-8 px-5 py-8 sm:px-9 sm:py-10">
           {loading && !snapshot.messages.length && <div className="py-10 text-center text-xs text-base-content/60"><span className="loading loading-dots loading-sm" /><p className="mt-3">正在找回我们的对话…</p></div>}
-          {snapshot.messages.map((message) => <MessageView key={message.id} message={message} busy={busy} onRetry={() => void retry(message)} onEdit={() => edit(message)} onQuote={() => quote(message)} onDelete={() => setMessageMutation({ id: message.id, mode: 'delete' })} canRetry={liveUserIds.has(message.parentId ?? '')} branchSelected={message.role === 'assistant' && message.status === 'completed' && message.id === currentBranchHead} onSelectBranch={() => selectBranch(message)} />)}
+          {snapshot.messages.map((message) => <MessageView key={message.id} message={message} busy={busy} onRetry={() => void retry(message)} onEdit={() => edit(message)} onQuote={() => quote(message)} onDelete={() => setMessageMutation({ id: message.id, mode: 'delete' })} canRetry={liveUserIds.has(message.parentId ?? '')} branchSelected={message.role === 'assistant' && message.status === 'completed' && message.id === currentBranchHead} onSelectBranch={() => selectBranch(message)} canFork={Boolean(selected && connection !== 'offline' && !syncError && !loading)} onFork={() => duplicateConversation(message.id)} />)}
           {currentPending && <article className="ml-auto max-w-[90%] rounded-2xl border border-dashed border-base-content/50 bg-base-200 px-5 py-4"><p className="text-sm leading-7 whitespace-pre-wrap">{currentPending.input.content ?? '新版本'}</p><div className="mt-2 flex items-center gap-2 text-[11px] text-base-content/60"><CloudOff size={12} />{currentPending.error ? '发送失败' : '等待发送'}</div>{currentPending.error && <p className="mt-2 text-xs font-medium leading-5 text-base-content">{currentPending.error}</p>}<div className="mt-2 flex gap-1"><button className="btn btn-ghost btn-xs" onClick={() => { const clean = { ...currentPending, error: undefined }; commitPending(pendingRef.current.map((item) => item.input.requestId === clean.input.requestId ? clean : item)); void deliver(clean); }}>重试</button><button className="btn btn-ghost btn-xs" onClick={() => { if (currentPending.input.content) updateDraft(currentPending.input.content); commitPending(pendingRef.current.filter((item) => item.input.requestId !== currentPending.input.requestId)); }}>编辑</button></div></article>}
         </section>}
       </div>

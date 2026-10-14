@@ -114,7 +114,7 @@ export class Conversation extends ProductionConversation {
     return this.ctx.storage.sql.exec<{ count: number }>(`SELECT COUNT(*) AS count FROM ${table} ${where}`).one().count;
   }
   protected override async openModelStream(...args: Parameters<typeof openProviderStream>) {
-    if (args[0].model.startsWith('alarm-')) {
+    if (args[0].model.startsWith('alarm-') || args[0].model.startsWith('benchmark-')) {
       this.ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS fixture_calls (runId TEXT PRIMARY KEY, calls INTEGER NOT NULL)');
       const run = this.ctx.storage.sql.exec<{ id: string; conversationId: string }>(`SELECT runs.id, runs.conversationId FROM runs JOIN messages ON messages.id = runs.assistantId WHERE messages.status = 'running'`).one();
       this.ctx.storage.sql.exec('INSERT INTO fixture_calls VALUES (?, 1) ON CONFLICT(runId) DO UPDATE SET calls = calls + 1', run.id);
@@ -156,6 +156,9 @@ export class Conversation extends ProductionConversation {
     const config = run.config ? JSON.parse(run.config) : null;
     if (config) delete config.apiKey;
     return { assistantId: run.assistantId, context: JSON.parse(run.context), config };
+  }
+  fixtureParent(messageId: string, parentId: string) {
+    this.ctx.storage.sql.exec('UPDATE messages SET parentId = ? WHERE id = ?', parentId, messageId);
   }
   fixtureReenterAlarm() { return this.alarm(); }
   fixtureRetrySearch() { this.ctx.storage.sql.exec('UPDATE search_retry SET nextAt = 0'); return this.alarm(); }
@@ -229,11 +232,11 @@ export default {
       const { id, fail, rebuild } = await request.json() as { id?: string; fail?: boolean; rebuild?: boolean };
       return Response.json(await (env.LIBRARY as unknown as DurableObjectNamespace<Library>).getByName('personal').fixtureSearchControl(id, fail, rebuild));
     }
-    const match = /^\/api\/__test\/conversations\/([0-9a-f-]{36})\/(state|context|alarm|abort|abort-stop|history|search-history|indexed-history|search-state|search-reset|search-retry|fill|resources|storage-error|delete-failure|delete-reset|deletion-state|late-submit)$/.exec(url.pathname);
+    const match = /^\/api\/__test\/conversations\/([0-9a-f-]{36})\/(state|context|parent|alarm|abort|abort-stop|history|search-history|indexed-history|search-state|search-reset|search-retry|fill|resources|storage-error|delete-failure|delete-reset|deletion-state|late-submit)$/.exec(url.pathname);
     if (!match) return production.fetch(request, env, ctx);
     if (request.method !== 'POST' || request.headers.get('Origin') !== url.origin) return new Response('Forbidden', { status: 403 });
     if (!await authenticated(request, env)) return new Response('Unauthorized', { status: 401 });
-    const { runId, pairs, target, count } = await request.json() as { runId: string; pairs: number; target: number; count: number };
+    const { runId, pairs, target, count, messageId, parentId } = await request.json() as { runId: string; pairs: number; target: number; count: number; messageId: string; parentId: string };
     const conversation = (env.CONVERSATIONS as unknown as DurableObjectNamespace<Conversation>).getByName(match[1]);
     switch (match[2]) {
       case 'search-history': return Response.json(await conversation.fixtureSearchHistory());
@@ -256,6 +259,7 @@ export default {
       case 'history': return Response.json(await conversation.fixtureHistory(pairs));
       case 'state': return Response.json(await conversation.fixtureState(runId));
       case 'context': return Response.json(await conversation.fixtureContext(runId));
+      case 'parent': await conversation.fixtureParent(messageId, parentId); break;
       case 'alarm': await conversation.fixtureReenterAlarm(); break;
       case 'abort':
       case 'abort-stop':
