@@ -1,7 +1,8 @@
 import * as v from 'valibot';
+import { imagePartSchema, MAX_MESSAGE_IMAGES, type ImagePart } from './images';
 
 /** Current channels are aggregated independently; parts do not imply SSE event order. */
-export type MessagePart = { type: 'text'; text: string } | { type: 'reasoning'; text: string };
+export type MessagePart = { type: 'text'; text: string } | { type: 'reasoning'; text: string } | ImagePart;
 
 /** One nonempty part per channel, with reasoning before the answer. */
 export function messageParts(text: string, reasoning = ''): MessagePart[] {
@@ -11,16 +12,24 @@ export function messageParts(text: string, reasoning = ''): MessagePart[] {
   return parts;
 }
 
-export function messageText(message: { parts: readonly MessagePart[] } | undefined, type: MessagePart['type'] = 'text'): string {
-  return message?.parts.find((part) => part.type === type)?.text ?? '';
+export function messageText(message: { parts: readonly MessagePart[] } | undefined, type: 'text' | 'reasoning' = 'text'): string {
+  const part = message?.parts.find((part) => part.type === type);
+  return part && 'text' in part ? part.text : '';
 }
+export const messageImages = (message: { parts: readonly MessagePart[] } | undefined) => message?.parts.filter((part): part is ImagePart => part.type === 'image') ?? [];
 
 const text = v.pipe(v.string(), v.minLength(1), v.maxLength(100_000));
 export const messagePartsSchema = v.pipe(
   v.array(v.variant('type', [
     v.strictObject({ type: v.literal('text'), text }),
     v.strictObject({ type: v.literal('reasoning'), text }),
+    imagePartSchema,
   ])),
-  v.maxLength(2),
-  v.check((parts) => parts.length < 2 || (parts[0].type === 'reasoning' && parts[1].type === 'text'), '消息内容部分的顺序或类型重复。'),
+  v.maxLength(2 + MAX_MESSAGE_IMAGES),
+  v.check((parts) => {
+    const channels = parts.filter((part) => part.type !== 'image'), images = parts.filter((part) => part.type === 'image');
+    return images.length <= MAX_MESSAGE_IMAGES && new Set(images.map((image) => image.attachmentId)).size === images.length
+      && channels.length <= 2 && (channels.length < 2 || channels[0].type === 'reasoning' && channels[1].type === 'text')
+      && parts.slice(0, channels.length).every((part) => part.type !== 'image');
+  }, '消息内容部分的顺序或类型重复。'),
 );

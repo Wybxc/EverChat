@@ -1,7 +1,7 @@
-import { messageText } from '../shared/message-content';
+import { messageImages, messageText } from '../shared/message-content';
 import { Component, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode, type SubmitEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowDown, ArrowRight, ArrowUp, BookOpen, Check, CheckCheck, CloudOff, Copy, Download, Feather, FolderOpen, Infinity as InfinityIcon, Lightbulb, LockKeyhole, Menu, MessageCircle, Monitor, Moon, Pencil, Pin, Plus, Quote, RefreshCw, Search, Settings, SlidersHorizontal, Sparkles, Square, Sun, Trash2, WifiOff, X } from 'lucide-react';
+import { ArrowDown, ArrowRight, ArrowUp, BookOpen, Check, CheckCheck, CloudOff, Copy, Download, Feather, FolderOpen, ImagePlus, Infinity as InfinityIcon, Lightbulb, LockKeyhole, Menu, MessageCircle, Monitor, Moon, Pencil, Pin, Plus, Quote, RefreshCw, Search, Settings, SlidersHorizontal, Sparkles, Square, Sun, Trash2, WifiOff, X } from 'lucide-react';
 import 'streamdown/styles.css';
 import 'katex/dist/katex.min.css';
 import type { PluginConfig } from 'streamdown';
@@ -26,6 +26,10 @@ import { MessageMutationDialog } from './MessageMutationDialog';
 import { ConversationSettingsDialog } from './ConversationSettings';
 import { SummaryDialog } from './SummaryDialog';
 import { AttachmentDialog } from './AttachmentDialog';
+import { ImagePreviews } from './ImagePreviews';
+import { prepareChatImage } from './chat-image';
+import { prepareAttachment, uploadAttachment } from './attachment-upload';
+import { MAX_MESSAGE_IMAGES, type ImagePart } from '../shared/images';
 import { prepareChatContext, summaryContext, summaryGeneration, summaryPrefix } from '../shared/summaries';
 import { applyConversationSettings, conversationSettingsSchema, DEFAULT_CONVERSATION_SETTINGS } from '../shared/conversation-settings';
 import * as v from 'valibot';
@@ -175,7 +179,7 @@ function SummaryView({ message, busy, onRetry, onDelete, selected }: { message: 
   </article>;
 }
 
-function MessageView({ message, busy, onRetry, onEdit, onQuote, onDelete, canRetry, branchSelected, onSelectBranch, canFork, onFork, summarySelected }: { message: Message; busy: boolean; onRetry: () => void; onEdit: () => void; onQuote: () => void; onDelete: () => void; canRetry: boolean; branchSelected: boolean; onSelectBranch: () => void; canFork: boolean; onFork: () => Promise<void>; summarySelected?: boolean }) {
+function MessageView({ conversationId, message, busy, onRetry, onEdit, onQuote, onDelete, canRetry, branchSelected, onSelectBranch, canFork, onFork, summarySelected }: { conversationId: string; message: Message; busy: boolean; onRetry: () => void; onEdit: () => void; onQuote: () => void; onDelete: () => void; canRetry: boolean; branchSelected: boolean; onSelectBranch: () => void; canFork: boolean; onFork: () => Promise<void>; summarySelected?: boolean }) {
   const [copied, setCopied] = useState(false);
   const [forking, setForking] = useState(false), [forkError, setForkError] = useState('');
   const forkLock = useRef(false);
@@ -202,7 +206,8 @@ function MessageView({ message, busy, onRetry, onEdit, onQuote, onDelete, canRet
     <button className="btn btn-ghost btn-xs gap-1.5" onClick={onQuote} aria-label="引用消息"><Quote size={13} />引用</button>
   </>;
   if (message.role === 'user') return <article data-testid="user-message" data-message-id={message.id} className="group ml-auto w-fit max-w-[90%] sm:max-w-[82%]">
-    <div data-search-content={`${message.id}:content`} className="rounded-2xl rounded-br-md border border-base-content/50 bg-base-200 px-5 py-3.5 text-[15px] leading-7 whitespace-pre-wrap break-words">{messageText(message)}</div>
+    <ImagePreviews conversationId={conversationId} images={messageImages(message)} />
+    {messageText(message) && <div data-search-content={`${message.id}:content`} className="rounded-2xl rounded-br-md border border-base-content/50 bg-base-200 px-5 py-3.5 text-[15px] leading-7 whitespace-pre-wrap break-words">{messageText(message)}</div>}
     <div className="mt-1.5 flex flex-wrap items-center justify-end gap-2 text-[11px] text-base-content/60">
       {message.revisionOf && <span>新版本</span>}
       {tools}{forkTool}<CheckCheck size={13} /><span>已保存</span>
@@ -247,6 +252,10 @@ export function App() {
   const pendingRef = useRef(pending);
   const deliveryLocks = useRef(new Set<string>());
   const [draft, setDraft] = useState('');
+  const [draftImages, setDraftImages] = useState<ImagePart[]>([]);
+  const imageInput = useRef<HTMLInputElement>(null);
+  const imageUpload = useRef<{ origin: string | null; controller: AbortController } | null>(null);
+  const [imageProgress, setImageProgress] = useState<{ name: string; percent: number } | null>(null);
   const [revisionOf, setRevisionOf] = useState<string | undefined>();
   const [error, setError] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -303,7 +312,7 @@ export function App() {
     setLocalConversations((items) => items.filter((item) => item.id !== id));
     queryClient.setQueryData<ConversationInfo[]>(['conversations'], (items) => items?.filter((item) => item.id !== id));
     write('library', read<ConversationInfo[]>('library', []).filter((item) => item.id !== id));
-    if (selectedRef.current === id) { setDraft(''); setRevisionOf(undefined); }
+    if (selectedRef.current === id) { setDraft(''); setRevisionOf(undefined); setDraftImages([]); }
   }, [queryClient]);
   const currentPending = pending.find((item) => item.conversation.id === selected);
   const { snapshot, durableSnapshot, hasUnconfirmed, connection, syncedAt, loading, syncError, reconnect } = useConversation(selected, Boolean(session?.authenticated), loggedOut, Boolean(currentPending && !currentPending.error), rememberDeletion, selected ? deletedAt(selected) : null);
@@ -346,7 +355,7 @@ export function App() {
     const local = localConversations.filter((item) => !cloudIds.has(item.id) && !queued.some((next) => next.id === item.id));
     return [...queued, ...local, ...cloud].filter((item) => !deletedAt(item.id)).sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
   }, [libraryQuery.data, localConversations, pending]);
-  const busy = Boolean(active || currentPending || sending || syncError || invalidRoute);
+  const busy = Boolean(active || currentPending || sending || imageProgress || syncError || invalidRoute);
   const currentConversation = conversations.find((item) => item.id === selected);
   const latestCompletedAssistant = useMemo(() => [...snapshot.messages].reverse().find((message) => message.role === 'assistant' && message.status === 'completed' && !message.deletedAt && !message.summary), [snapshot.messages]);
   const currentBranchHead = branchHead && snapshot.messages.some((message) => message.id === branchHead && message.role === 'assistant' && message.status === 'completed' && !message.deletedAt && !message.summary)
@@ -366,8 +375,8 @@ export function App() {
       const config = applyConversationSettings({ ...selectedModel, systemPrompt: selectedModel.systemPrompt ?? session?.systemPrompt ?? '',
         maxOutputTokens: session?.maxOutputTokens ?? null, modelMetadata: selectedModel.metadata, reasoningEnabled: selectedModel.reasoningSupported,
         reasoningEffort: reasoningEffort || undefined, showReasoning: session?.showReasoning }, settings.output);
-      estimate = buildContext(previewHistory.history, draft.trim(), config, settings.output, previewHistory.summary ? summaryPrefix(previewHistory.summary) : undefined).estimate;
-      const prepared = prepareChatContext(snapshot.messages, previewSource.parentId, draft.trim(), config, settings.output);
+      estimate = buildContext(previewHistory.history, draft.trim(), config, settings.output, previewHistory.summary ? summaryPrefix(previewHistory.summary) : undefined, draftImages).estimate;
+      const prepared = prepareChatContext(snapshot.messages, previewSource.parentId, draft.trim(), config, settings.output, draftImages);
       if (prepared.automatic) {
         const selection = settings.output.autoCompression.model;
         const model = selection ? models.find((item) => modelSelectionKey(item) === modelSelectionKey(selection)) : selectedModel;
@@ -376,7 +385,7 @@ export function App() {
       }
       return { estimate: prepared.automatic?.demand ?? prepared.estimate, compressing: Boolean(prepared.automatic), error: '' };
     } catch (error) { return { estimate, error: error instanceof Error ? error.message : '无法预览上下文。' }; }
-  }, [selectedModel, models, snapshot.messages, previewSource.parentId, previewHistory, conversationSettings, draft, reasoningEffort, session?.systemPrompt, session?.maxOutputTokens, session?.showReasoning]);
+  }, [selectedModel, models, snapshot.messages, previewSource.parentId, previewHistory, conversationSettings, draft, draftImages, reasoningEffort, session?.systemPrompt, session?.maxOutputTokens, session?.showReasoning]);
   const visibleConversations = conversations.filter((item) => Boolean(item.archived) === archivedList && item.title.toLowerCase().includes(search.toLowerCase()));
 
   const boot = useCallback(async () => {
@@ -434,8 +443,8 @@ export function App() {
   }, [session?.authenticated, pending.length]);
 
   useEffect(() => {
-    const saved: { text: string; revisionOf?: string } = selected && deletedAt(selected) ? { text: '' } : read(`draft:${selected ?? 'new'}`, { text: '' });
-    setDraft(saved.text); setRevisionOf(saved.revisionOf); setError('');
+    const saved: { text: string; revisionOf?: string; images?: ImagePart[] } = selected && deletedAt(selected) ? { text: '' } : read(`draft:${selected ?? 'new'}`, { text: '' });
+    setDraft(saved.text); setRevisionOf(saved.revisionOf); setDraftImages(saved.images ?? []); setError('');
   }, [selected]);
   useEffect(() => { setBranchHead(selected ? read<string | null>(`branch-head:${selected}`, null) : null); }, [selected]);
   useEffect(() => { setConversationSettingsOpen(false); }, [selected]);
@@ -449,7 +458,56 @@ export function App() {
     const node = editor.current;
     if (node) { node.style.height = 'auto'; node.style.height = `${Math.min(node.scrollHeight, 160)}px`; }
   }, [draft]);
-  const updateDraft = (text: string) => { setDraft(text); write(`draft:${selected ?? 'new'}`, { text, revisionOf }); };
+  const updateDraft = (text: string) => { setDraft(text); write(`draft:${selected ?? 'new'}`, { text, revisionOf, images: draftImages }); };
+  useEffect(() => {
+    if (imageUpload.current && (imageUpload.current.origin !== selected || !session?.authenticated)) imageUpload.current.controller.abort();
+  }, [selected, session?.authenticated]);
+  useEffect(() => () => imageUpload.current?.controller.abort(), []);
+  const removeImage = (id: string) => {
+    const images = draftImages.filter((image) => image.attachmentId !== id);
+    setDraftImages(images); write(`draft:${selected ?? 'new'}`, { text: draft, revisionOf, images });
+  };
+  const addImages = async (files: File[]) => {
+    if (!files.length || busy || imageUpload.current) return;
+    if (!navigator.onLine || !session?.attachmentsConfigured) { setError('图片上传需要联网并配置文件存储。'); return; }
+    if (!selectedModel?.metadata.imageInput) { setError('请先选择支持图片的视觉模型。'); return; }
+    if (files.length + draftImages.length > MAX_MESSAGE_IMAGES) { setError('每条消息最多添加 4 张图片。'); return; }
+    const origin = selected, controller = new AbortController(), operation = { origin, controller };
+    imageUpload.current = operation; setImageProgress({ name: files[0].name, percent: 0 }); setError('');
+    let conversation = currentConversation;
+    const uploaded: ImagePart[] = [], registered: string[] = [];
+    try {
+      const preparedFiles: { file: File; input: Awaited<ReturnType<typeof prepareAttachment>> }[] = [];
+      for (const file of files) {
+        setImageProgress({ name: file.name, percent: 0 });
+        const prepared = await prepareChatImage(file, controller.signal);
+        preparedFiles.push({ file: prepared, input: await prepareAttachment(prepared, controller.signal) });
+      }
+      if (!conversation) {
+        conversation = { id: selected ?? crypto.randomUUID(), title: (draft.trim() || files[0].name).slice(0, 26), createdAt: Date.now(), updatedAt: Date.now(), pinned: false, archived: false };
+        await api('/conversations', 'POST', { id: conversation.id, title: conversation.title }, controller.signal);
+      }
+      for (const { file: prepared, input } of preparedFiles) {
+        setImageProgress({ name: prepared.name, percent: 0 });
+        registered.push(input.id);
+        const saved = await uploadAttachment(conversation.id, input, prepared, controller.signal, (received) => setImageProgress({ name: prepared.name, percent: Math.round(received / input.size * 100) }));
+        uploaded.push({ type: 'image', attachmentId: saved.id, name: saved.name, sha256: saved.sha256, size: saved.size, mediaType: prepared.type as ImagePart['mediaType'] });
+      }
+      controller.signal.throwIfAborted();
+      if (selectedRef.current !== origin) throw new DOMException('已切换对话', 'AbortError');
+      const savedDraft = read<{ text: string; revisionOf?: string }>(`draft:${origin ?? 'new'}`, { text: draft, revisionOf });
+      const images = [...draftImages, ...uploaded];
+      write(`draft:${conversation.id}`, { ...savedDraft, images });
+      setDraftImages(images);
+      if (!origin) { write('draft:new', { text: '' }); select(conversation.id); }
+      refreshLibrary();
+    } catch (error) {
+      if (conversation) for (const id of registered) await api(`/conversations/${conversation.id}/attachments/${id}`, 'DELETE', undefined, AbortSignal.timeout(10_000)).catch(() => {});
+      if (selectedRef.current === origin && !controller.signal.aborted) setError(error instanceof Error ? error.message : '图片上传失败。');
+    } finally {
+      if (imageUpload.current === operation) { imageUpload.current = null; setImageProgress(null); }
+    }
+  };
   const select = (id: string | null) => {
     setSearchJump(null);
     setEditorFocusTarget({ id });
@@ -501,7 +559,7 @@ export function App() {
         const config = applyConversationSettings({ ...generationModel, reasoningEnabled: generationModel.reasoningSupported, reasoningEffort: input.reasoningEffort,
           showReasoning: input.showReasoning, systemPrompt: generationModel.systemPrompt ?? session?.systemPrompt ?? '', maxOutputTokens: session?.maxOutputTokens ?? null, modelMetadata: generationModel.metadata }, settings.output);
         const source = contextSource(snapshot.messages, input);
-        const prepared = prepareChatContext(snapshot.messages, source.parentId, source.content, config, settings.output);
+        const prepared = prepareChatContext(snapshot.messages, source.parentId, source.content, config, settings.output, input.retryOf ? source.images : draftImages);
         if (prepared.automatic) {
           const selection = settings.output.autoCompression.model;
           const model = selection ? models.find((item) => modelSelectionKey(item) === modelSelectionKey(selection)) : generationModel;
@@ -512,14 +570,14 @@ export function App() {
       catch (error) { setError(error instanceof Error ? error.message : '会话参数无效。'); return; }
     }
     const conversation: ConversationInfo = currentConversation ?? {
-      id: selected ?? crypto.randomUUID(), title: (input.content ?? '新对话').trim().slice(0, 26), createdAt: Date.now(), updatedAt: Date.now(), pinned: false, archived: false,
+      id: selected ?? crypto.randomUUID(), title: (input.content?.trim() || draftImages[0]?.name || '新对话').slice(0, 26), createdAt: Date.now(), updatedAt: Date.now(), pinned: false, archived: false,
     };
-    const item: Pending = { conversation, input };
+    const item: Pending = { conversation, input, images: input.retryOf ? undefined : draftImages };
     if (!commitPending([...pendingRef.current, item])) return;
     if (!conversations.some((item) => item.id === conversation.id)) {
       const items = [conversation, ...localConversations]; setLocalConversations(items); write('library', items);
     }
-    write(`draft:${selected ?? 'new'}`, { text: '' }); setDraft(''); setRevisionOf(undefined);
+    write(`draft:${selected ?? 'new'}`, { text: '' }); setDraft(''); setRevisionOf(undefined); setDraftImages([]);
     select(conversation.id);
     setBranchHead(null); write(`branch-head:${conversation.id}`, null);
     scrollToBottom();
@@ -527,9 +585,9 @@ export function App() {
   };
   const submit = async (event?: SubmitEvent<HTMLFormElement>) => {
     event?.preventDefault();
-    if (!draft.trim() || busy || !selectedModel) return;
+    if ((!draft.trim() && !draftImages.length) || busy || !selectedModel) return;
     setError(''); setSending(true);
-    try { await queue({ requestId: crypto.randomUUID(), content: draft.trim(), ...(revisionOf ? { revisionOf } : {}) }); }
+    try { await queue({ requestId: crypto.randomUUID(), content: draft.trim(), ...(draftImages.length ? { imageIds: draftImages.map((image) => image.attachmentId) } : {}), ...(revisionOf ? { revisionOf } : {}) }); }
     finally { setSending(false); }
   };
   const queueSummary = async (input: SubmitInput) => {
@@ -563,8 +621,8 @@ export function App() {
   };
   const edit = (message: Message) => {
     if (message.role === 'assistant') { setMessageMutation({ id: message.id, mode: 'edit' }); return; }
-    setRevisionOf(message.id); setDraft(messageText(message));
-    write(`draft:${selected}`, { text: messageText(message), revisionOf: message.id }); editor.current?.focus();
+    setRevisionOf(message.id); setDraft(messageText(message)); setDraftImages(messageImages(message));
+    write(`draft:${selected}`, { text: messageText(message), revisionOf: message.id, images: messageImages(message) }); editor.current?.focus();
   };
   const confirmMessageMutation = async (content: string, requestId: string) => {
     if (!selected || !messageMutation) return;
@@ -574,7 +632,7 @@ export function App() {
     } else {
       await api(`/conversations/${selected}/messages/${messageMutation.id}`, 'DELETE');
       if (branchHead === messageMutation.id) { setBranchHead(null); write(`branch-head:${selected}`, null); }
-      if (revisionOf === messageMutation.id) { setRevisionOf(undefined); write(`draft:${selected}`, { text: draft }); }
+      if (revisionOf === messageMutation.id) { setRevisionOf(undefined); write(`draft:${selected}`, { text: draft, images: draftImages }); }
     }
     requestAnimationFrame(() => editor.current?.focus());
   };
@@ -585,7 +643,7 @@ export function App() {
     const available = Math.max(0, 16_000 - prefix.length);
     const quoted = source.split(/\r?\n/u).map((line) => `> ${line}`).join('\n').slice(0, available);
     const next = `${prefix}${quoted}`;
-    setRevisionOf(undefined); setDraft(next); setError(''); write(`draft:${selected ?? 'new'}`, { text: next });
+    setRevisionOf(undefined); setDraft(next); setError(''); write(`draft:${selected ?? 'new'}`, { text: next, images: draftImages });
     requestAnimationFrame(() => { editor.current?.focus(); editor.current?.setSelectionRange(next.length, next.length); });
   };
   const logout = async () => {
@@ -606,12 +664,12 @@ export function App() {
       const model = message.role === 'assistant' && (message.modelName || message.model) ? `\n模型：${message.modelName || message.model}\n` : '';
       const reasoning = messageText(message, 'reasoning') ? `\n### 思考过程\n\n${messageText(message, 'reasoning')}\n` : '';
       const status = message.status === 'completed' ? '' : `\n状态：${message.status}${message.error ? `（${message.error}）` : ''}\n`;
-      return `## ${role}${message.revisionOf ? ' · 新版本' : ''}${model}\n\n${messageText(message)}${reasoning}${status}\n`;
+      return `## ${role}${message.revisionOf ? ' · 新版本' : ''}${model}\n\n${messageText(message)}${messageImages(message).map((image) => `\n[图片：${image.name}]`).join('')}${reasoning}${status}\n`;
     }).join('\n')}`;
     if (format === 'md') downloadFile(`EverChat-${selected}.md`, markdown, 'text/markdown;charset=utf-8');
     else if (format === 'txt') downloadFile(`EverChat-${selected}.txt`, markdown.replace(/^#{1,6} /gm, '').replace(/^\n### /gm, '\n'), 'text/plain;charset=utf-8');
     else {
-      const body = messages.map((message) => `<article><h2>${escapeHtml(message.summary ? '历史摘要' : message.role === 'user' ? '你' : 'EverChat')}${message.revisionOf ? ' · 新版本' : ''}</h2>${message.role === 'assistant' && (message.modelName || message.model) ? `<p class="meta">模型：${escapeHtml(message.modelName || message.model || '')}</p>` : ''}<pre>${escapeHtml(messageText(message))}</pre>${messageText(message, 'reasoning') ? `<details open><summary>思考过程</summary><pre>${escapeHtml(messageText(message, 'reasoning'))}</pre></details>` : ''}${message.status !== 'completed' ? `<p class="error">状态：${escapeHtml(message.status)}${message.error ? `（${escapeHtml(message.error)}）` : ''}</p>` : ''}</article>`).join('');
+      const body = messages.map((message) => `<article><h2>${escapeHtml(message.summary ? '历史摘要' : message.role === 'user' ? '你' : 'EverChat')}${message.revisionOf ? ' · 新版本' : ''}</h2>${message.role === 'assistant' && (message.modelName || message.model) ? `<p class="meta">模型：${escapeHtml(message.modelName || message.model || '')}</p>` : ''}<pre>${escapeHtml(messageText(message))}${messageImages(message).map((image) => `\n[图片：${escapeHtml(image.name)}]`).join('')}</pre>${messageText(message, 'reasoning') ? `<details open><summary>思考过程</summary><pre>${escapeHtml(messageText(message, 'reasoning'))}</pre></details>` : ''}${message.status !== 'completed' ? `<p class="error">状态：${escapeHtml(message.status)}${message.error ? `（${escapeHtml(message.error)}）` : ''}</p>` : ''}</article>`).join('');
       const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${escapeHtml(title)}</title><style>body{font:16px/1.7 system-ui,sans-serif;max-width:54rem;margin:2rem auto;padding:0 1rem;color:#1f2937}article{border-top:1px solid #d1d5db;padding:1.5rem 0}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}.meta{color:#6b7280;font-size:.875rem}.error{color:#b91c1c}summary{cursor:pointer}</style></head><body><h1>${escapeHtml(title)}</h1>${body}</body></html>`;
       downloadFile(`EverChat-${selected}.html`, html, 'text/html;charset=utf-8');
     }
@@ -693,8 +751,8 @@ export function App() {
           </div>
         </section> : <section ref={contentRef} aria-label="对话消息" className="mx-auto w-full max-w-3xl space-y-8 px-5 py-8 sm:px-9 sm:py-10">
           {loading && !snapshot.messages.length && <div className="py-10 text-center text-xs text-base-content/60"><span className="loading loading-dots loading-sm" /><p className="mt-3">正在找回我们的对话…</p></div>}
-          {snapshot.messages.map((message) => <MessageView key={message.id} message={message} busy={busy} onRetry={() => void retry(message)} onEdit={() => edit(message)} onQuote={() => quote(message)} onDelete={() => setMessageMutation({ id: message.id, mode: 'delete' })} canRetry={liveUserIds.has(message.parentId ?? '')} branchSelected={message.role === 'assistant' && message.status === 'completed' && message.id === currentBranchHead} onSelectBranch={() => selectBranch(message)} canFork={Boolean(selected && connection !== 'offline' && !syncError && !loading)} onFork={() => duplicateConversation(message.id)} summarySelected={previewHistory?.summary?.id === message.id} />)}
-          {currentPending && <article className="ml-auto max-w-[90%] rounded-2xl border border-dashed border-base-content/50 bg-base-200 px-5 py-4"><p className="text-sm leading-7 whitespace-pre-wrap">{currentPending.input.summaryThrough ? '历史摘要请求' : currentPending.input.content ?? '新版本'}</p><div className="mt-2 flex items-center gap-2 text-[11px] text-base-content/60"><CloudOff size={12} />{currentPending.error ? '发送失败' : '等待发送'}</div>{currentPending.error && <p className="mt-2 text-xs font-medium leading-5 text-base-content">{currentPending.error}</p>}<div className="mt-2 flex gap-1"><button className="btn btn-ghost btn-xs" onClick={() => { const clean = { ...currentPending, error: undefined }; commitPending(pendingRef.current.map((item) => item.input.requestId === clean.input.requestId ? clean : item)); void deliver(clean); }}>重试</button>{(!currentPending.input.summaryThrough || currentPending.error) && <button className="btn btn-ghost btn-xs" onClick={() => { if (currentPending.input.content) updateDraft(currentPending.input.content); commitPending(pendingRef.current.filter((item) => item.input.requestId !== currentPending.input.requestId)); }}>{currentPending.input.summaryThrough ? '取消请求' : '编辑'}</button>}</div></article>}
+          {snapshot.messages.map((message) => <MessageView conversationId={selected!} key={message.id} message={message} busy={busy} onRetry={() => void retry(message)} onEdit={() => edit(message)} onQuote={() => quote(message)} onDelete={() => setMessageMutation({ id: message.id, mode: 'delete' })} canRetry={liveUserIds.has(message.parentId ?? '')} branchSelected={message.role === 'assistant' && message.status === 'completed' && message.id === currentBranchHead} onSelectBranch={() => selectBranch(message)} canFork={Boolean(selected && connection !== 'offline' && !syncError && !loading)} onFork={() => duplicateConversation(message.id)} summarySelected={previewHistory?.summary?.id === message.id} />)}
+          {currentPending && <article className="ml-auto max-w-[90%] rounded-2xl border border-dashed border-base-content/50 bg-base-200 px-5 py-4"><ImagePreviews conversationId={currentPending.conversation.id} images={currentPending.images ?? []} /><p className="text-sm leading-7 whitespace-pre-wrap">{currentPending.input.summaryThrough ? '历史摘要请求' : currentPending.input.content ?? '新版本'}</p><div className="mt-2 flex items-center gap-2 text-[11px] text-base-content/60"><CloudOff size={12} />{currentPending.error ? '发送失败' : '等待发送'}</div>{currentPending.error && <p className="mt-2 text-xs font-medium leading-5 text-base-content">{currentPending.error}</p>}<div className="mt-2 flex gap-1"><button className="btn btn-ghost btn-xs" onClick={() => { const clean = { ...currentPending, error: undefined }; commitPending(pendingRef.current.map((item) => item.input.requestId === clean.input.requestId ? clean : item)); void deliver(clean); }}>重试</button>{(!currentPending.input.summaryThrough || currentPending.error) && <button className="btn btn-ghost btn-xs" onClick={() => { setDraft(currentPending.input.content ?? ''); setRevisionOf(currentPending.input.revisionOf); setDraftImages(currentPending.images ?? []); write(`draft:${selected}`, { text: currentPending.input.content ?? '', revisionOf: currentPending.input.revisionOf, images: currentPending.images ?? [] }); commitPending(pendingRef.current.filter((item) => item.input.requestId !== currentPending.input.requestId)); }}>{currentPending.input.summaryThrough ? '取消请求' : '编辑'}</button>}</div></article>}
         </section>}
       </div>
 
@@ -704,10 +762,12 @@ export function App() {
           {invalidRoute && <div role="alert" className="alert alert-error mb-3 text-xs"><span>找不到这个页面。</span><button type="button" className="btn btn-sm" onClick={() => select(null)}>开启新对话</button></div>}
           {syncError && <div role="alert" className="alert alert-error mb-3 text-xs"><span>{syncError}</span><button type="button" className="btn btn-sm" onClick={reconnect}>重新同步</button></div>}
           {error && <p role="alert" className="mb-3 text-xs font-medium text-base-content">{error}</p>}
-          {revisionOf && <div className="mb-2 flex items-center justify-between text-xs text-base-content/60"><span>编辑消息</span><button className="btn btn-ghost btn-xs" onClick={() => { setRevisionOf(undefined); write(`draft:${selected}`, { text: draft }); }}>取消</button></div>}
+          {revisionOf && <div className="mb-2 flex items-center justify-between text-xs text-base-content/60"><span>编辑消息</span><button className="btn btn-ghost btn-xs" onClick={() => { setRevisionOf(undefined); write(`draft:${selected}`, { text: draft, images: draftImages }); }}>取消</button></div>}
           <form onSubmit={submit} className="rounded-2xl border border-base-content/50 bg-base-100 p-3 shadow-[0_3px_16px_-7px_rgba(39,55,47,0.12)] sm:p-4">
-            <textarea ref={editor} disabled={Boolean(snapshot.deletedAt)} aria-label="消息" className="textarea textarea-ghost block min-h-13 w-full resize-none border-0 p-1 text-[15px] leading-6 placeholder:text-base-content/60 outline-none! focus:outline-none!" placeholder={active ? '生成中…' : '输入消息…'} value={draft} maxLength={16000} rows={2} onChange={(event) => updateDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void submit(); } }} />
-            <div className="mt-2 flex flex-wrap items-center justify-between gap-2"><div className="flex min-w-0 flex-wrap items-center gap-2 text-base-content"><Sparkles size={14} strokeWidth={1.5} className="shrink-0" />{selectedModel ? <select aria-label="聊天模型" className="select select-ghost select-sm min-w-0 max-w-48 border-base-content/50 text-xs sm:max-w-80" value={modelSelectionKey(selectedModel)} onChange={(event) => { setModelChoice(event.target.value); write('chat-model', event.target.value); }}>
+            {selected && <ImagePreviews conversationId={selected} images={draftImages} remove={imageProgress ? undefined : removeImage} />}
+            {imageProgress && <div className="flex items-center gap-2 py-2 text-xs" role="status"><span className="max-w-40 truncate">{imageProgress.name}</span><progress className="progress w-24" value={imageProgress.percent} max={100} aria-label="图片上传进度" /><button type="button" className="btn btn-ghost btn-xs" onClick={() => imageUpload.current?.controller.abort()}>取消上传</button></div>}
+            <textarea onPaste={(event) => { const files = Array.from(event.clipboardData.files); if (files.length) { event.preventDefault(); void addImages(files); } }} ref={editor} disabled={Boolean(snapshot.deletedAt)} aria-label="消息" className="textarea textarea-ghost block min-h-13 w-full resize-none border-0 p-1 text-[15px] leading-6 placeholder:text-base-content/60 outline-none! focus:outline-none!" placeholder={active ? '生成中…' : '输入消息…'} value={draft} maxLength={16000} rows={2} onChange={(event) => updateDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void submit(); } }} />
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2"><div className="flex min-w-0 flex-wrap items-center gap-2 text-base-content"><Sparkles size={14} strokeWidth={1.5} className="shrink-0" />{session.attachmentsConfigured && <><button type="button" className="btn btn-ghost btn-square btn-sm" aria-label="添加图片" title="添加图片" disabled={busy || !navigator.onLine || draftImages.length >= MAX_MESSAGE_IMAGES} onClick={() => imageInput.current?.click()}><ImagePlus size={16} /></button><input ref={imageInput} type="file" accept="image/png,image/jpeg,image/webp" multiple className="hidden" aria-label="选择聊天图片" onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ''; void addImages(files); }} /></>}{selectedModel ? <select aria-label="聊天模型" className="select select-ghost select-sm min-w-0 max-w-48 border-base-content/50 text-xs sm:max-w-80" value={modelSelectionKey(selectedModel)} onChange={(event) => { setModelChoice(event.target.value); write('chat-model', event.target.value); }}>
               {[...new Set(models.map((model) => model.providerId))].map((providerId) => <optgroup key={providerId} label={models.find((model) => model.providerId === providerId)!.providerName}>
                 {models.filter((model) => model.providerId === providerId).map((model) => <option key={model.model} value={modelSelectionKey(model)}>{model.name}</option>)}
               </optgroup>)}
@@ -715,7 +775,7 @@ export function App() {
             {selectedModel?.reasoningSupported && selectedModel.reasoningEfforts.length > 0 && <select aria-label="思维强度" className="select select-ghost select-sm w-auto max-w-32 border-base-content/50 text-xs" value={reasoningEffort} onChange={(event) => { const value = event.target.value as ReasoningEffort | ''; setReasoningEffort(value); write(`reasoning-effort:${modelSelectionKey(selectedModel)}`, value); }}>
               <option value="">思维强度：默认</option>{selectedModel.reasoningEfforts.map((effort) => <option key={effort} value={effort}>{effortLabels[effort]}</option>)}
             </select>}
-            </div>{active ? <button type="button" className="btn btn-sm h-9 shrink-0 gap-2 px-3" onClick={cancel} disabled={!navigator.onLine}><Square size={12} />停止生成</button> : <button type="submit" className="btn btn-primary btn-square btn-sm h-9 w-9 shrink-0 rounded-xl" aria-label="发送消息" disabled={!draft.trim() || busy || !selectedModel}>{sending ? <span className="loading loading-spinner loading-xs" /> : <ArrowUp size={18} />}</button>}</div>
+            </div>{active ? <button type="button" className="btn btn-sm h-9 shrink-0 gap-2 px-3" onClick={cancel} disabled={!navigator.onLine}><Square size={12} />停止生成</button> : <button type="submit" className="btn btn-primary btn-square btn-sm h-9 w-9 shrink-0 rounded-xl" aria-label="发送消息" disabled={(!draft.trim() && !draftImages.length) || busy || !selectedModel}>{sending ? <span className="loading loading-spinner loading-xs" /> : <ArrowUp size={18} />}</button>}</div>
             {contextPreview?.estimate && <ContextEstimateView estimate={contextPreview.estimate} compressing={contextPreview.compressing} />}
             {contextPreview?.error && <p className="mt-2 text-xs text-base-content/80">{contextPreview.error}</p>}
           </form>

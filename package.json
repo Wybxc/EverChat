@@ -33,6 +33,7 @@
     "eventsource-parser": "^3.1.1",
     "hono": "^4.13.13",
     "idb-keyval": "^6.3.0",
+    "image-size": "^2.0.4",
     "katex": "^0.19.0",
     "lucide-react": "^0.577.0",
     "mdast-util-from-markdown": "^2.1.0",

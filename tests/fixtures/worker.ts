@@ -180,7 +180,7 @@ export class Conversation extends ProductionConversation {
   }
   protected override async openModelStream(...args: Parameters<typeof openProviderStream>) {
     if (args[0].model === 'benchmark-summary-write-failure') this.failNextCommit = true;
-    if (args[0].model.startsWith('alarm-') || args[0].model.startsWith('benchmark-')) {
+    if (args[0].model.startsWith('alarm-') || args[0].model.startsWith('benchmark-') || args[0].model.startsWith('vision-')) {
       this.ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS fixture_calls (runId TEXT PRIMARY KEY, calls INTEGER NOT NULL)');
       const run = this.ctx.storage.sql.exec<{ id: string; conversationId: string }>(`SELECT runs.id, runs.conversationId FROM runs JOIN messages ON messages.id = runs.assistantId WHERE messages.status = 'running'`).one();
       this.ctx.storage.sql.exec('INSERT INTO fixture_calls VALUES (?, 1) ON CONFLICT(runId) DO UPDATE SET calls = calls + 1', run.id);
@@ -390,6 +390,23 @@ globalThis.fetch = async (input, init) => {
   if (requestBody.model === 'benchmark-answer-fact') {
     const text = JSON.stringify(requestBody).includes('__SUMMARY_FACT_42__') ? '记得预算 42 元。' : '未收到旧预算。';
     return new Response(`data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: text }, finish_reason: null }] })}\n\ndata: ${JSON.stringify({ choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`, { headers: { 'Content-Type': 'text/event-stream' } });
+  }
+  const visionKind = requestBody.model?.startsWith('vision-') ? requestBody.model.slice(7) as ProviderKind
+    : url.pathname.includes('/models/vision-gemini:') ? 'gemini' : undefined;
+  if (visionKind && providerStreams[visionKind]) {
+    const body = requestBody as unknown as { messages?: { content: { type: string; image_url?: { url: string }; source?: { type: string; media_type: string; data: string } }[] }[];
+      input?: { content: { type: string; image_url?: string }[] }[]; contents?: { parts: { inlineData?: { mimeType: string; data: string } }[] }[] };
+    const encoded = visionKind === 'openai-chat' ? body.messages?.flatMap((message) => Array.isArray(message.content) ? message.content.filter((part) => part.type === 'image_url').map((part) => part.image_url?.url) : [])
+      : visionKind === 'openai-responses' ? body.input?.flatMap((message) => Array.isArray(message.content) ? message.content.filter((part) => part.type === 'input_image').map((part) => part.image_url) : [])
+      : visionKind === 'anthropic' ? body.messages?.flatMap((message) => Array.isArray(message.content) ? message.content.filter((part) => part.type === 'image').map((part) => part.source?.type === 'base64' ? `data:${part.source.media_type};base64,${part.source.data}` : undefined) : [])
+      : body.contents?.flatMap((message) => message.parts.filter((part) => part.inlineData).map((part) => `data:${part.inlineData!.mimeType};base64,${part.inlineData!.data}`));
+    const expected = Number(/expect-images:(\d+)/.exec(JSON.stringify(body))?.[1] ?? 1);
+    if (encoded?.length !== expected || encoded.some((data) => !data || !/^data:image\/(png|webp|jpeg);base64,[A-Za-z0-9+/]+=*$/.test(data))) return Response.json({ error: { message: 'Missing native private image bytes' } }, { status: 400 });
+    const { partial, finish } = providerStreams[visionKind]; let step = 0;
+    return new Response(new ReadableStream<Uint8Array>({ async pull(controller) {
+      await new Promise((resolve) => setTimeout(resolve, step ? 1600 : 300));
+      controller.enqueue(encoder.encode(step++ ? finish : partial)); if (step === 2) controller.close();
+    } }), { headers: { 'Content-Type': 'text/event-stream' } });
   }
   const rawKind = requestBody.model?.startsWith('raw-') ? requestBody.model.slice(4) as ProviderKind
     : url.pathname.includes('/models/raw-gemini:') ? 'gemini' : undefined;

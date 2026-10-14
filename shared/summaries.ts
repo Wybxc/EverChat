@@ -1,6 +1,7 @@
 import * as v from 'valibot';
 import { branchPath, type ConversationSettings, type Message, type ProviderConfig } from './types';
-import { messageText } from './message-content';
+import { messageImages, messageText } from './message-content';
+import type { ImagePart } from './images';
 import { assertContextFits, buildContext, contextHistory, ContextBudgetError, historyCountWithinLimit, measureContextDemand } from './context-budget';
 import { FALLBACK_MODEL_METADATA } from './model-metadata';
 
@@ -38,18 +39,18 @@ export function summaryContext(messages: Message[], parentId: string | null, ena
   const deletedUsers = new Set(path.filter((message) => message.role === 'user' && message.deletedAt).map(({ id }) => id));
   const suffix = path.slice(summary.summary!.sourceIds.length).filter((message) => message.status === 'completed' && !message.deletedAt && !message.summary
     && !(message.role === 'assistant' && message.parentId && deletedUsers.has(message.parentId)))
-    .map((message) => ({ role: message.role, content: messageText(message) }));
+    .map((message) => ({ role: message.role, content: messageText(message), ...(messageImages(message).length ? { images: messageImages(message) } : {}) }));
   return { history: suffix, summary };
 }
 
-export function prepareChatContext(messages: Message[], parentId: string | null, content: string, config: ProviderConfig, settings: ConversationSettings) {
+export function prepareChatContext(messages: Message[], parentId: string | null, content: string, config: ProviderConfig, settings: ConversationSettings, images: ImagePart[] = []) {
   const prepared = summaryContext(messages, parentId, settings.useSummaries), prefix = prepared.summary ? summaryPrefix(prepared.summary) : undefined;
-  const built = buildContext(prepared.history, content, config, settings, prefix);
+  const built = buildContext(prepared.history, content, config, settings, prefix, images);
   let automatic: { throughId: string; demand: ReturnType<typeof measureContextDemand> } | undefined;
   if (settings.useSummaries && settings.autoCompression.enabled) {
     // Compression cannot reduce the current question or the system instructions.
-    assertContextFits(buildContext([], content, config, settings).estimate);
-    const demand = measureContextDemand(prepared.history, content, config, settings, prefix);
+    assertContextFits(buildContext([], content, config, settings, undefined, images).estimate);
+    const demand = measureContextDemand(prepared.history, content, config, settings, prefix, images);
     if (demand.totalTokens >= Math.ceil(demand.inputBudget * settings.autoCompression.threshold / 100)) {
       const path = parentId ? branchPath(messages, parentId) : [], covered = prepared.summary?.summary!.sourceIds.length ?? 0;
       const deletedUsers = new Set(path.filter((message) => message.role === 'user' && message.deletedAt).map(({ id }) => id));

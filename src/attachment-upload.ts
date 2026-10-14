@@ -37,7 +37,7 @@ export async function uploadAttachment(conversationId: string, input: Attachment
       xhr.send(file);
     });
   } catch (error) {
-    if (signal.aborted) await api(`/conversations/${conversationId}/attachments/${input.id}`, 'DELETE').catch(() => {});
+    if (signal.aborted) await api(`/conversations/${conversationId}/attachments/${input.id}`, 'DELETE', undefined, AbortSignal.timeout(10_000)).catch(() => {});
     throw error;
   }
 }

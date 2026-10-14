@@ -19,10 +19,12 @@ import { searchRetryDelay } from './search-index';
 import { backupMessage, type BackupMessage, type ConversationBackup } from '../shared/backup';
 import { assertContextFits, buildContext, ContextBudgetError, historyCountWithinLimit } from '../shared/context-budget';
 import { applyConversationSettings, DEFAULT_CONVERSATION_SETTINGS } from '../shared/conversation-settings';
-import { messageParts, messageText } from '../shared/message-content';
+import { messageImages, messageParts, messageText } from '../shared/message-content';
 import { MAX_SUMMARIES, MAX_SUMMARY_CHARACTERS, prepareChatContext, summaryContext, summaryGeneration, summaryPrefix } from '../shared/summaries';
 
-type Row = Omit<Message, 'parts' | 'waitingForSummary'> & { content: string; reasoning: string | null; generationResult: string | null; summaryResult: string | null; waitingForSummary?: string | null } & Record<string, SqlStorageValue>;
+import { ImageContextError, type ImagePart } from '../shared/images';
+
+type Row = Omit<Message, 'parts' | 'waitingForSummary'> & { content: string; reasoning: string | null; generationResult: string | null; summaryResult: string | null; imageResult?: string | null; waitingForSummary?: string | null } & Record<string, SqlStorageValue>;
 type Run = { id: string; conversationId: string; assistantId: string; context: string; config: string | null; chunkSeq: number; updatedAt: number;
   streamVersion: string | null; durableOffset: number;
   executor: GenerationExecutor; startedAt: number | null; cancelRequested: number } & Record<string, SqlStorageValue>;
@@ -67,8 +69,8 @@ export class Conversation extends DurableObject<Env> {
     return row ? JSON.parse(row.payload) as GenerationMeasurements : null;
   }
   private decorate(row: Row): Message {
-    const { generationResult, summaryResult, waitingForSummary, content, reasoning, ...message } = row;
-    return { ...message, parts: messageParts(content, reasoning ?? ''), ...(generationResult ? { generation: JSON.parse(generationResult) as Message['generation'] } : {}),
+    const { generationResult, summaryResult, imageResult, waitingForSummary, content, reasoning, ...message } = row;
+    return { ...message, parts: [...messageParts(content, reasoning ?? ''), ...(imageResult ? JSON.parse(imageResult) as ImagePart[] : [])], ...(generationResult ? { generation: JSON.parse(generationResult) as Message['generation'] } : {}),
       ...(summaryResult ? { summary: JSON.parse(summaryResult) as Message['summary'] } : {}), ...(waitingForSummary ? { waitingForSummary } : {}) };
   }
   private materialize(message: Message): Message {
@@ -78,7 +80,7 @@ export class Conversation extends DurableObject<Env> {
     const descriptor = JSON.parse(config) as ProviderConfig;
     return this.journal.materialize(message, { protocol: descriptor.provider, showReasoning: descriptor.showReasoning === true });
   }
-  private rows() { return this.query<Row>('SELECT messages.*, message_deletions.deletedAt, message_generations.payload AS generationResult, message_summaries.payload AS summaryResult, run_dependencies.summaryId AS waitingForSummary FROM messages LEFT JOIN message_deletions ON message_deletions.id = messages.id LEFT JOIN message_generations ON message_generations.messageId = messages.id LEFT JOIN message_summaries ON message_summaries.messageId = messages.id LEFT JOIN run_dependencies ON run_dependencies.runId = messages.runId ORDER BY messages.rowid'); }
+  private rows() { return this.query<Row>('SELECT messages.*, message_deletions.deletedAt, message_generations.payload AS generationResult, message_summaries.payload AS summaryResult, message_images.payload AS imageResult, run_dependencies.summaryId AS waitingForSummary FROM messages LEFT JOIN message_deletions ON message_deletions.id = messages.id LEFT JOIN message_generations ON message_generations.messageId = messages.id LEFT JOIN message_summaries ON message_summaries.messageId = messages.id LEFT JOIN message_images ON message_images.messageId = messages.id LEFT JOIN run_dependencies ON run_dependencies.runId = messages.runId ORDER BY messages.rowid'); }
   private all(): Message[] { return Array.from(this.rows(), (row) => this.materialize(this.decorate(row))); }
   backup(): BackupMessage[] {
     if (this.deletedAt) return [];
@@ -153,7 +155,7 @@ export class Conversation extends DurableObject<Env> {
     return this.snapshot();
   }
   private rawMessage(id: string): Message | undefined {
-    const row = this.query<Row>('SELECT messages.*, message_deletions.deletedAt, message_generations.payload AS generationResult, message_summaries.payload AS summaryResult, run_dependencies.summaryId AS waitingForSummary FROM messages LEFT JOIN message_deletions ON message_deletions.id = messages.id LEFT JOIN message_generations ON message_generations.messageId = messages.id LEFT JOIN message_summaries ON message_summaries.messageId = messages.id LEFT JOIN run_dependencies ON run_dependencies.runId = messages.runId WHERE messages.id = ?', id).toArray()[0];
+    const row = this.query<Row>('SELECT messages.*, message_deletions.deletedAt, message_generations.payload AS generationResult, message_summaries.payload AS summaryResult, message_images.payload AS imageResult, run_dependencies.summaryId AS waitingForSummary FROM messages LEFT JOIN message_deletions ON message_deletions.id = messages.id LEFT JOIN message_generations ON message_generations.messageId = messages.id LEFT JOIN message_summaries ON message_summaries.messageId = messages.id LEFT JOIN message_images ON message_images.messageId = messages.id LEFT JOIN run_dependencies ON run_dependencies.runId = messages.runId WHERE messages.id = ?', id).toArray()[0];
     return row && this.decorate(row);
   }
   private message(id: string): Message | undefined { const message = this.rawMessage(id); return message && this.materialize(message); }
@@ -265,6 +267,7 @@ export class Conversation extends DurableObject<Env> {
       message.providerId ?? null, message.model ?? null, message.modelName ?? null, messageText(message, 'reasoning'), message.streamVersion ?? null, message.durableOffset ?? 0);
     if (message.role === 'assistant' && !message.deletedAt && message.generation) this.query('INSERT INTO message_generations VALUES (?, ?)', message.id, JSON.stringify(message.generation));
     if (message.summary) this.query('INSERT INTO message_summaries VALUES (?, ?)', message.id, JSON.stringify(message.summary));
+    if (messageImages(message).length && !message.deletedAt) this.query('INSERT INTO message_images VALUES (?, ?)', message.id, JSON.stringify(messageImages(message)));
   }
   async reviseAssistant(conversationId: string, messageId: string, requestId: string, content: string): Promise<{ messageId: string } | Failure> {
     if (this.deletedAt || await this.env.LIBRARY.getByName('personal').deletedAt(conversationId)) return { error: '这个对话已删除。', status: 410 };
@@ -306,6 +309,7 @@ export class Conversation extends DurableObject<Env> {
         this.query('UPDATE messages SET content = ?, reasoning = NULL, error = NULL WHERE id = ?', '', message.id);
         this.query('INSERT INTO message_deletions VALUES (?, ?)', message.id, deletedAt);
         this.query('DELETE FROM message_generations WHERE messageId = ?', message.id);
+        this.query('DELETE FROM message_images WHERE messageId = ?', message.id);
         if (message.runId) this.query('DELETE FROM generation_timings WHERE runId = ?', message.runId);
         // Keep request IDs so delayed retries cannot recreate deleted content, but erase their saved text.
         this.query("UPDATE submissions SET fingerprint = '' WHERE json_extract(result, '$.userId') = ? OR json_extract(result, '$.assistantId') = ? OR json_extract(result, '$.messageId') = ?", message.id, message.id, message.id);
@@ -323,7 +327,7 @@ export class Conversation extends DurableObject<Env> {
     const accepted = await this.ctx.storage.transaction<Submission | Failure | { result: Submission; change: Change }>(async () => {
       if (this.deletedAt) return { error: '这个对话已删除。', status: 410 };
       const fingerprint = JSON.stringify([input.content ?? null, input.retryOf ?? null, input.revisionOf ?? null, input.branchHead ?? null,
-        input.selection?.providerId ?? null, input.selection?.model ?? null, input.showReasoning ?? null, input.reasoningEffort ?? null, input.settings ?? null, input.summaryThrough ?? null]);
+        input.selection?.providerId ?? null, input.selection?.model ?? null, input.showReasoning ?? null, input.reasoningEffort ?? null, input.settings ?? null, input.summaryThrough ?? null, input.imageIds ?? null]);
       const duplicate = () => {
         const existing = this.query<{ fingerprint: string; result: string }>('SELECT * FROM submissions WHERE id = ?', input.requestId).toArray()[0];
         if (!existing) return null;
@@ -331,7 +335,7 @@ export class Conversation extends DurableObject<Env> {
       };
       const existing = duplicate();
       if (existing) return existing;
-      if (input.summaryThrough && (input.content !== undefined || input.retryOf || input.revisionOf || input.branchHead || input.settings || input.reasoningEffort || input.showReasoning !== undefined)) return { error: '摘要请求不能同时指定聊天内容或会话参数。', status: 400 };
+      if (input.summaryThrough && (input.content !== undefined || input.retryOf || input.revisionOf || input.branchHead || input.settings || input.reasoningEffort || input.showReasoning !== undefined || input.imageIds !== undefined)) return { error: '摘要请求不能同时指定聊天内容或会话参数。', status: 400 };
       if (!config) return { error: '所选模型不可用，请配置供应商并启用模型。', status: 400 };
       if (this.query(`SELECT id FROM messages WHERE status IN ('queued', 'running') LIMIT 1`).toArray().length) return { error: '这个对话正在生成回答，请等待完成或先停止。', status: 409 };
       if (this.ctx.storage.sql.databaseSize > MAX_DATABASE_START_BYTES) return { error: DATABASE_LIMIT_MESSAGE, status: 507 };
@@ -349,6 +353,8 @@ export class Conversation extends DurableObject<Env> {
         let prepared;
         try { prepared = summaryGeneration(messages, input.summaryThrough, config); }
         catch (error) { return { error: error instanceof Error ? error.message : '无法构建摘要输入。', status: error instanceof ContextBudgetError ? 400 : 409 }; }
+        const pinned = await this.pinContextImages(conversationId, prepared.context);
+        if (pinned) return pinned;
         const runId = crypto.randomUUID();
         const summary: Message = { id: crypto.randomUUID(), role: 'assistant', parts: [], status: 'queued', createdAt: Date.now(), runId,
           parentId: input.summaryThrough, revisionOf: null, error: null, summary: prepared.coverage,
@@ -375,8 +381,12 @@ export class Conversation extends DurableObject<Env> {
       const original = input.revisionOf ? messages.find((m) => m.id === input.revisionOf && m.role === 'user' && !m.deletedAt) : undefined;
       if (input.revisionOf && !original) return { error: '找不到要编辑的消息。', status: 404 };
       if (messages.length + (parent ? 1 : 2) > MAX_MESSAGES) return { error: '此对话已达到原型的消息上限，请新建对话。', status: 507 };
-      const content = parent ? messageText(parent) : input.content?.trim();
-      if (!content || content.length > 16_000) return { error: '请输入 1 到 16,000 字的消息。', status: 400 };
+      const content = parent ? messageText(parent) : input.content?.trim() ?? '';
+      if (input.retryOf && input.imageIds !== undefined) return { error: '重新生成不能更换原提问的图片。', status: 400 };
+      const references = parent ? { value: messageImages(parent) } : input.imageIds?.length ? await this.env.LIBRARY.getByName('personal').imageReferences(conversationId, input.imageIds) : { value: [] as ImagePart[] };
+      if ('error' in references) return references;
+      const images = references.value;
+      if ((!content && !images.length) || content.length > 16_000) return { error: '请输入 1 到 16,000 字的消息。', status: 400 };
       const settings = input.settings ?? this.settings();
       let generationConfig: ProviderConfig;
       try { generationConfig = applyConversationSettings(config, settings); }
@@ -388,7 +398,7 @@ export class Conversation extends DurableObject<Env> {
       let contextEstimate;
       let automatic: ReturnType<typeof summaryGeneration> | undefined;
       try {
-        const built = prepareChatContext(messages, parent ? parent.parentId : userParentId, content, generationConfig, settings);
+        const built = prepareChatContext(messages, parent ? parent.parentId : userParentId, content, generationConfig, settings, images);
         context = built.messages; contextEstimate = built.estimate;
         if (built.automatic) {
           if (messages.length + (parent ? 2 : 3) > MAX_MESSAGES) return { error: '此对话已达到原型的消息上限，请新建对话。', status: 507 };
@@ -397,10 +407,12 @@ export class Conversation extends DurableObject<Env> {
           if (!summaryConfig) return { error: '自动压缩模型不可用，请启用所选模型或关闭自动压缩。', status: 400 };
           automatic = summaryGeneration(messages, built.automatic.throughId, summaryConfig);
         }
-      } catch (error) { return error instanceof ContextBudgetError ? { error: error.message, status: 400 }
+      } catch (error) { return error instanceof ContextBudgetError || error instanceof ImageContextError ? { error: error.message, status: 400 }
         : { error: '消息分支关系无效，无法构建上下文。', status: 409 }; }
+      const pinned = await this.pinContextImages(conversationId, [...context, ...(automatic?.context ?? [])]);
+      if (pinned) return pinned;
       const user: Message = parent ?? {
-        id: crypto.randomUUID(), role: 'user', parts: messageParts(content), status: 'completed', createdAt: Date.now(),
+        id: crypto.randomUUID(), role: 'user', parts: [...messageParts(content), ...images], status: 'completed', createdAt: Date.now(),
         runId: null, parentId: userParentId, revisionOf: original?.id ?? null, error: null,
       };
       const assistant: Message = {
@@ -418,7 +430,7 @@ export class Conversation extends DurableObject<Env> {
       this.query('INSERT INTO runs (id, conversationId, assistantId, context, chunkSeq, updatedAt, config, streamVersion, executor) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)',
         runId, conversationId, assistant.id, JSON.stringify(automatic ? [] : context), Date.now(), JSON.stringify(generationConfig), STREAM_VERSION, 'do-v1');
       if (summary) this.query('INSERT INTO run_dependencies VALUES (?, ?, ?, ?)', runId, summary.runId!, summary.id,
-        JSON.stringify({ parentId: parent ? parent.parentId : userParentId, content, settings }));
+        JSON.stringify({ parentId: parent ? parent.parentId : userParentId, content, settings, images }));
       const result = { runId, userId: user.id, assistantId: assistant.id, ...(summary ? { summaryId: summary.id } : {}) };
       this.query('INSERT INTO submissions VALUES (?, ?, ?)', input.requestId, fingerprint, JSON.stringify(result));
       const change = this.record([...(parent ? [] : [this.rawMessage(user.id)!]), ...(summary ? [this.rawMessage(summary.id)!] : []), this.rawMessage(assistant.id)!], conversationId, messages.length === 0 ? this.settings() : undefined);
@@ -471,6 +483,18 @@ export class Conversation extends DurableObject<Env> {
       ? '停止过程中后台执行被中断。已保留最近检查点，请主动重新生成。'
       : '后台执行被中断。已保留最近检查点，为避免重复计费，请主动重新生成。');
   }
+  private async pinContextImages(conversationId: string, context: ChatInput[]): Promise<Failure | null> {
+    const images = context.flatMap((message) => message.images ?? []);
+    if (!images.length) return null;
+    const result = await this.env.LIBRARY.getByName('personal').pinImages(conversationId, images);
+    return 'error' in result ? result : null;
+  }
+  usesAttachment(id: string): boolean {
+    if (this.deletedAt) return false;
+    const needle = JSON.stringify({ attachmentId: id }).slice(1, -1);
+    return Boolean(this.query('SELECT messageId FROM message_images WHERE instr(payload, ?) > 0 LIMIT 1', needle).toArray().length
+      || this.query("SELECT runs.id FROM runs JOIN messages ON messages.id = runs.assistantId WHERE messages.status IN ('queued', 'running') AND instr(runs.context, ?) > 0 LIMIT 1", needle).toArray().length);
+  }
   protected openModelStream(...args: Parameters<typeof openProviderStream>) { return openProviderStream(...args); }
   private async runInObject(runId: string, claim: Claim) {
     const abort = new AbortController();
@@ -503,7 +527,15 @@ export class Conversation extends DurableObject<Env> {
       const probe = new FirstTokenProbe(claim.config.provider, (receivedAt) => {
         if (!this.deletedAt && !active.cancelled) this.query('UPDATE generation_timings SET firstTokenAt = ? WHERE runId = ?', receivedAt, runId);
       });
-      const body = await this.openModelStream(claim.config, claim.context, abort.signal), reader = body.getReader();
+      const body = await this.openModelStream(claim.config, claim.context, abort.signal, async (image) => {
+        const response = await this.env.LIBRARY.getByName('personal').attachmentResponse(this.run(runId)!.conversationId, image.attachmentId, false);
+        if (!response.ok) throw new ProviderError('图片不可用，回答未调用模型。');
+        const data = new Uint8Array(await response.arrayBuffer());
+        const digest = await crypto.subtle.digest('SHA-256', data);
+        const sha256 = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+        if (sha256 !== image.sha256 || response.headers.get('Content-Type') !== image.mediaType) throw new ProviderError('图片完整性校验失败，回答未调用模型。');
+        return data;
+      }), reader = body.getReader();
       try {
         while (true) {
           if (active.cancelled) throw new GenerationCancelled();
@@ -637,11 +669,11 @@ export class Conversation extends DurableObject<Env> {
       let error: string | null = status === 'cancelled' ? null : '自动摘要失败，回答未调用模型。原始历史保留，请调整配置后主动重试。';
       if (summaryStatus === 'completed' && !run.cancelRequested) {
         try {
-          const { parentId, content, settings } = JSON.parse(dependency.payload) as { parentId: string | null; content: string; settings: ConversationSettings };
+          const { parentId, content, settings, images } = JSON.parse(dependency.payload) as { parentId: string | null; content: string; settings: ConversationSettings; images: ImagePart[] };
           if (!run.config) throw new Error('回答配置已丢失。');
           const prepared = summaryContext(this.all(), parentId, true);
           if (prepared.summary?.id !== dependency.summaryId) throw new Error('自动摘要覆盖范围不匹配。');
-          const built = buildContext(prepared.history, content, JSON.parse(run.config) as ProviderConfig, settings, summaryPrefix(prepared.summary));
+          const built = buildContext(prepared.history, content, JSON.parse(run.config) as ProviderConfig, settings, summaryPrefix(prepared.summary), images);
           assertContextFits(built.estimate);
           // Count limits can intentionally omit raw history; token pressure after compression must be explicit.
           if (built.estimate.retainedMessages < historyCountWithinLimit(prepared.history, settings.recentMessages)) throw new ContextBudgetError('自动摘要后仍无法容纳最近历史。请提高预算、手动压缩或关闭自动压缩后重试。');

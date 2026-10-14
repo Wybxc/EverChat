@@ -3,6 +3,7 @@ import type { GenerationResult } from './generation';
 import type { SummaryCoverage } from './summaries';
 import { validateBatch, validateCommit } from './stream-batches';
 import { messageParts, messageText, type MessagePart } from './message-content';
+import type { ImagePart } from './images';
 export type { MessagePart } from './message-content';
 
 export type MessageStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
@@ -55,10 +56,10 @@ export interface Preview { type: 'preview'; batch: StreamBatch }
 export type DurableChange = Change | Commit;
 export type SyncPacket = DurableChange | Preview | CommitAck | { type: 'snapshot'; snapshot: Snapshot } | { type: 'ready'; seq: number } | { type: 'deleted'; deletedAt: number };
 export interface ModelSelection { providerId: string; model: string }
-export interface SubmitInput { requestId: string; content?: string; retryOf?: string; revisionOf?: string; branchHead?: string; summaryThrough?: string; selection?: ModelSelection; showReasoning?: boolean; reasoningEffort?: ReasoningEffort; settings?: ConversationSettings }
+export interface SubmitInput { requestId: string; content?: string; imageIds?: string[]; retryOf?: string; revisionOf?: string; branchHead?: string; summaryThrough?: string; selection?: ModelSelection; showReasoning?: boolean; reasoningEffort?: ReasoningEffort; settings?: ConversationSettings }
 export interface Submission { runId: string; userId: string; assistantId: string; summaryId?: string }
 export type GenerationExecutor = 'do-v1';
-export interface ChatInput { role: 'system' | 'user' | 'assistant'; content: string }
+export interface ChatInput { role: 'system' | 'user' | 'assistant'; content: string; images?: ImagePart[] }
 export interface ChatModel extends ModelSelection { name: string; providerName: string; provider: ProviderApiKind; baseUrl: string; systemPrompt?: string; reasoningSupported: boolean; reasoningEfforts: ReasoningEffort[]; metadata: ResolvedModelMetadata }
 export interface SessionInfo { authenticated: boolean; provider: string; model: string; modelName?: string; activeProviderId?: string | null; models?: ChatModel[]; configured: boolean; attachmentsConfigured: boolean; showReasoning?: boolean; systemPrompt?: string; maxOutputTokens?: number | null }
 

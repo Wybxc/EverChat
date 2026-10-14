@@ -1,6 +1,8 @@
 import { ATTACHMENT_LEASE, ATTACHMENT_UPLOAD_TIMEOUT, attachmentSignatureMatches, MAX_DAILY_ATTACHMENT_UPLOADS, MAX_CONVERSATION_ATTACHMENTS, MAX_CONVERSATION_ATTACHMENT_BYTES,
   MAX_SPACE_ATTACHMENTS, MAX_SPACE_ATTACHMENT_BYTES, type Attachment, type AttachmentInput } from '../shared/attachments';
 import { HttpError } from './http';
+import { assertChatImage, imageMediaTypeSchema, MAX_MESSAGE_IMAGES, type ImagePart } from '../shared/images';
+import * as v from 'valibot';
 
 type Row = Attachment & { key: string; lease: number; token: string | null; removed: number } & Record<string, SqlStorageValue>;
 export class AttachmentStore {
@@ -10,6 +12,7 @@ export class AttachmentStore {
       size INTEGER NOT NULL, mediaType TEXT NOT NULL, sha256 TEXT NOT NULL, status TEXT NOT NULL, createdAt INTEGER NOT NULL,
       error TEXT, key TEXT NOT NULL, lease INTEGER NOT NULL, token TEXT, removed INTEGER NOT NULL DEFAULT 0)`);
     storage.sql.exec('CREATE TABLE IF NOT EXISTS attachment_daily_uploads (date TEXT PRIMARY KEY, count INTEGER NOT NULL)');
+    storage.sql.exec('CREATE TABLE IF NOT EXISTS attachment_usage (id TEXT PRIMARY KEY, token TEXT NOT NULL)');
   }
   private configuredBucket() {
     if (!this.bucket) throw new HttpError(503, '文件存储未配置，请先绑定私有 R2 桶。');
@@ -31,6 +34,34 @@ export class AttachmentStore {
     if (!this.exists(conversationId)) throw new HttpError(410, '对话不存在或已删除。');
     return this.storage.sql.exec<Row>('SELECT * FROM attachments WHERE conversationId = ? AND removed = 0 ORDER BY createdAt, id', conversationId).toArray().map((row) => this.public(row));
   }
+  images(conversationId: string, ids: string[]): ImagePart[] {
+    this.configuredBucket();
+    if (ids.length > MAX_MESSAGE_IMAGES || new Set(ids).size !== ids.length) throw new HttpError(400, '每条消息最多添加 4 张不同的图片。');
+    return ids.map((id) => {
+      const row = this.require(conversationId, id);
+      if (row.status !== 'ready') throw new HttpError(409, '图片尚未上传完成。');
+      const type = v.safeParse(imageMediaTypeSchema, row.mediaType);
+      if (!type.success) throw new HttpError(415, '此附件不是支持的图片格式。');
+      return { type: 'image', attachmentId: row.id, name: row.name, size: row.size, mediaType: type.output, sha256: row.sha256 };
+    });
+  }
+  async pinImages(conversationId: string, images: ImagePart[]) {
+    const unique = new Map(images.map((image) => [image.attachmentId, image]));
+    for (const image of unique.values()) {
+      const row = this.require(conversationId, image.attachmentId);
+      if (row.status !== 'ready' || row.name !== image.name || row.size !== image.size || row.sha256 !== image.sha256 || row.mediaType !== image.mediaType) throw new HttpError(409, '图片引用与文件不符，请重新上传。');
+      const response = await this.response(conversationId, image.attachmentId);
+      try { assertChatImage(new Uint8Array(await response.arrayBuffer()), image.mediaType); }
+      catch (error) { throw new HttpError(415, error instanceof Error ? error.message : '图片无效。'); }
+    }
+    // Recheck every row after the last R2 await. A concurrent deletion must win before acceptance.
+    for (const image of unique.values()) this.require(conversationId, image.attachmentId);
+    this.storage.transactionSync(() => {
+      for (const image of unique.values()) this.storage.sql.exec('INSERT INTO attachment_usage VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET token = excluded.token', image.attachmentId, crypto.randomUUID());
+    });
+    await this.storage.sync();
+  }
+  usage(id: string) { return this.storage.sql.exec<{ token: string }>('SELECT token FROM attachment_usage WHERE id = ?', id).toArray()[0]?.token; }
   register(conversationId: string, input: AttachmentInput): Attachment {
     this.configuredBucket();
     if (!this.exists(conversationId)) throw new HttpError(410, '对话不存在或已删除。');
@@ -131,8 +162,9 @@ export class AttachmentStore {
       'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(row.name).replace(/['()*]/g, (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`)}` });
     return new Response('body' in object ? (object as R2ObjectBody).body : null, { headers });
   }
-  remove(conversationId: string, id: string) {
+  remove(conversationId: string, id: string, usage = this.usage(id)) {
     const row = this.require(conversationId, id);
+    if (usage !== this.usage(id)) throw new HttpError(409, '图片刚被对话使用，请稍后重试。');
     this.storage.sql.exec('UPDATE attachments SET removed = 1, lease = ? WHERE id = ?', row.status === 'uploading' ? row.lease : Date.now(), id);
   }
   removeConversation(conversationId: string) {
@@ -156,7 +188,10 @@ export class AttachmentStore {
       try {
         await this.bucket.delete(row.key);
         const current = this.row(row.id);
-        if (current && current.lease <= Date.now() && (current.removed || current.status !== 'ready')) this.storage.sql.exec('DELETE FROM attachments WHERE id = ?', row.id);
+        if (current && current.lease <= Date.now() && (current.removed || current.status !== 'ready')) {
+          this.storage.sql.exec('DELETE FROM attachments WHERE id = ?', row.id);
+          this.storage.sql.exec('DELETE FROM attachment_usage WHERE id = ?', row.id);
+        }
       } catch { failed = true; this.storage.sql.exec('UPDATE attachments SET lease = ? WHERE id = ?', Date.now() + 30_000, row.id); }
     }
     return !failed;

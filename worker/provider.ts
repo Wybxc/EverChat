@@ -6,6 +6,7 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import type { ChatInput, ProviderConfig } from '../shared/types';
 import { normalizeBaseUrl } from './provider-config';
 import { GenerationCancelled, ProviderError } from './generation-errors';
+import { assertChatImage, assertImageContext, ImageContextError, type ImagePart } from '../shared/images';
 
 export { GenerationCancelled, ProviderError } from './generation-errors';
 
@@ -25,7 +26,8 @@ function languageModel(config: ProviderConfig, fetch: typeof globalThis.fetch): 
   }
 }
 
-export async function openProviderStream(config: ProviderConfig, context: ChatInput[], signal: AbortSignal): Promise<ReadableStream<Uint8Array>> {
+export async function openProviderStream(config: ProviderConfig, context: ChatInput[], signal: AbortSignal,
+  loadImage?: (image: ImagePart) => Promise<Uint8Array>): Promise<ReadableStream<Uint8Array>> {
   if (!config.apiKey) throw new ProviderError('尚未配置供应商 API 密钥。');
   let prepared: { input: Parameters<typeof fetch>[0]; init?: RequestInit } | undefined;
   // Use the SDK to construct the request, without giving its parser the live supplier body.
@@ -35,13 +37,26 @@ export async function openProviderStream(config: ProviderConfig, context: ChatIn
     return new Response('', { headers: { 'Content-Type': 'text/event-stream' } });
   };
   try {
+    assertImageContext(context, config);
+    const imageData = new Map<string, Uint8Array>();
+    for (const message of context) for (const image of message.images ?? []) {
+      if (imageData.has(image.attachmentId)) continue;
+      if (!loadImage) throw new ImageContextError('无法读取已保存图片。');
+      signal.throwIfAborted();
+      const data = await loadImage(image);
+      if (data.byteLength !== image.size) throw new ImageContextError('图片长度校验失败。');
+      assertChatImage(data, image.mediaType); imageData.set(image.attachmentId, data);
+    }
+    signal.throwIfAborted();
     const compatible = config.provider === 'openai-chat' && new URL(config.baseUrl).hostname !== 'api.openai.com';
     const deepseek = compatible && new URL(config.baseUrl).hostname === 'api.deepseek.com';
     const effort = config.reasoningEnabled ? config.reasoningEffort : undefined;
     const prompt: LanguageModelV4Prompt = [
       ...(config.systemPrompt ? [{ role: 'system' as const, content: config.systemPrompt }] : []),
       ...context.map((message) => message.role === 'system' ? { role: message.role, content: message.content }
-        : { role: message.role, content: [{ type: 'text' as const, text: message.content }] }),
+        : { role: message.role, content: [...(message.content ? [{ type: 'text' as const, text: message.content }] : []),
+          ...(message.images ?? []).map((image) => ({ type: 'file' as const, mediaType: image.mediaType,
+            data: { type: 'data' as const, data: imageData.get(image.attachmentId)! } }))] }),
     ];
     const options: LanguageModelV4CallOptions = {
       prompt,
@@ -79,6 +94,7 @@ export async function openProviderStream(config: ProviderConfig, context: ChatIn
     }
     return response.body;
   } catch (error) {
+    if (error instanceof ImageContextError) throw new ProviderError(error.message);
     if (error instanceof ProviderError || error instanceof GenerationCancelled) throw error;
     if (signal.aborted) throw new ProviderError('模型供应商连接已中断。');
     throw new ProviderError('无法连接模型供应商，请检查服务地址和网络。');

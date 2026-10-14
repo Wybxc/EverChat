@@ -1,6 +1,7 @@
 import * as v from 'valibot';
 import { branchPath, type ChatInput, type ConversationSettings, type Message, type ProviderConfig, type SubmitInput } from './types';
-import { messageText } from './message-content';
+import { messageImages, messageText } from './message-content';
+import { assertImageContext, imageTokens, type ImagePart } from './images';
 import { FALLBACK_MODEL_METADATA } from './model-metadata';
 
 // A bounded, model-independent approximation, not a supplier tokenizer or billing counter.
@@ -34,6 +35,7 @@ export const contextEstimateSchema = v.strictObject({
   contextScope: v.picklist(['combined', 'input']), windowSource: v.picklist(['manual', 'provider', 'catalog', 'fallback']),
   retainedMessages: count, omittedMessages: count,
   summaryTokens: v.optional(count), summarizedMessages: v.optional(count), summaryId: v.optional(v.pipe(v.string(), v.uuid())),
+  imageTokens: v.optional(count),
 });
 export type ContextEstimate = v.InferOutput<typeof contextEstimateSchema>;
 export class ContextBudgetError extends Error {}
@@ -43,7 +45,9 @@ export function contextSource(messages: Message[], input: Pick<SubmitInput, 'con
   const parent = previous ? messages.find((message) => message.id === previous.parentId) : undefined;
   const original = input.revisionOf ? messages.find((message) => message.id === input.revisionOf) : undefined;
   const latest = [...messages].reverse().find((message) => message.status === 'completed' && !message.deletedAt && !message.summary);
+  const images = parent ? messageImages(parent) : original ? messageImages(original) : [];
   return { content: parent ? messageText(parent) : input.content?.trim() ?? '',
+    ...(images.length ? { images } : {}),
     parentId: parent ? parent.parentId : original ? original.parentId : input.branchHead ?? latest?.id ?? null };
 }
 
@@ -52,17 +56,18 @@ export function contextHistory(messages: Message[], parentId: string | null): Ch
   const deletedUsers = new Set(history.filter((message) => message.role === 'user' && message.deletedAt).map(({ id }) => id));
   return history.filter((message) => message.status === 'completed' && !message.deletedAt && !message.summary
     && !(message.role === 'assistant' && message.parentId && deletedUsers.has(message.parentId)))
-    .map((message) => ({ role: message.role, content: messageText(message) }));
+    .map((message) => ({ role: message.role, content: messageText(message), ...(messageImages(message).length ? { images: messageImages(message) } : {}) }));
 }
 
 // Framing varies by protocol/model. Leave slack rather than claim an exact serialization count.
 const MESSAGE_OVERHEAD = 8, REQUEST_OVERHEAD = 3;
-const historyTokenCache = new WeakMap<ChatInput, { content: string; tokens: number }>();
+const historyTokenCache = new WeakMap<ChatInput, { content: string; images: number; tokens: number }>();
 function historyTokens(message: ChatInput): number {
   const cached = historyTokenCache.get(message);
-  if (cached?.content === message.content) return cached.tokens;
-  const tokens = estimateTextTokens(message.content) + MESSAGE_OVERHEAD;
-  historyTokenCache.set(message, { content: message.content, tokens });
+  const images = imageTokens(message.images);
+  if (cached?.content === message.content && cached.images === images) return cached.tokens;
+  const tokens = estimateTextTokens(message.content) + MESSAGE_OVERHEAD + images;
+  historyTokenCache.set(message, { content: message.content, images, tokens });
   return tokens;
 }
 function turnStart(history: ChatInput[], end: number) {
@@ -82,7 +87,7 @@ export function historyCountWithinLimit(history: ChatInput[], recentMessages: nu
 }
 export function buildContext(history: ChatInput[], content: string, config: Pick<ProviderConfig, 'systemPrompt' | 'maxOutputTokens' | 'modelMetadata'>,
   settings: Pick<ConversationSettings, 'recentMessages' | 'contextBudget'>,
-  summary?: { id: string; content: string; coveredMessages: number }): { messages: ChatInput[]; estimate: ContextEstimate } {
+  summary?: { id: string; content: string; coveredMessages: number }, images: ImagePart[] = []): { messages: ChatInput[]; estimate: ContextEstimate } {
   const metadata = config.modelMetadata ?? { ...FALLBACK_MODEL_METADATA, sources: { contextWindow: 'fallback' as const } };
   const { contextWindow, contextScope } = metadata;
   // Planning reserve only: never turn an unset request output limit into a supplier parameter.
@@ -90,7 +95,7 @@ export function buildContext(history: ChatInput[], content: string, config: Pick
   const safetyMargin = Math.ceil(contextWindow / 10);
   const capacity = Math.max(0, contextWindow - safetyMargin - (contextScope === 'combined' ? outputReserve : 0));
   const inputBudget = Math.min(capacity, settings.contextBudget ?? capacity);
-  const inputTokens = estimateTextTokens(content);
+  const inputTokens = estimateTextTokens(content) + imageTokens(images);
   const systemTokens = config.systemPrompt ? estimateTextTokens(config.systemPrompt) + MESSAGE_OVERHEAD : 0;
   const summaryTokens = summary ? estimateTextTokens(summary.content) + MESSAGE_OVERHEAD : 0;
   const fixed = inputTokens + MESSAGE_OVERHEAD + systemTokens + REQUEST_OVERHEAD + summaryTokens;
@@ -111,7 +116,11 @@ export function buildContext(history: ChatInput[], content: string, config: Pick
     inputBudget, contextWindow, contextScope, outputReserve, safetyMargin, windowSource: metadata.sources.contextWindow,
     retainedMessages: selected.length, omittedMessages: history.length - selected.length,
     ...(summary ? { summaryTokens, summarizedMessages: summary.coveredMessages, summaryId: summary.id } : {}) };
-  return { messages: [...(summary ? [{ role: 'user' as const, content: summary.content }] : []), ...selected, { role: 'user', content }], estimate };
+  const messages: ChatInput[] = [...(summary ? [{ role: 'user' as const, content: summary.content }] : []), ...selected, { role: 'user', content, ...(images.length ? { images } : {}) }];
+  const imageAllowance = messages.reduce((sum, message) => sum + imageTokens(message.images), 0);
+  if (imageAllowance) estimate.imageTokens = imageAllowance;
+  assertImageContext(messages, config);
+  return { messages, estimate };
 }
 
 export function assertContextFits(estimate: ContextEstimate) {
@@ -120,8 +129,10 @@ export function assertContextFits(estimate: ContextEstimate) {
 
 // Measure the whole available branch for compression, before selecting a bounded raw-history tail.
 export function measureContextDemand(history: ChatInput[], content: string, config: Pick<ProviderConfig, 'systemPrompt' | 'maxOutputTokens' | 'modelMetadata'>,
-  settings: Pick<ConversationSettings, 'recentMessages' | 'contextBudget'>, summary?: { id: string; content: string; coveredMessages: number }): ContextEstimate {
-  const fixed = buildContext([], content, config, settings, summary).estimate;
+  settings: Pick<ConversationSettings, 'recentMessages' | 'contextBudget'>, summary?: { id: string; content: string; coveredMessages: number }, images: ImagePart[] = []): ContextEstimate {
+  const fixed = buildContext([], content, config, settings, summary, images).estimate;
   const tokens = history.reduce((total, message) => total + historyTokens(message), 0);
-  return { ...fixed, historyTokens: tokens, totalTokens: fixed.totalTokens + tokens, retainedMessages: history.length, omittedMessages: 0 };
+  const imageAllowance = imageTokens(images) + history.reduce((sum, message) => sum + imageTokens(message.images), 0);
+  return { ...fixed, historyTokens: tokens, totalTokens: fixed.totalTokens + tokens, retainedMessages: history.length, omittedMessages: 0,
+    ...(imageAllowance ? { imageTokens: imageAllowance } : {}) };
 }

@@ -9,6 +9,7 @@ import type { BackupSettings } from '../shared/backup';
 import { PromptPresets, PromptPresetError } from './prompt-presets';
 import { AttachmentStore } from './attachments';
 import type { AttachmentInput } from '../shared/attachments';
+import type { ImagePart } from '../shared/images';
 import { HttpError, json } from './http';
 
 type Deletion = { id: string; deletedAt: number; completed: number } & Record<string, SqlStorageValue>;
@@ -197,6 +198,8 @@ export class Library extends DurableObject<Env> {
     catch (error) { return { error: error instanceof HttpError ? error.message : '附件存储暂时不可用，请稍后重试。', status: error instanceof HttpError ? error.status : 503 }; }
   }
   listAttachments(conversationId: string) { return this.attachmentAction(() => this.attachments.list(conversationId)); }
+  imageReferences(conversationId: string, ids: string[]) { return this.attachmentAction(() => this.attachments.images(conversationId, ids)); }
+  pinImages(conversationId: string, images: ImagePart[]) { return this.attachmentAction(() => this.attachments.pinImages(conversationId, images)); }
   async registerAttachment(conversationId: string, input: AttachmentInput) {
     const result = await this.attachmentAction(() => this.attachments.register(conversationId, input));
     await this.scheduleMaintenance(); return result;
@@ -210,7 +213,11 @@ export class Library extends DurableObject<Env> {
     return 'error' in result ? json({ error: result.error }, result.status) : result.value;
   }
   async removeAttachment(conversationId: string, id: string) {
-    const result = await this.attachmentAction(() => this.attachments.remove(conversationId, id));
+    const result = await this.attachmentAction(async () => {
+      const usage = this.attachments.usage(id);
+      if (usage && await this.env.CONVERSATIONS.getByName(conversationId).usesAttachment(id)) throw new HttpError(409, '图片仍被消息或生成任务使用，请先删除相关消息。');
+      this.attachments.remove(conversationId, id, usage);
+    });
     await this.scheduleMaintenance(); return result;
   }
   promptPresets() { return this.presets.list(); }
