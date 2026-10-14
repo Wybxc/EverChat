@@ -1,34 +1,17 @@
 import { assertDocumentContext, DocumentError, documentPrompt, estimateDocumentTokens, type DocumentPart } from '../shared/documents';
-import type { LanguageModelV4, LanguageModelV4CallOptions, LanguageModelV4Prompt } from '@ai-sdk/provider';
-import { createOpenAI } from '@ai-sdk/openai';
-import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-import { createAnthropic } from '@ai-sdk/anthropic';
-import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import type { LanguageModelV4Prompt } from '@ai-sdk/provider';
 import type { ChatInput, ProviderConfig } from '../shared/types';
-import { normalizeBaseUrl } from './provider-config';
 import { GenerationCancelled, ProviderError } from './generation-errors';
 import { assertChatImage, assertImageContext, ImageContextError, type ImagePart } from '../shared/images';
+import { providerCallOptions, providerModel } from './provider-sdk';
+import { providerToolPrompt, webToolDefinitions, type ProviderToolRequest } from './provider-tools';
+import { assertWebToolSupport } from '../shared/web-tools';
 
 export { GenerationCancelled, ProviderError } from './generation-errors';
 
-function languageModel(config: ProviderConfig, fetch: typeof globalThis.fetch): LanguageModelV4 {
-  let baseURL: string;
-  try { baseURL = normalizeBaseUrl(config.baseUrl); }
-  catch (error) { throw new ProviderError(error instanceof Error ? error.message : '供应商地址无效。'); }
-  const options = { baseURL, apiKey: config.apiKey, fetch };
-  switch (config.provider) {
-    case 'openai-chat': return new URL(baseURL).hostname === 'api.openai.com'
-      ? createOpenAI(options).chat(config.model)
-      : createOpenAICompatible({ ...options, name: 'compatible', includeUsage: true }).chatModel(config.model);
-    case 'openai-responses': return createOpenAI(options).responses(config.model);
-    case 'anthropic': return createAnthropic(options)(config.model);
-    case 'gemini': return createGoogleGenerativeAI(options)(config.model);
-    default: throw new ProviderError('AI_PROVIDER 配置无效。');
-  }
-}
-
 export async function openProviderStream(config: ProviderConfig, context: ChatInput[], signal: AbortSignal,
-  loadImage?: (image: ImagePart) => Promise<Uint8Array>, loadDocument?: (file: DocumentPart) => Promise<string>): Promise<ReadableStream<Uint8Array>> {
+  loadImage?: (image: ImagePart) => Promise<Uint8Array>, loadDocument?: (file: DocumentPart) => Promise<string>,
+  toolRequest?: ProviderToolRequest): Promise<ReadableStream<Uint8Array>> {
   if (!config.apiKey) throw new ProviderError('尚未配置供应商 API 密钥。');
   let prepared: { input: Parameters<typeof fetch>[0]; init?: RequestInit } | undefined;
   // Use the SDK to construct the request, without giving its parser the live supplier body.
@@ -38,6 +21,10 @@ export async function openProviderStream(config: ProviderConfig, context: ChatIn
     return new Response('', { headers: { 'Content-Type': 'text/event-stream' } });
   };
   try {
+    if (toolRequest) {
+      try { assertWebToolSupport(config.modelMetadata, toolRequest.enabled); }
+      catch (error) { throw new ProviderError(error instanceof Error ? error.message : '工具配置无效。'); }
+    }
     assertImageContext(context, config); assertDocumentContext(context);
     const documentData = new Map<string, string>();
     for (const message of context) for (const file of message.files ?? []) {
@@ -60,9 +47,6 @@ export async function openProviderStream(config: ProviderConfig, context: ChatIn
       assertChatImage(data, image.mediaType); imageData.set(image.attachmentId, data);
     }
     signal.throwIfAborted();
-    const compatible = config.provider === 'openai-chat' && new URL(config.baseUrl).hostname !== 'api.openai.com';
-    const deepseek = compatible && new URL(config.baseUrl).hostname === 'api.deepseek.com';
-    const effort = config.reasoningEnabled ? config.reasoningEffort : undefined;
     const prompt: LanguageModelV4Prompt = [
       ...(config.systemPrompt ? [{ role: 'system' as const, content: config.systemPrompt }] : []),
       ...context.map((message) => message.role === 'system' ? { role: message.role, content: message.content }
@@ -71,27 +55,9 @@ export async function openProviderStream(config: ProviderConfig, context: ChatIn
           ...(message.images ?? []).map((image) => ({ type: 'file' as const, mediaType: image.mediaType,
             data: { type: 'data' as const, data: imageData.get(image.attachmentId)! } }))] }),
     ];
-    const options: LanguageModelV4CallOptions = {
-      prompt,
-      maxOutputTokens: config.maxOutputTokens ?? undefined,
-      temperature: config.temperature,
-      topP: config.topP,
-      reasoning: deepseek ? undefined : effort,
-      providerOptions: compatible ? { compatible: {
-        store: false,
-        ...(deepseek && config.reasoningEnabled ? effort === 'none'
-          ? { thinking: { type: 'disabled' } }
-          : { thinking: { type: 'enabled' }, ...(effort ? { reasoningEffort: effort } : {}) } : {}),
-      } } : config.provider.startsWith('openai-') ? { openai: {
-        store: false,
-        ...(config.reasoningEnabled && config.provider === 'openai-responses' ? { forceReasoning: true, reasoningSummary: 'auto' } : {}),
-      } } : config.provider === 'anthropic' && config.reasoningEnabled && config.showReasoning
-        ? { anthropic: { thinking: { type: 'adaptive', display: 'summarized' }, sendReasoning: true } }
-        : config.provider === 'gemini' && config.reasoningEnabled
-        ? { google: { thinkingConfig: { includeThoughts: true } } } : undefined,
-      abortSignal: signal,
-    };
-    const placeholder = await languageModel(config, capture).doStream(options);
+    if (toolRequest) prompt.push(...providerToolPrompt(toolRequest.exchanges ?? [], toolRequest.enabled, config));
+    const placeholder = await providerModel(config, capture).doStream(providerCallOptions(config, prompt, signal,
+      toolRequest ? webToolDefinitions(toolRequest.enabled) : undefined));
     const reader = placeholder.stream.getReader();
     try { while (!(await reader.read()).done) { /* Empty local response, never the supplier stream. */ } }
     finally { reader.releaseLock(); }

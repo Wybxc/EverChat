@@ -37,7 +37,8 @@ export class ProviderStream {
   private state: StreamState;
   private readonly parser: EventSourceParser;
   private deltas: ParsedDelta[] = [];
-  constructor(protocol: ProviderKind, showReasoning: boolean, checkpoint?: StreamState, content = '', reasoning = '') {
+  constructor(protocol: ProviderKind, showReasoning: boolean, checkpoint?: StreamState, content = '', reasoning = '',
+    private readonly observeEvent?: (event: Readonly<Record<string, unknown>>) => void) {
     this.content = content; this.reasoning = reasoning;
     this.state = checkpoint ? structuredClone(checkpoint) : {
       protocol, showReasoning, tail: '', utf8: '', started: false, done: false, textDeltas: 0, reasoningDeltas: 0, usage: {}, usageIsFinal: false, thoughts: [],
@@ -77,12 +78,16 @@ export class ProviderStream {
     // At EOF a pending CR is a complete line ending. Resolve it without inventing an extra blank line.
     if (this.state.tail.endsWith('\r') && !this.state.utf8) this.feed(new Uint8Array([10]));
   }
-  assertComplete() {
+  assertEnded() {
     this.end();
     if (this.state.failure) throw new StreamParseError(this.state.failure);
-    if (this.state.utf8 || this.state.tail.split(/\r\n|\r|\n/).some((line) => line.trim() && !line.startsWith(':')) || !this.state.done || !['stop', 'length'].includes(this.state.finishReason ?? '')) {
+    if (this.state.utf8 || this.state.tail.split(/\r\n|\r|\n/).some((line) => line.trim() && !line.startsWith(':')) || !this.state.done) {
       throw new StreamParseError('与模型供应商的连接提前结束或未正常完成回答。已保存部分内容，请主动重新生成。');
     }
+  }
+  assertComplete() {
+    this.assertEnded();
+    if (!['stop', 'length'].includes(this.state.finishReason ?? '')) throw new StreamParseError('与模型供应商的连接提前结束或未正常完成回答。已保存部分内容，请主动重新生成。');
     if (!this.content) throw new StreamParseError('模型供应商未返回文字回答。');
   }
   private unfinishedTail(text: string) {
@@ -148,6 +153,7 @@ export class ProviderStream {
     if (data === '[DONE]') { if (this.state.protocol === 'openai-chat') this.state.done = true; return; }
     try {
       const event = object(JSON.parse(data)), kind = this.state.protocol;
+      this.observeEvent?.(event);
       if (event.error || event.type === 'error' || event.type === 'response.failed') {
         this.fail('模型供应商在生成期间返回错误。已保存部分内容。'); return;
       }
