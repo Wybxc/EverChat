@@ -21,6 +21,7 @@
       { "name": "LIBRARY", "class_name": "Library" }
     ]
   },
+  "r2_buckets": [{ "binding": "ATTACHMENTS", "bucket_name": "everchat-attachments" }],
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["Conversation", "Library"] }
   ],

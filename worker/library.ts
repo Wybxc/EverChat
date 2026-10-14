@@ -7,6 +7,9 @@ import { SearchIndex, SearchChanged, SEARCH_CAPACITY_MESSAGE, searchRetryDelay }
 import type { SearchDocument } from '../shared/search';
 import type { BackupSettings } from '../shared/backup';
 import { PromptPresets, PromptPresetError } from './prompt-presets';
+import { AttachmentStore } from './attachments';
+import type { AttachmentInput } from '../shared/attachments';
+import { HttpError, json } from './http';
 
 type Deletion = { id: string; deletedAt: number; completed: number } & Record<string, SqlStorageValue>;
 const conversationSelect = `SELECT conversations.*, COALESCE(metadata.pinned, 0) AS pinned, COALESCE(metadata.archived, 0) AS archived
@@ -17,6 +20,7 @@ const decorate = (row: Record<string, SqlStorageValue>) => ({ ...row, pinned: Bo
 export class Library extends DurableObject<Env> {
   private readonly searchIndex: SearchIndex;
   private readonly presets: PromptPresets;
+  private readonly attachments: AttachmentStore;
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     this.presets = new PromptPresets(ctx.storage);
@@ -33,6 +37,7 @@ export class Library extends DurableObject<Env> {
       systemPrompt TEXT NOT NULL, maxOutputTokens INTEGER NOT NULL, showReasoning INTEGER NOT NULL DEFAULT 0
     )`);
     this.searchIndex = new SearchIndex(ctx.storage);
+    this.attachments = new AttachmentStore(ctx.storage, env.ATTACHMENTS, (id) => Boolean(this.get(id)));
     // Feature initialization reads existing messages in bounded pages, never on a search request.
     ctx.storage.sql.exec(`INSERT OR IGNORE INTO search_backfill(conversationId) SELECT id FROM conversations
       WHERE NOT EXISTS (SELECT 1 FROM conversation_deletions WHERE conversation_deletions.id = conversations.id)`);
@@ -42,9 +47,10 @@ export class Library extends DurableObject<Env> {
     await this.ctx.storage.transaction(async () => {
       const sql = this.ctx.storage.sql;
       const pending = sql.exec<{ nextAt: number }>('SELECT MIN(nextAt) AS nextAt FROM search_backfill WHERE done = 0 HAVING COUNT(*) > 0').toArray()[0];
-      if (!pending) return;
+      const cleanup = this.attachments.nextCleanup();
+      if (!pending && cleanup === undefined) return;
       const alarm = await this.ctx.storage.getAlarm();
-      const next = Math.max(Date.now() + 1000, pending.nextAt);
+      const next = Math.max(Date.now() + 1000, Math.min(pending?.nextAt ?? Infinity, cleanup ?? Infinity));
       if (alarm === null || alarm > next) await this.ctx.storage.setAlarm(next);
     });
   }
@@ -114,6 +120,7 @@ export class Library extends DurableObject<Env> {
       const deletion = existing ?? { id, deletedAt: Date.now(), completed: 0 };
       if (!existing) this.ctx.storage.sql.exec('INSERT INTO conversation_deletions VALUES (?, ?, 0)', id, deletion.deletedAt);
       this.searchIndex.remove(id);
+      this.attachments.removeConversation(id);
       await this.ctx.storage.setAlarm(Date.now() + 1000);
       return deletion;
     });
@@ -126,6 +133,7 @@ export class Library extends DurableObject<Env> {
     });
   }
   async alarm() {
+    await this.attachments.cleanup();
     const pending = this.ctx.storage.sql.exec<Deletion>('SELECT * FROM conversation_deletions WHERE completed = 0 LIMIT 16').toArray();
     let failed = false;
     for (const deletion of pending) {
@@ -151,7 +159,9 @@ export class Library extends DurableObject<Env> {
     await this.ctx.storage.transaction(async () => {
       const deletion = this.ctx.storage.sql.exec('SELECT id FROM conversation_deletions WHERE completed = 0 LIMIT 1').toArray().length;
       const indexing = this.ctx.storage.sql.exec<{ nextAt: number }>('SELECT MIN(nextAt) AS nextAt FROM search_backfill WHERE done = 0 HAVING COUNT(*) > 0').toArray()[0];
-      const next = Math.min(deletion ? Date.now() + (failed ? 30_000 : 1000) : Infinity, indexing ? Math.max(Date.now() + 1000, indexing.nextAt) : Infinity);
+      const cleanup = this.attachments.nextCleanup();
+      const next = Math.min(deletion ? Date.now() + (failed ? 30_000 : 1000) : Infinity, indexing ? Math.max(Date.now() + 1000, indexing.nextAt) : Infinity,
+        cleanup === undefined ? Infinity : Math.max(Date.now() + 1000, cleanup));
       if (Number.isFinite(next)) await this.ctx.storage.setAlarm(next); else await this.ctx.storage.deleteAlarm();
     });
   }
@@ -182,6 +192,27 @@ export class Library extends DurableObject<Env> {
     return runtimeProviderConfig(this.providerSettingsData(), selection, effort);
   }
   providerSettings(): ProviderSettings { return publicProviderSettings(this.providerSettingsData()); }
+  private async attachmentAction<T>(action: () => T | Promise<T>): Promise<{ value: T } | { error: string; status: number }> {
+    try { return { value: await action() }; }
+    catch (error) { return { error: error instanceof HttpError ? error.message : '附件存储暂时不可用，请稍后重试。', status: error instanceof HttpError ? error.status : 503 }; }
+  }
+  listAttachments(conversationId: string) { return this.attachmentAction(() => this.attachments.list(conversationId)); }
+  async registerAttachment(conversationId: string, input: AttachmentInput) {
+    const result = await this.attachmentAction(() => this.attachments.register(conversationId, input));
+    await this.scheduleMaintenance(); return result;
+  }
+  async uploadAttachment(conversationId: string, id: string, body: ReadableStream<Uint8Array>) {
+    try { return await this.attachmentAction(() => this.attachments.upload(conversationId, id, body)); }
+    finally { await this.scheduleMaintenance(); }
+  }
+  async attachmentResponse(conversationId: string, id: string, head: boolean) {
+    const result = await this.attachmentAction(() => this.attachments.response(conversationId, id, head));
+    return 'error' in result ? json({ error: result.error }, result.status) : result.value;
+  }
+  async removeAttachment(conversationId: string, id: string) {
+    const result = await this.attachmentAction(() => this.attachments.remove(conversationId, id));
+    await this.scheduleMaintenance(); return result;
+  }
   promptPresets() { return this.presets.list(); }
   savePromptPreset(id: string, input: PromptPresetInput) {
     try { return this.presets.save(id, input); }

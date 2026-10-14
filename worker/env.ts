@@ -5,6 +5,7 @@ export interface Env {
   ASSETS: Fetcher;
   CONVERSATIONS: DurableObjectNamespace<Conversation>;
   LIBRARY: DurableObjectNamespace<Library>;
+  ATTACHMENTS?: R2Bucket;
   APP_PASSWORD?: string;
   SESSION_SECRET?: string;
   AI_API_KEY?: string;

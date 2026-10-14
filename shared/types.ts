@@ -60,7 +60,7 @@ export interface Submission { runId: string; userId: string; assistantId: string
 export type GenerationExecutor = 'do-v1';
 export interface ChatInput { role: 'system' | 'user' | 'assistant'; content: string }
 export interface ChatModel extends ModelSelection { name: string; providerName: string; provider: ProviderApiKind; baseUrl: string; systemPrompt?: string; reasoningSupported: boolean; reasoningEfforts: ReasoningEffort[]; metadata: ResolvedModelMetadata }
-export interface SessionInfo { authenticated: boolean; provider: string; model: string; modelName?: string; activeProviderId?: string | null; models?: ChatModel[]; configured: boolean; showReasoning?: boolean; systemPrompt?: string; maxOutputTokens?: number | null }
+export interface SessionInfo { authenticated: boolean; provider: string; model: string; modelName?: string; activeProviderId?: string | null; models?: ChatModel[]; configured: boolean; attachmentsConfigured: boolean; showReasoning?: boolean; systemPrompt?: string; maxOutputTokens?: number | null }
 
 export type ProviderKind = 'openai-chat' | 'anthropic' | 'openai-responses' | 'gemini';
 export type ProviderApiKind = ProviderKind;

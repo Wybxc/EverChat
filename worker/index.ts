@@ -12,6 +12,7 @@ import { storageErrorMessage } from './resource-limits';
 import { SEARCH_QUERY_LIMIT } from '../shared/search';
 import { conversationSettingsSchema } from '../shared/conversation-settings';
 import { promptPresetInputSchema } from '../shared/prompt-presets';
+import { attachmentInputSchema } from '../shared/attachments';
 
 export { Conversation } from './conversation';
 export { Library } from './library';
@@ -71,6 +72,7 @@ app.get('/session', async (context) => {
   return json({
     authenticated: signedIn,
     configured: Boolean(context.env.APP_PASSWORD && context.env.SESSION_SECRET),
+    attachmentsConfigured: Boolean(context.env.ATTACHMENTS),
     provider: config?.provider ?? '',
     model: config?.model ?? '',
     modelName: config?.modelName ?? '',
@@ -273,6 +275,38 @@ app.get('/conversations/:id/sync', async (context) => {
   const headers = new Headers(context.req.raw.headers);
   headers.set('X-Session-Expires', token);
   return context.env.CONVERSATIONS.getByName(id).fetch(new Request(context.req.raw, { headers }));
+});
+
+const attachmentId = (context: AppContext) => {
+  const id = context.req.param('attachmentId');
+  if (!id || !v.safeParse(uuidSchema, id).success) throw new HttpError(404, '找不到附件。');
+  return id;
+};
+app.get('/conversations/:id/attachments', async (context) => {
+  await requireAuth(context); const id = conversationId(context), library = await requireConversation(context, id);
+  const result = await library.listAttachments(id);
+  return 'error' in result ? json({ error: result.error }, result.status) : json(result.value);
+});
+app.post('/conversations/:id/attachments', async (context) => {
+  await requireAuth(context); const id = conversationId(context), library = await requireConversation(context, id);
+  const input = await parseBody(context, attachmentInputSchema, { maxBytes: 2000 });
+  const result = await library.registerAttachment(id, input);
+  return 'error' in result ? json({ error: result.error }, result.status) : json(result.value, 201);
+});
+app.put('/conversations/:id/attachments/:attachmentId/content', async (context) => {
+  await requireAuth(context); const id = conversationId(context), library = await requireConversation(context, id), fileId = attachmentId(context);
+  if (!context.req.raw.body) throw new HttpError(400, '附件内容为空。');
+  const result = await library.uploadAttachment(id, fileId, context.req.raw.body);
+  return 'error' in result ? json({ error: result.error }, result.status) : json(result.value);
+});
+app.on(['GET', 'HEAD'], '/conversations/:id/attachments/:attachmentId/content', async (context) => {
+  await requireAuth(context); const id = conversationId(context), library = await requireConversation(context, id);
+  return library.attachmentResponse(id, attachmentId(context), context.req.method === 'HEAD');
+});
+app.delete('/conversations/:id/attachments/:attachmentId', async (context) => {
+  await requireAuth(context); const id = conversationId(context), library = await requireConversation(context, id);
+  const result = await library.removeAttachment(id, attachmentId(context));
+  return 'error' in result ? json({ error: result.error }, result.status) : json({ ok: true });
 });
 
 app.post('/conversations/:id/messages', async (context) => {

@@ -32,6 +32,8 @@ pnpm dev
 
 对话右上角「压缩历史」可以选择摘要模型和覆盖边界，调用前提示额外供应商费用。会话参数可开启自动压缩（默认关闭），配置阈值和摘要模型；发送达到阈值时先保存完整摘要，再启动回答，失败不重复调用模型。摘要独立持久化并流式显示 Markdown，保留原始消息，支持查看、重新生成、删除和停用。后续回答只使用匹配当前分支的已完成摘要，失败或中断摘要不替换原文；复制和备份保留覆盖关系。详见 [历史摘要](docs/history-summaries.md)。
 
+已保存对话的右上角「管理对话文件」可上传、取消、下载及删除图片、文本、代码、CSV 和 PDF 原文件，并同步到其他登录设备。单文件最多 5 MiB，每对话最多 64 个文件／32 MiB；文件保存在私有 R2，当前仅存储，还不用于模型问答、复制或备份。部署与清理规则见 [对话文件](docs/attachments.md)。
+
 点击右上角搜索按钮或按 Ctrl／⌘ F 可查找当前对话的正文与思考内容。搜索忽略大小写，按普通文字匹配，支持跨 Markdown 格式的短语；关键词最多 200 字。上下按钮或 Enter／Shift+Enter 在匹配间循环，Escape 关闭并返回搜索按钮。定位会展开折叠的思考区；查找旧内容时暂停跟随滚动，点击「滚动到最新消息」可恢复。流式内容更新计数时保留当前匹配，不反复跳转。侧栏搜索同时查找正文和思考，结果按页加载，点击结果打开对应对话并定位消息；服务端索引更新期间会显示状态。当前对话已缓存时可离线查找，侧栏正文搜索需要联网。
 
 右上角文件菜单可以下载当前已保存的对话为 Markdown、纯文本或 HTML，也可以下载带版本号的 `.everchat.json` 备份。备份包含正文、思考、消息关系、模型信息和通用设置，不包含 API 密钥、流式游标或后台任务状态；导入备份会创建新的对话并恢复可搜索内容，正在生成的未保存尾部不会进入文件。
@@ -97,6 +99,8 @@ pnpm exec wrangler secret put APP_PASSWORD
 pnpm exec wrangler secret put SESSION_SECRET
 # 可选：通过环境变量配置默认模型密钥时使用；网页配置无需此步骤。
 pnpm exec wrangler secret put AI_API_KEY
+# 先在账户启用 R2；只需为目标账户创建一次，保留私有访问。
+pnpm exec wrangler r2 bucket create everchat-attachments --storage-class Standard
 pnpm deploy
 ```
 
@@ -149,7 +153,7 @@ PWA → Worker（密码鉴权、API）→ Conversation Durable Object（SQLite�
                             Conversation → 休眠 WebSocket → 多设备
 ```
 
-- `Library` Durable Object 保存个人会话索引、供应商配置与登录频率限制，`Conversation` 每个对话一个实例。暂不使用 D1、R2 或第三方登录。
+- `Library` Durable Object 保存个人会话索引、供应商配置、登录频率限制及附件登记／清理信息，`Conversation` 每个对话一个实例。私有 R2 保存原文件；暂不使用 D1 或第三方登录。
 - 删除先在 Library 保存永久标记，再中止 Conversation 的上游请求、清空 SQLite／任务 Alarm、保存最小删除标记，最后移除索引。Library Alarm 每批最多清理 16 项，失败后 30 秒重试；实例在清空与写入标记之间重置时，Library 标记仍阻止迟到任务和创建请求。重复删除是幂等的，同 ID 的创建、提交和读取返回 410，不重新调用模型。
 - `GET /api/conversations?after=<cursor>` 返回对话索引和每页最多 256 条删除记录，客户端读完分页后保存游标。这样没有打开被删除对话的设备也能清理缓存与离线 outbox。服务端及本地删除标记长期保留，防止旧设备重新恢复数据；它们仍占少量存储，删除不表示账户存储归零。DO 清空存储的行为依据 [SQLite 存储 API](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/)。
 - 在同一个存储事务中保存输入、配置快照、请求 ID、任务 outbox 和 Alarm；提交成功后才确认接受。新任务固定执行器 `do-v1`，由 Conversation Alarm 认领并执行。浏览器保存提交 request ID，未知网络结果继续用它重试。
@@ -169,11 +173,12 @@ PWA → Worker（密码鉴权、API）→ Conversation Durable Object（SQLite�
 - 私人空间使用一个密码、签名 HttpOnly/SameSite cookie、30 天会话、同源写入校验及登录尝试限制。修改 `SESSION_SECRET` 可使所有旧会话失效。当前退出清理本设备 cookie 和缓存，不撤销其他设备的会话。
 - 原型最多 128 个会话，每个 1,000 条消息。启动生成前，完整历史 JSON 的 UTF-8 大小最多 4 MiB，SQLite 分配最多 16 MiB；为新内容、解析检查点与流式日志预留空间。流式提交超过 30 MiB 会回滚并停止，终态保存最多 32 MiB。已有历史继续可读，不自动截断或删除；生成结束清除不再使用的任务上下文。128 × 32 MiB 约为 4.295GB，是应用保留预算，其他应用仍共享账户存储额度。SQLite 已分配页不一定随日志清理缩小。
 - 容量不足返回明确的 507 错误，不自动重新调用模型。同步失败保留草稿和缓存、显示“重新同步”，暂停自动重试；平台存储错误的内部诊断不会直接显示给用户。账户存储完全耗尽时可能无法写入终态，此时不发布完成确认。
-- 输入最多 16,000 字，正文与思考各最多 100,000 字，原始响应最多 4 MiB，SSE 数据事件最多 256 Ki 字符。语义长度和完成状态在云端读取／最终整理时校验，原始接收阶段按字节和时间限制停止。发送历史按模型窗口、会话 Token 预算和消息条数选取当前分支的完整轮次，省略条数明确可见。输出 Token 上限仍默认不设置。暂无附件、工具调用或多用户隔离。
+- 输入最多 16,000 字，正文与思考各最多 100,000 字，原始响应最多 4 MiB，SSE 数据事件最多 256 Ki 字符。语义长度和完成状态在云端读取／最终整理时校验，原始接收阶段按字节和时间限制停止。发送历史按模型窗口、会话 Token 预算和消息条数选取当前分支的完整轮次，省略条数明确可见。输出 Token 上限仍默认不设置。已有独立文件存储，模型附件输入、工具调用及多用户隔离待后续实现。
 
 ## 文件
 
 - [功能实施路线图](docs/serverless-feature-roadmap.md)：Serverless 约束下的 Chatbox 功能取舍、实施顺序及阶段验收。
+- [对话文件](docs/attachments.md)：私有 R2 设置、上传确认、资源上限和清理行为。
 - `worker/`：鉴权、Hono API、持久化会话、后台生成及 AI SDK 供应商适配。
 - `src/`：React 界面、离线缓存与 outbox、WebSocket 自动重连。
 - `shared/`：API 数据结构及按序应用同步事件。

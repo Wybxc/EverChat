@@ -8,8 +8,42 @@ import { providerStreams } from './provider-streams';
 import type { ProviderKind } from '../../shared/types';
 import { MAX_CONVERSATIONS, MAX_DATABASE_BYTES } from '../../worker/resource-limits';
 import { SUMMARY_SYSTEM_PROMPT } from '../../shared/summaries';
+import { AttachmentStore } from '../../worker/attachments';
+import { HttpError } from '../../worker/http';
+
+type AttachmentControl = { id?: string; expire?: boolean; count?: number; reset?: boolean; holdDelete?: string; releaseDelete?: boolean;
+  failDelete?: string; resetLibrary?: boolean; unconfigured?: boolean };
 
 export class Library extends ProductionLibrary {
+  private attachmentDeletes: { id: string; waiting: boolean; wait: Promise<void>; release: () => void }[];
+  constructor(ctx: DurableObjectState, env: Env) {
+    const attachmentDeletes: Library['attachmentDeletes'] = [];
+    const bucket = new Proxy(env.ATTACHMENTS!, { get(target, property) {
+      if (property === 'delete') return async (keys: string | string[]) => {
+        const exists = ctx.storage.sql.exec("SELECT name FROM sqlite_master WHERE name = 'fixture_attachment_delete_fault'").toArray().length;
+        const fault = exists ? ctx.storage.sql.exec<{ id: string; remaining: number }>('SELECT id, remaining FROM fixture_attachment_delete_fault WHERE remaining > 0').toArray()[0] : undefined;
+        if (fault && (Array.isArray(keys) ? keys : [keys]).some((key) => key.includes(`/${fault.id}/`))) {
+          ctx.storage.sql.exec('UPDATE fixture_attachment_delete_fault SET remaining = remaining - 1, failed = failed + 1 WHERE id = ?', fault.id);
+          await ctx.storage.sync(); throw new Error('Injected R2 delete failure');
+        }
+        const pause = attachmentDeletes.find((item) => (Array.isArray(keys) ? keys : [keys]).some((key) => key.includes(`/${item.id}/`)));
+        if (pause) { pause.waiting = true; await pause.wait; }
+        return target.delete(keys);
+      };
+      if (property === 'put') return async (...args: Parameters<R2Bucket['put']>) => {
+        const object = await target.put(...args);
+        const exists = ctx.storage.sql.exec("SELECT name FROM sqlite_master WHERE name = 'fixture_attachment_reset'").toArray().length;
+        if (exists && ctx.storage.sql.exec<{ enabled: number }>('SELECT enabled FROM fixture_attachment_reset WHERE id = 1').toArray()[0]?.enabled) {
+          ctx.storage.sql.exec('UPDATE fixture_attachment_reset SET enabled = 0 WHERE id = 1'); await ctx.storage.sync();
+          ctx.abort('Intentional reset after R2 put', { retryAlarm: true });
+        }
+        return object;
+      };
+      const value = Reflect.get(target, property, target); return typeof value === 'function' ? value.bind(target) : value;
+    } });
+    super(ctx, { ...env, ATTACHMENTS: bucket });
+    this.attachmentDeletes = attachmentDeletes;
+  }
   override applySearchDocuments(id: string, documents: Parameters<ProductionLibrary['applySearchDocuments']>[1]) {
     this.ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS fixture_index_fault (id INTEGER PRIMARY KEY, enabled INTEGER)');
     if (this.ctx.storage.sql.exec<{ enabled: number }>('SELECT enabled FROM fixture_index_fault WHERE id = 1').toArray()[0]?.enabled) throw new Error('Injected index RPC failure');
@@ -59,6 +93,33 @@ export class Library extends ProductionLibrary {
       }
     });
     return { count: sql.exec<{ count: number }>('SELECT COUNT(*) AS count FROM conversations').one().count };
+  }
+  async fixtureAttachments({ id, expire, count, reset, holdDelete, releaseDelete, failDelete, resetLibrary, unconfigured }: AttachmentControl) {
+    const date = new Date().toISOString().slice(0, 10), sql = this.ctx.storage.sql;
+    if (releaseDelete) this.attachmentDeletes.splice(0).forEach((pause) => pause.release());
+    if (holdDelete) {
+      let release!: () => void;
+      const wait = new Promise<void>((resolve) => { release = resolve; });
+      this.attachmentDeletes.push({ id: holdDelete, waiting: false, wait, release });
+    }
+    if (expire && id) { sql.exec('UPDATE attachments SET lease = 0 WHERE id = ?', id); await this.ctx.storage.setAlarm(Date.now() + 1000); }
+    if (count !== undefined) sql.exec('INSERT INTO attachment_daily_uploads VALUES (?, ?) ON CONFLICT(date) DO UPDATE SET count = excluded.count', date, count);
+    if (reset !== undefined) { sql.exec('CREATE TABLE IF NOT EXISTS fixture_attachment_reset (id INTEGER PRIMARY KEY, enabled INTEGER)'); sql.exec('INSERT INTO fixture_attachment_reset VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET enabled = excluded.enabled', Number(reset)); }
+    sql.exec('CREATE TABLE IF NOT EXISTS fixture_attachment_delete_fault (id TEXT PRIMARY KEY, remaining INTEGER, failed INTEGER)');
+    if (failDelete) sql.exec('INSERT INTO fixture_attachment_delete_fault VALUES (?, 1, 0) ON CONFLICT(id) DO UPDATE SET remaining = 1, failed = 0', failDelete);
+    if (resetLibrary) { await this.ctx.storage.sync(); this.ctx.abort('Intentional Library reset during R2 cleanup', { retryAlarm: true }); }
+    const unconfiguredStatus: number[] = [];
+    if (unconfigured) {
+      const store = new AttachmentStore(this.ctx.storage, undefined, () => true);
+      for (const action of [() => store.list('unconfigured'), () => store.register('unconfigured', { id: crypto.randomUUID(), name: 'blocked.txt', size: 1, sha256: 'a'.repeat(64), mediaType: 'text/plain' })]) {
+        try { action(); unconfiguredStatus.push(200); }
+        catch (error) { if (!(error instanceof HttpError)) throw error; unconfiguredStatus.push(error.status); }
+      }
+    }
+    return { rows: sql.exec('SELECT id, conversationId, status, removed, lease FROM attachments').toArray(), deleteWaiting: this.attachmentDeletes.some((pause) => pause.waiting),
+      failedDeletes: sql.exec<{ count: number }>('SELECT COALESCE(SUM(failed), 0) AS count FROM fixture_attachment_delete_fault').one().count, unconfiguredStatus,
+      dailyCount: sql.exec<{ count: number }>('SELECT count FROM attachment_daily_uploads WHERE date = ?', date).toArray()[0]?.count ?? 0,
+      objects: (await this.env.ATTACHMENTS!.list({ limit: 1000 })).objects.map((object) => ({ key: object.key, size: object.size })) };
   }
 }
 
@@ -210,6 +271,11 @@ export class Conversation extends ProductionConversation {
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext) {
     const url = new URL(request.url);
+    if (url.pathname === '/api/__test/library/attachments') {
+      if (request.method !== 'POST' || request.headers.get('Origin') !== url.origin) return new Response('Forbidden', { status: 403 });
+      if (!await authenticated(request, env)) return new Response('Unauthorized', { status: 401 });
+      return Response.json(await (env.LIBRARY as unknown as DurableObjectNamespace<Library>).getByName('personal').fixtureAttachments(await request.json() as AttachmentControl));
+    }
     if (url.pathname === '/api/__test/library/capacity') {
       if (request.method !== 'POST' || request.headers.get('Origin') !== url.origin) return new Response('Forbidden', { status: 403 });
       if (!await authenticated(request, env)) return new Response('Unauthorized', { status: 401 });
