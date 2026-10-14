@@ -43,6 +43,13 @@ export class AttachmentStore {
   hasSaved(conversationId: string) {
     return Boolean(this.storage.sql.exec("SELECT id FROM attachments WHERE conversationId = ? AND removed = 0 AND status = 'ready' LIMIT 1", conversationId).toArray().length);
   }
+  unconfirmed(id: string) { const row = this.row(id); return Boolean(row && ['uploading', 'failed'].includes(row.status) && !this.active.has(id)); }
+  archiveFiles(conversationId: string) {
+    return this.list(conversationId).filter((file) => file.status === 'ready').map(({ id, name, size, mediaType, sha256 }) => {
+      const parsed = this.documents.archiveReference(conversationId, id);
+      return { id, name, size, mediaType, sha256, ...(parsed ? { parsed } : {}) };
+    });
+  }
   images(conversationId: string, ids: string[]): ImagePart[] {
     this.configuredBucket();
     if (ids.length > MAX_MESSAGE_IMAGES || new Set(ids).size !== ids.length) throw new HttpError(400, '每条消息最多添加 4 张不同的图片。');

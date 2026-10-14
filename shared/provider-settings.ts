@@ -4,6 +4,8 @@ import type { ProviderApiKind, ProviderSettingsInput } from './types';
 import { MAX_MODEL_TOKENS, reasoningEfforts } from './model-metadata';
 
 export const providerTypes = providerOptions.map((option) => option.value) as [ProviderApiKind, ...ProviderApiKind[]];
+// SQLite limits a whole row to 2 MB; leave room for record headers and column encoding.
+export const MAX_PROVIDER_PROFILE_BYTES = 2_000_000 - 1024;
 const modelId = v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(200));
 const tokenLimit = v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(MAX_MODEL_TOKENS));
 const metadataFields = {
@@ -63,7 +65,9 @@ export function mergeProviderSettings(current: ProviderSettingsInput, input: unk
     if (apiKey && /[\r\n]/.test(apiKey)) throw new Error('API 密钥不能包含换行。');
     if (new Set(profile.models.map((model) => model.id)).size !== profile.models.length) throw new Error('模型 ID 不能重复。');
     const models = existing && !sameEndpoint && !options.restoreModelMetadata ? profile.models.map((model) => ({ ...model, reportedMetadata: undefined })) : profile.models;
-    return { ...profile, models, baseUrl, apiKey };
+    const merged = { ...profile, models, baseUrl, apiKey };
+    if (new TextEncoder().encode(JSON.stringify(merged)).byteLength > MAX_PROVIDER_PROFILE_BYTES) throw new Error('单个供应商配置超过云端存储上限，请减少模型或系统提示词。');
+    return merged;
   });
   const settings = { ...parsed.output, showReasoning: parsed.output.showReasoning ?? false, providers };
   if (settings.activeProviderId) {

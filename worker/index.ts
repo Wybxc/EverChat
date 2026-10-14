@@ -3,10 +3,9 @@ import * as v from 'valibot';
 import type { Env } from './env';
 import type { SubmitInput } from '../shared/types';
 import { authenticated, logoutCookie, passwordMatches, sessionCookie } from './auth';
-import { HttpError, json, jsonWithStream, parseBackup, parseBody, type AppContext } from './http';
-import { BACKUP_FORMAT, BACKUP_VERSION, type BackupSettings } from '../shared/backup';
-import { providerSettingsSchema } from './provider-config';
-import { chatModels } from '../shared/models';
+import { HttpError, json, jsonWithStream, parseBody, type AppContext } from './http';
+import { ARCHIVE_FORMAT, ARCHIVE_VERSION } from '../shared/archive';
+import type { ImportResult } from './archive-imports';
 import { ProviderModelError, fetchProviderModels } from './provider-models';
 import { storageErrorMessage } from './resource-limits';
 import { SEARCH_QUERY_LIMIT } from '../shared/search';
@@ -73,25 +72,19 @@ app.use('*', async (context, next) => {
 
 app.get('/session', async (context) => {
   const signedIn = await authenticated(context.req.raw, context.env);
-  const config = signedIn ? await context.env.LIBRARY.getByName('personal').providerConfig() : null;
-  const settings = signedIn ? await context.env.LIBRARY.getByName('personal').providerSettings() : null;
+  if (signedIn) return context.env.LIBRARY.getByName('personal').sessionResponse();
   return json({
     authenticated: signedIn,
     configured: Boolean(context.env.APP_PASSWORD && context.env.SESSION_SECRET),
     attachmentsConfigured: Boolean(context.env.ATTACHMENTS),
-    provider: config?.provider ?? '',
-    model: config?.model ?? '',
-    modelName: config?.modelName ?? '',
-    activeProviderId: config?.providerId ?? null,
-    models: settings ? chatModels(settings) : [],
-    showReasoning: settings?.showReasoning ?? false,
-    systemPrompt: settings?.systemPrompt ?? '', maxOutputTokens: settings?.maxOutputTokens ?? null,
+    provider: '', model: '', modelName: '', activeProviderId: null, models: [],
+    showReasoning: false, systemPrompt: '', maxOutputTokens: null,
   });
 });
 
 app.get('/settings/providers', async (context) => {
   await requireAuth(context);
-  return json(await context.env.LIBRARY.getByName('personal').providerSettings());
+  return context.env.LIBRARY.getByName('personal').providerSettingsResponse();
 });
 
 app.get('/settings/presets', async (context) => {
@@ -116,11 +109,9 @@ app.delete('/settings/presets/:id', async (context) => {
 
 app.put('/settings/providers', async (context) => {
   await requireAuth(context);
-  const input = await parseBody(context, providerSettingsSchema);
-  const normalizedInput = { ...input, showReasoning: input.showReasoning ?? false };
-  const result = await context.env.LIBRARY.getByName('personal').saveProviderSettings(normalizedInput);
-  if ('error' in result) throw new HttpError(400, result.error);
-  return json(result.settings);
+  if (!context.req.header('Content-Type')?.includes('application/json')) throw new HttpError(415, '请使用 JSON 请求。');
+  if (!context.req.raw.body) throw new HttpError(400, '请求内容为空。');
+  return context.env.LIBRARY.getByName('personal').saveProviderSettingsResponse(context.req.raw.body);
 });
 
 app.get('/settings/providers/:id/models', async (context) => {
@@ -190,14 +181,48 @@ app.get('/conversations/:id', async (context) => {
 app.get('/conversations/:id/backup', async (context) => {
   await requireAuth(context);
   const id = conversationId(context);
-  const library = await requireConversation(context, id);
-  const conversation = await library.get(id);
-  if (!conversation) throw new HttpError(404, '找不到这个对话。');
-  const messages = await context.env.CONVERSATIONS.getByName(id).backup();
-  if (messages.some((message) => messageAttachments(message).length)) throw new HttpError(409, '含附件的备份将在附件备份步骤接入；当前可导出文本。');
-  return json({ format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: Date.now(),
-    conversation: { ...conversation, messages, settings: await context.env.CONVERSATIONS.getByName(id).settings() },
-    settings: await library.backupSettings() });
+  await requireConversation(context, id);
+  return context.env.LIBRARY.getByName('personal').archiveManifestResponse(id, true);
+});
+
+app.get('/conversations/:id/backup/manifest', async (context) => {
+  await requireAuth(context); const id = conversationId(context);
+  await requireConversation(context, id);
+  return context.env.LIBRARY.getByName('personal').archiveManifestResponse(id);
+});
+
+const importBody = (context: AppContext, jsonBody: boolean) => {
+  if (jsonBody && !context.req.header('Content-Type')?.includes('application/json')) throw new HttpError(415, '请使用 JSON 清单。');
+  if (!context.req.raw.body) throw new HttpError(400, '请求内容为空。');
+  return context.req.raw.body;
+};
+async function importResponse(context: AppContext, id: string, result: ImportResult, snapshot = false) {
+  const library = context.env.LIBRARY.getByName('personal');
+  if ('error' in result) return json({ error: result.error, ...(await library.importStopped(id) ? { code: 'import-stopped' } : {}) }, result.status);
+  if (!snapshot || result.status !== 'completed') return json(result, 200);
+  return jsonWithStream({ id: result.id, conversation: await library.get(result.id) }, 'snapshot', await context.env.CONVERSATIONS.getByName(result.id).snapshotResponse(), 201);
+}
+app.post('/backup/imports/:id', async (context) => {
+  await requireAuth(context); const id = conversationId(context);
+  return importResponse(context, id, await context.env.LIBRARY.getByName('personal').beginImport(id, importBody(context, true)));
+});
+app.get('/backup/imports/:id', async (context) => {
+  await requireAuth(context); const id = conversationId(context);
+  return importResponse(context, id, await context.env.LIBRARY.getByName('personal').importStatus(id));
+});
+app.post('/backup/imports/:id/complete', async (context) => {
+  await requireAuth(context); const id = conversationId(context);
+  return importResponse(context, id, await context.env.LIBRARY.getByName('personal').finishImport(id), true);
+});
+app.delete('/backup/imports/:id', async (context) => {
+  await requireAuth(context); const result = await context.env.LIBRARY.getByName('personal').cancelImport(conversationId(context));
+  return 'error' in result ? json({ error: result.error }, result.status) : json({ cancelled: true });
+});
+app.put('/backup/imports/:id/files/:sourceId/:kind', async (context) => {
+  await requireAuth(context); const id = conversationId(context), sourceId = context.req.param('sourceId'), kind = context.req.param('kind');
+  if (!v.safeParse(uuidSchema, sourceId).success || !['content', 'text'].includes(kind)) throw new HttpError(404, '找不到存档中的文件。');
+  const result = await context.env.LIBRARY.getByName('personal').uploadImportFile(id, sourceId, importBody(context, false), kind === 'text');
+  return 'error' in result ? json({ error: result.error, ...(await context.env.LIBRARY.getByName('personal').importStopped(id) ? { code: 'import-stopped' } : {}) }, result.status) : json(result.value);
 });
 
 app.put('/conversations/:id/settings', async (context) => {
@@ -225,28 +250,10 @@ app.post('/conversations/:id/messages/:messageId/duplicate', (context) => duplic
 
 app.post('/backup/restore', async (context) => {
   await requireAuth(context);
-  const backup = await parseBackup(context);
-  if (backup.conversation.messages.some((message) => messageAttachments(message).length)) throw new HttpError(400, '此备份缺少附件文件，无法恢复。');
   const library = context.env.LIBRARY.getByName('personal');
   const id = crypto.randomUUID();
-  const created = await library.create(id, backup.conversation.title.trim());
-  if ('error' in created) return json({ error: created.error }, created.status);
-  try {
-    const restored = await context.env.CONVERSATIONS.getByName(id).restore(id, backup.conversation);
-    if ('error' in restored) throw new HttpError(restored.status, restored.error);
-    const settings: BackupSettings = { ...backup.settings, activeProviderId: null, activeModel: '' };
-    const saved = await library.saveProviderSettings(settings, backup.settings.promptPresets, { restoreModelMetadata: true });
-    if ('error' in saved) throw new HttpError(saved.status ?? 400, saved.error);
-    await library.touch(id);
-    return json({ id, conversation: await library.get(id), snapshot: restored }, 201);
-  } catch (error) {
-    try {
-      const deletion = await library.beginDelete(id);
-      await context.env.CONVERSATIONS.getByName(id).deleteConversation(deletion.deletedAt);
-      await library.completeDelete(id);
-    } catch { /* The next library alarm will retry cleanup. */ }
-    throw error;
-  }
+  const wrapped = jsonWithStream({ format: ARCHIVE_FORMAT, version: ARCHIVE_VERSION, files: [] }, 'backup', new Response(importBody(context, true)));
+  return importResponse(context, id, await library.beginImport(id, wrapped.body!), true);
 });
 
 app.get('/conversations/:id/measurements', async (context) => {

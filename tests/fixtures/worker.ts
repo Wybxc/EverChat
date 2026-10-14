@@ -12,11 +12,12 @@ import { AttachmentStore } from '../../worker/attachments';
 import { HttpError } from '../../worker/http';
 
 type AttachmentControl = { id?: string; expire?: boolean; count?: number; reset?: boolean; holdDelete?: string; releaseDelete?: boolean;
-  failDelete?: string; holdTextPut?: string; holdTextRead?: string; releaseText?: boolean; resetLibrary?: boolean; unconfigured?: boolean; expireCopy?: string };
+  failDelete?: string; holdTextPut?: string; holdTextRead?: string; releaseText?: boolean; resetLibrary?: boolean; unconfigured?: boolean; expireCopy?: string; expireImport?: string; noBucket?: boolean };
 
 export class Library extends ProductionLibrary {
   private attachmentDeletes: { id: string; waiting: boolean; wait: Promise<void>; release: () => void }[];
   private attachmentText: { id: string; kind: 'put' | 'get'; waiting: boolean; wait: Promise<void>; release: () => void }[];
+  private fixtureBucket: R2Bucket;
   constructor(ctx: DurableObjectState, env: Env) {
     const attachmentText: Library['attachmentText'] = [];
     const attachmentDeletes: Library['attachmentDeletes'] = [];
@@ -50,7 +51,10 @@ export class Library extends ProductionLibrary {
       };
       const value = Reflect.get(target, property, target); return typeof value === 'function' ? value.bind(target) : value;
     } });
-    super(ctx, { ...env, ATTACHMENTS: bucket });
+    const disabled = ctx.storage.sql.exec("SELECT name FROM sqlite_master WHERE name = 'fixture_r2_disabled'").toArray().length
+      && ctx.storage.sql.exec<{ enabled: number }>('SELECT enabled FROM fixture_r2_disabled WHERE id = 1').toArray()[0]?.enabled;
+    super(ctx, { ...env, ATTACHMENTS: disabled ? undefined : bucket });
+    this.fixtureBucket = bucket;
     this.attachmentDeletes = attachmentDeletes; this.attachmentText = attachmentText;
   }
   override applySearchDocuments(id: string, documents: Parameters<ProductionLibrary['applySearchDocuments']>[1]) {
@@ -103,7 +107,7 @@ export class Library extends ProductionLibrary {
     });
     return { count: sql.exec<{ count: number }>('SELECT COUNT(*) AS count FROM conversations').one().count };
   }
-  async fixtureAttachments({ id, expire, count, reset, holdDelete, releaseDelete, failDelete, holdTextPut, holdTextRead, releaseText, resetLibrary, unconfigured, expireCopy }: AttachmentControl) {
+  async fixtureAttachments({ id, expire, count, reset, holdDelete, releaseDelete, failDelete, holdTextPut, holdTextRead, releaseText, resetLibrary, unconfigured, expireCopy, expireImport, noBucket }: AttachmentControl) {
     const date = new Date().toISOString().slice(0, 10), sql = this.ctx.storage.sql;
     if (releaseText) this.attachmentText.splice(0).forEach((pause) => pause.release());
     for (const [kind, id] of [['put', holdTextPut], ['get', holdTextRead]] as const) if (id) {
@@ -118,6 +122,16 @@ export class Library extends ProductionLibrary {
     }
     if (expire && id) { sql.exec('UPDATE attachments SET lease = 0 WHERE id = ?', id); sql.exec("UPDATE attachment_documents SET lease = 0 WHERE id = ? AND status IN ('parsing', 'cleaning')", id); await this.ctx.storage.setAlarm(Date.now() + 1000); }
     if (expireCopy) { sql.exec("UPDATE conversation_copies SET lease = 0 WHERE id = ? AND status = 'copying'", expireCopy); await this.ctx.storage.setAlarm(Date.now() + 1000); }
+    if (expireImport) {
+      sql.exec('UPDATE archive_imports SET lease = 0, cleanupAt = 0 WHERE id = ?', expireImport);
+      sql.exec('UPDATE attachments SET lease = 0 WHERE conversationId = ?', expireImport);
+      await this.ctx.storage.setAlarm(Date.now() + 1000);
+    }
+    if (noBucket !== undefined) {
+      sql.exec('CREATE TABLE IF NOT EXISTS fixture_r2_disabled (id INTEGER PRIMARY KEY, enabled INTEGER)');
+      sql.exec('INSERT INTO fixture_r2_disabled VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET enabled = excluded.enabled', Number(noBucket));
+      await this.ctx.storage.sync(); this.ctx.abort('Intentional Library restart with changed R2 binding', { retryAlarm: true });
+    }
     if (count !== undefined) sql.exec('INSERT INTO attachment_daily_uploads VALUES (?, ?) ON CONFLICT(date) DO UPDATE SET count = excluded.count', date, count);
     if (reset !== undefined) { sql.exec('CREATE TABLE IF NOT EXISTS fixture_attachment_reset (id INTEGER PRIMARY KEY, enabled INTEGER)'); sql.exec('INSERT INTO fixture_attachment_reset VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET enabled = excluded.enabled', Number(reset)); }
     sql.exec('CREATE TABLE IF NOT EXISTS fixture_attachment_delete_fault (id TEXT PRIMARY KEY, remaining INTEGER, failed INTEGER)');
@@ -131,10 +145,10 @@ export class Library extends ProductionLibrary {
         catch (error) { if (!(error instanceof HttpError)) throw error; unconfiguredStatus.push(error.status); }
       }
     }
-    return { copies: sql.exec('SELECT id, sourceId, messageId, status, lease, errorStatus FROM conversation_copies').toArray(), pdfMetadataIds: sql.exec('SELECT id FROM attachment_pdf_metadata').toArray(), documents: sql.exec('SELECT id, status, lease, characters, tokens, bytes FROM attachment_documents').toArray(), textWaiting: this.attachmentText.some((pause) => pause.waiting), rows: sql.exec('SELECT id, conversationId, status, removed, lease FROM attachments').toArray(), deleteWaiting: this.attachmentDeletes.some((pause) => pause.waiting),
+    return { imports: sql.exec('SELECT id, status, lease, removed, cleanupAt, errorStatus FROM archive_imports').toArray(), copies: sql.exec('SELECT id, sourceId, messageId, status, lease, errorStatus FROM conversation_copies').toArray(), pdfMetadataIds: sql.exec('SELECT id FROM attachment_pdf_metadata').toArray(), documents: sql.exec('SELECT id, status, lease, characters, tokens, bytes FROM attachment_documents').toArray(), textWaiting: this.attachmentText.some((pause) => pause.waiting), rows: sql.exec('SELECT id, conversationId, status, removed, lease FROM attachments').toArray(), deleteWaiting: this.attachmentDeletes.some((pause) => pause.waiting),
       failedDeletes: sql.exec<{ count: number }>('SELECT COALESCE(SUM(failed), 0) AS count FROM fixture_attachment_delete_fault').one().count, unconfiguredStatus,
       dailyCount: sql.exec<{ count: number }>('SELECT count FROM attachment_daily_uploads WHERE date = ?', date).toArray()[0]?.count ?? 0,
-      objects: (await this.env.ATTACHMENTS!.list({ limit: 1000 })).objects.map((object) => ({ key: object.key, size: object.size })) };
+      alarm: await this.ctx.storage.getAlarm(), objects: (await this.fixtureBucket.list({ limit: 1000 })).objects.map((object) => ({ key: object.key, size: object.size })) };
   }
 }
 
@@ -289,7 +303,14 @@ export default {
     if (url.pathname === '/api/__test/library/attachments') {
       if (request.method !== 'POST' || request.headers.get('Origin') !== url.origin) return new Response('Forbidden', { status: 403 });
       if (!await authenticated(request, env)) return new Response('Unauthorized', { status: 401 });
-      return Response.json(await (env.LIBRARY as unknown as DurableObjectNamespace<Library>).getByName('personal').fixtureAttachments(await request.json() as AttachmentControl));
+      const input = await request.json() as AttachmentControl;
+      try { return Response.json(await (env.LIBRARY as unknown as DurableObjectNamespace<Library>).getByName('personal').fixtureAttachments(input)); }
+      catch (error) {
+        if (typeof input.noBucket === 'boolean' && error instanceof Error && error.message.includes('Intentional Library restart with changed R2 binding')) {
+          return Response.json({ restarted: true }, { status: 503 });
+        }
+        throw error;
+      }
     }
     if (url.pathname === '/api/__test/library/capacity') {
       if (request.method !== 'POST' || request.headers.get('Origin') !== url.origin) return new Response('Forbidden', { status: 403 });

@@ -1,6 +1,6 @@
 # 对话文件与 R2 存储
 
-阶段 4 第 1 项提供对话文件管理：上传、进度、取消、下载、删除和跨设备列表。文件管理保存 PNG／JPEG／WebP、TXT／Markdown／代码／CSV 和 PDF 原文件。阶段 4 第 2 项另有聊天中的[图片输入](images.md)，可上传、粘贴、预览并交给视觉模型；阶段 4 第 3 项另有[轻量文本文件输入](documents.md)，第 4 项另有 [PDF 文本输入](pdf.md)；[独立附件复制](attachment-copies.md)已实现，包含文件的备份随后接入。
+阶段 4 第 1 项提供对话文件管理：上传、进度、取消、下载、删除和跨设备列表。文件管理保存 PNG／JPEG／WebP、TXT／Markdown／代码／CSV 和 PDF 原文件。阶段 4 第 2 项另有聊天中的[图片输入](images.md)，可上传、粘贴、预览并交给视觉模型；阶段 4 第 3 项另有[轻量文本文件输入](documents.md)，第 4 项另有 [PDF 文本输入](pdf.md)；[独立附件复制](attachment-copies.md)和[可恢复 ZIP 备份](attachment-backups.md)均已实现。
 
 ## 使用与部署
 
@@ -20,7 +20,7 @@ pnpm exec wrangler r2 bucket create everchat-attachments --storage-class Standar
 
 ## 持久化与并发
 
-- `Library` DO 保存元数据、长度、SHA-256、上传状态、租约、每日计数和清理队列；R2 保存原文件。没有将二进制或 base64 放入消息事件、快照、对话备份或浏览器本地缓存。
+- `Library` DO 保存元数据、长度、SHA-256、上传状态、租约、每日计数和清理队列；R2 保存原文件。二进制或 base64 不进入消息事件、快照或浏览器本地缓存；ZIP 备份包含原始文件条目。
 - 客户端先计算 SHA-256 并登记不可变元数据，再通过同源 PUT 发送原始文件。DO 流式转发到 R2，以固定长度流检查实际字节数、有限文件头检查类型，并将 SHA-256 交给 R2 校验。客户端显示高频进度，服务端只保存登记、认领和完成状态。
 - 每次登记使用独立随机 R2 键；相同附件 ID 的相同登记幂等，不同元数据或所属对话冲突则拒绝。已完成上传再次 PUT 返回原结果，不再写 R2；未完成或失败的上传不自动重试，需重新选择文件。
 - R2 写入完成后，DO 再核对上传认领、文件和对话未被删除，保存 `ready` 后才返回成功。实例在 R2 写入与 DO 确认之间重置时，文件仍不可读；租约到期清理对象与登记，避免把未知结果认作已保存文件。
@@ -49,4 +49,4 @@ pnpm exec wrangler r2 bucket create everchat-attachments --storage-class Standar
 
 `tests/attachments.test.ts` 检查元数据和允许类型；`tests/e2e/attachments.spec.ts` 使用原生本地 R2、SQLite、DO Alarm 和浏览器，验证 5 MiB 上限文件的精确字节及 Unicode、校验失败、鉴权及跨域拒绝、跨设备读取、幂等上传、过期回收、配额并发、R2 写入后实例重置、清理与上传交错、删除失败后实例重置及定时重试、未配置存储、上传取消、进度、草稿／URL 保留、移动端长列表和焦点恢复。
 
-完整检查点结果记录在 [功能路线图](serverless-feature-roadmap.md) 中。图片、文本与 PDF 检查点另已覆盖接受后的后台任务、私有预览和引用；独立复制的引用与中断清理已接入，后续继续扩展包含文件的备份语义。
+完整检查点结果记录在 [功能路线图](serverless-feature-roadmap.md) 中。图片、文本与 PDF 检查点另已覆盖接受后的后台任务、私有预览和引用；独立复制与 ZIP 恢复纳入原文件、解析结果、引用和中断清理。

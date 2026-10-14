@@ -26,7 +26,8 @@ import { ConversationActions } from './ConversationActions';
 import { ConversationSearch } from './ConversationSearch';
 import { LibrarySearch } from './LibrarySearch';
 import type { SearchResult } from '../shared/search';
-import type { EverChatBackup } from '../shared/backup';
+import { createArchive, restoreArchive, type BackupProgress } from './archive-client';
+import { BackupProgressDialog } from './BackupProgressDialog';
 import { MessageMutationDialog } from './MessageMutationDialog';
 import { ConversationSettingsDialog } from './ConversationSettings';
 import { SummaryDialog } from './SummaryDialog';
@@ -130,7 +131,7 @@ function ThemeControl() {
 }
 
 const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]!));
-const downloadFile = (filename: string, content: string, type: string) => {
+const downloadFile = (filename: string, content: BlobPart, type: string) => {
   const url = URL.createObjectURL(new Blob([content], { type }));
   const link = document.createElement('a'); link.href = url; link.download = filename; link.click();
   setTimeout(() => URL.revokeObjectURL(url), 0);
@@ -275,6 +276,9 @@ export function App() {
   const [searchJump, setSearchJump] = useState<{ id: string; query: string; key: string; token: number } | null>(null);
   const searchTrigger = useRef<HTMLButtonElement>(null);
   const backupInput = useRef<HTMLInputElement>(null);
+  const backupOperation = useRef<AbortController | null>(null);
+  const [backupTask, setBackupTask] = useState<{ title: string; progress: BackupProgress; route: string | null; epoch: number } | null>(null);
+  useEffect(() => () => backupOperation.current?.abort(), []);
   const editor = useRef<HTMLTextAreaElement>(null);
   const [editorFocusTarget, setEditorFocusTarget] = useState<{ id: string | null } | null>(null);
   const mobileSidebarTrigger = useRef<HTMLButtonElement>(null);
@@ -670,6 +674,7 @@ export function App() {
   };
   const logout = async () => {
     try {
+      backupOperation.current?.abort(); setBackupTask(null);
       await api('/logout', 'POST'); clearLocal(); pendingRef.current = []; setPending([]);
       setLocalConversations([]); queryClient.clear(); navigate(null, true); setDraft(''); setRevisionOf(undefined);
       setNewConversationSettings({ ...DEFAULT_CONVERSATION_SETTINGS }); setSettingsDraft(null); setConversationSettingsOpen(false);
@@ -697,20 +702,29 @@ export function App() {
     }
   };
   const exportBackup = async () => {
-    if (!selected) return;
+    if (!selected || backupOperation.current) return;
+    const controller = new AbortController(), id = selected, epoch = storageEpoch(); backupOperation.current = controller;
+    setBackupTask({ title: '下载备份', progress: { value: 0, label: '正在读取备份资料' }, route: id, epoch });
     try {
-      const backup = await api<EverChatBackup>(`/conversations/${selected}/backup`);
-      downloadFile(`EverChat-${selected}.everchat.json`, JSON.stringify(backup, null, 2), 'application/json;charset=utf-8');
-    } catch (cause) { setError(cause instanceof Error ? cause.message : '备份失败，请稍后重试。'); }
+      const blob = await createArchive(id, controller.signal, (progress) => setBackupTask((task) => task ? { ...task, progress } : null));
+      if (!controller.signal.aborted && epoch === storageEpoch()) downloadFile(`EverChat-${id}.everchat.zip`, blob, 'application/zip');
+    } catch (cause) { if (!controller.signal.aborted && epoch === storageEpoch()) setError(cause instanceof Error ? cause.message : '备份失败，请稍后重试。'); }
+    finally { if (backupOperation.current === controller) { backupOperation.current = null; setBackupTask(null); } }
   };
   const importBackup = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]; event.target.value = '';
-    if (!file) return;
+    if (!file || backupOperation.current) return;
+    const controller = new AbortController(), sourceId = selectedRef.current, epoch = storageEpoch(); backupOperation.current = controller;
     setError('');
+    setBackupTask({ title: '导入备份', progress: { value: 0, label: '正在检查备份' }, route: sourceId, epoch });
     try {
-      const result = await api<{ id: string }>('/backup/restore', 'POST', JSON.parse(await file.text()));
-      refreshLibrary(); select(result.id);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : '恢复备份失败，请检查文件。'); }
+      const result = await restoreArchive(file, controller.signal, (progress) => setBackupTask((task) => task ? { ...task, progress } : null));
+      if (epoch !== storageEpoch() || controller.signal.aborted) return;
+      void queryClient.invalidateQueries({ queryKey: ['provider-settings'] });
+      void api<ProviderSettings>('/settings/providers').then((config) => { if (epoch === storageEpoch()) providerSaved(config); }).catch(() => {});
+      refreshLibrary(); if (selectedRef.current === sourceId) select(result.id);
+    } catch (cause) { if (!controller.signal.aborted && epoch === storageEpoch()) setError(cause instanceof Error ? cause.message : '恢复备份失败，请检查文件。'); }
+    finally { if (backupOperation.current === controller) { backupOperation.current = null; setBackupTask(null); } }
   };
   const updateConversation = async (patch: { title?: string; pinned?: boolean; archived?: boolean }) => {
     if (!selected) return;
@@ -770,7 +784,7 @@ export function App() {
     <div className="flex min-w-0 flex-1 flex-col">
       <header className="flex h-18 shrink-0 items-center justify-between border-b border-base-content/50 px-5 sm:px-8">
         <div className="flex min-w-0 items-center gap-3"><button ref={mobileSidebarTrigger} className="btn btn-ghost btn-sm btn-square lg:hidden" onClick={() => setSidebarOpen(true)} aria-label="打开对话列表"><Menu size={19} /></button><div className="min-w-0"><p className="truncate text-sm font-medium">{invalidRoute ? '页面不可用' : currentConversation?.title ?? (selected ? '对话' : '新对话')}</p><p className="mt-1 text-[10px] text-base-content/60">{selectedModel?.name || session.modelName || session.model || '未选择模型'}</p></div></div>
-        <div className="flex shrink-0 items-center gap-1 sm:gap-3"><span aria-live="polite" className="hidden items-center gap-1.5 text-[11px] text-base-content/60 sm:flex" title={syncedAt ? `上次同步 ${new Date(syncedAt).toLocaleTimeString('zh-CN')}` : undefined}>{connection === 'offline' ? <CloudOff size={14} /> : <span className={`status status-xs ${connection === 'connected' && !hasUnconfirmed ? 'status-success' : 'status-warning'}`} />}{statusText}</span>{canSearch && <button ref={searchTrigger} type="button" aria-label="搜索当前对话" aria-expanded={searchOpen} aria-controls={searchOpen ? 'conversation-search' : undefined} title="搜索当前对话（Ctrl / ⌘ F）" className="btn btn-ghost btn-sm btn-square" onClick={() => searchOpen ? closeConversationSearch() : setConversationSearchFor(selected)}><Search size={16} /></button>}{session.attachmentsConfigured && selected && currentConversation && !snapshot.deletedAt && <button type="button" aria-label="管理对话文件" title="管理对话文件" className="btn btn-ghost btn-sm btn-square" onClick={() => setAttachmentsFor(selected)}><FolderOpen size={16} /></button>}<button type="button" aria-label="会话参数" title="会话参数" className="btn btn-ghost btn-sm btn-square" disabled={Boolean(invalidRoute || syncError)} onClick={() => setConversationSettingsOpen(true)}><SlidersHorizontal size={16} /></button>{selected && latestCompletedAssistant && <button type="button" aria-label="压缩历史" title="压缩历史" className="btn btn-ghost btn-sm btn-square" disabled={busy || connection === 'offline' || loading} onClick={() => { setSummaryTarget(null); setSummaryOpen(true); }}><BookOpen size={16} /></button>}{currentConversation && <ConversationActions key={currentConversation.id} conversation={currentConversation} disabled={connection === 'offline'} update={updateConversation} remove={deleteConversation} duplicate={duplicateConversation} />}<div className="dropdown dropdown-end"><button type="button" aria-label="对话文件操作" title="导出或导入对话" className="btn btn-ghost btn-sm btn-square"><Download size={16} /></button><ul tabIndex={0} className="dropdown-content menu z-50 mt-2 w-48 rounded-box border border-base-content/20 bg-base-100 p-2 shadow"><li className="menu-title">导出对话</li><li><button type="button" disabled={!snapshot.messages.length} onClick={() => exportChat('md')}>Markdown</button></li><li><button type="button" disabled={!snapshot.messages.length} onClick={() => exportChat('txt')}>纯文本</button></li><li><button type="button" disabled={!snapshot.messages.length} onClick={() => exportChat('html')}>HTML</button></li><li><button type="button" disabled={!currentConversation || !snapshot.messages.length} onClick={() => void exportBackup()}>下载备份</button></li><li className="menu-title mt-1">恢复</li><li><button type="button" onClick={() => backupInput.current?.click()}>导入备份</button></li></ul></div><input ref={backupInput} type="file" accept=".json,application/json" className="hidden" onChange={(event) => void importBackup(event)} /><button aria-label="空间设置" className="btn btn-ghost btn-sm btn-square" onClick={openSettings}><Settings size={17} /></button></div>
+        <div className="flex shrink-0 items-center gap-1 sm:gap-3"><span aria-live="polite" className="hidden items-center gap-1.5 text-[11px] text-base-content/60 sm:flex" title={syncedAt ? `上次同步 ${new Date(syncedAt).toLocaleTimeString('zh-CN')}` : undefined}>{connection === 'offline' ? <CloudOff size={14} /> : <span className={`status status-xs ${connection === 'connected' && !hasUnconfirmed ? 'status-success' : 'status-warning'}`} />}{statusText}</span>{canSearch && <button ref={searchTrigger} type="button" aria-label="搜索当前对话" aria-expanded={searchOpen} aria-controls={searchOpen ? 'conversation-search' : undefined} title="搜索当前对话（Ctrl / ⌘ F）" className="btn btn-ghost btn-sm btn-square" onClick={() => searchOpen ? closeConversationSearch() : setConversationSearchFor(selected)}><Search size={16} /></button>}{session.attachmentsConfigured && selected && currentConversation && !snapshot.deletedAt && <button type="button" aria-label="管理对话文件" title="管理对话文件" className="btn btn-ghost btn-sm btn-square" onClick={() => setAttachmentsFor(selected)}><FolderOpen size={16} /></button>}<button type="button" aria-label="会话参数" title="会话参数" className="btn btn-ghost btn-sm btn-square" disabled={Boolean(invalidRoute || syncError)} onClick={() => setConversationSettingsOpen(true)}><SlidersHorizontal size={16} /></button>{selected && latestCompletedAssistant && <button type="button" aria-label="压缩历史" title="压缩历史" className="btn btn-ghost btn-sm btn-square" disabled={busy || connection === 'offline' || loading} onClick={() => { setSummaryTarget(null); setSummaryOpen(true); }}><BookOpen size={16} /></button>}{currentConversation && <ConversationActions key={currentConversation.id} conversation={currentConversation} disabled={connection === 'offline'} update={updateConversation} remove={deleteConversation} duplicate={duplicateConversation} />}<div className="dropdown dropdown-end"><button type="button" aria-label="对话文件操作" title="导出或导入对话" className="btn btn-ghost btn-sm btn-square"><Download size={16} /></button><ul tabIndex={0} className="dropdown-content menu z-50 mt-2 w-48 rounded-box border border-base-content/20 bg-base-100 p-2 shadow"><li className="menu-title">导出对话</li><li><button type="button" disabled={!snapshot.messages.length} onClick={() => exportChat('md')}>Markdown</button></li><li><button type="button" disabled={!snapshot.messages.length} onClick={() => exportChat('txt')}>纯文本</button></li><li><button type="button" disabled={!snapshot.messages.length} onClick={() => exportChat('html')}>HTML</button></li><li><button type="button" disabled={!currentConversation} onClick={() => void exportBackup()}>下载备份</button></li><li className="menu-title mt-1">恢复</li><li><button type="button" onClick={() => backupInput.current?.click()}>导入备份</button></li></ul></div><input ref={backupInput} type="file" accept=".zip,.json,application/zip,application/json" className="hidden" onChange={(event) => void importBackup(event)} /><button aria-label="空间设置" className="btn btn-ghost btn-sm btn-square" onClick={openSettings}><Settings size={17} /></button></div>
       </header>
       {searchOpen && <ConversationSearch key={`${selected}:${searchJump?.token ?? ''}`} content={content} viewport={viewport} close={closeConversationSearch} initial={searchJump ?? undefined} />}
       {connection === 'offline' && <div role="status" className="flex items-center justify-center gap-2 border-b border-base-content/50 bg-base-200 px-4 py-2 text-xs text-base-content"><WifiOff size={13} />你现在离线，已保存的对话仍可阅读。新消息将在联网后发送。</div>}
@@ -820,6 +834,7 @@ export function App() {
     }} aria-labelledby="space-settings-title">
       <div className="modal-box flex h-[min(48rem,92dvh)] max-h-[92dvh] max-w-5xl flex-col overflow-hidden p-0">
         <div className="flex shrink-0 items-center justify-between border-b border-base-content/30 px-6 py-4"><h2 id="space-settings-title" className="text-lg font-semibold">设置</h2><form method="dialog"><button className="btn btn-ghost btn-sm btn-square" aria-label="关闭设置"><X size={18} /></button></form></div>
+        {backupTask && <BackupProgressDialog title={backupTask.title} progress={backupTask.progress} cancel={() => backupOperation.current?.abort()} canRestoreFocus={() => selectedRef.current === backupTask.route && storageEpoch() === backupTask.epoch} />}
         <ProviderSettingsPanel open={settingsOpen} requestedTab={requestedSettingsTab} onSaved={providerSaved} themeControl={<ThemeControl />} onLogout={() => void logout()} />
       </div>
       <form method="dialog" className="modal-backdrop"><button>关闭</button></form>

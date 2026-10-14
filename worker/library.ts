@@ -14,15 +14,20 @@ import { PromptPresets, PromptPresetError } from './prompt-presets';
 import { AttachmentStore } from './attachments';
 import type { AttachmentInput } from '../shared/attachments';
 import type { ImagePart } from '../shared/images';
-import { HttpError, json } from './http';
+import { HttpError, json, readJsonStream } from './http';
 import { CopyJobs, type CopyResult } from './copy-jobs';
+import { ArchiveImports, readArchiveManifest, type ImportResult } from './archive-imports';
+import { ARCHIVE_FORMAT, ARCHIVE_VERSION, sha256, validateArchiveManifest, type ArchiveManifest } from '../shared/archive';
+import { BACKUP_FORMAT, BACKUP_VERSION } from '../shared/backup';
 import { messageAttachments, messageFiles, messageImages } from '../shared/message-content';
+import { chatModels } from '../shared/models';
 
 type Deletion = { id: string; deletedAt: number; completed: number } & Record<string, SqlStorageValue>;
 const conversationSelect = `SELECT conversations.*, COALESCE(metadata.pinned, 0) AS pinned, COALESCE(metadata.archived, 0) AS archived
   FROM conversations LEFT JOIN conversation_metadata AS metadata ON metadata.id = conversations.id
   WHERE NOT EXISTS (SELECT 1 FROM conversation_deletions WHERE conversation_deletions.id = conversations.id)
-  AND NOT EXISTS (SELECT 1 FROM conversation_copies WHERE conversation_copies.id = conversations.id AND conversation_copies.status != 'completed')`;
+  AND NOT EXISTS (SELECT 1 FROM conversation_copies WHERE conversation_copies.id = conversations.id AND conversation_copies.status != 'completed')
+  AND NOT EXISTS (SELECT 1 FROM archive_imports WHERE archive_imports.id = conversations.id AND archive_imports.status != 'completed')`;
 const decorate = (row: Record<string, SqlStorageValue>) => ({ ...row, pinned: Boolean(row.pinned), archived: Boolean(row.archived) }) as unknown as ConversationInfo;
 
 export class Library extends DurableObject<Env> {
@@ -30,10 +35,13 @@ export class Library extends DurableObject<Env> {
   private readonly presets: PromptPresets;
   private readonly attachments: AttachmentStore;
   private readonly copies: CopyJobs;
+  private readonly imports: ArchiveImports;
+  private readonly interruptedImportFiles = new Set<string>();
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     this.presets = new PromptPresets(ctx.storage);
     this.copies = new CopyJobs(ctx.storage);
+    this.imports = new ArchiveImports(ctx.storage, env.ATTACHMENTS);
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS conversations (id TEXT PRIMARY KEY, title TEXT NOT NULL, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL)`);
     ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS conversation_metadata (id TEXT PRIMARY KEY, pinned INTEGER NOT NULL, archived INTEGER NOT NULL)');
     ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS conversation_deletions (id TEXT PRIMARY KEY, deletedAt INTEGER NOT NULL, completed INTEGER NOT NULL DEFAULT 0)');
@@ -48,10 +56,14 @@ export class Library extends DurableObject<Env> {
     )`);
     this.searchIndex = new SearchIndex(ctx.storage);
     this.attachments = new AttachmentStore(ctx.storage, env.ATTACHMENTS, (id) => Boolean(this.internalConversation(id)));
+    for (const row of ctx.storage.sql.exec<{ id: string }>(`SELECT files.id FROM archive_import_files AS files JOIN attachments ON attachments.id = files.id
+      LEFT JOIN attachment_documents AS documents ON documents.id = files.id
+      WHERE attachments.status IN ('uploading', 'failed') OR documents.status IN ('parsing', 'cleaning', 'failed')`).toArray()) this.interruptedImportFiles.add(row.id);
     // Feature initialization reads existing messages in bounded pages, never on a search request.
     ctx.storage.sql.exec(`INSERT OR IGNORE INTO search_backfill(conversationId) SELECT id FROM conversations
       WHERE NOT EXISTS (SELECT 1 FROM conversation_deletions WHERE conversation_deletions.id = conversations.id)
-      AND NOT EXISTS (SELECT 1 FROM conversation_copies WHERE conversation_copies.id = conversations.id AND conversation_copies.status != 'completed')`);
+      AND NOT EXISTS (SELECT 1 FROM conversation_copies WHERE conversation_copies.id = conversations.id AND conversation_copies.status != 'completed')
+      AND NOT EXISTS (SELECT 1 FROM archive_imports WHERE archive_imports.id = conversations.id AND archive_imports.status != 'completed')`);
     ctx.waitUntil(this.scheduleMaintenance());
   }
   private async scheduleMaintenance() {
@@ -59,12 +71,16 @@ export class Library extends DurableObject<Env> {
       const sql = this.ctx.storage.sql;
       const pending = sql.exec<{ nextAt: number }>('SELECT MIN(nextAt) AS nextAt FROM search_backfill WHERE done = 0 HAVING COUNT(*) > 0').toArray()[0];
       const cleanup = this.attachments.nextCleanup();
-      const copy = this.copies.nextMaintenance();
+      const copy = Math.min(this.copies.nextMaintenance(), this.nextImportMaintenance());
       if (!pending && cleanup === undefined && !Number.isFinite(copy)) return;
       const alarm = await this.ctx.storage.getAlarm();
       const next = Math.max(Date.now() + 1000, Math.min(pending?.nextAt ?? Infinity, cleanup ?? Infinity, copy));
       if (alarm === null || alarm > next) await this.ctx.storage.setAlarm(next);
     });
+  }
+  private nextImportMaintenance() {
+    const interrupted = this.imports.pending().some((job) => job.status === 'uploading' && this.imports.files(job.id).some((file) => this.interruptedImportFiles.has(file.id)));
+    return Math.min(this.imports.nextMaintenance(), interrupted ? Date.now() + 1000 : Infinity);
   }
   applySearchDocuments(id: string, documents: SearchDocument[]) {
     if (!this.get(id)) return;
@@ -103,6 +119,7 @@ export class Library extends DurableObject<Env> {
   create(id: string, title: string) {
     if (this.deletedAt(id)) return { error: '这个对话已删除。', status: 410 };
     if (this.copies.get(id)?.status !== undefined && this.copies.get(id)?.status !== 'completed') return { error: '此对话正在复制或已停止。', status: 409 };
+    if (this.imports.get(id)?.status !== undefined && this.imports.get(id)?.status !== 'completed') return { error: '此对话正在恢复或已停止。', status: 409 };
     const existing = this.get(id);
     if (existing) return existing;
     if (this.ctx.storage.sql.exec<{ count: number }>('SELECT COUNT(*) AS count FROM conversations').one().count >= MAX_CONVERSATIONS) {
@@ -142,6 +159,7 @@ export class Library extends DurableObject<Env> {
         this.searchIndex.remove(copy.id);
       }
       this.searchIndex.remove(id);
+      this.imports.fail(id, new HttpError(410, '恢复目标对话已删除。'));
       this.attachments.removeConversation(id);
       await this.ctx.storage.setAlarm(Date.now() + 1000);
       return deletion;
@@ -155,11 +173,19 @@ export class Library extends DurableObject<Env> {
     });
   }
   async alarm() {
+    for (const job of this.imports.pending()) if (job.status === 'uploading' && this.imports.files(job.id).some((file) => this.interruptedImportFiles.has(file.id))) {
+      this.imports.fail(job.id, new HttpError(409, '恢复文件写入因实例中断而停止，请重新导入。')); await this.beginDelete(job.id);
+    }
+    for (const job of this.imports.pending()) if (job.lease <= Date.now() || job.status !== 'uploading' && !this.imports.active.has(job.id)) {
+      this.imports.fail(job.id, new HttpError(job.lease <= Date.now() ? 408 : 409, job.lease <= Date.now() ? '恢复超过等待期限，请重新导入。' : '恢复因实例中断而停止，请重新导入。'));
+      await this.beginDelete(job.id);
+    }
     for (const copy of this.copies.pending()) if (!this.copies.active.has(copy.id) || copy.lease <= Date.now()) {
       this.copies.fail(copy.id, new HttpError(copy.lease <= Date.now() ? 408 : 409, copy.lease <= Date.now() ? '复制超过 10 分钟，请重新尝试。' : '复制因实例中断而停止，请重新尝试。'));
       await this.beginDelete(copy.id);
     }
     await this.attachments.cleanup();
+    await this.imports.cleanup();
     const pending = this.ctx.storage.sql.exec<Deletion>('SELECT * FROM conversation_deletions WHERE completed = 0 LIMIT 16').toArray();
     let failed = false;
     for (const deletion of pending) {
@@ -187,7 +213,7 @@ export class Library extends DurableObject<Env> {
       const indexing = this.ctx.storage.sql.exec<{ nextAt: number }>('SELECT MIN(nextAt) AS nextAt FROM search_backfill WHERE done = 0 HAVING COUNT(*) > 0').toArray()[0];
       const cleanup = this.attachments.nextCleanup();
       const next = Math.min(deletion ? Date.now() + (failed ? 30_000 : 1000) : Infinity, indexing ? Math.max(Date.now() + 1000, indexing.nextAt) : Infinity,
-        cleanup === undefined ? Infinity : Math.max(Date.now() + 1000, cleanup), this.copies.nextMaintenance());
+        cleanup === undefined ? Infinity : Math.max(Date.now() + 1000, cleanup), this.copies.nextMaintenance(), this.nextImportMaintenance());
       if (Number.isFinite(next)) await this.ctx.storage.setAlarm(next); else await this.ctx.storage.deleteAlarm();
     });
   }
@@ -267,6 +293,161 @@ export class Library extends DurableObject<Env> {
     }
   }
   copyStopped(id: string) { return this.copies.get(id)?.status === 'failed'; }
+  async archiveManifestResponse(id: string, textOnly = false) {
+    try {
+      const conversation = this.get(id);
+      if (!conversation) throw new HttpError(404, '找不到这个对话。');
+      const source = await this.env.CONVERSATIONS.getByName(id).copySourceResponse();
+      if (!source.ok) return source;
+      const saved = await source.json() as { messages: BackupMessage[]; settings: ConversationSettings };
+      if (!this.get(id)) throw new HttpError(410, '对话已删除。');
+      const files = this.env.ATTACHMENTS || this.attachments.hasSaved(id) ? this.attachments.archiveFiles(id) : [];
+      const manifest = validateArchiveManifest({ format: ARCHIVE_FORMAT, version: ARCHIVE_VERSION,
+        backup: { format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: Date.now(),
+          conversation: { ...conversation, messages: saved.messages, settings: saved.settings }, settings: this.backupSettings() }, files });
+      if (textOnly && files.length) throw new HttpError(409, '此对话包含文件，请下载 ZIP 备份。');
+      const response = json(textOnly ? manifest.backup : manifest);
+      if (new TextEncoder().encode(JSON.stringify(manifest)).byteLength > MAX_BACKUP_BYTES) throw new HttpError(413, '备份清单超过 12 MiB。');
+      return response;
+    } catch (error) { return json({ error: error instanceof Error ? error.message : '备份清单无法读取。' }, error instanceof HttpError ? error.status : 409); }
+  }
+  private checkImport(id: string, status?: string) {
+    const row = this.imports.require(id, status);
+    if (!this.internalConversation(id)) throw new HttpError(410, '恢复目标对话已删除。');
+    return row;
+  }
+  private importFailure(error: unknown): { error: string; status: number } {
+    return { error: error instanceof HttpError ? error.message : '恢复暂时无法完成，请重试查看结果。', status: error instanceof HttpError ? error.status : 503 };
+  }
+  async beginImport(id: string, body: ReadableStream<Uint8Array>): Promise<ImportResult> {
+    try {
+      const manifest = await readArchiveManifest(body), bytes = new TextEncoder().encode(JSON.stringify(manifest)), hash = await sha256(bytes);
+      const existing = this.imports.get(id);
+      if (existing) {
+        if (existing.sha256 !== hash) throw new HttpError(409, '此恢复 ID 已绑定另一份存档。');
+        if (this.deletedAt(id) && existing.status === 'completed') throw new HttpError(410, '此恢复副本已删除。');
+        return this.imports.active.get(id) ?? this.imports.result(id);
+      }
+      if (this.internalConversation(id) || this.deletedAt(id) || this.copies.get(id)) throw new HttpError(409, '目标对话 ID 已被使用。');
+      if (this.ctx.storage.sql.exec<{ count: number }>('SELECT COUNT(*) AS count FROM conversations').one().count >= MAX_CONVERSATIONS) throw new HttpError(507, '空间对话容量已满。');
+      this.ctx.storage.transactionSync(() => {
+        this.imports.begin(id, hash, bytes.byteLength, manifest.files);
+        this.ctx.storage.sql.exec('INSERT INTO conversations VALUES (?, ?, ?, ?)', id, manifest.backup.conversation.title, Date.now(), Date.now());
+        for (const { id: target, file } of this.imports.files(id)) this.attachments.register(id, { id: target, name: file.name, size: file.size, mediaType: file.mediaType, sha256: file.sha256 });
+        this.ctx.storage.sql.exec("UPDATE attachments SET lease = ? WHERE conversationId = ? AND status = 'registered'", this.imports.get(id)!.lease, id);
+      });
+      const promise = this.prepareImport(id, bytes, manifest).finally(async () => { this.imports.active.delete(id); await this.scheduleMaintenance(); });
+      this.imports.active.set(id, promise); this.ctx.waitUntil(promise); return await promise;
+    } catch (error) { return this.importFailure(error); }
+  }
+  private async prepareImport(id: string, bytes: Uint8Array, manifest: ArchiveManifest): Promise<ImportResult> {
+    try {
+      await this.ctx.storage.sync(); await this.scheduleMaintenance(); this.checkImport(id, 'preparing');
+      if (manifest.files.length) { await this.imports.save(id, bytes); this.checkImport(id, 'uploading'); return this.imports.result(id); }
+      this.imports.prepareEmpty(id); this.imports.finalize(id); return await this.restoreImport(id, manifest);
+    } catch (error) { return this.stopImport(id, error); }
+  }
+  private async stopImport(id: string, error: unknown): Promise<ImportResult> {
+    if (this.imports.get(id)?.status === 'completed') return this.imports.result(id);
+    const failure = this.importFailure(error);
+    this.imports.fail(id, new HttpError(failure.status, failure.error));
+    await this.beginDelete(id); await this.scheduleMaintenance(); return this.imports.result(id);
+  }
+  importStatus(id: string) {
+    if (this.deletedAt(id) && this.imports.get(id)?.status === 'completed') return { error: '此恢复副本已删除。', status: 410 };
+    return this.imports.result(id);
+  }
+  importStopped(id: string) { return this.imports.get(id)?.status === 'failed'; }
+  async uploadImportFile(id: string, sourceId: string, body: ReadableStream<Uint8Array>, extracted: boolean) {
+    try {
+      this.checkImport(id, 'uploading');
+      const mapped = this.imports.files(id).find((file) => file.sourceId === sourceId);
+      if (!mapped) { await body.cancel(); throw new HttpError(404, '找不到存档中的文件。'); }
+      if (!extracted) { const result = await this.attachments.upload(id, mapped.id, body); this.checkImport(id, 'uploading'); return { value: result }; }
+      if (!mapped.file.parsed) { await body.cancel(); throw new HttpError(400, '此原文件没有提取文本。'); }
+      const reference = mapped.file.parsed.reference;
+      const bytes = await this.readImportText(body, mapped.file.parsed.bytes);
+      if (await sha256(bytes) !== reference.textSha256) throw new HttpError(409, '提取文本的校验和不符。');
+      const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes);
+      this.checkImport(id, 'uploading');
+      const result = await this.attachments.documents.parse(id, mapped.id, reference.pdf ? { text, pdf: reference.pdf, sourceSha256: mapped.file.sha256 } : undefined);
+      this.checkImport(id, 'uploading');
+      if (JSON.stringify({ ...result, attachmentId: sourceId }) !== JSON.stringify(reference)) throw new HttpError(409, '恢复后的解析资料与备份不符。');
+      return { value: result };
+    } catch (error) {
+      await body.cancel().catch(() => {});
+      const mapped = this.imports.files(id).find((file) => file.sourceId === sourceId);
+      if (error instanceof HttpError && [429, 507, 410].includes(error.status) || mapped && (this.attachments.unconfirmed(mapped.id) || this.attachments.documents.unconfirmed(mapped.id))) {
+        await this.stopImport(id, error);
+      }
+      const stopped = this.imports.get(id);
+      return stopped?.status === 'failed' ? { error: stopped.error ?? '恢复已停止。', status: stopped.errorStatus ?? 409 } : this.importFailure(error);
+    }
+    finally { await this.scheduleMaintenance(); }
+  }
+  private async readImportText(body: ReadableStream<Uint8Array>, expected: number) {
+    const reader = body.getReader(), chunks: Uint8Array[] = []; let size = 0;
+    let expired = false;
+    const timeout = setTimeout(() => { expired = true; void reader.cancel().catch(() => {}); }, 90_000);
+    try {
+      while (true) { const next = await reader.read(); if (expired) throw new HttpError(408, '提取文本上传超时。'); if (next.done) break; size += next.value.byteLength;
+        if (size > expected) throw new HttpError(413, '提取文本过长。'); chunks.push(next.value); }
+      if (size !== expected) throw new HttpError(400, '提取文本不完整。');
+      const bytes = new Uint8Array(size); let at = 0;
+      for (const chunk of chunks) { bytes.set(chunk, at); at += chunk.byteLength; } return bytes;
+    } catch (error) { await reader.cancel().catch(() => {}); throw error; } finally { clearTimeout(timeout); reader.releaseLock(); }
+  }
+  async finishImport(id: string): Promise<ImportResult> {
+    try {
+      const current = this.imports.get(id);
+      if (!current || ['failed', 'completed'].includes(current.status)) return this.importStatus(id);
+      const active = this.imports.active.get(id); if (active) return await active;
+      this.checkImport(id, 'uploading');
+      for (const { id: fileId, file } of this.imports.files(id)) {
+        if (!this.attachments.list(id).some((item) => item.id === fileId && item.status === 'ready')) throw new HttpError(409, '仍有原文件尚未保存完成。');
+        if (file.parsed && !this.attachments.documents.parsedReference(id, fileId)) throw new HttpError(409, '仍有提取文本尚未保存完成。');
+      }
+      this.imports.finalize(id);
+      const promise = this.restoreImport(id).finally(async () => { this.imports.active.delete(id); await this.scheduleMaintenance(); });
+      this.imports.active.set(id, promise); this.ctx.waitUntil(promise); return await promise;
+    } catch (error) { return this.importFailure(error); }
+  }
+  private async restoreImport(id: string, saved?: ArchiveManifest): Promise<ImportResult> {
+    try {
+      await this.ctx.storage.sync(); await this.scheduleMaintenance(); this.checkImport(id, 'finalizing');
+      const manifest = saved ?? await this.imports.manifest(id); this.checkImport(id, 'finalizing');
+      const mapped = new Map(this.imports.files(id).map((file) => [file.sourceId, file.id]));
+      const messages = manifest.backup.conversation.messages.map((message) => ({ ...message, parts: message.parts.map((part) => part.type === 'image' || part.type === 'file' ? { ...part, attachmentId: mapped.get(part.attachmentId)! } : part) }));
+      for (const { id: fileId, file } of this.imports.files(id)) {
+        const response = await this.attachments.response(id, fileId, true); await response.body?.cancel(); this.checkImport(id, 'finalizing');
+        if (file.parsed) { const text = await this.attachments.documents.read(id, fileId); this.checkImport(id, 'finalizing');
+          if (JSON.stringify({ ...text.file, attachmentId: file.id }) !== JSON.stringify(file.parsed.reference)) throw new HttpError(409, '恢复后的解析引用不符。'); }
+      }
+      if (messages.some((message) => messageAttachments(message).length)) { await this.attachments.pinAttachments(id, messages.flatMap(messageImages), messages.flatMap(messageFiles)); this.checkImport(id, 'finalizing'); }
+      const result = await this.env.CONVERSATIONS.getByName(id).restoreResponse(id, new Response(JSON.stringify({ ...manifest.backup.conversation, messages })).body!);
+      this.checkImport(id, 'finalizing');
+      if (!result.ok) { const failure = await result.json() as { error: string }; throw new HttpError(result.status, failure.error); }
+      await result.body?.cancel();
+      this.ctx.storage.transactionSync(() => {
+        this.checkImport(id, 'finalizing');
+        const prior = this.providerSettingsData();
+        const providers = manifest.backup.settings.providers.map((profile) => {
+          const existing = prior.providers.find((saved) => saved.id === profile.id);
+          return { ...profile, ...(existing && (existing.provider !== profile.provider || existing.baseUrl !== profile.baseUrl) ? { apiKey: '' } : {}) };
+        });
+        const settings = this.saveProviderSettings({ ...manifest.backup.settings, providers, activeProviderId: null, activeModel: '' }, manifest.backup.settings.promptPresets, { restoreModelMetadata: true });
+        if ('error' in settings) throw new HttpError(settings.status ?? 400, settings.error);
+        this.imports.complete(id); this.touch(id); this.ctx.storage.sql.exec('INSERT OR IGNORE INTO search_backfill(conversationId) VALUES (?)', id);
+      });
+      await this.ctx.storage.sync(); return this.imports.result(id);
+    } catch (error) { return this.stopImport(id, error); }
+  }
+  async cancelImport(id: string) {
+    const row = this.imports.get(id);
+    if (!row) return { error: '找不到这项恢复。', status: 404 };
+    if (row.status === 'completed') return { error: '恢复已完成。', status: 409 };
+    this.imports.fail(id, new HttpError(409, '恢复已取消。')); await this.beginDelete(id); return { value: true };
+  }
   private providerSettingsData(): ProviderSettingsInput {
     const preferences = this.ctx.storage.sql.exec<{
       activeProviderId: string | null; activeModel: string; systemPrompt: string; maxOutputTokens: number; showReasoning: number;
@@ -294,6 +475,21 @@ export class Library extends DurableObject<Env> {
     return runtimeProviderConfig(this.providerSettingsData(), selection, effort);
   }
   providerSettings(): ProviderSettings { return publicProviderSettings(this.providerSettingsData()); }
+  providerSettingsResponse() { return json(this.providerSettings()); }
+  async saveProviderSettingsResponse(body: ReadableStream<Uint8Array>) {
+    try {
+      const input = await readJsonStream(body, MAX_BACKUP_BYTES, '供应商配置超过 12 MiB。');
+      const result = this.saveProviderSettings(input as ProviderSettingsInput);
+      return 'error' in result ? json({ error: result.error }, result.status ?? 400) : json(result.settings);
+    } catch (error) { return json({ error: error instanceof HttpError ? error.message : '供应商配置暂时无法保存。' }, error instanceof HttpError ? error.status : 503); }
+  }
+  sessionResponse() {
+    const settings = this.providerSettings(), config = this.providerConfig();
+    return json({ authenticated: true, configured: Boolean(this.env.APP_PASSWORD && this.env.SESSION_SECRET),
+      attachmentsConfigured: Boolean(this.env.ATTACHMENTS), provider: config?.provider ?? '', model: config?.model ?? '',
+      modelName: config?.modelName ?? '', activeProviderId: config?.providerId ?? null, models: chatModels(settings),
+      showReasoning: settings.showReasoning, systemPrompt: settings.systemPrompt, maxOutputTokens: settings.maxOutputTokens });
+  }
   private async attachmentAction<T>(action: () => T | Promise<T>): Promise<{ value: T } | { error: string; status: number }> {
     try { return { value: await action() }; }
     catch (error) { return { error: error instanceof HttpError ? error.message : '附件存储暂时不可用，请稍后重试。', status: error instanceof HttpError ? error.status : 503 }; }

@@ -1,7 +1,6 @@
 import type { Context } from 'hono';
 import * as v from 'valibot';
 import type { Env } from './env';
-import { MAX_BACKUP_BYTES, validateBackup, type EverChatBackup } from '../shared/backup';
 
 export class HttpError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -35,6 +34,25 @@ export function jsonWithStream(body: Record<string, unknown>, key: string, sourc
 
 export type AppContext = Context<{ Bindings: Env }>;
 
+/** Decode bounded JSON in the owning DO; native streams do not count against object RPC payload limits. */
+export async function readJsonStream(body: ReadableStream<Uint8Array>, maxBytes: number, tooLarge: string): Promise<unknown> {
+  const reader = body.getReader(), decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false });
+  let text = '', size = 0, expired = false;
+  const timeout = setTimeout(() => { expired = true; void reader.cancel().catch(() => {}); }, 90_000);
+  try {
+    while (true) {
+      const next = await reader.read(); if (expired) throw new HttpError(408, '请求上传超时。'); if (next.done) break;
+      size += next.value.byteLength;
+      if (size > maxBytes) throw new HttpError(413, tooLarge);
+      text += decoder.decode(next.value, { stream: true });
+    }
+    return JSON.parse(text + decoder.decode());
+  } catch (error) {
+    await reader.cancel().catch(() => {});
+    throw error instanceof HttpError ? error : new HttpError(400, '请求内容不是有效的 JSON 对象。');
+  } finally { clearTimeout(timeout); reader.releaseLock(); }
+}
+
 export async function parseBody<TSchema extends v.GenericSchema>(context: AppContext, schema: TSchema, options: { maxBytes?: number; tooLarge?: string } = {}): Promise<v.InferOutput<TSchema>> {
   const request = context.req.raw;
   if (!request.headers.get('Content-Type')?.includes('application/json')) throw new HttpError(415, '请使用 JSON 请求。');
@@ -55,28 +73,4 @@ export async function parseBody<TSchema extends v.GenericSchema>(context: AppCon
     if (!result.success) throw new Error();
     return result.output;
   } catch { throw new HttpError(400, '请求内容不是有效的 JSON 对象。'); }
-}
-
-export async function parseBackup(context: AppContext): Promise<EverChatBackup> {
-  const request = context.req.raw;
-  if (!request.headers.get('Content-Type')?.includes('application/json')) throw new HttpError(415, '请使用 JSON 请求。');
-  const reader = request.body?.getReader();
-  if (!reader) throw new HttpError(400, '请求内容为空。');
-  const decoder = new TextDecoder();
-  let text = '';
-  let size = 0;
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      size += value.byteLength;
-      if (size > MAX_BACKUP_BYTES) { await reader.cancel(); throw new HttpError(413, '备份文件过大，请拆分后重试。'); }
-      text += decoder.decode(value, { stream: true });
-    }
-    const value = JSON.parse(text + decoder.decode());
-    return validateBackup(value);
-  } catch (error) {
-    if (error instanceof HttpError) throw error;
-    throw new HttpError(400, '备份文件格式无效或版本不受支持。');
-  }
 }

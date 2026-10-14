@@ -86,10 +86,9 @@ test('the client can download text formats and import a backup into a new conver
     expect(htmlText).toContain('末尾思考终点');
     await menu.click();
     const backupDownload = page.waitForEvent('download'); await page.getByRole('button', { name: '下载备份', exact: true }).click(); const backupFile = await backupDownload;
-    expect(backupFile.suggestedFilename()).toMatch(/\.everchat\.json$/);
-    const backupResponse = await page.request.get(`/api/conversations/${source.id}/backup`, { headers });
-    const backup = await backupResponse.json() as EverChatBackup;
-    await page.getByRole('banner').locator('input[type="file"]').setInputFiles({ name: 'backup.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(backup)) });
+    expect(backupFile.suggestedFilename()).toMatch(/\.everchat\.zip$/);
+    const archive = await readFile((await backupFile.path())!);
+    await page.getByRole('banner').locator('input[type="file"]').setInputFiles({ name: 'backup.zip', mimeType: 'application/zip', buffer: archive });
     await expect(page).not.toHaveURL(`/c/${source.id}`);
     await expect(page).toHaveURL(/\/c\/[0-9a-f-]{36}$/);
     restoredId = new URL(page.url()).pathname.split('/').at(-1)!;

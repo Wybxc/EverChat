@@ -26,7 +26,7 @@ Library 在写入文件前持久化元数据登记，副本在文件、解析文
 
 消息和配置的复制负载最多 12 MiB。大历史通过原生 RPC 流传给 DO 解析与恢复，返回快照也使用流封装，普通 Worker 不解析这些大 JSON。恢复事件按约 1 MB 分批写入，同一事务保存全部消息，避免超过 SQLite 单个字符串、BLOB 或行的 2 MB 限制。[DO 限制](https://developers.cloudflare.com/durable-objects/platform/limits/)
 
-本地回归使用原生模拟 DO／R2、实际供应商 SDK 与模拟响应，不部署、创建远程资源或调用付费模型；它不证明真实 Cloudflare CPU、免费余量或账单。含文件的可恢复备份仍在阶段 4 第 5 项的下一检查点实现，当前 JSON 备份继续明确拒绝附件，文本导出保留文件名。
+本地回归使用原生模拟 DO／R2、实际供应商 SDK 与模拟响应，不部署、创建远程资源或调用付费模型；它不证明真实 Cloudflare CPU、免费余量或账单。含文件的[可恢复 ZIP 备份](attachment-backups.md)现已实现，原文件、解析结果及引用在独立对话中恢复；文本 JSON 导出继续明确要求 ZIP，文本导出保留文件名。
 
 ## 验证
 

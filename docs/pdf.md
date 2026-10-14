@@ -24,7 +24,7 @@
 
 解析结果 R2 写入前持久化认领和租约，结果未知时由 Alarm 清理派生对象及 PDF 元数据，保留已完成的原文件。明确重新提交提取结果后可重试保存，不自动调用模型。已被消息或活动任务使用时阻止独立删除；删除最后来源后清理原文件、提取对象和 PDF 元数据。页面关闭前未保存完成的提取不视为已接受，可能需要重新选择文件。
 
-含 PDF 的对话已支持[独立附件复制](attachment-copies.md)，原文件及提取文本独立保存。JSON 备份仍明确拒绝附件，包含文件的备份在阶段 4 第 5 项的下一检查点实现；文本导出保留文件名。Office 格式仍待验证托管解析服务。
+含 PDF 的对话已支持[独立附件复制](attachment-copies.md)和[ZIP 备份恢复](attachment-backups.md)，原文件及提取文本独立保存。文本 JSON 导出要求改用 ZIP；文本导出保留文件名。Office 格式仍待验证托管解析服务。
 
 参考 [PDF.js API](https://mozilla.github.io/pdf.js/api/draft/module-pdfjsLib.html) 的本地数据输入、Worker、`stopAtErrors` 和资源加载参数，以及 [streamTextContent](https://mozilla.github.io/pdf.js/api/draft/module-pdfjsLib-PDFPageProxy.html) 的按块读取接口。包的当前实现和类型是本原型固定版本的运行依据；这些 API 不证明解析结果质量或 Cloudflare 费用。
 

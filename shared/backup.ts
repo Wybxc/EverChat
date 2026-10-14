@@ -66,6 +66,7 @@ export function validateBackup(value: unknown): EverChatBackup {
   if (!value || typeof value !== 'object') throw new Error('备份文件格式无效。');
   const input = value as Record<string, unknown>, conversation = input.conversation as Record<string, unknown>;
   if (input.format !== BACKUP_FORMAT || input.version !== BACKUP_VERSION || !conversation || typeof conversation !== 'object') throw new Error('备份文件版本不受支持。');
+  if (!Number.isSafeInteger(input.exportedAt)) throw new Error('备份导出时间无效。');
   if (!isUuid(conversation.id) || !isString(conversation.title, 80) || !conversation.title.trim() || !Number.isSafeInteger(conversation.createdAt) || !Number.isSafeInteger(conversation.updatedAt)) throw new Error('备份中的对话信息无效。');
   if (!Array.isArray(conversation.messages) || conversation.messages.length > MAX_BACKUP_MESSAGES) throw new Error('备份中的消息数量无效。');
   const conversationSettings = conversation.settings === undefined ? undefined : v.safeParse(conversationSettingsSchema, conversation.settings);
@@ -128,7 +129,7 @@ export function validateBackup(value: unknown): EverChatBackup {
     return { id: provider.id, name: provider.name, provider: provider.provider as ProviderApiKind, baseUrl: provider.baseUrl, models };
   });
   return {
-    format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: Number.isSafeInteger(input.exportedAt) ? Number(input.exportedAt) : Date.now(),
+    format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: Number(input.exportedAt),
     conversation: { id: conversation.id, title: conversation.title, createdAt: Number(conversation.createdAt), updatedAt: Number(conversation.updatedAt), messages,
       ...(conversationSettings?.success ? { settings: conversationSettings.output } : {}) },
     settings: { providers, activeProviderId: settings.activeProviderId as string | null, activeModel: settings.activeModel,

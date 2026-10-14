@@ -28,6 +28,11 @@ export class DocumentStore {
   parsedReference(conversationId: string, id: string) {
     return this.row(id)?.status === 'ready' ? this.reference(conversationId, id) : undefined;
   }
+  archiveReference(conversationId: string, id: string) {
+    const reference = this.parsedReference(conversationId, id);
+    return reference ? { reference, bytes: this.row(id)!.bytes } : undefined;
+  }
+  unconfirmed(id: string) { const row = this.row(id); return Boolean(row && row.status !== 'ready' && !this.parsing.has(id)); }
   private requireSource(conversationId: string, id: string) {
     if (!this.bucket) throw new HttpError(503, '文件存储未配置，请先绑定私有 R2 桶。');
     const source = this.source(conversationId, id);
