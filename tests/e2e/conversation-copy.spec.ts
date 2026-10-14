@@ -17,7 +17,7 @@ test('copying a conversation creates a new URL with the same messages and indepe
   const copyIds: string[] = [];
   try {
     const original = await page.request.get(`/api/conversations/${source.id}`).then((response) => response.json()) as Snapshot;
-    const copied = await page.request.post(`/api/conversations/${source.id}/duplicate`, { headers });
+    const copied = await page.request.post(`/api/conversations/${source.id}/duplicate`, { headers, data: { requestId: crypto.randomUUID() } });
     expect(copied.status()).toBe(201);
     const result = await copied.json() as { id: string; snapshot: Snapshot; conversation: { title: string } };
     copyIds.push(result.id);
@@ -69,7 +69,7 @@ async function generationSource(request: APIRequestContext, model = 'metadata-co
 
 type Copy = { id: string; snapshot: Snapshot };
 async function copyAt(request: APIRequestContext, sourceId: string, messageId: string, copies: string[]) {
-  const response = await request.post(`/api/conversations/${sourceId}/messages/${messageId}/duplicate`, { headers });
+  const response = await request.post(`/api/conversations/${sourceId}/messages/${messageId}/duplicate`, { headers, data: { requestId: crypto.randomUUID() } });
   expect(response.status()).toBe(201);
   const copy = await response.json() as Copy; copies.push(copy.id); return copy;
 }
@@ -166,7 +166,7 @@ test('user and assistant copy actions open independent URLs, preserve the source
 
 test('invalid, deleted, or broken selected paths fail before creating a conversation; deleted ancestors stay redacted', async ({ request }) => {
   const unknown = `/api/conversations/${crypto.randomUUID()}/messages/${crypto.randomUUID()}/duplicate`;
-  expect((await request.post(unknown, { headers })).status()).toBe(401);
+  expect((await request.post(unknown, { headers, data: { requestId: crypto.randomUUID() } })).status()).toBe(401);
   const fixture = await generationSource(request), copies: string[] = [];
   try {
     const first = await fixture.send('应删除的旧问题'); await fixture.done();
@@ -176,23 +176,23 @@ test('invalid, deleted, or broken selected paths fail before creating a conversa
     const before = await libraryIds();
     expect((await request.post(endpoint)).status()).toBe(403);
     expect((await request.post(endpoint, { headers: { Origin: 'https://other.test' } })).status()).toBe(403);
-    expect((await request.post(unknown, { headers })).status()).toBe(404);
-    for (const messageId of ['invalid', crypto.randomUUID()]) expect((await request.post(`/api/conversations/${fixture.id}/messages/${messageId}/duplicate`, { headers })).status()).toBe(404);
+    expect((await request.post(unknown, { headers, data: { requestId: crypto.randomUUID() } })).status()).toBe(404);
+    for (const messageId of ['invalid', crypto.randomUUID()]) expect((await request.post(`/api/conversations/${fixture.id}/messages/${messageId}/duplicate`, { headers, data: { requestId: crypto.randomUUID() } })).status()).toBe(404);
     const corrupt = (parentId: string) => request.post(`/api/__test/conversations/${fixture.id}/parent`, { headers, data: { messageId: second.assistantId, parentId } });
-    expect((await corrupt(crypto.randomUUID())).ok()).toBe(true); expect((await request.post(endpoint, { headers })).status()).toBe(409);
-    expect((await corrupt(second.assistantId)).ok()).toBe(true); expect((await request.post(endpoint, { headers })).status()).toBe(409);
+    expect((await corrupt(crypto.randomUUID())).ok()).toBe(true); expect((await request.post(endpoint, { headers, data: { requestId: crypto.randomUUID() } })).status()).toBe(409);
+    expect((await corrupt(second.assistantId)).ok()).toBe(true); expect((await request.post(endpoint, { headers, data: { requestId: crypto.randomUUID() } })).status()).toBe(409);
     expect(await libraryIds()).toEqual(before);
     await corrupt(second.userId);
     expect((await request.delete(`/api/conversations/${fixture.id}/messages/${first.userId}`, { headers })).ok()).toBe(true);
     expect((await request.delete(`/api/conversations/${fixture.id}/messages/${first.assistantId}`, { headers })).ok()).toBe(true);
-    expect((await request.post(`/api/conversations/${fixture.id}/messages/${first.userId}/duplicate`, { headers })).status()).toBe(404);
+    expect((await request.post(`/api/conversations/${fixture.id}/messages/${first.userId}/duplicate`, { headers, data: { requestId: crypto.randomUUID() } })).status()).toBe(404);
     const copy = await copyAt(request, fixture.id, second.assistantId, copies);
     expect(copy.snapshot.messages).toHaveLength(4);
     for (const message of copy.snapshot.messages.slice(0, 2)) { expect(message.deletedAt).toBeGreaterThan(0); expect(message.parts).toEqual([]); expect(message.generation).toBeUndefined(); }
     expect(copy.snapshot.messages[2].parentId).toBe(copy.snapshot.messages[1].id);
     expect(JSON.stringify(copy.snapshot)).not.toContain('应删除的旧问题');
     expect((await request.delete(`/api/conversations/${fixture.id}`, { headers })).ok()).toBe(true);
-    expect((await request.post(endpoint, { headers })).status()).toBe(410);
+    expect((await request.post(endpoint, { headers, data: { requestId: crypto.randomUUID() } })).status()).toBe(410);
   } finally { await fixture.cleanup(copies); }
 });
 

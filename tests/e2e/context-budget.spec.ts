@@ -58,7 +58,7 @@ test('cloud budgeting rejects oversized fixed input, keeps a complete branch suf
     expect(await fixture.run(task.runId)).toEqual(pinned);
     await fixture.stop(task.runId);
     expect((await fixture.snapshot()).messages.at(-1)!.generation!.context).toEqual(estimate);
-    const copied = await request.post(`/api/conversations/${fixture.id}/duplicate`, { headers }).then((response) => response.json()); fixture.ids.push(copied.id);
+    const copied = await request.post(`/api/conversations/${fixture.id}/duplicate`, { headers, data: { requestId: crypto.randomUUID() } }).then((response) => response.json()); fixture.ids.push(copied.id);
     expect(copied.snapshot.messages.at(-1).generation.context).toEqual(estimate);
     expect(copied.snapshot.settings).toMatchObject({ contextBudget: 1, recentMessages: 1 });
     const backup = await request.get(`/api/conversations/${fixture.id}/backup`).then((response) => response.json()) as EverChatBackup;

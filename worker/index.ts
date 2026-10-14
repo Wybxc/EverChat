@@ -3,7 +3,7 @@ import * as v from 'valibot';
 import type { Env } from './env';
 import type { SubmitInput } from '../shared/types';
 import { authenticated, logoutCookie, passwordMatches, sessionCookie } from './auth';
-import { HttpError, json, parseBackup, parseBody, type AppContext } from './http';
+import { HttpError, json, jsonWithStream, parseBackup, parseBody, type AppContext } from './http';
 import { BACKUP_FORMAT, BACKUP_VERSION, type BackupSettings } from '../shared/backup';
 import { providerSettingsSchema } from './provider-config';
 import { chatModels } from '../shared/models';
@@ -214,31 +214,11 @@ async function duplicateConversation(context: AppContext, messageId?: string) {
   await requireAuth(context);
   const id = conversationId(context);
   if (messageId !== undefined && !v.safeParse(uuidSchema, messageId).success) throw new HttpError(404, '找不到这条消息。');
-  const library = await requireConversation(context, id);
-  const source = await library.get(id);
-  if (!source) throw new HttpError(404, '找不到这个对话。');
-  const saved = await context.env.CONVERSATIONS.getByName(id).copySource(messageId);
-  if ('error' in saved) throw new HttpError(saved.status, saved.error);
-  if (saved.messages.some((message) => messageAttachments(message).length)) throw new HttpError(409, '含附件的复制将在附件引用步骤接入。');
-  const copyId = crypto.randomUUID();
-  const title = `${source.title} 副本`.slice(0, 80);
-  const created = await library.create(copyId, title);
-  if ('error' in created) return json({ error: created.error }, created.status);
-  try {
-    const restored = await context.env.CONVERSATIONS.getByName(copyId).restore(copyId, {
-      id: source.id, title: source.title, createdAt: source.createdAt, updatedAt: source.updatedAt, ...saved,
-    });
-    if ('error' in restored) throw new HttpError(restored.status, restored.error);
-    await library.touch(copyId);
-    return json({ id: copyId, conversation: await library.get(copyId), snapshot: restored }, 201);
-  } catch (error) {
-    try {
-      const deletion = await library.beginDelete(copyId);
-      await context.env.CONVERSATIONS.getByName(copyId).deleteConversation(deletion.deletedAt);
-      await library.completeDelete(copyId);
-    } catch { /* The next library alarm will retry cleanup. */ }
-    throw error;
-  }
+  const { requestId } = await parseBody(context, v.strictObject({ requestId: uuidSchema }));
+  const library = context.env.LIBRARY.getByName('personal');
+  const result = await library.duplicate(id, requestId, messageId);
+  if ('error' in result) return json({ error: result.error, ...(await library.copyStopped(requestId) ? { code: 'copy-stopped' } : {}) }, result.status);
+  return jsonWithStream({ id: result.id, conversation: await library.get(result.id) }, 'snapshot', await context.env.CONVERSATIONS.getByName(result.id).snapshotResponse(), 201);
 }
 app.post('/conversations/:id/duplicate', (context) => duplicateConversation(context));
 app.post('/conversations/:id/messages/:messageId/duplicate', (context) => duplicateConversation(context, context.req.param('messageId')));

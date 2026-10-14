@@ -12,7 +12,7 @@ import { AttachmentStore } from '../../worker/attachments';
 import { HttpError } from '../../worker/http';
 
 type AttachmentControl = { id?: string; expire?: boolean; count?: number; reset?: boolean; holdDelete?: string; releaseDelete?: boolean;
-  failDelete?: string; holdTextPut?: string; holdTextRead?: string; releaseText?: boolean; resetLibrary?: boolean; unconfigured?: boolean };
+  failDelete?: string; holdTextPut?: string; holdTextRead?: string; releaseText?: boolean; resetLibrary?: boolean; unconfigured?: boolean; expireCopy?: string };
 
 export class Library extends ProductionLibrary {
   private attachmentDeletes: { id: string; waiting: boolean; wait: Promise<void>; release: () => void }[];
@@ -103,7 +103,7 @@ export class Library extends ProductionLibrary {
     });
     return { count: sql.exec<{ count: number }>('SELECT COUNT(*) AS count FROM conversations').one().count };
   }
-  async fixtureAttachments({ id, expire, count, reset, holdDelete, releaseDelete, failDelete, holdTextPut, holdTextRead, releaseText, resetLibrary, unconfigured }: AttachmentControl) {
+  async fixtureAttachments({ id, expire, count, reset, holdDelete, releaseDelete, failDelete, holdTextPut, holdTextRead, releaseText, resetLibrary, unconfigured, expireCopy }: AttachmentControl) {
     const date = new Date().toISOString().slice(0, 10), sql = this.ctx.storage.sql;
     if (releaseText) this.attachmentText.splice(0).forEach((pause) => pause.release());
     for (const [kind, id] of [['put', holdTextPut], ['get', holdTextRead]] as const) if (id) {
@@ -117,6 +117,7 @@ export class Library extends ProductionLibrary {
       this.attachmentDeletes.push({ id: holdDelete, waiting: false, wait, release });
     }
     if (expire && id) { sql.exec('UPDATE attachments SET lease = 0 WHERE id = ?', id); sql.exec("UPDATE attachment_documents SET lease = 0 WHERE id = ? AND status IN ('parsing', 'cleaning')", id); await this.ctx.storage.setAlarm(Date.now() + 1000); }
+    if (expireCopy) { sql.exec("UPDATE conversation_copies SET lease = 0 WHERE id = ? AND status = 'copying'", expireCopy); await this.ctx.storage.setAlarm(Date.now() + 1000); }
     if (count !== undefined) sql.exec('INSERT INTO attachment_daily_uploads VALUES (?, ?) ON CONFLICT(date) DO UPDATE SET count = excluded.count', date, count);
     if (reset !== undefined) { sql.exec('CREATE TABLE IF NOT EXISTS fixture_attachment_reset (id INTEGER PRIMARY KEY, enabled INTEGER)'); sql.exec('INSERT INTO fixture_attachment_reset VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET enabled = excluded.enabled', Number(reset)); }
     sql.exec('CREATE TABLE IF NOT EXISTS fixture_attachment_delete_fault (id TEXT PRIMARY KEY, remaining INTEGER, failed INTEGER)');
@@ -130,7 +131,7 @@ export class Library extends ProductionLibrary {
         catch (error) { if (!(error instanceof HttpError)) throw error; unconfiguredStatus.push(error.status); }
       }
     }
-    return { pdfMetadataIds: sql.exec('SELECT id FROM attachment_pdf_metadata').toArray(), documents: sql.exec('SELECT id, status, lease, characters, tokens, bytes FROM attachment_documents').toArray(), textWaiting: this.attachmentText.some((pause) => pause.waiting), rows: sql.exec('SELECT id, conversationId, status, removed, lease FROM attachments').toArray(), deleteWaiting: this.attachmentDeletes.some((pause) => pause.waiting),
+    return { copies: sql.exec('SELECT id, sourceId, messageId, status, lease, errorStatus FROM conversation_copies').toArray(), pdfMetadataIds: sql.exec('SELECT id FROM attachment_pdf_metadata').toArray(), documents: sql.exec('SELECT id, status, lease, characters, tokens, bytes FROM attachment_documents').toArray(), textWaiting: this.attachmentText.some((pause) => pause.waiting), rows: sql.exec('SELECT id, conversationId, status, removed, lease FROM attachments').toArray(), deleteWaiting: this.attachmentDeletes.some((pause) => pause.waiting),
       failedDeletes: sql.exec<{ count: number }>('SELECT COALESCE(SUM(failed), 0) AS count FROM fixture_attachment_delete_fault').one().count, unconfiguredStatus,
       dailyCount: sql.exec<{ count: number }>('SELECT count FROM attachment_daily_uploads WHERE date = ?', date).toArray()[0]?.count ?? 0,
       objects: (await this.env.ATTACHMENTS!.list({ limit: 1000 })).objects.map((object) => ({ key: object.key, size: object.size })) };

@@ -14,6 +14,25 @@ export function json(body: unknown, status = 200, headers?: HeadersInit) {
   return new Response(JSON.stringify(body), { status, headers: result });
 }
 
+/** Wrap a native RPC response without decoding large histories in the Free Worker. */
+export function jsonWithStream(body: Record<string, unknown>, key: string, source: Response, status = 200) {
+  if (!source.ok || !source.body) return source;
+  const reader = source.body.getReader(), encoder = new TextEncoder();
+  const prefix = JSON.stringify(body).slice(0, -1) + (Object.keys(body).length ? ',' : '') + JSON.stringify(key) + ':';
+  let started = false;
+  return new Response(new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      if (!started) { started = true; controller.enqueue(encoder.encode(prefix)); return; }
+      try {
+        const { done, value } = await reader.read();
+        if (done) { reader.releaseLock(); controller.enqueue(encoder.encode('}')); controller.close(); }
+        else controller.enqueue(value);
+      } catch (error) { reader.releaseLock(); controller.error(error); }
+    },
+    async cancel(reason) { try { await reader.cancel(reason); } finally { reader.releaseLock(); } },
+  }), { status, headers: json(null).headers });
+}
+
 export type AppContext = Context<{ Bindings: Env }>;
 
 export async function parseBody<TSchema extends v.GenericSchema>(context: AppContext, schema: TSchema, options: { maxBytes?: number; tooLarge?: string } = {}): Promise<v.InferOutput<TSchema>> {

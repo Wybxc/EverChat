@@ -25,6 +25,9 @@ export class DocumentStore {
     return row ? JSON.parse(row.payload) as PDFMetadata : undefined;
   }
   private row(id: string) { return this.storage.sql.exec<Row>('SELECT * FROM attachment_documents WHERE id = ?', id).toArray()[0]; }
+  parsedReference(conversationId: string, id: string) {
+    return this.row(id)?.status === 'ready' ? this.reference(conversationId, id) : undefined;
+  }
   private requireSource(conversationId: string, id: string) {
     if (!this.bucket) throw new HttpError(503, '文件存储未配置，请先绑定私有 R2 桶。');
     const source = this.source(conversationId, id);

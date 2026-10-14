@@ -7,26 +7,33 @@ import { defaultProviderSettings, mergeProviderSettings, publicProviderSettings,
 import { MAX_CONVERSATIONS } from './resource-limits';
 import { SearchIndex, SearchChanged, SEARCH_CAPACITY_MESSAGE, searchRetryDelay } from './search-index';
 import type { SearchDocument } from '../shared/search';
-import type { BackupSettings } from '../shared/backup';
+import { MAX_BACKUP_BYTES, type BackupSettings } from '../shared/backup';
+import type { BackupMessage } from '../shared/backup';
+import type { ConversationSettings } from '../shared/types';
 import { PromptPresets, PromptPresetError } from './prompt-presets';
 import { AttachmentStore } from './attachments';
 import type { AttachmentInput } from '../shared/attachments';
 import type { ImagePart } from '../shared/images';
 import { HttpError, json } from './http';
+import { CopyJobs, type CopyResult } from './copy-jobs';
+import { messageAttachments, messageFiles, messageImages } from '../shared/message-content';
 
 type Deletion = { id: string; deletedAt: number; completed: number } & Record<string, SqlStorageValue>;
 const conversationSelect = `SELECT conversations.*, COALESCE(metadata.pinned, 0) AS pinned, COALESCE(metadata.archived, 0) AS archived
   FROM conversations LEFT JOIN conversation_metadata AS metadata ON metadata.id = conversations.id
-  WHERE NOT EXISTS (SELECT 1 FROM conversation_deletions WHERE conversation_deletions.id = conversations.id)`;
+  WHERE NOT EXISTS (SELECT 1 FROM conversation_deletions WHERE conversation_deletions.id = conversations.id)
+  AND NOT EXISTS (SELECT 1 FROM conversation_copies WHERE conversation_copies.id = conversations.id AND conversation_copies.status != 'completed')`;
 const decorate = (row: Record<string, SqlStorageValue>) => ({ ...row, pinned: Boolean(row.pinned), archived: Boolean(row.archived) }) as unknown as ConversationInfo;
 
 export class Library extends DurableObject<Env> {
   private readonly searchIndex: SearchIndex;
   private readonly presets: PromptPresets;
   private readonly attachments: AttachmentStore;
+  private readonly copies: CopyJobs;
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     this.presets = new PromptPresets(ctx.storage);
+    this.copies = new CopyJobs(ctx.storage);
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS conversations (id TEXT PRIMARY KEY, title TEXT NOT NULL, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL)`);
     ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS conversation_metadata (id TEXT PRIMARY KEY, pinned INTEGER NOT NULL, archived INTEGER NOT NULL)');
     ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS conversation_deletions (id TEXT PRIMARY KEY, deletedAt INTEGER NOT NULL, completed INTEGER NOT NULL DEFAULT 0)');
@@ -40,10 +47,11 @@ export class Library extends DurableObject<Env> {
       systemPrompt TEXT NOT NULL, maxOutputTokens INTEGER NOT NULL, showReasoning INTEGER NOT NULL DEFAULT 0
     )`);
     this.searchIndex = new SearchIndex(ctx.storage);
-    this.attachments = new AttachmentStore(ctx.storage, env.ATTACHMENTS, (id) => Boolean(this.get(id)));
+    this.attachments = new AttachmentStore(ctx.storage, env.ATTACHMENTS, (id) => Boolean(this.internalConversation(id)));
     // Feature initialization reads existing messages in bounded pages, never on a search request.
     ctx.storage.sql.exec(`INSERT OR IGNORE INTO search_backfill(conversationId) SELECT id FROM conversations
-      WHERE NOT EXISTS (SELECT 1 FROM conversation_deletions WHERE conversation_deletions.id = conversations.id)`);
+      WHERE NOT EXISTS (SELECT 1 FROM conversation_deletions WHERE conversation_deletions.id = conversations.id)
+      AND NOT EXISTS (SELECT 1 FROM conversation_copies WHERE conversation_copies.id = conversations.id AND conversation_copies.status != 'completed')`);
     ctx.waitUntil(this.scheduleMaintenance());
   }
   private async scheduleMaintenance() {
@@ -51,9 +59,10 @@ export class Library extends DurableObject<Env> {
       const sql = this.ctx.storage.sql;
       const pending = sql.exec<{ nextAt: number }>('SELECT MIN(nextAt) AS nextAt FROM search_backfill WHERE done = 0 HAVING COUNT(*) > 0').toArray()[0];
       const cleanup = this.attachments.nextCleanup();
-      if (!pending && cleanup === undefined) return;
+      const copy = this.copies.nextMaintenance();
+      if (!pending && cleanup === undefined && !Number.isFinite(copy)) return;
       const alarm = await this.ctx.storage.getAlarm();
-      const next = Math.max(Date.now() + 1000, Math.min(pending?.nextAt ?? Infinity, cleanup ?? Infinity));
+      const next = Math.max(Date.now() + 1000, Math.min(pending?.nextAt ?? Infinity, cleanup ?? Infinity, copy));
       if (alarm === null || alarm > next) await this.ctx.storage.setAlarm(next);
     });
   }
@@ -85,11 +94,15 @@ export class Library extends DurableObject<Env> {
     const row = this.ctx.storage.sql.exec(`${conversationSelect} AND conversations.id = ?`, id).toArray()[0];
     return row ? decorate(row) : null;
   }
+  private internalConversation(id: string) {
+    return this.ctx.storage.sql.exec('SELECT id FROM conversations WHERE id = ? AND NOT EXISTS (SELECT 1 FROM conversation_deletions WHERE conversation_deletions.id = conversations.id)', id).toArray()[0];
+  }
   deletedAt(id: string): number | null {
     return this.ctx.storage.sql.exec<Deletion>('SELECT * FROM conversation_deletions WHERE id = ?', id).toArray()[0]?.deletedAt ?? null;
   }
   create(id: string, title: string) {
     if (this.deletedAt(id)) return { error: '这个对话已删除。', status: 410 };
+    if (this.copies.get(id)?.status !== undefined && this.copies.get(id)?.status !== 'completed') return { error: '此对话正在复制或已停止。', status: 409 };
     const existing = this.get(id);
     if (existing) return existing;
     if (this.ctx.storage.sql.exec<{ count: number }>('SELECT COUNT(*) AS count FROM conversations').one().count >= MAX_CONVERSATIONS) {
@@ -122,6 +135,12 @@ export class Library extends DurableObject<Env> {
       if (existing?.completed) return existing;
       const deletion = existing ?? { id, deletedAt: Date.now(), completed: 0 };
       if (!existing) this.ctx.storage.sql.exec('INSERT INTO conversation_deletions VALUES (?, ?, 0)', id, deletion.deletedAt);
+      for (const copy of this.copies.pending()) if (copy.sourceId === id || copy.id === id) {
+        this.copies.fail(copy.id, new HttpError(410, '复制来源或目标对话已删除。'));
+        this.ctx.storage.sql.exec('INSERT OR IGNORE INTO conversation_deletions VALUES (?, ?, 0)', copy.id, deletion.deletedAt);
+        this.attachments.removeConversation(copy.id);
+        this.searchIndex.remove(copy.id);
+      }
       this.searchIndex.remove(id);
       this.attachments.removeConversation(id);
       await this.ctx.storage.setAlarm(Date.now() + 1000);
@@ -136,6 +155,10 @@ export class Library extends DurableObject<Env> {
     });
   }
   async alarm() {
+    for (const copy of this.copies.pending()) if (!this.copies.active.has(copy.id) || copy.lease <= Date.now()) {
+      this.copies.fail(copy.id, new HttpError(copy.lease <= Date.now() ? 408 : 409, copy.lease <= Date.now() ? '复制超过 10 分钟，请重新尝试。' : '复制因实例中断而停止，请重新尝试。'));
+      await this.beginDelete(copy.id);
+    }
     await this.attachments.cleanup();
     const pending = this.ctx.storage.sql.exec<Deletion>('SELECT * FROM conversation_deletions WHERE completed = 0 LIMIT 16').toArray();
     let failed = false;
@@ -164,10 +187,86 @@ export class Library extends DurableObject<Env> {
       const indexing = this.ctx.storage.sql.exec<{ nextAt: number }>('SELECT MIN(nextAt) AS nextAt FROM search_backfill WHERE done = 0 HAVING COUNT(*) > 0').toArray()[0];
       const cleanup = this.attachments.nextCleanup();
       const next = Math.min(deletion ? Date.now() + (failed ? 30_000 : 1000) : Infinity, indexing ? Math.max(Date.now() + 1000, indexing.nextAt) : Infinity,
-        cleanup === undefined ? Infinity : Math.max(Date.now() + 1000, cleanup));
+        cleanup === undefined ? Infinity : Math.max(Date.now() + 1000, cleanup), this.copies.nextMaintenance());
       if (Number.isFinite(next)) await this.ctx.storage.setAlarm(next); else await this.ctx.storage.deleteAlarm();
     });
   }
+  async duplicate(sourceId: string, id: string, messageId?: string): Promise<CopyResult> {
+    try {
+      const existing = this.copies.get(id);
+      if (existing) {
+        if (existing.sourceId !== sourceId || existing.messageId !== (messageId ?? null)) throw new HttpError(409, '此复制请求已用于其他来源。');
+        if (existing.status === 'completed') {
+          if (!this.get(id)) throw new HttpError(410, '这个副本已删除。');
+          return { id };
+        }
+        if (existing.status === 'failed') throw new HttpError(existing.errorStatus ?? 409, existing.error ?? '复制已停止，请重新尝试。');
+        const active = this.copies.active.get(id);
+        if (active) return await active;
+        this.copies.fail(id, new HttpError(409, '复制因实例中断而停止，请重新尝试。'));
+        await this.beginDelete(id);
+        throw new HttpError(409, '复制因实例中断而停止，请重新尝试。');
+      }
+      const source = this.get(sourceId);
+      if (!source) throw new HttpError(this.deletedAt(sourceId) ? 410 : 404, '找不到复制来源对话。');
+      if (this.internalConversation(id) || this.deletedAt(id)) throw new HttpError(409, '目标对话 ID 已被使用。');
+      if (this.ctx.storage.sql.exec<{ count: number }>('SELECT COUNT(*) AS count FROM conversations').one().count >= MAX_CONVERSATIONS) throw new HttpError(507, `空间最多保存 ${MAX_CONVERSATIONS} 个对话，请整理已有对话后再创建。`);
+      this.ctx.storage.transactionSync(() => {
+        this.copies.begin(id, sourceId, messageId);
+        const now = Date.now();
+        this.ctx.storage.sql.exec('INSERT INTO conversations VALUES (?, ?, ?, ?)', id, `${source.title} 副本`.slice(0, 80), now, now);
+      });
+      const promise = this.performCopy(source, id, messageId).finally(async () => { this.copies.active.delete(id); await this.scheduleMaintenance(); });
+      this.copies.active.set(id, promise);
+      this.ctx.waitUntil(promise);
+      return await promise;
+    } catch (error) { return { error: error instanceof HttpError ? error.message : '复制暂时无法完成，请重新尝试。', status: error instanceof HttpError ? error.status : 503 }; }
+  }
+  private async performCopy(source: ConversationInfo, id: string, messageId?: string): Promise<CopyResult> {
+    const check = () => {
+      this.copies.requireActive(id);
+      if (!this.get(source.id) || !this.internalConversation(id)) throw new HttpError(410, '复制来源或目标对话已删除。');
+    };
+    try {
+      await this.ctx.storage.sync(); await this.scheduleMaintenance(); check();
+      const response = await this.env.CONVERSATIONS.getByName(source.id).copySourceResponse(messageId); check();
+      if (!response.ok) { const failure = await response.json() as { error: string }; throw new HttpError(response.status, failure.error); }
+      const saved = await response.json() as { messages: BackupMessage[]; settings: ConversationSettings }; check();
+      const images = saved.messages.flatMap(messageImages), files = saved.messages.flatMap(messageFiles);
+      if (images.length || files.length) { await this.attachments.pinAttachments(source.id, images, files); check(); }
+      const required = new Set(saved.messages.flatMap(messageAttachments).map((file) => file.attachmentId));
+      const originals = this.env.ATTACHMENTS || this.attachments.hasSaved(source.id) ? this.attachments.list(source.id).filter((file) => file.status === 'ready' && (!messageId || required.has(file.id))) : [];
+      if ([...required].some((fileId) => !originals.some((file) => file.id === fileId))) throw new HttpError(409, '待复制附件不完整。');
+      const mapped = new Map<string, string>();
+      for (const file of originals) {
+        check(); const cloneId = crypto.randomUUID();
+        await this.attachments.clone(source.id, id, file.id, cloneId); check(); mapped.set(file.id, cloneId);
+      }
+      const messages = saved.messages.map((message) => ({ ...message, parts: message.parts.map((part) => (part.type === 'image' || part.type === 'file')
+        ? { ...part, attachmentId: mapped.get(part.attachmentId)! } : part) }));
+      const copiedImages = messages.flatMap(messageImages), copiedFiles = messages.flatMap(messageFiles);
+      if (copiedImages.length || copiedFiles.length) { await this.attachments.pinAttachments(id, copiedImages, copiedFiles); check(); }
+      const payload = JSON.stringify({
+        id: source.id, title: source.title, createdAt: source.createdAt, updatedAt: source.updatedAt, messages, settings: saved.settings,
+      });
+      if (new TextEncoder().encode(payload).byteLength > MAX_BACKUP_BYTES) throw new HttpError(413, '复制资料超过 12 MiB，请选择较短的分支。');
+      const restored = await this.env.CONVERSATIONS.getByName(id).restoreResponse(id, new Response(payload).body!); check();
+      if (!restored.ok) { const failure = await restored.json() as { error: string }; throw new HttpError(restored.status, failure.error); }
+      await restored.body?.cancel();
+      this.ctx.storage.transactionSync(() => {
+        check(); this.copies.complete(id); this.touch(id);
+        this.ctx.storage.sql.exec('INSERT OR IGNORE INTO search_backfill(conversationId) VALUES (?)', id);
+      });
+      await this.ctx.storage.sync(); return { id };
+    } catch (error) {
+      const stopped = this.copies.get(id);
+      const failure = stopped?.status === 'failed' ? new HttpError(stopped.errorStatus ?? 409, stopped.error ?? '复制已停止。')
+        : error instanceof HttpError ? error : new HttpError(503, '复制暂时无法完成，请重新尝试。');
+      this.copies.fail(id, failure); await this.beginDelete(id);
+      return { error: failure.message, status: failure.status };
+    }
+  }
+  copyStopped(id: string) { return this.copies.get(id)?.status === 'failed'; }
   private providerSettingsData(): ProviderSettingsInput {
     const preferences = this.ctx.storage.sql.exec<{
       activeProviderId: string | null; activeModel: string; systemPrompt: string; maxOutputTokens: number; showReasoning: number;

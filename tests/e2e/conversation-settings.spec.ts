@@ -95,7 +95,7 @@ test('conversation settings validate, inherit and pin task configuration, and su
     const packets = await replay(request, fixture.id);
     const changes = packets.filter((packet) => packet.type === 'change' && packet.settings);
     expect(changes.at(-1)).toMatchObject({ settings: later });
-    const copied = await request.post(`/api/conversations/${fixture.id}/duplicate`, { headers }).then((response) => response.json()); copies.push(copied.id);
+    const copied = await request.post(`/api/conversations/${fixture.id}/duplicate`, { headers, data: { requestId: crypto.randomUUID() } }).then((response) => response.json()); copies.push(copied.id);
     expect(copied.snapshot.settings).toEqual(later);
     const backup = await request.get(`/api/conversations/${fixture.id}/backup`).then((response) => response.json());
     expect(backup.conversation.settings).toEqual(later);

@@ -131,7 +131,7 @@ test('distinct concurrent automatic requests accept only one paid pipeline, and 
     const responses = await Promise.all([fixture.submit(automaticInput(fixture, 'benchmark-summary-slow')), fixture.submit(automaticInput(fixture, 'benchmark-summary-slow'))]);
     expect(responses.map((response) => response.status()).sort()).toEqual([202, 409]);
     const task = await responses.find((response) => response.status() === 202)!.json() as Submission;
-    const copied = await request.post(`/api/conversations/${fixture.id}/duplicate`, { headers }); expect(copied.status()).toBe(201);
+    const copied = await request.post(`/api/conversations/${fixture.id}/duplicate`, { headers, data: { requestId: crypto.randomUUID() } }); expect(copied.status()).toBe(201);
     const { id, snapshot } = await copied.json() as { id: string; snapshot: Snapshot }; fixture.ids.push(id);
     const summary = snapshot.messages.find((message) => message.summary)!;
     expect(summary).toMatchObject({ status: 'failed', summary: { automatic: true } });
@@ -358,7 +358,7 @@ test('copies and backups remap coverage and generation references; deleting a so
       expect(originals.find((message) => message.role === 'assistant' && message.status === 'cancelled')!.generation!.context!.summaryId).toBe(copiedSummary.id);
       expect(snapshot.settings!.useSummaries).toBe(true);
     };
-    const copied = await request.post(`/api/conversations/${fixture.id}/messages/${answer.assistantId}/duplicate`, { headers }); expect(copied.status()).toBe(201);
+    const copied = await request.post(`/api/conversations/${fixture.id}/messages/${answer.assistantId}/duplicate`, { headers, data: { requestId: crypto.randomUUID() } }); expect(copied.status()).toBe(201);
     const copy = await copied.json() as { id: string; snapshot: Snapshot }; fixture.ids.push(copy.id); checkCopy(copy.snapshot);
     expect(copy.snapshot.messages.some((message) => messageText(message) === '另一个话题')).toBe(false);
     const backup = await request.get(`/api/conversations/${fixture.id}/backup`).then((response) => response.json()) as EverChatBackup;

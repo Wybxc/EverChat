@@ -1,6 +1,6 @@
 # 对话文件与 R2 存储
 
-阶段 4 第 1 项提供对话文件管理：上传、进度、取消、下载、删除和跨设备列表。文件管理保存 PNG／JPEG／WebP、TXT／Markdown／代码／CSV 和 PDF 原文件。阶段 4 第 2 项另有聊天中的[图片输入](images.md)，可上传、粘贴、预览并交给视觉模型；阶段 4 第 3 项另有[轻量文本文件输入](documents.md)，第 4 项另有 [PDF 文本输入](pdf.md)；附件复制／备份按后续步骤实现。
+阶段 4 第 1 项提供对话文件管理：上传、进度、取消、下载、删除和跨设备列表。文件管理保存 PNG／JPEG／WebP、TXT／Markdown／代码／CSV 和 PDF 原文件。阶段 4 第 2 项另有聊天中的[图片输入](images.md)，可上传、粘贴、预览并交给视觉模型；阶段 4 第 3 项另有[轻量文本文件输入](documents.md)，第 4 项另有 [PDF 文本输入](pdf.md)；[独立附件复制](attachment-copies.md)已实现，包含文件的备份随后接入。
 
 ## 使用与部署
 
@@ -49,4 +49,4 @@ pnpm exec wrangler r2 bucket create everchat-attachments --storage-class Standar
 
 `tests/attachments.test.ts` 检查元数据和允许类型；`tests/e2e/attachments.spec.ts` 使用原生本地 R2、SQLite、DO Alarm 和浏览器，验证 5 MiB 上限文件的精确字节及 Unicode、校验失败、鉴权及跨域拒绝、跨设备读取、幂等上传、过期回收、配额并发、R2 写入后实例重置、清理与上传交错、删除失败后实例重置及定时重试、未配置存储、上传取消、进度、草稿／URL 保留、移动端长列表和焦点恢复。
 
-完整检查点结果记录在 [功能路线图](serverless-feature-roadmap.md) 中。图片、文本与 PDF 检查点另已覆盖接受后的后台任务、私有预览和引用；后续阶段继续扩展独立复制及包含文件的备份语义。
+完整检查点结果记录在 [功能路线图](serverless-feature-roadmap.md) 中。图片、文本与 PDF 检查点另已覆盖接受后的后台任务、私有预览和引用；独立复制的引用与中断清理已接入，后续继续扩展包含文件的备份语义。

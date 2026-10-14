@@ -102,6 +102,10 @@ export class Conversation extends DurableObject<Env> {
     // Read settings and the durable prefix together; never copy browser-only previews or start a generation.
     return { messages: messages.map((message) => backupMessage(this.materialize(message))), settings: this.settings() };
   }
+  copySourceResponse(headId?: string) {
+    const result = this.copySource(headId);
+    return json(result, 'error' in result ? result.status : 200);
+  }
   settings(): ConversationSettings {
     const row = this.query<{ payload: string }>('SELECT payload FROM conversation_settings WHERE id = 1').toArray()[0];
     return { ...DEFAULT_CONVERSATION_SETTINGS, ...(row ? JSON.parse(row.payload) as ConversationSettings : {}) };
@@ -143,17 +147,32 @@ export class Conversation extends DurableObject<Env> {
       ...(!source.deletedAt && source.role === 'assistant' && source.generation ? { generation: copiedGeneration(source) } : {}),
       ...(source.summary ? { summary: { ...source.summary, throughId: ids.get(source.summary.throughId)!, sourceIds: source.summary.sourceIds.map((id) => ids.get(id)!) } } : {}),
     }));
-    const change = this.ctx.storage.transactionSync(() => {
+    const batches: Message[][] = [], settings = backup.settings ?? DEFAULT_CONVERSATION_SETTINGS;
+    const overhead = payloadBytes(JSON.stringify(settings)) + 64;
+    let batch: Message[] = [], bytes = overhead;
+    for (const message of messages) {
+      const size = payloadBytes(JSON.stringify(message)) + 1;
+      if (size + overhead > 1_000_000) return { error: '单条恢复消息过大。', status: 413 };
+      if (batch.length && bytes + size > 1_000_000) { batches.push(batch); batch = []; bytes = overhead; }
+      batch.push(message); bytes += size;
+    }
+    if (batch.length || !batches.length) batches.push(batch);
+    const changes = this.ctx.storage.transactionSync(() => {
       for (const message of messages) {
         this.insert(message);
         if (message.deletedAt) this.query('INSERT INTO message_deletions VALUES (?, ?)', message.id, message.deletedAt);
       }
-      this.writeSettings(backup.settings ?? DEFAULT_CONVERSATION_SETTINGS);
-      return this.record(messages, conversationId, this.settings());
+      this.writeSettings(settings);
+      return batches.map((batch) => this.record(batch, conversationId, settings));
     });
-    this.broadcast(change);
+    for (const change of changes) this.broadcast(change);
     this.updateSearchSoon();
     return this.snapshot();
+  }
+  async restoreResponse(conversationId: string, body: ReadableStream<Uint8Array>) {
+    const backup = await new Response(body).json() as ConversationBackup;
+    const result = this.restore(conversationId, backup);
+    return json(result, 'error' in result ? result.status : 200);
   }
   private rawMessage(id: string): Message | undefined {
     const row = this.query<Row>('SELECT messages.*, message_deletions.deletedAt, message_generations.payload AS generationResult, message_summaries.payload AS summaryResult, message_images.payload AS imageResult, message_files.payload AS fileResult, run_dependencies.summaryId AS waitingForSummary FROM messages LEFT JOIN message_deletions ON message_deletions.id = messages.id LEFT JOIN message_generations ON message_generations.messageId = messages.id LEFT JOIN message_summaries ON message_summaries.messageId = messages.id LEFT JOIN message_images ON message_images.messageId = messages.id LEFT JOIN message_files ON message_files.messageId = messages.id LEFT JOIN run_dependencies ON run_dependencies.runId = messages.runId WHERE messages.id = ?', id).toArray()[0];

@@ -12,7 +12,7 @@ import 'katex/dist/katex.min.css';
 import type { PluginConfig } from 'streamdown';
 import { isActive, type ConversationInfo, type ConversationSettings, type LibrarySnapshot, type Message, type ModelSelection, type ProviderSettings, type ReasoningEffort, type SessionInfo, type Submission, type SubmitInput } from '../shared/types';
 import { api, ApiError } from './api';
-import { clearLocal, deletedAt, markConversationDeleted, read, write, writePending, type Pending } from './storage';
+import { clearLocal, deletedAt, markConversationDeleted, read, storageEpoch, write, writePending, type Pending } from './storage';
 import { useConversation } from './useConversation';
 import { ProviderSettingsPanel, type SettingsTab } from './ProviderSettings';
 import { GenerationMetadata } from './GenerationMetadata';
@@ -729,7 +729,16 @@ export function App() {
     if (!selected) return;
     const sourceId = selected;
     const path = messageId ? `/messages/${messageId}/duplicate` : '/duplicate';
-    const result = await api<{ id: string }>(`/conversations/${sourceId}${path}`, 'POST');
+    const epoch = storageEpoch(), key = `copy:${sourceId}:${messageId ?? 'all'}`, requestId = read<string | null>(key, null) ?? crypto.randomUUID();
+    write(key, requestId);
+    let result: { id: string };
+    try { result = await api<{ id: string }>(`/conversations/${sourceId}${path}`, 'POST', { requestId }); }
+    catch (error) {
+      if (epoch === storageEpoch() && error instanceof ApiError && (error.code === 'copy-stopped' || error.status >= 400 && error.status < 500)) write(key, null);
+      throw error instanceof ApiError ? error : new Error('复制结果未确认，请重试查看结果。');
+    }
+    if (epoch !== storageEpoch()) return;
+    write(key, null);
     refreshLibrary();
     if (selectedRef.current === sourceId) select(result.id);
   };

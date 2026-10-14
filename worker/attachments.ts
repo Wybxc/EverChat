@@ -40,6 +40,9 @@ export class AttachmentStore {
     if (!this.exists(conversationId)) throw new HttpError(410, '对话不存在或已删除。');
     return this.storage.sql.exec<Row>('SELECT * FROM attachments WHERE conversationId = ? AND removed = 0 ORDER BY createdAt, id', conversationId).toArray().map((row) => this.public(row));
   }
+  hasSaved(conversationId: string) {
+    return Boolean(this.storage.sql.exec("SELECT id FROM attachments WHERE conversationId = ? AND removed = 0 AND status = 'ready' LIMIT 1", conversationId).toArray().length);
+  }
   images(conversationId: string, ids: string[]): ImagePart[] {
     this.configuredBucket();
     if (ids.length > MAX_MESSAGE_IMAGES || new Set(ids).size !== ids.length) throw new HttpError(400, '每条消息最多添加 4 张不同的图片。');
@@ -71,6 +74,24 @@ export class AttachmentStore {
     await this.storage.sync();
   }
   usage(id: string) { return this.storage.sql.exec<{ token: string }>('SELECT token FROM attachment_usage WHERE id = ?', id).toArray()[0]?.token; }
+  async clone(sourceId: string, targetId: string, id: string, cloneId: string) {
+    const source = this.require(sourceId, id);
+    if (source.status !== 'ready') throw new HttpError(409, '待复制文件尚未保存完成。');
+    const parsed = this.documents.parsedReference(sourceId, id);
+    const document = parsed ? await this.documents.read(sourceId, id) : undefined;
+    this.register(targetId, { id: cloneId, name: source.name, size: source.size, mediaType: source.mediaType, sha256: source.sha256 });
+    const response = await this.response(sourceId, id);
+    if (!response.body) throw new HttpError(503, '待复制文件内容不可用。');
+    try { await this.upload(targetId, cloneId, response.body); }
+    finally { await response.body.cancel().catch(() => {}); }
+    this.require(sourceId, id);
+    if (document) {
+      const result = await this.documents.parse(targetId, cloneId, document.file.pdf
+        ? { sourceSha256: source.sha256, text: document.text, pdf: document.file.pdf } : undefined);
+      if (JSON.stringify({ ...result, attachmentId: id }) !== JSON.stringify(document.file)) throw new HttpError(409, '复制后的解析资料与原文件不符。');
+    }
+    this.require(sourceId, id); this.require(targetId, cloneId);
+  }
   register(conversationId: string, input: AttachmentInput): Attachment {
     this.configuredBucket();
     if (!this.exists(conversationId)) throw new HttpError(410, '对话不存在或已删除。');

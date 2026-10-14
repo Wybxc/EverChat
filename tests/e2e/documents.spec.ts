@@ -66,7 +66,8 @@ for (const provider of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
       const anonymous = await browser.newContext();
       try { expect((await anonymous.request.get(documentUrl(fixture.id, file.attachmentId))).status()).toBe(401); } finally { await anonymous.close(); }
       expect((await request.get(`/api/conversations/${fixture.id}/backup`)).status()).toBe(409);
-      expect((await request.post(`/api/conversations/${fixture.id}/duplicate`, { headers })).status()).toBe(409);
+      const copy = await request.post(`/api/conversations/${fixture.id}/duplicate`, { headers, data: { requestId: crypto.randomUUID() } });
+      expect(copy.status()).toBe(201); await request.delete(`/api/conversations/${(await copy.json()).id}`, { headers });
     } finally { await first.close(); await second.close(); await fixture.cleanup(); }
   });
 }

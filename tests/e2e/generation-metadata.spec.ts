@@ -46,7 +46,7 @@ for (const protocol of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
       expect((await second.request.get(`/api/conversations/${fixture.id}`).then((response) => response.json())).messages[1].generation).toEqual(generation);
       const backup = await page.request.get(`/api/conversations/${fixture.id}/backup`).then((response) => response.json()) as EverChatBackup;
       expect(backup.conversation.messages[1].generation).toEqual(generation);
-      const copy = await page.request.post(`/api/conversations/${fixture.id}/duplicate`, { headers }).then((response) => response.json()); extra.push(copy.id);
+      const copy = await page.request.post(`/api/conversations/${fixture.id}/duplicate`, { headers, data: { requestId: crypto.randomUUID() } }).then((response) => response.json()); extra.push(copy.id);
       expect((await page.request.get(`/api/conversations/${copy.id}`).then((response) => response.json())).messages[1].generation).toEqual(generation);
       const response = await page.request.post('/api/backup/restore', { headers, data: backup }); expect(response.status()).toBe(201);
       const restored = await response.json(); extra.push(restored.id);
