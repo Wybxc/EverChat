@@ -13,6 +13,8 @@ import { GenerationCancelled, ProviderError } from './generation-errors';
 import { GenerationBuffer } from './generation-buffer';
 import { json } from './http';
 import { DATABASE_LIMIT_MESSAGE, HISTORY_LIMIT_MESSAGE, MAX_DATABASE_BYTES, MAX_DATABASE_START_BYTES, MAX_DATABASE_WRITE_BYTES, MAX_HISTORY_START_BYTES, MAX_MESSAGES, storageErrorMessage } from './resource-limits';
+import type { SearchDocument, SearchPage } from '../shared/search';
+import { searchRetryDelay } from './search-index';
 
 type Row = Message & { generationResult: string | null } & Record<string, SqlStorageValue>;
 type Run = { id: string; conversationId: string; assistantId: string; context: string; config: string | null; chunkSeq: number; updatedAt: number;
@@ -30,6 +32,7 @@ export class Conversation extends DurableObject<Env> {
   private activeGeneration?: ActiveGeneration;
   private deletedAt: number | null = null;
   private deletionCleaned = false;
+  private searchFlush?: Promise<boolean>;
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     initializeConversation(ctx.storage.sql, env.GENERATION_METRICS === '1');
@@ -82,8 +85,60 @@ export class Conversation extends DurableObject<Env> {
     // RPC transfers a Response body as a stream, keeping history decoding and JSON work out of the Free Worker.
     return json(this.snapshot());
   }
-  private record(messages: Message[]): Change {
-    return { type: 'change', seq: this.recordPayload(JSON.stringify(messages)), messages };
+  private record(messages: Message[], conversationId?: string): Change {
+    const seq = this.recordPayload(JSON.stringify(messages));
+    if (conversationId) for (const message of messages) if (!isActive(message)) {
+      this.query('INSERT INTO message_search_versions VALUES (?, ?) ON CONFLICT(messageId) DO UPDATE SET version = excluded.version', message.id, seq);
+      this.query('INSERT INTO search_outbox VALUES (?, ?, ?) ON CONFLICT(messageId) DO UPDATE SET version = excluded.version', message.id, conversationId, seq);
+    }
+    return { type: 'change', seq, messages };
+  }
+  private searchDocument(message: Message, version: number): SearchDocument {
+    return { messageId: message.id, version, role: message.role, content: message.content, reasoning: message.reasoning ?? '' };
+  }
+  searchDocumentPage(after: number): SearchPage {
+    if (this.deletedAt) return { documents: [], after, done: true };
+    const rows = this.query<Row & { ordinal: number; version: number }>(`SELECT messages.*, messages.rowid AS ordinal, COALESCE(message_search_versions.version, 0) AS version, NULL AS generationResult
+      FROM messages LEFT JOIN message_search_versions ON message_search_versions.messageId = messages.id WHERE messages.rowid > ? ORDER BY messages.rowid LIMIT 5`, after).toArray();
+    const page = rows.slice(0, 4);
+    return { documents: page.filter((row) => !isActive(row)).map((row) => this.searchDocument(row, row.version)), after: page.at(-1)?.ordinal ?? after, done: rows.length <= 4 };
+  }
+  private flushSearchIndex(): Promise<boolean> {
+    if (this.searchFlush) return this.searchFlush;
+    const flush = async () => {
+      if (this.deletedAt) return true;
+      const retry = this.query<{ attempts: number; nextAt: number }>('SELECT attempts, nextAt FROM search_retry WHERE id = 1').toArray()[0];
+      if (retry && retry.nextAt > Date.now()) return false;
+      try {
+        const pending = this.query<{ messageId: string; conversationId: string; version: number }>('SELECT * FROM search_outbox ORDER BY version LIMIT 4').toArray();
+        for (const item of pending) {
+          const message = this.rawMessage(item.messageId);
+          if (!message || this.deletedAt) continue;
+          await this.env.LIBRARY.getByName('personal').applySearchDocuments(item.conversationId, [this.searchDocument(message, item.version)]);
+          if (this.deletedAt) return true;
+          this.query('DELETE FROM search_outbox WHERE messageId = ? AND version = ?', item.messageId, item.version);
+        }
+        this.query('DELETE FROM search_retry WHERE id = 1');
+        return true;
+      } catch {
+        if (this.deletedAt) return true;
+        const attempts = (retry?.attempts ?? 0) + 1;
+        this.query('INSERT INTO search_retry VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET attempts = excluded.attempts, nextAt = excluded.nextAt', attempts, Date.now() + searchRetryDelay(attempts));
+        console.warn('EverChat search update will retry'); return false;
+      }
+    };
+    this.searchFlush = flush().finally(() => { this.searchFlush = undefined; });
+    return this.searchFlush;
+  }
+  private updateSearchSoon() {
+    this.ctx.waitUntil((async () => {
+      const success = await this.flushSearchIndex();
+      await this.ctx.storage.transaction(async () => {
+        if (this.deletedAt || !this.query('SELECT messageId FROM search_outbox LIMIT 1').toArray().length) return;
+        const next = success ? Date.now() + 1000 : this.query<{ nextAt: number }>('SELECT nextAt FROM search_retry WHERE id = 1').toArray()[0]?.nextAt ?? Date.now() + 30_000, alarm = await this.ctx.storage.getAlarm();
+        if (alarm === null || alarm > next) await this.ctx.storage.setAlarm(next);
+      });
+    })());
   }
   private recordPayload(payload: string): number {
     this.meter?.event(payload);
@@ -190,18 +245,19 @@ export class Conversation extends DurableObject<Env> {
       this.query('INSERT INTO runs (id, conversationId, assistantId, context, chunkSeq, updatedAt, config, streamVersion, executor) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)',
         runId, conversationId, assistant.id, JSON.stringify(context), Date.now(), JSON.stringify(config), STREAM_VERSION, 'do-v1');
       this.query('INSERT INTO submissions VALUES (?, ?, ?)', input.requestId, fingerprint, JSON.stringify(result));
-      const change = this.record(parent ? [this.rawMessage(assistant.id)!] : [this.rawMessage(user.id)!, this.rawMessage(assistant.id)!]);
+      const change = this.record(parent ? [this.rawMessage(assistant.id)!] : [this.rawMessage(user.id)!, this.rawMessage(assistant.id)!], conversationId);
       // The outbox, input/configuration and its alarm commit together before acceptance.
       await this.ctx.storage.setAlarm(Date.now() + 1000);
       return { result, change };
     });
-    if ('change' in accepted) { this.broadcast(accepted.change); return accepted.result; }
+    if ('change' in accepted) { this.broadcast(accepted.change); this.updateSearchSoon(); return accepted.result; }
     return accepted;
   }
   async alarm() {
     if (this.deletedAt) return;
     // An RPC re-entry during a live alarm never starts a second upstream call.
     if (this.activeGeneration) return;
+    const searchSuccess = await this.flushSearchIndex();
     for (const run of this.query<Run>(`SELECT runs.* FROM runs JOIN messages ON messages.id = runs.assistantId WHERE messages.status IN ('queued', 'running')`).toArray()) {
       const deletion = await this.env.LIBRARY.getByName('personal').deletedAt(run.conversationId);
       if (this.deletedAt) return;
@@ -219,6 +275,7 @@ export class Conversation extends DurableObject<Env> {
       if (this.deletedAt) return;
       const pending = this.query<Run>(`SELECT runs.* FROM runs JOIN messages ON messages.id = runs.assistantId WHERE messages.status IN ('queued', 'running')`).toArray();
       if (pending.length) await this.ctx.storage.setAlarm(Date.now() + 1000);
+      else if (this.query('SELECT messageId FROM search_outbox LIMIT 1').toArray().length) await this.ctx.storage.setAlarm(searchSuccess ? Date.now() + 1000 : this.query<{ nextAt: number }>('SELECT nextAt FROM search_retry WHERE id = 1').toArray()[0]?.nextAt ?? Date.now() + 30_000);
       else await this.ctx.storage.deleteAlarm();
     });
   }
@@ -353,11 +410,12 @@ export class Conversation extends DurableObject<Env> {
       if (message.generation) this.query('INSERT INTO generation_results (runId, payload) VALUES (?, ?)', runId, JSON.stringify(message.generation));
       this.query('UPDATE messages SET status = ?, error = ? WHERE id = ?', status, error, message.id);
       this.query("UPDATE runs SET config = NULL, context = '[]' WHERE id = ?", runId);
-      const terminal = this.record([this.message(message.id)!]);
+      const terminal = this.record([this.message(message.id)!], run.conversationId);
       if (this.ctx.storage.sql.databaseSize > MAX_DATABASE_BYTES) throw new ProviderError(DATABASE_LIMIT_MESSAGE);
       return terminal;
     });
     this.broadcast(change);
+    this.updateSearchSoon();
     if (this.meter?.runId === runId) {
       const final = this.message(message.id)!;
       const report = this.meter.report(status, this.ctx.storage.sql.databaseSize, final.content.length, final.reasoning?.length ?? 0);

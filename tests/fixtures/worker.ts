@@ -9,6 +9,22 @@ import type { ProviderKind } from '../../shared/types';
 import { MAX_CONVERSATIONS, MAX_DATABASE_BYTES } from '../../worker/resource-limits';
 
 export class Library extends ProductionLibrary {
+  override applySearchDocuments(id: string, documents: Parameters<ProductionLibrary['applySearchDocuments']>[1]) {
+    this.ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS fixture_index_fault (id INTEGER PRIMARY KEY, enabled INTEGER)');
+    if (this.ctx.storage.sql.exec<{ enabled: number }>('SELECT enabled FROM fixture_index_fault WHERE id = 1').toArray()[0]?.enabled) throw new Error('Injected index RPC failure');
+    return super.applySearchDocuments(id, documents);
+  }
+  async fixtureSearchControl(id?: string, fail?: boolean, rebuild?: boolean) {
+    this.ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS fixture_index_fault (id INTEGER PRIMARY KEY, enabled INTEGER)');
+    if (fail !== undefined) this.ctx.storage.sql.exec('INSERT INTO fixture_index_fault VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET enabled = excluded.enabled', Number(fail));
+    if (id && rebuild) {
+      this.ctx.storage.sql.exec('INSERT INTO search_backfill(conversationId, after, done) VALUES (?, 0, 0) ON CONFLICT(conversationId) DO UPDATE SET after = 0, done = 0, nextAt = 0, attempts = 0', id);
+      await this.ctx.storage.setAlarm(Date.now() + 1000);
+    }
+    return { fields: this.ctx.storage.sql.exec<{ count: number }>('SELECT COUNT(*) AS count FROM search_fields').one().count,
+      versions: this.ctx.storage.sql.exec('SELECT messageId, version FROM search_messages WHERE conversationId = ?', id ?? '').toArray(),
+      progress: this.ctx.storage.sql.exec('SELECT * FROM search_backfill WHERE conversationId = ?', id ?? '').toArray()[0] ?? null };
+  }
   fixtureDeletionHistory(count: number) {
     if (!Number.isInteger(count) || count < 0 || count > 600) throw new Error('Invalid deletion fixture count');
     this.ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS fixture_deletion_ids (id TEXT PRIMARY KEY)');
@@ -44,6 +60,18 @@ export class Library extends ProductionLibrary {
 }
 
 export class Conversation extends ProductionConversation {
+  async fixtureSearchState(reset: boolean) {
+    if (reset) { await this.ctx.storage.sync(); this.ctx.abort('Intentional index reset', { retryAlarm: true }); }
+    return { pending: this.ctx.storage.sql.exec('SELECT * FROM search_outbox').toArray(), retry: this.ctx.storage.sql.exec('SELECT * FROM search_retry').toArray()[0] ?? null, alarmAt: await this.ctx.storage.getAlarm() };
+  }
+  fixtureIndexedHistory(count: number) {
+    if (!Number.isInteger(count) || count < 1 || count > 60) throw new Error('Invalid indexed history count');
+    if (this.ctx.storage.sql.exec('SELECT id FROM messages LIMIT 1').toArray().length) throw new Error('Seed only empty conversation');
+    this.ctx.storage.transactionSync(() => {
+      for (let i = 0; i < count; i++) this.ctx.storage.sql.exec('INSERT INTO messages(id, role, content, reasoning, status, createdAt, runId) VALUES (?, ?, ?, ?, ?, ?, NULL)',
+        crypto.randomUUID(), 'assistant', `全文TOKEN 第 ${i} 条，跨越 **格式** 搜索。Unicode ÅBC 😀 中文，literal*mark [a+b]。`, `独立思考 ${i}`, 'completed', i);
+    });
+  }
   private failNextCommit = false;
   private failDelete = false;
   private resetDelete = false;
@@ -123,6 +151,7 @@ export class Conversation extends ProductionConversation {
     return { ...run, calls };
   }
   fixtureReenterAlarm() { return this.alarm(); }
+  fixtureRetrySearch() { this.ctx.storage.sql.exec('UPDATE search_retry SET nextAt = 0'); return this.alarm(); }
   async fixtureAbort(runId: string, stopping: boolean) {
     if (stopping) this.ctx.storage.sql.exec('UPDATE runs SET cancelRequested = 1 WHERE id = ?', runId);
     await this.ctx.storage.sync();
@@ -187,14 +216,26 @@ export default {
       if (begin) return Response.json(await library.beginDelete(id));
       return Response.json({ deletedAt: await library.deletedAt(id), calls: await library.fixtureSupplierCalls(id) });
     }
-    const match = /^\/api\/__test\/conversations\/([0-9a-f-]{36})\/(state|alarm|abort|abort-stop|history|search-history|fill|resources|storage-error|delete-failure|delete-reset|deletion-state|late-submit)$/.exec(url.pathname);
+    if (url.pathname === '/api/__test/library/search') {
+      if (request.method !== 'POST' || request.headers.get('Origin') !== url.origin) return new Response('Forbidden', { status: 403 });
+      if (!await authenticated(request, env)) return new Response('Unauthorized', { status: 401 });
+      const { id, fail, rebuild } = await request.json() as { id?: string; fail?: boolean; rebuild?: boolean };
+      return Response.json(await (env.LIBRARY as unknown as DurableObjectNamespace<Library>).getByName('personal').fixtureSearchControl(id, fail, rebuild));
+    }
+    const match = /^\/api\/__test\/conversations\/([0-9a-f-]{36})\/(state|alarm|abort|abort-stop|history|search-history|indexed-history|search-state|search-reset|search-retry|fill|resources|storage-error|delete-failure|delete-reset|deletion-state|late-submit)$/.exec(url.pathname);
     if (!match) return production.fetch(request, env, ctx);
     if (request.method !== 'POST' || request.headers.get('Origin') !== url.origin) return new Response('Forbidden', { status: 403 });
     if (!await authenticated(request, env)) return new Response('Unauthorized', { status: 401 });
-    const { runId, pairs, target } = await request.json() as { runId: string; pairs: number; target: number };
+    const { runId, pairs, target, count } = await request.json() as { runId: string; pairs: number; target: number; count: number };
     const conversation = (env.CONVERSATIONS as unknown as DurableObjectNamespace<Conversation>).getByName(match[1]);
     switch (match[2]) {
       case 'search-history': return Response.json(await conversation.fixtureSearchHistory());
+      case 'indexed-history': await conversation.fixtureIndexedHistory(count); break;
+      case 'search-state': return Response.json(await conversation.fixtureSearchState(false));
+      case 'search-retry': await conversation.fixtureRetrySearch(); break;
+      case 'search-reset':
+        try { await conversation.fixtureSearchState(true); } catch { return Response.json({ reset: true }, { status: 503 }); }
+        break;
       case 'late-submit': {
         const result = await conversation.submit(match[1], { requestId: runId, content: '迟到的 RPC' }, await env.LIBRARY.getByName('personal').providerConfig());
         return Response.json(result, { status: 'error' in result ? result.status : 202 });

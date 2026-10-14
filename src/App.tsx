@@ -13,6 +13,8 @@ import { useFollowScroll } from './useFollowScroll';
 import { conversationUrl, useConversationRoute } from './useConversationRoute';
 import { ConversationActions } from './ConversationActions';
 import { ConversationSearch } from './ConversationSearch';
+import { LibrarySearch } from './LibrarySearch';
+import type { SearchResult } from '../shared/search';
 
 const EMPTY_SESSION: SessionInfo = { authenticated: false, configured: false, provider: '', model: '' };
 const Streamdown = lazy(() => import('streamdown').then(({ Streamdown: Component }) => ({ default: Component })));
@@ -127,6 +129,7 @@ export function App() {
   const [sending, setSending] = useState(false);
   const { viewportRef, contentRef, viewport, content, atBottom, scrollToBottom } = useFollowScroll(selected);
   const [conversationSearchFor, setConversationSearchFor] = useState<string | null>(null);
+  const [searchJump, setSearchJump] = useState<{ id: string; query: string; key: string; token: number } | null>(null);
   const searchTrigger = useRef<HTMLButtonElement>(null);
   const editor = useRef<HTMLTextAreaElement>(null);
   const mobileSidebarTrigger = useRef<HTMLButtonElement>(null);
@@ -164,9 +167,9 @@ export function App() {
   const { snapshot, durableSnapshot, hasUnconfirmed, connection, syncedAt, loading, syncError, reconnect } = useConversation(selected, Boolean(session?.authenticated), loggedOut, Boolean(currentPending && !currentPending.error), rememberDeletion, selected ? deletedAt(selected) : null);
   const active = snapshot.messages.find(isActive);
   const canSearch = Boolean(selected && snapshot.messages.length && !snapshot.deletedAt && session?.authenticated);
-  const searchOpen = canSearch && conversationSearchFor === selected;
-  const closeConversationSearch = () => { setConversationSearchFor(null); searchTrigger.current?.focus(); };
-  useEffect(() => { setConversationSearchFor(null); }, [selected]);
+  const searchOpen = canSearch && (conversationSearchFor === selected || searchJump?.id === selected);
+  const closeConversationSearch = () => { setConversationSearchFor(null); setSearchJump(null); searchTrigger.current?.focus(); };
+  useEffect(() => { setConversationSearchFor(null); setSearchJump((current) => current?.id === selected ? current : null); }, [selected]);
   useEffect(() => {
     const find = (event: KeyboardEvent) => {
       if (canSearch && !event.isComposing && (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'f' && !document.querySelector('dialog[open]')) {
@@ -223,7 +226,7 @@ export function App() {
     if (libraryQuery.error instanceof ApiError && libraryQuery.error.status === 401) loggedOut();
     if (libraryQuery.data) { setLocalConversations(libraryQuery.data); write('library', libraryQuery.data); }
   }, [libraryQuery.data, libraryQuery.error, loggedOut]);
-  const refreshLibrary = useCallback(() => { void queryClient.invalidateQueries({ queryKey: ['conversations'] }); }, [queryClient]);
+  const refreshLibrary = useCallback(() => { void queryClient.invalidateQueries({ queryKey: ['conversations'] }); void queryClient.invalidateQueries({ queryKey: ['body-search'] }); }, [queryClient]);
 
   const commitPending = (items: Pending[]) => {
     items = items.filter((item) => !deletedAt(item.conversation.id));
@@ -272,8 +275,13 @@ export function App() {
   }, [draft]);
   const updateDraft = (text: string) => { setDraft(text); write(`draft:${selected ?? 'new'}`, { text, revisionOf }); };
   const select = (id: string | null) => {
+    setSearchJump(null);
     navigate(id); setSidebarOpen(false);
     requestAnimationFrame(() => editor.current?.focus());
+  };
+  const openSearchResult = (result: SearchResult, query: string) => {
+    navigate(result.conversationId); setSidebarOpen(false);
+    setSearchJump({ id: result.conversationId, query, key: `${result.messageId}:${result.field}`, token: Date.now() });
   };
   const closeSidebar = () => {
     setSidebarOpen(false);
@@ -361,7 +369,7 @@ export function App() {
     <aside className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} fixed inset-y-0 left-0 z-40 flex w-70 shrink-0 flex-col border-r border-base-content/50 bg-base-200 transition-transform lg:static lg:translate-x-0`}>
       <div className="flex items-center justify-between px-6 pt-7 pb-8"><Brand small /><button className="btn btn-ghost btn-sm btn-square lg:hidden" aria-label="收起侧栏" onClick={closeSidebar}><X size={18} /></button></div>
       <div className="px-4"><button className="btn h-11 w-full justify-between border-base-content/50 bg-base-100 px-4 text-sm font-medium" onClick={() => select(null)}><span className="flex items-center gap-2.5"><Plus size={17} />开启新对话</span><span><MessageCircle size={15} /></span></button></div>
-      <label className="input mx-4 mt-5 h-9 w-auto gap-2 border-base-content/50 bg-base-100"><Search size={14} /><input className="text-xs placeholder:text-base-content/60" placeholder="搜索你的对话" aria-label="搜索对话" value={search} onChange={(event) => setSearch(event.target.value)} /></label>
+      <label className="input mx-4 mt-5 h-9 w-auto gap-2 border-base-content/50 bg-base-100"><Search size={14} /><input className="text-xs placeholder:text-base-content/60" placeholder="搜索你的对话" aria-label="搜索对话" maxLength={200} value={search} onChange={(event) => setSearch(event.target.value)} /></label>
       <div className="flex-1 overflow-y-auto px-3 pt-6">
         <div role="tablist" className="tabs tabs-border tabs-sm mb-3"><input type="radio" role="tab" name="conversation-list" className="tab" aria-label="对话" aria-selected={!archivedList} checked={!archivedList} onChange={() => setArchivedList(false)} /><input type="radio" role="tab" name="conversation-list" className="tab" aria-label="归档" aria-selected={archivedList} checked={archivedList} onChange={() => setArchivedList(true)} /></div>
         <ul className="menu w-full gap-1 p-0 text-sm">
@@ -371,6 +379,7 @@ export function App() {
           }} aria-current={item.id === selected ? 'page' : undefined} className={`${item.id === selected ? 'menu-active bg-primary! text-primary-content! hover:bg-primary!' : ''} h-11 min-w-0 gap-3 rounded-lg px-3 font-normal`}><MessageCircle size={15} className="shrink-0" /><span className="truncate">{item.title}</span>{item.pinned && <Pin size={12} aria-hidden="true" className="shrink-0" />}{pending.some((p) => p.conversation.id === item.id) && <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />}</a></li>)}
         </ul>
         {!visibleConversations.length && <p className="px-3 text-xs text-base-content/60">{search ? '没有找到相关对话' : archivedList ? '暂无归档' : '暂无对话'}</p>}
+        {search.trim() && <LibrarySearch query={search} archived={archivedList} open={openSearchResult} />}
       </div>
       <button className="mx-3 mb-4 flex items-center gap-3 rounded-lg px-3 py-3 text-left hover:bg-base-300" onClick={openSettings}><span className="flex h-8 w-8 items-center justify-center rounded-full border border-base-content/50 bg-base-100 text-xs">我</span><span className="flex-1"><span className="block text-xs font-medium">私人空间</span></span><Settings size={16} /></button>
     </aside>
@@ -380,7 +389,7 @@ export function App() {
         <div className="flex min-w-0 items-center gap-3"><button ref={mobileSidebarTrigger} className="btn btn-ghost btn-sm btn-square lg:hidden" onClick={() => setSidebarOpen(true)} aria-label="打开对话列表"><Menu size={19} /></button><div className="min-w-0"><p className="truncate text-sm font-medium">{invalidRoute ? '页面不可用' : currentConversation?.title ?? (selected ? '对话' : '新对话')}</p><p className="mt-1 text-[10px] text-base-content/60">{selectedModel?.name || session.modelName || session.model || '未选择模型'}</p></div></div>
         <div className="flex shrink-0 items-center gap-3"><span aria-live="polite" className="hidden items-center gap-1.5 text-[11px] text-base-content/60 sm:flex" title={syncedAt ? `上次同步 ${new Date(syncedAt).toLocaleTimeString('zh-CN')}` : undefined}>{connection === 'offline' ? <CloudOff size={14} /> : <span className={`status status-xs ${connection === 'connected' && !hasUnconfirmed ? 'status-success' : 'status-warning'}`} />}{statusText}</span>{canSearch && <button ref={searchTrigger} type="button" aria-label="搜索当前对话" aria-expanded={searchOpen} aria-controls={searchOpen ? 'conversation-search' : undefined} title="搜索当前对话（Ctrl / ⌘ F）" className="btn btn-ghost btn-sm btn-square" onClick={() => searchOpen ? closeConversationSearch() : setConversationSearchFor(selected)}><Search size={16} /></button>}{currentConversation && <ConversationActions key={currentConversation.id} conversation={currentConversation} disabled={connection === 'offline'} update={updateConversation} remove={deleteConversation} />}{snapshot.messages.length > 0 && <button aria-label="导出对话" title="导出 Markdown" className="btn btn-ghost btn-sm btn-square" onClick={exportChat}><Download size={16} /></button>}<button aria-label="空间设置" className="btn btn-ghost btn-sm btn-square" onClick={openSettings}><Settings size={17} /></button></div>
       </header>
-      {searchOpen && <ConversationSearch key={selected} content={content} viewport={viewport} close={closeConversationSearch} />}
+      {searchOpen && <ConversationSearch key={`${selected}:${searchJump?.token ?? ''}`} content={content} viewport={viewport} close={closeConversationSearch} initial={searchJump ?? undefined} />}
       {connection === 'offline' && <div role="status" className="flex items-center justify-center gap-2 border-b border-base-content/50 bg-base-200 px-4 py-2 text-xs text-base-content"><WifiOff size={13} />你现在离线，已保存的对话仍可阅读。新消息将在联网后发送。</div>}
       <div ref={viewportRef} className="relative flex-1 overflow-y-auto">
         {welcome ? <section ref={contentRef} className="mx-auto flex min-h-full w-full max-w-3xl flex-col justify-center px-6 pt-8 pb-12 sm:px-10">

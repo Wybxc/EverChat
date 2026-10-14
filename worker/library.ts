@@ -3,6 +3,8 @@ import type { Env } from './env';
 import type { ConversationInfo, ModelSelection, ProviderConfig, ProviderModelConfig, ProviderSettings, ProviderSettingsInput, ReasoningEffort } from '../shared/types';
 import { defaultProviderSettings, mergeProviderSettings, publicProviderSettings, runtimeProviderConfig } from './provider-config';
 import { MAX_CONVERSATIONS } from './resource-limits';
+import { SearchIndex, SearchChanged, SEARCH_CAPACITY_MESSAGE, searchRetryDelay } from './search-index';
+import type { SearchDocument } from '../shared/search';
 
 type Deletion = { id: string; deletedAt: number; completed: number } & Record<string, SqlStorageValue>;
 const conversationSelect = `SELECT conversations.*, COALESCE(metadata.pinned, 0) AS pinned, COALESCE(metadata.archived, 0) AS archived
@@ -11,6 +13,7 @@ const conversationSelect = `SELECT conversations.*, COALESCE(metadata.pinned, 0)
 const decorate = (row: Record<string, SqlStorageValue>) => ({ ...row, pinned: Boolean(row.pinned), archived: Boolean(row.archived) }) as unknown as ConversationInfo;
 
 export class Library extends DurableObject<Env> {
+  private readonly searchIndex: SearchIndex;
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS conversations (id TEXT PRIMARY KEY, title TEXT NOT NULL, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL)`);
@@ -25,7 +28,36 @@ export class Library extends DurableObject<Env> {
       id INTEGER PRIMARY KEY CHECK (id = 1), activeProviderId TEXT, activeModel TEXT NOT NULL,
       systemPrompt TEXT NOT NULL, maxOutputTokens INTEGER NOT NULL, showReasoning INTEGER NOT NULL DEFAULT 0
     )`);
-
+    this.searchIndex = new SearchIndex(ctx.storage);
+    // Feature initialization reads existing messages in bounded pages, never on a search request.
+    ctx.storage.sql.exec(`INSERT OR IGNORE INTO search_backfill(conversationId) SELECT id FROM conversations
+      WHERE NOT EXISTS (SELECT 1 FROM conversation_deletions WHERE conversation_deletions.id = conversations.id)`);
+    ctx.waitUntil(this.scheduleMaintenance());
+  }
+  private async scheduleMaintenance() {
+    await this.ctx.storage.transaction(async () => {
+      const sql = this.ctx.storage.sql;
+      const pending = sql.exec<{ nextAt: number }>('SELECT MIN(nextAt) AS nextAt FROM search_backfill WHERE done = 0 HAVING COUNT(*) > 0').toArray()[0];
+      if (!pending) return;
+      const alarm = await this.ctx.storage.getAlarm();
+      const next = Math.max(Date.now() + 1000, pending.nextAt);
+      if (alarm === null || alarm > next) await this.ctx.storage.setAlarm(next);
+    });
+  }
+  applySearchDocuments(id: string, documents: SearchDocument[]) {
+    if (!this.get(id)) return;
+    try {
+      this.searchIndex.replace(id, documents);
+      this.ctx.storage.sql.exec('DELETE FROM search_problems WHERE conversationId = ?', id);
+    } catch (error) {
+      this.ctx.storage.sql.exec('INSERT INTO search_problems VALUES (?, ?) ON CONFLICT(conversationId) DO UPDATE SET error = excluded.error', id,
+        error instanceof Error && error.message === SEARCH_CAPACITY_MESSAGE ? SEARCH_CAPACITY_MESSAGE : '部分对话的索引尚未更新，请稍后重试。');
+      throw error;
+    }
+  }
+  search(query: string, archived: boolean, cursor?: string) {
+    try { return this.searchIndex.search(query, archived, cursor); }
+    catch (error) { if (error instanceof SearchChanged) return { error: error.message, status: 409 }; throw error; }
   }
   list(): ConversationInfo[] {
     return this.ctx.storage.sql.exec(`${conversationSelect} ORDER BY pinned DESC, updatedAt DESC, conversations.id`).toArray().map(decorate);
@@ -52,6 +84,8 @@ export class Library extends DurableObject<Env> {
     }
     const now = Date.now();
     this.ctx.storage.sql.exec('INSERT OR IGNORE INTO conversations VALUES (?, ?, ?, ?)', id, title, now, now);
+    this.ctx.storage.sql.exec('INSERT OR IGNORE INTO search_backfill(conversationId) VALUES (?)', id);
+    this.ctx.waitUntil(this.scheduleMaintenance());
     return this.get(id)!;
   }
   touch(id: string) { if (!this.deletedAt(id)) this.ctx.storage.sql.exec('UPDATE conversations SET updatedAt = ? WHERE id = ?', Date.now(), id); }
@@ -65,6 +99,7 @@ export class Library extends DurableObject<Env> {
         this.ctx.storage.sql.exec(`INSERT INTO conversation_metadata VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET pinned = excluded.pinned, archived = excluded.archived`,
           id, Number(patch.pinned ?? current.pinned), Number(patch.archived ?? current.archived));
       }
+      this.searchIndex.changed();
     });
     return this.get(id)!;
   }
@@ -74,6 +109,7 @@ export class Library extends DurableObject<Env> {
       if (existing?.completed) return existing;
       const deletion = existing ?? { id, deletedAt: Date.now(), completed: 0 };
       if (!existing) this.ctx.storage.sql.exec('INSERT INTO conversation_deletions VALUES (?, ?, 0)', id, deletion.deletedAt);
+      this.searchIndex.remove(id);
       await this.ctx.storage.setAlarm(Date.now() + 1000);
       return deletion;
     });
@@ -94,9 +130,25 @@ export class Library extends DurableObject<Env> {
         this.completeDelete(deletion.id);
       } catch { failed = true; console.warn('EverChat deletion cleanup will retry'); }
     }
+    const job = this.ctx.storage.sql.exec<{ conversationId: string; after: number; attempts: number }>('SELECT conversationId, after, attempts FROM search_backfill WHERE done = 0 AND nextAt <= ? ORDER BY nextAt, conversationId LIMIT 1', Date.now()).toArray()[0];
+    if (job) {
+      try {
+        const page = await this.env.CONVERSATIONS.getByName(job.conversationId).searchDocumentPage(job.after);
+        // Deletion may interleave while reading another object.
+        if (this.get(job.conversationId)) {
+          this.applySearchDocuments(job.conversationId, page.documents);
+          this.ctx.storage.sql.exec('UPDATE search_backfill SET after = ?, done = ?, attempts = 0, nextAt = 0 WHERE conversationId = ?', page.after, Number(page.done), job.conversationId);
+        }
+      } catch {
+        this.ctx.storage.sql.exec('UPDATE search_backfill SET attempts = attempts + 1, nextAt = ? WHERE conversationId = ?', Date.now() + searchRetryDelay(job.attempts + 1), job.conversationId);
+        console.warn('EverChat search initialization will retry');
+      }
+    }
     await this.ctx.storage.transaction(async () => {
-      if (this.ctx.storage.sql.exec('SELECT id FROM conversation_deletions WHERE completed = 0 LIMIT 1').toArray().length) await this.ctx.storage.setAlarm(Date.now() + (failed ? 30_000 : 1000));
-      else await this.ctx.storage.deleteAlarm();
+      const deletion = this.ctx.storage.sql.exec('SELECT id FROM conversation_deletions WHERE completed = 0 LIMIT 1').toArray().length;
+      const indexing = this.ctx.storage.sql.exec<{ nextAt: number }>('SELECT MIN(nextAt) AS nextAt FROM search_backfill WHERE done = 0 HAVING COUNT(*) > 0').toArray()[0];
+      const next = Math.min(deletion ? Date.now() + (failed ? 30_000 : 1000) : Infinity, indexing ? Math.max(Date.now() + 1000, indexing.nextAt) : Infinity);
+      if (Number.isFinite(next)) await this.ctx.storage.setAlarm(next); else await this.ctx.storage.deleteAlarm();
     });
   }
   private providerSettingsData(): ProviderSettingsInput {

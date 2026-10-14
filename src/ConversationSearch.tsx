@@ -25,13 +25,14 @@ function reveal(range: Range, viewport: HTMLElement) {
   }
 }
 
-export function ConversationSearch({ content, viewport, close }: { content: HTMLElement | null; viewport: HTMLElement | null; close: () => void }) {
+export function ConversationSearch({ content, viewport, close, initial }: { content: HTMLElement | null; viewport: HTMLElement | null; close: () => void; initial?: { query: string; key: string } }) {
   const input = useRef<HTMLInputElement>(null);
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(initial?.query ?? '');
   const [status, setStatus] = useState({ count: 0, index: 0, excerpt: '', reasoning: false });
   const move = useRef<(direction: number) => void>(() => {});
   const previousQuery = useRef('');
   const position = useRef<Position | null>(null);
+  const targetPending = useRef(Boolean(initial));
   useEffect(() => { input.current?.focus(); }, []);
 
   useEffect(() => {
@@ -71,9 +72,12 @@ export function ConversationSearch({ content, viewport, close }: { content: HTML
         if (cached.count) { fields.push({ key: root.dataset.searchContent!, root, ...cached, offset: count }); count += cached.count; }
       }
       const previous = position.current;
+      if (query !== initial?.query) targetPending.current = false;
+      const target = targetPending.current && fields.find((field) => field.key === initial?.key);
       const same = previous && fields.find((field) => field.key === previous.key && field.count > previous.ordinal);
-      const index = changedQuery ? 0 : same ? same.offset + previous!.ordinal : Math.min(previous?.index ?? 0, Math.max(0, count - 1));
-      select(index, scroll || changedQuery); changedQuery = false;
+      const index = target ? target.offset : changedQuery ? 0 : same ? same.offset + previous!.ordinal : Math.min(previous?.index ?? 0, Math.max(0, count - 1));
+      select(index, scroll || changedQuery || Boolean(target)); changedQuery = false;
+      if (target) targetPending.current = false;
     };
     // Only dirty Markdown fields are rescanned during generation; no array of every occurrence is retained.
     const observer = new MutationObserver((records) => {
@@ -88,7 +92,7 @@ export function ConversationSearch({ content, viewport, close }: { content: HTML
     observer.observe(content, { subtree: true, childList: true, characterData: true });
     move.current = (direction) => { if (count) select(((position.current?.index ?? 0) + direction + count) % count, true); };
     return () => { observer.disconnect(); if (timer) clearTimeout(timer); clear(); move.current = () => {}; };
-  }, [content, viewport, query]);
+  }, [content, viewport, query, initial]);
 
   return <div id="conversation-search" role="search" aria-label="当前对话搜索" className="shrink-0 border-b border-base-content/50 bg-base-200 px-3 py-2 sm:px-8" onKeyDown={(event) => { if (event.key === 'Escape' && !event.nativeEvent.isComposing) { event.preventDefault(); close(); } }}>
     <div className="mx-auto flex w-full max-w-3xl items-center gap-1 sm:gap-2">
