@@ -28,7 +28,8 @@ for (const [protocol, fixture] of Object.entries(providerStreams)) {
       parser = new ProviderStream(kind, true, checkpoint, parser.content, parser.reasoning);
       parser.feed(bytes.subarray(split)); parser.assertComplete();
       assert.equal(parser.content, '**正文🙂**\n答案。'); assert.equal(parser.reasoning, '**思考🙂**\n结论。');
-      assert.equal(parser.checkpoint().usage.inputTokens, 10); assert.equal(parser.checkpoint().usage.outputTokens, 5);
+      assert.equal(parser.checkpoint().usage.inputTokens, kind === 'anthropic' ? 14 : 10);
+      assert.equal(parser.checkpoint().usage.outputTokens, kind === 'gemini' ? 7 : 5);
       assert.equal(parser.checkpoint().usage.cachedInputTokens, 4);
       assert.equal(parser.checkpoint().textDeltas, 2); assert.equal(parser.checkpoint().reasoningDeltas, 2);
     }

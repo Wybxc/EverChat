@@ -3,11 +3,16 @@ import type { ProviderKind } from './types';
 
 export const MAX_EVENT_CHARACTERS = 256 * 1024;
 const LIMIT = 100_000;
-export interface StreamUsage { inputTokens?: number; outputTokens?: number; totalTokens?: number; cachedInputTokens?: number; reasoningTokens?: number }
+export interface StreamUsage {
+  inputTokens?: number; outputTokens?: number; totalTokens?: number;
+  cachedInputTokens?: number; cacheWriteInputTokens?: number; reasoningTokens?: number;
+  uncachedInputTokens?: number; textOutputTokens?: number; toolInputTokens?: number;
+}
 export interface StreamState {
   protocol: ProviderKind; showReasoning: boolean; tail: string; utf8: string; started: boolean;
   done: boolean; finishReason?: 'stop' | 'length' | 'other'; failure?: string;
-  textDeltas: number; reasoningDeltas: number; usage: StreamUsage;
+  textDeltas: number; reasoningDeltas: number; usage: StreamUsage; usageIsFinal: boolean;
+  promptInputTokens?: number;
   thoughts: { id: string; raw: string; summary: string }[];
 }
 export type ParsedDelta = { kind: 'content' | 'reasoning'; text: string };
@@ -35,7 +40,7 @@ export class ProviderStream {
   constructor(protocol: ProviderKind, showReasoning: boolean, checkpoint?: StreamState, content = '', reasoning = '') {
     this.content = content; this.reasoning = reasoning;
     this.state = checkpoint ? structuredClone(checkpoint) : {
-      protocol, showReasoning, tail: '', utf8: '', started: false, done: false, textDeltas: 0, reasoningDeltas: 0, usage: {}, thoughts: [],
+      protocol, showReasoning, tail: '', utf8: '', started: false, done: false, textDeltas: 0, reasoningDeltas: 0, usage: {}, usageIsFinal: false, thoughts: [],
     };
     if (this.state.protocol !== protocol || this.state.showReasoning !== showReasoning) throw new StreamParseError('流协议状态不一致。');
     this.parser = createParser({ maxBufferSize: MAX_EVENT_CHARACTERS,
@@ -45,6 +50,7 @@ export class ProviderStream {
     if (this.state.tail) this.parser.feed(this.state.tail);
   }
   checkpoint(): StreamState { return structuredClone(this.state); }
+  get failed() { return Boolean(this.state.failure); }
   drainDeltas(): ParsedDelta[] { const deltas = this.deltas; this.deltas = []; return deltas; }
   feed(bytes: Uint8Array) {
     if (this.state.failure) return;
@@ -108,13 +114,29 @@ export class ProviderStream {
   private usage(value: unknown, kind: ProviderKind) {
     const usage = object(value), inputDetails = object(usage.input_tokens_details ?? usage.prompt_tokens_details), outputDetails = object(usage.output_tokens_details ?? usage.completion_tokens_details);
     const next: StreamUsage = kind === 'gemini' ? {
-      inputTokens: number(usage.promptTokenCount), outputTokens: number(usage.candidatesTokenCount), totalTokens: number(usage.totalTokenCount),
-      cachedInputTokens: number(usage.cachedContentTokenCount), reasoningTokens: number(usage.thoughtsTokenCount),
+      textOutputTokens: number(usage.candidatesTokenCount), totalTokens: number(usage.totalTokenCount),
+      cachedInputTokens: number(usage.cachedContentTokenCount), reasoningTokens: number(usage.thoughtsTokenCount), toolInputTokens: number(usage.toolUsePromptTokenCount),
+    } : kind === 'anthropic' ? {
+      uncachedInputTokens: number(usage.input_tokens), outputTokens: number(usage.output_tokens),
+      cachedInputTokens: number(usage.cache_read_input_tokens), cacheWriteInputTokens: number(usage.cache_creation_input_tokens),
+      reasoningTokens: number(outputDetails.thinking_tokens),
     } : {
-      inputTokens: number(usage.input_tokens ?? usage.prompt_tokens), outputTokens: number(usage.output_tokens ?? usage.completion_tokens), totalTokens: number(usage.total_tokens),
-      cachedInputTokens: number(inputDetails.cached_tokens ?? usage.cache_read_input_tokens), reasoningTokens: number(outputDetails.reasoning_tokens),
+      inputTokens: number(usage.input_tokens) ?? number(usage.prompt_tokens), outputTokens: number(usage.output_tokens) ?? number(usage.completion_tokens), totalTokens: number(usage.total_tokens),
+      cachedInputTokens: number(inputDetails.cached_tokens) ?? number(usage.prompt_cache_hit_tokens),
+      cacheWriteInputTokens: number(inputDetails.cache_write_tokens), reasoningTokens: number(outputDetails.reasoning_tokens),
     };
     for (const [key, value] of Object.entries(next)) if (value !== undefined) this.state.usage[key as keyof StreamUsage] = value;
+    const report = this.state.usage;
+    if (kind === 'anthropic' && report.uncachedInputTokens !== undefined) {
+      report.inputTokens = number(report.uncachedInputTokens + (report.cachedInputTokens ?? 0) + (report.cacheWriteInputTokens ?? 0));
+    }
+    if (kind === 'gemini') {
+      // These API counters are disjoint. Keep the reported total; never invent one.
+      this.state.promptInputTokens = number(usage.promptTokenCount) ?? this.state.promptInputTokens;
+      if (this.state.promptInputTokens !== undefined) report.inputTokens = number(this.state.promptInputTokens + (report.toolInputTokens ?? 0));
+      if (report.textOutputTokens !== undefined) report.outputTokens = number(report.textOutputTokens + (report.reasoningTokens ?? 0));
+    }
+    return Object.values(next).some((value) => value !== undefined);
   }
   private finish(reason: unknown, accepted: string[], length: string[]) {
     const value = string(reason);
@@ -130,8 +152,9 @@ export class ProviderStream {
         this.fail('模型供应商在生成期间返回错误。已保存部分内容。'); return;
       }
       if (kind === 'openai-chat') {
-        this.usage(event.usage, kind);
-        for (const value of array(event.choices)) {
+        const reported = this.usage(event.usage, kind), choices = array(event.choices);
+        if (reported && (choices.length === 0 || choices.some((value) => object(value).finish_reason != null))) this.state.usageIsFinal = true;
+        for (const value of choices) {
           const choice = object(value);
           if (choice.index !== undefined && choice.index !== 0) continue;
           const delta = object(choice.delta);
@@ -145,7 +168,7 @@ export class ProviderStream {
         if (type === 'response.reasoning_text.delta' || type === 'response.reasoning_summary_text.delta') this.responseThought(event, type === 'response.reasoning_text.delta' ? 'raw' : 'summary');
         if (type === 'response.completed' || type === 'response.incomplete') {
           const response = object(event.response);
-          this.usage(response.usage, kind);
+          this.state.usageIsFinal = this.usage(response.usage, kind);
           this.finish(type === 'response.completed' ? 'stop' : object(response.incomplete_details).reason, ['stop'], ['max_output_tokens']);
           this.state.done = true;
         }
@@ -161,10 +184,14 @@ export class ProviderStream {
           if (delta.type === 'text_delta') this.append('content', delta.text);
           if (delta.type === 'thinking_delta') this.append('reasoning', delta.thinking);
         }
-        if (type === 'message_delta') { this.usage(event.usage, kind); if (delta.stop_reason != null) this.finish(delta.stop_reason, ['end_turn', 'stop_sequence'], ['max_tokens']); }
+        if (type === 'message_delta') {
+          this.usage(event.usage, kind);
+          if (delta.stop_reason != null) this.finish(delta.stop_reason, ['end_turn', 'stop_sequence'], ['max_tokens']);
+          if (this.state.finishReason && number(object(event.usage).output_tokens) !== undefined) this.state.usageIsFinal = true;
+        }
         if (type === 'message_stop') this.state.done = true;
       } else if (kind === 'gemini') {
-        this.usage(event.usageMetadata, kind);
+        const reported = this.usage(event.usageMetadata, kind);
         if (object(event.promptFeedback).blockReason) this.fail('模型供应商未正常完成回答。已保存部分内容，请主动重新生成。');
         for (const value of array(event.candidates)) {
           const candidate = object(value);
@@ -174,6 +201,7 @@ export class ProviderStream {
           }
           if (candidate.finishReason) { this.finish(candidate.finishReason, ['STOP'], ['MAX_TOKENS']); this.state.done = true; }
         }
+        if (reported && this.state.done) this.state.usageIsFinal = true;
       }
     } catch { this.fail('供应商流格式无效。已保存部分内容，请主动重新生成。'); }
   }

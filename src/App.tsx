@@ -9,6 +9,7 @@ import { api, ApiError } from './api';
 import { clearLocal, deletedAt, markConversationDeleted, read, write, writePending, type Pending } from './storage';
 import { useConversation } from './useConversation';
 import { ProviderSettingsPanel, type SettingsTab } from './ProviderSettings';
+import { GenerationMetadata } from './GenerationMetadata';
 import { chatModels, effortLabels, modelSelectionKey } from '../shared/models';
 import { useThemeMode } from './theme';
 import { useFollowScroll } from './useFollowScroll';
@@ -160,6 +161,7 @@ function MessageView({ message, busy, onRetry, onEdit, onQuote, onDelete, canRet
       {message.content ? <MarkdownContent content={message.content} searchId={`${message.id}:content`} streaming={isActive(message)} /> : isActive(message) && !message.reasoning ? <p className="py-2 text-sm text-base-content/60">准备中…</p> : null}
       {message.status === 'failed' && <p role="alert" className="mt-4 rounded-lg bg-error/5 px-3 py-2 text-xs font-medium leading-6 text-base-content">{message.error ?? '生成失败，已保存部分内容。'}</p>}
       {message.status === 'cancelled' && <p className="mt-4 text-xs text-base-content/60">已停止</p>}
+      {!isActive(message) && <GenerationMetadata generation={message.generation} />}
       {!isActive(message) && <div className="mt-4 flex flex-wrap items-center gap-1 text-base-content/60">
         {tools}
         {message.status === 'completed' && <button className={`btn btn-ghost btn-xs gap-1.5 ${branchSelected ? 'text-primary' : ''}`} disabled={busy || branchSelected} onClick={onSelectBranch} aria-label={branchSelected ? '当前分支' : '继续此分支'}>{branchSelected ? '当前分支' : '继续此分支'}</button>}

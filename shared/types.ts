@@ -1,4 +1,5 @@
-import { ProviderStream, type StreamState, type StreamUsage } from './provider-stream';
+import { ProviderStream, type StreamState } from './provider-stream';
+import type { GenerationResult } from './generation';
 import { validateBatch, validateCommit } from './stream-batches';
 
 export type MessageStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
@@ -19,7 +20,7 @@ export interface Message {
   modelName?: string | null;
   streamVersion?: 'raw-sse-v1' | null;
   streamState?: StreamState;
-  generation?: { finishReason?: StreamState['finishReason']; usage: StreamUsage };
+  generation?: GenerationResult;
   durableOffset?: number;
   liveOffset?: number;
 }

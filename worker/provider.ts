@@ -17,7 +17,7 @@ function languageModel(config: ProviderConfig, fetch: typeof globalThis.fetch): 
   switch (config.provider) {
     case 'openai-chat': return new URL(baseURL).hostname === 'api.openai.com'
       ? createOpenAI(options).chat(config.model)
-      : createOpenAICompatible({ ...options, name: 'compatible' }).chatModel(config.model);
+      : createOpenAICompatible({ ...options, name: 'compatible', includeUsage: true }).chatModel(config.model);
     case 'openai-responses': return createOpenAI(options).responses(config.model);
     case 'anthropic': return createAnthropic(options)(config.model);
     case 'gemini': return createGoogleGenerativeAI(options)(config.model);

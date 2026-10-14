@@ -11,6 +11,7 @@ import { openProviderStream } from './provider';
 import { ProviderStream, StreamParseError } from '../shared/provider-stream';
 import { GenerationCancelled, ProviderError } from './generation-errors';
 import { GenerationBuffer } from './generation-buffer';
+import { FirstTokenProbe, generationTiming } from './generation-timing';
 import { json } from './http';
 import { DATABASE_LIMIT_MESSAGE, HISTORY_LIMIT_MESSAGE, MAX_DATABASE_BYTES, MAX_DATABASE_START_BYTES, MAX_DATABASE_WRITE_BYTES, MAX_HISTORY_START_BYTES, MAX_MESSAGES, storageErrorMessage } from './resource-limits';
 import type { SearchDocument, SearchPage } from '../shared/search';
@@ -27,7 +28,7 @@ type Attachment = { expires: number; blocked?: boolean; runId?: string; messageI
 export const SUBSCRIBER_WINDOW_BYTES = 128 * 1024;
 type Failure = { error: string; status: number };
 type Claim = { context: ChatInput[]; config?: ProviderConfig; claimed: boolean; status: MessageStatus; streamVersion?: string; assistantId?: string };
-type ActiveGeneration = { runId: string; abort: AbortController; buffer: GenerationBuffer; cancelled: boolean; failure?: Error; persistence?: Promise<void>; timer?: ReturnType<typeof setInterval> };
+type ActiveGeneration = { runId: string; abort: AbortController; buffer: GenerationBuffer; cancelled: boolean; endedAt?: number; failure?: Error; persistence?: Promise<void>; timer?: ReturnType<typeof setInterval> };
 
 export class Conversation extends DurableObject<Env> {
   private meter?: GenerationMeter;
@@ -73,7 +74,7 @@ export class Conversation extends DurableObject<Env> {
     const descriptor = JSON.parse(config) as ProviderConfig;
     return this.journal.materialize(message, { protocol: descriptor.provider, showReasoning: descriptor.showReasoning === true });
   }
-  private rows() { return this.query<Row>('SELECT messages.*, message_deletions.deletedAt, generation_results.payload AS generationResult FROM messages LEFT JOIN message_deletions ON message_deletions.id = messages.id LEFT JOIN generation_results ON generation_results.runId = messages.runId ORDER BY messages.rowid'); }
+  private rows() { return this.query<Row>('SELECT messages.*, message_deletions.deletedAt, message_generations.payload AS generationResult FROM messages LEFT JOIN message_deletions ON message_deletions.id = messages.id LEFT JOIN message_generations ON message_generations.messageId = messages.id ORDER BY messages.rowid'); }
   private all(): Message[] { return Array.from(this.rows(), (row) => this.materialize(this.decorate(row))); }
   backup(): BackupMessage[] {
     if (this.deletedAt) return [];
@@ -111,6 +112,7 @@ export class Conversation extends DurableObject<Env> {
       parentId: source.parentId ? ids.get(source.parentId) ?? null : null,
       revisionOf: source.revisionOf ? ids.get(source.revisionOf) ?? null : null,
       error: source.error, providerId: source.providerId, model: source.model, modelName: source.modelName,
+      ...(!source.deletedAt && source.role === 'assistant' && source.generation ? { generation: source.generation } : {}),
     }));
     const change = this.ctx.storage.transactionSync(() => {
       for (const message of messages) {
@@ -125,7 +127,7 @@ export class Conversation extends DurableObject<Env> {
     return this.snapshot();
   }
   private rawMessage(id: string): Message | undefined {
-    const row = this.query<Row>('SELECT messages.*, message_deletions.deletedAt, generation_results.payload AS generationResult FROM messages LEFT JOIN message_deletions ON message_deletions.id = messages.id LEFT JOIN generation_results ON generation_results.runId = messages.runId WHERE messages.id = ?', id).toArray()[0];
+    const row = this.query<Row>('SELECT messages.*, message_deletions.deletedAt, message_generations.payload AS generationResult FROM messages LEFT JOIN message_deletions ON message_deletions.id = messages.id LEFT JOIN message_generations ON message_generations.messageId = messages.id WHERE messages.id = ?', id).toArray()[0];
     return row && this.decorate(row);
   }
   private message(id: string): Message | undefined { const message = this.rawMessage(id); return message && this.materialize(message); }
@@ -235,6 +237,7 @@ export class Conversation extends DurableObject<Env> {
     this.query('INSERT INTO messages (id, role, content, status, createdAt, runId, parentId, revisionOf, error, providerId, model, modelName, reasoning, streamVersion, durableOffset) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       message.id, message.role, message.content, message.status, message.createdAt, message.runId, message.parentId, message.revisionOf, message.error,
       message.providerId ?? null, message.model ?? null, message.modelName ?? null, message.reasoning ?? null, message.streamVersion ?? null, message.durableOffset ?? 0);
+    if (message.role === 'assistant' && !message.deletedAt && message.generation) this.query('INSERT INTO message_generations VALUES (?, ?)', message.id, JSON.stringify(message.generation));
   }
   async reviseAssistant(conversationId: string, messageId: string, requestId: string, content: string): Promise<{ messageId: string } | Failure> {
     if (this.deletedAt || await this.env.LIBRARY.getByName('personal').deletedAt(conversationId)) return { error: '这个对话已删除。', status: 410 };
@@ -273,7 +276,8 @@ export class Conversation extends DurableObject<Env> {
       const deletedAt = Date.now();
       this.query('UPDATE messages SET content = ?, reasoning = NULL, error = NULL WHERE id = ?', '', messageId);
       this.query('INSERT INTO message_deletions VALUES (?, ?)', messageId, deletedAt);
-      if (original.runId) this.query('DELETE FROM generation_results WHERE runId = ?', original.runId);
+      this.query('DELETE FROM message_generations WHERE messageId = ?', original.id);
+      if (original.runId) this.query('DELETE FROM generation_timings WHERE runId = ?', original.runId);
       // Keep request IDs so delayed retries cannot recreate deleted content, but erase their saved text.
       this.query("UPDATE submissions SET fingerprint = '' WHERE json_extract(result, '$.userId') = ? OR json_extract(result, '$.assistantId') = ? OR json_extract(result, '$.messageId') = ?", messageId, messageId, messageId);
       const change = this.record([this.rawMessage(messageId)!], conversationId);
@@ -417,6 +421,10 @@ export class Conversation extends DurableObject<Env> {
         try { active.buffer.tick(); }
         catch (error) { active.failure = error instanceof Error ? error : new Error('Generation persistence failed'); abort.abort(); }
       }, 100);
+      this.query('INSERT INTO generation_timings VALUES (?, ?, NULL)', runId, Date.now());
+      const probe = new FirstTokenProbe(claim.config.provider, (receivedAt) => {
+        if (!this.deletedAt && !active.cancelled) this.query('UPDATE generation_timings SET firstTokenAt = ? WHERE runId = ?', receivedAt, runId);
+      });
       const body = await this.openModelStream(claim.config, claim.context, abort.signal), reader = body.getReader();
       try {
         while (true) {
@@ -425,8 +433,10 @@ export class Conversation extends DurableObject<Env> {
           if (abort.signal.aborted) throw new ProviderError('模型供应商连接已中断。');
           await active.persistence;
           const next = await reader.read();
-          if (next.done) break;
+          const receivedAt = Date.now();
+          if (next.done) { active.endedAt ??= receivedAt; probe.end(receivedAt); break; }
           if (active.cancelled) throw new GenerationCancelled();
+          probe.feed(next.value, receivedAt);
           active.buffer.add(next.value);
         }
       } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
@@ -434,6 +444,7 @@ export class Conversation extends DurableObject<Env> {
       await active.persistence;
       this.finish(runId, active.cancelled ? 'cancelled' : 'completed', null);
     } catch (error) {
+      active.endedAt ??= Date.now();
       let failure = active.failure ?? error;
       let tailFailed = false;
       try { active.buffer.flush(); await active.persistence; } catch (saveError) {
@@ -507,12 +518,16 @@ export class Conversation extends DurableObject<Env> {
         catch (failure) { status = 'failed'; error = failure instanceof StreamParseError ? failure.message : '无法验证供应商回答。'; }
       }
       message.content = parser.content; message.reasoning = parser.reasoning; message.streamState = parser.checkpoint();
-      message.generation = { finishReason: message.streamState.finishReason, usage: message.streamState.usage };
+      message.generation = { finishReason: message.streamState.finishReason, usage: message.streamState.usage,
+        usageIsFinal: message.streamState.usageIsFinal && message.streamState.done && !message.streamState.failure && ['stop', 'length'].includes(message.streamState.finishReason ?? '') };
       this.meter?.streamCounts(message.streamState);
     }
+    const timing = this.query<{ providerStartedAt: number; firstTokenAt: number | null }>('SELECT providerStartedAt, firstTokenAt FROM generation_timings WHERE runId = ?', runId).toArray()[0];
+    message.generation = { usage: {}, usageIsFinal: false, ...message.generation,
+      timing: generationTiming(message.createdAt, run.startedAt, timing, this.activeGeneration?.runId === runId ? this.activeGeneration.endedAt : undefined) };
     const change = this.ctx.storage.transactionSync(() => {
       if (message.streamVersion === STREAM_VERSION) this.journal.compact(message);
-      if (message.generation) this.query('INSERT INTO generation_results (runId, payload) VALUES (?, ?)', runId, JSON.stringify(message.generation));
+      this.query('INSERT INTO message_generations (messageId, payload) VALUES (?, ?)', message.id, JSON.stringify(message.generation));
       this.query('UPDATE messages SET status = ?, error = ? WHERE id = ?', status, error, message.id);
       this.query("UPDATE runs SET config = NULL, context = '[]' WHERE id = ?", runId);
       const terminal = this.record([this.message(message.id)!], run.conversationId);
@@ -539,7 +554,7 @@ export class Conversation extends DurableObject<Env> {
     this.query('UPDATE runs SET cancelRequested = 1 WHERE id = ?', runId);
     const active = this.activeGeneration?.runId === runId ? this.activeGeneration : undefined;
     if (active) {
-      active.cancelled = true; active.abort.abort();
+      active.cancelled = true; active.endedAt ??= Date.now(); active.abort.abort();
       if (active.timer) clearInterval(active.timer);
     }
     // Keep the cancellation intent if flushing the tail or writing the terminal state fails.

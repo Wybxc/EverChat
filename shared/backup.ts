@@ -2,6 +2,7 @@ import type { ConversationInfo, ConversationSettings, Message, PromptPreset, Pro
 import * as v from 'valibot';
 import { conversationSettingsSchema } from './conversation-settings';
 import { promptPresetListSchema } from './prompt-presets';
+import { generationSchema } from './generation';
 
 export const BACKUP_FORMAT = 'everchat-backup';
 export const BACKUP_VERSION = 1 as const;
@@ -34,13 +35,15 @@ export interface EverChatBackup {
 
 export function backupMessage(message: Message): BackupMessage {
   const partial = message.status === 'queued' || message.status === 'running';
+  const generation = message.generation ?? (partial && message.streamState && Object.keys(message.streamState.usage).length
+    ? { usage: message.streamState.usage, usageIsFinal: false } : undefined);
   return {
     id: message.id, role: message.role, content: message.deletedAt ? '' : message.content, reasoning: message.deletedAt ? null : message.reasoning ?? null,
     status: partial ? 'failed' : message.status, createdAt: message.createdAt,
     parentId: message.parentId, revisionOf: message.revisionOf,
     error: partial ? (message.error ?? '导出时生成尚未完成，已恢复已保存的部分内容。') : message.error,
     providerId: message.providerId ?? null, model: message.model ?? null, modelName: message.modelName ?? null,
-    ...(message.generation ? { generation: message.generation } : {}),
+    ...(!message.deletedAt && message.role === 'assistant' && generation ? { generation } : {}),
     ...(message.deletedAt ? { deletedAt: message.deletedAt } : {}),
   };
 }
@@ -70,8 +73,11 @@ export function validateBackup(value: unknown): EverChatBackup {
       || !nullableString(message.error, 4096) || !nullableString(message.providerId, 64) || !nullableString(message.model, 200)
       || !nullableString(message.modelName, 200)
       || !(message.deletedAt === undefined || message.deletedAt === null || (Number.isSafeInteger(message.deletedAt) && Number(message.deletedAt) > 0))) throw new Error('备份中的消息字段无效。');
-    if (message.deletedAt) return { ...message, content: '', reasoning: null } as unknown as BackupMessage;
-    return message as unknown as BackupMessage;
+    const { generation: rawGeneration, ...fields } = message;
+    if (message.deletedAt) return { ...fields, content: '', reasoning: null } as unknown as BackupMessage;
+    const generation = rawGeneration === undefined ? undefined : v.safeParse(generationSchema, rawGeneration);
+    if (generation && (!generation.success || message.role !== 'assistant')) throw new Error('备份中的生成元数据无效。');
+    return { ...fields, ...(generation?.success ? { generation: generation.output } : {}) } as unknown as BackupMessage;
   });
   const settings = input.settings as Record<string, unknown>;
   const promptPresets = v.safeParse(promptPresetListSchema, settings?.promptPresets);

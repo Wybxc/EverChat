@@ -324,7 +324,7 @@ for (const protocol of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
       const final = await request.get(`/api/conversations/${id}`).then((response) => response.json()) as Snapshot;
       expect(resumed.snapshot()).toEqual(final); expect(resumed.view()).toEqual(final);
       expect(final.messages[1]).toMatchObject({ content: '**正文🙂**\n答案。', reasoning: '**思考🙂**\n结论。',
-        generation: { finishReason: 'stop', usage: { inputTokens: 10, outputTokens: 5, cachedInputTokens: 4 } } });
+        generation: { finishReason: 'stop', usageIsFinal: true, usage: { inputTokens: protocol === 'anthropic' ? 14 : 10, outputTokens: protocol === 'gemini' ? 7 : 5, cachedInputTokens: 4 } } });
       expect(final.messages[1].streamState).toBeUndefined();
       const replay = await subscribe(request, id); sockets.push(replay.socket);
       expect(replay.snapshot()).toEqual(final);

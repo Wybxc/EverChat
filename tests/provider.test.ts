@@ -62,6 +62,7 @@ for (const [kind, fixture] of Object.entries(streams)) {
         assert.ok(JSON.stringify(body.input).includes('历史回答'));
         assert.equal(body.max_output_tokens, 128);
       } else {
+        assert.deepEqual(body.stream_options, { include_usage: true });
         assert.equal(body.store, false);
         assert.equal(body.messages[0].content, config.systemPrompt);
         assert.deepEqual(body.messages.slice(1).map((item: { role: string }) => item.role), ['user', 'assistant', 'user']);

@@ -1,0 +1,26 @@
+import type { GenerationResult } from '../shared/generation';
+import type { StreamUsage } from '../shared/provider-stream';
+
+const usageFields: [keyof StreamUsage, string][] = [
+  ['inputTokens', '输入 Tokens'], ['cachedInputTokens', '其中缓存读取'], ['cacheWriteInputTokens', '其中缓存写入'],
+  ['uncachedInputTokens', '其中未缓存'], ['toolInputTokens', '其中工具输入'],
+  ['outputTokens', '输出 Tokens'], ['textOutputTokens', '其中正文'], ['reasoningTokens', '其中思考'], ['totalTokens', '总计 Tokens'],
+];
+const timings = [['firstTokenMs', '云端首 Token（含思考）'], ['queueMs', '排队'], ['durationMs', '云端生成']] as const;
+const number = new Intl.NumberFormat('zh-CN');
+const duration = (ms: number) => ms < 1000 ? `${number.format(ms)} ms` : `${(ms / 1000).toFixed(2)} s`;
+
+export function GenerationMetadata({ generation }: { generation?: GenerationResult }) {
+  if (!generation) return null;
+  const fields = usageFields.filter(([key]) => generation.usage[key] !== undefined);
+  return <details data-testid="message-generation" className="collapse collapse-arrow mt-3 max-w-xl rounded-box border border-base-content/30 bg-base-200 text-xs">
+    <summary className="collapse-title min-h-0 py-2 font-medium">生成信息</summary>
+    <div className="collapse-content">
+      <dl className="space-y-2">
+        <div className="flex items-baseline justify-between gap-4 sm:gap-6"><dt>Token 用量</dt><dd>{fields.length ? generation.usageIsFinal ? '供应商报告' : '部分报告' : '供应商未返回'}</dd></div>
+        {fields.map(([key, label]) => <div key={key} className="flex items-baseline justify-between gap-4 sm:gap-6"><dt>{label}</dt><dd data-testid={`generation-${key}`}>{number.format(generation.usage[key]!)}</dd></div>)}
+        {timings.filter(([key]) => generation.timing?.[key] !== undefined).map(([key, label]) => <div key={key} className="flex items-baseline justify-between gap-4 sm:gap-6"><dt>{label}</dt><dd data-testid={`generation-${key}`}>{duration(generation.timing![key]!)}</dd></div>)}
+      </dl>
+    </div>
+  </details>;
+}

@@ -148,7 +148,8 @@ export class Conversation extends ProductionConversation {
     const run = this.ctx.storage.sql.exec<{ executor: string; cancelRequested: number; startedAt: number | null }>('SELECT executor, cancelRequested, startedAt FROM runs WHERE id = ?', runId).one();
     const hasCalls = this.ctx.storage.sql.exec(`SELECT name FROM sqlite_master WHERE name = 'fixture_calls'`).toArray().length;
     const calls = hasCalls ? this.ctx.storage.sql.exec<{ calls: number }>('SELECT calls FROM fixture_calls WHERE runId = ?', runId).toArray()[0]?.calls ?? 0 : 0;
-    return { ...run, calls };
+    const timing = this.ctx.storage.sql.exec('SELECT providerStartedAt, firstTokenAt FROM generation_timings WHERE runId = ?', runId).toArray()[0];
+    return { ...run, calls, timing };
   }
   fixtureContext(runId: string) {
     const run = this.ctx.storage.sql.exec<{ assistantId: string; context: string; config: string | null }>('SELECT assistantId, context, config FROM runs WHERE id = ?', runId).one();
@@ -299,6 +300,29 @@ globalThis.fetch = async (input, init) => {
           await new Promise((resolve) => setTimeout(resolve, 1900));
           controller.enqueue(bytes.slice(encoder.encode(partial).length)); controller.close();
         }
+      },
+    }), { headers: { 'Content-Type': 'text/event-stream' } });
+  }
+
+  if (requestBody.model?.startsWith('metadata-')) {
+    const noOutput = requestBody.model === 'metadata-no-output', noUsage = requestBody.model === 'metadata-no-usage';
+    const events = [
+      { delay: 80, value: { choices: [{ delta: { role: 'assistant', content: '' } }] } },
+      ...(!noOutput ? [
+        { delay: 200, value: { choices: [{ delta: { reasoning_content: '思考先到' } }] } },
+        { delay: 1500, value: { choices: [{ delta: { content: '正文后到' } }] } },
+      ] : []),
+      { delay: 100, value: { choices: [{ delta: {}, finish_reason: 'stop' }], ...(!noUsage ? { usage: {
+        prompt_tokens: noOutput ? 0 : 10, completion_tokens: noOutput ? 0 : 5, total_tokens: noOutput ? 0 : 15,
+        prompt_cache_hit_tokens: noOutput ? 0 : 4, completion_tokens_details: { reasoning_tokens: noOutput ? 0 : 2 },
+      } } : {}) } },
+    ];
+    let index = 0;
+    return new Response(new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        const { delay, value } = events[index++]; await new Promise((resolve) => setTimeout(resolve, delay));
+        controller.enqueue(encoder.encode(`: heartbeat\n\ndata: ${JSON.stringify(value)}\n\n`));
+        if (index === events.length) { controller.enqueue(encoder.encode('data: [DONE]\n\n')); controller.close(); }
       },
     }), { headers: { 'Content-Type': 'text/event-stream' } });
   }
