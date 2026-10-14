@@ -157,10 +157,39 @@ app.get('/conversations/:id/backup', async (context) => {
   await requireAuth(context);
   const id = conversationId(context);
   const library = await requireConversation(context, id);
-  const conversation = library.get(id)!;
+  const conversation = await library.get(id);
+  if (!conversation) throw new HttpError(404, '找不到这个对话。');
   return json({ format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: Date.now(),
     conversation: { ...conversation, messages: await context.env.CONVERSATIONS.getByName(id).backup() },
     settings: await library.backupSettings() });
+});
+
+app.post('/conversations/:id/duplicate', async (context) => {
+  await requireAuth(context);
+  const id = conversationId(context);
+  const library = await requireConversation(context, id);
+  const source = await library.get(id);
+  if (!source) throw new HttpError(404, '找不到这个对话。');
+  const copyId = crypto.randomUUID();
+  const title = `${source.title} 副本`.slice(0, 80);
+  const created = await library.create(copyId, title);
+  if ('error' in created) return json({ error: created.error }, created.status);
+  try {
+    const messages = await context.env.CONVERSATIONS.getByName(id).backup();
+    const restored = await context.env.CONVERSATIONS.getByName(copyId).restore(copyId, {
+      id: source.id, title: source.title, createdAt: source.createdAt, updatedAt: source.updatedAt, messages,
+    });
+    if ('error' in restored) throw new HttpError(restored.status, restored.error);
+    await library.touch(copyId);
+    return json({ id: copyId, conversation: await library.get(copyId), snapshot: restored }, 201);
+  } catch (error) {
+    try {
+      const deletion = await library.beginDelete(copyId);
+      await context.env.CONVERSATIONS.getByName(copyId).deleteConversation(deletion.deletedAt);
+      await library.completeDelete(copyId);
+    } catch { /* The next library alarm will retry cleanup. */ }
+    throw error;
+  }
 });
 
 app.post('/backup/restore', async (context) => {
@@ -177,7 +206,7 @@ app.post('/backup/restore', async (context) => {
     const saved = await library.saveProviderSettings(settings);
     if ('error' in saved) throw new HttpError(400, saved.error);
     await library.touch(id);
-    return json({ id, conversation: library.get(id), snapshot: restored }, 201);
+    return json({ id, conversation: await library.get(id), snapshot: restored }, 201);
   } catch (error) {
     try {
       const deletion = await library.beginDelete(id);

@@ -1,11 +1,11 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
-import { Archive, ArchiveRestore, MoreHorizontal, Pencil, Pin, PinOff, Trash2 } from 'lucide-react';
+import { Archive, ArchiveRestore, Copy, MoreHorizontal, Pencil, Pin, PinOff, Trash2 } from 'lucide-react';
 import type { ConversationInfo } from '../shared/types';
 
-export function ConversationActions({ conversation, disabled, update, remove }: {
+export function ConversationActions({ conversation, disabled, update, remove, duplicate }: {
   conversation: ConversationInfo; disabled: boolean;
   update: (patch: { title?: string; pinned?: boolean; archived?: boolean }) => Promise<void>;
-  remove: () => Promise<void>;
+  remove: () => Promise<void>; duplicate: () => Promise<void>;
 }) {
   const menuId = useId(), anchor = `--conversation-${menuId.replace(/[^a-z0-9_-]/gi, '')}`;
   const menu = useRef<HTMLUListElement>(null), dialog = useRef<HTMLDialogElement>(null);
@@ -39,6 +39,7 @@ export function ConversationActions({ conversation, disabled, update, remove }: 
       <li><button disabled={disabled || busy} onClick={() => open('rename')}><Pencil size={15} />重命名</button></li>
       <li><button disabled={disabled || busy} onClick={() => void perform(() => update({ pinned: !conversation.pinned }))}>{conversation.pinned ? <PinOff size={15} /> : <Pin size={15} />}{conversation.pinned ? '取消置顶' : '置顶'}</button></li>
       <li><button disabled={disabled || busy} onClick={() => void perform(() => update({ archived: !conversation.archived }))}>{conversation.archived ? <ArchiveRestore size={15} /> : <Archive size={15} />}{conversation.archived ? '取消归档' : '归档'}</button></li>
+      <li><button disabled={disabled || busy} onClick={() => void perform(duplicate)}><Copy size={15} />复制对话</button></li>
       <li><button disabled={disabled || busy} onClick={() => open('delete')}><Trash2 size={15} />删除</button></li>
       {error && !mode && <li><span role="alert" className="whitespace-normal text-xs">{error}</span></li>}
     </ul>
