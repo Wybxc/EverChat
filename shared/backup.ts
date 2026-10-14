@@ -17,6 +17,7 @@ export interface BackupMessage {
   createdAt: number; parentId: string | null; revisionOf: string | null; error: string | null;
   providerId: string | null; model: string | null; modelName: string | null;
   generation?: Message['generation'];
+  deletedAt?: number | null;
 }
 export interface ConversationBackup {
   id: string; title: string; createdAt: number; updatedAt: number; messages: BackupMessage[];
@@ -29,12 +30,13 @@ export interface EverChatBackup {
 export function backupMessage(message: Message): BackupMessage {
   const partial = message.status === 'queued' || message.status === 'running';
   return {
-    id: message.id, role: message.role, content: message.content, reasoning: message.reasoning ?? null,
+    id: message.id, role: message.role, content: message.deletedAt ? '' : message.content, reasoning: message.deletedAt ? null : message.reasoning ?? null,
     status: partial ? 'failed' : message.status, createdAt: message.createdAt,
     parentId: message.parentId, revisionOf: message.revisionOf,
     error: partial ? (message.error ?? '导出时生成尚未完成，已恢复已保存的部分内容。') : message.error,
     providerId: message.providerId ?? null, model: message.model ?? null, modelName: message.modelName ?? null,
     ...(message.generation ? { generation: message.generation } : {}),
+    ...(message.deletedAt ? { deletedAt: message.deletedAt } : {}),
   };
 }
 
@@ -59,7 +61,9 @@ export function validateBackup(value: unknown): EverChatBackup {
       || !nullableString(message.reasoning, 100_000) || !['completed', 'failed', 'cancelled'].includes(String(message.status))
       || !Number.isSafeInteger(message.createdAt) || !nullableString(message.parentId, 64) || !nullableString(message.revisionOf, 64)
       || !nullableString(message.error, 4096) || !nullableString(message.providerId, 64) || !nullableString(message.model, 200)
-      || !nullableString(message.modelName, 200)) throw new Error('备份中的消息字段无效。');
+      || !nullableString(message.modelName, 200)
+      || !(message.deletedAt === undefined || message.deletedAt === null || (Number.isSafeInteger(message.deletedAt) && Number(message.deletedAt) > 0))) throw new Error('备份中的消息字段无效。');
+    if (message.deletedAt) return { ...message, content: '', reasoning: null } as unknown as BackupMessage;
     return message as unknown as BackupMessage;
   });
   const settings = input.settings as Record<string, unknown>;

@@ -31,6 +31,7 @@ const submitSchema = v.object({
 });
 const cancelSchema = v.object({ runId: uuidSchema });
 const conversationPatchSchema = v.object({ title: v.optional(v.pipe(v.string(), v.maxLength(80))), pinned: v.optional(v.boolean()), archived: v.optional(v.boolean()) });
+const assistantEditSchema = v.object({ requestId: uuidSchema, content: v.pipe(v.string(), v.maxLength(100_000)) });
 
 const requireAuth = async (context: AppContext) => {
   if (!await authenticated(context.req.raw, context.env)) throw new HttpError(401, '请先登录你的私人空间。');
@@ -258,6 +259,28 @@ app.post('/conversations/:id/messages', async (context) => {
   if ('error' in result) return json({ error: result.error }, result.status);
   await library.touch(id);
   return json(result, 202);
+});
+
+app.patch('/conversations/:id/messages/:messageId', async (context) => {
+  await requireAuth(context);
+  const id = conversationId(context), messageId = context.req.param('messageId');
+  if (!v.safeParse(uuidSchema, messageId).success) throw new HttpError(404, '找不到这条消息。');
+  const library = await requireConversation(context, id);
+  const input = await parseBody(context, assistantEditSchema, { maxBytes: 640_000, tooLarge: '回答太长，请控制在 100,000 字以内。' });
+  const result = await context.env.CONVERSATIONS.getByName(id).reviseAssistant(id, messageId, input.requestId, input.content);
+  if ('error' in result) return json({ error: result.error }, result.status);
+  await library.touch(id);
+  return json(result, 201);
+});
+
+app.delete('/conversations/:id/messages/:messageId', async (context) => {
+  await requireAuth(context);
+  const id = conversationId(context), messageId = context.req.param('messageId');
+  if (!v.safeParse(uuidSchema, messageId).success) throw new HttpError(404, '找不到这条消息。');
+  await requireConversation(context, id);
+  const result = await context.env.CONVERSATIONS.getByName(id).deleteMessage(id, messageId);
+  if ('error' in result) return json({ error: result.error }, result.status);
+  return json(result);
 });
 
 app.post('/conversations/:id/cancel', async (context) => {

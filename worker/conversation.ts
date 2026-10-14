@@ -72,7 +72,7 @@ export class Conversation extends DurableObject<Env> {
     const descriptor = JSON.parse(config) as ProviderConfig;
     return this.journal.materialize(message, { protocol: descriptor.provider, showReasoning: descriptor.showReasoning === true });
   }
-  private rows() { return this.query<Row>('SELECT messages.*, generation_results.payload AS generationResult FROM messages LEFT JOIN generation_results ON generation_results.runId = messages.runId ORDER BY messages.rowid'); }
+  private rows() { return this.query<Row>('SELECT messages.*, message_deletions.deletedAt, generation_results.payload AS generationResult FROM messages LEFT JOIN message_deletions ON message_deletions.id = messages.id LEFT JOIN generation_results ON generation_results.runId = messages.runId ORDER BY messages.rowid'); }
   private all(): Message[] { return Array.from(this.rows(), (row) => this.materialize(this.decorate(row))); }
   backup(): BackupMessage[] {
     if (this.deletedAt) return [];
@@ -83,14 +83,17 @@ export class Conversation extends DurableObject<Env> {
     if (this.query('SELECT id FROM messages LIMIT 1').toArray().length) return { error: '目标对话已有消息。', status: 409 };
     const ids = new Map(backup.messages.map((message) => [message.id, crypto.randomUUID()]));
     const messages: Message[] = backup.messages.map((source) => ({
-      id: ids.get(source.id)!, role: source.role, content: source.content, reasoning: source.reasoning,
+      id: ids.get(source.id)!, role: source.role, content: source.deletedAt ? '' : source.content, reasoning: source.deletedAt ? null : source.reasoning, deletedAt: source.deletedAt,
       status: source.status, createdAt: source.createdAt, runId: null,
       parentId: source.parentId ? ids.get(source.parentId) ?? null : null,
       revisionOf: source.revisionOf ? ids.get(source.revisionOf) ?? null : null,
       error: source.error, providerId: source.providerId, model: source.model, modelName: source.modelName,
     }));
     const change = this.ctx.storage.transactionSync(() => {
-      for (const message of messages) this.insert(message);
+      for (const message of messages) {
+        this.insert(message);
+        if (message.deletedAt) this.query('INSERT INTO message_deletions VALUES (?, ?)', message.id, message.deletedAt);
+      }
       return this.record(messages, conversationId);
     });
     this.broadcast(change);
@@ -98,7 +101,7 @@ export class Conversation extends DurableObject<Env> {
     return this.snapshot();
   }
   private rawMessage(id: string): Message | undefined {
-    const row = this.query<Row>('SELECT messages.*, generation_results.payload AS generationResult FROM messages LEFT JOIN generation_results ON generation_results.runId = messages.runId WHERE messages.id = ?', id).toArray()[0];
+    const row = this.query<Row>('SELECT messages.*, message_deletions.deletedAt, generation_results.payload AS generationResult FROM messages LEFT JOIN message_deletions ON message_deletions.id = messages.id LEFT JOIN generation_results ON generation_results.runId = messages.runId WHERE messages.id = ?', id).toArray()[0];
     return row && this.decorate(row);
   }
   private message(id: string): Message | undefined { const message = this.rawMessage(id); return message && this.materialize(message); }
@@ -209,6 +212,54 @@ export class Conversation extends DurableObject<Env> {
       message.id, message.role, message.content, message.status, message.createdAt, message.runId, message.parentId, message.revisionOf, message.error,
       message.providerId ?? null, message.model ?? null, message.modelName ?? null, message.reasoning ?? null, message.streamVersion ?? null, message.durableOffset ?? 0);
   }
+  async reviseAssistant(conversationId: string, messageId: string, requestId: string, content: string): Promise<{ messageId: string } | Failure> {
+    if (this.deletedAt || await this.env.LIBRARY.getByName('personal').deletedAt(conversationId)) return { error: '这个对话已删除。', status: 410 };
+    const accepted = this.ctx.storage.transactionSync<{ messageId: string; change: Change } | { messageId: string } | Failure>(() => {
+      if (this.deletedAt) return { error: '这个对话已删除。', status: 410 };
+      const fingerprint = JSON.stringify(['assistant-edit', messageId, content.trim()]);
+      const existing = this.query<{ fingerprint: string; result: string }>('SELECT fingerprint, result FROM submissions WHERE id = ?', requestId).toArray()[0];
+      if (existing) return existing.fingerprint === fingerprint ? JSON.parse(existing.result) as { messageId: string } : { error: '此请求 ID 已用于另一条消息。', status: 409 };
+      const original = this.rawMessage(messageId);
+      if (!original || original.deletedAt || original.role !== 'assistant') return { error: '找不到要编辑的回答。', status: 404 };
+      if (this.query("SELECT id FROM messages WHERE status IN ('queued', 'running') LIMIT 1").toArray().length) return { error: '请等待生成完成或先停止，再编辑消息。', status: 409 };
+      if (!content.trim() || content.trim().length > 100_000) return { error: '请输入 1 到 100,000 字的回答。', status: 400 };
+      if (this.ctx.storage.sql.databaseSize > MAX_DATABASE_START_BYTES) return { error: DATABASE_LIMIT_MESSAGE, status: 507 };
+      const messages = this.all();
+      if (messages.length >= MAX_MESSAGES) return { error: '此对话已达到原型的消息上限，请新建对话。', status: 507 };
+      const revision: Message = { id: crypto.randomUUID(), role: 'assistant', content: content.trim(), status: 'completed', createdAt: Date.now(),
+        runId: null, parentId: original.parentId, revisionOf: original.id, error: null,
+        providerId: original.providerId, model: original.model, modelName: original.modelName };
+      if (payloadBytes(JSON.stringify([...messages, revision])) > MAX_HISTORY_START_BYTES) return { error: HISTORY_LIMIT_MESSAGE, status: 507 };
+      this.insert(revision);
+      const result = { messageId: revision.id };
+      this.query('INSERT INTO submissions VALUES (?, ?, ?)', requestId, fingerprint, JSON.stringify(result));
+      return { ...result, change: this.record([this.rawMessage(revision.id)!], conversationId) };
+    });
+    if ('change' in accepted) { this.broadcast(accepted.change); this.updateSearchSoon(); return { messageId: accepted.messageId }; }
+    return accepted;
+  }
+  async deleteMessage(conversationId: string, messageId: string): Promise<{ deletedAt: number } | Failure> {
+    if (this.deletedAt || await this.env.LIBRARY.getByName('personal').deletedAt(conversationId)) return { error: '这个对话已删除。', status: 410 };
+    const accepted = this.ctx.storage.transactionSync<{ deletedAt: number; change: Change } | { deletedAt: number } | Failure>(() => {
+      if (this.deletedAt) return { error: '这个对话已删除。', status: 410 };
+      const original = this.rawMessage(messageId);
+      if (!original) return { error: '找不到要删除的消息。', status: 404 };
+      if (original.deletedAt) return { deletedAt: original.deletedAt };
+      if (this.query("SELECT id FROM messages WHERE status IN ('queued', 'running') LIMIT 1").toArray().length) return { error: '请等待生成完成或先停止，再删除消息。', status: 409 };
+      const deletedAt = Date.now();
+      this.query('UPDATE messages SET content = ?, reasoning = NULL, error = NULL WHERE id = ?', '', messageId);
+      this.query('INSERT INTO message_deletions VALUES (?, ?)', messageId, deletedAt);
+      if (original.runId) this.query('DELETE FROM generation_results WHERE runId = ?', original.runId);
+      // Keep request IDs so delayed retries cannot recreate deleted content, but erase their saved text.
+      this.query("UPDATE submissions SET fingerprint = '' WHERE json_extract(result, '$.userId') = ? OR json_extract(result, '$.assistantId') = ? OR json_extract(result, '$.messageId') = ?", messageId, messageId, messageId);
+      const change = this.record([this.rawMessage(messageId)!], conversationId);
+      // Force stale cursors to use the redacted snapshot instead of replaying deleted text.
+      this.query('DELETE FROM events WHERE seq < ?', change.seq);
+      return { deletedAt, change };
+    });
+    if ('change' in accepted) { this.broadcast(accepted.change); this.updateSearchSoon(); return { deletedAt: accepted.deletedAt }; }
+    return accepted;
+  }
   async submit(conversationId: string, input: SubmitInput, config: ProviderConfig | null): Promise<Submission | Failure> {
     if (this.deletedAt || await this.env.LIBRARY.getByName('personal').deletedAt(conversationId)) return { error: '这个对话已删除。', status: 410 };
     const accepted = await this.ctx.storage.transaction<Submission | Failure | { result: Submission; change: Change }>(async () => {
@@ -233,22 +284,22 @@ export class Conversation extends DurableObject<Env> {
         if (historyBytes > MAX_HISTORY_START_BYTES) return { error: HISTORY_LIMIT_MESSAGE, status: 507 };
         messages.push(message);
       }
-      const requestedHead = input.branchHead ? messages.find((message) => message.id === input.branchHead && message.role === 'assistant' && message.status === 'completed') : undefined;
+      const requestedHead = input.branchHead ? messages.find((message) => message.id === input.branchHead && message.role === 'assistant' && message.status === 'completed' && !message.deletedAt) : undefined;
       if (input.branchHead && !requestedHead) return { error: '找不到可继续的分支。', status: 404 };
       let parent: Message | undefined;
       let previous: Message | undefined;
       if (input.retryOf) {
-        previous = messages.find((m) => m.id === input.retryOf && m.role === 'assistant');
+        previous = messages.find((m) => m.id === input.retryOf && m.role === 'assistant' && !m.deletedAt);
         parent = messages.find((m) => m.id === previous?.parentId);
-        if (!previous || !parent) return { error: '找不到要重新生成的消息。', status: 404 };
+        if (!previous || !parent || parent.deletedAt) return { error: '找不到要重新生成的消息。', status: 404 };
       }
-      const original = input.revisionOf ? messages.find((m) => m.id === input.revisionOf && m.role === 'user') : undefined;
+      const original = input.revisionOf ? messages.find((m) => m.id === input.revisionOf && m.role === 'user' && !m.deletedAt) : undefined;
       if (input.revisionOf && !original) return { error: '找不到要编辑的消息。', status: 404 };
       if (messages.length + (parent ? 1 : 2) > MAX_MESSAGES) return { error: '此对话已达到原型的消息上限，请新建对话。', status: 507 };
       const content = parent?.content ?? input.content?.trim();
       if (!content || content.length > 16_000) return { error: '请输入 1 到 16,000 字的消息。', status: 400 };
       const runId = crypto.randomUUID();
-      const latestAssistant = [...messages].reverse().find((message) => message.role === 'assistant' && message.status === 'completed');
+      const latestAssistant = [...messages].reverse().find((message) => message.role === 'assistant' && message.status === 'completed' && !message.deletedAt);
       const userParentId = original ? original.parentId : requestedHead?.id ?? latestAssistant?.id ?? null;
       let context: ChatInput[];
       try { context = messageContext(messages, parent ? parent.parentId : userParentId, content); }

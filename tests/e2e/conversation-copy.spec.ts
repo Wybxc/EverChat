@@ -29,11 +29,12 @@ test('copying a conversation creates a new URL with the same messages and indepe
     await page.goto(`/c/${source.id}`);
     await page.getByRole('button', { name: '管理对话', exact: true }).click();
     await page.getByRole('button', { name: '复制对话', exact: true }).click();
+    await expect(page).not.toHaveURL(`/c/${source.id}`);
     await expect(page).toHaveURL(/\/c\/[0-9a-f-]{36}$/);
     const uiCopyId = new URL(page.url()).pathname.split('/').at(-1)!;
     copyIds.push(uiCopyId);
     expect(uiCopyId).not.toBe(source.id);
-    await expect(page.getByText('复制源对话 副本', { exact: true })).toBeVisible();
+    await expect(page.getByRole('banner').getByText('复制源对话 副本', { exact: true })).toBeVisible();
     await expect(page.getByTestId('assistant-message')).toHaveCount(2);
   } finally { await page.request.delete(`/api/conversations/${source.id}`, { headers }); for (const id of copyIds) await page.request.delete(`/api/conversations/${id}`, { headers }); }
 });

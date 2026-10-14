@@ -49,3 +49,12 @@ test('provider context omits unfinished output and bounds a long branch without 
   assert.equal(context.slice(0, -1).reduce((total, message) => total + message.content.length, 0), 80_000);
   assert.ok(!context.some(({ content }) => content === 'failed output'));
 });
+
+test('deletion keeps descendant parent links but excludes a deleted question and its answers from context', () => {
+  const deletedQuestion = { ...history[0], content: '', deletedAt: 123 };
+  const messages = [deletedQuestion, ...history.slice(1)];
+  assert.deepEqual(branchPath(messages, 'followup-answer').map(({ id }) => id), ['question', 'answer', 'followup', 'followup-answer']);
+  assert.deepEqual(messageContext(messages, 'followup-answer', 'next').map(({ content }) => content), ['followup', 'followup-answer', 'next']);
+  const deletedAnswer = history.map((message) => message.id === 'answer' ? { ...message, content: '', deletedAt: 123 } : message);
+  assert.deepEqual(messageContext(deletedAnswer, 'followup-answer', 'next').map(({ content }) => content), ['question', 'followup', 'followup-answer', 'next']);
+});

@@ -16,7 +16,7 @@ export function json(body: unknown, status = 200, headers?: HeadersInit) {
 
 export type AppContext = Context<{ Bindings: Env }>;
 
-export async function parseBody<TSchema extends v.GenericSchema>(context: AppContext, schema: TSchema): Promise<v.InferOutput<TSchema>> {
+export async function parseBody<TSchema extends v.GenericSchema>(context: AppContext, schema: TSchema, options: { maxBytes?: number; tooLarge?: string } = {}): Promise<v.InferOutput<TSchema>> {
   const request = context.req.raw;
   if (!request.headers.get('Content-Type')?.includes('application/json')) throw new HttpError(415, '请使用 JSON 请求。');
   const reader = request.body?.getReader();
@@ -28,7 +28,7 @@ export async function parseBody<TSchema extends v.GenericSchema>(context: AppCon
     const { done, value } = await reader.read();
     if (done) break;
     size += value.byteLength;
-    if (size > 64_000) { await reader.cancel(); throw new HttpError(413, '消息太长，请控制在 16,000 字以内。'); }
+    if (size > (options.maxBytes ?? 64_000)) { await reader.cancel(); throw new HttpError(413, options.tooLarge ?? '消息太长，请控制在 16,000 字以内。'); }
     text += decoder.decode(value, { stream: true });
   }
   try {

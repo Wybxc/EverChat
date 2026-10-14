@@ -11,6 +11,7 @@ export interface Message {
   runId: string | null;
   parentId: string | null;
   revisionOf: string | null;
+  deletedAt?: number | null;
   error: string | null;
   reasoning?: string | null;
   providerId?: string | null;

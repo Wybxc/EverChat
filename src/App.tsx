@@ -1,6 +1,6 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowDown, ArrowRight, ArrowUp, Check, CheckCheck, CloudOff, Copy, Download, Feather, Infinity as InfinityIcon, Lightbulb, LockKeyhole, Menu, MessageCircle, Monitor, Moon, Pencil, Pin, Plus, Quote, RefreshCw, Search, Settings, Sparkles, Square, Sun, WifiOff, X } from 'lucide-react';
+import { ArrowDown, ArrowRight, ArrowUp, Check, CheckCheck, CloudOff, Copy, Download, Feather, Infinity as InfinityIcon, Lightbulb, LockKeyhole, Menu, MessageCircle, Monitor, Moon, Pencil, Pin, Plus, Quote, RefreshCw, Search, Settings, Sparkles, Square, Sun, Trash2, WifiOff, X } from 'lucide-react';
 import 'streamdown/styles.css';
 import 'katex/dist/katex.min.css';
 import type { PluginConfig } from 'streamdown';
@@ -18,9 +18,18 @@ import { ConversationSearch } from './ConversationSearch';
 import { LibrarySearch } from './LibrarySearch';
 import type { SearchResult } from '../shared/search';
 import type { EverChatBackup } from '../shared/backup';
+import { MessageMutationDialog } from './MessageMutationDialog';
 
 const EMPTY_SESSION: SessionInfo = { authenticated: false, configured: false, provider: '', model: '' };
-const Streamdown = lazy(() => import('streamdown').then(({ Streamdown: Component }) => ({ default: Component })));
+type MarkdownRenderer = typeof import('streamdown')['Streamdown'];
+let markdownRenderer: MarkdownRenderer | null = null;
+let markdownRendererPromise: Promise<MarkdownRenderer> | null = null;
+function loadMarkdownRenderer() {
+  if (markdownRenderer) return Promise.resolve(markdownRenderer);
+  return markdownRendererPromise ??= import('streamdown').then(({ Streamdown }) => {
+    markdownRenderer = Streamdown; return Streamdown;
+  }).catch((error: unknown) => { markdownRendererPromise = null; throw error; });
+}
 const markdownPluginLoaders = {
   code: () => import('@streamdown/code').then(({ createCodePlugin }) => createCodePlugin({ themes: ['github-light', 'github-dark'] })),
   math: () => import('@streamdown/math').then(({ createMathPlugin }) => createMathPlugin({ singleDollarTextMath: false })),
@@ -33,28 +42,38 @@ const starters = [
 ];
 
 function MarkdownContent({ content, streaming, searchId, className = 'markdown' }: { content: string; streaming: boolean; searchId?: string; className?: string }) {
+  const [Renderer, setRenderer] = useState<MarkdownRenderer | null>(() => markdownRenderer);
   const [plugins, setPlugins] = useState<PluginConfig | null>(null);
   const needsCode = /```(?!mermaid\b)/iu.test(content);
   const needsMath = /\$\$|\\\(|\\\[/u.test(content);
   const needsMermaid = /```mermaid(?:\s|$)/imu.test(content);
   useEffect(() => {
     let active = true;
+    const load = () => { void loadMarkdownRenderer().then((renderer) => {
+      if (active) setRenderer(() => renderer);
+    }).catch(() => { /* Keep the text readable when the runtime is unavailable. */ }); };
+    load(); window.addEventListener('online', load);
+    return () => { active = false; window.removeEventListener('online', load); };
+  }, []);
+  useEffect(() => {
+    let active = true;
     if (!needsCode && !needsMath && !needsMermaid) { setPlugins(null); return () => { active = false; }; }
-    void Promise.all([
+    const load = () => { void Promise.all([
       needsCode ? markdownPluginLoaders.code() : Promise.resolve(null),
       needsMath ? markdownPluginLoaders.math() : Promise.resolve(null),
       needsMermaid ? markdownPluginLoaders.mermaid() : Promise.resolve(null),
     ]).then(([code, math, mermaid]) => {
       if (active) setPlugins({ ...(code ? { code } : {}), ...(math ? { math } : {}), ...(mermaid ? { mermaid } : {}) });
-    });
-    return () => { active = false; };
+    }).catch(() => { if (active) setPlugins(null); }); };
+    load(); window.addEventListener('online', load);
+    return () => { active = false; window.removeEventListener('online', load); };
   }, [needsCode, needsMath, needsMermaid]);
-  return <div data-search-content={searchId}><Suspense fallback={<div className={`${className} whitespace-pre-wrap`}>{content}</div>}>
-    <Streamdown className={className} mode={streaming ? 'streaming' : 'static'} isAnimating={streaming} components={{
+  return <div data-search-content={searchId}>{Renderer ?
+    <Renderer className={className} mode={streaming ? 'streaming' : 'static'} isAnimating={streaming} components={{
       a: ({ children, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer">{children}</a>,
       img: ({ alt }) => <span className="text-base-content/60">[图片：{alt ?? '附件'}]</span>,
-    }} plugins={plugins ?? undefined} controls={{ code: { copy: true, download: false }, mermaid: { fullscreen: true, download: false, copy: false, panZoom: true } }}>{content}</Streamdown>
-  </Suspense></div>;
+    }} plugins={plugins ?? undefined} controls={{ code: { copy: true, download: false }, mermaid: { fullscreen: true, download: false, copy: false, panZoom: true } }}>{content}</Renderer>
+    : <div className={`${className} whitespace-pre-wrap`}>{content}</div>}</div>;
 }
 
 function Brand({ small = false }: { small?: boolean }) {
@@ -106,23 +125,25 @@ function Login({ session, onLogin }: { session: SessionInfo; onLogin: () => Prom
   </main>;
 }
 
-function MessageView({ message, busy, onRetry, onEdit, onQuote, branchSelected, onSelectBranch }: { message: Message; busy: boolean; onRetry: () => void; onEdit: () => void; onQuote: () => void; branchSelected: boolean; onSelectBranch: () => void }) {
+function MessageView({ message, busy, onRetry, onEdit, onQuote, onDelete, canRetry, branchSelected, onSelectBranch }: { message: Message; busy: boolean; onRetry: () => void; onEdit: () => void; onQuote: () => void; onDelete: () => void; canRetry: boolean; branchSelected: boolean; onSelectBranch: () => void }) {
   const [copied, setCopied] = useState(false);
   const [reasoningOpen, setReasoningOpen] = useState(true);
   const reasoningScroll = useFollowScroll(message.id);
   const copy = async () => {
     try { await navigator.clipboard.writeText(message.content); setCopied(true); setTimeout(() => setCopied(false), 1800); } catch { /* Clipboard can be unavailable outside HTTPS. */ }
   };
+  if (message.deletedAt) return <article data-testid={`${message.role}-message`} data-message-id={message.id} data-deleted="true" className={`py-2 text-xs text-base-content/60 ${message.role === 'user' ? 'text-right' : ''}`}>消息已删除</article>;
   const tools = <>
     <button className="btn btn-ghost btn-xs gap-1.5" onClick={copy} aria-label="复制消息">{copied ? <Check size={13} /> : <Copy size={13} />}{copied ? '已复制' : '复制'}</button>
     <button className="btn btn-ghost btn-xs gap-1.5" onClick={onQuote} aria-label="引用消息"><Quote size={13} />引用</button>
   </>;
   if (message.role === 'user') return <article data-testid="user-message" data-message-id={message.id} className="group ml-auto w-fit max-w-[90%] sm:max-w-[82%]">
     <div data-search-content={`${message.id}:content`} className="rounded-2xl rounded-br-md border border-base-content/50 bg-base-200 px-5 py-3.5 text-[15px] leading-7 whitespace-pre-wrap break-words">{message.content}</div>
-    <div className="mt-1.5 flex items-center justify-end gap-2 text-[11px] text-base-content/60">
+    <div className="mt-1.5 flex flex-wrap items-center justify-end gap-2 text-[11px] text-base-content/60">
       {message.revisionOf && <span>新版本</span>}
       {tools}<CheckCheck size={13} /><span>已保存</span>
       <button className="btn btn-ghost btn-xs btn-square sm:opacity-0 sm:group-hover:opacity-100 sm:focus:opacity-100" aria-label="编辑为新版本" title="编辑为新版本" disabled={busy} onClick={onEdit}><Pencil size={12} /></button>
+      <button className="btn btn-ghost btn-xs btn-square" aria-label="删除消息" title="删除消息" disabled={busy || !navigator.onLine} onClick={onDelete}><Trash2 size={12} /></button>
     </div>
   </article>;
   return <article data-testid="assistant-message" data-message-id={message.id} data-status={message.status} data-durable-offset={message.durableOffset ?? 0} data-live-offset={message.liveOffset ?? message.durableOffset ?? 0} className="group flex gap-3 sm:gap-4">
@@ -136,10 +157,12 @@ function MessageView({ message, busy, onRetry, onEdit, onQuote, branchSelected, 
       {message.content ? <MarkdownContent content={message.content} searchId={`${message.id}:content`} streaming={isActive(message)} /> : isActive(message) && !message.reasoning ? <p className="py-2 text-sm text-base-content/60">准备中…</p> : null}
       {message.status === 'failed' && <p role="alert" className="mt-4 rounded-lg bg-error/5 px-3 py-2 text-xs font-medium leading-6 text-base-content">{message.error ?? '生成失败，已保存部分内容。'}</p>}
       {message.status === 'cancelled' && <p className="mt-4 text-xs text-base-content/60">已停止</p>}
-      {!isActive(message) && <div className="mt-4 flex items-center gap-1 text-base-content/60">
+      {!isActive(message) && <div className="mt-4 flex flex-wrap items-center gap-1 text-base-content/60">
         {tools}
         {message.status === 'completed' && <button className={`btn btn-ghost btn-xs gap-1.5 ${branchSelected ? 'text-primary' : ''}`} disabled={busy || branchSelected} onClick={onSelectBranch} aria-label={branchSelected ? '当前分支' : '继续此分支'}>{branchSelected ? '当前分支' : '继续此分支'}</button>}
-        <button className="btn btn-ghost btn-xs gap-1.5" disabled={busy} onClick={onRetry}><RefreshCw size={12} />重新生成</button>
+        <button className="btn btn-ghost btn-xs gap-1.5" disabled={busy || !canRetry} onClick={onRetry}><RefreshCw size={12} />重新生成</button>
+        <button className="btn btn-ghost btn-xs btn-square" aria-label="编辑回答" title="编辑回答" disabled={busy || !navigator.onLine} onClick={onEdit}><Pencil size={12} /></button>
+        <button className="btn btn-ghost btn-xs btn-square" aria-label="删除消息" title="删除消息" disabled={busy || !navigator.onLine} onClick={onDelete}><Trash2 size={12} /></button>
       </div>}
     </div>
   </article>;
@@ -174,6 +197,7 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [modelChoice, setModelChoice] = useState<string>(() => read('chat-model', ''));
   const [branchHead, setBranchHead] = useState<string | null>(null);
+  const [messageMutation, setMessageMutation] = useState<{ id: string; mode: 'edit' | 'delete' } | null>(null);
   const models = session?.models ?? [];
   const selectedModel = models.find((model) => modelSelectionKey(model) === modelChoice)
     ?? models.find((model) => model.providerId === session?.activeProviderId && model.model === session?.model)
@@ -204,6 +228,8 @@ export function App() {
   const currentPending = pending.find((item) => item.conversation.id === selected);
   const { snapshot, durableSnapshot, hasUnconfirmed, connection, syncedAt, loading, syncError, reconnect } = useConversation(selected, Boolean(session?.authenticated), loggedOut, Boolean(currentPending && !currentPending.error), rememberDeletion, selected ? deletedAt(selected) : null);
   const active = snapshot.messages.find(isActive);
+  const liveUserIds = useMemo(() => new Set(snapshot.messages.filter((message) => message.role === 'user' && !message.deletedAt).map((message) => message.id)), [snapshot.messages]);
+  const mutationMessage = messageMutation ? snapshot.messages.find((message) => message.id === messageMutation.id) : undefined;
   const canSearch = Boolean(selected && snapshot.messages.length && !snapshot.deletedAt && session?.authenticated);
   const searchOpen = canSearch && (conversationSearchFor === selected || searchJump?.id === selected);
   const closeConversationSearch = () => { setConversationSearchFor(null); setSearchJump(null); searchTrigger.current?.focus(); };
@@ -242,8 +268,8 @@ export function App() {
   }, [libraryQuery.data, localConversations, pending]);
   const busy = Boolean(active || currentPending || sending || syncError || invalidRoute);
   const currentConversation = conversations.find((item) => item.id === selected);
-  const latestCompletedAssistant = useMemo(() => [...snapshot.messages].reverse().find((message) => message.role === 'assistant' && message.status === 'completed'), [snapshot.messages]);
-  const currentBranchHead = branchHead && snapshot.messages.some((message) => message.id === branchHead && message.role === 'assistant' && message.status === 'completed')
+  const latestCompletedAssistant = useMemo(() => [...snapshot.messages].reverse().find((message) => message.role === 'assistant' && message.status === 'completed' && !message.deletedAt), [snapshot.messages]);
+  const currentBranchHead = branchHead && snapshot.messages.some((message) => message.id === branchHead && message.role === 'assistant' && message.status === 'completed' && !message.deletedAt)
     ? branchHead : latestCompletedAssistant?.id;
   const visibleConversations = conversations.filter((item) => Boolean(item.archived) === archivedList && item.title.toLowerCase().includes(search.toLowerCase()));
 
@@ -322,7 +348,7 @@ export function App() {
     requestAnimationFrame(() => editor.current?.focus());
   };
   const selectBranch = (message: Message) => {
-    if (!selected || message.role !== 'assistant' || message.status !== 'completed') return;
+    if (!selected || message.role !== 'assistant' || message.status !== 'completed' || message.deletedAt) return;
     setBranchHead(message.id); write(`branch-head:${selected}`, message.id); setError('');
     requestAnimationFrame(() => editor.current?.focus());
   };
@@ -337,7 +363,7 @@ export function App() {
 
   const queue = async (input: SubmitInput) => {
     if (!input.selection && selectedModel) input = { ...input, selection: { providerId: selectedModel.providerId, model: selectedModel.model } };
-    const selectedBranch = branchHead && snapshot.messages.some((message) => message.id === branchHead && message.role === 'assistant' && message.status === 'completed') ? branchHead : undefined;
+    const selectedBranch = branchHead && snapshot.messages.some((message) => message.id === branchHead && message.role === 'assistant' && message.status === 'completed' && !message.deletedAt) ? branchHead : undefined;
     if (input.content !== undefined && input.revisionOf === undefined && selectedBranch && input.branchHead === undefined) input = { ...input, branchHead: selectedBranch };
     if (input.showReasoning === undefined) input = { ...input, showReasoning: session?.showReasoning ?? false };
     const generationModel = input.selection ? models.find((model) => model.providerId === input.selection!.providerId && model.model === input.selection!.model) : selectedModel;
@@ -383,8 +409,21 @@ export function App() {
     finally { setSending(false); }
   };
   const edit = (message: Message) => {
+    if (message.role === 'assistant') { setMessageMutation({ id: message.id, mode: 'edit' }); return; }
     setRevisionOf(message.id); setDraft(message.content);
     write(`draft:${selected}`, { text: message.content, revisionOf: message.id }); editor.current?.focus();
+  };
+  const confirmMessageMutation = async (content: string, requestId: string) => {
+    if (!selected || !messageMutation) return;
+    if (messageMutation.mode === 'edit') {
+      await api(`/conversations/${selected}/messages/${messageMutation.id}`, 'PATCH', { requestId, content });
+      setBranchHead(null); write(`branch-head:${selected}`, null); refreshLibrary(); scrollToBottom();
+    } else {
+      await api(`/conversations/${selected}/messages/${messageMutation.id}`, 'DELETE');
+      if (branchHead === messageMutation.id) { setBranchHead(null); write(`branch-head:${selected}`, null); }
+      if (revisionOf === messageMutation.id) { setRevisionOf(undefined); write(`draft:${selected}`, { text: draft }); }
+    }
+    requestAnimationFrame(() => editor.current?.focus());
   };
   const quote = (message: Message) => {
     const source = message.content.trim();
@@ -405,7 +444,7 @@ export function App() {
   const exportChat = (format: 'md' | 'txt' | 'html') => {
     if (!selected) return;
     const title = currentConversation?.title ?? 'EverChat';
-    const messages = durableSnapshot.messages;
+    const messages = durableSnapshot.messages.filter((message) => !message.deletedAt);
     const markdown = `# ${title}\n\n${messages.map((message) => {
       const role = message.role === 'user' ? '你' : 'EverChat';
       const model = message.role === 'assistant' && (message.modelName || message.model) ? `\n模型：${message.modelName || message.model}\n` : '';
@@ -495,7 +534,7 @@ export function App() {
           </div>
         </section> : <section ref={contentRef} aria-label="对话消息" className="mx-auto w-full max-w-3xl space-y-8 px-5 py-8 sm:px-9 sm:py-10">
           {loading && !snapshot.messages.length && <div className="py-10 text-center text-xs text-base-content/60"><span className="loading loading-dots loading-sm" /><p className="mt-3">正在找回我们的对话…</p></div>}
-          {snapshot.messages.map((message) => <MessageView key={message.id} message={message} busy={busy} onRetry={() => void retry(message)} onEdit={() => edit(message)} onQuote={() => quote(message)} branchSelected={message.role === 'assistant' && message.status === 'completed' && message.id === currentBranchHead} onSelectBranch={() => selectBranch(message)} />)}
+          {snapshot.messages.map((message) => <MessageView key={message.id} message={message} busy={busy} onRetry={() => void retry(message)} onEdit={() => edit(message)} onQuote={() => quote(message)} onDelete={() => setMessageMutation({ id: message.id, mode: 'delete' })} canRetry={liveUserIds.has(message.parentId ?? '')} branchSelected={message.role === 'assistant' && message.status === 'completed' && message.id === currentBranchHead} onSelectBranch={() => selectBranch(message)} />)}
           {currentPending && <article className="ml-auto max-w-[90%] rounded-2xl border border-dashed border-base-content/50 bg-base-200 px-5 py-4"><p className="text-sm leading-7 whitespace-pre-wrap">{currentPending.input.content ?? '新版本'}</p><div className="mt-2 flex items-center gap-2 text-[11px] text-base-content/60"><CloudOff size={12} />{currentPending.error ? '发送失败' : '等待发送'}</div>{currentPending.error && <p className="mt-2 text-xs font-medium leading-5 text-base-content">{currentPending.error}</p>}<div className="mt-2 flex gap-1"><button className="btn btn-ghost btn-xs" onClick={() => { const clean = { ...currentPending, error: undefined }; commitPending(pendingRef.current.map((item) => item.input.requestId === clean.input.requestId ? clean : item)); void deliver(clean); }}>重试</button><button className="btn btn-ghost btn-xs" onClick={() => { if (currentPending.input.content) updateDraft(currentPending.input.content); commitPending(pendingRef.current.filter((item) => item.input.requestId !== currentPending.input.requestId)); }}>编辑</button></div></article>}
         </section>}
       </div>
@@ -529,5 +568,6 @@ export function App() {
       </div>
       <form method="dialog" className="modal-backdrop"><button>关闭</button></form>
     </dialog>
+    {messageMutation && mutationMessage && <MessageMutationDialog key={`${selected}:${messageMutation.id}:${messageMutation.mode}`} message={mutationMessage} mode={messageMutation.mode} confirm={confirmMessageMutation} close={() => setMessageMutation(null)} />}
   </div>;
 }

@@ -3,7 +3,9 @@ import { branchPath, type ChatInput, type Message } from '../shared/types';
 /** Build provider history from one parent path and append the current user input. */
 export function messageContext(messages: Message[], parentId: string | null, content: string): ChatInput[] {
   const history = parentId ? branchPath(messages, parentId) : [];
-  const context: ChatInput[] = history.filter((message) => message.status === 'completed')
+  const deletedUsers = new Set(history.filter((message) => message.role === 'user' && message.deletedAt).map(({ id }) => id));
+  const context: ChatInput[] = history.filter((message) => message.status === 'completed' && !message.deletedAt
+    && !(message.role === 'assistant' && message.parentId && deletedUsers.has(message.parentId)))
     .map(({ role, content }) => ({ role, content }));
   // Bound provider context for a personal prototype. Keep the most recent turns.
   let characters = context.reduce((total, message) => total + message.content.length, 0);

@@ -20,6 +20,15 @@ test('backupMessage converts an unfinished generation into recoverable partial c
   assert.equal(result.modelName, 'DeepSeek Flash');
 });
 
+test('a message tombstone preserves graph identity without exporting deleted text or thoughts', () => {
+  const result = backupMessage({ ...assistant, status: 'completed', deletedAt: 123 });
+  assert.equal(result.deletedAt, 123);
+  assert.equal(result.id, assistant.id);
+  assert.equal(result.parentId, assistant.parentId);
+  assert.equal(result.content, '');
+  assert.equal(result.reasoning, null);
+});
+
 test('validateBackup accepts version 1 backups and rejects malformed messages', () => {
   const id = crypto.randomUUID();
   const backup = validateBackup({

@@ -28,6 +28,34 @@ const highlighted = (page: Page) => page.evaluate(() => String(CSS.highlights.ge
 const pane = (page: Page) => page.getByRole('region', { name: '对话消息' }).locator('..');
 const metrics = (page: Page) => pane(page).evaluate((node) => ({ top: node.scrollTop, height: node.scrollHeight, gap: node.scrollHeight - node.scrollTop - node.clientHeight }));
 
+test('unavailable Markdown runtimes preserve messages and drafts, then recover on reconnect', async ({ page, context }) => {
+  const fixture = await setup(page.request);
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  const runtime = '**/node_modules/.vite/deps/streamdown.js*';
+  const plugins = '**/node_modules/.vite/deps/@streamdown_*.js*';
+  await page.route(runtime, (route) => route.abort());
+  await page.route(plugins, (route) => route.abort());
+  try {
+    await page.goto(`/c/${fixture.id}`);
+    const answer = page.getByTestId('assistant-message').first();
+    await expect(answer).toContainText('const TARGET = 1;');
+    await expect(answer.locator('[data-search-content$=":content"]')).toContainText('**格式**');
+    const composer = page.getByLabel('消息', { exact: true });
+    await composer.fill('保留我的离线草稿');
+    await context.setOffline(true);
+    await expect(page.getByRole('banner')).toContainText('离线');
+    await page.unroute(runtime);
+    await page.unroute(plugins);
+    await context.setOffline(false);
+    await expect(page.locator('.katex')).toHaveCount(1);
+    await expect(page.locator('[data-streamdown="mermaid"] svg').first()).toBeVisible();
+    await expect(answer.locator('[data-streamdown="strong"]')).toContainText('格式');
+    await expect(composer).toHaveValue('保留我的离线草稿');
+    expect(errors).toEqual([]);
+  } finally { await context.setOffline(false); await fixture.cleanup(); }
+});
+
 test('search finds rendered Markdown and literal text, navigates occurrences, excludes controls, and restores focus', async ({ page }) => {
   const fixture = await setup(page.request);
   try {

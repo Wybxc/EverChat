@@ -72,10 +72,11 @@ test('the client can download text formats and import a backup into a new conver
     const backupResponse = await page.request.get(`/api/conversations/${source.id}/backup`, { headers });
     const backup = await backupResponse.json() as EverChatBackup;
     await page.locator('input[type="file"]').setInputFiles({ name: 'backup.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(backup)) });
+    await expect(page).not.toHaveURL(`/c/${source.id}`);
     await expect(page).toHaveURL(/\/c\/[0-9a-f-]{36}$/);
     restoredId = new URL(page.url()).pathname.split('/').at(-1)!;
     expect(restoredId).not.toBe(source.id);
     await expect(page.getByTestId('assistant-message')).toHaveCount(2);
-    await expect(page.getByText('备份源对话', { exact: true })).toBeVisible();
+    await expect(page.getByRole('banner').getByText('备份源对话', { exact: true })).toBeVisible();
   } finally { await source.cleanup(restoredId || undefined); }
 });
