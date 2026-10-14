@@ -10,6 +10,7 @@ import { MAX_CONVERSATIONS, MAX_DATABASE_BYTES } from '../../worker/resource-lim
 import { SUMMARY_SYSTEM_PROMPT } from '../../shared/summaries';
 import { AttachmentStore } from '../../worker/attachments';
 import { HttpError } from '../../worker/http';
+import { ToolJournalFixture, type ToolJournalControl } from './tool-task-journal';
 
 type AttachmentControl = { id?: string; expire?: boolean; count?: number; reset?: boolean; holdDelete?: string; releaseDelete?: boolean;
   failDelete?: string; holdTextPut?: string; holdTextRead?: string; releaseText?: boolean; resetLibrary?: boolean; unconfigured?: boolean; expireCopy?: string; expireImport?: string; noBucket?: boolean };
@@ -153,6 +154,12 @@ export class Library extends ProductionLibrary {
 }
 
 export class Conversation extends ProductionConversation {
+  private toolJournalFixture?: ToolJournalFixture;
+  async fixtureToolJournal(input: ToolJournalControl) {
+    if (input.action === 'reset') { await this.ctx.storage.sync(); this.ctx.abort('Intentional tool journal reset', { retryAlarm: true }); }
+    this.toolJournalFixture ??= new ToolJournalFixture(this.ctx.storage);
+    return this.toolJournalFixture.control(input);
+  }
   async fixtureSearchState(reset: boolean) {
     if (reset) { await this.ctx.storage.sync(); this.ctx.abort('Intentional index reset', { retryAlarm: true }); }
     return { pending: this.ctx.storage.sql.exec('SELECT * FROM search_outbox').toArray(), retry: this.ctx.storage.sql.exec('SELECT * FROM search_retry').toArray()[0] ?? null, alarmAt: await this.ctx.storage.getAlarm() };
@@ -339,12 +346,20 @@ export default {
       const { id, fail, rebuild } = await request.json() as { id?: string; fail?: boolean; rebuild?: boolean };
       return Response.json(await (env.LIBRARY as unknown as DurableObjectNamespace<Library>).getByName('personal').fixtureSearchControl(id, fail, rebuild));
     }
-    const match = /^\/api\/__test\/conversations\/([0-9a-f-]{36})\/(state|context|parent|alarm|abort|abort-stop|history|search-history|indexed-history|search-state|search-reset|search-retry|fill|resources|storage-error|delete-failure|delete-reset|deletion-state|late-submit)$/.exec(url.pathname);
+    const match = /^\/api\/__test\/conversations\/([0-9a-f-]{36})\/(state|context|parent|alarm|abort|abort-stop|history|search-history|indexed-history|search-state|search-reset|search-retry|fill|resources|storage-error|delete-failure|delete-reset|deletion-state|late-submit|tool-journal)$/.exec(url.pathname);
     if (!match) return production.fetch(request, env, ctx);
     if (request.method !== 'POST' || request.headers.get('Origin') !== url.origin) return new Response('Forbidden', { status: 403 });
     if (!await authenticated(request, env)) return new Response('Unauthorized', { status: 401 });
-    const { runId, pairs, target, count, messageId, parentId } = await request.json() as { runId: string; pairs: number; target: number; count: number; messageId: string; parentId: string };
     const conversation = (env.CONVERSATIONS as unknown as DurableObjectNamespace<Conversation>).getByName(match[1]);
+    if (match[2] === 'tool-journal') {
+      const input = await request.json() as ToolJournalControl;
+      try { return Response.json(await conversation.fixtureToolJournal(input)); }
+      catch (error) {
+        if (input.action === 'reset' && error instanceof Error && error.message.includes('Intentional tool journal reset')) return Response.json({ reset: true }, { status: 503 });
+        return Response.json({ error: error instanceof Error ? error.message : 'Tool journal fixture failed' }, { status: 400 });
+      }
+    }
+    const { runId, pairs, target, count, messageId, parentId } = await request.json() as { runId: string; pairs: number; target: number; count: number; messageId: string; parentId: string };
     switch (match[2]) {
       case 'search-history': return Response.json(await conversation.fixtureSearchHistory());
       case 'indexed-history': await conversation.fixtureIndexedHistory(count); break;

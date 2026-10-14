@@ -17,7 +17,7 @@ export interface ProviderToolTurn {
 }
 export interface ProviderToolExchange { turn: ProviderToolTurn; outcomes: WebToolOutcome[] }
 export interface ProviderToolRequest { enabled: readonly WebToolName[]; exchanges?: ProviderToolExchange[] }
-const identity = (config: ProviderConfig) => JSON.stringify([config.provider, config.baseUrl, config.model]);
+export const providerToolIdentity = (config: ProviderConfig) => JSON.stringify([config.provider, config.baseUrl, config.model]);
 const bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).byteLength;
 const object = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const array = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
@@ -93,6 +93,28 @@ function assertPrivateReasoning(config: ProviderConfig, content: AssistantPart[]
     if (config.provider === 'anthropic' && !present(options?.anthropic?.signature) && !present(options?.anthropic?.redactedData)
       || config.provider === 'openai-responses' && !present(options?.openai?.reasoningEncryptedContent)) throw new ProviderError('供应商未返回工具续接需要的完整推理资料。');
   }
+}
+
+export function validateProviderToolTurn(turn: ProviderToolTurn, enabled: readonly WebToolName[], config: ProviderConfig) {
+  if (turn.identity !== providerToolIdentity(config) || !Array.isArray(turn.content) || !turn.content.length || turn.content.length > 64
+    || !Array.isArray(turn.calls) || turn.calls.length > MAX_TOOL_CALLS_PER_TURN || bytes(turn) > MAX_TOOL_TURN_CONTEXT_BYTES
+    || !['stop', 'length', 'tool-calls'].includes(turn.finishReason) || (turn.calls.length > 0) !== (turn.finishReason === 'tool-calls')) throw new ProviderError('工具续接状态与原调用不符。');
+  let text = 0, reasoning = 0;
+  for (const part of turn.content) {
+    if (part.type === 'text' && typeof part.text === 'string') text += part.text.length;
+    else if (part.type === 'reasoning' && typeof part.text === 'string') reasoning += part.text.length;
+    else if (part.type !== 'tool-call') throw new ProviderError('工具续接内容类型无效。');
+  }
+  if (text > 100_000 || reasoning > 100_000 || !turn.calls.length && !turn.content.some((part) => part.type === 'text' && part.text.trim())) throw new ProviderError('工具续接正文或思考内容无效。');
+  const actual = turn.content.filter((part) => part.type === 'tool-call'), used = new Set<string>();
+  if (actual.length !== turn.calls.length) throw new ProviderError('工具续接调用数量不符。');
+  for (const candidate of turn.calls) {
+    const call = validateWebToolCall(candidate, enabled), matches = actual.filter((part) => part.toolCallId === call.id);
+    if (used.has(call.id) || matches.length !== 1 || matches[0].providerExecuted || matches[0].toolName !== call.name
+      || JSON.stringify(matches[0].input) !== JSON.stringify(call.input)) throw new ProviderError('工具续接调用身份或参数不符。');
+    used.add(call.id);
+  }
+  if (turn.calls.length) assertPrivateReasoning(config, turn.content);
 }
 
 /** Replays a bounded saved response through the installed SDK; it never calls a provider. */
@@ -187,8 +209,9 @@ export async function collectProviderToolTurn(config: ProviderConfig, enabled: r
     if (calls.length) assertPrivateReasoning(config, content);
     wireIdentity.assertCalls(calls);
     const state = guard.checkpoint();
-    const turn: ProviderToolTurn = { identity: identity(config), content, calls, finishReason, usage: state.usage, usageIsFinal: state.usageIsFinal };
+    const turn: ProviderToolTurn = { identity: providerToolIdentity(config), content, calls, finishReason, usage: state.usage, usageIsFinal: state.usageIsFinal };
     if (bytes(turn) > MAX_TOOL_TURN_CONTEXT_BYTES) throw new ProviderError('工具续接内容超过保存限制。');
+    validateProviderToolTurn(turn, enabled, config);
     return turn;
   } catch (error) {
     await (replay ?? body).cancel().catch(() => {});
@@ -202,16 +225,8 @@ export function providerToolPrompt(exchanges: ProviderToolExchange[], enabled: r
   const prompt: LanguageModelV4Prompt = [], used = new Set<string>();
   try {
     for (const { turn, outcomes } of exchanges) {
-      if (turn.identity !== identity(config) || turn.finishReason !== 'tool-calls' || !turn.calls.length || turn.calls.length > MAX_TOOL_CALLS_PER_TURN
-        || bytes(turn) > MAX_TOOL_TURN_CONTEXT_BYTES || !turn.content.length || turn.content.length > 64 || outcomes.length !== turn.calls.length) throw new Error();
-      assertPrivateReasoning(config, turn.content);
-      let textCharacters = 0, reasoningCharacters = 0;
-      for (const part of turn.content) {
-        if (part.type === 'text') textCharacters += part.text.length;
-        else if (part.type === 'reasoning') reasoningCharacters += part.text.length;
-        else if (part.type !== 'tool-call') throw new Error();
-      }
-      if (textCharacters > 100_000 || reasoningCharacters > 100_000) throw new Error();
+      validateProviderToolTurn(turn, enabled, config);
+      if (turn.finishReason !== 'tool-calls' || outcomes.length !== turn.calls.length) throw new Error();
       const actual = turn.content.filter((part) => part.type === 'tool-call');
       if (actual.length !== turn.calls.length) throw new Error();
       const results = turn.calls.map((candidate) => {
