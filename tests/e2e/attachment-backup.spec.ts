@@ -105,13 +105,13 @@ test('the real browser ZIP survives source deletion and restores private preview
     await send(request, fixture.id, { fileIds: [csv.id, pdf.id] });
     await page.goto(`/c/${fixture.id}`); await page.getByLabel('访问密码').fill('everchat-local'); await page.getByRole('button', { name: '进入我的空间' }).click();
     await expect(page.getByTestId('assistant-message')).toHaveCount(1);
-    await page.getByRole('button', { name: '对话文件操作' }).click();
+    await page.getByRole('button', { name: '更多会话操作' }).click();
     const pending = page.waitForEvent('download'); await page.getByRole('button', { name: '下载备份', exact: true }).click();
     const download = await pending, bytes = await readFile((await download.path())!); expect(download.suggestedFilename()).toMatch(/\.everchat\.zip$/);
     const decoded = await decodeArchive(bytes); expect(decoded.manifest.files).toHaveLength(3); expect(bytes.toString()).not.toContain('integration-test-key');
     await request.delete(`/api/conversations/${fixture.id}`, { headers });
     await device.request.post('/api/login', { headers, data: { password: 'everchat-local' } });
-    const other = await device.newPage(); await other.goto('/'); await expect(other.getByRole('button', { name: '对话文件操作' })).toBeVisible();
+    const other = await device.newPage(); await other.goto('/'); await expect(other.getByRole('button', { name: '更多会话操作' })).toBeVisible();
     await other.getByRole('banner').locator('input[type="file"]').setInputFiles({ name: 'saved.everchat.zip', mimeType: 'application/zip', buffer: bytes });
     await expect(other).toHaveURL(/\/c\/[0-9a-f-]{36}$/); imported = new URL(other.url()).pathname.split('/').at(-1)!; fixture.restored.push(imported);
     await expect(other.getByTestId('assistant-message')).toHaveCount(1);
@@ -144,7 +144,7 @@ test('claimed finalization completes after the initiating page closes and a lost
     const file = await upload(request, fixture.id); await send(request, fixture.id, { fileIds: [file.id] });
     await page.goto(`/c/${fixture.id}`); await page.getByLabel('访问密码').fill('everchat-local'); await page.getByRole('button', { name: '进入我的空间' }).click();
     await expect(page.getByTestId('assistant-message')).toHaveCount(1);
-    await page.getByRole('button', { name: '对话文件操作' }).click(); const pending = page.waitForEvent('download');
+    await page.getByRole('button', { name: '更多会话操作' }).click(); const pending = page.waitForEvent('download');
     await page.getByRole('button', { name: '下载备份', exact: true }).click(); const zip = await pending, bytes = await readFile((await zip.path())!);
     await page.route('**/api/backup/imports/*/complete', async (route) => {
       id = new URL(route.request().url()).pathname.split('/').at(-2)!; fixture.restored.push(id);
@@ -315,7 +315,7 @@ test('an otherwise empty conversation can back up and restore saved files that h
     const file = await upload(request, fixture.id, 'unused.txt', Buffer.from('saved before chat'), 'text/plain', false);
     await page.goto(`/c/${fixture.id}`); await page.getByLabel('访问密码').fill('everchat-local'); await page.getByRole('button', { name: '进入我的空间' }).click();
     await expect(page.getByRole('banner').getByText('附件备份源', { exact: true })).toBeVisible();
-    await page.getByRole('button', { name: '对话文件操作' }).click(); await expect(page.getByRole('button', { name: '下载备份', exact: true })).toBeEnabled();
+    await page.getByRole('button', { name: '更多会话操作' }).click(); await expect(page.getByRole('button', { name: '下载备份', exact: true })).toBeEnabled();
     const pending = page.waitForEvent('download'); await page.getByRole('button', { name: '下载备份', exact: true }).click();
     const downloaded = await pending, bytes = await readFile((await downloaded.path())!), decoded = await decodeArchive(bytes);
     expect(decoded.manifest.backup.conversation.messages).toEqual([]); expect(decoded.manifest.files).toHaveLength(1);

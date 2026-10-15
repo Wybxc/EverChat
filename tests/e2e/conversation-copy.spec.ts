@@ -29,7 +29,7 @@ test('copying a conversation creates a new URL with the same messages and indepe
     expect(result.snapshot.messages.map(({ id }) => id)).not.toEqual(original.messages.map(({ id }) => id));
 
     await page.goto(`/c/${source.id}`);
-    await page.getByRole('button', { name: '管理对话', exact: true }).click();
+    await page.getByRole('button', { name: '更多会话操作', exact: true }).click();
     await page.getByRole('button', { name: '复制对话', exact: true }).click();
     await expect(page).not.toHaveURL(`/c/${source.id}`);
     await expect(page).toHaveURL(/\/c\/[0-9a-f-]{36}$/);

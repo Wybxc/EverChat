@@ -1,3 +1,4 @@
+import { openSpaceSettings } from '../ui';
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import type { ProviderSettings, SessionInfo, Snapshot, Submission } from '../../shared/types';
 import { DEFAULT_CONVERSATION_SETTINGS } from '../../shared/conversation-settings';
@@ -9,7 +10,7 @@ async function login(page: Page) {
   await expect(page.getByLabel('消息', { exact: true })).toBeVisible();
 }
 async function providers(page: Page) {
-  await page.getByRole('button', { name: '空间设置', exact: true }).click();
+  await openSpaceSettings(page);
   const tab = page.getByRole('tab', { name: '供应商', exact: true }); await tab.focus(); await tab.press('Space');
   await expect(tab).toHaveAttribute('aria-selected', 'true');
 }

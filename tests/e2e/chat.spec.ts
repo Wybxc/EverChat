@@ -1,3 +1,4 @@
+import { openSpaceSettings } from '../ui';
 import { messageText } from '../../shared/message-content';
 import { test, expect, type BrowserContext, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
@@ -125,13 +126,13 @@ test('mobile and desktop layouts fit their viewports', async ({ page }) => {
   await page.getByRole('button', { name: '打开对话列表' }).click();
   await expect(page.getByRole('button', { name: '开启新对话' })).toBeVisible();
   await page.getByRole('button', { name: '收起侧栏' }).click();
-  await page.getByRole('button', { name: '空间设置' }).click();
+  await openSpaceSettings(page);
   await page.getByRole('radio', { name: '深色' }).focus();
   await page.getByRole('radio', { name: '深色' }).press('Space');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-  await page.getByRole('button', { name: '空间设置' }).click();
+  await openSpaceSettings(page);
   await page.getByRole('radio', { name: '浅色' }).focus();
   await page.getByRole('radio', { name: '浅色' }).press('Space');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
@@ -146,7 +147,7 @@ test('new conversation moves keyboard focus to the composer', async ({ page }) =
 test('system theme follows the operating-system color preference', async ({ page }) => {
   await login(page);
   await page.emulateMedia({ colorScheme: 'dark' });
-  await page.getByRole('button', { name: '空间设置' }).click();
+  await openSpaceSettings(page);
   await page.getByRole('radio', { name: '系统' }).focus();
   await page.getByRole('radio', { name: '系统' }).press('Space');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');

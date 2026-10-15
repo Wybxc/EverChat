@@ -1,3 +1,4 @@
+import { openSpaceSettings } from '../ui';
 import { messageParts, messageText } from '../../shared/message-content';
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import WebSocket from 'ws';
@@ -193,7 +194,7 @@ test('browser rendering streams ahead of saving, while export and throttled cach
     await expect(answer).toHaveAttribute('data-durable-offset', '0');
     await expect(page.getByRole('banner')).toContainText('保存中');
     const download = page.waitForEvent('download');
-    await page.getByRole('button', { name: '对话文件操作' }).click();
+    await page.getByRole('button', { name: '更多会话操作' }).click();
     await page.getByRole('button', { name: 'Markdown', exact: true }).click();
     const saved = await download;
     const exported = await readFile((await saved.path())!, 'utf8');
@@ -260,7 +261,7 @@ test('logging out clears cached messages even when a delayed durable snapshot wr
     const answer = page.getByTestId('assistant-message');
     await expect.poll(async () => Number(await answer.getAttribute('data-durable-offset')), { intervals: [50] }).toBeGreaterThan(0);
     id = new URL(page.url()).pathname.split('/')[2];
-    await page.getByRole('button', { name: '空间设置' }).click();
+    await openSpaceSettings(page);
     await page.getByRole('button', { name: '退出并清除本地记录' }).click();
     await expect(page.getByLabel('访问密码')).toBeVisible();
     // Advance beyond the cache writer's two-second window and sample throughout it.

@@ -1,3 +1,4 @@
+import { openSpaceSettings } from '../ui';
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import WebSocket from 'ws';
 import type { ConversationSettings, ProviderSettings, Snapshot, Submission, SyncPacket } from '../../shared/types';
@@ -127,7 +128,7 @@ test('logging out cannot restore parameter drafts when an earlier autosave respo
     await modal.getByLabel('自定义会话系统提示词').check(); await modal.getByLabel('会话系统提示词', { exact: true }).fill(prompt);
     await reachedServer;
     await modal.getByRole('button', { name: '关闭会话参数' }).click();
-    await page.getByRole('button', { name: '空间设置', exact: true }).click();
+    await openSpaceSettings(page);
     await page.getByRole('button', { name: '退出并清除本地记录' }).click();
     await expect(page.getByLabel('访问密码')).toBeVisible();
     const late = page.waitForResponse((response) => response.url().endsWith(`/conversations/${fixture.id}/settings`) && response.request().postDataJSON()?.systemPrompt === prompt);

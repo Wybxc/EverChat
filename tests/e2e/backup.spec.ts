@@ -64,7 +64,7 @@ test('the client can download text formats and import a backup into a new conver
   try {
     await page.goto(`/c/${source.id}`);
     await expect(page.getByTestId('assistant-message')).toHaveCount(2);
-    const menu = page.getByRole('button', { name: '对话文件操作', exact: true });
+    const menu = page.getByRole('button', { name: '更多会话操作', exact: true });
     await menu.click();
     const markdown = page.waitForEvent('download'); await page.getByRole('button', { name: 'Markdown', exact: true }).click();
     const markdownFile = await markdown;

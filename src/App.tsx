@@ -6,7 +6,7 @@ import type { PDFExtraction } from '../shared/pdf';
 import { messageFiles, messageImages, messageText } from '../shared/message-content';
 import { Component, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode, type SubmitEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowDown, ArrowRight, ArrowUp, BookOpen, Check, CheckCheck, CloudOff, Copy, Download, Feather, FolderOpen, Globe, ImagePlus, Infinity as InfinityIcon, Lightbulb, LockKeyhole, Menu, MessageCircle, Monitor, Moon, Paperclip, Pencil, Pin, Plus, Quote, RefreshCw, Search, Settings, SlidersHorizontal, Sparkles, Square, Sun, Trash2, WifiOff, X } from 'lucide-react';
+import { ArrowDown, ArrowRight, ArrowUp, BookOpen, Check, CheckCheck, CloudOff, Copy, Download, Feather, FolderOpen, Globe, ImagePlus, Infinity as InfinityIcon, Lightbulb, LockKeyhole, Menu, MessageCircle, Monitor, Moon, Paperclip, Pencil, Pin, Plus, Quote, RefreshCw, Search, Settings, SlidersHorizontal, Square, Sun, Trash2, WifiOff, X } from 'lucide-react';
 import 'streamdown/styles.css';
 import 'katex/dist/katex.min.css';
 import type { PluginConfig } from 'streamdown';
@@ -27,6 +27,7 @@ import { useFollowScroll } from './useFollowScroll';
 import { useSidebar } from './useSidebar';
 import { conversationUrl, useConversationRoute } from './useConversationRoute';
 import { ConversationActions } from './ConversationActions';
+import { ActionMenu } from './ActionMenu';
 import { ConversationSearch } from './ConversationSearch';
 import { LibrarySearch } from './LibrarySearch';
 import type { SearchResult } from '../shared/search';
@@ -315,7 +316,11 @@ export function App() {
     ?? models.find((model) => model.providerId === session?.activeProviderId && model.model === session?.model)
     ?? models[0];
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort | ''>('');
-  const openSettings = () => { setSettingsOpen(true); settings.current?.showModal(); };
+  const settingsTrigger = useRef<HTMLElement | null>(null);
+  const openSettings = () => {
+    settingsTrigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setSidebarOpen(false); setSettingsOpen(true); settings.current?.showModal();
+  };
   const providerSaved = useCallback((config: ProviderSettings) => {
     const profile = config.providers.find((profile) => profile.id === config.activeProviderId);
     const model = profile?.models.find((model) => model.id === config.activeModel && model.enabled);
@@ -790,10 +795,10 @@ export function App() {
   return <div className="flex h-dvh min-h-0 overflow-hidden">
     {sidebarModal && <button tabIndex={-1} aria-label="关闭对话列表" className="fixed inset-0 z-30 bg-neutral/20 lg:hidden" onClick={closeSidebar} />}
     <aside ref={sidebar} inert={!desktop && !sidebarOpen} role={sidebarModal ? 'dialog' : undefined} aria-modal={sidebarModal || undefined} aria-label="对话列表" className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} sidebar-surface fixed inset-y-0 left-0 z-40 flex w-70 max-w-[90vw] shrink-0 flex-col border-r border-base-300 bg-base-200 transition-transform lg:static lg:translate-x-0`}>
-      <div className="flex items-center justify-between px-6 pt-7 pb-8"><Brand small /><button className="btn btn-ghost btn-sm btn-square lg:hidden" aria-label="收起侧栏" onClick={closeSidebar}><X size={18} /></button></div>
+      <div className="flex items-center justify-between px-5 py-5"><Brand small /><button className="btn btn-ghost btn-sm btn-square lg:hidden" aria-label="收起侧栏" onClick={closeSidebar}><X size={18} /></button></div>
       <div className="px-4"><button className="btn h-11 w-full justify-between border-base-content/50 bg-base-100 px-4 text-sm font-medium" onClick={() => select(null)}><span className="flex items-center gap-2.5"><Plus size={17} />开启新对话</span><span><MessageCircle size={15} /></span></button></div>
-      <label className="input mx-4 mt-5 h-9 w-auto gap-2 border-base-content/50 bg-base-100"><Search size={14} /><input className="text-xs placeholder:text-base-content/60" placeholder="搜索你的对话" aria-label="搜索对话" maxLength={200} value={search} onChange={(event) => setSearch(event.target.value)} /></label>
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pt-6">
+      <label className="input mx-4 mt-3 h-11 w-auto gap-2 border-base-content/50 bg-base-100"><Search size={14} /><input className="text-xs placeholder:text-base-content/60" placeholder="搜索你的对话" aria-label="搜索对话" maxLength={200} value={search} onChange={(event) => setSearch(event.target.value)} /></label>
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pt-4">
         <div role="tablist" className="tabs tabs-border tabs-sm mb-3"><input type="radio" role="tab" name="conversation-list" className="tab" aria-label="对话" aria-selected={!archivedList} checked={!archivedList} onChange={() => setArchivedList(false)} /><input type="radio" role="tab" name="conversation-list" className="tab" aria-label="归档" aria-selected={archivedList} checked={archivedList} onChange={() => setArchivedList(true)} /></div>
         <ul className="menu w-full gap-1 p-0 text-sm">
           {visibleConversations.map((item) => <li key={item.id}><a href={conversationUrl(item.id)} onClick={(event) => {
@@ -804,13 +809,30 @@ export function App() {
         {!visibleConversations.length && <p className="px-3 text-xs text-base-content/60">{search ? '没有找到相关对话' : archivedList ? '暂无归档' : '暂无对话'}</p>}
         {search.trim() && <LibrarySearch query={search} archived={archivedList} open={openSearchResult} />}
       </div>
-      <button className="mx-3 mb-4 flex items-center gap-3 rounded-lg px-3 py-3 text-left hover:bg-base-300" onClick={openSettings}><span className="flex h-8 w-8 items-center justify-center rounded-full border border-base-content/50 bg-base-100 text-xs">我</span><span className="flex-1"><span className="block text-xs font-medium">私人空间</span></span><Settings size={16} /></button>
+      <button aria-label="空间设置" className="mx-3 mb-3 flex items-center gap-3 rounded-lg px-3 py-3 text-left hover:bg-base-300" onClick={openSettings}><span className="flex h-8 w-8 items-center justify-center rounded-full border border-base-content/50 bg-base-100 text-xs">我</span><span className="flex-1"><span className="block text-xs font-medium">私人空间</span></span><Settings size={16} /></button>
     </aside>
 
     <div inert={sidebarModal} className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <header className="flex h-18 shrink-0 items-center justify-between border-b border-base-content/50 px-5 sm:px-8">
-        <div className="flex min-w-0 items-center gap-3"><button ref={mobileSidebarTrigger} className="btn btn-ghost btn-sm btn-square lg:hidden" onClick={() => setSidebarOpen(true)} aria-label="打开对话列表"><Menu size={19} /></button><div className="min-w-0"><p className="truncate text-sm font-medium">{invalidRoute ? '页面不可用' : currentConversation?.title ?? (selected ? '对话' : '新对话')}</p><p className="mt-1 text-[10px] text-base-content/60">{selectedModel?.name || session.modelName || session.model || '未选择模型'}</p></div></div>
-        <div className="flex shrink-0 items-center gap-1 sm:gap-3"><span aria-live="polite" className="hidden items-center gap-1.5 text-[11px] text-base-content/60 sm:flex" title={syncedAt ? `上次同步 ${new Date(syncedAt).toLocaleTimeString('zh-CN')}` : undefined}>{connection === 'offline' ? <CloudOff size={14} /> : <span className={`status status-xs ${connection === 'connected' && !hasUnconfirmed ? 'status-success' : 'status-warning'}`} />}{statusText}</span>{canSearch && <button ref={searchTrigger} type="button" aria-label="搜索当前对话" aria-expanded={searchOpen} aria-controls={searchOpen ? 'conversation-search' : undefined} title="搜索当前对话（Ctrl / ⌘ F）" className="btn btn-ghost btn-sm btn-square" onClick={() => searchOpen ? closeConversationSearch() : setConversationSearchFor(selected)}><Search size={16} /></button>}{session.attachmentsConfigured && selected && currentConversation && !snapshot.deletedAt && <button type="button" aria-label="管理对话文件" title="管理对话文件" className="btn btn-ghost btn-sm btn-square" onClick={() => setAttachmentsFor(selected)}><FolderOpen size={16} /></button>}<button type="button" aria-label="会话参数" title="会话参数" className="btn btn-ghost btn-sm btn-square" disabled={Boolean(invalidRoute || syncError)} onClick={() => setConversationSettingsOpen(true)}><SlidersHorizontal size={16} /></button>{selected && latestCompletedAssistant && <button type="button" aria-label="压缩历史" title="压缩历史" className="btn btn-ghost btn-sm btn-square" disabled={busy || connection === 'offline' || loading} onClick={() => { setSummaryTarget(null); setSummaryOpen(true); }}><BookOpen size={16} /></button>}{currentConversation && <ConversationActions key={currentConversation.id} conversation={currentConversation} disabled={connection === 'offline'} update={updateConversation} remove={deleteConversation} duplicate={duplicateConversation} />}<div className="dropdown dropdown-end"><button type="button" aria-label="对话文件操作" title="导出或导入对话" className="btn btn-ghost btn-sm btn-square"><Download size={16} /></button><ul tabIndex={0} className="dropdown-content menu z-50 mt-2 w-48 rounded-box border border-base-content/20 bg-base-100 p-2 shadow"><li className="menu-title">导出对话</li><li><button type="button" disabled={!snapshot.messages.length} onClick={() => exportChat('md')}>Markdown</button></li><li><button type="button" disabled={!snapshot.messages.length} onClick={() => exportChat('txt')}>纯文本</button></li><li><button type="button" disabled={!snapshot.messages.length} onClick={() => exportChat('html')}>HTML</button></li><li><button type="button" disabled={!currentConversation} onClick={() => void exportBackup()}>下载备份</button></li><li className="menu-title mt-1">恢复</li><li><button type="button" onClick={() => backupInput.current?.click()}>导入备份</button></li></ul></div><input ref={backupInput} type="file" accept=".zip,.json,application/zip,application/json" className="hidden" onChange={(event) => void importBackup(event)} /><button aria-label="空间设置" className="btn btn-ghost btn-sm btn-square" onClick={openSettings}><Settings size={17} /></button></div>
+      <header className="chat-header flex h-14 shrink-0 items-center gap-2 border-b border-base-300 px-2 sm:h-16 sm:px-6">
+        <button ref={mobileSidebarTrigger} className="btn btn-ghost btn-square h-11 w-11 shrink-0 lg:hidden" onClick={() => setSidebarOpen(true)} aria-label="打开对话列表" aria-expanded={sidebarOpen}><Menu size={20} /></button>
+        <p data-testid="conversation-title" className="min-w-0 flex-1 truncate text-sm font-medium" title={currentConversation?.title}>{invalidRoute ? '页面不可用' : currentConversation?.title ?? (selected ? '对话' : '新对话')}</p>
+        <div className="flex shrink-0 items-center gap-0 sm:gap-1">
+          <span aria-live="polite" className="mr-3 hidden items-center gap-1.5 text-xs text-base-content/70 md:flex" title={syncedAt ? `上次同步 ${new Date(syncedAt).toLocaleTimeString('zh-CN')}` : undefined}>{connection === 'offline' ? <CloudOff size={14} /> : <span className={`status status-xs ${connection === 'connected' && !hasUnconfirmed ? 'status-success' : 'status-warning'}`} />}{statusText}</span>
+          {canSearch && <button ref={searchTrigger} type="button" aria-label="搜索当前对话" aria-expanded={searchOpen} aria-controls={searchOpen ? 'conversation-search' : undefined} title="搜索当前对话（Ctrl / ⌘ F）" className="btn btn-ghost btn-square h-11 w-11" onClick={() => searchOpen ? closeConversationSearch() : setConversationSearchFor(selected)}><Search size={18} /></button>}
+          <button type="button" aria-label="会话参数" title="会话参数" className="btn btn-ghost btn-square h-11 w-11 hidden md:inline-flex" disabled={Boolean(invalidRoute || syncError)} onClick={() => setConversationSettingsOpen(true)}><SlidersHorizontal size={18} /></button>
+          <ConversationActions key={selected ?? 'new'} conversation={currentConversation} disabled={connection === 'offline'} update={updateConversation} remove={deleteConversation} duplicate={duplicateConversation} exports={<>
+            <li><button type="button" disabled={!snapshot.messages.length} onClick={() => exportChat('md')}>Markdown</button></li>
+            <li><button type="button" disabled={!snapshot.messages.length} onClick={() => exportChat('txt')}>纯文本</button></li>
+            <li><button type="button" disabled={!snapshot.messages.length} onClick={() => exportChat('html')}>HTML</button></li>
+            <li><button type="button" disabled={!currentConversation} onClick={() => void exportBackup()}>下载备份</button></li>
+            <li><button type="button" onClick={() => backupInput.current?.click()}>导入备份</button></li>
+          </>}>
+            <li className="md:hidden"><button type="button" disabled={Boolean(invalidRoute || syncError)} onClick={() => setConversationSettingsOpen(true)}><SlidersHorizontal size={16} />会话参数</button></li>
+            {session.attachmentsConfigured && selected && currentConversation && !snapshot.deletedAt && <li><button type="button" aria-label="管理对话文件" onClick={() => setAttachmentsFor(selected)}><FolderOpen size={16} />对话文件</button></li>}
+            {selected && latestCompletedAssistant && <li><button type="button" disabled={busy || connection === 'offline' || loading} onClick={() => { setSummaryTarget(null); setSummaryOpen(true); }}><BookOpen size={16} />压缩历史</button></li>}
+          </ConversationActions>
+          <input ref={backupInput} type="file" accept=".zip,.json,application/zip,application/json" className="hidden" onChange={(event) => void importBackup(event)} />
+        </div>
       </header>
       {searchOpen && <ConversationSearch key={`${selected}:${searchJump?.token ?? ''}`} content={content} viewport={viewport} close={closeConversationSearch} initial={searchJump ?? undefined} />}
       {connection === 'offline' && <div role="status" className="flex items-center justify-center gap-2 border-b border-base-content/50 bg-base-200 px-4 py-2 text-xs text-base-content"><WifiOff size={13} />你现在离线，已保存的对话仍可阅读。新消息将在联网后发送。</div>}
@@ -827,28 +849,38 @@ export function App() {
         </section>}
       </div>
 
-      <div className="relative shrink-0 px-4 pt-2 pb-3 sm:px-8 sm:pb-5" style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
+      <div className="composer-region relative shrink-0 px-3 pt-2 pb-3 sm:px-8 sm:pb-5" style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
         {!atBottom && <button className="btn btn-circle btn-sm absolute -top-12 left-1/2 z-10 border-base-content/50 bg-base-100 shadow-sm" aria-label="滚动到最新消息" onClick={scrollToBottom}><ArrowDown size={16} /></button>}
         <div className="mx-auto w-full max-w-3xl">
           {invalidRoute && <div role="alert" className="alert alert-error mb-3 text-xs"><span>找不到这个页面。</span><button type="button" className="btn btn-sm" onClick={() => select(null)}>开启新对话</button></div>}
           {syncError && <div role="alert" className="alert alert-error mb-3 text-xs"><span>{syncError}</span><button type="button" className="btn btn-sm" onClick={reconnect}>重新同步</button></div>}
           {error && <p role="alert" className="mb-3 text-xs font-medium text-base-content">{error}</p>}
           {revisionOf && <div className="mb-2 flex items-center justify-between text-xs text-base-content/60"><span>编辑消息</span><button className="btn btn-ghost btn-xs" onClick={() => { setRevisionOf(undefined); write(`draft:${selected}`, { text: draft, images: draftImages, files: draftFiles }); }}>取消</button></div>}
-          <form onSubmit={submit} data-testid="chat-composer" className="chat-composer rounded-2xl border border-base-content/50 bg-base-100 p-3 sm:p-4">
-            {selected && <DocumentPreviews conversationId={selected} files={draftFiles} remove={imageProgress ? undefined : removeDocument} />}
-            {selected && <ImagePreviews conversationId={selected} images={draftImages} remove={imageProgress ? undefined : removeImage} />}
-            {imageProgress && <div className="flex items-center gap-2 py-2 text-xs" role="status"><span className="max-w-40 truncate">{imageProgress.name}</span><progress className="progress w-24" value={imageProgress.percent} max={100} aria-label={imageProgress.kind === 'image' ? '图片上传进度' : '文件上传进度'} /><button type="button" className="btn btn-ghost btn-xs" onClick={() => imageUpload.current?.controller.abort()}>取消上传</button></div>}
-            <textarea onPaste={(event) => { const files = Array.from(event.clipboardData.files); if (files.length) { event.preventDefault(); void addImages(files); } }} ref={editor} disabled={Boolean(snapshot.deletedAt)} aria-label="消息" className="textarea textarea-ghost block min-h-13 w-full resize-none border-0 p-1 text-[15px] leading-6 placeholder:text-base-content/60 outline-none! focus:outline-none!" placeholder={active ? '生成中…' : '输入消息…'} value={draft} maxLength={16000} rows={2} onChange={(event) => updateDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void submit(); } }} />
-            <div className="mt-2 flex flex-wrap items-center justify-between gap-2"><div className="flex min-w-0 flex-wrap items-center gap-2 text-base-content"><Sparkles size={14} strokeWidth={1.5} className="shrink-0" />{session.attachmentsConfigured && <><button type="button" className="btn btn-ghost btn-square btn-sm" aria-label="添加文件" title="添加文件" disabled={busy || !navigator.onLine || draftFiles.length >= MAX_MESSAGE_DOCUMENTS} onClick={() => fileInput.current?.click()}><Paperclip size={16} /></button><input ref={fileInput} type="file" accept=".pdf,.txt,.md,.csv,.js,.jsx,.ts,.tsx,.py,.rs,.go,.c,.cpp,.h,.css,.json,.yaml,.yml,.toml,.sh" multiple className="hidden" aria-label="选择聊天文件" onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ''; void addDocuments(files); }} /><button type="button" className="btn btn-ghost btn-square btn-sm" aria-label="添加图片" title="添加图片" disabled={busy || !navigator.onLine || draftImages.length >= MAX_MESSAGE_IMAGES} onClick={() => imageInput.current?.click()}><ImagePlus size={16} /></button><input ref={imageInput} type="file" accept="image/png,image/jpeg,image/webp" multiple className="hidden" aria-label="选择聊天图片" onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ''; void addImages(files); }} /></>}{selectedModel ? <select aria-label="聊天模型" className="select select-ghost select-sm min-w-0 max-w-48 border-base-content/50 text-xs sm:max-w-80" value={modelSelectionKey(selectedModel)} onChange={(event) => { setModelChoice(event.target.value); write('chat-model', event.target.value); }}>
-              {[...new Set(models.map((model) => model.providerId))].map((providerId) => <optgroup key={providerId} label={models.find((model) => model.providerId === providerId)!.providerName}>
-                {models.filter((model) => model.providerId === providerId).map((model) => <option key={model.model} value={modelSelectionKey(model)}>{model.name}</option>)}
-              </optgroup>)}
-            </select> : <button type="button" className="btn btn-ghost btn-xs" onClick={openSettings}>配置模型</button>}
-            {selectedModel?.reasoningSupported && selectedModel.reasoningEfforts.length > 0 && <select aria-label="思维强度" className="select select-ghost select-sm w-auto max-w-32 border-base-content/50 text-xs" value={reasoningEffort} onChange={(event) => { const value = event.target.value as ReasoningEffort | ''; setReasoningEffort(value); write(`reasoning-effort:${modelSelectionKey(selectedModel)}`, value); }}>
-              <option value="">思维强度：默认</option>{selectedModel.reasoningEfforts.map((effort) => <option key={effort} value={effort}>{effortLabels[effort]}</option>)}
-            </select>}
-            <button type="button" className="btn btn-ghost btn-sm gap-1 text-xs" aria-label="联网工具" onClick={() => setConversationSettingsOpen(true)}><Globe size={14} />{conversationSettings.tools?.length ? conversationSettings.tools.map((name) => name === 'web_search' ? '搜索' : '读取').join(' · ') : '联网'}</button>
-            </div>{active ? <button type="button" className="btn btn-sm h-9 shrink-0 gap-2 px-3" onClick={cancel} disabled={!navigator.onLine}><Square size={12} />停止生成</button> : <button type="submit" className="btn btn-primary btn-square btn-sm h-9 w-9 shrink-0 rounded-xl" aria-label="发送消息" disabled={(!draft.trim() && !draftImages.length && !draftFiles.length) || busy || !selectedModel}>{sending ? <span className="loading loading-spinner loading-xs" /> : <ArrowUp size={18} />}</button>}</div>
+          <form onSubmit={submit} data-testid="chat-composer" className="chat-composer rounded-2xl border border-base-content/50 bg-base-100 p-2 sm:p-3">
+            {selected && (draftFiles.length > 0 || draftImages.length > 0) && <div data-testid="draft-previews" className="draft-previews mb-2 max-h-[min(9rem,20dvh)] overflow-y-auto overscroll-contain p-1">
+              <DocumentPreviews conversationId={selected} files={draftFiles} remove={imageProgress ? undefined : removeDocument} />
+              <ImagePreviews conversationId={selected} images={draftImages} remove={imageProgress ? undefined : removeImage} />
+            </div>}
+            {imageProgress && <div className="flex items-center gap-2 py-2 text-xs" role="status"><span className="min-w-0 flex-1 truncate">{imageProgress.name}</span><progress className="progress w-20 shrink-0" value={imageProgress.percent} max={100} aria-label={imageProgress.kind === 'image' ? '图片上传进度' : '文件上传进度'} /><button type="button" className="btn btn-ghost btn-sm" onClick={() => imageUpload.current?.controller.abort()}>取消上传</button></div>}
+            <textarea onPaste={(event) => { const files = Array.from(event.clipboardData.files); if (files.length) { event.preventDefault(); void addImages(files); } }} ref={editor} disabled={Boolean(snapshot.deletedAt)} aria-label="消息" className="composer-editor textarea textarea-ghost block min-h-12 w-full resize-none border-0 px-2 py-1 text-base leading-6 placeholder:text-base-content/70 outline-none! focus:outline-none!" placeholder={active ? '生成中…' : '输入消息…'} value={draft} maxLength={16000} rows={2} onChange={(event) => updateDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void submit(); } }} />
+            <div className="mt-1 flex min-w-0 items-center gap-1" data-testid="composer-toolbar">
+              {session.attachmentsConfigured && <ActionMenu label="添加附件" icon={<Paperclip size={18} />} placement="dropdown-top dropdown-start" disabled={busy || !navigator.onLine}>
+                <li><button type="button" aria-label="添加文件" disabled={draftFiles.length >= MAX_MESSAGE_DOCUMENTS} onClick={() => fileInput.current?.click()}><Paperclip size={16} />文件</button></li>
+                <li><button type="button" aria-label="添加图片" disabled={draftImages.length >= MAX_MESSAGE_IMAGES} onClick={() => imageInput.current?.click()}><ImagePlus size={16} />图片</button></li>
+              </ActionMenu>}
+              <input ref={fileInput} type="file" accept=".pdf,.txt,.md,.csv,.js,.jsx,.ts,.tsx,.py,.rs,.go,.c,.cpp,.h,.css,.json,.yaml,.yml,.toml,.sh" multiple className="hidden" aria-label="选择聊天文件" onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ''; void addDocuments(files); }} />
+              <input ref={imageInput} type="file" accept="image/png,image/jpeg,image/webp" multiple className="hidden" aria-label="选择聊天图片" onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ''; void addImages(files); }} />
+              {selectedModel ? <select aria-label="聊天模型" title={`${selectedModel.providerName} · ${selectedModel.name}`} className="select select-ghost h-11 min-w-0 flex-1 truncate border-transparent pl-2 pr-6 text-xs sm:max-w-80 sm:text-sm" value={modelSelectionKey(selectedModel)} onChange={(event) => { setModelChoice(event.target.value); write('chat-model', event.target.value); }}>
+                {[...new Set(models.map((model) => model.providerId))].map((providerId) => <optgroup key={providerId} label={models.find((model) => model.providerId === providerId)!.providerName}>
+                  {models.filter((model) => model.providerId === providerId).map((model) => <option key={model.model} value={modelSelectionKey(model)}>{model.name}</option>)}
+                </optgroup>)}
+              </select> : <button type="button" className="btn btn-ghost min-w-0 flex-1 text-sm" onClick={() => { setRequestedSettingsTab('providers'); openSettings(); }}>配置模型</button>}
+              {selectedModel?.reasoningSupported && selectedModel.reasoningEfforts.length > 0 && <select aria-label="思维强度" title={`思维强度：${reasoningEffort ? effortLabels[reasoningEffort] : '默认'}`} className="select select-ghost h-11 w-16 shrink-0 border-transparent pl-1 pr-5 text-xs sm:w-24" value={reasoningEffort} onChange={(event) => { const value = event.target.value as ReasoningEffort | ''; setReasoningEffort(value); write(`reasoning-effort:${modelSelectionKey(selectedModel)}`, value); }}>
+                <option value="">思考</option>{selectedModel.reasoningEfforts.map((effort) => <option key={effort} value={effort}>{effortLabels[effort]}</option>)}
+              </select>}
+              <button type="button" className={`btn btn-ghost btn-square h-11 w-11 shrink-0 ${conversationSettings.tools?.length ? 'bg-base-200' : ''}`} aria-label="联网工具" aria-pressed={Boolean(conversationSettings.tools?.length)} title={conversationSettings.tools?.length ? '联网已开启' : '联网工具'} onClick={() => setConversationSettingsOpen(true)}><Globe size={18} /></button>
+              {active ? <button type="button" className="btn btn-square h-11 w-11 shrink-0 rounded-xl" aria-label="停止生成" title="停止生成" onClick={cancel} disabled={!navigator.onLine}><Square size={16} /></button> : <button type="submit" className="btn btn-primary btn-square h-11 w-11 shrink-0 rounded-xl" aria-label="发送消息" disabled={(!draft.trim() && !draftImages.length && !draftFiles.length) || busy || !selectedModel}>{sending ? <span className="loading loading-spinner loading-xs" /> : <ArrowUp size={19} />}</button>}
+            </div>
             {contextPreview?.estimate && <ContextEstimateView estimate={contextPreview.estimate} compressing={contextPreview.compressing} />}
             {contextPreview?.error && <p className="mt-2 text-xs text-base-content/80">{contextPreview.error}</p>}
           </form>
@@ -857,6 +889,11 @@ export function App() {
     </div>
     <dialog id="space-settings" ref={settings} className="modal" onClose={() => {
       setSettingsOpen(false); setRequestedSettingsTab(undefined);
+      if (!returnToConversationSettings.current) requestAnimationFrame(() => {
+        const target = settingsTrigger.current;
+        if (target?.isConnected && target.checkVisibility() && !target.closest('[inert]')) target.focus({ preventScroll: true });
+        else if (mobileSidebarTrigger.current?.checkVisibility()) mobileSidebarTrigger.current.focus({ preventScroll: true });
+      });
       if (returnToConversationSettings.current) { returnToConversationSettings.current = false; setConversationSettingsOpen(true); }
     }} aria-labelledby="space-settings-title">
       <div className="modal-box flex h-[min(48rem,92dvh)] max-h-[92dvh] max-w-5xl flex-col overflow-hidden p-0">

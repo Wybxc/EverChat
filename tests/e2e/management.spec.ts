@@ -111,7 +111,7 @@ test('the management menu preserves failed edits, syncs metadata to another devi
       if (route.request().method() === 'PATCH' && failing) await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '保存失败，请重试。' }) });
       else await route.continue();
     });
-    const menu = () => page.getByRole('button', { name: '管理对话', exact: true }).click();
+    const menu = () => page.getByRole('button', { name: '更多会话操作', exact: true }).click();
     await menu(); await page.getByRole('button', { name: '重命名', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: '重命名', exact: true }), input = dialog.getByRole('textbox', { name: '对话名称', exact: true });
     await expect(input).toBeFocused(); await input.fill('重命名的对话');
@@ -128,7 +128,7 @@ test('the management menu preserves failed edits, syncs metadata to another devi
     await expect(second.locator('aside').getByRole('link', { name: '重命名的对话', exact: true })).toHaveCount(0);
     await second.getByRole('tab', { name: '归档', exact: true }).click();
     await expect(second.locator('aside').getByRole('link', { name: '重命名的对话', exact: true })).toBeVisible();
-    await second.getByRole('button', { name: '管理对话', exact: true }).click();
+    await second.getByRole('button', { name: '更多会话操作', exact: true }).click();
     await expect(second.getByRole('button', { name: '取消置顶', exact: true })).toBeVisible();
     await expect(second.getByRole('button', { name: '取消归档', exact: true })).toBeVisible();
     await page.getByRole('tab', { name: '归档', exact: true }).click();
@@ -139,12 +139,12 @@ test('the management menu preserves failed edits, syncs metadata to another devi
     await expect(page.locator('aside').getByRole('link', { name: '重命名的对话', exact: true })).toBeVisible();
     await menu(); await page.getByRole('button', { name: '取消置顶', exact: true }).click();
     await expect.poll(async () => (await index(page.request)).conversations.find((item) => item.id === fixture.id)?.pinned).toBe(false);
-    await menu(); await page.getByRole('button', { name: '删除', exact: true }).click();
+    await menu(); await page.getByRole('button', { name: '删除对话', exact: true }).click();
     const confirmation = page.getByRole('dialog', { name: '删除对话', exact: true });
     await expect(confirmation.getByRole('button', { name: '取消', exact: true })).toBeFocused();
     await confirmation.getByRole('button', { name: '取消', exact: true }).click();
     expect((await page.request.get(`/api/conversations/${fixture.id}`)).status()).toBe(200);
-    await menu(); await page.getByRole('button', { name: '删除', exact: true }).click();
+    await menu(); await page.getByRole('button', { name: '删除对话', exact: true }).click();
     await confirmation.getByRole('button', { name: '删除', exact: true }).click();
     await expect(page).toHaveURL('/');
     await expect(page.getByRole('textbox', { name: '消息', exact: true })).toBeFocused();

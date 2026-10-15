@@ -1,3 +1,4 @@
+import { openSpaceSettings } from '../ui';
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import type { ConversationSettings, ProviderKind, ProviderSettings, Snapshot } from '../../shared/types';
 import type { WebToolName } from '../../shared/web-tools';
@@ -32,7 +33,7 @@ async function setup(request: APIRequestContext, provider: ProviderKind = 'opena
   } };
 }
 async function space(page: Page) {
-  await page.getByRole('button', { name: '空间设置', exact: true }).click();
+  await openSpaceSettings(page);
   await tab(page, '联网');
 }
 async function tab(page: Page, name: string) {

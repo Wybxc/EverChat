@@ -1,3 +1,4 @@
+import { openSpaceSettings } from '../ui';
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import type { PromptPreset, ProviderSettings, Snapshot, Submission } from '../../shared/types';
 import { DEFAULT_CONVERSATION_SETTINGS as defaults } from '../../shared/conversation-settings';
@@ -79,7 +80,7 @@ test('preset management autosaves and recovers drafts, applies copies, synchroni
     await panel.getByRole('button', { name: '添加预设' }).click(); await expect(panel.getByLabel('预设名称', { exact: true })).toBeFocused();
     await panel.getByLabel('预设名称', { exact: true }).fill('写作助手'); await panel.getByLabel('预设系统提示词', { exact: true }).fill('你是写作助手。');
     await expect(panel.getByRole('alert')).toContainText('暂时无法保存预设');
-    await page.reload(); await page.getByRole('button', { name: '空间设置', exact: true }).click(); panel = await presetsTab(page);
+    await page.reload(); await openSpaceSettings(page); panel = await presetsTab(page);
     await expect(panel.getByLabel('预设系统提示词', { exact: true })).toHaveValue('你是写作助手。');
     await expect(panel.getByRole('alert')).toContainText('暂时无法保存预设');
     await page.unroute('**/api/settings/presets/*'); await panel.getByRole('button', { name: '重试保存预设' }).click();
@@ -100,7 +101,7 @@ test('preset management autosaves and recovers drafts, applies copies, synchroni
     await parameters.getByRole('button', { name: '管理预设' }).click(); panel = await presetsTab(page);
     await page.getByRole('button', { name: '关闭设置', exact: true }).click(); await parameters.getByRole('button', { name: '关闭会话参数' }).click();
     await second.request.put(`/api/settings/presets/${preset.id}`, { headers, data: { name: '远端新名称', systemPrompt: '远端提示词' } });
-    await page.getByRole('button', { name: '空间设置', exact: true }).click(); panel = await presetsTab(page);
+    await openSpaceSettings(page); panel = await presetsTab(page);
     await expect(panel.getByLabel('预设名称', { exact: true })).toHaveValue('远端新名称');
     await page.route('**/api/settings/presets/*', (route) => route.request().method() === 'DELETE' ? route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '暂时无法删除预设' }) }) : route.continue());
     await panel.getByRole('button', { name: '删除预设', exact: true }).click(); await expect(panel.getByRole('button', { name: '取消删除预设' })).toBeFocused();
@@ -147,7 +148,7 @@ test('a late preset autosave cannot repopulate local prompt caches after logout'
       if (route.request().method() !== 'PUT' || route.request().postDataJSON()?.systemPrompt !== prompt) { await route.continue(); return; }
       const response = await route.fetch(); ready(); await hold; await route.fulfill({ response });
     });
-    await page.goto(`/c/${fixture.id}`); await page.getByRole('button', { name: '空间设置', exact: true }).click(); const panel = await presetsTab(page);
+    await page.goto(`/c/${fixture.id}`); await openSpaceSettings(page); const panel = await presetsTab(page);
     await panel.getByRole('button', { name: '添加预设' }).click(); await panel.getByLabel('预设名称', { exact: true }).fill('私密预设'); await panel.getByLabel('预设系统提示词', { exact: true }).fill(prompt);
     await accepted;
     const general = page.getByRole('tab', { name: '通用', exact: true }); await general.focus(); await general.press('Space');
@@ -163,7 +164,7 @@ test('a dirty draft whose preset was deleted remotely can be saved under a new I
   try {
     await second.request.post('/api/login', { headers, data: { password: 'everchat-local' } });
     await page.request.put(`/api/settings/presets/${id}`, { headers, data: { name: '原预设', systemPrompt: '原内容' } });
-    await page.goto(`/c/${fixture.id}`); await page.getByRole('button', { name: '空间设置', exact: true }).click(); const panel = await presetsTab(page);
+    await page.goto(`/c/${fixture.id}`); await openSpaceSettings(page); const panel = await presetsTab(page);
     await panel.getByLabel('编辑预设', { exact: true }).selectOption(id);
     await page.route(`**/api/settings/presets/${id}`, (route) => route.request().method() === 'PUT' ? route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '暂时无法保存预设' }) }) : route.continue());
     await panel.getByLabel('预设系统提示词', { exact: true }).fill('待恢复的内容'); await expect(panel.getByRole('alert')).toContainText('暂时无法保存预设');
