@@ -1,3 +1,4 @@
+import { messageMenu } from '../ui';
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import type { ProviderKind, ProviderSettings, Snapshot, Submission } from '../../shared/types';
 import { messageText } from '../../shared/message-content';
@@ -137,6 +138,7 @@ test('tool process sync survives page closure and a second device, with no priva
     const other = await second.newPage(); await other.goto(`/c/${f.id}`);
     await expect(other.getByTestId('assistant-message')).toHaveAttribute('data-status', 'completed');
     await expect(other.getByTestId('tool-activity').getByRole('link')).toHaveCount(2);
+    await messageMenu(other.getByTestId('assistant-message'));
     await other.getByTestId('message-generation').locator('summary').click();
     await expect(other.getByTestId('generation-toolTokens')).toBeVisible();
     expect(await other.getByTestId('tool-activity').getByRole('link').first().getAttribute('href')).toBe('https://developers.cloudflare.com/');

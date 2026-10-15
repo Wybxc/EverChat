@@ -28,6 +28,7 @@ import { useSidebar } from './useSidebar';
 import { conversationUrl, useConversationRoute } from './useConversationRoute';
 import { ConversationActions } from './ConversationActions';
 import { ActionMenu } from './ActionMenu';
+import { MessageActions } from './MessageActions';
 import { ConversationSearch } from './ConversationSearch';
 import { LibrarySearch } from './LibrarySearch';
 import type { SearchResult } from '../shared/search';
@@ -176,9 +177,9 @@ function SummaryView({ message, busy, onRetry, onDelete, selected }: { message: 
   const scroll = useFollowScroll(message.id);
   if (message.deletedAt) return <article data-testid="summary-message" data-message-id={message.id} className="text-xs text-base-content/70">摘要已删除或失效</article>;
   return <article data-testid="summary-message" data-message-id={message.id} data-status={message.status} className="space-y-2">
-    <details className="collapse collapse-arrow border border-base-content/30 bg-base-200" open={open || isActive(message)} onToggle={(event) => setOpen(event.currentTarget.open)}>
+    <details className="collapse collapse-arrow bg-base-200" open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
       <summary className="collapse-title min-h-0 py-3 text-sm">{message.summary!.automatic ? '自动历史摘要' : '历史摘要'} · 覆盖 {message.summary!.sourceIds.length} 条{isActive(message) ? ' · 生成中' : message.status === 'failed' ? ' · 生成失败' : message.status === 'cancelled' ? ' · 已停止' : selected ? ' · 当前分支使用' : ' · 未用于当前分支'}</summary>
-      <div className="collapse-content"><div ref={scroll.viewportRef} className="max-h-80 overflow-y-auto"><div ref={scroll.contentRef}>{messageText(message) && <MarkdownContent content={messageText(message)} streaming={isActive(message)} />}</div></div>
+      <div className="collapse-content"><div ref={scroll.viewportRef} className="max-h-[min(22rem,40dvh)] overflow-y-auto overscroll-contain"><div ref={scroll.contentRef}>{messageText(message) && <MarkdownContent content={messageText(message)} streaming={isActive(message)} />}</div></div>
         {message.error && <p role="alert" className="mt-3 text-sm">{message.error}</p>}
         {message.status === 'cancelled' && <p className="mt-3 text-sm">已停止，摘要未用于上下文。</p>}
         {!isActive(message) && <GenerationMetadata generation={message.generation} />}
@@ -208,47 +209,30 @@ function MessageView({ conversationId, message, busy, onRetry, onEdit, onQuote, 
   };
   if (message.summary) return <SummaryView message={message} busy={busy} onRetry={onRetry} onDelete={onDelete} selected={Boolean(summarySelected)} />;
   if (message.deletedAt) return <article data-testid={`${message.role}-message`} data-message-id={message.id} data-deleted="true" className={`py-2 text-xs text-base-content/60 ${message.role === 'user' ? 'text-right' : ''}`}>消息已删除</article>;
-  const forkTool = <>
-    <button type="button" className="btn btn-ghost btn-xs gap-1.5" disabled={!canFork || forking} onClick={() => void fork()} aria-label="复制到新对话">{forking ? <span className="loading loading-spinner loading-xs" /> : <Copy size={13} />}复制到新对话</button>
-    {forkError && <span role="alert" className="text-xs text-base-content">{forkError}</span>}
-  </>;
-  const tools = <>
-    <button className="btn btn-ghost btn-xs gap-1.5" onClick={copy} aria-label="复制消息">{copied ? <Check size={13} /> : <Copy size={13} />}{copied ? '已复制' : '复制'}</button>
-    <button className="btn btn-ghost btn-xs gap-1.5" onClick={onQuote} aria-label="引用消息"><Quote size={13} />引用</button>
-  </>;
+  const actions = <MessageActions message={message} busy={busy} copied={copied} forking={forking} canFork={canFork} canRetry={canRetry} branchSelected={branchSelected}
+    copy={() => void copy()} quote={onQuote} edit={onEdit} remove={onDelete} fork={() => void fork()} retry={onRetry} selectBranch={onSelectBranch} />;
   if (message.role === 'user') return <article data-testid="user-message" data-message-id={message.id} className="group ml-auto w-fit max-w-[90%] sm:max-w-[82%]">
     <DocumentPreviews conversationId={conversationId} files={messageFiles(message)} />
     <ImagePreviews conversationId={conversationId} images={messageImages(message)} />
-    {messageText(message) && <div data-search-content={`${message.id}:content`} className="rounded-2xl rounded-br-md border border-base-content/50 bg-base-200 px-5 py-3.5 text-[15px] leading-7 whitespace-pre-wrap break-words">{messageText(message)}</div>}
-    <div className="mt-1.5 flex flex-wrap items-center justify-end gap-2 text-[11px] text-base-content/60">
-      {message.revisionOf && <span>新版本</span>}
-      {tools}{forkTool}<CheckCheck size={13} /><span>已保存</span>
-      <button className="btn btn-ghost btn-xs btn-square sm:opacity-0 sm:group-hover:opacity-100 sm:focus:opacity-100" aria-label="编辑为新版本" title="编辑为新版本" disabled={busy} onClick={onEdit}><Pencil size={12} /></button>
-      <button className="btn btn-ghost btn-xs btn-square" aria-label="删除消息" title="删除消息" disabled={busy || !navigator.onLine} onClick={onDelete}><Trash2 size={12} /></button>
-    </div>
+    {messageText(message) && <div data-search-content={`${message.id}:content`} className="rounded-2xl rounded-br-md bg-base-200 px-5 py-3.5 text-[15px] leading-7 whitespace-pre-wrap break-words">{messageText(message)}</div>}
+    {actions}
+    {message.revisionOf && <p className="mt-1 text-right text-xs text-base-content/70">新版本</p>}
+    {forkError && <p role="alert" className="mt-1 text-xs">{forkError}</p>}
   </article>;
   return <article data-testid="assistant-message" data-message-id={message.id} data-status={message.status} data-durable-offset={message.durableOffset ?? 0} data-live-offset={message.liveOffset ?? message.durableOffset ?? 0} className="group flex gap-3 sm:gap-4">
-    <span className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-base-content/50 bg-base-100"><InfinityIcon size={20} strokeWidth={1.7} /></span>
+    <span className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-base-200"><InfinityIcon size={20} strokeWidth={1.7} /></span>
     <div className="min-w-0 flex-1 pt-1">
       <div className="mb-3 flex items-center gap-3 text-xs"><span className="font-semibold">{message.modelName || message.model || 'EverChat'}</span>{message.revisionOf && <span className="text-base-content/60">新版本</span>}{isActive(message) && <span className="flex items-center gap-1.5 text-base-content/60"><span className="loading loading-dots loading-xs" />{message.waitingForSummary ? '等待历史摘要' : message.status === 'queued' ? '排队中' : '生成中'}</span>}</div>
-      {messageText(message, 'reasoning') && <details open={reasoningOpen || isActive(message)} onToggle={(event) => setReasoningOpen(event.currentTarget.open)} className="collapse collapse-arrow mb-4 border border-base-content/30 bg-base-200" data-testid="message-reasoning">
+      {messageText(message, 'reasoning') && <details open={reasoningOpen} onToggle={(event) => setReasoningOpen(event.currentTarget.open)} className="collapse collapse-arrow mb-4 bg-base-200" data-testid="message-reasoning">
         <summary className="collapse-title min-h-0 py-3 text-sm font-medium">思考过程</summary>
-        <div className="collapse-content text-sm"><div ref={reasoningScroll.viewportRef} className="max-h-80 overflow-y-auto break-words"><div ref={reasoningScroll.contentRef}><MarkdownContent content={messageText(message, 'reasoning')} searchId={`${message.id}:reasoning`} streaming={isActive(message)} /></div></div></div>
+        <div className="collapse-content text-sm"><div ref={reasoningScroll.viewportRef} className="max-h-[min(22rem,40dvh)] overflow-y-auto overscroll-contain break-words"><div ref={reasoningScroll.contentRef}><MarkdownContent content={messageText(message, 'reasoning')} searchId={`${message.id}:reasoning`} streaming={isActive(message)} /></div></div></div>
       </details>}
       <ToolActivity task={message.tools} />
       {messageText(message) ? <MarkdownContent content={messageText(message)} searchId={`${message.id}:content`} streaming={isActive(message)} /> : isActive(message) && !messageText(message, 'reasoning') && !message.tools ? <p className="py-2 text-sm text-base-content/60">{message.waitingForSummary ? '压缩历史后开始回答…' : '准备中…'}</p> : null}
       {message.status === 'failed' && <p role="alert" className="mt-4 rounded-lg bg-error/5 px-3 py-2 text-xs font-medium leading-6 text-base-content">{message.error ?? '生成失败，已保存部分内容。'}</p>}
       {message.status === 'cancelled' && <p className="mt-4 text-xs text-base-content/60">已停止</p>}
-      {!isActive(message) && <GenerationMetadata generation={message.generation} />}
-      <div className="mt-4 flex flex-wrap items-center gap-1 text-base-content/60">
-        {forkTool}
-        {!isActive(message) && <>{tools}
-        {message.status === 'completed' && <button className={`btn btn-ghost btn-xs gap-1.5 ${branchSelected ? 'text-primary' : ''}`} disabled={busy || branchSelected} onClick={onSelectBranch} aria-label={branchSelected ? '当前分支' : '继续此分支'}>{branchSelected ? '当前分支' : '继续此分支'}</button>}
-        <button className="btn btn-ghost btn-xs gap-1.5" disabled={busy || !canRetry} onClick={onRetry}><RefreshCw size={12} />重新生成</button>
-        <button className="btn btn-ghost btn-xs btn-square" aria-label="编辑回答" title="编辑回答" disabled={busy || !navigator.onLine} onClick={onEdit}><Pencil size={12} /></button>
-        <button className="btn btn-ghost btn-xs btn-square" aria-label="删除消息" title="删除消息" disabled={busy || !navigator.onLine} onClick={onDelete}><Trash2 size={12} /></button>
-        </>}
-      </div>
+      {actions}
+      {forkError && <p role="alert" className="mt-1 text-xs">{forkError}</p>}
     </div>
   </article>;
 }
@@ -896,7 +880,7 @@ export function App() {
       });
       if (returnToConversationSettings.current) { returnToConversationSettings.current = false; setConversationSettingsOpen(true); }
     }} aria-labelledby="space-settings-title">
-      <div className="modal-box flex h-[min(48rem,92dvh)] max-h-[92dvh] max-w-5xl flex-col overflow-hidden p-0">
+      <div className="settings-dialog modal-box flex h-[min(48rem,92dvh)] max-h-[92dvh] max-w-5xl flex-col overflow-hidden p-0">
         <div className="flex shrink-0 items-center justify-between border-b border-base-content/30 px-6 py-4"><h2 id="space-settings-title" className="text-lg font-semibold">设置</h2><form method="dialog"><button className="btn btn-ghost btn-sm btn-square" aria-label="关闭设置"><X size={18} /></button></form></div>
         {backupTask && <BackupProgressDialog title={backupTask.title} progress={backupTask.progress} cancel={() => backupOperation.current?.abort()} canRestoreFocus={() => selectedRef.current === backupTask.route && storageEpoch() === backupTask.epoch} />}
         <ProviderSettingsPanel open={settingsOpen} requestedTab={requestedSettingsTab} onSaved={providerSaved} themeControl={<ThemeControl />} onLogout={() => void logout()} />

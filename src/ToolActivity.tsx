@@ -4,12 +4,12 @@ import type { PublicToolTask } from '../shared/web-tools';
 
 const labels = { queued: '等待中', running: '执行中', completed: '已完成', failed: '失败', cancelled: '已停止' };
 export function ToolActivity({ task }: { task?: PublicToolTask }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   if (!task) return null;
   const status = task.status === 'active' ? task.calls.some((item) => item.state === 'running') ? '执行中' : '等待模型'
     : task.status === 'completed' ? '已完成' : task.status === 'cancelled' ? '已停止' : '未完成';
-  return <details open={open} onToggle={(event) => setOpen(event.currentTarget.open)} className="collapse collapse-arrow mb-4 border border-base-content/30 bg-base-200 text-sm" data-testid="tool-activity">
-    <summary className="collapse-title min-h-0 py-3 font-medium">联网工具 <span className="ml-2 badge badge-outline badge-sm" role="status">{status}</span></summary>
+  return <div className="mb-4 text-sm"><details open={open} onToggle={(event) => setOpen(event.currentTarget.open)} className="collapse collapse-arrow bg-base-200" data-testid="tool-activity">
+    <summary className="collapse-title min-h-0 py-3 font-medium">联网工具 <span className="ml-2 text-xs font-normal" role="status">{status}</span></summary>
     <div className="collapse-content">
       <ol className="space-y-4">
         {task.calls.map(({ call, state, result, round }) => <li key={call.id} data-tool-id={call.id} data-tool-state={state} className="space-y-2">
@@ -30,5 +30,7 @@ export function ToolActivity({ task }: { task?: PublicToolTask }) {
         </li>)}
       </ol>
     </div>
-  </details>;
+  </details>
+    {task.calls.filter((item) => item.result?.status === 'failed').map((item) => <p key={item.call.id} role="alert" className="mt-2 px-3 text-xs">{item.result?.status === 'failed' ? item.result.error : ''}</p>)}
+  </div>;
 }

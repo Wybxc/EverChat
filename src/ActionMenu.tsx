@@ -12,7 +12,7 @@ export function ActionMenu({ label, icon, children, className = 'btn btn-ghost b
     <button ref={trigger} type="button" className={className} aria-label={label} title={label} aria-haspopup="true" popoverTarget={id} style={{ anchorName: anchor }} disabled={disabled} onKeyDown={(event) => {
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         event.preventDefault(); menu.current?.showPopover();
-        const items = menu.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)');
+        const items = menu.current?.querySelectorAll<HTMLElement>('button:not(:disabled), summary');
         (event.key === 'ArrowUp' ? items?.[items.length - 1] : items?.[0])?.focus();
       }
     }}>{icon}</button>
@@ -23,8 +23,8 @@ export function ActionMenu({ label, icon, children, className = 'btn btn-ghost b
     }} onKeyDown={(event) => {
       if (event.key === 'Escape') { event.preventDefault(); menu.current?.hidePopover(); trigger.current?.focus({ preventScroll: true }); }
       if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
-      const items = Array.from(menu.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? []).filter((item) => item.checkVisibility());
-      const current = items.indexOf(document.activeElement as HTMLButtonElement);
+      const items = Array.from(menu.current?.querySelectorAll<HTMLElement>('button:not(:disabled), summary') ?? []).filter((item) => item.checkVisibility());
+      const current = items.indexOf(document.activeElement as HTMLElement);
       const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (current + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
       event.preventDefault(); items[next]?.focus();
     }}>{children}</ul>

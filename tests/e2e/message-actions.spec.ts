@@ -1,3 +1,4 @@
+import { messageMenu } from '../ui';
 import { test, expect, type APIRequestContext } from '@playwright/test';
 
 const headers = { Origin: 'http://127.0.0.1:5174' };
@@ -22,7 +23,7 @@ test('messages can be copied and quoted into the composer while preserving focus
     const user = page.getByTestId('user-message').first();
     const assistant = page.getByTestId('assistant-message').first();
     await expect(page.getByRole('button', { name: '复制消息', exact: true })).toHaveCount(3);
-    await expect(page.getByRole('button', { name: '引用消息', exact: true })).toHaveCount(3);
+    await expect(page.getByRole('button', { name: '引用消息', exact: true })).toHaveCount(1);
     await user.getByRole('button', { name: '复制消息', exact: true }).click();
     await expect.poll(() => page.evaluate(() => (window as unknown as { copiedMessage: string }).copiedMessage)).toBe('用户 TARGET 与 [a+b] 😀');
     await assistant.getByRole('button', { name: '复制消息', exact: true }).click();
@@ -34,6 +35,7 @@ test('messages can be copied and quoted into the composer while preserving focus
     await expect(editor).toHaveValue(/^> 用户 TARGET 与 \[a\+b\] 😀$/u);
 
     await editor.fill('请结合下面内容回答：');
+    await messageMenu(assistant);
     await assistant.getByRole('button', { name: '引用消息', exact: true }).click();
     await expect(editor).toBeFocused();
     await expect(editor).toHaveValue(/^请结合下面内容回答：\n\n> ## 章节/u);

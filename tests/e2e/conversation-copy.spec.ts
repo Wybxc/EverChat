@@ -1,3 +1,4 @@
+import { messageMenu } from '../ui';
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import type { ConversationInfo, ConversationSettings, Message, ProviderSettings, Snapshot, Submission } from '../../shared/types';
 import { branchPath, isActive } from '../../shared/types';
@@ -137,6 +138,7 @@ test('user and assistant copy actions open independent URLs, preserve the source
     const original = await fixture.snapshot();
     await page.setViewportSize({ width: 390, height: 600 }); await page.goto(`/c/${fixture.id}`);
     const composer = page.getByRole('textbox', { name: '消息', exact: true }); await composer.fill('原对话草稿');
+    await messageMenu(page.locator(`[data-message-id="${second.userId}"]`));
     await page.locator(`[data-message-id="${second.userId}"]`).getByRole('button', { name: '复制到新对话', exact: true }).click();
     await expect(page).not.toHaveURL(`/c/${fixture.id}`); const copyId = new URL(page.url()).pathname.split('/').at(-1)!; copies.push(copyId);
     await expect(page).toHaveURL(`/c/${copyId}`); await expect(composer).toHaveValue(''); await expect(composer).toBeFocused();
@@ -155,6 +157,7 @@ test('user and assistant copy actions open independent URLs, preserve the source
     expect(context.context.slice(-2)).toEqual([{ role: 'user', content: '复制到这里的提问' }, { role: 'user', content: '补充说明' }]);
 
     await page.goto(`/c/${fixture.id}`); await expect(composer).toHaveValue('原对话草稿');
+    await messageMenu(page.locator(`[data-message-id="${first.assistantId}"]`));
     await page.locator(`[data-message-id="${first.assistantId}"]`).getByRole('button', { name: '复制到新对话', exact: true }).click();
     await expect(page).not.toHaveURL(`/c/${fixture.id}`); const answerCopyId = new URL(page.url()).pathname.split('/').at(-1)!; copies.push(answerCopyId);
     await expect(page.getByTestId('user-message')).toHaveCount(1); await expect(page.getByTestId('assistant-message')).toHaveCount(1);
@@ -203,7 +206,7 @@ test('copying a streaming answer takes only its durable prefix without stopping 
     await expect.poll(async () => (await fixture.snapshot()).messages[1]?.durableOffset ?? 0).toBeGreaterThan(0);
     const before = await fixture.snapshot(); expect(isActive(before.messages[1])).toBe(true);
     const action = page.locator(`[data-message-id="${accepted.assistantId}"]`).getByRole('button', { name: '复制到新对话', exact: true });
-    await expect(action).toBeEnabled(); await action.click(); await expect(page).not.toHaveURL(`/c/${fixture.id}`);
+    await messageMenu(page.locator(`[data-message-id="${accepted.assistantId}"]`)); await action.click(); await expect(page).not.toHaveURL(`/c/${fixture.id}`);
     const copyId = new URL(page.url()).pathname.split('/').at(-1)!; copies.push(copyId);
     const copy = await page.request.get(`/api/conversations/${copyId}`).then((response) => response.json()) as Snapshot;
     expect(copy.messages).toHaveLength(2); expect(copy.messages[1].parts).toEqual(before.messages[1].parts);
@@ -250,8 +253,9 @@ test('copy actions handle offline and errors, block double clicks, and respect n
   let release = () => {};
   try {
     await page.goto(`/c/${source.id}`);
-    const message = page.getByTestId('user-message'), action = message.getByRole('button', { name: '复制到新对话', exact: true });
+    const message = page.getByTestId('user-message'), action = message.getByRole('button', { name: '复制到新对话', exact: true, includeHidden: true });
     const composer = page.getByRole('textbox', { name: '消息', exact: true }); await composer.fill('保留草稿');
+    await messageMenu(message);
     await page.context().setOffline(true); await expect(action).toBeDisabled(); await page.context().setOffline(false); await expect(action).toBeEnabled();
     const endpoint = `**/api/conversations/${source.id}/messages/*/duplicate`;
     await page.route(endpoint, (route) => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '暂时无法复制，请重试。' }) }), { times: 1 });
@@ -263,7 +267,7 @@ test('copy actions handle offline and errors, block double clicks, and respect n
       requests++; const response = await route.fetch(); copies.push((await response.json()).id);
       await gate; await route.fulfill({ response });
     });
-    await action.click(); await expect(action).toBeDisabled(); await action.dispatchEvent('click');
+    await messageMenu(message); await action.click(); await expect(action).toBeDisabled(); await action.dispatchEvent('click');
     await expect.poll(() => copies.length).toBe(1); expect(requests).toBe(1);
     await page.getByRole('button', { name: '开启新对话', exact: true }).click(); await expect(page).toHaveURL('/');
     const fulfilled = page.waitForResponse((response) => response.url().endsWith('/duplicate') && response.status() === 201);

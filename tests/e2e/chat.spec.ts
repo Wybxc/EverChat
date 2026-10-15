@@ -172,7 +172,7 @@ test('the composer uses the selected model and shows opt-in provider thoughts', 
   expect(await unsupported.json()).toMatchObject({ error: '所选模型不支持此思维强度。' });
   await page.reload();
   await page.getByLabel('聊天模型').selectOption(JSON.stringify([settings.providers[0].id, 'test-model-2']));
-  await expect(page.getByRole('banner').getByText('第二模型', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('聊天模型')).toHaveValue(JSON.stringify([settings.providers[0].id, 'test-model-2']));
   await page.getByLabel('思维强度').selectOption('high');
   await page.getByLabel('消息', { exact: true }).fill('用选定模型回答');
   await page.getByRole('button', { name: '发送消息', exact: true }).click();
@@ -181,7 +181,11 @@ test('the composer uses the selected model and shows opt-in provider thoughts', 
   await expect(answer.getByTestId('message-reasoning').locator('[data-streamdown="strong"]').filter({ hasText: '集成思考。' })).toBeVisible();
   await expect(answer.locator('[data-streamdown="strong"]').filter({ hasText: '集成测试回答。' })).toBeVisible();
   await expect(answer).toHaveAttribute('data-status', 'running');
+  await answer.getByTestId('message-reasoning').locator('summary').click();
+  await expect(answer.getByTestId('message-reasoning')).toHaveJSProperty('open', false);
   await expect(answer).toHaveAttribute('data-status', 'completed', { timeout: 30_000 });
+  await expect(answer.getByTestId('message-reasoning')).toHaveJSProperty('open', false);
+  await answer.getByTestId('message-reasoning').locator('summary').click();
   await expect(answer).toContainText('第二模型：'); await expect(answer).toContainText('第二模型');
   await expect(answer.getByTestId('message-reasoning')).toContainText('集成思考。');
   await expect(answer.getByTestId('message-reasoning')).toHaveJSProperty('open', true);

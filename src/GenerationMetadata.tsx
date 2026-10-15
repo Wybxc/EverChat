@@ -13,9 +13,9 @@ const duration = (ms: number) => ms < 1000 ? `${number.format(ms)} ms` : `${(ms 
 export function GenerationMetadata({ generation }: { generation?: GenerationResult }) {
   if (!generation) return null;
   const fields = usageFields.filter(([key]) => generation.usage[key] !== undefined);
-  return <details data-testid="message-generation" className="collapse collapse-arrow mt-3 max-w-xl rounded-box border border-base-content/30 bg-base-200 text-xs">
-    <summary className="collapse-title min-h-0 py-2 font-medium">生成信息</summary>
-    <div className="collapse-content">
+  return <details data-testid="message-generation" className="w-full text-xs">
+    <summary className="min-h-11 cursor-pointer py-3 text-sm font-medium">生成信息</summary>
+    <div className="py-2">
       <dl className="space-y-2">
         <div className="flex items-baseline justify-between gap-4 sm:gap-6"><dt>Token 用量</dt><dd>{fields.length ? generation.usageIsFinal ? '供应商报告' : '部分报告' : '供应商未返回'}</dd></div>
         {fields.map(([key, label]) => <div key={key} className="flex items-baseline justify-between gap-4 sm:gap-6"><dt>{label}</dt><dd data-testid={`generation-${key}`}>{number.format(generation.usage[key]!)}</dd></div>)}
