@@ -1,6 +1,6 @@
 # 有限联网工具的逐轮持久化状态
 
-阶段 5 第 1 项的状态基础检查点。SQLite 日志已接入[生产 Conversation Alarm、Workflow 与过程展示](tool-workflow.md)，并在真实本地 Cloudflare 运行时验证重启、恢复与回滚。**搜索／网页服务与会话开关尚未接入**，生产环境拒绝工具请求；阶段 5 仍按[路线图](serverless-feature-roadmap.md#阶段-5联网搜索与网页读取)整体验收。协议资料见[工具协议基础](tool-protocol.md)。
+阶段 5 第 1 项的状态基础检查点。SQLite 日志已接入[生产 Conversation Alarm、Workflow 与过程展示](tool-workflow.md)，并在真实本地 Cloudflare 运行时验证重启、恢复与回滚。后续[联网服务检查点](web-tool-service.md)已接入 Tavily 搜索／读取及全局每日请求额度；网页配置与默认关闭的会话开关仍待完成，阶段 5 继续按[路线图](serverless-feature-roadmap.md#阶段-5联网搜索与网页读取)整体验收。协议资料见[工具协议基础](tool-protocol.md)。
 
 ## 状态与事务
 

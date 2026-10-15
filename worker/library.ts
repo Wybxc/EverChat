@@ -21,6 +21,7 @@ import { ARCHIVE_FORMAT, ARCHIVE_VERSION, sha256, validateArchiveManifest, type 
 import { BACKUP_FORMAT, BACKUP_VERSION } from '../shared/backup';
 import { messageAttachments, messageFiles, messageImages } from '../shared/message-content';
 import { chatModels } from '../shared/models';
+import { WebToolSettings } from './web-tool-settings';
 
 type Deletion = { id: string; deletedAt: number; completed: number } & Record<string, SqlStorageValue>;
 const conversationSelect = `SELECT conversations.*, COALESCE(metadata.pinned, 0) AS pinned, COALESCE(metadata.archived, 0) AS archived
@@ -36,9 +37,11 @@ export class Library extends DurableObject<Env> {
   private readonly attachments: AttachmentStore;
   private readonly copies: CopyJobs;
   private readonly imports: ArchiveImports;
+  private readonly webTools: WebToolSettings;
   private readonly interruptedImportFiles = new Set<string>();
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
+    this.webTools = new WebToolSettings(<T extends Record<string, SqlStorageValue>>(statement: string, ...bindings: SqlStorageValue[]) => ctx.storage.sql.exec<T>(statement, ...bindings));
     this.presets = new PromptPresets(ctx.storage);
     this.copies = new CopyJobs(ctx.storage);
     this.imports = new ArchiveImports(ctx.storage, env.ATTACHMENTS);
@@ -475,6 +478,14 @@ export class Library extends DurableObject<Env> {
     return runtimeProviderConfig(this.providerSettingsData(), selection, effort);
   }
   providerSettings(): ProviderSettings { return publicProviderSettings(this.providerSettingsData()); }
+  webToolSettings() { return this.webTools.settings(); }
+  webToolConfig() { return this.webTools.config(); }
+  webToolKey() { return this.webTools.key(); }
+  saveWebToolSettings(value: unknown) { return this.ctx.storage.transactionSync(() => this.webTools.save(value)); }
+  async claimWebToolRequest(id: string, acceptedLimit: number) {
+    const result = this.ctx.storage.transactionSync(() => this.webTools.claim(id, acceptedLimit));
+    await this.ctx.storage.sync(); return result;
+  }
   providerSettingsResponse() { return json(this.providerSettings()); }
   async saveProviderSettingsResponse(body: ReadableStream<Uint8Array>) {
     try {

@@ -6,6 +6,7 @@ import { validateBatch, validateCommit } from './stream-batches';
 import { messageParts, messageText, type MessagePart } from './message-content';
 import type { ImagePart } from './images';
 import type { PublicToolTask, WebToolName } from './web-tools';
+import type { WebToolServiceConfig } from './web-tool-service';
 export type { MessagePart } from './message-content';
 
 export type MessageStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
@@ -83,6 +84,7 @@ export interface ProviderConfig {
   reasoningEffort?: ReasoningEffort;
   showReasoning?: boolean;
   modelMetadata?: ResolvedModelMetadata;
+  webTools?: WebToolServiceConfig;
 }
 export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 export interface ModelMetadata {

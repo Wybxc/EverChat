@@ -31,6 +31,9 @@ import { ToolTaskJournal, type ToolTaskState } from './tool-task-journal';
 import { ToolStreamRelay } from './tool-stream-relay';
 import { addGenerationUsage } from '../shared/generation';
 import { toolWorkflowId, type ToolWorkflowParams } from './tool-workflow';
+import type { WebToolServiceConfig } from '../shared/web-tool-service';
+import { executeWebTool, terminalWebToolError, type WebToolFetch } from './web-tool-service';
+import { WEB_TOOL_QUOTA_ERROR } from './web-tool-settings';
 
 type Row = Omit<Message, 'parts' | 'waitingForSummary'> & { content: string; reasoning: string | null; generationResult: string | null; summaryResult: string | null; imageResult?: string | null; fileResult?: string | null; toolResult?: string | null; waitingForSummary?: string | null } & Record<string, SqlStorageValue>;
 type Run = { id: string; conversationId: string; assistantId: string; context: string; config: string | null; chunkSeq: number; updatedAt: number;
@@ -395,7 +398,11 @@ export class Conversation extends DurableObject<Env> {
       if (input.tools) {
         try { assertWebToolSupport(config.modelMetadata, input.tools); }
         catch (error) { return { error: error instanceof Error ? error.message : '工具配置无效。', status: 400 }; }
-        if (!this.webToolsConfigured(input.tools)) return { error: '尚未配置联网工具服务。', status: 400 };
+        if (!this.webToolsConfigured(input.tools, config.webTools)) return { error: '尚未配置联网工具服务。', status: 400 };
+        if (config.webTools) {
+          const quota = await this.env.LIBRARY.getByName('personal').webToolSettings();
+          if (quota.usedToday >= Math.min(quota.dailyLimit, config.webTools.dailyLimit)) return { error: WEB_TOOL_QUOTA_ERROR, status: 429 };
+        }
       }
       if (this.query(`SELECT id FROM messages WHERE status IN ('queued', 'running') LIMIT 1`).toArray().length) return { error: '这个对话正在生成回答，请等待完成或先停止。', status: 409 };
       if (this.ctx.storage.sql.databaseSize > MAX_DATABASE_START_BYTES) return { error: DATABASE_LIMIT_MESSAGE, status: 507 };
@@ -517,9 +524,11 @@ export class Conversation extends DurableObject<Env> {
       runId, conversationId, summary.id, JSON.stringify(prepared.context), Date.now(), JSON.stringify(prepared.config), STREAM_VERSION, 'do-v1');
     return summary;
   }
-  protected webToolsConfigured(_enabled: readonly WebToolName[]): boolean { return false; }
-  protected async executeWebTool(call: WebToolCall, _signal: AbortSignal): Promise<WebToolOutcome> {
-    return { id: call.id, name: call.name, status: 'failed', error: '尚未配置联网工具服务。' };
+  protected webToolsConfigured(_enabled: readonly WebToolName[], service?: WebToolServiceConfig): boolean { return Boolean(service?.apiKey); }
+  protected fetchWebTool(...args: Parameters<WebToolFetch>) { return fetch(...args); }
+  protected async executeWebTool(call: WebToolCall, signal: AbortSignal, service?: WebToolServiceConfig): Promise<WebToolOutcome> {
+    return service ? executeWebTool(service, call, signal, (request) => this.fetchWebTool(request))
+      : { id: call.id, name: call.name, status: 'failed', error: '尚未配置联网工具服务。' };
   }
   protected createWebToolWorkflow(params: ToolWorkflowParams) { return this.env.WEB_TOOLS.create({ id: toolWorkflowId(params.conversationId, params.taskId), params }); }
   protected async notifyWebToolWorkflow(taskId: string, round: number) {
@@ -663,16 +672,30 @@ export class Conversation extends DurableObject<Env> {
       const timer = setTimeout(() => abort.abort(), Math.max(1, Math.min(15_000, state.deadline - Date.now())));
       try {
         await this.ctx.storage.sync();
+        const before = this.toolTaskState(taskId); if (before.status !== 'active') return before;
+        const service = (JSON.parse(this.run(state.runId)!.config!) as ProviderConfig).webTools;
+        let stopError: string | undefined;
         let outcome: WebToolOutcome;
-        try { outcome = await this.executeWebTool(call, abort.signal); }
+        try {
+          if (service) {
+            const identity = createHash('sha256').update(JSON.stringify([this.run(state.runId)!.conversationId, taskId, callId])).digest('hex');
+            const budget = await this.env.LIBRARY.getByName('personal').claimWebToolRequest(identity, service.dailyLimit);
+            if ('error' in budget) stopError = budget.error;
+          }
+          abort.signal.throwIfAborted();
+          outcome = stopError ? { id: call.id, name: call.name, status: 'failed', error: stopError } : await this.executeWebTool(call, abort.signal, service);
+          stopError ??= terminalWebToolError(outcome);
+        }
         catch { outcome = { id: call.id, name: call.name, status: 'failed', error: '联网工具执行失败或超时。' }; }
         const current = this.toolTaskState(taskId); if (current.status !== 'active') return current;
         const update = this.ctx.storage.transactionSync(() => {
           try { this.tools.finishTool(taskId, callId, outcome); }
           catch { this.tools.finishTool(taskId, callId, { id: call.id, name: call.name, status: 'failed', error: '联网工具返回无效结果。' }); }
+          if (stopError) this.tools.stop(taskId, 'failed', stopError);
           return this.refreshToolMessage(taskId);
         });
         if (update) this.broadcast(update);
+        if (stopError) this.finish(state.runId, 'failed', stopError);
         await this.ctx.storage.sync(); return this.toolTaskState(taskId);
       } finally { clearTimeout(timer); abort.abort(); this.activeTools.delete(key); }
     })();

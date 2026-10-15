@@ -14,12 +14,15 @@ import { ToolJournalFixture, type ToolJournalControl } from './tool-task-journal
 import { toolFinalStream, toolStream } from './tool-streams';
 import type { WebToolCall, WebToolName, WebToolOutcome } from '../../shared/web-tools';
 import { toolWorkflowId, type ToolWorkflowParams } from '../../worker/tool-workflow';
+import type { WebToolServiceConfig } from '../../shared/web-tool-service';
+import { createHash } from 'node:crypto';
 export { WebToolWorkflow } from '../../worker/tool-workflow';
 
 type AttachmentControl = { id?: string; expire?: boolean; count?: number; reset?: boolean; holdDelete?: string; releaseDelete?: boolean;
   failDelete?: string; holdTextPut?: string; holdTextRead?: string; releaseText?: boolean; resetLibrary?: boolean; unconfigured?: boolean; expireCopy?: string; expireImport?: string; noBucket?: boolean };
 
 export class Library extends ProductionLibrary {
+  async fixtureResetWebTools() { await this.ctx.storage.sync(); this.ctx.abort('Intentional Library reset during web tools', { retryAlarm: true }); }
   private attachmentDeletes: { id: string; waiting: boolean; wait: Promise<void>; release: () => void }[];
   private attachmentText: { id: string; kind: 'put' | 'get'; waiting: boolean; wait: Promise<void>; release: () => void }[];
   private fixtureBucket: R2Bucket;
@@ -173,8 +176,24 @@ export class Conversation extends ProductionConversation {
     if (this.consumeToolFault('event-once')) throw new Error('Injected Workflow event delivery failure');
     await super.notifyWebToolWorkflow(taskId, round);
   }
-  protected override webToolsConfigured(_names: readonly WebToolName[]) { return true; }
-  protected override async executeWebTool(call: WebToolCall, signal: AbortSignal): Promise<WebToolOutcome> {
+  private serviceMode() {
+    this.ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS fixture_tool_service (id INTEGER PRIMARY KEY, mode TEXT NOT NULL)');
+    return this.ctx.storage.sql.exec<{ mode: string }>('SELECT mode FROM fixture_tool_service WHERE id = 1').toArray()[0]?.mode;
+  }
+  protected override webToolsConfigured(names: readonly WebToolName[], service?: WebToolServiceConfig) { return this.serviceMode() ? super.webToolsConfigured(names, service) : true; }
+  protected override async fetchWebTool(request: Request): Promise<Response> {
+    if (!['https://api.tavily.com/search', 'https://api.tavily.com/extract'].includes(request.url)) throw new Error('Unexpected service origin');
+    const sql = this.ctx.storage.sql, mode = this.serviceMode(), body = await request.json();
+    sql.exec('CREATE TABLE IF NOT EXISTS fixture_service_requests (seq INTEGER PRIMARY KEY AUTOINCREMENT, url TEXT, body TEXT, authDigest TEXT)');
+    sql.exec('INSERT INTO fixture_service_requests(url, body, authDigest) VALUES (?, ?, ?)', request.url, JSON.stringify(body), createHash('sha256').update(request.headers.get('Authorization') ?? '').digest('hex'));
+    await new Promise<void>((resolve) => { const timer = setTimeout(resolve, mode === 'service-timeout' ? 20_000 : mode === 'service-slow' ? 10_000 : 1500); request.signal.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true }); });
+    request.signal.throwIfAborted();
+    if (mode === 'service-401' || mode === 'service-429') return new Response(request.headers.get('Authorization'), { status: Number(mode.slice(-3)) });
+    const source = { url: 'https://developers.cloudflare.com/', title: 'Cloudflare 文档', content: '本地工具结果🙂' };
+    return Response.json(request.url.endsWith('/search') ? { results: [source] } : { results: [{ url: source.url, raw_content: source.content }], failed_results: [] });
+  }
+  protected override async executeWebTool(call: WebToolCall, signal: AbortSignal, service?: WebToolServiceConfig): Promise<WebToolOutcome> {
+    if (this.serviceMode()) return super.executeWebTool(call, signal, service);
     this.ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS fixture_tool_calls (id TEXT PRIMARY KEY, calls INTEGER NOT NULL)');
     this.ctx.storage.sql.exec('INSERT INTO fixture_tool_calls VALUES (?, 1) ON CONFLICT(id) DO UPDATE SET calls = calls + 1', call.id);
     await new Promise<void>((resolve) => { const timer = setTimeout(resolve, 1500); signal.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true }); });
@@ -183,6 +202,7 @@ export class Conversation extends ProductionConversation {
   }
   async fixtureToolRuntime(taskId: string, fault?: string, expire?: boolean) {
     const sql = this.ctx.storage.sql;
+    if (fault?.startsWith('service')) { this.serviceMode(); sql.exec('INSERT INTO fixture_tool_service VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET mode = excluded.mode', fault); }
     if (fault) { sql.exec('CREATE TABLE IF NOT EXISTS fixture_tool_faults (kind TEXT PRIMARY KEY, remaining INTEGER NOT NULL)'); sql.exec('INSERT INTO fixture_tool_faults VALUES (?, 1) ON CONFLICT(kind) DO UPDATE SET remaining = 1', fault); }
     const exists = sql.exec('SELECT id FROM web_tool_tasks WHERE id = ?', taskId).toArray().length;
     if (exists && expire) sql.exec('UPDATE web_tool_tasks SET deadline = ? WHERE id = ?', Date.now() - 1, taskId);
@@ -193,6 +213,7 @@ export class Conversation extends ProductionConversation {
       modelCalls: this.fixtureResources().calls,
       toolCalls: this.fixtureCount('fixture_tool_calls') ? sql.exec<{ calls: number }>('SELECT SUM(calls) AS calls FROM fixture_tool_calls').one().calls : 0,
       privateStreams: sql.exec<{ count: number }>('SELECT COUNT(*) AS count FROM tool_stream_commits').one().count,
+      serviceRequests: this.fixtureCount('fixture_service_requests') ? sql.exec('SELECT * FROM fixture_service_requests ORDER BY seq').toArray() : [],
       alarmAt: await this.ctx.storage.getAlarm() };
   }
   private toolJournalFixture?: ToolJournalFixture;
@@ -348,6 +369,12 @@ export class Conversation extends ProductionConversation {
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext) {
     const url = new URL(request.url);
+    if (url.pathname === '/api/__test/library/web-tools/reset') {
+      if (request.method !== 'POST' || request.headers.get('Origin') !== url.origin) return new Response('Forbidden', { status: 403 });
+      if (!await authenticated(request, env)) return new Response('Unauthorized', { status: 401 });
+      try { await (env.LIBRARY as unknown as DurableObjectNamespace<Library>).getByName('personal').fixtureResetWebTools(); }
+      catch (error) { if (error instanceof Error && error.message.includes('Intentional Library reset during web tools')) return Response.json({ restarted: true }, { status: 503 }); throw error; }
+    }
     if (url.pathname === '/api/__test/library/attachments') {
       if (request.method !== 'POST' || request.headers.get('Origin') !== url.origin) return new Response('Forbidden', { status: 403 });
       if (!await authenticated(request, env)) return new Response('Unauthorized', { status: 401 });
@@ -459,15 +486,18 @@ globalThis.fetch = async (input, init) => {
   if (!['/v1/chat/completions', '/v1/responses', '/v1/messages'].includes(url.pathname) && !url.pathname.includes(':streamGenerateContent')) return new Response('Not found', { status: 404 });
   const requestBody = await request.clone().json() as { model: string; thinking?: { type: string }; reasoning_effort?: string; reasoning?: { effort?: string } };
   const encoder = new TextEncoder();
-  const toolKind = requestBody.model?.startsWith('tools-') ? requestBody.model.replace(/^tools-(?:loop-|pause-)?/, '') as ProviderKind
-    : url.pathname.includes('/models/tools-gemini:') ? 'gemini' : undefined;
+  const modelId = requestBody.model ?? /\/models\/([^/:]+):/.exec(url.pathname)?.[1];
+  const toolKind = modelId?.startsWith('tools-') ? modelId.replace(/^tools-(?:loop-|pause-|service-)?/, '') as ProviderKind : undefined;
   if (toolKind && providerStreams[toolKind]) {
-    const serialized = JSON.stringify(requestBody), continued = serialized.includes('本地工具结果');
+    const serialized = JSON.stringify(requestBody), continued = serialized.includes('本地工具结果') || /"role":"tool"|"type":"tool_result"|"type":"function_call_output"|"functionResponse":/.test(serialized);
     if (!serialized.includes('web_search')) return Response.json({ error: 'Missing tools' }, { status: 400 });
     if (continued && (toolKind === 'anthropic' && !serialized.includes('fixture-signature')
       || toolKind === 'openai-responses' && !serialized.includes('encrypted-fixture') || toolKind === 'gemini' && !serialized.includes('fixture-signature'))) return Response.json({ error: 'Missing continuation metadata' }, { status: 400 });
     const loop = requestBody.model?.startsWith('tools-loop-'), round = loop ? (serialized.match(/"role":"tool"/g) ?? []).length / 2 : 0;
-    let wire = continued && !loop ? toolFinalStream(toolKind) : toolStream(toolKind, { count: 2 }).replaceAll('call_0', `call_${round}_0`).replaceAll('call_1', `call_${round}_1`);
+    let wire = continued && !loop ? toolFinalStream(toolKind) : toolStream(toolKind, { count: 2,
+      ...(modelId?.startsWith('tools-service-') ? { calls: [{ name: 'web_search', input: JSON.stringify({ query: 'Cloudflare 文档🙂' }) },
+        { name: 'read_webpage', input: JSON.stringify({ url: 'https://developers.cloudflare.com/' }) }] } : {}),
+    }).replaceAll('call_0', `call_${round}_0`).replaceAll('call_1', `call_${round}_1`);
     if (!continued && toolKind === 'openai-chat') wire = wire.replace('"reasoning_content":"检索资料🙂"', '"reasoning_content":"检索资料🙂","content":"先查阅资料。\\n"');
     let sent = false;
     return new Response(new ReadableStream<Uint8Array>({ async pull(controller) {

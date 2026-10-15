@@ -3,6 +3,7 @@ import * as v from 'valibot';
 import type { Env } from './env';
 export { WebToolWorkflow } from './tool-workflow';
 import type { SubmitInput } from '../shared/types';
+import { webToolServiceInputSchema } from '../shared/web-tool-service';
 import { authenticated, logoutCookie, passwordMatches, sessionCookie } from './auth';
 import { HttpError, json, jsonWithStream, parseBody, type AppContext } from './http';
 import { ARCHIVE_FORMAT, ARCHIVE_VERSION } from '../shared/archive';
@@ -87,6 +88,20 @@ app.get('/session', async (context) => {
 app.get('/settings/providers', async (context) => {
   await requireAuth(context);
   return context.env.LIBRARY.getByName('personal').providerSettingsResponse();
+});
+
+app.get('/settings/web-tools', async (context) => {
+  await requireAuth(context);
+  return json(await context.env.LIBRARY.getByName('personal').webToolSettings());
+});
+app.get('/settings/web-tools/key', async (context) => {
+  await requireAuth(context);
+  return json({ apiKey: await context.env.LIBRARY.getByName('personal').webToolKey() });
+});
+app.put('/settings/web-tools', async (context) => {
+  await requireAuth(context);
+  const input = await parseBody(context, webToolServiceInputSchema, { maxBytes: 8192, tooLarge: '联网工具设置超过 8 KiB。' });
+  return json(await context.env.LIBRARY.getByName('personal').saveWebToolSettings(input));
 });
 
 app.get('/settings/presets', async (context) => {
@@ -337,6 +352,7 @@ app.post('/conversations/:id/messages', async (context) => {
   }
   const config = input.reasoningEffort ? await library.providerConfig(input.selection, input.reasoningEffort) : baseConfig;
   if (!config) throw new HttpError(400, '所选模型不支持此思维强度。');
+  if (input.tools) config.webTools = await library.webToolConfig();
   if (config) config.showReasoning = input.showReasoning ?? false;
   const result = await context.env.CONVERSATIONS.getByName(id).submit(id, input, config);
   if ('error' in result) return json({ error: result.error }, result.status);
