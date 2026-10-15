@@ -39,14 +39,14 @@ export class Library extends ProductionLibrary {
   async fixtureResetWebTools() { await this.ctx.storage.sync(); this.ctx.abort('Intentional Library reset during web tools', { retryAlarm: true }); }
   private attachmentDeletes: { id: string; waiting: boolean; wait: Promise<void>; release: () => void }[];
   private attachmentText: { id: string; kind: 'put' | 'get'; waiting: boolean; wait: Promise<void>; release: () => void }[];
-  private fixtureBucket: R2Bucket;
+  private fixtureBucket?: R2Bucket;
   constructor(ctx: DurableObjectState, env: Env) {
     const resourceStorage = ctx.storage;
     const resourceMeter = (env as MeasurementEnv).LOCAL_RESOURCE_METRICS === '1' ? new FixtureResourceMeter() : undefined;
     if (resourceMeter) ctx = resourceMeter.wrapState(ctx);
     const attachmentText: Library['attachmentText'] = [];
     const attachmentDeletes: Library['attachmentDeletes'] = [];
-    const bucket = new Proxy(env.ATTACHMENTS!, { get(target, property) {
+    const bucket = env.ATTACHMENTS ? new Proxy(env.ATTACHMENTS, { get(target, property) {
       if (property === 'delete') return async (keys: string | string[]) => {
         const exists = ctx.storage.sql.exec("SELECT name FROM sqlite_master WHERE name = 'fixture_attachment_delete_fault'").toArray().length;
         const fault = exists ? ctx.storage.sql.exec<{ id: string; remaining: number }>('SELECT id, remaining FROM fixture_attachment_delete_fault WHERE remaining > 0').toArray()[0] : undefined;
@@ -75,7 +75,7 @@ export class Library extends ProductionLibrary {
         return object;
       };
       const value = Reflect.get(target, property, target); return typeof value === 'function' ? value.bind(target) : value;
-    } });
+    } }) : undefined;
     const disabled = ctx.storage.sql.exec("SELECT name FROM sqlite_master WHERE name = 'fixture_r2_disabled'").toArray().length
       && ctx.storage.sql.exec<{ enabled: number }>('SELECT enabled FROM fixture_r2_disabled WHERE id = 1').toArray()[0]?.enabled;
     super(ctx, { ...env, ATTACHMENTS: disabled ? undefined : bucket });
@@ -174,7 +174,7 @@ export class Library extends ProductionLibrary {
     return { imports: sql.exec('SELECT id, status, lease, removed, cleanupAt, errorStatus FROM archive_imports').toArray(), copies: sql.exec('SELECT id, sourceId, messageId, status, lease, errorStatus FROM conversation_copies').toArray(), pdfMetadataIds: sql.exec('SELECT id FROM attachment_pdf_metadata').toArray(), documents: sql.exec('SELECT id, status, lease, characters, tokens, bytes FROM attachment_documents').toArray(), textWaiting: this.attachmentText.some((pause) => pause.waiting), rows: sql.exec('SELECT id, conversationId, status, removed, lease FROM attachments').toArray(), deleteWaiting: this.attachmentDeletes.some((pause) => pause.waiting),
       failedDeletes: sql.exec<{ count: number }>('SELECT COALESCE(SUM(failed), 0) AS count FROM fixture_attachment_delete_fault').one().count, unconfiguredStatus,
       dailyCount: sql.exec<{ count: number }>('SELECT count FROM attachment_daily_uploads WHERE date = ?', date).toArray()[0]?.count ?? 0,
-      alarm: await this.ctx.storage.getAlarm(), objects: (await this.fixtureBucket.list({ limit: 1000 })).objects.map((object) => ({ key: object.key, size: object.size })) };
+      alarm: await this.ctx.storage.getAlarm(), objects: this.fixtureBucket ? (await this.fixtureBucket.list({ limit: 1000 })).objects.map((object) => ({ key: object.key, size: object.size })) : [] };
   }
 }
 
@@ -562,7 +562,8 @@ globalThis.fetch = async (input, init) => {
     tools?: { name?: string; function?: { name: string }; functionDeclarations?: { name: string }[] }[] };
   const encoder = new TextEncoder();
   const modelId = requestBody.model ?? /\/models\/([^/:]+):/.exec(url.pathname)?.[1];
-  const toolKind = modelId?.startsWith('tools-') ? modelId.replace(/^tools-(?:loop-|pause-|service-)?/, '') as ProviderKind : undefined;
+  const toolModel = /^tools-(?:(loop|pause|service)-)?(?:(large|sustained)-)?(openai-chat|openai-responses|anthropic|gemini)$/.exec(modelId ?? '');
+  const toolKind = toolModel?.[3] as ProviderKind | undefined;
   if (toolKind && providerStreams[toolKind]) {
     const serialized = JSON.stringify(requestBody), continued = serialized.includes('本地工具结果') || /"role":"tool"|"type":"tool_result"|"type":"function_call_output"|"functionResponse":/.test(serialized);
     const names = requestBody.tools?.flatMap((tool) => tool.functionDeclarations?.map((item) => item.name) ?? [tool.function?.name ?? tool.name]) ?? [];
@@ -574,7 +575,9 @@ globalThis.fetch = async (input, init) => {
     // The mock workload is independent of diagnostic counters so a later CPU
     // validation can use the same input with all instrumentation switched off.
     const encodedWorkload = (runtimeEnv as MeasurementEnv).LOCAL_TOOL_WORKLOAD;
-    const workload = encodedWorkload ? JSON.parse(encodedWorkload) as { chunks: number; size: number; interval: number } : undefined;
+    const workload = toolModel?.[2] === 'large' ? { chunks: 120, size: 750, interval: 25 }
+      : toolModel?.[2] === 'sustained' ? { chunks: 120, size: 200, interval: 500 }
+      : encodedWorkload ? JSON.parse(encodedWorkload) as { chunks: number; size: number; interval: number } : undefined;
     let wire = continued && !loop ? toolFinalStream(toolKind, workload) : toolStream(toolKind, { count: 2,
       ...(modelId?.startsWith('tools-service-') ? { calls: [{ name: 'web_search', input: JSON.stringify({ query: 'Cloudflare 文档🙂' }) },
         { name: 'read_webpage', input: JSON.stringify({ url: 'https://developers.cloudflare.com/' }) }].filter((call) => names.includes(call.name)) } : {}),

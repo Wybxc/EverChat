@@ -19,6 +19,8 @@
     "measure:cloudflare-history": "node --import tsx/esm scripts/history-cloudflare.ts",
     "measure:stream": "node --import tsx/esm scripts/stream-baseline.ts",
     "measure:tools": "node --import tsx/esm scripts/tool-baseline.ts",
+    "measure:cloudflare-tools": "node --import tsx/esm scripts/tools-cloudflare.ts",
+    "measure:tools-platform-local": "node --import tsx/esm scripts/tool-platform-local.ts",
     "check": "pnpm test && pnpm build && pnpm test:e2e && pnpm test:pwa"
   },
   "dependencies": {

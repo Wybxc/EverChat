@@ -1,0 +1,432 @@
+{
+  "version": 1,
+  "runtime": "local",
+  "workerName": "everchat-tools-validation",
+  "suite": "functional",
+  "startedAt": "2026-10-15T02:35:55.884Z",
+  "finishedAt": "2026-10-15T02:37:10.750Z",
+  "complete": true,
+  "expectedScenarios": 9,
+  "identity": {
+    "kind": "everchat-tools-validation",
+    "version": 1,
+    "runId": "e5d3a638-9304-4878-a308-bb007ef9b0f9",
+    "mockUpstreams": true,
+    "counters": {
+      "generation": false,
+      "local": false
+    },
+    "workload": {
+      "chunks": 120,
+      "size": 200,
+      "interval": 25
+    }
+  },
+  "observations": {
+    "publicSnapshotReads": 18,
+    "conversationStatusReads": 10,
+    "libraryStatusReads": 18
+  },
+  "observationPolicy": {
+    "activeLibraryProbes": false,
+    "offlineSnapshotIntervalMs": 5000,
+    "terminalStatusIntervalMs": 2000
+  },
+  "scope": "All diagnostic counters disabled. Native tool Workflow and production service adapter with isolated mock HTTP; no paid supplier calls. Public WebSocket completion before read-only terminal checks. API setup, fixture bookkeeping SQL and observation requests are part of the reported platform window. Local elapsed time/SQLite allocation are not CPU, billed resources, natural hibernation proof or account totals.",
+  "results": [
+    {
+      "scenario": "online-openai-chat",
+      "protocol": "openai-chat",
+      "conversationId": "c00cefdc-6107-4b1c-8a0c-14e5040f5e79",
+      "taskId": "546ed3ea-6235-45ae-bca0-fd8c85d16d79",
+      "status": "completed",
+      "contentCharacters": 24007,
+      "reasoningCharacters": 6,
+      "elapsedMs": 9731,
+      "runtime": {
+        "databaseBytes": 372736,
+        "alarmAt": null,
+        "task": {
+          "status": "completed",
+          "round": 1,
+          "modelRequests": 2,
+          "toolRequests": 2
+        },
+        "workflowStatus": "complete",
+        "pendingSearch": 0,
+        "pendingNotifications": 0,
+        "privateStreams": 0,
+        "privatePayloads": 0,
+        "retainedContexts": 0,
+        "modelCalls": 2,
+        "serviceRequests": 2
+      },
+      "client": {
+        "frames": 51,
+        "bytes": 91013,
+        "disconnected": false
+      },
+      "library": {
+        "databaseBytes": 278528,
+        "alarmAt": null,
+        "pendingBackfills": 0,
+        "usedToday": 2,
+        "usedInWindow": 2
+      }
+    },
+    {
+      "scenario": "online-openai-responses",
+      "protocol": "openai-responses",
+      "conversationId": "602e2cf4-3871-4124-8eea-c1c6a7408774",
+      "taskId": "ca2cba80-905e-499c-9bf8-080ad0a6d9b8",
+      "status": "completed",
+      "contentCharacters": 24000,
+      "reasoningCharacters": 6,
+      "elapsedMs": 9954,
+      "runtime": {
+        "databaseBytes": 372736,
+        "alarmAt": null,
+        "task": {
+          "status": "completed",
+          "round": 1,
+          "modelRequests": 2,
+          "toolRequests": 2
+        },
+        "workflowStatus": "complete",
+        "pendingSearch": 0,
+        "pendingNotifications": 0,
+        "privateStreams": 0,
+        "privatePayloads": 0,
+        "retainedContexts": 0,
+        "modelCalls": 2,
+        "serviceRequests": 2
+      },
+      "client": {
+        "frames": 51,
+        "bytes": 90666,
+        "disconnected": false
+      },
+      "library": {
+        "databaseBytes": 331776,
+        "alarmAt": null,
+        "pendingBackfills": 0,
+        "usedToday": 4,
+        "usedInWindow": 2
+      }
+    },
+    {
+      "scenario": "online-anthropic",
+      "protocol": "anthropic",
+      "conversationId": "aea720ee-8b66-46fb-a2d1-2d5fc531edfc",
+      "taskId": "1f573bf6-c84f-4d2d-b379-2c25e51d82f7",
+      "status": "completed",
+      "contentCharacters": 24000,
+      "reasoningCharacters": 6,
+      "elapsedMs": 10007,
+      "runtime": {
+        "databaseBytes": 372736,
+        "alarmAt": null,
+        "task": {
+          "status": "completed",
+          "round": 1,
+          "modelRequests": 2,
+          "toolRequests": 2
+        },
+        "workflowStatus": "complete",
+        "pendingSearch": 0,
+        "pendingNotifications": 0,
+        "privateStreams": 0,
+        "privatePayloads": 0,
+        "retainedContexts": 0,
+        "modelCalls": 2,
+        "serviceRequests": 2
+      },
+      "client": {
+        "frames": 52,
+        "bytes": 90887,
+        "disconnected": false
+      },
+      "library": {
+        "databaseBytes": 380928,
+        "alarmAt": null,
+        "pendingBackfills": 0,
+        "usedToday": 6,
+        "usedInWindow": 2
+      }
+    },
+    {
+      "scenario": "online-gemini",
+      "protocol": "gemini",
+      "conversationId": "7c8cdd19-0051-44c3-93b0-8f5968bbc5d6",
+      "taskId": "020659f8-55cf-4fe8-b0c5-8d2e7f500ff9",
+      "status": "completed",
+      "contentCharacters": 24000,
+      "reasoningCharacters": 0,
+      "elapsedMs": 9436,
+      "runtime": {
+        "databaseBytes": 368640,
+        "alarmAt": null,
+        "task": {
+          "status": "completed",
+          "round": 1,
+          "modelRequests": 2,
+          "toolRequests": 2
+        },
+        "workflowStatus": "complete",
+        "pendingSearch": 0,
+        "pendingNotifications": 0,
+        "privateStreams": 0,
+        "privatePayloads": 0,
+        "retainedContexts": 0,
+        "modelCalls": 2,
+        "serviceRequests": 2
+      },
+      "client": {
+        "frames": 49,
+        "bytes": 89720,
+        "disconnected": false
+      },
+      "library": {
+        "databaseBytes": 430080,
+        "alarmAt": null,
+        "pendingBackfills": 0,
+        "usedToday": 8,
+        "usedInWindow": 2
+      }
+    },
+    {
+      "scenario": "disconnected-replay",
+      "protocol": "openai-chat",
+      "conversationId": "e559b84d-0d94-434d-b7ce-d9d9f69e676e",
+      "taskId": "5fe80c6c-8a1b-4bbd-8e80-8e2fc9d6cff6",
+      "status": "completed",
+      "contentCharacters": 24007,
+      "reasoningCharacters": 6,
+      "elapsedMs": 10072,
+      "runtime": {
+        "databaseBytes": 376832,
+        "alarmAt": null,
+        "task": {
+          "status": "completed",
+          "round": 1,
+          "modelRequests": 2,
+          "toolRequests": 2
+        },
+        "workflowStatus": "complete",
+        "pendingSearch": 0,
+        "pendingNotifications": 0,
+        "privateStreams": 0,
+        "privatePayloads": 0,
+        "retainedContexts": 0,
+        "modelCalls": 2,
+        "serviceRequests": 2
+      },
+      "client": {
+        "frames": 5,
+        "bytes": 4045,
+        "disconnected": true
+      },
+      "library": {
+        "databaseBytes": 479232,
+        "alarmAt": null,
+        "pendingBackfills": 0,
+        "usedToday": 10,
+        "usedInWindow": 2
+      }
+    },
+    {
+      "scenario": "round-limit",
+      "protocol": "openai-chat",
+      "conversationId": "63c4b283-635b-4da0-ac37-300d46d45137",
+      "taskId": "05820353-1945-494a-a5a4-9d3516ac0fb5",
+      "status": "failed",
+      "contentCharacters": 7,
+      "reasoningCharacters": 24,
+      "elapsedMs": 15135,
+      "runtime": {
+        "databaseBytes": 323584,
+        "alarmAt": null,
+        "task": {
+          "status": "failed",
+          "round": 3,
+          "modelRequests": 4,
+          "toolRequests": 6
+        },
+        "workflowStatus": "complete",
+        "pendingSearch": 0,
+        "pendingNotifications": 0,
+        "privateStreams": 0,
+        "privatePayloads": 0,
+        "retainedContexts": 0,
+        "modelCalls": 4,
+        "serviceRequests": 6
+      },
+      "client": {
+        "frames": 38,
+        "bytes": 57632,
+        "disconnected": false
+      },
+      "library": {
+        "databaseBytes": 483328,
+        "alarmAt": null,
+        "pendingBackfills": 0,
+        "usedToday": 16,
+        "usedInWindow": 6
+      }
+    },
+    {
+      "scenario": "service-rejected",
+      "protocol": "openai-chat",
+      "conversationId": "6ad873cf-29e5-4a18-9451-609f1c265b28",
+      "taskId": "aff287ed-2a57-41ea-aafb-082ba64a976d",
+      "status": "failed",
+      "contentCharacters": 7,
+      "reasoningCharacters": 6,
+      "elapsedMs": 3814,
+      "runtime": {
+        "databaseBytes": 258048,
+        "alarmAt": null,
+        "task": {
+          "status": "failed",
+          "round": 0,
+          "modelRequests": 1,
+          "toolRequests": 1
+        },
+        "workflowStatus": "complete",
+        "pendingSearch": 0,
+        "pendingNotifications": 0,
+        "privateStreams": 0,
+        "privatePayloads": 0,
+        "retainedContexts": 0,
+        "modelCalls": 1,
+        "serviceRequests": 1
+      },
+      "client": {
+        "frames": 11,
+        "bytes": 10548,
+        "disconnected": false
+      },
+      "library": {
+        "databaseBytes": 483328,
+        "alarmAt": null,
+        "pendingBackfills": 0,
+        "usedToday": 17,
+        "usedInWindow": 1
+      }
+    },
+    {
+      "scenario": "cancel-model",
+      "protocol": "openai-chat",
+      "conversationId": "37943769-8eec-4037-8edf-30615f3db5db",
+      "taskId": "0baa9cbe-d4c9-4440-ac5e-799eea8fff68",
+      "status": "cancelled",
+      "contentCharacters": 7,
+      "reasoningCharacters": 6,
+      "elapsedMs": 2707,
+      "runtime": {
+        "databaseBytes": 249856,
+        "alarmAt": null,
+        "task": {
+          "status": "cancelled",
+          "round": 0,
+          "modelRequests": 1,
+          "toolRequests": 0
+        },
+        "workflowStatus": "complete",
+        "pendingSearch": 0,
+        "pendingNotifications": 0,
+        "privateStreams": 0,
+        "privatePayloads": 0,
+        "retainedContexts": 0,
+        "modelCalls": 1,
+        "serviceRequests": 0
+      },
+      "client": {
+        "frames": 8,
+        "bytes": 5567,
+        "disconnected": false
+      },
+      "library": {
+        "databaseBytes": 483328,
+        "alarmAt": null,
+        "pendingBackfills": 0,
+        "usedToday": 17,
+        "usedInWindow": 0
+      }
+    },
+    {
+      "scenario": "concurrent-shared-quota",
+      "tasks": [
+        {
+          "conversationId": "19555d55-f894-4646-b956-ee2965e2f586",
+          "taskId": "089e3277-2166-4238-83c2-7fe65a6f5655",
+          "status": "failed",
+          "contentCharacters": 7,
+          "reasoningCharacters": 6,
+          "elapsedMs": 3868,
+          "runtime": {
+            "databaseBytes": 262144,
+            "alarmAt": null,
+            "task": {
+              "status": "failed",
+              "round": 0,
+              "modelRequests": 1,
+              "toolRequests": 2
+            },
+            "workflowStatus": "complete",
+            "pendingSearch": 0,
+            "pendingNotifications": 0,
+            "privateStreams": 0,
+            "privatePayloads": 0,
+            "retainedContexts": 0,
+            "modelCalls": 1,
+            "serviceRequests": 1
+          },
+          "client": {
+            "frames": 13,
+            "bytes": 13768,
+            "disconnected": false
+          }
+        },
+        {
+          "conversationId": "2620f976-bc4b-47fe-b47d-e81be0fc8ecf",
+          "taskId": "31aceaee-de1a-4643-afbe-8616176a4f69",
+          "status": "failed",
+          "contentCharacters": 7,
+          "reasoningCharacters": 6,
+          "elapsedMs": 2367,
+          "runtime": {
+            "databaseBytes": 253952,
+            "alarmAt": null,
+            "task": {
+              "status": "failed",
+              "round": 0,
+              "modelRequests": 1,
+              "toolRequests": 1
+            },
+            "workflowStatus": "complete",
+            "pendingSearch": 0,
+            "pendingNotifications": 0,
+            "privateStreams": 0,
+            "privatePayloads": 0,
+            "retainedContexts": 0,
+            "modelCalls": 1,
+            "serviceRequests": 0
+          },
+          "client": {
+            "frames": 11,
+            "bytes": 10637,
+            "disconnected": false
+          }
+        }
+      ],
+      "library": {
+        "databaseBytes": 483328,
+        "alarmAt": null,
+        "pendingBackfills": 0,
+        "usedToday": 18,
+        "usedInWindow": 1
+      }
+    }
+  ]
+}

@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "runtime": "local",
+  "workerName": "everchat-tools-validation",
+  "suite": "sustained",
+  "startedAt": "2026-10-15T02:37:20.785Z",
+  "finishedAt": "2026-10-15T02:38:38.334Z",
+  "complete": true,
+  "expectedScenarios": 1,
+  "identity": {
+    "kind": "everchat-tools-validation",
+    "version": 1,
+    "runId": "e5d3a638-9304-4878-a308-bb007ef9b0f9",
+    "mockUpstreams": true,
+    "counters": {
+      "generation": false,
+      "local": false
+    },
+    "workload": {
+      "chunks": 120,
+      "size": 200,
+      "interval": 25
+    }
+  },
+  "observations": {
+    "publicSnapshotReads": 2,
+    "conversationStatusReads": 1,
+    "libraryStatusReads": 2
+  },
+  "observationPolicy": {
+    "activeLibraryProbes": false,
+    "offlineSnapshotIntervalMs": 5000,
+    "terminalStatusIntervalMs": 2000
+  },
+  "scope": "All diagnostic counters disabled. Native tool Workflow and production service adapter with isolated mock HTTP; no paid supplier calls. Public WebSocket completion before read-only terminal checks. API setup, fixture bookkeeping SQL and observation requests are part of the reported platform window. Local elapsed time/SQLite allocation are not CPU, billed resources, natural hibernation proof or account totals.",
+  "results": [
+    {
+      "scenario": "responses-sustained",
+      "protocol": "openai-responses",
+      "conversationId": "9a5c499a-06b4-439c-9bcf-d25485bd7e43",
+      "taskId": "48a7db1e-6d7e-4c6a-9ced-13219977f35f",
+      "status": "completed",
+      "contentCharacters": 24000,
+      "reasoningCharacters": 6,
+      "elapsedMs": 77513,
+      "runtime": {
+        "databaseBytes": 401408,
+        "alarmAt": null,
+        "task": {
+          "status": "completed",
+          "round": 1,
+          "modelRequests": 2,
+          "toolRequests": 2
+        },
+        "workflowStatus": "complete",
+        "pendingSearch": 0,
+        "pendingNotifications": 0,
+        "privateStreams": 0,
+        "privatePayloads": 0,
+        "retainedContexts": 0,
+        "modelCalls": 2,
+        "serviceRequests": 2
+      },
+      "client": {
+        "frames": 179,
+        "bytes": 117533,
+        "disconnected": false
+      },
+      "library": {
+        "databaseBytes": 712704,
+        "alarmAt": null,
+        "pendingBackfills": 0,
+        "usedToday": 22,
+        "usedInWindow": 2
+      }
+    }
+  ]
+}
