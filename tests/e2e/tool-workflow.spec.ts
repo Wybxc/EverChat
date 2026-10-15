@@ -137,6 +137,7 @@ test('tool process sync survives page closure and a second device, with no priva
     await expect.poll(async () => (await f.snapshot()).messages[1].status).toBe('completed');
     const other = await second.newPage(); await other.goto(`/c/${f.id}`);
     await expect(other.getByTestId('assistant-message')).toHaveAttribute('data-status', 'completed');
+    await other.getByTestId('tool-activity').locator(':scope > summary').click();
     await expect(other.getByTestId('tool-activity').getByRole('link')).toHaveCount(2);
     await messageMenu(other.getByTestId('assistant-message'));
     await other.getByTestId('message-generation').locator('summary').click();

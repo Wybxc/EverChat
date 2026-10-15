@@ -1,3 +1,4 @@
+import { openParameters, conversationMenu } from '../ui';
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import { validateBackup, type EverChatBackup } from '../../shared/backup';
 import type { ChatInput, ConversationSettings, ProviderSettings, ProviderSettingsInput, Snapshot, Submission, SubmitInput, SyncPacket } from '../../shared/types';
@@ -248,13 +249,13 @@ test('automatic compression preferences autosave with fee disclosure, offline ed
   const fixture = await setup(page.request), other = await browser.newContext();
   try {
     await page.goto(`/c/${fixture.id}`); const composer = page.getByLabel('消息', { exact: true }); await composer.fill('待发送草稿');
-    await page.getByRole('button', { name: '会话参数', exact: true }).click(); const modal = page.getByRole('dialog', { name: '会话参数', exact: true });
+    await openParameters(page); const modal = page.getByRole('dialog', { name: '会话参数', exact: true });
     await expect(modal.getByLabel('自动压缩历史', { exact: true })).not.toBeChecked(); await expect(modal).toContainText('额外调用摘要模型');
     await modal.getByLabel('自动压缩历史', { exact: true }).check();
     await modal.getByLabel('自动摘要模型', { exact: true }).selectOption(modelSelectionKey({ providerId: fixture.providerId, model: 'benchmark-summary-slow' }));
     await expect(modal.getByRole('status')).toHaveText('已保存');
     await other.request.post('/api/login', { headers, data: { password: 'everchat-local' } });
-    const second = await other.newPage(); await second.goto(`/c/${fixture.id}`); await second.getByRole('button', { name: '会话参数', exact: true }).click();
+    const second = await other.newPage(); await second.goto(`/c/${fixture.id}`); await openParameters(second);
     await expect(second.getByLabel('自动压缩历史', { exact: true })).toBeChecked();
     await context.setOffline(true); await modal.getByLabel('自动压缩阈值（%）', { exact: true }).fill('70'); await expect(modal.getByRole('alert')).toBeVisible();
     await modal.getByRole('button', { name: '关闭会话参数' }).click(); await expect(composer).toHaveValue('待发送草稿');
@@ -265,7 +266,7 @@ test('automatic compression preferences autosave with fee disclosure, offline ed
     await page.getByRole('button', { name: '发送消息', exact: true }).click();
     await expect(page.getByText('等待历史摘要', { exact: true })).toBeVisible(); await expect(page.getByTestId('summary-message')).toContainText('自动历史摘要');
     await page.getByRole('button', { name: '停止生成', exact: true }).click(); await expect.poll(async () => (await fixture.snapshot()).messages.at(-1)!.status).toBe('cancelled');
-    await page.getByRole('button', { name: '会话参数', exact: true }).click(); await modal.getByLabel('使用历史摘要', { exact: true }).uncheck();
+    await openParameters(page); await modal.getByLabel('使用历史摘要', { exact: true }).uncheck();
     await expect(modal.getByLabel('自动压缩历史', { exact: true })).not.toBeChecked(); await expect(modal.getByRole('status')).toHaveText('已保存');
     expect((await fixture.snapshot()).settings?.autoCompression.enabled).toBe(false);
   } finally { await context.setOffline(false); await other.close(); await fixture.cleanup(); }
@@ -405,7 +406,7 @@ test('summary controls stream Markdown, preserve the draft and URL, sync another
   const fixture = await setup(page.request), other = await browser.newContext({ storageState: await page.context().storageState() });
   try {
     await page.goto(`/c/${fixture.id}`); const composer = page.getByLabel('消息', { exact: true }); await composer.fill('保留的聊天草稿');
-    await page.getByRole('button', { name: '压缩历史', exact: true }).click(); const modal = page.getByRole('dialog', { name: '压缩历史', exact: true });
+    await conversationMenu(page); await page.getByRole('button', { name: '压缩历史', exact: true }).click(); const modal = page.getByRole('dialog', { name: '压缩历史', exact: true });
     await expect(modal.getByLabel('摘要模型', { exact: true })).toBeFocused(); await expect(modal).toContainText('会额外调用所选模型，可能产生费用');
     await modal.getByLabel('摘要模型', { exact: true }).selectOption(modelSelectionKey({ providerId: fixture.providerId, model: 'benchmark-summary-slow' }));
     await modal.getByLabel('摘要覆盖边界', { exact: true }).selectOption(fixture.seeded.messages[1].id);
@@ -421,7 +422,7 @@ test('summary controls stream Markdown, preserve the draft and URL, sync another
     await expect(second.getByTestId('context-estimate')).toContainText('覆盖 2 条');
     expect((await fixture.resources()).calls).toBe(1);
     await second.reload(); await expect(second.getByTestId('summary-message')).toHaveAttribute('data-status', 'completed'); expect((await fixture.resources()).calls).toBe(1);
-    await second.getByRole('button', { name: '会话参数', exact: true }).click(); const settings = second.getByRole('dialog', { name: '会话参数', exact: true });
+    await openParameters(second); const settings = second.getByRole('dialog', { name: '会话参数', exact: true });
     await settings.getByLabel('使用历史摘要', { exact: true }).uncheck(); await expect(settings.getByRole('status')).toHaveText('已保存');
     await settings.getByRole('button', { name: '关闭会话参数' }).click(); await expect(second.getByTestId('context-estimate')).not.toContainText('覆盖 2 条');
     expect((await fixture.snapshot()).settings!.useSummaries).toBe(false);
@@ -433,7 +434,7 @@ test('an unknown submission result retries the same summary request and leaves a
   try {
     await page.goto(`/c/${fixture.id}`); await page.getByLabel('消息', { exact: true }).fill('草稿不丢');
     await page.route(`**/api/conversations/${fixture.id}/messages`, async (route) => { await route.fetch(); await route.abort('failed'); }, { times: 1 });
-    await page.getByRole('button', { name: '压缩历史', exact: true }).click(); const modal = page.getByRole('dialog', { name: '压缩历史', exact: true });
+    await conversationMenu(page); await page.getByRole('button', { name: '压缩历史', exact: true }).click(); const modal = page.getByRole('dialog', { name: '压缩历史', exact: true });
     await modal.getByLabel('摘要模型', { exact: true }).selectOption(modelSelectionKey({ providerId: fixture.providerId, model: 'benchmark-summary-ok' }));
     await modal.getByRole('button', { name: '生成摘要', exact: true }).click();
     await expect(page.getByText('历史摘要请求', { exact: true })).toBeVisible();
@@ -463,6 +464,7 @@ test('summary regeneration and deletion controls keep originals and drafts, and 
     await expect(page.getByTestId('summary-message').first()).toHaveText('摘要已删除或失效');
     expect((await fixture.snapshot()).messages.slice(0, 6)).toEqual(fixture.seeded.messages);
     await page.context().setOffline(true);
+    await conversationMenu(page);
     await expect(page.getByRole('button', { name: '压缩历史', exact: true })).toBeDisabled();
     await expect(page.getByRole('button', { name: '重新生成摘要', exact: true })).toBeDisabled(); await expect(composer).toHaveValue('保留草稿');
   } finally { await page.context().setOffline(false); await fixture.cleanup(); }

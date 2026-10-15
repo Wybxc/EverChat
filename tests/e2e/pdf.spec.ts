@@ -23,7 +23,7 @@ async function setup(request: APIRequestContext, provider: ProviderKind = 'opena
 }
 async function login(page: Page, id: string) {
   await page.goto(`/c/${id}`); await page.getByLabel('访问密码').fill('everchat-local'); await page.getByRole('button', { name: '进入我的空间' }).click();
-  await expect(page.getByRole('button', { name: '添加文件', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: '添加附件', exact: true })).toBeEnabled();
 }
 async function finish(fixture: Awaited<ReturnType<typeof setup>>, submission: Submission) {
   await expect.poll(async () => (await fixture.snapshot()).messages.find((message) => message.id === submission.assistantId)?.status).toBe('completed');
@@ -140,7 +140,7 @@ test('cancelling a cold PDF module load releases the composer and keeps the dest
     await page.getByLabel('选择聊天文件').setInputFiles({ name: 'cancel.pdf', mimeType: 'application/pdf', buffer: textPdf() });
     await expect.poll(() => waiting).toBe(true);
     await page.evaluate((id) => { history.pushState(null, '', `/c/${id}`); dispatchEvent(new PopStateEvent('popstate')); }, other.id);
-    await expect(page.getByRole('button', { name: '添加文件', exact: true })).toBeEnabled(); await expect(page.getByRole('textbox', { name: '消息', exact: true })).toHaveValue('');
+    await expect(page.getByRole('button', { name: '添加附件', exact: true })).toBeEnabled(); await expect(page.getByRole('textbox', { name: '消息', exact: true })).toHaveValue('');
     release(); expect((await (await request.get(`/api/conversations/${fixture.id}/attachments`)).json())).toEqual([]);
   } finally { release?.(); await fixture.cleanup(); await other.cleanup(); }
 });

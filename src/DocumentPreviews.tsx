@@ -18,7 +18,7 @@ export function DocumentPreviews({ conversationId, files, remove }: { conversati
     return () => abort.abort();
   }, [preview, conversationId]);
   if (!files.length) return null;
-  return <><ul className="list mb-2 max-w-full rounded-box border border-base-content/50 bg-base-100" aria-label={remove ? '待发送文件' : '消息文件'}>
+  return <><ul className="list mb-2 max-w-full rounded-box border border-base-300 bg-base-100" aria-label={remove ? '待发送文件' : '消息文件'}>
     {files.map((file) => <li key={file.attachmentId} className="list-row items-center gap-2 p-2">
       <FileText size={16} /><button type="button" className="btn btn-ghost btn-sm min-w-0 justify-start" aria-label={`预览 ${file.name}`} onClick={() => setPreview(file)}><span className="truncate">{file.name}</span></button>
       {remove && <button type="button" className="btn btn-ghost btn-square btn-xs" aria-label={`移除 ${file.name}`} onClick={() => remove(file.attachmentId)}><X size={13} /></button>}

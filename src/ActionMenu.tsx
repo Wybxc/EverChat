@@ -12,8 +12,8 @@ export function ActionMenu({ label, icon, children, className = 'btn btn-ghost b
     <button ref={trigger} type="button" className={className} aria-label={label} title={label} aria-haspopup="true" popoverTarget={id} style={{ anchorName: anchor }} disabled={disabled} onKeyDown={(event) => {
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         event.preventDefault(); menu.current?.showPopover();
-        const items = menu.current?.querySelectorAll<HTMLElement>('button:not(:disabled), summary');
-        (event.key === 'ArrowUp' ? items?.[items.length - 1] : items?.[0])?.focus();
+        const items = Array.from(menu.current?.querySelectorAll<HTMLElement>('button:not(:disabled), summary') ?? []).filter((item) => item.checkVisibility());
+        (event.key === 'ArrowUp' ? items[items.length - 1] : items[0])?.focus();
       }
     }}>{icon}</button>
     <ul ref={menu} id={id} popover="auto" aria-label={label} style={{ positionAnchor: anchor }} className={`action-menu dropdown ${placement} menu w-60 max-w-[calc(100vw-1rem)] rounded-box border border-base-300 bg-base-100 p-2 shadow-lg`} onClickCapture={(event) => {

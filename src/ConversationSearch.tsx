@@ -94,15 +94,15 @@ export function ConversationSearch({ content, viewport, close, initial }: { cont
     return () => { observer.disconnect(); if (timer) clearTimeout(timer); clear(); move.current = () => {}; };
   }, [content, viewport, query, initial]);
 
-  return <div id="conversation-search" role="search" aria-label="当前对话搜索" className="shrink-0 border-b border-base-content/50 bg-base-200 px-3 py-2 sm:px-8" onKeyDown={(event) => { if (event.key === 'Escape' && !event.nativeEvent.isComposing) { event.preventDefault(); close(); } }}>
+  return <div id="conversation-search" role="search" aria-label="当前对话搜索" className="shrink-0 border-b border-base-300 bg-base-200 px-3 py-2 sm:px-8" onKeyDown={(event) => { if (event.key === 'Escape' && !event.nativeEvent.isComposing) { event.preventDefault(); close(); } }}>
     <div className="mx-auto flex w-full max-w-3xl items-center gap-1 sm:gap-2">
-      <label className="input input-sm min-w-0 flex-1 border-base-content/50 bg-base-100"><Search size={14} /><input ref={input} aria-label="查找当前对话" placeholder="查找当前对话" maxLength={200} value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => {
+      <label className="input input-sm h-11 min-w-0 flex-1 border-base-content/50 bg-base-100"><Search size={14} /><input ref={input} aria-label="查找当前对话" placeholder="查找当前对话" maxLength={200} value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => {
         if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); move.current(event.shiftKey ? -1 : 1); }
       }} /></label>
       <span role="status" className="min-w-14 shrink-0 text-center text-xs text-base-content"><span aria-hidden="true">{query.trim() ? status.count ? `${status.index + 1} / ${status.count}` : '无结果' : ''}</span><span className="sr-only">{query.trim() ? status.count ? `第 ${status.index + 1} 个匹配，共 ${status.count} 个。${status.reasoning ? '思考内容' : '正文'}：${status.excerpt}` : '没有匹配结果' : '输入关键词查找'}</span></span>
-      <button type="button" className="btn btn-ghost btn-sm btn-square" aria-label="上一个匹配" disabled={!status.count} onClick={() => move.current(-1)}><ArrowUp size={15} /></button>
-      <button type="button" className="btn btn-ghost btn-sm btn-square" aria-label="下一个匹配" disabled={!status.count} onClick={() => move.current(1)}><ArrowDown size={15} /></button>
-      <button type="button" className="btn btn-ghost btn-sm btn-square" aria-label="关闭对话搜索" onClick={close}><X size={15} /></button>
+      <button type="button" className="btn btn-ghost btn-square h-11 w-11" aria-label="上一个匹配" disabled={!status.count} onClick={() => move.current(-1)}><ArrowUp size={15} /></button>
+      <button type="button" className="btn btn-ghost btn-square h-11 w-11" aria-label="下一个匹配" disabled={!status.count} onClick={() => move.current(1)}><ArrowDown size={15} /></button>
+      <button type="button" className="btn btn-ghost btn-square h-11 w-11" aria-label="关闭对话搜索" onClick={close}><X size={15} /></button>
     </div>
   </div>;
 }

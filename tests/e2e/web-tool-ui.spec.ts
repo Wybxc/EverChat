@@ -93,7 +93,7 @@ test('web settings autosave, validate ceilings, reveal explicitly, hide across t
     const used = (await f.settings()).usedToday, next = used + 50;
     await limit.fill('0'); await expect(page.getByTestId('web-tool-save-status')).toContainText('1–1,000');
     expect((await f.settings()).dailyLimit).not.toBe(0);
-    await limit.fill(String(next)); await expect(page.getByTestId('web-tool-save-status')).toHaveText('已自动保存');
+    await limit.fill(String(next)); await expect(page.getByTestId('web-tool-save-status')).toHaveText('已保存');
     expect((await f.settings()).dailyLimit).toBe(next);
     await page.getByRole('button', { name: '查看联网服务密钥', exact: true }).click(); await expect(field).toHaveValue(key);
     await page.getByRole('button', { name: '关闭设置', exact: true }).click(); await space(page); await expect(field).toHaveValue('');
@@ -107,8 +107,8 @@ test('web settings autosave, validate ceilings, reveal explicitly, hide across t
       await other.screenshot({ path: 'test-results/web-tool-settings-mobile.png', animations: 'disabled' });
     } finally { await second.close(); }
     await page.getByRole('button', { name: '清除密钥', exact: true }).click();
-    await expect(page.getByTestId('web-tool-save-status')).toHaveText('已自动保存'); expect((await f.settings()).hasApiKey).toBe(false);
-    await field.fill(key); await expect(page.getByTestId('web-tool-save-status')).toHaveText('已自动保存');
+    await expect(page.getByTestId('web-tool-save-status')).toHaveText('已保存'); expect((await f.settings()).hasApiKey).toBe(false);
+    await field.fill(key); await expect(page.getByTestId('web-tool-save-status')).toHaveText('已保存');
     await expect(field).toHaveValue(''); await noCachedKey(page);
   } finally { await page.close(); await f.cleanup(); }
 });
@@ -122,6 +122,7 @@ for (const [provider, tools] of combinations) test(`${provider} browser toggles 
     await page.goto('/'); await enable(page, tools);
     const sent = await send(page); f.ids.push(sent.id); expect(sent.input.tools).toEqual(tools); expect(sent.input.settings.tools).toEqual(tools);
     await expect(page.getByTestId('assistant-message')).toHaveAttribute('data-status', 'completed');
+    await page.getByTestId('tool-activity').locator(':scope > summary').click();
     await expect(page.getByTestId('tool-activity').getByRole('link')).toHaveCount(tools.length);
     await expect(page.getByTestId('assistant-message').locator('[data-streamdown="strong"]').filter({ hasText: '工具回答🙂' })).toBeVisible();
     expect((await f.snapshot(sent.id)).settings!.tools).toEqual(tools);
@@ -184,7 +185,7 @@ test('configuring a service from conversation parameters returns to the same dia
     await expect(modal.getByRole('checkbox', { name: '联网搜索', exact: true })).toBeDisabled();
     await modal.getByRole('button', { name: '配置联网服务', exact: true }).click();
     await expect(page.getByRole('tab', { name: '联网', exact: true })).toHaveAttribute('aria-selected', 'true');
-    await page.getByLabel('联网服务 API 密钥', { exact: true }).fill(key); await expect(page.getByTestId('web-tool-save-status')).toHaveText('已自动保存');
+    await page.getByLabel('联网服务 API 密钥', { exact: true }).fill(key); await expect(page.getByTestId('web-tool-save-status')).toHaveText('已保存');
     await page.getByRole('button', { name: '关闭设置', exact: true }).click();
     await expect(modal).toBeVisible(); await expect(modal.getByRole('checkbox', { name: '联网搜索', exact: true })).toBeEnabled();
   } finally { await page.close(); await f.cleanup(); }
@@ -196,6 +197,7 @@ test('invalid new-conversation parameters reject attachments before creating a c
     await page.goto('/');
     await page.getByLabel('消息', { exact: true }).fill('参数无效时保留附件提问');
     const modal = await parameters(page);
+    await modal.getByText('上下文预算与条数', { exact: true }).click();
     await modal.getByLabel('上下文 Token 预算', { exact: true }).fill('0');
     await modal.getByRole('button', { name: '关闭会话参数', exact: true }).click();
     await expect(modal).not.toBeVisible();
@@ -238,7 +240,9 @@ test('copy and restore retain enabled tools and saved sources without executing 
       expect((await f.runtime(id, crypto.randomUUID())).modelCalls).toBe(0);
       expect((await f.runtime(id, crypto.randomUUID())).serviceRequests).toHaveLength(0);
     }
-    await page.goto(`/c/${restored.id}`); await expect(page.getByTestId('tool-activity').getByRole('link')).toHaveCount(2);
+    await page.goto(`/c/${restored.id}`);
+    await page.getByTestId('tool-activity').locator(':scope > summary').click();
+    await expect(page.getByTestId('tool-activity').getByRole('link')).toHaveCount(2);
     const modal = await parameters(page); for (const label of ['联网搜索', '网页读取']) await expect(modal.getByRole('checkbox', { name: label, exact: true })).toBeChecked();
     await noCachedKey(page);
   } finally { await page.close(); await f.cleanup(); }

@@ -16,7 +16,7 @@ export function ImagePreviews({ conversationId, images, remove }: { conversation
   }, []);
   if (!images.length) return null;
   return <><div className="flex flex-wrap gap-2" role="group" aria-label={remove ? '待发送图片' : '消息图片'}>
-    {images.map((image) => <div key={image.attachmentId} className="relative rounded-box border border-base-content/50 bg-base-100 p-1">
+    {images.map((image) => <div key={image.attachmentId} className="relative rounded-box border border-base-300 bg-base-100 p-1">
       <button type="button" className="block max-w-32 overflow-hidden rounded-field" aria-label={`预览 ${image.name}`} onClick={() => setPreview(image)}>
         {failed.has(image.attachmentId) ? <span className="block p-3 text-xs">图片不可用</span> : <img src={attachmentUrl(conversationId, image.attachmentId)} alt={image.name} loading="lazy" className="h-24 w-28 object-contain" onError={() => setFailed((current) => new Set(current).add(image.attachmentId))} />}
       </button>

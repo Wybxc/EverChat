@@ -26,7 +26,7 @@ test('production assets load the real PDF worker and bundled Chinese CMaps and f
     if (request.method() === 'GET' && path.endsWith('/document')) return route.fulfill({ json: { file: part, text: extracted!.text }, headers: { 'Cache-Control': 'no-store' } });
     return route.fulfill({ json: [] });
   });
-  await page.goto(`/c/${id}`); await expect(page.getByRole('button', { name: '添加文件', exact: true })).toBeEnabled();
+  await page.goto(`/c/${id}`); await expect(page.getByRole('button', { name: '添加附件', exact: true })).toBeEnabled();
   await page.getByLabel('选择聊天文件').setInputFiles({ name: '生产.pdf', mimeType: 'application/pdf', buffer: bytes });
   await page.getByRole('button', { name: '预览 生产.pdf' }).click(); await expect(page.getByRole('dialog').locator('pre')).toContainText('生产构建预算：42 元');
   expect(extracted?.pdf).toEqual({ pages: 1, parserVersion: PDF_PARSER_VERSION });
