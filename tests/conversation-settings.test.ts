@@ -23,6 +23,16 @@ test('conversation settings reject non-finite numbers, bounds, fractional output
   assert.equal(v.safeParse(conversationSettingsSchema, { ...defaults, temperature: 0, topP: 1 }).success, true);
 });
 
+test('conversation tools default to off and accept only independent, unique read-only tool names', () => {
+  assert.deepEqual(defaults.tools, []);
+  for (const tools of [[], ['web_search'], ['read_webpage'], ['web_search', 'read_webpage']]) {
+    assert.equal(v.safeParse(conversationSettingsSchema, { ...defaults, tools }).success, true);
+  }
+  for (const tools of [undefined, null, 'web_search', ['web_search', 'web_search'], ['run_command'], ['read_webpage', 'write_file']]) {
+    assert.equal(v.safeParse(conversationSettingsSchema, { ...defaults, tools }).success, false);
+  }
+});
+
 test('reasoning and model sampling gates match current supplier and SDK restrictions', () => {
   const supported = (patch: Partial<ProviderConfig>) => samplingSupport({ ...config, ...patch });
   for (const model of ['o3', 'o4-mini', 'gpt-5-mini', 'gpt-6.1-sol', 'gpt-4o-search-preview']) assert.equal(supported({ model, reasoningEffort: 'none' }).temperatureMax, null);

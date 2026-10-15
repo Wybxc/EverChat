@@ -7,9 +7,10 @@ import { api } from './api';
 import { SettingsAutosave } from './settings-autosave';
 import { PromptPresetsPanel } from './PromptPresets';
 import { ModelMetadataFields } from './ModelMetadataFields';
+import { WebToolSettingsPanel } from './WebToolSettings';
 
 type PanelProps = { open: boolean; requestedTab?: SettingsTab; onSaved: (settings: ProviderSettings) => void; themeControl: ReactNode; onLogout: () => void };
-const tabs = [{ id: 'general', label: '通用' }, { id: 'providers', label: '供应商' }, { id: 'chat', label: '对话' }, { id: 'presets', label: '预设' }] as const;
+const tabs = [{ id: 'general', label: '通用' }, { id: 'providers', label: '供应商' }, { id: 'chat', label: '对话' }, { id: 'presets', label: '预设' }, { id: 'web-tools', label: '联网' }] as const;
 export type SettingsTab = (typeof tabs)[number]['id'];
 
 function ModelOptions({ model, index, provider, globalPrompt, onChange }: {
@@ -148,7 +149,7 @@ function ProviderManager({ initial, open, requestedTab, onSaved, themeControl, o
   const enabled = availableModels(settings);
 
   return <div className="flex min-h-0 flex-1 flex-col">
-    <div role="tablist" aria-label="设置分类" className="tabs tabs-border mx-6 shrink-0">
+    <div role="tablist" aria-label="设置分类" className="tabs tabs-border mx-6 shrink-0 flex-nowrap overflow-x-auto">
       {tabs.map((item) => <input key={item.id} id={`settings-tab-${item.id}`} type="radio" name="settings-tabs" role="tab" className="tab text-base-content/70 aria-selected:text-base-content" aria-label={item.label} aria-controls={`settings-panel-${item.id}`} aria-selected={tab === item.id} checked={tab === item.id} onChange={() => { setTab(item.id); setShowKey(false); }} />)}
     </div>
     <div data-testid="settings-scroll" className="min-h-0 flex-1 overflow-y-auto p-6" onBlur={(event) => {
@@ -222,8 +223,11 @@ function ProviderManager({ initial, open, requestedTab, onSaved, themeControl, o
       <section id="settings-panel-presets" role="tabpanel" aria-labelledby="settings-tab-presets" hidden={tab !== 'presets'}>
         <PromptPresetsPanel open={open && tab === 'presets'} />
       </section>
+      <section id="settings-panel-web-tools" role="tabpanel" aria-labelledby="settings-tab-web-tools" hidden={tab !== 'web-tools'}>
+        <WebToolSettingsPanel active={open && tab === 'web-tools'} />
+      </section>
     </div>
-    {tab !== 'presets' && <div className="flex shrink-0 items-center justify-between gap-3 border-t border-base-content/30 px-6 py-3 text-xs text-base-content/70">
+    {tab !== 'presets' && tab !== 'web-tools' && <div className="flex shrink-0 items-center justify-between gap-3 border-t border-base-content/30 px-6 py-3 text-xs text-base-content/70">
       <p data-testid="settings-save-status" role={status === 'error' ? 'alert' : 'status'}>{status === 'error' ? error : status === 'saving' ? '保存中…' : status === 'waiting' ? '待保存' : '已自动保存'}</p>
       {status === 'error' && <button type="button" className="btn btn-ghost btn-xs" onClick={() => { void store.flush().catch(() => {}); }}>重试</button>}
     </div>}

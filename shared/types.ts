@@ -40,6 +40,7 @@ export interface ConversationSettings {
   useGlobalMaxOutputTokens: boolean; maxOutputTokens: number | null;
   recentMessages: number | null; contextBudget: number | null;
   useSummaries: boolean;
+  tools: WebToolName[];
   autoCompression: { enabled: boolean; threshold: number; model: ModelSelection | null };
 }
 export interface PromptPreset { id: string; name: string; systemPrompt: string; updatedAt: number }

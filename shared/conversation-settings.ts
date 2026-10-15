@@ -1,11 +1,13 @@
 import * as v from 'valibot';
 import type { ConversationSettings, ProviderConfig } from './types';
 import { validateOutputLimit } from './model-metadata';
+import { WEB_TOOL_NAMES } from './web-tools';
 
 export const DEFAULT_CONVERSATION_SETTINGS: ConversationSettings = {
   systemPrompt: null, temperature: null, topP: null, useGlobalMaxOutputTokens: true, maxOutputTokens: null,
   recentMessages: null, contextBudget: null,
   useSummaries: true,
+  tools: [],
   autoCompression: { enabled: false, threshold: 80, model: null },
 };
 export const conversationSettingsSchema = v.pipe(v.strictObject({
@@ -17,6 +19,7 @@ export const conversationSettingsSchema = v.pipe(v.strictObject({
   recentMessages: v.nullable(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(1000))),
   contextBudget: v.nullable(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(10_000_000))),
   useSummaries: v.boolean(),
+  tools: v.pipe(v.array(v.picklist(WEB_TOOL_NAMES)), v.maxLength(WEB_TOOL_NAMES.length), v.check((tools) => new Set(tools).size === tools.length)),
   autoCompression: v.strictObject({ enabled: v.boolean(), threshold: v.pipe(v.number(), v.integer(), v.minValue(50), v.maxValue(95)),
     model: v.nullable(v.strictObject({ providerId: v.pipe(v.string(), v.uuid()), model: v.pipe(v.string(), v.minLength(1), v.maxLength(200)) })) }),
 }), v.check((settings) => !settings.autoCompression.enabled || settings.useSummaries, '自动压缩需要启用历史摘要。'));

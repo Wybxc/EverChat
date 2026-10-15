@@ -8,8 +8,10 @@ import { api } from './api';
 import { read, storageEpoch, write } from './storage';
 import { PromptPresetPicker } from './PromptPresets';
 import { modelSelectionKey } from '../shared/models';
+import { WEB_TOOL_NAMES } from '../shared/web-tools';
+import { useWebToolSettings } from './web-tool-settings';
 
-const withContextDefaults = (settings: ConversationSettings) => settings.recentMessages === undefined || settings.contextBudget === undefined || settings.useSummaries === undefined || settings.autoCompression === undefined
+const withContextDefaults = (settings: ConversationSettings) => settings.recentMessages === undefined || settings.contextBudget === undefined || settings.useSummaries === undefined || settings.autoCompression === undefined || settings.tools === undefined
   ? { ...DEFAULT_CONVERSATION_SETTINGS, ...settings } : settings;
 
 function NumberSetting({ label, value, min, max, integer = false, change }: {
@@ -28,14 +30,19 @@ function NumberSetting({ label, value, min, max, integer = false, change }: {
   </label>;
 }
 
-export function ConversationSettingsDialog({ id, initial, model, models, effort, showReasoning, open, close, onDraft, managePresets }: {
+export function ConversationSettingsDialog({ id, initial, model, models, effort, showReasoning, open, close, onDraft, managePresets, manageWebTools }: {
   id: string | null; initial: ConversationSettings; model?: ChatModel; models: ChatModel[]; effort: ReasoningEffort | ''; showReasoning: boolean;
   open: boolean; close: () => void; onDraft: (settings: ConversationSettings) => void;
   managePresets: () => void;
+  manageWebTools: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null), titleId = useId();
+  const service = useWebToolSettings(open);
   const draftKey = `conversation-settings-draft:${id ?? 'new'}`;
-  const [cached] = useState(() => read<{ settings: ConversationSettings; dirty: boolean } | null>(draftKey, null));
+  const [cached] = useState(() => {
+    const value = read<{ settings: ConversationSettings; dirty: boolean } | null>(draftKey, null);
+    return value && v.safeParse(conversationSettingsSchema, value.settings).success ? value : null;
+  });
   const [store] = useState(() => {
     const epoch = storageEpoch();
     const autosave = new Autosave(withContextDefaults(cached?.dirty ? cached.settings : initial), async (settings: ConversationSettings) => {
@@ -92,6 +99,14 @@ export function ConversationSettingsDialog({ id, initial, model, models, effort,
           <option value="inherit">继承全局设置</option><option value="unset">未设置</option><option value="custom">自定义</option>
         </select></label>
         {limitMode === 'custom' && <NumberSetting label="输出 Token 上限" value={settings.maxOutputTokens} min={1} max={100000} integer change={(maxOutputTokens) => update({ maxOutputTokens })} />}
+        <fieldset className="fieldset border-t border-base-content/20 pt-3">
+          <legend className="fieldset-legend">联网工具</legend>
+          {WEB_TOOL_NAMES.map((name) => <label key={name} className="flex items-center justify-between gap-3 text-sm"><span>{name === 'web_search' ? '联网搜索' : '网页读取'}</span><input type="checkbox" className="toggle toggle-sm" checked={settings.tools.includes(name)} disabled={!settings.tools.includes(name) && (!model?.metadata.toolCalls || !service.data?.hasApiKey)} onChange={(event) => update({ tools: event.currentTarget.checked ? [...settings.tools, name] : settings.tools.filter((tool) => tool !== name) })} /></label>)}
+          {!model?.metadata.toolCalls && <p className="text-xs text-base-content/70">当前模型未声明支持工具调用。</p>}
+          {service.isError && !service.data && <div className="flex items-center gap-2 text-xs"><span role="alert">无法读取联网服务配置。</span><button type="button" className="btn btn-xs" onClick={() => void service.refetch()}>重新读取</button></div>}
+          <button type="button" className="btn btn-sm w-fit" onClick={() => { dialog.current?.close(); close(); manageWebTools(); }}>{service.data?.hasApiKey ? '联网服务设置' : '配置联网服务'}</button>
+          <p className="text-xs text-base-content/70">开启后可能增加搜索服务与模型费用。每个新对话默认关闭。</p>
+        </fieldset>
         <fieldset className="fieldset border-t border-base-content/20 pt-3">
           <legend className="fieldset-legend">上下文</legend>
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="checkbox checkbox-sm" checked={settings.useSummaries} onChange={(event) => update({ useSummaries: event.currentTarget.checked, ...(!event.currentTarget.checked ? { autoCompression: { ...compression, enabled: false } } : {}) })} />使用历史摘要</label>

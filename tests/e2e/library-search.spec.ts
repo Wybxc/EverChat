@@ -33,12 +33,13 @@ test('cross-conversation search uses paginated literal text and jumps to the mat
     await results.getByRole('button', { name: '加载更多结果' }).click(); await expect(results.getByRole('link')).toHaveCount(47);
     await results.getByRole('link').first().click(); await expect(page).toHaveURL(`/c/${id}`);
     await expect(page.locator('[data-search-current]')).toHaveAttribute('data-message-id', ids[0]);
-    expect(await page.evaluate(() => String(CSS.highlights.get('everchat-search')?.values().next().value ?? ''))).toBe('全文TOKEN');
+    // Markdown can replace text nodes after the target article has been found.
+    await expect.poll(() => page.evaluate(() => String(CSS.highlights.get('everchat-search')?.values().next().value ?? ''))).toBe('全文TOKEN');
     await page.getByRole('button', { name: '关闭对话搜索' }).click();
     await page.getByRole('textbox', { name: '搜索对话', exact: true }).fill('独立思考 46');
     await expect(results.getByRole('link')).toHaveCount(1); await results.getByRole('link').click();
     await expect(page.locator('[data-search-current] [data-testid="message-reasoning"]')).toHaveAttribute('open', '');
-    expect(await page.evaluate(() => String(CSS.highlights.get('everchat-search')?.values().next().value ?? ''))).toBe('独立思考 46');
+    await expect.poll(() => page.evaluate(() => String(CSS.highlights.get('everchat-search')?.values().next().value ?? ''))).toBe('独立思考 46');
   } finally { await page.request.delete(`/api/conversations/${id}`, { headers }); }
 });
 

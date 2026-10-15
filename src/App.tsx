@@ -6,7 +6,7 @@ import type { PDFExtraction } from '../shared/pdf';
 import { messageFiles, messageImages, messageText } from '../shared/message-content';
 import { Component, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode, type SubmitEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowDown, ArrowRight, ArrowUp, BookOpen, Check, CheckCheck, CloudOff, Copy, Download, Feather, FolderOpen, ImagePlus, Infinity as InfinityIcon, Lightbulb, LockKeyhole, Menu, MessageCircle, Monitor, Moon, Paperclip, Pencil, Pin, Plus, Quote, RefreshCw, Search, Settings, SlidersHorizontal, Sparkles, Square, Sun, Trash2, WifiOff, X } from 'lucide-react';
+import { ArrowDown, ArrowRight, ArrowUp, BookOpen, Check, CheckCheck, CloudOff, Copy, Download, Feather, FolderOpen, Globe, ImagePlus, Infinity as InfinityIcon, Lightbulb, LockKeyhole, Menu, MessageCircle, Monitor, Moon, Paperclip, Pencil, Pin, Plus, Quote, RefreshCw, Search, Settings, SlidersHorizontal, Sparkles, Square, Sun, Trash2, WifiOff, X } from 'lucide-react';
 import 'streamdown/styles.css';
 import 'katex/dist/katex.min.css';
 import type { PluginConfig } from 'streamdown';
@@ -17,6 +17,8 @@ import { useConversation } from './useConversation';
 import { ProviderSettingsPanel, type SettingsTab } from './ProviderSettings';
 import { GenerationMetadata } from './GenerationMetadata';
 import { ToolActivity } from './ToolActivity';
+import { assertWebToolSupport } from '../shared/web-tools';
+import { loadWebToolSettings, useWebToolSettings, WEB_TOOL_SETTINGS_KEY } from './web-tool-settings';
 import { ContextEstimateView } from './ContextEstimate';
 import { buildContext, contextSource } from '../shared/context-budget';
 import { chatModels, effortLabels, modelSelectionKey } from '../shared/models';
@@ -252,6 +254,7 @@ function MessageView({ conversationId, message, busy, onRetry, onEdit, onQuote, 
 export function App() {
   const queryClient = useQueryClient();
   const [session, setSession] = useState<SessionInfo | null>(null);
+  const webToolSettings = useWebToolSettings(Boolean(session?.authenticated));
   const [bootError, setBootError] = useState('');
   const [localConversations, setLocalConversations] = useState<ConversationInfo[]>(() => read('library', []));
   const { id: selected, invalid: invalidRoute, navigate } = useConversationRoute();
@@ -376,6 +379,11 @@ export function App() {
     ? branchHead : latestCompletedAssistant?.id;
   const validBranchHead = branchHead && snapshot.messages.some((message) => message.id === branchHead && message.role === 'assistant' && message.status === 'completed' && !message.deletedAt && !message.summary) ? branchHead : undefined;
   const conversationSettings = settingsDraft?.id === selected ? settingsDraft.settings : selected ? snapshot.settings ?? DEFAULT_CONVERSATION_SETTINGS : newConversationSettings;
+  const resetNewTools = () => {
+    const settings = { ...newConversationSettings, tools: [] };
+    setNewConversationSettings(settings); write('conversation-settings:new', settings);
+    write('conversation-settings-draft:new', { settings, dirty: false });
+  };
   const previewSource = contextSource(snapshot.messages, { content: draft, revisionOf, branchHead: validBranchHead });
   const previewHistory = useMemo(() => {
     try { return summaryContext(snapshot.messages, previewSource.parentId, conversationSettings.useSummaries); } catch { return null; }
@@ -508,8 +516,11 @@ export function App() {
         preparedFiles.push({ file: prepared, input, pdf });
       }
       if (!conversation) {
+        const parameters = v.safeParse(conversationSettingsSchema, conversationSettings);
+        if (!parameters.success) throw new Error('请先修正会话参数，再添加附件。');
         conversation = { id: crypto.randomUUID(), title: (draft.trim() || inputFiles[0].name).slice(0, 26), createdAt: Date.now(), updatedAt: Date.now(), pinned: false, archived: false };
         await api('/conversations', 'POST', { id: conversation.id, title: conversation.title }, controller.signal);
+        await api(`/conversations/${conversation.id}/settings`, 'PUT', parameters.output, controller.signal);
       }
       for (const { file: prepared, input, pdf } of preparedFiles) {
         setImageProgress({ name: prepared.name, percent: 0, kind }); registered.push(input.id);
@@ -524,6 +535,7 @@ export function App() {
       if (selectedRef.current !== origin) throw new DOMException('已切换对话', 'AbortError');
       const savedDraft = read<{ text: string; revisionOf?: string }>(`draft:${origin ?? 'new'}`, { text: draft, revisionOf });
       const images = [...draftImages, ...uploadedImages], files = [...draftFiles, ...uploadedFiles];
+      if (!origin) resetNewTools();
       write(`draft:${conversation.id}`, { ...savedDraft, images, files }); setDraftImages(images); setDraftFiles(files);
       if (!origin) { write('draft:new', { text: '' }); select(conversation.id); }
       refreshLibrary();
@@ -568,9 +580,10 @@ export function App() {
   };
 
   const queue = async (input: SubmitInput) => {
+    const origin = selected, epoch = storageEpoch();
     const settings = v.safeParse(conversationSettingsSchema, conversationSettings);
     if (!settings.success) { setError('请先修正会话参数。'); return; }
-    input = { ...input, settings: settings.output };
+    input = { ...input, settings: settings.output, ...(settings.output.tools.length ? { tools: settings.output.tools } : {}) };
     if (!input.selection && selectedModel) input = { ...input, selection: { providerId: selectedModel.providerId, model: selectedModel.model } };
     const selectedBranch = validBranchHead;
     if (input.content !== undefined && input.revisionOf === undefined && selectedBranch && input.branchHead === undefined) input = { ...input, branchHead: selectedBranch };
@@ -581,6 +594,14 @@ export function App() {
       : generationModel ? read<ReasoningEffort | ''>(`reasoning-effort:${modelSelectionKey(generationModel)}`, '') : '';
     if (input.reasoningEffort === undefined && generationModel?.reasoningSupported && generationEffort && generationModel.reasoningEfforts.includes(generationEffort)) {
       input = { ...input, reasoningEffort: generationEffort };
+    }
+    if (input.tools) {
+      try {
+        assertWebToolSupport(generationModel?.metadata, input.tools);
+        const service = navigator.onLine ? await queryClient.fetchQuery({ queryKey: WEB_TOOL_SETTINGS_KEY, queryFn: ({ signal }) => loadWebToolSettings(signal), staleTime: 0 }) : webToolSettings.data;
+        if (!service?.hasApiKey) throw new Error('请先配置联网服务，或关闭会话中的联网工具。');
+      } catch (error) { if (selectedRef.current === origin && storageEpoch() === epoch) setError(error instanceof Error ? error.message : '无法读取联网服务配置。'); return; }
+      if (selectedRef.current !== origin || storageEpoch() !== epoch || !sessionRef.current?.authenticated) return;
     }
     if (generationModel) {
       try {
@@ -606,6 +627,7 @@ export function App() {
       const items = [conversation, ...localConversations]; setLocalConversations(items); write('library', items);
     }
     write(`draft:${selected ?? 'new'}`, { text: '' }); setDraft(''); setRevisionOf(undefined); setDraftImages([]); setDraftFiles([]);
+    if (!selected) resetNewTools();
     select(conversation.id);
     setBranchHead(null); write(`branch-head:${conversation.id}`, null);
     scrollToBottom();
@@ -823,6 +845,7 @@ export function App() {
             {selectedModel?.reasoningSupported && selectedModel.reasoningEfforts.length > 0 && <select aria-label="思维强度" className="select select-ghost select-sm w-auto max-w-32 border-base-content/50 text-xs" value={reasoningEffort} onChange={(event) => { const value = event.target.value as ReasoningEffort | ''; setReasoningEffort(value); write(`reasoning-effort:${modelSelectionKey(selectedModel)}`, value); }}>
               <option value="">思维强度：默认</option>{selectedModel.reasoningEfforts.map((effort) => <option key={effort} value={effort}>{effortLabels[effort]}</option>)}
             </select>}
+            <button type="button" className="btn btn-ghost btn-sm gap-1 text-xs" aria-label="联网工具" onClick={() => setConversationSettingsOpen(true)}><Globe size={14} />{conversationSettings.tools?.length ? conversationSettings.tools.map((name) => name === 'web_search' ? '搜索' : '读取').join(' · ') : '联网'}</button>
             </div>{active ? <button type="button" className="btn btn-sm h-9 shrink-0 gap-2 px-3" onClick={cancel} disabled={!navigator.onLine}><Square size={12} />停止生成</button> : <button type="submit" className="btn btn-primary btn-square btn-sm h-9 w-9 shrink-0 rounded-xl" aria-label="发送消息" disabled={(!draft.trim() && !draftImages.length && !draftFiles.length) || busy || !selectedModel}>{sending ? <span className="loading loading-spinner loading-xs" /> : <ArrowUp size={18} />}</button>}</div>
             {contextPreview?.estimate && <ContextEstimateView estimate={contextPreview.estimate} compressing={contextPreview.compressing} />}
             {contextPreview?.error && <p className="mt-2 text-xs text-base-content/80">{contextPreview.error}</p>}
@@ -841,7 +864,7 @@ export function App() {
       </div>
       <form method="dialog" className="modal-backdrop"><button>关闭</button></form>
     </dialog>
-    {session?.authenticated && <ConversationSettingsDialog key={selected ?? 'new'} id={selected} initial={selected ? snapshot.settings ?? DEFAULT_CONVERSATION_SETTINGS : newConversationSettings} model={selectedModel} models={models} effort={reasoningEffort} showReasoning={session.showReasoning ?? false} open={conversationSettingsOpen} close={() => setConversationSettingsOpen(false)} onDraft={settingsDraftChanged} managePresets={() => { returnToConversationSettings.current = true; setRequestedSettingsTab('presets'); openSettings(); }} />}
+    {session?.authenticated && <ConversationSettingsDialog key={selected ?? 'new'} id={selected} initial={selected ? snapshot.settings ?? DEFAULT_CONVERSATION_SETTINGS : newConversationSettings} model={selectedModel} models={models} effort={reasoningEffort} showReasoning={session.showReasoning ?? false} open={conversationSettingsOpen} close={() => setConversationSettingsOpen(false)} onDraft={settingsDraftChanged} managePresets={() => { returnToConversationSettings.current = true; setRequestedSettingsTab('presets'); openSettings(); }} manageWebTools={() => { returnToConversationSettings.current = true; setRequestedSettingsTab('web-tools'); openSettings(); }} />}
     {session.attachmentsConfigured && selected && currentConversation && !snapshot.deletedAt && <AttachmentDialog key={`attachments:${selected}`} id={selected} open={attachmentsFor === selected} close={() => setAttachmentsFor(null)} />}
     {summaryOpen && selected && <SummaryDialog messages={snapshot.messages} headId={summaryTarget?.throughId ?? contextSource(snapshot.messages, { branchHead: validBranchHead }).parentId} models={models} preferred={selectedModel} target={summaryTarget ?? undefined} busy={busy} submit={queueSummary} close={() => { setSummaryOpen(false); setSummaryTarget(null); }} />}
     {messageMutation && mutationMessage && <MessageMutationDialog key={`${selected}:${messageMutation.id}:${messageMutation.mode}`} message={mutationMessage} mode={messageMutation.mode} affectsSummaries={snapshot.messages.some((message) => !message.deletedAt && message.summary?.sourceIds.includes(mutationMessage.id))} confirm={confirmMessageMutation} close={() => setMessageMutation(null)} />}

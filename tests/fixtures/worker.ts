@@ -161,6 +161,10 @@ export class Library extends ProductionLibrary {
 }
 
 export class Conversation extends ProductionConversation {
+  override async submit(...args: Parameters<ProductionConversation['submit']>) {
+    if (args[2]?.model.startsWith('tools-service-') && !this.serviceMode()) this.ctx.storage.sql.exec('INSERT INTO fixture_tool_service VALUES (1, ?)', 'service');
+    return super.submit(...args);
+  }
   private consumeToolFault(kind: string) {
     const sql = this.ctx.storage.sql;
     sql.exec('CREATE TABLE IF NOT EXISTS fixture_tool_faults (kind TEXT PRIMARY KEY, remaining INTEGER NOT NULL)');
@@ -318,7 +322,7 @@ export class Conversation extends ProductionConversation {
   fixtureContext(runId: string) {
     const run = this.ctx.storage.sql.exec<{ assistantId: string; context: string; config: string | null }>('SELECT assistantId, context, config FROM runs WHERE id = ?', runId).one();
     const config = run.config ? JSON.parse(run.config) : null;
-    if (config) delete config.apiKey;
+    if (config) { delete config.apiKey; if (config.webTools) delete config.webTools.apiKey; }
     return { assistantId: run.assistantId, context: JSON.parse(run.context), config };
   }
   fixtureParent(messageId: string, parentId: string) {
@@ -484,19 +488,22 @@ globalThis.fetch = async (input, init) => {
     return Response.json({ data: [{ id: 'test-model' }, { id: 'test-model-2' }] });
   }
   if (!['/v1/chat/completions', '/v1/responses', '/v1/messages'].includes(url.pathname) && !url.pathname.includes(':streamGenerateContent')) return new Response('Not found', { status: 404 });
-  const requestBody = await request.clone().json() as { model: string; thinking?: { type: string }; reasoning_effort?: string; reasoning?: { effort?: string } };
+  const requestBody = await request.clone().json() as { model: string; thinking?: { type: string }; reasoning_effort?: string; reasoning?: { effort?: string };
+    tools?: { name?: string; function?: { name: string }; functionDeclarations?: { name: string }[] }[] };
   const encoder = new TextEncoder();
   const modelId = requestBody.model ?? /\/models\/([^/:]+):/.exec(url.pathname)?.[1];
   const toolKind = modelId?.startsWith('tools-') ? modelId.replace(/^tools-(?:loop-|pause-|service-)?/, '') as ProviderKind : undefined;
   if (toolKind && providerStreams[toolKind]) {
     const serialized = JSON.stringify(requestBody), continued = serialized.includes('本地工具结果') || /"role":"tool"|"type":"tool_result"|"type":"function_call_output"|"functionResponse":/.test(serialized);
-    if (!serialized.includes('web_search')) return Response.json({ error: 'Missing tools' }, { status: 400 });
+    const names = requestBody.tools?.flatMap((tool) => tool.functionDeclarations?.map((item) => item.name) ?? [tool.function?.name ?? tool.name]) ?? [];
+    if (!names.length && modelId?.startsWith('tools-service-')) return new Response(providerStreams[toolKind].partial + providerStreams[toolKind].finish, { headers: { 'Content-Type': 'text/event-stream' } });
+    if (!names.some((name) => name === 'web_search' || name === 'read_webpage')) return Response.json({ error: 'Missing tools' }, { status: 400 });
     if (continued && (toolKind === 'anthropic' && !serialized.includes('fixture-signature')
       || toolKind === 'openai-responses' && !serialized.includes('encrypted-fixture') || toolKind === 'gemini' && !serialized.includes('fixture-signature'))) return Response.json({ error: 'Missing continuation metadata' }, { status: 400 });
     const loop = requestBody.model?.startsWith('tools-loop-'), round = loop ? (serialized.match(/"role":"tool"/g) ?? []).length / 2 : 0;
     let wire = continued && !loop ? toolFinalStream(toolKind) : toolStream(toolKind, { count: 2,
       ...(modelId?.startsWith('tools-service-') ? { calls: [{ name: 'web_search', input: JSON.stringify({ query: 'Cloudflare 文档🙂' }) },
-        { name: 'read_webpage', input: JSON.stringify({ url: 'https://developers.cloudflare.com/' }) }] } : {}),
+        { name: 'read_webpage', input: JSON.stringify({ url: 'https://developers.cloudflare.com/' }) }].filter((call) => names.includes(call.name)) } : {}),
     }).replaceAll('call_0', `call_${round}_0`).replaceAll('call_1', `call_${round}_1`);
     if (!continued && toolKind === 'openai-chat') wire = wire.replace('"reasoning_content":"检索资料🙂"', '"reasoning_content":"检索资料🙂","content":"先查阅资料。\\n"');
     let sent = false;

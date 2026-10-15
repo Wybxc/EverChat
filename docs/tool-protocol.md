@@ -1,6 +1,6 @@
 # 有限联网工具的供应商协议基础
 
-阶段 5 的中间检查点，尚未向网页开放联网入口。固定工具的输入／结果校验、供应商请求构造及已保存响应的协议回放，现已接入[逐轮状态日志](tool-task-state.md)、[生产 Conversation／Workflow 执行与过程展示](tool-workflow.md)及[联网服务后端](web-tool-service.md)。网页服务配置与会话开关继续按[路线图](serverless-feature-roadmap.md#阶段-5联网搜索与网页读取)实施，不以这些基础检查点替代整体功能验收。
+阶段 5 的供应商协议基础。固定工具的输入／结果校验、供应商请求构造及已保存响应的协议回放，已接入[逐轮状态日志](tool-task-state.md)、[生产 Conversation／Workflow 执行与过程展示](tool-workflow.md)及[联网服务](web-tool-service.md)。网页提供服务配置和默认关闭的会话开关；整体验证与边界见[路线图](serverless-feature-roadmap.md#阶段-5联网搜索与网页读取)。
 
 ## 请求与续接
 
