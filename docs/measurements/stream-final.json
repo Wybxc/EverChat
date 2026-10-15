@@ -1,0 +1,97 @@
+{
+  "version": 2,
+  "runtime": "local Cloudflare fixture",
+  "capturedAt": "2026-10-15T01:34:02.790Z",
+  "workload": {
+    "chunks": 120,
+    "intervalMs": 25,
+    "baseCharactersPerChunk": 200
+  },
+  "scope": "Claim-to-terminal Conversation SQL and broadcasts; excludes bootstrap, acceptance, Library, RPC metering, alarms and diagnostic persistence. elapsedMs is wall time, not CPU. No paid model calls.",
+  "results": [
+    {
+      "scenario": "online-text",
+      "measurements": {
+        "runId": "2515bfe8-5e46-4689-b014-f0b8ad8304a1",
+        "executor": "do-v1",
+        "coverage": "claim-to-terminal",
+        "status": "completed",
+        "elapsedMs": 3289,
+        "textDeltas": 120,
+        "reasoningDeltas": 0,
+        "checkpoints": 3,
+        "checkpointBytes": 71378,
+        "sqlStatements": 59,
+        "sqlRowsRead": 58,
+        "sqlRowsWritten": 32,
+        "eventPayloadBytes": 163227,
+        "broadcastFrames": 37,
+        "broadcastBytes": 164401,
+        "databaseBytes": 462848,
+        "contentCharacters": 24000,
+        "reasoningCharacters": 0
+      },
+      "client": {
+        "frames": 39,
+        "bytes": 165812,
+        "disconnected": false
+      }
+    },
+    {
+      "scenario": "online-reasoning",
+      "measurements": {
+        "runId": "14b76b44-0037-4aae-a800-88c7b123bd7d",
+        "executor": "do-v1",
+        "coverage": "claim-to-terminal",
+        "status": "completed",
+        "elapsedMs": 3287,
+        "textDeltas": 120,
+        "reasoningDeltas": 120,
+        "checkpoints": 4,
+        "checkpointBytes": 134138,
+        "sqlStatements": 67,
+        "sqlRowsRead": 67,
+        "sqlRowsWritten": 37,
+        "eventPayloadBytes": 307159,
+        "broadcastFrames": 38,
+        "broadcastBytes": 308425,
+        "databaseBytes": 663552,
+        "contentCharacters": 24000,
+        "reasoningCharacters": 24000
+      },
+      "client": {
+        "frames": 40,
+        "bytes": 309846,
+        "disconnected": false
+      }
+    },
+    {
+      "scenario": "disconnected-long",
+      "measurements": {
+        "runId": "c3be8c8d-da2e-48ed-9ab9-2746a54aef79",
+        "executor": "do-v1",
+        "coverage": "claim-to-terminal",
+        "status": "completed",
+        "elapsedMs": 3318,
+        "textDeltas": 120,
+        "reasoningDeltas": 0,
+        "checkpoints": 7,
+        "checkpointBytes": 236498,
+        "sqlStatements": 91,
+        "sqlRowsRead": 94,
+        "sqlRowsWritten": 52,
+        "eventPayloadBytes": 549039,
+        "broadcastFrames": 2,
+        "broadcastBytes": 9078,
+        "databaseBytes": 1015808,
+        "contentCharacters": 90000,
+        "reasoningCharacters": 0
+      },
+      "client": {
+        "frames": 4,
+        "bytes": 10495,
+        "disconnected": true
+      }
+    }
+  ]
+}
