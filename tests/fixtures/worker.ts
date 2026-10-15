@@ -16,17 +16,34 @@ import type { WebToolCall, WebToolName, WebToolOutcome } from '../../shared/web-
 import { toolWorkflowId, type ToolWorkflowParams } from '../../worker/tool-workflow';
 import type { WebToolServiceConfig } from '../../shared/web-tool-service';
 import { createHash } from 'node:crypto';
-export { WebToolWorkflow } from '../../worker/tool-workflow';
+import { FixtureResourceMeter } from './resource-meter';
+import { env as runtimeEnv } from 'cloudflare:workers';
+export { WebToolWorkflow } from './tool-workflow-metrics';
+type MeasurementEnv = Env & { LOCAL_RESOURCE_METRICS?: string; LOCAL_TOOL_WORKLOAD?: string; LOCAL_MEASUREMENT_RUN?: string };
 
 type AttachmentControl = { id?: string; expire?: boolean; count?: number; reset?: boolean; holdDelete?: string; releaseDelete?: boolean;
   failDelete?: string; holdTextPut?: string; holdTextRead?: string; releaseText?: boolean; resetLibrary?: boolean; unconfigured?: boolean; expireCopy?: string; expireImport?: string; noBucket?: boolean };
 
 export class Library extends ProductionLibrary {
+  private readonly resourceMeter?: FixtureResourceMeter;
+  private readonly resourceStorage: DurableObjectStorage;
+  async fixtureResourceControl(windowId?: string) {
+    if (!this.resourceMeter) throw new Error('Local resource measurement is disabled');
+    if (windowId) this.resourceMeter.begin(windowId);
+    const sql = this.resourceStorage.sql;
+    const alarmAt = await this.resourceStorage.getAlarm();
+    return { report: this.resourceMeter.read(), databaseBytes: sql.databaseSize, alarmAt,
+      pendingBackfills: sql.exec<{ count: number }>('SELECT COUNT(*) AS count FROM search_backfill WHERE done = 0').one().count,
+      usedToday: sql.exec<{ count: number }>('SELECT COUNT(*) AS count FROM web_tool_requests WHERE day = ?', new Date().toISOString().slice(0, 10)).one().count };
+  }
   async fixtureResetWebTools() { await this.ctx.storage.sync(); this.ctx.abort('Intentional Library reset during web tools', { retryAlarm: true }); }
   private attachmentDeletes: { id: string; waiting: boolean; wait: Promise<void>; release: () => void }[];
   private attachmentText: { id: string; kind: 'put' | 'get'; waiting: boolean; wait: Promise<void>; release: () => void }[];
   private fixtureBucket: R2Bucket;
   constructor(ctx: DurableObjectState, env: Env) {
+    const resourceStorage = ctx.storage;
+    const resourceMeter = (env as MeasurementEnv).LOCAL_RESOURCE_METRICS === '1' ? new FixtureResourceMeter() : undefined;
+    if (resourceMeter) ctx = resourceMeter.wrapState(ctx);
     const attachmentText: Library['attachmentText'] = [];
     const attachmentDeletes: Library['attachmentDeletes'] = [];
     const bucket = new Proxy(env.ATTACHMENTS!, { get(target, property) {
@@ -62,6 +79,7 @@ export class Library extends ProductionLibrary {
     const disabled = ctx.storage.sql.exec("SELECT name FROM sqlite_master WHERE name = 'fixture_r2_disabled'").toArray().length
       && ctx.storage.sql.exec<{ enabled: number }>('SELECT enabled FROM fixture_r2_disabled WHERE id = 1').toArray()[0]?.enabled;
     super(ctx, { ...env, ATTACHMENTS: disabled ? undefined : bucket });
+    this.resourceMeter = resourceMeter; this.resourceStorage = resourceStorage;
     this.fixtureBucket = bucket;
     this.attachmentDeletes = attachmentDeletes; this.attachmentText = attachmentText;
   }
@@ -161,6 +179,27 @@ export class Library extends ProductionLibrary {
 }
 
 export class Conversation extends ProductionConversation {
+  private readonly resourceMeter?: FixtureResourceMeter;
+  private readonly resourceStorage: DurableObjectStorage;
+  constructor(ctx: DurableObjectState, env: Env) {
+    const resourceStorage = ctx.storage;
+    const resourceMeter = (env as MeasurementEnv).LOCAL_RESOURCE_METRICS === '1' ? new FixtureResourceMeter() : undefined;
+    super(resourceMeter ? resourceMeter.wrapState(ctx) : ctx, env);
+    this.resourceMeter = resourceMeter; this.resourceStorage = resourceStorage;
+  }
+  async fixtureResourceControl(windowId?: string) {
+    if (!this.resourceMeter) throw new Error('Local resource measurement is disabled');
+    if (windowId) this.resourceMeter.begin(windowId);
+    // Use unwrapped storage: observing completion must not add SQL to the workload.
+    const sql = this.resourceStorage.sql;
+    const count = (table: string, where = '') => sql.exec<{ count: number }>(`SELECT COUNT(*) AS count FROM ${table} ${where}`).one().count;
+    const alarmAt = await this.resourceStorage.getAlarm();
+    return { report: this.resourceMeter.read(), databaseBytes: sql.databaseSize, alarmAt,
+      pendingSearch: count('search_outbox'), pendingNotifications: count('web_tool_notifications'),
+      privateStreams: count('tool_stream_commits'), privatePayloads: count('web_tool_models', 'WHERE turn IS NOT NULL'),
+      retainedContexts: count('runs', "WHERE config IS NOT NULL OR context != '[]'"),
+      task: sql.exec<{ status: string; round: number; modelRequests: number; toolRequests: number }>('SELECT status, round, modelRequests, toolRequests FROM web_tool_tasks ORDER BY rowid DESC LIMIT 1').toArray()[0] ?? null };
+  }
   override async submit(...args: Parameters<ProductionConversation['submit']>) {
     if (args[2]?.model.startsWith('tools-service-') && !this.serviceMode()) this.ctx.storage.sql.exec('INSERT INTO fixture_tool_service VALUES (1, ?)', 'service');
     return super.submit(...args);
@@ -187,14 +226,21 @@ export class Conversation extends ProductionConversation {
   protected override webToolsConfigured(names: readonly WebToolName[], service?: WebToolServiceConfig) { return this.serviceMode() ? super.webToolsConfigured(names, service) : true; }
   protected override async fetchWebTool(request: Request): Promise<Response> {
     if (!['https://api.tavily.com/search', 'https://api.tavily.com/extract'].includes(request.url)) throw new Error('Unexpected service origin');
+    this.resourceMeter?.upstream('toolRequests');
     const sql = this.ctx.storage.sql, mode = this.serviceMode(), body = await request.json();
     sql.exec('CREATE TABLE IF NOT EXISTS fixture_service_requests (seq INTEGER PRIMARY KEY AUTOINCREMENT, url TEXT, body TEXT, authDigest TEXT)');
     sql.exec('INSERT INTO fixture_service_requests(url, body, authDigest) VALUES (?, ?, ?)', request.url, JSON.stringify(body), createHash('sha256').update(request.headers.get('Authorization') ?? '').digest('hex'));
     await new Promise<void>((resolve) => { const timer = setTimeout(resolve, mode === 'service-timeout' ? 20_000 : mode === 'service-slow' ? 10_000 : 1500); request.signal.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true }); });
     request.signal.throwIfAborted();
-    if (mode === 'service-401' || mode === 'service-429') return new Response(request.headers.get('Authorization'), { status: Number(mode.slice(-3)) });
+    if (mode === 'service-401' || mode === 'service-429') {
+      const rejected = request.headers.get('Authorization') ?? '';
+      this.resourceMeter?.upstream('toolResponseBytes', new TextEncoder().encode(rejected).byteLength);
+      return new Response(rejected, { status: Number(mode.slice(-3)) });
+    }
     const source = { url: 'https://developers.cloudflare.com/', title: 'Cloudflare 文档', content: '本地工具结果🙂' };
-    return Response.json(request.url.endsWith('/search') ? { results: [source] } : { results: [{ url: source.url, raw_content: source.content }], failed_results: [] });
+    const result = request.url.endsWith('/search') ? { results: [source] } : { results: [{ url: source.url, raw_content: source.content }], failed_results: [] };
+    this.resourceMeter?.upstream('toolResponseBytes', new TextEncoder().encode(JSON.stringify(result)).byteLength);
+    return Response.json(result);
   }
   protected override async executeWebTool(call: WebToolCall, signal: AbortSignal, service?: WebToolServiceConfig): Promise<WebToolOutcome> {
     if (this.serviceMode()) return super.executeWebTool(call, signal, service);
@@ -217,6 +263,7 @@ export class Conversation extends ProductionConversation {
       modelCalls: this.fixtureResources().calls,
       toolCalls: this.fixtureCount('fixture_tool_calls') ? sql.exec<{ calls: number }>('SELECT SUM(calls) AS calls FROM fixture_tool_calls').one().calls : 0,
       privateStreams: sql.exec<{ count: number }>('SELECT COUNT(*) AS count FROM tool_stream_commits').one().count,
+      pendingNotifications: sql.exec<{ count: number }>('SELECT COUNT(*) AS count FROM web_tool_notifications').one().count,
       serviceRequests: this.fixtureCount('fixture_service_requests') ? sql.exec('SELECT * FROM fixture_service_requests ORDER BY seq').toArray() : [],
       alarmAt: await this.ctx.storage.getAlarm() };
   }
@@ -281,11 +328,12 @@ export class Conversation extends ProductionConversation {
     return this.ctx.storage.sql.exec<{ count: number }>(`SELECT COUNT(*) AS count FROM ${table} ${where}`).one().count;
   }
   protected override async openModelStream(...args: Parameters<typeof openProviderStream>) {
+    const fixtureSql = this.resourceStorage.sql;
     if (args[0].model === 'benchmark-summary-write-failure') this.failNextCommit = true;
     if (args[0].model.startsWith('alarm-') || args[0].model.startsWith('benchmark-') || args[0].model.startsWith('vision-') || args[0].model.startsWith('documents-') || args[0].model.startsWith('tools-')) {
-      this.ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS fixture_calls (runId TEXT PRIMARY KEY, calls INTEGER NOT NULL)');
-      const run = this.ctx.storage.sql.exec<{ id: string; conversationId: string }>(`SELECT runs.id, runs.conversationId FROM runs JOIN messages ON messages.id = runs.assistantId AND messages.runId = runs.id WHERE messages.status = 'running'`).one();
-      this.ctx.storage.sql.exec('INSERT INTO fixture_calls VALUES (?, 1) ON CONFLICT(runId) DO UPDATE SET calls = calls + 1', run.id);
+      fixtureSql.exec('CREATE TABLE IF NOT EXISTS fixture_calls (runId TEXT PRIMARY KEY, calls INTEGER NOT NULL)');
+      const run = fixtureSql.exec<{ id: string; conversationId: string }>(`SELECT runs.id, runs.conversationId FROM runs JOIN messages ON messages.id = runs.assistantId AND messages.runId = runs.id WHERE messages.status = 'running'`).one();
+      fixtureSql.exec('INSERT INTO fixture_calls VALUES (?, 1) ON CONFLICT(runId) DO UPDATE SET calls = calls + 1', run.id);
       await (this.env.LIBRARY as unknown as DurableObjectNamespace<Library>).getByName('personal').fixtureSupplierCall(run.conversationId);
       if (args[0].model === 'alarm-cancel-tail-failure') {
         let step = 0;
@@ -306,7 +354,12 @@ export class Conversation extends ProductionConversation {
         });
       }
     }
-    return super.openModelStream(...args);
+    const stream = await super.openModelStream(...args);
+    if (!this.resourceMeter) return stream;
+    this.resourceMeter.upstream('modelRequests');
+    return stream.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({ transform: (bytes, controller) => {
+      this.resourceMeter!.upstream('modelBytes', bytes.byteLength); controller.enqueue(bytes);
+    } }));
   }
   override commit(runId: string, batches: StreamBatch[]) {
     if (this.failNextCommit) { this.failNextCommit = false; throw new Error('Injected storage failure'); }
@@ -373,6 +426,23 @@ export class Conversation extends ProductionConversation {
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext) {
     const url = new URL(request.url);
+    const measurement = /^\/api\/__test\/resources\/(library|[0-9a-f-]{36})$/.exec(url.pathname);
+    if (measurement) {
+      if ((env as MeasurementEnv).LOCAL_RESOURCE_METRICS !== '1') return new Response('Not found', { status: 404 });
+      if (request.method !== 'POST' || request.headers.get('Origin') !== url.origin) return new Response('Forbidden', { status: 403 });
+      if (!await authenticated(request, env)) return new Response('Unauthorized', { status: 401,
+        headers: { 'X-EverChat-Measurement-Run': (env as MeasurementEnv).LOCAL_MEASUREMENT_RUN ?? '' } });
+      const input = await request.json() as { windowId?: string; taskId?: string };
+      if (input.windowId !== undefined && !/^[0-9a-f-]{36}$/.test(input.windowId)) return new Response('Invalid window', { status: 400 });
+      if (input.taskId !== undefined && !/^[0-9a-f-]{36}$/.test(input.taskId)) return new Response('Invalid task', { status: 400 });
+      const object = measurement[1] === 'library'
+        ? (env.LIBRARY as unknown as DurableObjectNamespace<Library>).getByName('personal')
+        : (env.CONVERSATIONS as unknown as DurableObjectNamespace<Conversation>).getByName(measurement[1]);
+      const report = await object.fixtureResourceControl(input.windowId);
+      const workflow = input.taskId && measurement[1] !== 'library'
+        ? await env.WEB_TOOLS.get(toolWorkflowId(measurement[1], input.taskId)).then((instance) => instance.status()).catch(() => null) : null;
+      return Response.json({ ...report, workflow }, { headers: { 'Cache-Control': 'no-store' } });
+    }
     if (url.pathname === '/api/__test/library/web-tools/reset') {
       if (request.method !== 'POST' || request.headers.get('Origin') !== url.origin) return new Response('Forbidden', { status: 403 });
       if (!await authenticated(request, env)) return new Response('Unauthorized', { status: 401 });
@@ -501,11 +571,23 @@ globalThis.fetch = async (input, init) => {
     if (continued && (toolKind === 'anthropic' && !serialized.includes('fixture-signature')
       || toolKind === 'openai-responses' && !serialized.includes('encrypted-fixture') || toolKind === 'gemini' && !serialized.includes('fixture-signature'))) return Response.json({ error: 'Missing continuation metadata' }, { status: 400 });
     const loop = requestBody.model?.startsWith('tools-loop-'), round = loop ? (serialized.match(/"role":"tool"/g) ?? []).length / 2 : 0;
-    let wire = continued && !loop ? toolFinalStream(toolKind) : toolStream(toolKind, { count: 2,
+    // The mock workload is independent of diagnostic counters so a later CPU
+    // validation can use the same input with all instrumentation switched off.
+    const encodedWorkload = (runtimeEnv as MeasurementEnv).LOCAL_TOOL_WORKLOAD;
+    const workload = encodedWorkload ? JSON.parse(encodedWorkload) as { chunks: number; size: number; interval: number } : undefined;
+    let wire = continued && !loop ? toolFinalStream(toolKind, workload) : toolStream(toolKind, { count: 2,
       ...(modelId?.startsWith('tools-service-') ? { calls: [{ name: 'web_search', input: JSON.stringify({ query: 'Cloudflare 文档🙂' }) },
         { name: 'read_webpage', input: JSON.stringify({ url: 'https://developers.cloudflare.com/' }) }].filter((call) => names.includes(call.name)) } : {}),
     }).replaceAll('call_0', `call_${round}_0`).replaceAll('call_1', `call_${round}_1`);
     if (!continued && toolKind === 'openai-chat') wire = wire.replace('"reasoning_content":"检索资料🙂"', '"reasoning_content":"检索资料🙂","content":"先查阅资料。\\n"');
+    if (workload) {
+      const frames = wire.match(/[^]*?\n\n/g) ?? []; let index = 0;
+      return new Response(new ReadableStream<Uint8Array>({ async pull(controller) {
+        await new Promise((resolve) => setTimeout(resolve, workload.interval));
+        request.signal.throwIfAborted();
+        if (index < frames.length) controller.enqueue(encoder.encode(frames[index++])); else controller.close();
+      } }), { headers: { 'Content-Type': 'text/event-stream' } });
+    }
     let sent = false;
     return new Response(new ReadableStream<Uint8Array>({ async pull(controller) {
       await new Promise((resolve) => setTimeout(resolve, sent ? requestBody.model?.startsWith('tools-pause-') ? 5000 : 1800 : 250));

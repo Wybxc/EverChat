@@ -695,7 +695,12 @@ export class Conversation extends DurableObject<Env> {
           return this.refreshToolMessage(taskId);
         });
         if (update) this.broadcast(update);
-        if (stopError) this.finish(state.runId, 'failed', stopError);
+        if (stopError) {
+          this.finish(state.runId, 'failed', stopError);
+          // Unlike a model's Alarm, this RPC has no outer Alarm cleanup. The
+          // terminal notification must replace the old root-deadline alarm.
+          await this.scheduleAlarm();
+        }
         await this.ctx.storage.sync(); return this.toolTaskState(taskId);
       } finally { clearTimeout(timer); abort.abort(); this.activeTools.delete(key); }
     })();

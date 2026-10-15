@@ -35,7 +35,12 @@ export default defineConfig({
     ...(process.env.EVERCHAT_TEST_STATE ? { inspectorPort: false } : {}),
     ...(process.env.EVERCHAT_MOCK_PROVIDER === '1' ? { config: {
       main: 'tests/fixtures/worker.ts',
-      ...(process.env.EVERCHAT_GENERATION_METRICS === '1' ? { vars: { GENERATION_METRICS: '1' } } : {}),
+      ...(process.env.EVERCHAT_GENERATION_METRICS === '1' || process.env.EVERCHAT_TOOL_METRICS === '1' ? { vars: {
+        ...(process.env.EVERCHAT_GENERATION_METRICS === '1' ? { GENERATION_METRICS: '1' } : {}),
+        ...(process.env.EVERCHAT_TOOL_METRICS === '1' ? { LOCAL_RESOURCE_METRICS: '1',
+          LOCAL_MEASUREMENT_RUN: process.env.EVERCHAT_MEASUREMENT_RUN ?? '',
+          LOCAL_TOOL_WORKLOAD: process.env.EVERCHAT_TOOL_WORKLOAD ?? '{"chunks":120,"interval":25,"size":200}' } : {}),
+      } } : {}),
     } } : {}),
   })],
   server: { port: 5173, strictPort: true },

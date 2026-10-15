@@ -138,6 +138,8 @@ pnpm measure:stream --interval 100 --output /tmp/everchat-stream-comparison.json
 
 此命令在 5184 端口启动独立本地运行时，使用临时数据库和模拟供应商，覆盖正文、思考及客户端在回答开始后断开订阅的场景。在线场景还比较增量回放和最终数据库快照。只保存计数，不记录正文或密钥；报告默认写入系统临时目录中的 `everchat-stream-measurements.json`，可用 `--output` 指定文件，保留首次基线。指标定义、Workers Free 隔离部署验证结果及复现步骤见 [流式测量说明](docs/stream-measurements.md)。平台已通过 9 项功能场景、3 项一分钟以上生成和 30 次终态重连；8MB 历史快照已通过 DO Response 转发降低 Worker CPU。历史与存储预算另有本地故障回归；这些结果限定于已测个人负载，不能保证共享账户的所有应用始终处于免费额度内。
 
+`pnpm measure:tools` 在 5185 端口单独测量有限工具任务：四协议往返、断开客户端、服务拒绝和轮次上限，分别统计模型、两类流日志、Conversation／Library SQL 及真实 Workflow 步骤。要求终态私有数据、通知和 Alarm 清理完成；不调用真实模型或搜索服务。指标边界、基线及下一次平台负载见[工具资源测量](docs/tool-measurements.md)，本地计数不代替 Workers Free 资源验收。
+
 手动验证：
 
 1. 发送消息，生成途中断开网络。另一浏览器登录同一空间，打开同一对话，观察生成完成。

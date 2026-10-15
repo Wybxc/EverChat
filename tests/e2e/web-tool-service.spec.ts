@@ -7,6 +7,7 @@ import type { EverChatBackup } from '../../shared/backup';
 const headers = { Origin: 'http://127.0.0.1:5174' };
 const key = 'tvly-native-private-service-key';
 type Runtime = { modelCalls: number; privatePayloads: number; privateStreams: number; state: { status: string };
+  pendingNotifications: number;
   workflow: { status: string } | null; serviceRequests: { url: string; body: string; authDigest: string }[] };
 async function setup(request: APIRequestContext, provider: ProviderKind = 'openai-chat', limit = 20) {
   expect((await request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok()).toBe(true);
@@ -138,6 +139,8 @@ for (const status of [401, 429]) test(`HTTP ${status} tool failures are persiste
     const answer = (await c.snapshot()).messages[1]; expect(answer.tools!.calls.map((call) => call.state)).toEqual(['failed', 'failed']);
     expect(JSON.stringify(answer)).not.toContain(key); expect((await c.state()).serviceRequests).toHaveLength(1);
     expect((await f.settings()).usedToday).toBe(f.baseline + 1); expect((await c.state()).modelCalls).toBe(1);
+    await expect.poll(async () => (await c.state()).workflow?.status).toBe('complete');
+    await expect.poll(async () => (await c.state()).pendingNotifications, { timeout: 5000 }).toBe(0);
   } finally { await f.cleanup(); }
 });
 

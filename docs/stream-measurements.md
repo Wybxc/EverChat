@@ -2,6 +2,8 @@
 
 本地工具用于路线图阶段 0 的改造前后比较；隔离部署工具用于记录真实平台指标。两者的测量窗口和计量口径分别说明，不能互相替代。
 
+有限工具任务另用 `pnpm measure:tools`，见[工具资源测量](tool-measurements.md)。该窗口包含接受、轮次间操作、Library 和终态 Alarm 清理，不能直接与本文普通聊天的认领到终态计数比较。
+
 ## 当前代码的本地复核
 
 2026-10-15 在 `12d9cb0` 上再次运行 `pnpm measure:stream --output /tmp/everchat-final-stream.json`，使用默认 120 个增量、25ms 间隔及隔离模拟供应商，三场景均通过。最终报告见 [stream-final.json](measurements/stream-final.json)。
