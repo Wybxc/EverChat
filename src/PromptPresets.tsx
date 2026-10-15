@@ -105,7 +105,7 @@ function PresetEditor({ preset, open, changed, removed, copy, canCopy }: { prese
     {error && <p role="alert" className="text-sm">{error}</p>}
     {removeError && <p role="alert" className="text-sm">{removeError}</p>}
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <span role="status" data-testid="preset-save-status" className="text-xs text-base-content/70">{status === 'saved' ? '已自动保存' : status === 'saving' ? '保存中…' : status === 'waiting' ? '待保存' : '未保存'}</span>
+      <span role="status" data-testid="preset-save-status" className="text-xs text-base-content/70">{status === 'saved' ? '已保存' : status === 'saving' ? '保存中…' : status === 'waiting' ? '保存中…' : '未保存'}</span>
       <div className="flex flex-wrap gap-2">{status === 'error' && <><button type="button" className="btn btn-sm" onClick={() => void store.flush().catch(() => {})}>重试保存预设</button><button type="button" className="btn btn-sm" disabled={!canCopy} onClick={() => copy(settings)}>另存为新预设</button></>}
         <button ref={deleteButton} type="button" className="btn btn-ghost btn-sm" disabled={removing} onClick={() => { store.dispose(); setConfirming(true); requestAnimationFrame(() => cancel.current?.focus()); }}><Trash2 size={14} />删除预设</button>
       </div>

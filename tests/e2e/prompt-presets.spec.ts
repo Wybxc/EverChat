@@ -1,4 +1,4 @@
-import { openSpaceSettings } from '../ui';
+import { openSpaceSettings, openParameters } from '../ui';
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import type { PromptPreset, ProviderSettings, Snapshot, Submission } from '../../shared/types';
 import { DEFAULT_CONVERSATION_SETTINGS as defaults } from '../../shared/conversation-settings';
@@ -73,7 +73,7 @@ test('preset management autosaves and recovers drafts, applies copies, synchroni
     await second.request.post('/api/login', { headers, data: { password: 'everchat-local' } });
     await page.setViewportSize({ width: 390, height: 700 }); await page.goto(`/c/${fixture.id}`);
     await page.getByRole('textbox', { name: '消息', exact: true }).fill('保留聊天草稿');
-    await page.getByRole('button', { name: '会话参数', exact: true }).click(); await page.getByRole('button', { name: '管理预设' }).click();
+    await openParameters(page); await page.getByRole('button', { name: '管理预设' }).click();
     await expect(page.getByRole('dialog', { name: '设置', exact: true })).toBeVisible();
     let panel = await presetsTab(page);
     await page.route('**/api/settings/presets/*', (route) => route.request().method() === 'PUT' ? route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '暂时无法保存预设' }) }) : route.continue());
@@ -84,14 +84,14 @@ test('preset management autosaves and recovers drafts, applies copies, synchroni
     await expect(panel.getByLabel('预设系统提示词', { exact: true })).toHaveValue('你是写作助手。');
     await expect(panel.getByRole('alert')).toContainText('暂时无法保存预设');
     await page.unroute('**/api/settings/presets/*'); await panel.getByRole('button', { name: '重试保存预设' }).click();
-    await expect(panel.getByTestId('preset-save-status')).toHaveText('已自动保存');
+    await expect(panel.getByTestId('preset-save-status')).toHaveText('已保存');
     const preset = (await list(page.request)).find((item) => item.name === '写作助手')!;
     expect(preset.systemPrompt).toBe('你是写作助手。');
     await panel.getByLabel('预设名称', { exact: true }).fill(''); await panel.getByLabel('预设系统提示词', { exact: true }).focus();
     await expect(panel.getByRole('alert')).toContainText('预设名称'); expect((await list(page.request)).find((item) => item.id === preset.id)?.name).toBe('写作助手');
-    await panel.getByLabel('预设名称', { exact: true }).fill('写作助手'); await expect(panel.getByTestId('preset-save-status')).toHaveText('已自动保存');
+    await panel.getByLabel('预设名称', { exact: true }).fill('写作助手'); await expect(panel.getByTestId('preset-save-status')).toHaveText('已保存');
     await expect(page.getByRole('button', { name: '关闭设置', exact: true })).toBeInViewport(); await page.getByRole('button', { name: '关闭设置', exact: true }).click();
-    await page.getByRole('button', { name: '会话参数', exact: true }).click();
+    await openParameters(page);
     const parameters = page.getByRole('dialog', { name: '会话参数', exact: true });
     await parameters.getByLabel('提示词预设', { exact: true }).selectOption(preset.id);
     await expect(parameters.getByLabel('会话系统提示词', { exact: true })).toHaveValue('你是写作助手。');
@@ -109,7 +109,7 @@ test('preset management autosaves and recovers drafts, applies copies, synchroni
     await expect(panel.getByLabel('预设系统提示词', { exact: true })).toHaveValue('远端提示词');
     await page.unroute('**/api/settings/presets/*'); await panel.getByRole('button', { name: '确认删除预设', exact: true }).click();
     await expect(panel.getByRole('button', { name: '添加预设' })).toBeFocused();
-    await page.getByRole('button', { name: '关闭设置', exact: true }).click(); await page.getByRole('button', { name: '会话参数', exact: true }).click();
+    await page.getByRole('button', { name: '关闭设置', exact: true }).click(); await openParameters(page);
     await expect(parameters.getByLabel('会话系统提示词', { exact: true })).toHaveValue('你是写作助手。');
     await parameters.getByRole('button', { name: '关闭会话参数' }).click(); await expect(page.getByRole('textbox', { name: '消息', exact: true })).toHaveValue('保留聊天草稿');
   } finally { await second.close(); await fixture.cleanup(); }
@@ -120,10 +120,10 @@ test('cached presets apply offline and queued tasks retain their text after the 
   try {
     await second.request.post('/api/login', { headers, data: { password: 'everchat-local' } });
     const id = crypto.randomUUID(); await page.request.put(`/api/settings/presets/${id}`, { headers, data: { name: '离线预设', systemPrompt: 'OFFLINE ROLE' } });
-    await page.goto(`/c/${fixture.id}`); await page.getByRole('button', { name: '会话参数', exact: true }).click();
+    await page.goto(`/c/${fixture.id}`); await openParameters(page);
     await expect(page.getByLabel('提示词预设', { exact: true }).locator('option')).toContainText(['离线预设']);
     await page.getByRole('button', { name: '关闭会话参数' }).click(); await page.getByRole('button', { name: '开启新对话', exact: true }).click();
-    await context.setOffline(true); await page.getByRole('button', { name: '会话参数', exact: true }).click();
+    await context.setOffline(true); await openParameters(page);
     const parameters = page.getByRole('dialog', { name: '新对话参数', exact: true });
     await parameters.getByLabel('提示词预设', { exact: true }).selectOption(id); await expect(parameters.getByLabel('会话系统提示词', { exact: true })).toHaveValue('OFFLINE ROLE');
     await parameters.getByRole('button', { name: '关闭会话参数' }).click();
@@ -171,7 +171,7 @@ test('a dirty draft whose preset was deleted remotely can be saved under a new I
     await second.request.delete(`/api/settings/presets/${id}`, { headers }); await page.unroute(`**/api/settings/presets/${id}`);
     await panel.getByRole('button', { name: '重试保存预设' }).click(); await expect(panel.getByRole('alert')).toContainText('已删除');
     await expect(panel.getByLabel('预设系统提示词', { exact: true })).toHaveValue('待恢复的内容');
-    await panel.getByRole('button', { name: '另存为新预设' }).click(); await expect(panel.getByTestId('preset-save-status')).toHaveText('已自动保存');
+    await panel.getByRole('button', { name: '另存为新预设' }).click(); await expect(panel.getByTestId('preset-save-status')).toHaveText('已保存');
     const copy = (await list(page.request)).find((preset) => preset.systemPrompt === '待恢复的内容')!;
     expect(copy.id).not.toBe(id); expect(copy.name).toBe('原预设');
     expect((await page.request.put(`/api/settings/presets/${id}`, { headers, data: { name: '原预设', systemPrompt: '迟到内容' } })).status()).toBe(410);

@@ -1,4 +1,4 @@
-import { openSpaceSettings } from '../ui';
+import { openSpaceSettings, openParameters } from '../ui';
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import WebSocket from 'ws';
 import type { ConversationSettings, ProviderSettings, Snapshot, Submission, SyncPacket } from '../../shared/types';
@@ -114,7 +114,7 @@ test('logging out cannot restore parameter drafts when an earlier autosave respo
   const hold = new Promise<void>((resolve) => { release = resolve; });
   const reachedServer = new Promise<void>((resolve) => { saved = resolve; });
   try {
-    await page.goto('/'); await page.getByRole('button', { name: '会话参数', exact: true }).click();
+    await page.goto('/'); await openParameters(page);
     const local = page.getByRole('dialog', { name: '新对话参数', exact: true });
     await local.getByLabel('自定义会话系统提示词').check(); await local.getByLabel('会话系统提示词', { exact: true }).fill('清除新对话本机参数');
     await expect(local.getByRole('status')).toHaveText('已保存到本机');
@@ -123,7 +123,7 @@ test('logging out cannot restore parameter drafts when an earlier autosave respo
       if (route.request().postDataJSON()?.systemPrompt !== prompt) { await route.continue(); return; }
       const response = await route.fetch(); saved(); await hold; await route.fulfill({ response });
     });
-    await page.goto(`/c/${fixture.id}`); await page.getByRole('button', { name: '会话参数', exact: true }).click();
+    await page.goto(`/c/${fixture.id}`); await openParameters(page);
     const modal = page.getByRole('dialog', { name: '会话参数', exact: true });
     await modal.getByLabel('自定义会话系统提示词').check(); await modal.getByLabel('会话系统提示词', { exact: true }).fill(prompt);
     await reachedServer;
@@ -136,7 +136,7 @@ test('logging out cannot restore parameter drafts when an earlier autosave respo
     await page.waitForTimeout(100);
     expect(await page.evaluate(() => Object.keys(localStorage).filter((key) => key.startsWith('everchat:conversation-settings')))).toEqual([]);
     await page.getByLabel('访问密码').fill('everchat-local'); await page.getByRole('button', { name: '进入我的空间' }).click();
-    await page.getByRole('button', { name: '会话参数', exact: true }).click();
+    await openParameters(page);
     await expect(local.getByLabel('自定义会话系统提示词')).not.toBeChecked();
   } finally {
     release(); await page.unroute('**/api/conversations/*/settings');
@@ -151,17 +151,17 @@ test('conversation settings autosave, preserve failed and invalid drafts, sync d
   try {
     await second.request.post('/api/login', { headers, data: { password: 'everchat-local' } });
     const other = await second.newPage(); await other.goto(`/c/${fixture.id}`);
-    await other.getByRole('button', { name: '会话参数', exact: true }).click();
+    await openParameters(other);
     const remote = other.getByRole('dialog', { name: '会话参数', exact: true });
     await page.setViewportSize({ width: 390, height: 600 }); await page.goto(`/c/${fixture.id}`);
     const composer = page.getByRole('textbox', { name: '消息', exact: true }); await composer.fill('保留聊天草稿');
-    const trigger = page.getByRole('button', { name: '会话参数', exact: true }); await trigger.click();
+    const trigger = page.getByRole('button', { name: '更多会话操作', exact: true }); await openParameters(page);
     const modal = page.getByRole('dialog', { name: '会话参数', exact: true });
     await expect(modal.getByRole('button', { name: '关闭会话参数' })).toBeInViewport();
     await page.route('**/api/conversations/*/settings', (route) => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '暂时无法保存参数' }) }));
     await modal.getByLabel('自定义会话系统提示词').check(); await modal.getByLabel('会话系统提示词', { exact: true }).fill('保留未保存的会话提示');
     await expect(modal.getByRole('alert')).toContainText('暂时无法保存参数');
-    await page.reload(); await trigger.click(); await expect(modal.getByLabel('会话系统提示词', { exact: true })).toHaveValue('保留未保存的会话提示');
+    await page.reload(); await openParameters(page); await expect(modal.getByLabel('会话系统提示词', { exact: true })).toHaveValue('保留未保存的会话提示');
     await expect(modal.getByRole('alert')).toContainText('暂时无法保存参数');
     await page.unroute('**/api/conversations/*/settings'); await modal.getByRole('button', { name: '重试保存' }).click();
     await expect(modal.getByRole('status')).toHaveText('已保存');
@@ -178,7 +178,7 @@ test('conversation settings autosave, preserve failed and invalid drafts, sync d
     await modal.getByRole('button', { name: '关闭会话参数' }).click(); await expect(trigger).toBeFocused();
     await expect(composer).toHaveValue('保留聊天草稿');
     await page.getByLabel('聊天模型', { exact: true }).selectOption(modelSelectionKey({ providerId: fixture.providerId, model: 'o3' }));
-    await trigger.click(); await expect(modal.getByLabel('Temperature', { exact: true })).toHaveCount(0); await expect(modal.getByLabel('Top P', { exact: true })).toHaveCount(0);
+    await openParameters(page); await expect(modal.getByLabel('Temperature', { exact: true })).toHaveCount(0); await expect(modal.getByLabel('Top P', { exact: true })).toHaveCount(0);
     await expect(modal.getByLabel('会话系统提示词', { exact: true })).toHaveValue('保留未保存的会话提示');
   } finally { await second.close(); await fixture.cleanup(); }
 });
@@ -188,7 +188,7 @@ test('an offline new conversation pins its parameters without overwriting anothe
   const other = await browser.newContext(); let id = '';
   try {
     await other.request.post('/api/login', { headers, data: { password: 'everchat-local' } });
-    await page.goto('/'); await page.getByRole('button', { name: '会话参数', exact: true }).click();
+    await page.goto('/'); await openParameters(page);
     const modal = page.getByRole('dialog', { name: '新对话参数', exact: true });
     await modal.getByLabel('自定义会话系统提示词').check(); await modal.getByLabel('会话系统提示词', { exact: true }).fill('OFFLINE');
     await modal.getByLabel('Temperature', { exact: true }).fill('0.3'); await modal.getByLabel('输出上限方式').selectOption('unset');

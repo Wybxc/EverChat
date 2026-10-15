@@ -1,6 +1,7 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 
 export async function openSpaceSettings(page: Page) {
+  await expect(page.getByRole('textbox', { name: '消息', exact: true })).toBeVisible();
   const settings = page.getByRole('button', { name: '空间设置', exact: true });
   if (!await settings.isVisible() || await settings.evaluate((node) => Boolean(node.closest('[inert]')))) await page.getByRole('button', { name: '打开对话列表' }).click();
   await settings.click();
@@ -29,6 +30,7 @@ export async function editModel(page: Page, index = 1) {
 }
 
 export async function openParameters(page: Page) {
+  await expect(page.getByRole('textbox', { name: '消息', exact: true })).toBeVisible();
   const trigger = page.getByRole('button', { name: '会话参数', exact: true });
   if (!await trigger.isVisible()) await conversationMenu(page);
   await trigger.click();

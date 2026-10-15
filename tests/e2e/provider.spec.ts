@@ -1,4 +1,4 @@
-import { openSpaceSettings } from '../ui';
+import { openSpaceSettings, providerDetails, editModel } from '../ui';
 import { test, expect, type Page } from '@playwright/test';
 import type { ProviderSettings } from '../../shared/types';
 
@@ -8,8 +8,9 @@ async function tab(page: Page, name: string) {
   const item = page.getByRole('dialog', { name: '设置', exact: true }).getByRole('tab', { name, exact: true });
   await item.focus(); await item.press('Space');
   await expect(item).toHaveAttribute('aria-selected', 'true');
+  if (name === '供应商') await providerDetails(page);
 }
-async function saved(page: Page) { await expect(page.getByTestId('settings-save-status')).toHaveText('已自动保存'); }
+async function saved(page: Page) { await expect(page.getByTestId('settings-save-status')).toHaveText('已保存'); }
 async function login(page: Page) {
   await page.goto('/');
   await page.getByLabel('访问密码').fill('everchat-local');
@@ -82,6 +83,7 @@ test('tabbed settings autosave model names and enabled choices; the close button
     await page.getByLabel('新模型 ID', { exact: true }).fill('gpt-test');
     await page.getByLabel('新模型显示名').fill('主模型');
     await page.getByRole('button', { name: '添加', exact: true }).click();
+    await editModel(page);
     await page.getByLabel('模型 ID 1', { exact: true }).fill('gpt-chat-one');
     await saved(page);
     await expect(page.getByRole('checkbox', { name: '启用模型 主模型', exact: true })).toBeChecked();
@@ -97,6 +99,7 @@ test('tabbed settings autosave model names and enabled choices; the close button
     await expect(page.getByRole('checkbox', { name: '启用模型 test-model', exact: true })).not.toBeChecked();
     await page.getByRole('checkbox', { name: '启用模型 test-model', exact: true }).check();
     await page.getByRole('checkbox', { name: '启用模型 test-model-2', exact: true }).check();
+    await editModel(page, 2);
     await page.getByLabel('模型显示名 2').fill('快速模型');
     await saved(page);
     expect((await getSettings()).providers[0].models.every((model) => model.enabled)).toBe(true);
@@ -167,7 +170,7 @@ test('tabbed settings autosave model names and enabled choices; the close button
     await page.getByRole('radio', { name: '深色' }).focus(); await page.getByRole('radio', { name: '深色' }).press('Space');
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     await tab(page, '供应商');
-    await expect(page.locator('#space-settings .modal-box')).toHaveCSS('opacity', '1');
+    await expect(page.locator('#space-settings > .settings-dialog')).toHaveCSS('opacity', '1');
     await page.screenshot({ path: 'test-results/provider-settings-dark.png', animations: 'disabled' });
     settings = await getSettings();
     const second = await browser.newContext();
@@ -186,6 +189,8 @@ test('tabbed settings autosave model names and enabled choices; the close button
     await tab(page, '供应商');
 
     await page.getByRole('button', { name: '删除供应商 Gemini 备用' }).click();
+    await page.getByRole('dialog', { name: '删除供应商', exact: true }).getByRole('button', { name: '确认删除', exact: true }).click();
+    await providerDetails(page);
     await saved(page);
     await page.getByRole('checkbox', { name: '启用模型 主模型', exact: true }).uncheck();
     await page.getByRole('checkbox', { name: '启用模型 test-model-2', exact: true }).uncheck();

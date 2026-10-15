@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
-import { Eye, EyeOff, LogOut, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff, LogOut, Pencil, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { providerOptions } from '../shared/providers';
 import type { DiscoveredModel, ProviderApiKind, ProviderModel, ProviderProfile, ProviderSettings } from '../shared/types';
@@ -16,14 +16,15 @@ export type SettingsTab = (typeof tabs)[number]['id'];
 function ModelOptions({ model, index, provider, globalPrompt, onChange }: {
   model: ProviderModel; index: number; provider: ProviderApiKind; globalPrompt: string; onChange: (patch: Partial<ProviderModel>) => void;
 }) {
-  return <details className="collapse collapse-arrow mt-2 border border-base-content/30 bg-base-200">
-    <summary className="collapse-title min-h-0 py-2 text-xs font-medium">模型设置 {index + 1}</summary>
-    <div className="collapse-content space-y-4">
+  return <div className="space-y-4 border-t border-base-300 pt-4">
+      <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+        <label className="min-w-0 space-y-1"><span className="text-xs">ID</span><input aria-label={`模型 ID ${index + 1}`} required maxLength={200} className="input w-full border-base-content/50" value={model.id} onChange={(event) => onChange({ id: event.target.value })} /></label>
+        <label className="min-w-0 space-y-1"><span className="text-xs">显示名</span><input aria-label={`模型显示名 ${index + 1}`} maxLength={200} className="input w-full border-base-content/50" value={model.name} placeholder={model.id} onChange={(event) => onChange({ name: event.target.value })} /></label>
+      </div>
       <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="checkbox checkbox-sm" aria-label={`继承统一提示词 ${index + 1}`} checked={model.useGlobalSystemPrompt !== false} onChange={(event) => onChange({ useGlobalSystemPrompt: event.target.checked, systemPrompt: model.systemPrompt ?? globalPrompt })} />使用统一系统提示词</label>
       {model.useGlobalSystemPrompt === false && <label className="block space-y-2"><span className="text-sm">模型专属提示词</span><textarea aria-label={`模型专属提示词 ${index + 1}`} rows={4} maxLength={20000} className="textarea w-full border-base-content/50" value={model.systemPrompt ?? ''} onChange={(event) => onChange({ systemPrompt: event.target.value })} /></label>}
       <ModelMetadataFields provider={provider} model={model} index={index} onChange={onChange} />
-    </div>
-  </details>;
+  </div>;
 }
 
 export function ProviderSettingsPanel(props: PanelProps) {
@@ -62,6 +63,20 @@ function ProviderManager({ initial, open, requestedTab, onSaved, themeControl, o
   const [newName, setNewName] = useState('');
   const [fetchingId, setFetchingId] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
+  const [mobileDetail, setMobileDetail] = useState(false);
+  const [editingModel, setEditingModel] = useState<number | null>(null);
+  const [modelFilter, setModelFilter] = useState('');
+  const [removal, setRemoval] = useState<{ kind: 'provider' | 'model'; providerId: string; index?: number; name: string } | null>(null);
+  const deletionDialog = useRef<HTMLDialogElement>(null), cancelDeletion = useRef<HTMLButtonElement>(null);
+  const addProviderButton = useRef<HTMLButtonElement>(null), fetchModelsButton = useRef<HTMLButtonElement>(null);
+  const providerList = useRef<HTMLDivElement>(null), detailBack = useRef<HTMLButtonElement>(null);
+  const focusDetails = () => requestAnimationFrame(() => {
+    if (detailBack.current?.checkVisibility()) detailBack.current.focus({ preventScroll: true });
+  });
+  useEffect(() => {
+    if (removal) { deletionDialog.current?.showModal(); cancelDeletion.current?.focus(); }
+    else deletionDialog.current?.close();
+  }, [removal]);
   const wasOpen = useRef(open);
   useEffect(() => { if (open && requestedTab) setTab(requestedTab); }, [open, requestedTab]);
   useEffect(() => () => store.dispose(), [store]);
@@ -110,12 +125,13 @@ function ProviderManager({ initial, open, requestedTab, onSaved, themeControl, o
     const profile: ProviderProfile = { id: crypto.randomUUID(), name: option.label, provider: option.value,
       baseUrl: option.baseUrl, models: [], hasApiKey: false };
     update({ ...settings, providers: [...settings.providers, profile] });
-    setSelectedId(profile.id); setNewModel(''); setNewName(''); setShowKey(false);
+    setSelectedId(profile.id); setMobileDetail(true); setEditingModel(null); setModelFilter(''); setNewModel(''); setNewName(''); setShowKey(false);
+    focusDetails();
   };
   const removeProvider = (id: string) => {
     const providers = settings.providers.filter((profile) => profile.id !== id);
     update({ ...settings, providers });
-    if (selectedId === id) { setSelectedId(providers[0]?.id ?? null); setNewModel(''); setNewName(''); setShowKey(false); }
+    if (selectedId === id) { setSelectedId(providers[0]?.id ?? null); setMobileDetail(false); setEditingModel(null); setNewModel(''); setNewName(''); setShowKey(false); }
   };
   const fetchModels = async () => {
     if (!selected) return;
@@ -147,12 +163,23 @@ function ProviderManager({ initial, open, requestedTab, onSaved, themeControl, o
     setNewModel(''); setNewName('');
   };
   const enabled = availableModels(settings);
+  const confirmRemoval = () => {
+    if (!removal) return;
+    if (removal.kind === 'provider') removeProvider(removal.providerId);
+    else {
+      const current = store.getSnapshot().settings.providers.find((item) => item.id === removal.providerId);
+      if (current) changeProvider(removal.providerId, { models: current.models.filter((_, index) => index !== removal.index) });
+      setEditingModel(null);
+    }
+    setRemoval(null);
+    requestAnimationFrame(() => (removal.kind === 'provider' ? addProviderButton.current : fetchModelsButton.current)?.focus({ preventScroll: true }));
+  };
 
   return <div className="flex min-h-0 flex-1 flex-col">
-    <div role="tablist" aria-label="设置分类" className="tabs tabs-border mx-6 shrink-0 flex-nowrap overflow-x-auto">
-      {tabs.map((item) => <input key={item.id} id={`settings-tab-${item.id}`} type="radio" name="settings-tabs" role="tab" className="tab text-base-content/70 aria-selected:text-base-content" aria-label={item.label} aria-controls={`settings-panel-${item.id}`} aria-selected={tab === item.id} checked={tab === item.id} onChange={() => { setTab(item.id); setShowKey(false); }} />)}
+    <div role="tablist" aria-label="设置分类" className="tabs tabs-border mx-4 shrink-0 flex-nowrap overflow-x-auto overscroll-contain sm:mx-6">
+      {tabs.map((item) => <input key={item.id} id={`settings-tab-${item.id}`} type="radio" name="settings-tabs" role="tab" className="tab min-h-11 min-w-14 shrink-0 px-4 text-base-content/70 aria-selected:text-base-content" onFocus={(event) => event.currentTarget.scrollIntoView({ block: 'nearest', inline: 'nearest' })} aria-label={item.label} aria-controls={`settings-panel-${item.id}`} aria-selected={tab === item.id} checked={tab === item.id} onChange={() => { setTab(item.id); setShowKey(false); }} />)}
     </div>
-    <div data-testid="settings-scroll" className="min-h-0 flex-1 overflow-y-auto p-6" onBlur={(event) => {
+    <div data-testid="settings-scroll" className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6" onBlur={(event) => {
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) void store.flush().catch(() => {});
     }}>
       <section id="settings-panel-general" role="tabpanel" aria-labelledby="settings-tab-general" hidden={tab !== 'general'} className="space-y-8">
@@ -163,19 +190,20 @@ function ProviderManager({ initial, open, requestedTab, onSaved, themeControl, o
         <fieldset className="fieldset gap-4" disabled={Boolean(fetchingId)}>
           <legend className="fieldset-legend sr-only">AI 供应商</legend>
           <div className="grid gap-5 md:grid-cols-[minmax(11rem,0.3fr)_minmax(0,0.7fr)]">
-            <div className="flex min-w-0 flex-col gap-2">
+            <div ref={providerList} className={`${mobileDetail ? 'hidden md:flex' : 'flex'} min-w-0 flex-col gap-2`}>
               <div className="max-h-48 space-y-1 overflow-y-auto rounded-box border border-base-content/30 p-2 md:max-h-96">
-                {settings.providers.map((profile) => <button type="button" key={profile.id} onClick={() => { setSelectedId(profile.id); setNewModel(''); setNewName(''); setNotice(''); setShowKey(false); }} aria-current={selectedId === profile.id ? 'true' : undefined} className={`flex min-h-11 w-full items-center gap-2 rounded-field px-3 text-left text-sm ${selectedId === profile.id ? 'bg-primary/10 text-base-content' : 'hover:bg-base-200'}`}>
+                {settings.providers.map((profile) => <button type="button" key={profile.id} onClick={() => { setSelectedId(profile.id); setMobileDetail(true); setEditingModel(null); setModelFilter(''); setNewModel(''); setNewName(''); setNotice(''); setShowKey(false); focusDetails(); }} aria-current={selectedId === profile.id ? 'true' : undefined} className={`flex min-h-11 w-full items-center gap-2 rounded-field px-3 text-left text-sm ${selectedId === profile.id ? 'bg-primary/10 text-base-content' : 'hover:bg-base-200'}`}>
                   <span className="min-w-0 flex-1 truncate">{profile.name || '新供应商'}</span>
                   {settings.activeProviderId === profile.id && <span className="badge badge-xs badge-outline">默认</span>}
                   <span aria-label={profile.hasApiKey || profile.apiKey?.trim() ? '密钥已配置' : '密钥未配置'} className={`h-2 w-2 shrink-0 rounded-full ${profile.hasApiKey || profile.apiKey?.trim() ? 'bg-success' : 'bg-base-300'}`} />
                 </button>)}
                 {!settings.providers.length && <p className="px-2 py-5 text-center text-sm text-base-content/70">尚无供应商</p>}
               </div>
-              <button type="button" className="btn btn-outline btn-sm" onClick={addProvider}><Plus size={15} />添加供应商</button>
+              <button ref={addProviderButton} type="button" className="btn btn-outline btn-sm" onClick={addProvider}><Plus size={15} />添加供应商</button>
             </div>
-            {selected ? <div className="min-w-0 space-y-4">
-              <div className="flex items-center gap-2"><h3 className="min-w-0 flex-1 truncate text-lg font-semibold">{selected.name || '新供应商'}</h3><button type="button" className="btn btn-ghost btn-sm btn-square text-error" aria-label={`删除供应商 ${selected.name}`} onClick={() => removeProvider(selected.id)}><Trash2 size={16} /></button></div>
+            {selected ? <div className={`${mobileDetail ? '' : 'hidden md:block'} min-w-0 space-y-4`} onFocusCapture={() => setMobileDetail(true)}>
+              <button ref={detailBack} type="button" className="btn btn-ghost h-11 gap-2 md:hidden" onClick={() => { setMobileDetail(false); setShowKey(false); requestAnimationFrame(() => providerList.current?.querySelector<HTMLButtonElement>('[aria-current="true"]')?.focus({ preventScroll: true })); }}><ArrowLeft size={16} />供应商列表</button>
+              <div className="flex items-center gap-2"><h3 className="min-w-0 flex-1 truncate text-lg font-semibold">{selected.name || '新供应商'}</h3><button type="button" className="btn btn-ghost btn-sm btn-square text-error" aria-label={`删除供应商 ${selected.name}`} onClick={() => setRemoval({ kind: 'provider', providerId: selected.id, name: selected.name })}><Trash2 size={16} /></button></div>
               <div className="space-y-2"><label htmlFor="provider-name" className="block text-sm font-medium">名称</label><input id="provider-name" required maxLength={100} className="input w-full border-base-content/50" value={selected.name} onChange={(event) => changeProvider(selected.id, { name: event.target.value })} /></div>
               <div className="space-y-2"><label htmlFor="provider-protocol" className="block text-sm font-medium">API 类型</label><select id="provider-protocol" className="select w-full border-base-content/50" value={selected.provider} onChange={(event) => {
                 const option = providerOptions.find((item) => item.value === event.target.value as ProviderApiKind)!;
@@ -187,18 +215,27 @@ function ProviderManager({ initial, open, requestedTab, onSaved, themeControl, o
                 <button type="button" className="btn btn-ghost btn-sm btn-square" aria-label={showKey ? '隐藏 API 密钥' : '显示 API 密钥'} aria-pressed={showKey} onClick={() => setShowKey((current) => !current)}>{showKey ? <EyeOff size={17} /> : <Eye size={17} />}</button>
               </div></div>
               <div className="space-y-3 border-t border-base-content/30 pt-4">
-                <div className="flex items-center gap-2"><h4 className="flex-1 text-sm font-semibold">模型</h4><button type="button" className="btn btn-ghost btn-sm" disabled={!(selected.hasApiKey || selected.apiKey?.trim()) || Boolean(fetchingId)} onClick={() => void fetchModels()}>{fetchingId === selected.id ? <span className="loading loading-spinner loading-xs" /> : <RefreshCw size={14} />}获取</button></div>
-                {selected.models.length > 0 && <div className="divide-y divide-base-content/20 rounded-box border border-base-content/30 px-3">
-                  {selected.models.map((model, index) => <div key={`${selected.id}-${index}`} className="min-w-0 py-3"><div className="flex min-w-0 items-start gap-3">
-                    <input type="checkbox" className="checkbox checkbox-sm mt-7 shrink-0" aria-label={`启用模型 ${model.name || model.id}`} checked={model.enabled} onChange={(event) => changeModel(index, { enabled: event.target.checked })} />
-                    <div className="grid min-w-0 flex-1 gap-2 sm:grid-cols-2">
-                      <label className="min-w-0 space-y-1"><span className="text-xs text-base-content/70">ID</span><input aria-label={`模型 ID ${index + 1}`} required maxLength={200} className="input input-sm w-full border-base-content/50" value={model.id} onChange={(event) => changeModel(index, { id: event.target.value })} /></label>
-                      <label className="min-w-0 space-y-1"><span className="text-xs text-base-content/70">显示名</span><input aria-label={`模型显示名 ${index + 1}`} maxLength={200} className="input input-sm w-full border-base-content/50" value={model.name} placeholder={model.id} onChange={(event) => changeModel(index, { name: event.target.value })} /></label>
-                    </div>
-                    <button type="button" className="btn btn-ghost btn-xs btn-square mt-6 shrink-0 text-error" aria-label={`删除模型 ${model.name || model.id || index + 1}`} onClick={() => changeProvider(selected.id, { models: selected.models.filter((_, i) => i !== index) })}><Trash2 size={14} /></button>
-                    </div>
-                    <ModelOptions model={model} index={index} provider={selected.provider} globalPrompt={settings.systemPrompt} onChange={(patch) => changeModel(index, patch)} />
-                  </div>)}
+                <div className="flex items-center gap-2"><h4 className="flex-1 text-sm font-semibold">模型</h4><button ref={fetchModelsButton} type="button" className="btn btn-ghost btn-sm" disabled={!(selected.hasApiKey || selected.apiKey?.trim()) || Boolean(fetchingId)} onClick={() => void fetchModels()}>{fetchingId === selected.id ? <span className="loading loading-spinner loading-xs" /> : <RefreshCw size={14} />}获取</button></div>
+                {selected.models.length > 1 && <label className="input input-sm h-11 w-full gap-2 border-base-content/50"><Search size={15} /><input aria-label="筛选模型" placeholder="筛选模型" value={modelFilter} onChange={(event) => { setModelFilter(event.target.value); setEditingModel(null); }} /></label>}
+                {selected.models.length > 0 && <div className="divide-y divide-base-300 rounded-box border border-base-300 px-3">
+                  {selected.models.map((model, index) => {
+                    if (editingModel !== index && !`${model.name} ${model.id}`.toLowerCase().includes(modelFilter.toLowerCase())) return null;
+                    const expanded = editingModel === index;
+                    return <div key={`${selected.id}-${index}`} data-testid="provider-model-row" className="min-w-0 py-2">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <label className="flex min-h-12 min-w-0 flex-1 cursor-pointer items-center gap-3">
+                          <input type="checkbox" className="checkbox checkbox-sm shrink-0" aria-label={`启用模型 ${model.name || model.id}`} checked={model.enabled} onChange={(event) => changeModel(index, { enabled: event.target.checked })} />
+                          <span className="min-w-0"><span className="block truncate text-sm font-medium">{model.name || model.id}</span><span className="block truncate text-xs text-base-content/70">{model.id}</span></span>
+                        </label>
+                        <button type="button" className="btn btn-ghost btn-square h-11 w-11 shrink-0" aria-label={`模型设置 ${index + 1}`} aria-expanded={expanded} aria-controls={`model-editor-${selected.id}-${index}`} onClick={() => setEditingModel(expanded ? null : index)}><Pencil size={15} /></button>
+                      </div>
+                      {expanded && <div id={`model-editor-${selected.id}-${index}`} className="space-y-4 pb-2">
+                        <ModelOptions model={model} index={index} provider={selected.provider} globalPrompt={settings.systemPrompt} onChange={(patch) => changeModel(index, patch)} />
+                        <button type="button" className="btn btn-ghost btn-sm" aria-label={`删除模型 ${model.name || model.id || index + 1}`} onClick={() => setRemoval({ kind: 'model', providerId: selected.id, index, name: model.name || model.id })}><Trash2 size={15} />删除模型</button>
+                      </div>}
+                    </div>;
+                  })}
+                  {editingModel === null && modelFilter && !selected.models.some((model) => `${model.name} ${model.id}`.toLowerCase().includes(modelFilter.toLowerCase())) && <p className="py-4 text-sm text-base-content/70">没有匹配的模型</p>}
                 </div>}
                 <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
                   <input aria-label="新模型 ID" maxLength={200} className="input input-sm w-full border-base-content/50" placeholder="模型 ID" value={newModel} onChange={(event) => setNewModel(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addModel(); } }} />
@@ -227,9 +264,16 @@ function ProviderManager({ initial, open, requestedTab, onSaved, themeControl, o
         <WebToolSettingsPanel active={open && tab === 'web-tools'} />
       </section>
     </div>
-    {tab !== 'presets' && tab !== 'web-tools' && <div className="flex shrink-0 items-center justify-between gap-3 border-t border-base-content/30 px-6 py-3 text-xs text-base-content/70">
-      <p data-testid="settings-save-status" role={status === 'error' ? 'alert' : 'status'}>{status === 'error' ? error : status === 'saving' ? '保存中…' : status === 'waiting' ? '待保存' : '已自动保存'}</p>
+    {tab !== 'presets' && tab !== 'web-tools' && <div className="flex shrink-0 items-center justify-between gap-3 border-t border-base-content/30 px-4 py-3 text-xs sm:px-6 text-base-content/70">
+      <p data-testid="settings-save-status" role={status === 'error' ? 'alert' : 'status'}>{status === 'error' ? `未保存 · ${error}` : status === 'saving' ? '保存中…' : status === 'waiting' ? '保存中…' : '已保存'}</p>
       {status === 'error' && <button type="button" className="btn btn-ghost btn-xs" onClick={() => { void store.flush().catch(() => {}); }}>重试</button>}
     </div>}
+    <dialog ref={deletionDialog} className="modal" aria-labelledby="provider-removal-title" onClose={() => setRemoval(null)}>
+      <div className="modal-box max-w-sm">
+        <h3 id="provider-removal-title" className="text-lg font-semibold">{removal?.kind === 'provider' ? '删除供应商' : '删除模型'}</h3>
+        <p className="mt-4 break-words text-sm">删除“{removal?.name}”？此操作会自动保存，无法撤销。</p>
+        <div className="modal-action"><form method="dialog"><button ref={cancelDeletion} className="btn">取消</button></form><button type="button" className="btn btn-error" onClick={confirmRemoval}>确认删除</button></div>
+      </div>
+    </dialog>
   </div>;
 }

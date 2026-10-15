@@ -1,4 +1,4 @@
-import { openSpaceSettings } from '../ui';
+import { openSpaceSettings, editModel, openParameters } from '../ui';
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import type { ProviderSettings, SessionInfo, Snapshot, Submission } from '../../shared/types';
 import { DEFAULT_CONVERSATION_SETTINGS } from '../../shared/conversation-settings';
@@ -14,11 +14,8 @@ async function providers(page: Page) {
   const tab = page.getByRole('tab', { name: '供应商', exact: true }); await tab.focus(); await tab.press('Space');
   await expect(tab).toHaveAttribute('aria-selected', 'true');
 }
-async function saved(page: Page) { await expect(page.getByTestId('settings-save-status')).toHaveText('已自动保存'); }
-async function modelOptions(page: Page) {
-  const summary = page.getByText('模型设置 1', { exact: true });
-  if (await summary.locator('..').getAttribute('open') === null) await summary.click();
-}
+async function saved(page: Page) { await expect(page.getByTestId('settings-save-status')).toHaveText('已保存'); }
+async function modelOptions(page: Page) { await editModel(page); }
 const getSettings = (request: APIRequestContext) => request.get('/api/settings/providers').then((response) => response.json()) as Promise<ProviderSettings>;
 
 test('unknown model metadata is visible, editable, automatically saved across devices and resettable', async ({ page, context, browser }) => {
@@ -54,7 +51,7 @@ test('unknown model metadata is visible, editable, automatically saved across de
     const session = await context.request.get('/api/session').then((response) => response.json()) as SessionInfo;
     expect(session.models![0].metadata).toMatchObject({ contextWindow: 65536, maxOutputTokens: 2048, reasoning: true, reasoningEfforts: ['high'], sources: { contextWindow: 'manual', reasoning: 'manual' } });
     await page.getByRole('button', { name: '关闭设置', exact: true }).click();
-    await expect(page.getByLabel('思维强度', { exact: true }).locator('option')).toHaveText(['思维强度：默认', '高']);
+    await expect(page.getByLabel('思维强度', { exact: true }).locator('option')).toHaveText(['思考', '高']);
     await page.reload(); await providers(page); await modelOptions(page);
     await expect(window).toHaveValue('65536'); await expect(maximum).toHaveValue('2048');
     const other = await browser.newContext({ baseURL: 'http://127.0.0.1:5174', storageState: await context.storageState() });
@@ -65,7 +62,7 @@ test('unknown model metadata is visible, editable, automatically saved across de
       await expect(second.getByLabel('思维强度 高 1', { exact: true })).toBeChecked();
     } finally { await other.close(); }
     await page.getByRole('button', { name: '关闭设置', exact: true }).click();
-    await page.getByRole('button', { name: '会话参数', exact: true }).click();
+    await openParameters(page);
     await page.getByLabel('输出上限方式').selectOption('custom');
     await page.getByLabel('输出 Token 上限', { exact: true }).fill('2049');
     await page.getByRole('button', { name: '关闭会话参数', exact: true }).click();
@@ -120,6 +117,7 @@ test('native discovery refreshes reported metadata while preserving overrides, e
     } })).status()).toBe(200);
     await page.reload(); await providers(page); await page.getByRole('button', { name: '获取', exact: true }).click();
     await expect(page.getByText('已获取 2 个模型', { exact: true })).toBeVisible();
+    await editModel(page);
     await expect(page.getByLabel('模型显示名 1')).toHaveValue('My Claude');
     await expect(page.getByLabel('启用模型 My Claude', { exact: true })).not.toBeChecked();
     await expect(page.getByLabel('启用模型 Second Claude', { exact: true })).not.toBeChecked();

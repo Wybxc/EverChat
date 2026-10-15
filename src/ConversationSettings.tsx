@@ -82,7 +82,7 @@ export function ConversationSettingsDialog({ id, initial, model, models, effort,
   const compressionModel = compression.model ? modelSelectionKey(compression.model) : '';
   const compressionModelAvailable = !compression.model || models.some((item) => modelSelectionKey(item) === compressionModel);
   return <dialog id={`conversation-settings-${titleId}`} ref={dialog} className="modal" aria-labelledby={titleId} onClose={close}>
-    <div className="modal-box flex max-h-[85dvh] max-w-xl flex-col overflow-hidden p-0">
+    <div className="settings-dialog modal-box flex max-h-[85dvh] max-w-xl flex-col overflow-hidden p-0">
       <div className="flex shrink-0 items-center justify-between gap-3 p-5">
         <h2 id={titleId} className="text-lg font-semibold">{id ? '会话参数' : '新对话参数'}</h2>
         <form method="dialog"><button className="btn btn-ghost btn-sm btn-square" aria-label="关闭会话参数"><X size={18} /></button></form>
@@ -110,11 +110,14 @@ export function ConversationSettingsDialog({ id, initial, model, models, effort,
         <fieldset className="fieldset border-t border-base-content/20 pt-3">
           <legend className="fieldset-legend">上下文</legend>
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="checkbox checkbox-sm" checked={settings.useSummaries} onChange={(event) => update({ useSummaries: event.currentTarget.checked, ...(!event.currentTarget.checked ? { autoCompression: { ...compression, enabled: false } } : {}) })} />使用历史摘要</label>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <details className="py-1">
+          <summary className="min-h-11 cursor-pointer py-3 text-sm font-medium">上下文预算与条数</summary>
+          <div className="grid gap-4 pb-3 sm:grid-cols-2">
             <NumberSetting label="上下文 Token 预算" value={settings.contextBudget} min={1} max={10000000} integer change={(contextBudget) => update({ contextBudget })} />
             <NumberSetting label="最近历史消息条数" value={settings.recentMessages} min={1} max={1000} integer change={(recentMessages) => update({ recentMessages })} />
           </div>
           <p className="text-xs text-base-content/70">留空按模型窗口；预算包含系统提示词和本次输入，历史按完整轮次选取。</p>
+          </details>
           <label className="mt-2 flex items-center gap-2 text-sm"><input type="checkbox" className="checkbox checkbox-sm" checked={compression.enabled} onChange={(event) => update({ useSummaries: event.currentTarget.checked || settings.useSummaries, autoCompression: { ...compression, enabled: event.currentTarget.checked } })} />自动压缩历史</label>
           <p className="text-xs text-base-content/70">开启后会额外调用摘要模型，产生供应商费用。原始消息保留。</p>
           {compression.enabled && <div className="space-y-3">
@@ -133,7 +136,7 @@ export function ConversationSettingsDialog({ id, initial, model, models, effort,
         {error && <p role="alert" className="text-sm">{error}</p>}
       </div>
       <div className="flex shrink-0 items-center justify-between gap-3 border-t border-base-content/20 p-5">
-        <span role="status" className="text-xs text-base-content/70">{status === 'saved' ? id ? '已保存' : '已保存到本机' : status === 'saving' ? '保存中…' : status === 'waiting' ? '等待保存…' : '未保存'}</span>
+        <span role="status" className="text-xs text-base-content/70">{status === 'saved' ? id ? '已保存' : '已保存到本机' : status === 'saving' ? '保存中…' : status === 'waiting' ? '保存中…' : '未保存'}</span>
         <div className="flex gap-2"><button type="button" className="btn btn-sm" onClick={() => update({ ...DEFAULT_CONVERSATION_SETTINGS })}>恢复继承</button>{status === 'error' && <button type="button" className="btn btn-sm" onClick={() => void store.flush().catch(() => {})}>重试保存</button>}</div>
       </div>
     </div>

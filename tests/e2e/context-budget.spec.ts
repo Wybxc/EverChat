@@ -1,3 +1,4 @@
+import { messageMenu, openParameters } from '../ui';
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import type { EverChatBackup } from '../../shared/backup';
 import type { ConversationSettings, ProviderSettings, ProviderSettingsInput, Snapshot, Submission } from '../../shared/types';
@@ -88,14 +89,14 @@ test('composer estimates reflect model prompts and autosaved budgets across devi
     expect((await fixture.save({ ...defaults, contextBudget: 300, recentMessages: 3 })).status()).toBe(200);
     await page.goto(`/c/${fixture.id}`); const composer = page.getByLabel('消息', { exact: true }); await composer.fill('next');
     const estimate = page.getByTestId('context-estimate');
-    await expect(estimate).toContainText('上下文 ≈'); await expect(estimate).toContainText('/ 300 Tokens');
+    await expect(estimate).toContainText('上下文 ≈'); await expect(estimate).toContainText('/ 300');
     await expect(page.getByTestId('context-omission')).toContainText('将省略 2 条');
-    await estimate.locator('summary').click(); await expect(estimate).toContainText('系统提示词（估算）');
+    await page.getByRole('button', { name: '查看上下文估算' }).click(); await expect(estimate).toContainText('系统提示词（估算）');
     await expect(estimate.locator('dd').first()).toHaveText('10');
     await other.request.post('/api/login', { headers, data: { password: 'everchat-local' } });
     const second = await other.newPage(); await second.goto(`/c/${fixture.id}`);
-    await second.getByRole('button', { name: '会话参数', exact: true }).click();
-    await page.getByRole('button', { name: '会话参数', exact: true }).click();
+    await openParameters(second);
+    await openParameters(page);
     const modal = page.getByRole('dialog', { name: '会话参数', exact: true });
     await modal.getByLabel('上下文 Token 预算', { exact: true }).fill('350');
     await expect(modal.getByRole('status')).toHaveText('已保存');
@@ -103,22 +104,24 @@ test('composer estimates reflect model prompts and autosaved budgets across devi
     await modal.getByLabel('最近历史消息条数', { exact: true }).fill('1');
     await expect(modal.getByRole('status')).toHaveText('已保存');
     await modal.getByRole('button', { name: '关闭会话参数' }).click();
-    await expect(estimate).toContainText('/ 350 Tokens'); await expect(page.getByTestId('context-omission')).toContainText('将省略 4 条');
+    await expect(estimate).toContainText('/ 350'); await expect(page.getByTestId('context-omission')).toContainText('将省略 4 条');
     await expect(composer).toHaveValue('next');
+    await messageMenu(page.getByTestId('assistant-message').first());
     await page.getByRole('button', { name: '继续此分支', exact: true }).first().click();
     await expect(page.getByTestId('context-omission')).toContainText('将省略 2 条');
-    await page.getByRole('button', { name: '会话参数', exact: true }).click();
+    await openParameters(page);
     await context.setOffline(true); await modal.getByLabel('上下文 Token 预算', { exact: true }).fill('400');
     await expect(modal.getByRole('alert')).toBeVisible();
-    await modal.getByRole('button', { name: '关闭会话参数' }).click(); await expect(estimate).toContainText('/ 400 Tokens');
+    await modal.getByRole('button', { name: '关闭会话参数' }).click(); await expect(estimate).toContainText('/ 400');
     await context.setOffline(false); await expect.poll(async () => (await fixture.snapshot()).settings?.contextBudget).toBe(400);
-    await page.reload(); await expect(composer).toHaveValue('next'); await expect(estimate).toContainText('/ 400 Tokens');
+    await page.reload(); await expect(composer).toHaveValue('next'); await expect(estimate).toContainText('/ 400');
     await page.getByRole('button', { name: '发送消息', exact: true }).click();
     await expect(page.getByRole('button', { name: '停止生成', exact: true })).toBeVisible();
     const sent = (await fixture.snapshot()).messages.at(-1)!;
     expect(sent.generation!.context).toMatchObject({ inputBudget: 400, retainedMessages: 0, omittedMessages: 2 });
     await page.getByRole('button', { name: '停止生成', exact: true }).click();
-    const info = page.getByTestId('message-generation'); await info.locator('summary').click();
+    await messageMenu(page.getByTestId('assistant-message').last());
+    const info = page.getByTestId('assistant-message').last().getByTestId('message-generation'); await info.locator('summary').click();
     await expect(info.getByTestId('generation-contextMessages')).toHaveText('0 条 · 省略 2 条');
   } finally { await context.setOffline(false); await other.close(); await fixture.cleanup(); }
 });
@@ -128,7 +131,7 @@ test('an unknown model displays fallback capacity and an over-budget draft stays
   try {
     await page.goto('/'); const composer = page.getByLabel('消息', { exact: true }); await composer.fill('保留当前草稿');
     await expect(page.getByTestId('context-estimate')).toContainText('窗口未识别');
-    await page.getByRole('button', { name: '会话参数', exact: true }).click();
+    await openParameters(page);
     const modal = page.getByRole('dialog', { name: '新对话参数', exact: true });
     await modal.getByLabel('上下文 Token 预算', { exact: true }).fill('1');
     await expect(modal.getByRole('status')).toHaveText('已保存到本机');
@@ -137,7 +140,7 @@ test('an unknown model displays fallback capacity and an over-budget draft stays
     await composer.press('Enter'); await expect(page.getByRole('alert')).toContainText('超过上下文预算');
     await expect(composer).toHaveValue('保留当前草稿'); await expect(composer).toBeFocused(); await expect(page).toHaveURL(`${origin}/`);
     expect(await page.evaluate(() => JSON.parse(localStorage.getItem('everchat:pending') ?? '[]'))).toHaveLength(0);
-    await page.getByRole('button', { name: '会话参数', exact: true }).click(); await modal.getByLabel('上下文 Token 预算', { exact: true }).fill('1.5');
+    await openParameters(page); await modal.getByLabel('上下文 Token 预算', { exact: true }).fill('1.5');
     await expect(modal.getByRole('alert')).toContainText('正整数'); await expect(modal.getByRole('button', { name: '关闭会话参数' })).toBeInViewport();
   } finally { await fixture.cleanup(); }
 });
