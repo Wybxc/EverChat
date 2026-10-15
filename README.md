@@ -4,6 +4,8 @@
 
 [实施路线图](docs/serverless-feature-roadmap.md)阶段 0–5 的必做功能与原型验收已完成；功能、完整检查结果和资源边界见[实施与验收核对](docs/implementation-audit.md)。
 
+下一轮界面改进见[前端界面优化方案](docs/frontend-refinement-plan.md)，按可视区域、导航与输入、消息阅读、设置和整体验收分阶段推进。
+
 ## 本地运行
 
 需要 Node.js 22.12+（或 24+）、pnpm 12。所有命令在项目根目录执行。
