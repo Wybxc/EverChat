@@ -76,6 +76,23 @@ test('model claims are durable and reentry cannot consume another request', (t) 
   assert.equal(reader().state(input.id).modelRequests, 1);
 });
 
+test('public history spans rounds without private continuation, and erasure is terminal-only and transactional', (t) => {
+  const { query, reader, write, begin, save, finish } = database(t), input = begin();
+  assert.throws(() => write((j) => j.erase(input.id)), /先停止/);
+  save(input); finish(input.id, 'search-0');
+  const next = crypto.randomUUID();
+  write((j) => j.queueModel(input.id, 1, next, input.messageId, config));
+  write((j) => j.claimModel(next)); write((j) => j.saveTurn(next, turn([], '最终回答'), config));
+  const expected = { status: 'completed', round: 1, calls: [{ round: 0, call: call(), state: 'completed', result: outcome() }] };
+  assert.deepEqual(reader().publicTask(input.id), expected);
+  assert.doesNotMatch(JSON.stringify(reader().publicTask(input.id)), /providerOptions|private-test-key|private-system-prompt|最终回答/);
+  assert.throws(() => write((j) => { j.erase(input.id); throw new Error('Caller rollback'); }), /Caller rollback/);
+  assert.deepEqual(reader().publicTask(input.id), expected);
+  write((j) => j.erase(input.id)); write((j) => j.erase(input.id));
+  for (const table of ['web_tool_tasks', 'web_tool_models', 'web_tool_calls', 'web_tool_notifications'])
+    assert.equal(query<{ count: number }>(`SELECT COUNT(*) AS count FROM ${table}`).one().count, 0);
+});
+
 for (const provider of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'] as const) test(`${provider} private continuation survives SQLite reopening while orchestration state remains small and public`, async (t) => {
   const { query, reader, write, begin } = database(t), settings = configuration(provider), input = begin(start(), settings);
   const value = await collectProviderToolTurn(settings, enabled, fragmentedToolBody(toolStream(provider, { count: 2, redacted: true })), new AbortController().signal);

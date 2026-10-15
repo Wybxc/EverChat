@@ -1,10 +1,12 @@
 import type { Conversation } from './conversation';
 import type { Library } from './library';
+import type { ToolWorkflowParams } from './tool-workflow';
 
 export interface Env {
   ASSETS: Fetcher;
   CONVERSATIONS: DurableObjectNamespace<Conversation>;
   LIBRARY: DurableObjectNamespace<Library>;
+  WEB_TOOLS: Workflow<ToolWorkflowParams>;
   ATTACHMENTS?: R2Bucket;
   APP_PASSWORD?: string;
   SESSION_SECRET?: string;

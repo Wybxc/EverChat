@@ -16,6 +16,7 @@ import { clearLocal, deletedAt, markConversationDeleted, read, storageEpoch, wri
 import { useConversation } from './useConversation';
 import { ProviderSettingsPanel, type SettingsTab } from './ProviderSettings';
 import { GenerationMetadata } from './GenerationMetadata';
+import { ToolActivity } from './ToolActivity';
 import { ContextEstimateView } from './ContextEstimate';
 import { buildContext, contextSource } from '../shared/context-budget';
 import { chatModels, effortLabels, modelSelectionKey } from '../shared/models';
@@ -230,7 +231,8 @@ function MessageView({ conversationId, message, busy, onRetry, onEdit, onQuote, 
         <summary className="collapse-title min-h-0 py-3 text-sm font-medium">思考过程</summary>
         <div className="collapse-content text-sm"><div ref={reasoningScroll.viewportRef} className="max-h-80 overflow-y-auto break-words"><div ref={reasoningScroll.contentRef}><MarkdownContent content={messageText(message, 'reasoning')} searchId={`${message.id}:reasoning`} streaming={isActive(message)} /></div></div></div>
       </details>}
-      {messageText(message) ? <MarkdownContent content={messageText(message)} searchId={`${message.id}:content`} streaming={isActive(message)} /> : isActive(message) && !messageText(message, 'reasoning') ? <p className="py-2 text-sm text-base-content/60">{message.waitingForSummary ? '压缩历史后开始回答…' : '准备中…'}</p> : null}
+      <ToolActivity task={message.tools} />
+      {messageText(message) ? <MarkdownContent content={messageText(message)} searchId={`${message.id}:content`} streaming={isActive(message)} /> : isActive(message) && !messageText(message, 'reasoning') && !message.tools ? <p className="py-2 text-sm text-base-content/60">{message.waitingForSummary ? '压缩历史后开始回答…' : '准备中…'}</p> : null}
       {message.status === 'failed' && <p role="alert" className="mt-4 rounded-lg bg-error/5 px-3 py-2 text-xs font-medium leading-6 text-base-content">{message.error ?? '生成失败，已保存部分内容。'}</p>}
       {message.status === 'cancelled' && <p className="mt-4 text-xs text-base-content/60">已停止</p>}
       {!isActive(message) && <GenerationMetadata generation={message.generation} />}

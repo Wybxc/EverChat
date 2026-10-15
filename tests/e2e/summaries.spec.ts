@@ -1,5 +1,5 @@
 import { test, expect, type APIRequestContext } from '@playwright/test';
-import type { EverChatBackup } from '../../shared/backup';
+import { validateBackup, type EverChatBackup } from '../../shared/backup';
 import type { ChatInput, ConversationSettings, ProviderSettings, ProviderSettingsInput, Snapshot, Submission, SubmitInput, SyncPacket } from '../../shared/types';
 import WebSocket from 'ws';
 import type { LibrarySearch } from '../../shared/search';
@@ -25,13 +25,13 @@ async function replay(request: APIRequestContext, id: string) {
     return packets;
   } finally { socket.terminate(); }
 }
-async function setup(request: APIRequestContext, branch = false, longTail = false) {
+async function setup(request: APIRequestContext, branch = false, longTail = false, longHistory = false) {
   expect((await request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok()).toBe(true);
   const original = await request.get('/api/settings/providers').then((response) => response.json()) as ProviderSettings;
   const providerId = crypto.randomUUID(), empty = crypto.randomUUID(), ids: string[] = [empty];
   const configuration: ProviderSettingsInput = { providers: [{ id: providerId, name: 'Summary fixture', provider: 'openai-chat', baseUrl: 'https://provider.test/v1', apiKey: 'integration-test-key',
-    models: ['alarm-stall', 'benchmark-answer-fact', 'benchmark-summary-ok', 'benchmark-summary-slow', 'benchmark-summary-empty', 'benchmark-summary-length', 'benchmark-summary-error', 'benchmark-summary-write-failure', 'benchmark-summary-small'].map((id) => ({
-      id, name: id, enabled: true, metadataOverrides: { contextWindow: id === 'alarm-stall' ? 4096 : id.endsWith('small') ? 1024 : 65536, maxOutputTokens: 4096 },
+    models: ['alarm-stall', 'benchmark-answer-fact', 'tools-openai-chat', 'benchmark-summary-ok', 'benchmark-summary-slow', 'benchmark-summary-empty', 'benchmark-summary-length', 'benchmark-summary-error', 'benchmark-summary-write-failure', 'benchmark-summary-small'].map((id) => ({
+      id, name: id, enabled: true, metadataOverrides: { contextWindow: id === 'alarm-stall' ? 4096 : id.endsWith('small') ? 1024 : 65536, maxOutputTokens: 4096, toolCalls: id === 'tools-openai-chat' },
     })) }], activeProviderId: providerId, activeModel: 'alarm-stall', systemPrompt: 'CHAT SYSTEM', maxOutputTokens: null, showReasoning: false };
   const configure = (input = configuration) => request.put('/api/settings/providers', { headers, data: input });
   expect((await configure()).status()).toBe(200);
@@ -39,7 +39,7 @@ async function setup(request: APIRequestContext, branch = false, longTail = fals
   const backup = await request.get(`/api/conversations/${empty}/backup`).then((response) => response.json()) as EverChatBackup;
   let parentId: string | null = null;
   backup.conversation.settings = { ...defaults, contextBudget: 400 };
-  backup.conversation.messages = [`预算 42 元，标识 ${fact}。${'旧资料 '.repeat(500)}`, '已确认预算和约束。', '最近问题', '最近回答', longTail ? '后续问题'.repeat(500) : '后续问题', '后续回答'].map((text, index) => {
+  backup.conversation.messages = [`预算 42 元，标识 ${fact}。${'旧资料 '.repeat(longHistory ? 3000 : 500)}`, '已确认预算和约束。', '最近问题', '最近回答', longTail ? '后续问题'.repeat(500) : '后续问题', '后续回答'].map((text, index) => {
     const id = crypto.randomUUID(), message = { id, role: index % 2 ? 'assistant' as const : 'user' as const, parts: messageParts(text), status: 'completed' as const,
       createdAt: index + 1, parentId, revisionOf: null, error: null, providerId: null, model: null, modelName: null };
     parentId = id; return message;
@@ -76,6 +76,28 @@ function automaticInput(fixture: Awaited<ReturnType<typeof setup>>, summaryModel
     settings: { ...defaults, contextBudget: budget, autoCompression: { enabled: true, threshold: 80, model: { providerId: fixture.providerId, model: summaryModel } } } };
 }
 const action = (request: APIRequestContext, id: string, name: string, runId: string) => request.post(`/api/__test/conversations/${id}/${name}`, { headers, data: { runId } });
+
+for (const outcome of ['completed', 'failed', 'cancelled'] as const) test(`tool-enabled automatic summary ${outcome} settles the dependent process and produces a valid backup`, async ({ request }) => {
+  const fixture = await setup(request, false, false, true);
+  try {
+    const model = outcome === 'failed' ? 'benchmark-summary-error' : outcome === 'cancelled' ? 'benchmark-summary-slow' : 'benchmark-summary-ok';
+    const input = automaticInput(fixture, model, 5000);
+    input.selection!.model = 'tools-openai-chat'; input.tools = ['web_search', 'read_webpage'];
+    const response = await fixture.submit(input); expect(response.status(), await response.text()).toBe(202);
+    const task = await response.json() as Submission; expect(task.summaryId).toBeTruthy();
+    if (outcome === 'cancelled') {
+      await expect.poll(async () => (await fixture.snapshot()).messages.find((message) => message.id === task.summaryId)?.status).toBe('running');
+      expect((await fixture.stop(task.runId)).ok()).toBe(true);
+    }
+    const answer = await fixture.terminal(task, outcome);
+    expect(answer.tools?.status).toBe(outcome);
+    expect(answer.tools?.calls).toHaveLength(outcome === 'completed' ? 2 : 0);
+    expect((await fixture.resources()).calls).toBe(outcome === 'completed' ? 3 : 1);
+    const backup = await request.get(`/api/conversations/${fixture.id}/backup`).then((result) => result.json()) as EverChatBackup;
+    expect(() => validateBackup(backup)).not.toThrow();
+    expect(backup.conversation.messages.find((message) => message.id === task.assistantId)?.tools?.status).toBe(outcome);
+  } finally { await fixture.cleanup(); }
+});
 
 test('automatic compression saves coverage before answering, retains early facts and is idempotent across refresh and a second device', async ({ request, browser }) => {
   const fixture = await setup(request), other = await browser.newContext();

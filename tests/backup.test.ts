@@ -77,3 +77,28 @@ test('validateBackup accepts version 1 backups and rejects malformed messages', 
   assert.throws(() => validateBackup({ ...backup, settings: { ...backup.settings, promptPresets: [preset, preset] } }), /提示词预设无效/);
   assert.throws(() => validateBackup({ ...backup, settings: { ...backup.settings, promptPresets: [{ ...preset, apiKey: 'unexpected' }] } }), /提示词预设无效/);
 });
+
+test('tool process backups retain safe outcomes, stop unfinished work and reject private or mismatched records', () => {
+  const completed = { round: 0, call: { id: 'search-0', name: 'web_search' as const, input: { query: 'Cloudflare' } }, state: 'completed' as const,
+    result: { id: 'search-0', name: 'web_search' as const, status: 'completed' as const,
+      sources: [{ title: '文档', url: 'https://developers.cloudflare.com/', content: '公开结果' }] } };
+  const running = { round: 0, call: { id: 'read-0', name: 'read_webpage' as const, input: { url: 'https://developers.cloudflare.com/' } }, state: 'running' as const };
+  const partial = backupMessage({ ...assistant, parentId: null, tools: { status: 'active', round: 0, calls: [completed, running] } });
+  assert.deepEqual(partial.tools, { status: 'failed', round: 0, calls: [completed, { ...running, state: 'cancelled' }] });
+  const backup = { format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: Date.now(),
+    conversation: { id: crypto.randomUUID(), title: '工具备份', createdAt: 1, updatedAt: 2, messages: [partial] },
+    settings: { providers: [], activeProviderId: null, activeModel: '', systemPrompt: '', maxOutputTokens: null, showReasoning: true, promptPresets: [] } };
+  assert.deepEqual(validateBackup(JSON.parse(JSON.stringify(backup))).conversation.messages[0].tools, partial.tools);
+  const invalid = [
+    { ...partial.tools, status: 'active' },
+    { ...partial.tools, providerOptions: { signature: 'private' } },
+    { ...partial.tools, calls: [completed, completed] },
+    { ...partial.tools, calls: [{ ...completed, round: 1 }] },
+    { ...partial.tools, calls: [{ ...completed, result: { ...completed.result, id: 'another-call' } }] },
+    { ...partial.tools, calls: [{ ...completed, result: { ...completed.result, signature: 'private' } }] },
+    { ...partial.tools, calls: [{ ...completed, state: 'running' }] },
+    { ...partial.tools, calls: [{ ...completed, result: { ...completed.result, sources: [{ ...completed.result.sources[0], url: 'https://localhost/' }] } }] },
+  ];
+  for (const tools of invalid) assert.throws(() => validateBackup({ ...backup, conversation: { ...backup.conversation, messages: [{ ...partial, tools }] } }), /工具过程无效/);
+  assert.equal(backupMessage({ ...assistant, tools: { status: 'active', round: 0, calls: [completed] }, deletedAt: 123 }).tools, undefined);
+});

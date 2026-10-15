@@ -24,8 +24,15 @@ import { messageFiles, messageImages, messageParts, messageText } from '../share
 import { MAX_SUMMARIES, MAX_SUMMARY_CHARACTERS, prepareChatContext, summaryContext, summaryGeneration, summaryPrefix } from '../shared/summaries';
 
 import { ImageContextError, type ImagePart } from '../shared/images';
+import { createHash } from 'node:crypto';
+import { assertWebToolSupport, type PublicToolTask, type WebToolCall, type WebToolName, type WebToolOutcome } from '../shared/web-tools';
+import { collectProviderToolTurn, type ProviderToolTurn } from './provider-tools';
+import { ToolTaskJournal, type ToolTaskState } from './tool-task-journal';
+import { ToolStreamRelay } from './tool-stream-relay';
+import { addGenerationUsage } from '../shared/generation';
+import { toolWorkflowId, type ToolWorkflowParams } from './tool-workflow';
 
-type Row = Omit<Message, 'parts' | 'waitingForSummary'> & { content: string; reasoning: string | null; generationResult: string | null; summaryResult: string | null; imageResult?: string | null; fileResult?: string | null; waitingForSummary?: string | null } & Record<string, SqlStorageValue>;
+type Row = Omit<Message, 'parts' | 'waitingForSummary'> & { content: string; reasoning: string | null; generationResult: string | null; summaryResult: string | null; imageResult?: string | null; fileResult?: string | null; toolResult?: string | null; waitingForSummary?: string | null } & Record<string, SqlStorageValue>;
 type Run = { id: string; conversationId: string; assistantId: string; context: string; config: string | null; chunkSeq: number; updatedAt: number;
   streamVersion: string | null; durableOffset: number;
   executor: GenerationExecutor; startedAt: number | null; cancelRequested: number } & Record<string, SqlStorageValue>;
@@ -34,11 +41,16 @@ type Dependency = { runId: string; summaryRunId: string; summaryId: string; payl
 export const SUBSCRIBER_WINDOW_BYTES = 128 * 1024;
 type Failure = { error: string; status: number };
 type Claim = { context: ChatInput[]; config?: ProviderConfig; claimed: boolean; status: MessageStatus; streamVersion?: string; assistantId?: string };
-type ActiveGeneration = { runId: string; abort: AbortController; buffer: GenerationBuffer; cancelled: boolean; endedAt?: number; failure?: Error; persistence?: Promise<void>; timer?: ReturnType<typeof setInterval> };
+type ActiveGeneration = { runId: string; abort: AbortController; buffer: GenerationBuffer; privateBuffer?: GenerationBuffer; cancelled: boolean; endedAt?: number; failure?: Error; persistence?: Promise<void>; timer?: ReturnType<typeof setInterval> };
+type ToolRequestRow = { messageId: string; rootId: string; enabled: string; requestHash: string; payload: string } & Record<string, SqlStorageValue>;
+type WorkflowRow = { rootId: string; conversationId: string; created: number; nextAt: number; attempts: number } & Record<string, SqlStorageValue>;
 
 export class Conversation extends DurableObject<Env> {
   private meter?: GenerationMeter;
   private readonly journal: StreamJournal;
+  private readonly privateToolStreams: StreamJournal;
+  private readonly tools!: ToolTaskJournal;
+  private readonly activeTools = new Map<string, { abort: AbortController; result: Promise<ToolTaskState> }>();
   private activeGeneration?: ActiveGeneration;
   private deletedAt: number | null = null;
   private deletionCleaned = false;
@@ -49,10 +61,22 @@ export class Conversation extends DurableObject<Env> {
     this.deletedAt = ctx.storage.sql.exec<{ deletedAt: number }>('SELECT deletedAt FROM conversation_deletion WHERE id = 1').toArray()[0]?.deletedAt ?? null;
     this.deletionCleaned = this.deletedAt !== null;
     this.journal = new StreamJournal(this.query.bind(this));
+    this.privateToolStreams = new StreamJournal(this.query.bind(this), 'tool_stream_commits');
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
     // A new instance cannot resume an old upstream socket. Recover before serving any snapshot.
     if (!this.deletedAt) {
-      for (const run of this.query<Run>(`SELECT runs.* FROM runs JOIN messages ON messages.id = runs.assistantId WHERE messages.status = 'running'`).toArray()) this.finishInterrupted(run);
+      this.tools = new ToolTaskJournal(this.query.bind(this));
+      ctx.storage.transactionSync(() => this.tools.recover());
+      for (const run of this.query<Run>(`SELECT runs.* FROM runs JOIN messages ON messages.id = runs.assistantId AND messages.runId = runs.id WHERE messages.status IN ('queued', 'running')`).toArray()) {
+        const tool = this.tools.model(run.id);
+        if (tool) {
+          const state = this.tools.state(tool.rootId);
+          if (state.status !== 'active') this.finish(run.id, state.status, state.error);
+          else { const change = this.ctx.storage.transactionSync(() => this.refreshToolMessage(tool.rootId, run.conversationId)); if (change) this.broadcast(change); }
+        } else if (this.rawMessage(run.assistantId)?.status === 'running') this.finishInterrupted(run);
+      }
+      if (this.query(`SELECT rootId FROM tool_workflows WHERE EXISTS (SELECT 1 FROM web_tool_tasks WHERE id = rootId AND status = 'active')
+        OR EXISTS (SELECT 1 FROM web_tool_notifications WHERE web_tool_notifications.rootId = tool_workflows.rootId) LIMIT 1`).toArray().length) ctx.waitUntil(this.scheduleAlarm());
     }
   }
   private query<T extends Record<string, SqlStorageValue> = Record<string, SqlStorageValue>>(statement: string, ...bindings: SqlStorageValue[]) {
@@ -70,8 +94,8 @@ export class Conversation extends DurableObject<Env> {
     return row ? JSON.parse(row.payload) as GenerationMeasurements : null;
   }
   private decorate(row: Row): Message {
-    const { generationResult, summaryResult, imageResult, fileResult, waitingForSummary, content, reasoning, ...message } = row;
-    return { ...message, parts: [...messageParts(content, reasoning ?? ''), ...(imageResult ? JSON.parse(imageResult) as ImagePart[] : []), ...(fileResult ? JSON.parse(fileResult) as DocumentPart[] : [])], ...(generationResult ? { generation: JSON.parse(generationResult) as Message['generation'] } : {}),
+    const { generationResult, summaryResult, imageResult, fileResult, toolResult, waitingForSummary, content, reasoning, ...message } = row;
+    return { ...message, ...(toolResult && !message.deletedAt ? { tools: JSON.parse(toolResult) as PublicToolTask } : {}), parts: [...messageParts(content, reasoning ?? ''), ...(imageResult ? JSON.parse(imageResult) as ImagePart[] : []), ...(fileResult ? JSON.parse(fileResult) as DocumentPart[] : [])], ...(generationResult ? { generation: JSON.parse(generationResult) as Message['generation'] } : {}),
       ...(summaryResult ? { summary: JSON.parse(summaryResult) as Message['summary'] } : {}), ...(waitingForSummary ? { waitingForSummary } : {}) };
   }
   private materialize(message: Message): Message {
@@ -79,9 +103,9 @@ export class Conversation extends DurableObject<Env> {
     const config = this.run(message.runId)?.config;
     if (!config) return message;
     const descriptor = JSON.parse(config) as ProviderConfig;
-    return this.journal.materialize(message, { protocol: descriptor.provider, showReasoning: descriptor.showReasoning === true });
+    return this.journal.materialize(message, { protocol: message.tools ? 'openai-chat' : descriptor.provider, showReasoning: descriptor.showReasoning === true });
   }
-  private rows() { return this.query<Row>('SELECT messages.*, message_deletions.deletedAt, message_generations.payload AS generationResult, message_summaries.payload AS summaryResult, message_images.payload AS imageResult, message_files.payload AS fileResult, run_dependencies.summaryId AS waitingForSummary FROM messages LEFT JOIN message_deletions ON message_deletions.id = messages.id LEFT JOIN message_generations ON message_generations.messageId = messages.id LEFT JOIN message_summaries ON message_summaries.messageId = messages.id LEFT JOIN message_images ON message_images.messageId = messages.id LEFT JOIN message_files ON message_files.messageId = messages.id LEFT JOIN run_dependencies ON run_dependencies.runId = messages.runId ORDER BY messages.rowid'); }
+  private rows() { return this.query<Row>('SELECT messages.*, message_deletions.deletedAt, message_generations.payload AS generationResult, message_summaries.payload AS summaryResult, message_images.payload AS imageResult, message_files.payload AS fileResult, message_web_tools.payload AS toolResult, run_dependencies.summaryId AS waitingForSummary FROM messages LEFT JOIN message_deletions ON message_deletions.id = messages.id LEFT JOIN message_generations ON message_generations.messageId = messages.id LEFT JOIN message_summaries ON message_summaries.messageId = messages.id LEFT JOIN message_images ON message_images.messageId = messages.id LEFT JOIN message_files ON message_files.messageId = messages.id LEFT JOIN message_web_tools ON message_web_tools.messageId = messages.id LEFT JOIN run_dependencies ON run_dependencies.runId = messages.runId ORDER BY messages.rowid'); }
   private all(): Message[] { return Array.from(this.rows(), (row) => this.materialize(this.decorate(row))); }
   backup(): BackupMessage[] {
     if (this.deletedAt) return [];
@@ -146,6 +170,7 @@ export class Conversation extends DurableObject<Env> {
       error: source.error, providerId: source.providerId, model: source.model, modelName: source.modelName,
       ...(!source.deletedAt && source.role === 'assistant' && source.generation ? { generation: copiedGeneration(source) } : {}),
       ...(source.summary ? { summary: { ...source.summary, throughId: ids.get(source.summary.throughId)!, sourceIds: source.summary.sourceIds.map((id) => ids.get(id)!) } } : {}),
+      ...(!source.deletedAt && source.tools ? { tools: source.tools } : {}),
     }));
     const batches: Message[][] = [], settings = backup.settings ?? DEFAULT_CONVERSATION_SETTINGS;
     const overhead = payloadBytes(JSON.stringify(settings)) + 64;
@@ -175,7 +200,7 @@ export class Conversation extends DurableObject<Env> {
     return json(result, 'error' in result ? result.status : 200);
   }
   private rawMessage(id: string): Message | undefined {
-    const row = this.query<Row>('SELECT messages.*, message_deletions.deletedAt, message_generations.payload AS generationResult, message_summaries.payload AS summaryResult, message_images.payload AS imageResult, message_files.payload AS fileResult, run_dependencies.summaryId AS waitingForSummary FROM messages LEFT JOIN message_deletions ON message_deletions.id = messages.id LEFT JOIN message_generations ON message_generations.messageId = messages.id LEFT JOIN message_summaries ON message_summaries.messageId = messages.id LEFT JOIN message_images ON message_images.messageId = messages.id LEFT JOIN message_files ON message_files.messageId = messages.id LEFT JOIN run_dependencies ON run_dependencies.runId = messages.runId WHERE messages.id = ?', id).toArray()[0];
+    const row = this.query<Row>('SELECT messages.*, message_deletions.deletedAt, message_generations.payload AS generationResult, message_summaries.payload AS summaryResult, message_images.payload AS imageResult, message_files.payload AS fileResult, message_web_tools.payload AS toolResult, run_dependencies.summaryId AS waitingForSummary FROM messages LEFT JOIN message_deletions ON message_deletions.id = messages.id LEFT JOIN message_generations ON message_generations.messageId = messages.id LEFT JOIN message_summaries ON message_summaries.messageId = messages.id LEFT JOIN message_images ON message_images.messageId = messages.id LEFT JOIN message_files ON message_files.messageId = messages.id LEFT JOIN message_web_tools ON message_web_tools.messageId = messages.id LEFT JOIN run_dependencies ON run_dependencies.runId = messages.runId WHERE messages.id = ?', id).toArray()[0];
     return row && this.decorate(row);
   }
   private message(id: string): Message | undefined { const message = this.rawMessage(id); return message && this.materialize(message); }
@@ -288,6 +313,7 @@ export class Conversation extends DurableObject<Env> {
     if (message.role === 'assistant' && !message.deletedAt && message.generation) this.query('INSERT INTO message_generations VALUES (?, ?)', message.id, JSON.stringify(message.generation));
     if (message.summary) this.query('INSERT INTO message_summaries VALUES (?, ?)', message.id, JSON.stringify(message.summary));
     if (messageFiles(message).length && !message.deletedAt) this.query('INSERT INTO message_files VALUES (?, ?)', message.id, JSON.stringify(messageFiles(message)));
+    if (message.tools && !message.deletedAt) this.query('INSERT INTO message_web_tools VALUES (?, ?, ?, ?, ?)', message.id, crypto.randomUUID(), '[]', '', JSON.stringify(message.tools));
     if (messageImages(message).length && !message.deletedAt) this.query('INSERT INTO message_images VALUES (?, ?)', message.id, JSON.stringify(messageImages(message)));
   }
   async reviseAssistant(conversationId: string, messageId: string, requestId: string, content: string): Promise<{ messageId: string } | Failure> {
@@ -332,6 +358,13 @@ export class Conversation extends DurableObject<Env> {
         this.query('DELETE FROM message_generations WHERE messageId = ?', message.id);
         this.query('DELETE FROM message_images WHERE messageId = ?', message.id);
         this.query('DELETE FROM message_files WHERE messageId = ?', message.id);
+        const tool = this.toolRequest(message.id);
+        if (tool) {
+          this.query('DELETE FROM tool_model_permits WHERE runId IN (SELECT runId FROM web_tool_models WHERE rootId = ?)', tool.rootId);
+          this.tools.erase(tool.rootId);
+          this.query('DELETE FROM tool_workflows WHERE rootId = ?', tool.rootId);
+          this.query('DELETE FROM message_web_tools WHERE messageId = ?', message.id);
+        }
         if (message.runId) this.query('DELETE FROM generation_timings WHERE runId = ?', message.runId);
         // Keep request IDs so delayed retries cannot recreate deleted content, but erase their saved text.
         this.query("UPDATE submissions SET fingerprint = '' WHERE json_extract(result, '$.userId') = ? OR json_extract(result, '$.assistantId') = ? OR json_extract(result, '$.messageId') = ?", message.id, message.id, message.id);
@@ -349,7 +382,7 @@ export class Conversation extends DurableObject<Env> {
     const accepted = await this.ctx.storage.transaction<Submission | Failure | { result: Submission; change: Change }>(async () => {
       if (this.deletedAt) return { error: '这个对话已删除。', status: 410 };
       const fingerprint = JSON.stringify([input.content ?? null, input.retryOf ?? null, input.revisionOf ?? null, input.branchHead ?? null,
-        input.selection?.providerId ?? null, input.selection?.model ?? null, input.showReasoning ?? null, input.reasoningEffort ?? null, input.settings ?? null, input.summaryThrough ?? null, input.imageIds ?? null, input.fileIds ?? null]);
+        input.selection?.providerId ?? null, input.selection?.model ?? null, input.showReasoning ?? null, input.reasoningEffort ?? null, input.settings ?? null, input.summaryThrough ?? null, input.imageIds ?? null, input.fileIds ?? null, input.tools ?? null]);
       const duplicate = () => {
         const existing = this.query<{ fingerprint: string; result: string }>('SELECT * FROM submissions WHERE id = ?', input.requestId).toArray()[0];
         if (!existing) return null;
@@ -357,8 +390,13 @@ export class Conversation extends DurableObject<Env> {
       };
       const existing = duplicate();
       if (existing) return existing;
-      if (input.summaryThrough && (input.content !== undefined || input.retryOf || input.revisionOf || input.branchHead || input.settings || input.reasoningEffort || input.showReasoning !== undefined || input.imageIds !== undefined || input.fileIds !== undefined)) return { error: '摘要请求不能同时指定聊天内容或会话参数。', status: 400 };
+      if (input.summaryThrough && (input.content !== undefined || input.retryOf || input.revisionOf || input.branchHead || input.settings || input.reasoningEffort || input.showReasoning !== undefined || input.imageIds !== undefined || input.fileIds !== undefined || input.tools !== undefined)) return { error: '摘要请求不能同时指定聊天内容或会话参数。', status: 400 };
       if (!config) return { error: '所选模型不可用，请配置供应商并启用模型。', status: 400 };
+      if (input.tools) {
+        try { assertWebToolSupport(config.modelMetadata, input.tools); }
+        catch (error) { return { error: error instanceof Error ? error.message : '工具配置无效。', status: 400 }; }
+        if (!this.webToolsConfigured(input.tools)) return { error: '尚未配置联网工具服务。', status: 400 };
+      }
       if (this.query(`SELECT id FROM messages WHERE status IN ('queued', 'running') LIMIT 1`).toArray().length) return { error: '这个对话正在生成回答，请等待完成或先停止。', status: 409 };
       if (this.ctx.storage.sql.databaseSize > MAX_DATABASE_START_BYTES) return { error: DATABASE_LIMIT_MESSAGE, status: 507 };
       const messages: Message[] = [];
@@ -452,6 +490,8 @@ export class Conversation extends DurableObject<Env> {
       if (!parent) this.insert(user);
       const summary = automatic ? this.queueSummary(conversationId, automatic, true) : undefined;
       this.insert(assistant);
+      if (input.tools) this.query('INSERT INTO message_web_tools VALUES (?, ?, ?, ?, ?)', assistant.id, input.requestId, JSON.stringify(input.tools),
+        createHash('sha256').update(fingerprint).digest('hex'), JSON.stringify({ status: 'active', round: 0, calls: [] } satisfies PublicToolTask));
       this.query('INSERT INTO runs (id, conversationId, assistantId, context, chunkSeq, updatedAt, config, streamVersion, executor) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)',
         runId, conversationId, assistant.id, JSON.stringify(automatic ? [] : context), Date.now(), JSON.stringify(generationConfig), STREAM_VERSION, 'do-v1');
       if (summary) this.query('INSERT INTO run_dependencies VALUES (?, ?, ?, ?)', runId, summary.runId!, summary.id,
@@ -477,12 +517,183 @@ export class Conversation extends DurableObject<Env> {
       runId, conversationId, summary.id, JSON.stringify(prepared.context), Date.now(), JSON.stringify(prepared.config), STREAM_VERSION, 'do-v1');
     return summary;
   }
+  protected webToolsConfigured(_enabled: readonly WebToolName[]): boolean { return false; }
+  protected async executeWebTool(call: WebToolCall, _signal: AbortSignal): Promise<WebToolOutcome> {
+    return { id: call.id, name: call.name, status: 'failed', error: '尚未配置联网工具服务。' };
+  }
+  protected createWebToolWorkflow(params: ToolWorkflowParams) { return this.env.WEB_TOOLS.create({ id: toolWorkflowId(params.conversationId, params.taskId), params }); }
+  protected async notifyWebToolWorkflow(taskId: string, round: number) {
+    const dispatch = this.query<WorkflowRow>('SELECT * FROM tool_workflows WHERE rootId = ?', taskId).one();
+    const instance = await this.env.WEB_TOOLS.get(toolWorkflowId(dispatch.conversationId, taskId));
+    await instance.sendEvent({ type: `model-${round}`, payload: { taskId, round } });
+  }
+  private toolRequest(messageId: string) { return this.query<ToolRequestRow>('SELECT * FROM message_web_tools WHERE messageId = ?', messageId).toArray()[0]; }
+  private refreshToolMessage(rootId: string, conversationId?: string): Change | null {
+    const request = this.query<ToolRequestRow>('SELECT * FROM message_web_tools WHERE rootId = ?', rootId).toArray()[0];
+    if (!request) return null;
+    const payload = JSON.stringify(this.tools.publicTask(rootId));
+    if (payload === request.payload) return null;
+    this.query('UPDATE message_web_tools SET payload = ? WHERE rootId = ?', payload, rootId);
+    return this.record([this.message(request.messageId)!], conversationId);
+  }
+  private initializeToolTasks() {
+    for (const request of this.query<ToolRequestRow>(`SELECT message_web_tools.* FROM message_web_tools JOIN messages ON messages.id = messageId
+      WHERE messages.status = 'queued' AND NOT EXISTS (SELECT 1 FROM web_tool_tasks WHERE web_tool_tasks.id = rootId)
+      AND NOT EXISTS (SELECT 1 FROM run_dependencies WHERE run_dependencies.runId = messages.runId)`).toArray()) {
+      const message = this.rawMessage(request.messageId)!, run = this.run(message.runId!)!;
+      try {
+        this.ctx.storage.transactionSync(() => {
+          const estimate = message.generation?.context;
+          if (!run.config || !estimate) throw new ProviderError('工具任务缺少已保存的配置或上下文预算。');
+          this.tools.create({ id: request.rootId, runId: run.id, messageId: message.id, requestHash: request.requestHash,
+            enabled: JSON.parse(request.enabled), inputBudget: estimate.inputBudget, initialTokens: estimate.totalTokens }, JSON.parse(run.config));
+          this.query('INSERT INTO tool_workflows(rootId, conversationId, nextAt) VALUES (?, ?, ?)', request.rootId, run.conversationId, Date.now());
+        });
+      } catch (error) { this.finish(run.id, 'failed', error instanceof Error ? error.message : '无法登记工具任务。'); }
+    }
+  }
+  private expireToolTasks() {
+    this.ctx.storage.transactionSync(() => this.tools.expire());
+    for (const row of this.query<{ runId: string; status: 'completed' | 'failed' | 'cancelled'; error: string | null }>(`SELECT messages.runId, web_tool_tasks.status, web_tool_tasks.error
+      FROM message_web_tools JOIN web_tool_tasks ON web_tool_tasks.id = rootId JOIN messages ON messages.id = messageId
+      WHERE web_tool_tasks.status != 'active' AND messages.status IN ('queued', 'running')`).toArray()) this.finish(row.runId, row.status, row.error);
+  }
+  private async flushToolWorkflows() {
+    for (const row of this.query<WorkflowRow>(`SELECT tool_workflows.* FROM tool_workflows JOIN web_tool_tasks ON web_tool_tasks.id = rootId
+      WHERE created = 0 AND status = 'active' AND nextAt <= ? LIMIT 2`, Date.now()).toArray()) {
+      try {
+        try { await this.createWebToolWorkflow({ conversationId: row.conversationId, taskId: row.rootId }); }
+        catch {
+          const instance = await this.env.WEB_TOOLS.get(toolWorkflowId(row.conversationId, row.rootId)), state = await instance.status();
+          if (['errored', 'terminated', 'complete'].includes(state.status)) { await this.failToolTask(row.rootId); continue; }
+        }
+        if (this.deletedAt) return;
+        this.query('UPDATE tool_workflows SET created = 1 WHERE rootId = ?', row.rootId);
+      } catch {
+        if (this.deletedAt) return;
+        this.query('UPDATE tool_workflows SET attempts = attempts + 1, nextAt = ? WHERE rootId = ?', Date.now() + Math.min(30_000, 5000 * 2 ** Math.min(row.attempts, 3)), row.rootId);
+      }
+    }
+    for (const notification of this.tools.notifications()) {
+      const dispatch = this.query<WorkflowRow>('SELECT * FROM tool_workflows WHERE rootId = ?', notification.rootId).toArray()[0];
+      if (!dispatch?.created) {
+        if (this.tools.state(notification.rootId).status !== 'active') this.tools.acknowledge(notification.rootId, notification.round);
+        else this.tools.deferNotification(notification.rootId, notification.round);
+        continue;
+      }
+      try {
+        await this.notifyWebToolWorkflow(notification.rootId, notification.round);
+        if (this.deletedAt) return;
+        this.tools.acknowledge(notification.rootId, notification.round);
+      } catch {
+        if (this.deletedAt) return;
+        if (this.tools.state(notification.rootId).status !== 'active') {
+          const status = await this.env.WEB_TOOLS.get(toolWorkflowId(dispatch.conversationId, notification.rootId)).then((instance) => instance.status()).catch(() => null);
+          if (status && ['complete', 'errored', 'terminated'].includes(status.status)) { this.tools.acknowledge(notification.rootId, notification.round); continue; }
+        }
+        this.tools.deferNotification(notification.rootId, notification.round);
+      }
+    }
+  }
+  private async scheduleAlarm(searchSuccess = false) {
+    await this.ctx.storage.transaction(async () => {
+      if (this.deletedAt) return;
+      const times: number[] = [];
+      if (this.query(`SELECT messages.id FROM messages WHERE messages.status IN ('queued', 'running')
+        AND (NOT EXISTS (SELECT 1 FROM message_web_tools WHERE messageId = messages.id) OR
+          EXISTS (SELECT 1 FROM tool_model_permits WHERE runId = messages.runId) OR
+          (EXISTS (SELECT 1 FROM message_web_tools WHERE messageId = messages.id) AND NOT EXISTS (SELECT 1 FROM web_tool_models WHERE runId = messages.runId)
+            AND NOT EXISTS (SELECT 1 FROM run_dependencies WHERE runId = messages.runId))) LIMIT 1`).toArray().length) times.push(Date.now() + 1000);
+      const workflow = this.query<{ next: number | null }>(`SELECT MIN(nextAt) AS next FROM tool_workflows JOIN web_tool_tasks ON web_tool_tasks.id = rootId WHERE created = 0 AND status = 'active'`).one().next;
+      if (workflow !== null) times.push(workflow);
+      const tools = this.tools.nextAlarm(); if (tools !== null) times.push(tools);
+      if (this.query('SELECT messageId FROM search_outbox LIMIT 1').toArray().length) times.push(searchSuccess ? Date.now() + 1000
+        : this.query<{ nextAt: number }>('SELECT nextAt FROM search_retry WHERE id = 1').toArray()[0]?.nextAt ?? Date.now() + 30_000);
+      if (times.length) await this.ctx.storage.setAlarm(Math.min(...times)); else await this.ctx.storage.deleteAlarm();
+    });
+  }
+  toolTaskState(taskId: string): ToolTaskState {
+    if (this.deletedAt || !this.query('SELECT id FROM web_tool_tasks WHERE id = ?', taskId).toArray().length)
+      return { id: taskId, status: 'cancelled', round: 0, deadline: 0, modelRequests: 0, toolRequests: 0, runId: '', messageId: '', phase: 'cancelled', calls: [], error: '这个工具任务已删除。' };
+    this.expireToolTasks(); return this.tools.state(taskId);
+  }
+  async scheduleToolModel(taskId: string, round: number): Promise<ToolTaskState> {
+    const state = this.toolTaskState(taskId);
+    if (state.status !== 'active') return state;
+    if (!Number.isInteger(round) || round < 0 || round > 3 || round > state.round + 1) throw new ProviderError('工具模型轮次无效。');
+    let change: Change | null;
+    try { change = this.ctx.storage.transactionSync(() => {
+      if (round === state.round + 1) {
+        const previous = this.run(state.runId)!;
+        if (!previous.config) throw new ProviderError('工具续接配置不存在。');
+        const runId = crypto.randomUUID();
+        this.tools.queueModel(taskId, round, runId, state.messageId, JSON.parse(previous.config));
+        this.query('INSERT INTO runs(id, conversationId, assistantId, context, updatedAt, config, streamVersion) VALUES (?, ?, ?, ?, ?, ?, ?)',
+          runId, previous.conversationId, state.messageId, previous.context, Date.now(), previous.config, STREAM_VERSION);
+        this.query("UPDATE runs SET config = NULL, context = '[]' WHERE id = ?", previous.id);
+        this.query('UPDATE messages SET runId = ?, status = ?, streamVersion = ?, durableOffset = 0 WHERE id = ?', runId, 'queued', STREAM_VERSION, state.messageId);
+      }
+      const current = this.tools.state(taskId);
+      if (round !== current.round || current.phase !== 'queued') return null;
+      const message = this.rawMessage(current.messageId)!, estimate = message.generation?.context;
+      if (!estimate) throw new ProviderError('工具任务缺少上下文估算。');
+      const planned = this.tools.model(current.runId)!.plannedTokens;
+      this.query('UPDATE message_generations SET payload = ? WHERE messageId = ?', JSON.stringify({ ...message.generation,
+        context: { ...estimate, toolTokens: planned - (estimate.totalTokens - (estimate.toolTokens ?? 0)), totalTokens: planned } }), current.messageId);
+      this.query('INSERT INTO tool_model_permits VALUES (?) ON CONFLICT DO NOTHING', current.runId);
+      this.query('UPDATE message_web_tools SET payload = ? WHERE rootId = ?', JSON.stringify(this.tools.publicTask(taskId)), taskId);
+      return this.record([this.message(state.messageId)!]);
+    }); } catch (error) {
+      this.finish(state.runId, 'failed', error instanceof Error ? error.message : '无法登记下一工具模型步骤。');
+      await this.scheduleAlarm(); return this.toolTaskState(taskId);
+    }
+    if (change) this.broadcast(change);
+    await this.scheduleAlarm(); await this.ctx.storage.sync();
+    return this.toolTaskState(taskId);
+  }
+  async runWebTool(taskId: string, callId: string): Promise<ToolTaskState> {
+    const state = this.toolTaskState(taskId); if (state.status !== 'active') return state;
+    const key = `${taskId}:${callId}`, existing = this.activeTools.get(key);
+    if (existing) return existing.result;
+    const claimed = this.ctx.storage.transactionSync(() => this.tools.claimTool(taskId, callId));
+    if (!claimed) return this.tools.state(taskId);
+    const abort = new AbortController(), call = this.tools.publicCalls(state.runId).find((item) => item.call.id === callId)!.call;
+    const change = this.ctx.storage.transactionSync(() => this.refreshToolMessage(taskId)); if (change) this.broadcast(change);
+    const result = (async () => {
+      const timer = setTimeout(() => abort.abort(), Math.max(1, Math.min(15_000, state.deadline - Date.now())));
+      try {
+        await this.ctx.storage.sync();
+        let outcome: WebToolOutcome;
+        try { outcome = await this.executeWebTool(call, abort.signal); }
+        catch { outcome = { id: call.id, name: call.name, status: 'failed', error: '联网工具执行失败或超时。' }; }
+        const current = this.toolTaskState(taskId); if (current.status !== 'active') return current;
+        const update = this.ctx.storage.transactionSync(() => {
+          try { this.tools.finishTool(taskId, callId, outcome); }
+          catch { this.tools.finishTool(taskId, callId, { id: call.id, name: call.name, status: 'failed', error: '联网工具返回无效结果。' }); }
+          return this.refreshToolMessage(taskId);
+        });
+        if (update) this.broadcast(update);
+        await this.ctx.storage.sync(); return this.toolTaskState(taskId);
+      } finally { clearTimeout(timer); abort.abort(); this.activeTools.delete(key); }
+    })();
+    this.activeTools.set(key, { abort, result }); return result;
+  }
+  async failToolTask(taskId: string): Promise<ToolTaskState> {
+    const state = this.toolTaskState(taskId);
+    if (state.status === 'active') this.finish(state.runId, 'failed', '工具编排中断。已保留保存内容，请主动重新生成。');
+    await this.scheduleAlarm(); return this.toolTaskState(taskId);
+  }
   async alarm() {
     if (this.deletedAt) return;
     // An RPC re-entry during a live alarm never starts a second upstream call.
     if (this.activeGeneration) return;
     const searchSuccess = await this.flushSearchIndex();
+    if (this.query("SELECT messages.id FROM message_web_tools JOIN messages ON messages.id = messageId WHERE messages.status IN ('queued', 'running') LIMIT 1").toArray().length) await this.ctx.storage.setAlarm(Date.now() + 30_000);
+    this.expireToolTasks(); this.initializeToolTasks();
+    await this.flushToolWorkflows();
     for (const run of this.query<Run>(`SELECT runs.* FROM runs JOIN messages ON messages.id = runs.assistantId WHERE messages.status IN ('queued', 'running') AND NOT EXISTS (SELECT 1 FROM run_dependencies WHERE run_dependencies.runId = runs.id)`).toArray()) {
+      if (this.rawMessage(run.assistantId)?.runId !== run.id) continue;
+      if (this.toolRequest(run.assistantId) && !this.query('SELECT runId FROM tool_model_permits WHERE runId = ?', run.id).toArray().length) continue;
       const deletion = await this.env.LIBRARY.getByName('personal').deletedAt(run.conversationId);
       if (this.deletedAt) return;
       if (deletion) { await this.deleteConversation(deletion); return; }
@@ -494,14 +705,9 @@ export class Conversation extends DurableObject<Env> {
         if (claim?.claimed) await this.runInObject(run.id, claim);
       }
     }
+    await this.flushToolWorkflows();
     // Acceptance and cleanup both use transactions so cleanup cannot erase a new task's alarm.
-    await this.ctx.storage.transaction(async () => {
-      if (this.deletedAt) return;
-      const pending = this.query<Run>(`SELECT runs.* FROM runs JOIN messages ON messages.id = runs.assistantId WHERE messages.status IN ('queued', 'running')`).toArray();
-      if (pending.length) await this.ctx.storage.setAlarm(Date.now() + 1000);
-      else if (this.query('SELECT messageId FROM search_outbox LIMIT 1').toArray().length) await this.ctx.storage.setAlarm(searchSuccess ? Date.now() + 1000 : this.query<{ nextAt: number }>('SELECT nextAt FROM search_retry WHERE id = 1').toArray()[0]?.nextAt ?? Date.now() + 30_000);
-      else await this.ctx.storage.deleteAlarm();
-    });
+    await this.scheduleAlarm(searchSuccess);
   }
   private finishInterrupted(run: Run) {
     this.finish(run.id, 'failed', run.cancelRequested
@@ -524,6 +730,7 @@ export class Conversation extends DurableObject<Env> {
   }
   protected openModelStream(...args: Parameters<typeof openProviderStream>) { return openProviderStream(...args); }
   private async runInObject(runId: string, claim: Claim) {
+    const toolModel = this.tools.model(runId), deadline = toolModel ? this.tools.state(toolModel.rootId).deadline : Date.now() + 14 * 60_000;
     const abort = new AbortController();
     const active: ActiveGeneration = { runId, abort, cancelled: false, buffer: new GenerationBuffer(runId, claim.assistantId!,
       (batches) => {
@@ -538,16 +745,29 @@ export class Conversation extends DurableObject<Env> {
         return saved;
       }, (batch) => this.preview(batch)) };
     this.activeGeneration = active;
-    const timeout = setTimeout(() => abort.abort(), 14 * 60_000);
+    if (toolModel) active.privateBuffer = new GenerationBuffer(runId, claim.assistantId!, (batches) => {
+      if (this.deletedAt || !isActive(this.rawMessage(claim.assistantId!) ?? { status: 'completed' })) return false;
+      this.ctx.storage.transactionSync(() => {
+        this.privateToolStreams.append({ runId, messageId: claim.assistantId!, batches });
+        if (this.ctx.storage.sql.databaseSize > MAX_DATABASE_WRITE_BYTES) throw new ProviderError(DATABASE_LIMIT_MESSAGE);
+      });
+      const barrier = (active.persistence ?? Promise.resolve()).then(() => this.ctx.storage.sync()); active.persistence = barrier;
+      void barrier.then(() => { if (active.persistence === barrier) active.persistence = undefined; }, (error) => {
+        active.failure = error instanceof Error ? error : new Error('Tool persistence failed'); abort.abort();
+      });
+      return true;
+    });
+    const relay = toolModel && claim.config ? new ToolStreamRelay(claim.config, (bytes) => active.privateBuffer!.add(bytes), (bytes) => active.buffer.add(bytes)) : undefined;
+    const timeout = setTimeout(() => abort.abort(), Math.max(1, Math.min(14 * 60_000, deadline - Date.now())));
     try {
       // A surviving watchdog or alarm retry will finish an orphaned running task, never replay it.
-      await this.ctx.storage.setAlarm(Date.now() + 15 * 60_000);
+      await this.ctx.storage.setAlarm(toolModel ? deadline : Date.now() + 15 * 60_000);
       await this.ctx.storage.sync();
       if (active.cancelled || abort.signal.aborted) throw new GenerationCancelled();
       if (!claim.config) throw new ProviderError('此任务缺少已保存的供应商配置，请主动重新生成。');
       active.timer = setInterval(() => {
         if (active.cancelled || active.persistence) return;
-        try { active.buffer.tick(); }
+        try { active.privateBuffer?.tick(); active.buffer.tick(); }
         catch (error) { active.failure = error instanceof Error ? error : new Error('Generation persistence failed'); abort.abort(); }
       }, 100);
       this.query('INSERT INTO generation_timings VALUES (?, ?, NULL)', runId, Date.now());
@@ -566,7 +786,7 @@ export class Conversation extends DurableObject<Env> {
         const result = await this.env.LIBRARY.getByName('personal').documentText(this.run(runId)!.conversationId, file.attachmentId);
         if ('error' in result) throw new ProviderError(result.error);
         return result.value.text;
-      }), reader = body.getReader();
+      }, toolModel ? { enabled: this.tools.enabled(toolModel.rootId), exchanges: this.tools.exchanges(toolModel.rootId, toolModel.round, claim.config) } : undefined), reader = body.getReader();
       try {
         while (true) {
           if (active.cancelled) throw new GenerationCancelled();
@@ -578,12 +798,14 @@ export class Conversation extends DurableObject<Env> {
           if (next.done) { active.endedAt ??= receivedAt; probe.end(receivedAt); break; }
           if (active.cancelled) throw new GenerationCancelled();
           probe.feed(next.value, receivedAt);
-          active.buffer.add(next.value);
+          if (relay) relay.add(next.value); else active.buffer.add(next.value);
         }
       } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
-      active.buffer.flush();
+      relay?.end(); active.privateBuffer?.flush(); active.buffer.flush();
       await active.persistence;
-      this.finish(runId, active.cancelled ? 'cancelled' : 'completed', null);
+      const turn = toolModel && !active.cancelled ? await collectProviderToolTurn(claim.config, this.tools.enabled(toolModel.rootId),
+        this.privateToolStreams.replay(runId, claim.assistantId!), abort.signal) : undefined;
+      this.finish(runId, active.cancelled ? 'cancelled' : 'completed', null, turn);
     } catch (error) {
       active.endedAt ??= Date.now();
       let failure = active.failure ?? error;
@@ -592,7 +814,7 @@ export class Conversation extends DurableObject<Env> {
         if (!(saveError instanceof GenerationCancelled)) { failure = saveError; tailFailed = true; }
       }
       const cancelled = active.cancelled && !tailFailed;
-      this.finish(runId, cancelled ? 'cancelled' : 'failed', cancelled ? null : failure instanceof ProviderError
+      this.finish(runId, cancelled ? 'cancelled' : 'failed', cancelled ? null : toolModel && Date.now() >= deadline ? '工具任务超过 10 分钟期限，未启动后续步骤。' : failure instanceof ProviderError || failure instanceof StreamParseError
         ? failure.message : '生成中断或无法保存尾部。已保留最近检查点，请主动重新生成。');
     } finally {
       if (active.timer) clearInterval(active.timer);
@@ -607,10 +829,12 @@ export class Conversation extends DurableObject<Env> {
     if (message.status !== 'queued') return { context: [], claimed: false, status: message.status };
     if (this.env.GENERATION_METRICS === '1') this.meter = new GenerationMeter(runId, Date.now, 'claim-to-terminal', 'do-v1');
     const change = this.ctx.storage.transactionSync(() => {
+      if (this.tools.model(runId) && !this.tools.claimModel(runId)) return null;
       this.query('UPDATE messages SET status = ? WHERE id = ?', 'running', message.id);
       this.query('UPDATE runs SET updatedAt = ?, startedAt = ? WHERE id = ?', Date.now(), Date.now(), runId);
       return this.record([this.message(message.id)!]);
     });
+    if (!change) return null;
     this.broadcast(change);
     return { context: JSON.parse(run.context), ...(run.config ? { config: JSON.parse(run.config) as ProviderConfig } : {}), claimed: true, status: 'running',
       streamVersion: run.streamVersion ?? undefined, assistantId: run.assistantId };
@@ -644,45 +868,72 @@ export class Conversation extends DurableObject<Env> {
     this.broadcast(change);
     return true;
   }
-  finish(runId: string, status: 'completed' | 'failed' | 'cancelled', error: string | null = null) {
+  finish(runId: string, status: 'completed' | 'failed' | 'cancelled', error: string | null = null, toolTurn?: ProviderToolTurn) {
     if (this.deletedAt) return;
     const run = this.run(runId);
     const message = run && this.message(run.assistantId);
-    if (!run || !message || !isActive(message)) return;
+    if (!run || !message || message.runId !== runId || !isActive(message)) return;
+    const toolModel = this.tools.model(runId), toolRequest = this.toolRequest(message.id), prior = message.generation;
+    if (toolModel && status === 'completed' && !toolTurn) { status = 'failed'; error = '工具模型步骤缺少完整续接资料。'; }
     if (this.env.GENERATION_METRICS === '1' && !this.meter) this.meter = new GenerationMeter(runId, Date.now, 'since-last-resume', 'do-v1');
     if (message.streamState) {
       const state = message.streamState;
       const parser = new ProviderStream(state.protocol, state.showReasoning, state, messageText(message), messageText(message, 'reasoning'));
       parser.end();
       if (status === 'completed') {
-        try { parser.assertComplete(); }
+        try { if (toolTurn?.calls.length) parser.assertEnded(); else parser.assertComplete(); }
         catch (failure) { status = 'failed'; error = failure instanceof StreamParseError ? failure.message : '无法验证供应商回答。'; }
       }
       message.parts = messageParts(parser.content, parser.reasoning); message.streamState = parser.checkpoint();
       message.generation = { ...message.generation, finishReason: message.streamState.finishReason, usage: message.streamState.usage,
         usageIsFinal: message.streamState.usageIsFinal && message.streamState.done && !message.streamState.failure && ['stop', 'length'].includes(message.streamState.finishReason ?? '') };
+      if (toolModel) {
+        message.generation = { ...message.generation, ...addGenerationUsage(toolModel.round ? prior : undefined,
+          { usage: toolTurn?.usage ?? message.streamState.usage, usageIsFinal: toolTurn?.usageIsFinal ?? message.generation.usageIsFinal }) };
+      }
       this.meter?.streamCounts(message.streamState);
     }
-    const timing = this.query<{ providerStartedAt: number; firstTokenAt: number | null }>('SELECT providerStartedAt, firstTokenAt FROM generation_timings WHERE runId = ?', runId).toArray()[0];
+    const rootTiming = toolModel ? this.query<{ providerStartedAt: number | null; firstTokenAt: number | null; claimedAt: number | null }>(`SELECT MIN(generation_timings.providerStartedAt) AS providerStartedAt,
+      MIN(generation_timings.firstTokenAt) AS firstTokenAt, MIN(runs.startedAt) AS claimedAt FROM web_tool_models
+      JOIN runs ON runs.id = web_tool_models.runId LEFT JOIN generation_timings ON generation_timings.runId = runs.id WHERE rootId = ?`, toolModel.rootId).one() : undefined;
+    const timing = rootTiming ? rootTiming.providerStartedAt === null ? undefined : { providerStartedAt: rootTiming.providerStartedAt, firstTokenAt: rootTiming.firstTokenAt }
+      : this.query<{ providerStartedAt: number; firstTokenAt: number | null }>('SELECT providerStartedAt, firstTokenAt FROM generation_timings WHERE runId = ?', runId).toArray()[0];
     if (status === 'completed' && message.summary && (!messageText(message).trim() || message.streamState?.finishReason === 'length' || messageText(message).length > MAX_SUMMARY_CHARACTERS)) {
       status = 'failed'; error = '摘要未完整生成或超过长度限制，未用于后续上下文。请主动重新生成。';
     }
     message.generation = { usage: {}, usageIsFinal: false, ...message.generation,
-      timing: generationTiming(message.createdAt, run.startedAt, timing, this.activeGeneration?.runId === runId ? this.activeGeneration.endedAt : undefined) };
-    const change = this.ctx.storage.transactionSync(() => {
+      timing: generationTiming(message.createdAt, rootTiming?.claimedAt ?? run.startedAt, timing,
+        this.activeGeneration?.runId === runId ? this.activeGeneration.endedAt : toolModel ? Date.now() : undefined) };
+    const { change, finalStatus } = this.ctx.storage.transactionSync(() => {
+      let finalStatus: MessageStatus = status;
+      if (toolModel) {
+        if (status === 'completed' && toolTurn) this.tools.saveTurn(runId, toolTurn, JSON.parse(run.config!));
+        else this.tools.stop(toolModel.rootId, status === 'completed' ? 'failed' : status, error ?? undefined);
+        const state = this.tools.state(toolModel.rootId);
+        finalStatus = state.status === 'active' ? 'running' : state.status;
+        error = state.error ?? error;
+        this.query('UPDATE message_web_tools SET payload = ? WHERE rootId = ?', JSON.stringify(this.tools.publicTask(toolModel.rootId)), toolModel.rootId);
+        this.query('DELETE FROM tool_model_permits WHERE runId = ?', runId);
+      } else if (toolRequest) this.query('UPDATE message_web_tools SET payload = ? WHERE messageId = ?', JSON.stringify({ status: finalStatus, round: 0, calls: [] }), message.id);
       if (message.streamVersion === STREAM_VERSION) this.journal.compact(message);
+      if (toolRequest) this.privateToolStreams.purge(runId);
       this.query('INSERT INTO message_generations (messageId, payload) VALUES (?, ?) ON CONFLICT(messageId) DO UPDATE SET payload = excluded.payload', message.id, JSON.stringify(message.generation));
-      this.query('UPDATE messages SET status = ?, error = ? WHERE id = ?', status, error, message.id);
-      this.query("UPDATE runs SET config = NULL, context = '[]' WHERE id = ?", runId);
-      const terminal = this.record([this.message(message.id)!, ...this.resolveDependentAnswers(runId, status)], run.conversationId);
+      this.query('UPDATE messages SET status = ?, error = ?, streamVersion = ? WHERE id = ?', finalStatus, error,
+        toolModel && finalStatus === 'running' ? null : message.streamVersion ?? null, message.id);
+      if (finalStatus !== 'running') this.query("UPDATE runs SET config = NULL, context = '[]' WHERE assistantId = ?", message.id);
+      const terminal = this.record([this.message(message.id)!, ...this.resolveDependentAnswers(runId, finalStatus)], run.conversationId);
       if (this.ctx.storage.sql.databaseSize > MAX_DATABASE_BYTES) throw new ProviderError(DATABASE_LIMIT_MESSAGE);
-      return terminal;
+      return { change: terminal, finalStatus };
     });
     this.broadcast(change);
+    if (toolModel && finalStatus !== 'running') {
+      if (this.activeGeneration?.runId === runId) this.activeGeneration.abort.abort();
+      for (const [key, active] of this.activeTools) if (key.startsWith(`${toolModel.rootId}:`)) active.abort.abort();
+    }
     this.updateSearchSoon();
     if (this.meter?.runId === runId) {
       const final = this.message(message.id)!;
-      const report = this.meter.report(status, this.ctx.storage.sql.databaseSize, messageText(final).length, messageText(final, 'reasoning').length);
+      const report = this.meter.report(finalStatus, this.ctx.storage.sql.databaseSize, messageText(final).length, messageText(final, 'reasoning').length);
       this.meter = undefined;
       // One diagnostic row per generation, excluded from the measured application SQL window.
       try {
@@ -716,6 +967,8 @@ export class Conversation extends DurableObject<Env> {
       if (status !== 'queued') {
         this.query("UPDATE runs SET config = NULL, context = '[]' WHERE id = ?", run.id);
         this.query('DELETE FROM generation_timings WHERE runId = ?', run.id);
+        if (answer.tools) this.query('UPDATE message_web_tools SET payload = ? WHERE messageId = ?',
+          JSON.stringify({ status, round: 0, calls: [] } satisfies PublicToolTask), answer.id);
       }
       this.query('UPDATE messages SET status = ?, error = ? WHERE id = ?', status, error, answer.id);
       this.query('DELETE FROM run_dependencies WHERE runId = ?', run.id);
@@ -725,6 +978,8 @@ export class Conversation extends DurableObject<Env> {
   }
   async cancel(runId: string) {
     if (this.deletedAt) return;
+    const original = this.run(runId), originalMessage = original && this.rawMessage(original.assistantId);
+    if (originalMessage?.runId && this.toolRequest(originalMessage.id)) runId = originalMessage.runId;
     const run = this.run(runId), message = run && this.rawMessage(run.assistantId);
     if (!run || !message || !isActive(message)) return;
     const dependency = this.query<Dependency>('SELECT * FROM run_dependencies WHERE runId = ? OR summaryRunId = ?', runId, runId).toArray()[0];
@@ -742,12 +997,14 @@ export class Conversation extends DurableObject<Env> {
       if (!(failure instanceof GenerationCancelled)) error = '停止时未能保存尾部。已保留最近检查点，请主动重新生成。';
     }
     for (const id of ids) this.finish(id, error && active?.runId === id ? 'failed' : 'cancelled', error && active?.runId === id ? error : null);
+    await this.flushToolWorkflows(); await this.scheduleAlarm();
     await this.ctx.storage.sync();
   }
   closeSessions() { for (const socket of this.ctx.getWebSockets()) socket.close(4001, 'Signed out'); }
   protected eraseDeletedStorage() { return this.ctx.storage.deleteAll(); }
   async deleteConversation(deletedAt: number) {
     this.deletedAt = deletedAt;
+    for (const tool of this.activeTools.values()) tool.abort.abort();
     const active = this.activeGeneration;
     if (active) {
       active.cancelled = true; active.abort.abort();

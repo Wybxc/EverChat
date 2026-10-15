@@ -2,11 +2,12 @@ import type { ConversationInfo, ConversationSettings, Message, PromptPreset, Pro
 import * as v from 'valibot';
 import { conversationSettingsSchema } from './conversation-settings';
 import { promptPresetListSchema } from './prompt-presets';
-import { generationSchema } from './generation';
+import { addGenerationUsage, generationSchema } from './generation';
 import { messagePartsSchema } from './message-content';
 import { modelSchema } from './provider-settings';
 import { MAX_SUMMARIES, MAX_SUMMARY_CHARACTERS, summaryCoverageSchema } from './summaries';
 import { branchPath } from './types';
+import { publicToolTaskSchema } from './web-tools';
 
 export const BACKUP_FORMAT = 'everchat-backup';
 export const BACKUP_VERSION = 1 as const;
@@ -27,6 +28,7 @@ export interface BackupMessage {
   providerId: string | null; model: string | null; modelName: string | null;
   generation?: Message['generation'];
   summary?: Message['summary'];
+  tools?: Message['tools'];
   deletedAt?: number | null;
 }
 export interface ConversationBackup {
@@ -41,7 +43,7 @@ export interface EverChatBackup {
 export function backupMessage(message: Message): BackupMessage {
   const partial = message.status === 'queued' || message.status === 'running';
   const generation = partial && message.streamState
-    ? { ...message.generation, usage: message.streamState.usage, usageIsFinal: false } : message.generation;
+    ? { ...message.generation, ...addGenerationUsage(message.tools?.round ? message.generation : undefined, { usage: message.streamState.usage, usageIsFinal: false }) } : message.generation;
   return {
     id: message.id, role: message.role, parts: message.deletedAt ? [] : message.parts,
     status: partial ? 'failed' : message.status, createdAt: message.createdAt,
@@ -50,6 +52,8 @@ export function backupMessage(message: Message): BackupMessage {
     providerId: message.providerId ?? null, model: message.model ?? null, modelName: message.modelName ?? null,
     ...(!message.deletedAt && message.role === 'assistant' && generation ? { generation } : {}),
     ...(message.summary ? { summary: message.summary } : {}),
+    ...(!message.deletedAt && message.tools ? { tools: partial ? { ...message.tools, status: 'failed' as const,
+      calls: message.tools.calls.map((item) => ['queued', 'running'].includes(item.state) ? { ...item, state: 'cancelled' as const } : item) } : message.tools } : {}),
     ...(message.deletedAt ? { deletedAt: message.deletedAt } : {}),
   };
 }
@@ -96,7 +100,9 @@ export function validateBackup(value: unknown): EverChatBackup {
     if (message.deletedAt) return { ...fields, parts: [], error: null };
     const generation = rawGeneration === undefined ? undefined : v.safeParse(generationSchema, rawGeneration);
     if (generation && (!generation.success || message.role !== 'assistant')) throw new Error('备份中的生成元数据无效。');
-    return { ...fields, ...(generation?.success ? { generation: generation.output } : {}) } as unknown as BackupMessage;
+    const tools = message.tools === undefined ? undefined : v.safeParse(publicToolTaskSchema, message.tools);
+    if (tools && (!tools.success || message.role !== 'assistant' || tools.output.status !== message.status)) throw new Error('备份中的工具过程无效。');
+    return { ...fields, ...(generation?.success ? { generation: generation.output } : {}), ...(tools?.success ? { tools: tools.output } : {}) } as unknown as BackupMessage;
   });
   if (messages.filter((message) => message.summary && !message.deletedAt).length > MAX_SUMMARIES) throw new Error('备份中的摘要数量超过上限。');
   for (const message of messages) if (message.summary) {

@@ -11,6 +11,10 @@ import { SUMMARY_SYSTEM_PROMPT } from '../../shared/summaries';
 import { AttachmentStore } from '../../worker/attachments';
 import { HttpError } from '../../worker/http';
 import { ToolJournalFixture, type ToolJournalControl } from './tool-task-journal';
+import { toolFinalStream, toolStream } from './tool-streams';
+import type { WebToolCall, WebToolName, WebToolOutcome } from '../../shared/web-tools';
+import { toolWorkflowId, type ToolWorkflowParams } from '../../worker/tool-workflow';
+export { WebToolWorkflow } from '../../worker/tool-workflow';
 
 type AttachmentControl = { id?: string; expire?: boolean; count?: number; reset?: boolean; holdDelete?: string; releaseDelete?: boolean;
   failDelete?: string; holdTextPut?: string; holdTextRead?: string; releaseText?: boolean; resetLibrary?: boolean; unconfigured?: boolean; expireCopy?: string; expireImport?: string; noBucket?: boolean };
@@ -154,6 +158,43 @@ export class Library extends ProductionLibrary {
 }
 
 export class Conversation extends ProductionConversation {
+  private consumeToolFault(kind: string) {
+    const sql = this.ctx.storage.sql;
+    sql.exec('CREATE TABLE IF NOT EXISTS fixture_tool_faults (kind TEXT PRIMARY KEY, remaining INTEGER NOT NULL)');
+    if (!sql.exec<{ remaining: number }>('SELECT remaining FROM fixture_tool_faults WHERE kind = ? AND remaining > 0', kind).toArray().length) return false;
+    sql.exec('UPDATE fixture_tool_faults SET remaining = remaining - 1 WHERE kind = ?', kind); return true;
+  }
+  protected override async createWebToolWorkflow(params: ToolWorkflowParams) {
+    const instance = await super.createWebToolWorkflow(params);
+    if (this.consumeToolFault('create-lost')) throw new Error('Injected lost Workflow creation response');
+    return instance;
+  }
+  protected override async notifyWebToolWorkflow(taskId: string, round: number) {
+    if (this.consumeToolFault('event-once')) throw new Error('Injected Workflow event delivery failure');
+    await super.notifyWebToolWorkflow(taskId, round);
+  }
+  protected override webToolsConfigured(_names: readonly WebToolName[]) { return true; }
+  protected override async executeWebTool(call: WebToolCall, signal: AbortSignal): Promise<WebToolOutcome> {
+    this.ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS fixture_tool_calls (id TEXT PRIMARY KEY, calls INTEGER NOT NULL)');
+    this.ctx.storage.sql.exec('INSERT INTO fixture_tool_calls VALUES (?, 1) ON CONFLICT(id) DO UPDATE SET calls = calls + 1', call.id);
+    await new Promise<void>((resolve) => { const timer = setTimeout(resolve, 1500); signal.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true }); });
+    signal.throwIfAborted();
+    return { id: call.id, name: call.name, status: 'completed', sources: [{ title: 'Cloudflare 文档', url: 'https://developers.cloudflare.com/', content: '本地工具结果🙂' }] };
+  }
+  async fixtureToolRuntime(taskId: string, fault?: string, expire?: boolean) {
+    const sql = this.ctx.storage.sql;
+    if (fault) { sql.exec('CREATE TABLE IF NOT EXISTS fixture_tool_faults (kind TEXT PRIMARY KEY, remaining INTEGER NOT NULL)'); sql.exec('INSERT INTO fixture_tool_faults VALUES (?, 1) ON CONFLICT(kind) DO UPDATE SET remaining = 1', fault); }
+    const exists = sql.exec('SELECT id FROM web_tool_tasks WHERE id = ?', taskId).toArray().length;
+    if (exists && expire) sql.exec('UPDATE web_tool_tasks SET deadline = ? WHERE id = ?', Date.now() - 1, taskId);
+    const state = this.toolTaskState(taskId);
+    const dispatch = sql.exec<{ conversationId: string }>('SELECT conversationId FROM tool_workflows WHERE rootId = ?', taskId).toArray()[0];
+    return { state, workflow: dispatch ? await this.env.WEB_TOOLS.get(toolWorkflowId(dispatch.conversationId, taskId)).then((instance) => instance.status()).catch(() => null) : null,
+      privatePayloads: sql.exec<{ count: number }>('SELECT COUNT(*) AS count FROM web_tool_models WHERE turn IS NOT NULL').one().count,
+      modelCalls: this.fixtureResources().calls,
+      toolCalls: this.fixtureCount('fixture_tool_calls') ? sql.exec<{ calls: number }>('SELECT SUM(calls) AS calls FROM fixture_tool_calls').one().calls : 0,
+      privateStreams: sql.exec<{ count: number }>('SELECT COUNT(*) AS count FROM tool_stream_commits').one().count,
+      alarmAt: await this.ctx.storage.getAlarm() };
+  }
   private toolJournalFixture?: ToolJournalFixture;
   async fixtureToolJournal(input: ToolJournalControl) {
     if (input.action === 'reset') { await this.ctx.storage.sync(); this.ctx.abort('Intentional tool journal reset', { retryAlarm: true }); }
@@ -216,9 +257,9 @@ export class Conversation extends ProductionConversation {
   }
   protected override async openModelStream(...args: Parameters<typeof openProviderStream>) {
     if (args[0].model === 'benchmark-summary-write-failure') this.failNextCommit = true;
-    if (args[0].model.startsWith('alarm-') || args[0].model.startsWith('benchmark-') || args[0].model.startsWith('vision-') || args[0].model.startsWith('documents-')) {
+    if (args[0].model.startsWith('alarm-') || args[0].model.startsWith('benchmark-') || args[0].model.startsWith('vision-') || args[0].model.startsWith('documents-') || args[0].model.startsWith('tools-')) {
       this.ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS fixture_calls (runId TEXT PRIMARY KEY, calls INTEGER NOT NULL)');
-      const run = this.ctx.storage.sql.exec<{ id: string; conversationId: string }>(`SELECT runs.id, runs.conversationId FROM runs JOIN messages ON messages.id = runs.assistantId WHERE messages.status = 'running'`).one();
+      const run = this.ctx.storage.sql.exec<{ id: string; conversationId: string }>(`SELECT runs.id, runs.conversationId FROM runs JOIN messages ON messages.id = runs.assistantId AND messages.runId = runs.id WHERE messages.status = 'running'`).one();
       this.ctx.storage.sql.exec('INSERT INTO fixture_calls VALUES (?, 1) ON CONFLICT(runId) DO UPDATE SET calls = calls + 1', run.id);
       await (this.env.LIBRARY as unknown as DurableObjectNamespace<Library>).getByName('personal').fixtureSupplierCall(run.conversationId);
       if (args[0].model === 'alarm-cancel-tail-failure') {
@@ -346,7 +387,7 @@ export default {
       const { id, fail, rebuild } = await request.json() as { id?: string; fail?: boolean; rebuild?: boolean };
       return Response.json(await (env.LIBRARY as unknown as DurableObjectNamespace<Library>).getByName('personal').fixtureSearchControl(id, fail, rebuild));
     }
-    const match = /^\/api\/__test\/conversations\/([0-9a-f-]{36})\/(state|context|parent|alarm|abort|abort-stop|history|search-history|indexed-history|search-state|search-reset|search-retry|fill|resources|storage-error|delete-failure|delete-reset|deletion-state|late-submit|tool-journal)$/.exec(url.pathname);
+    const match = /^\/api\/__test\/conversations\/([0-9a-f-]{36})\/(state|context|parent|alarm|abort|abort-stop|history|search-history|indexed-history|search-state|search-reset|search-retry|fill|resources|storage-error|delete-failure|delete-reset|deletion-state|late-submit|tool-journal|tool-runtime)$/.exec(url.pathname);
     if (!match) return production.fetch(request, env, ctx);
     if (request.method !== 'POST' || request.headers.get('Origin') !== url.origin) return new Response('Forbidden', { status: 403 });
     if (!await authenticated(request, env)) return new Response('Unauthorized', { status: 401 });
@@ -359,8 +400,9 @@ export default {
         return Response.json({ error: error instanceof Error ? error.message : 'Tool journal fixture failed' }, { status: 400 });
       }
     }
-    const { runId, pairs, target, count, messageId, parentId } = await request.json() as { runId: string; pairs: number; target: number; count: number; messageId: string; parentId: string };
+    const { runId, pairs, target, count, messageId, parentId, taskId, fault, expire } = await request.json() as { runId: string; pairs: number; target: number; count: number; messageId: string; parentId: string; taskId: string; fault?: string; expire?: boolean };
     switch (match[2]) {
+      case 'tool-runtime': return Response.json(await conversation.fixtureToolRuntime(taskId, fault, expire));
       case 'search-history': return Response.json(await conversation.fixtureSearchHistory());
       case 'indexed-history': await conversation.fixtureIndexedHistory(count); break;
       case 'search-state': return Response.json(await conversation.fixtureSearchState(false));
@@ -417,6 +459,22 @@ globalThis.fetch = async (input, init) => {
   if (!['/v1/chat/completions', '/v1/responses', '/v1/messages'].includes(url.pathname) && !url.pathname.includes(':streamGenerateContent')) return new Response('Not found', { status: 404 });
   const requestBody = await request.clone().json() as { model: string; thinking?: { type: string }; reasoning_effort?: string; reasoning?: { effort?: string } };
   const encoder = new TextEncoder();
+  const toolKind = requestBody.model?.startsWith('tools-') ? requestBody.model.replace(/^tools-(?:loop-|pause-)?/, '') as ProviderKind
+    : url.pathname.includes('/models/tools-gemini:') ? 'gemini' : undefined;
+  if (toolKind && providerStreams[toolKind]) {
+    const serialized = JSON.stringify(requestBody), continued = serialized.includes('本地工具结果');
+    if (!serialized.includes('web_search')) return Response.json({ error: 'Missing tools' }, { status: 400 });
+    if (continued && (toolKind === 'anthropic' && !serialized.includes('fixture-signature')
+      || toolKind === 'openai-responses' && !serialized.includes('encrypted-fixture') || toolKind === 'gemini' && !serialized.includes('fixture-signature'))) return Response.json({ error: 'Missing continuation metadata' }, { status: 400 });
+    const loop = requestBody.model?.startsWith('tools-loop-'), round = loop ? (serialized.match(/"role":"tool"/g) ?? []).length / 2 : 0;
+    let wire = continued && !loop ? toolFinalStream(toolKind) : toolStream(toolKind, { count: 2 }).replaceAll('call_0', `call_${round}_0`).replaceAll('call_1', `call_${round}_1`);
+    if (!continued && toolKind === 'openai-chat') wire = wire.replace('"reasoning_content":"检索资料🙂"', '"reasoning_content":"检索资料🙂","content":"先查阅资料。\\n"');
+    let sent = false;
+    return new Response(new ReadableStream<Uint8Array>({ async pull(controller) {
+      await new Promise((resolve) => setTimeout(resolve, sent ? requestBody.model?.startsWith('tools-pause-') ? 5000 : 1800 : 250));
+      if (!sent) { sent = true; controller.enqueue(encoder.encode(wire)); } else controller.close();
+    } }), { headers: { 'Content-Type': 'text/event-stream' } });
+  }
   if (requestBody.model?.startsWith('benchmark-summary-')) {
     const serialized = JSON.stringify(requestBody);
     if (!serialized.includes(SUMMARY_SYSTEM_PROMPT)) return Response.json({ error: { message: 'Summary instructions missing' } }, { status: 400 });

@@ -43,6 +43,20 @@ export const webToolOutcomeSchema = v.variant('status', [
   v.strictObject({ id: callId, name, status: v.literal('failed'), error: safeText(500) }),
 ]);
 export type WebToolOutcome = v.InferOutput<typeof webToolOutcomeSchema>;
+export interface PublicToolCall { round: number; call: WebToolCall; state: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'; result?: WebToolOutcome }
+export interface PublicToolTask { status: 'active' | 'completed' | 'failed' | 'cancelled'; round: number; calls: PublicToolCall[] }
+const round = v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(MAX_TOOL_EXCHANGES));
+export const publicToolTaskSchema = v.pipe(v.strictObject({
+  status: v.picklist(['active', 'completed', 'failed', 'cancelled']), round,
+  calls: v.pipe(v.array(v.strictObject({ round, call: webToolCallSchema, state: v.picklist(['queued', 'running', 'completed', 'failed', 'cancelled']),
+    result: v.optional(webToolOutcomeSchema) })), v.maxLength(2 * (MAX_TOOL_EXCHANGES + 1))),
+}), v.check((task) => new Set(task.calls.map((item) => item.call.id)).size === task.calls.length && task.calls.every((item) => {
+  if (item.round > task.round || task.calls.filter((candidate) => candidate.round === item.round).length > MAX_TOOL_CALLS_PER_TURN
+    || task.status !== 'active' && ['queued', 'running'].includes(item.state) || task.status === 'completed' && item.state === 'cancelled') return false;
+  try { validateWebToolCall(item.call, WEB_TOOL_NAMES); if (item.result) validateWebToolOutcome(item.result); } catch { return false; }
+  if (item.state === 'completed' || item.state === 'failed') return item.result?.status === item.state && item.result.id === item.call.id && item.result.name === item.call.name;
+  return item.result === undefined;
+}), '工具过程与结果的对应关系无效。'));
 
 export function validateWebToolCall(value: unknown, enabled: readonly WebToolName[]): WebToolCall {
   const result = v.safeParse(webToolCallSchema, value);

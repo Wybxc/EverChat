@@ -22,6 +22,7 @@ export function GenerationMetadata({ generation }: { generation?: GenerationResu
         {timings.filter(([key]) => generation.timing?.[key] !== undefined).map(([key, label]) => <div key={key} className="flex items-baseline justify-between gap-4 sm:gap-6"><dt>{label}</dt><dd data-testid={`generation-${key}`}>{duration(generation.timing![key]!)}</dd></div>)}
         {generation.context && <>
           <div className="flex items-baseline justify-between gap-4 sm:gap-6"><dt>发送上下文（估算）</dt><dd data-testid="generation-contextTokens">≈{number.format(generation.context.totalTokens)} / {number.format(generation.context.inputBudget)}</dd></div>
+          {generation.context.toolTokens !== undefined && <div className="flex items-baseline justify-between gap-4 sm:gap-6"><dt>其中工具（估算）</dt><dd data-testid="generation-toolTokens">≈{number.format(generation.context.toolTokens)}</dd></div>}
           <div className="flex items-baseline justify-between gap-4 sm:gap-6"><dt>历史消息</dt><dd data-testid="generation-contextMessages">{generation.context.retainedMessages} 条 · 省略 {generation.context.omittedMessages} 条</dd></div>
           {generation.context.summaryTokens !== undefined && <div className="flex items-baseline justify-between gap-4 sm:gap-6"><dt>摘要（估算）</dt><dd data-testid="generation-summaryTokens">≈{number.format(generation.context.summaryTokens)} · 覆盖 {generation.context.summarizedMessages} 条</dd></div>}
         </>}

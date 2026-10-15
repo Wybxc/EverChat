@@ -17,6 +17,7 @@ export const contextEstimateSchema = v.strictObject({
   summaryTokens: v.optional(count), summarizedMessages: v.optional(count), summaryId: v.optional(v.pipe(v.string(), v.uuid())),
   imageTokens: v.optional(count),
   documentTokens: v.optional(count),
+  toolTokens: v.optional(count),
 });
 export type ContextEstimate = v.InferOutput<typeof contextEstimateSchema>;
 export class ContextBudgetError extends Error {}

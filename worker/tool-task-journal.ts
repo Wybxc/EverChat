@@ -2,7 +2,7 @@ import * as v from 'valibot';
 import { createHash } from 'node:crypto';
 import type { ProviderConfig } from '../shared/types';
 import { estimateTextTokens } from '../shared/token-estimate';
-import { assertWebToolSupport, MAX_TOOL_EXCHANGES, validateWebToolOutcome, type WebToolCall, type WebToolName, type WebToolOutcome } from '../shared/web-tools';
+import { assertWebToolSupport, MAX_TOOL_EXCHANGES, validateWebToolOutcome, type PublicToolTask, type WebToolCall, type WebToolName, type WebToolOutcome } from '../shared/web-tools';
 import type { SqlQuery } from './generation-metrics';
 import { providerToolIdentity, providerToolPrompt, validateProviderToolTurn, type ProviderToolExchange, type ProviderToolTurn } from './provider-tools';
 
@@ -52,6 +52,21 @@ export class ToolTaskJournal {
   }
   private root(id: string): Root { return this.query<Root>('SELECT * FROM web_tool_tasks WHERE id = ?', id).toArray()[0] ?? taskError('找不到工具任务。'); }
   model(runId: string): Model | undefined { return this.query<Model>('SELECT * FROM web_tool_models WHERE runId = ?', runId).toArray()[0]; }
+  modelAt(rootId: string, round: number): Model | undefined { return this.query<Model>('SELECT * FROM web_tool_models WHERE rootId = ? AND round = ?', rootId, round).toArray()[0]; }
+  enabled(rootId: string): WebToolName[] { return JSON.parse(this.root(rootId).enabled); }
+  publicTask(rootId: string): PublicToolTask {
+    const root = this.root(rootId);
+    return { status: root.status, round: root.round, calls: this.query<{ runId: string; round: number }>('SELECT runId, round FROM web_tool_models WHERE rootId = ? ORDER BY round', rootId).toArray()
+      .flatMap((model) => this.publicCalls(model.runId).map((call) => ({ round: model.round, ...call }))) };
+  }
+  erase(rootId: string) {
+    const root = this.query<Root>('SELECT * FROM web_tool_tasks WHERE id = ?', rootId).toArray()[0];
+    if (root?.status === 'active') taskError('请先停止工具任务。');
+    this.query('DELETE FROM web_tool_notifications WHERE rootId = ?', rootId);
+    this.query('DELETE FROM web_tool_calls WHERE rootId = ?', rootId);
+    this.query('DELETE FROM web_tool_models WHERE rootId = ?', rootId);
+    this.query('DELETE FROM web_tool_tasks WHERE id = ?', rootId);
+  }
   private calls(runId: string) { return this.query<Call>('SELECT * FROM web_tool_calls WHERE runId = ? ORDER BY ordinal', runId).toArray(); }
   private current(root: Root): Model { return this.query<Model>('SELECT * FROM web_tool_models WHERE rootId = ? AND round = ?', root.id, root.round).toArray()[0] ?? taskError('工具轮次不存在。'); }
   private active(root: Root) {
@@ -59,7 +74,7 @@ export class ToolTaskJournal {
     if (root.deadline <= this.now()) taskError('工具任务超过等待期限。');
   }
   state(id: string): ToolTaskState {
-    const root = this.root(id), model = this.current(root);
+    const root = this.root(id), model = this.query<Model>('SELECT runId, messageId, phase FROM web_tool_models WHERE rootId = ? AND round = ?', id, root.round).one();
     return { id, status: root.status, round: root.round, deadline: root.deadline, modelRequests: root.modelRequests, toolRequests: root.toolRequests,
       runId: model.runId, messageId: model.messageId, phase: model.phase, calls: this.calls(model.runId).map((call) => call.callId), error: root.error };
   }

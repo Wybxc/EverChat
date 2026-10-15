@@ -1,4 +1,4 @@
-import { STREAM_JOURNAL_SCHEMA } from './stream-journal';
+import { PRIVATE_TOOL_STREAM_SCHEMA, STREAM_JOURNAL_SCHEMA } from './stream-journal';
 export const DELETION_SCHEMA = 'CREATE TABLE IF NOT EXISTS conversation_deletion (id INTEGER PRIMARY KEY CHECK (id = 1), deletedAt INTEGER NOT NULL)';
 
 export function initializeConversation(sql: SqlStorage, metrics: boolean) {
@@ -21,10 +21,14 @@ export function initializeConversation(sql: SqlStorage, metrics: boolean) {
   )`);
   sql.exec('CREATE TABLE IF NOT EXISTS events (seq INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL)');
   sql.exec(STREAM_JOURNAL_SCHEMA);
+  sql.exec(PRIVATE_TOOL_STREAM_SCHEMA);
   sql.exec('CREATE TABLE IF NOT EXISTS message_generations (messageId TEXT PRIMARY KEY, payload TEXT NOT NULL)');
   sql.exec('CREATE TABLE IF NOT EXISTS message_summaries (messageId TEXT PRIMARY KEY, payload TEXT NOT NULL)');
   sql.exec('CREATE TABLE IF NOT EXISTS message_images (messageId TEXT PRIMARY KEY, payload TEXT NOT NULL)');
   sql.exec('CREATE TABLE IF NOT EXISTS message_files (messageId TEXT PRIMARY KEY, payload TEXT NOT NULL)');
+  sql.exec('CREATE TABLE IF NOT EXISTS message_web_tools (messageId TEXT PRIMARY KEY, rootId TEXT NOT NULL UNIQUE, enabled TEXT NOT NULL, requestHash TEXT NOT NULL, payload TEXT NOT NULL)');
+  sql.exec('CREATE TABLE IF NOT EXISTS tool_workflows (rootId TEXT PRIMARY KEY, conversationId TEXT NOT NULL, created INTEGER NOT NULL DEFAULT 0, nextAt INTEGER NOT NULL, attempts INTEGER NOT NULL DEFAULT 0)');
+  sql.exec('CREATE TABLE IF NOT EXISTS tool_model_permits (runId TEXT PRIMARY KEY)');
   sql.exec('CREATE TABLE IF NOT EXISTS run_dependencies (runId TEXT PRIMARY KEY, summaryRunId TEXT NOT NULL, summaryId TEXT NOT NULL, payload TEXT NOT NULL)');
   sql.exec('CREATE TABLE IF NOT EXISTS generation_timings (runId TEXT PRIMARY KEY, providerStartedAt INTEGER NOT NULL, firstTokenAt INTEGER)');
   sql.exec('CREATE TABLE IF NOT EXISTS message_search_versions (messageId TEXT PRIMARY KEY, version INTEGER NOT NULL)');

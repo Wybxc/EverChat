@@ -10,25 +10,26 @@ export const STREAM_JOURNAL_SCHEMA = `CREATE TABLE IF NOT EXISTS stream_commits 
   runId TEXT NOT NULL, chunkSeq INTEGER NOT NULL, endSeq INTEGER NOT NULL, startOffset INTEGER NOT NULL, endOffset INTEGER NOT NULL,
   payload TEXT NOT NULL, PRIMARY KEY (runId, chunkSeq)
 ) WITHOUT ROWID`;
+export const PRIVATE_TOOL_STREAM_SCHEMA = STREAM_JOURNAL_SCHEMA.replace('stream_commits', 'tool_stream_commits');
 
 // The caller atomically commits the journal, progress and event, or compacts the terminal snapshot.
 export class StreamJournal {
-  constructor(private readonly query: SqlQuery) {}
+  constructor(private readonly query: SqlQuery, private readonly table: 'stream_commits' | 'tool_stream_commits' = 'stream_commits') {}
   append(commit: StreamCommit) {
     const payload = validateCommit(commit), first = commit.batches[0], last = commit.batches.at(-1)!;
-    const existing = this.query<CommitRow>('SELECT * FROM stream_commits WHERE runId = ? AND chunkSeq = ?', commit.runId, first.chunkSeq).toArray()[0];
+    const existing = this.query<CommitRow>(`SELECT * FROM ${this.table} WHERE runId = ? AND chunkSeq = ?`, commit.runId, first.chunkSeq).toArray()[0];
     if (existing) {
       if (existing.startOffset !== first.startOffset || existing.endOffset !== last.endOffset || existing.endSeq !== last.chunkSeq || existing.payload !== payload) throw new Error('Conflicting stream commit');
       return false;
     }
-    this.query('INSERT INTO stream_commits (runId, chunkSeq, endSeq, startOffset, endOffset, payload) VALUES (?, ?, ?, ?, ?, ?)',
+    this.query(`INSERT INTO ${this.table} (runId, chunkSeq, endSeq, startOffset, endOffset, payload) VALUES (?, ?, ?, ?, ?, ?)`,
       commit.runId, first.chunkSeq, last.chunkSeq, first.startOffset, last.endOffset, payload);
     return true;
   }
   materialize(message: Message, descriptor: Pick<StreamState, 'protocol' | 'showReasoning'>): Message {
     if (message.streamVersion !== STREAM_VERSION || !message.runId) return message;
-    const rows = this.query<CommitRow>('SELECT * FROM stream_commits WHERE runId = ? ORDER BY chunkSeq', message.runId).toArray();
-    const parser = new ProviderStream(descriptor.protocol, descriptor.showReasoning);
+    const rows = this.query<CommitRow>(`SELECT * FROM ${this.table} WHERE runId = ? ORDER BY chunkSeq`, message.runId).toArray();
+    const parser = new ProviderStream(descriptor.protocol, descriptor.showReasoning, undefined, messageText(message), messageText(message, 'reasoning'));
     let sequence = 0, offset = 0;
     for (const row of rows) {
       const batches = JSON.parse(row.payload) as StreamBatch[];
@@ -43,9 +44,26 @@ export class StreamJournal {
     }
     return { ...message, parts: messageParts(parser.content, parser.reasoning), durableOffset: offset, streamState: parser.checkpoint() };
   }
+  replay(runId: string, messageId: string): ReadableStream<Uint8Array> {
+    const rows = this.query<CommitRow>(`SELECT * FROM ${this.table} WHERE runId = ? ORDER BY chunkSeq`, runId).toArray();
+    const batches = rows.flatMap((row) => {
+      const batches = JSON.parse(row.payload) as StreamBatch[];
+      validateCommit({ runId, messageId, batches });
+      if (row.chunkSeq !== batches[0].chunkSeq || row.endSeq !== batches.at(-1)!.chunkSeq || row.startOffset !== batches[0].startOffset || row.endOffset !== batches.at(-1)!.endOffset) throw new Error('Stream journal boundary mismatch');
+      return batches;
+    });
+    let index = 0, sequence = 0, offset = 0;
+    return new ReadableStream({ pull(controller) {
+      const batch = batches[index++];
+      if (!batch) { controller.close(); return; }
+      if (batch.runId !== runId || batch.messageId !== messageId || batch.chunkSeq !== ++sequence || batch.startOffset !== offset) throw new Error('Stream replay identity or boundary mismatch');
+      offset = batch.endOffset; controller.enqueue(validateBatch(batch));
+    } });
+  }
   compact(message: Message) {
     this.query('UPDATE messages SET content = ?, reasoning = ?, durableOffset = ? WHERE id = ?',
       messageText(message), messageText(message, 'reasoning'), message.durableOffset ?? 0, message.id);
-    this.query('DELETE FROM stream_commits WHERE runId = ?', message.runId);
+    this.purge(message.runId!);
   }
+  purge(runId: string) { this.query(`DELETE FROM ${this.table} WHERE runId = ?`, runId); }
 }

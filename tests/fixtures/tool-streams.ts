@@ -54,3 +54,27 @@ export function fragmentedToolBody(wire: string, size = 11) {
     if (at === data.length) controller.close(); else { controller.enqueue(data.subarray(at, at + size)); at = Math.min(data.length, at + size); }
   } });
 }
+
+export function toolFinalStream(protocol: ProviderKind) {
+  const text = '**工具回答🙂**\n结论。';
+  if (protocol === 'openai-chat') return frame({ choices: [{ index: 0, delta: { content: text } }] })
+    + frame({ choices: [{ index: 0, delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } }) + 'data: [DONE]\n\n';
+  if (protocol === 'openai-responses') return [
+    { type: 'response.created', response: { id: 'resp_final', created_at: 1, model: 'tool-fixture' } },
+    { type: 'response.output_item.added', output_index: 0, item: { type: 'message', id: 'msg_final', role: 'assistant', content: [], status: 'in_progress' } },
+    { type: 'response.content_part.added', item_id: 'msg_final', output_index: 0, content_index: 0, part: { type: 'output_text', text: '', annotations: [] } },
+    { type: 'response.output_text.delta', item_id: 'msg_final', output_index: 0, content_index: 0, delta: text },
+    { type: 'response.output_text.done', item_id: 'msg_final', output_index: 0, content_index: 0, text },
+    { type: 'response.content_part.done', item_id: 'msg_final', output_index: 0, content_index: 0, part: { type: 'output_text', text, annotations: [] } },
+    { type: 'response.output_item.done', output_index: 0, item: { type: 'message', id: 'msg_final', role: 'assistant', content: [{ type: 'output_text', text, annotations: [] }], status: 'completed' } },
+    { type: 'response.completed', response: { usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 }, incomplete_details: null } },
+  ].map(frame).join('');
+  if (protocol === 'anthropic') return [
+    { type: 'message_start', message: { id: 'msg_final', type: 'message', role: 'assistant', model: 'tool-fixture', content: [], usage: { input_tokens: 10, output_tokens: 0 } } },
+    { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+    { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text } }, { type: 'content_block_stop', index: 0 },
+    { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 5 } }, { type: 'message_stop' },
+  ].map(frame).join('');
+  return frame({ candidates: [{ index: 0, content: { role: 'model', parts: [{ text }] }, finishReason: 'STOP' }],
+    usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5, totalTokenCount: 15 } });
+}

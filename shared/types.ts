@@ -5,6 +5,7 @@ import type { SummaryCoverage } from './summaries';
 import { validateBatch, validateCommit } from './stream-batches';
 import { messageParts, messageText, type MessagePart } from './message-content';
 import type { ImagePart } from './images';
+import type { PublicToolTask, WebToolName } from './web-tools';
 export type { MessagePart } from './message-content';
 
 export type MessageStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
@@ -29,6 +30,7 @@ export interface Message {
   waitingForSummary?: string;
   durableOffset?: number;
   liveOffset?: number;
+  tools?: PublicToolTask;
 }
 export interface ConversationInfo { id: string; title: string; createdAt: number; updatedAt: number; pinned: boolean; archived: boolean }
 export interface LibrarySnapshot { conversations: ConversationInfo[]; deletions: { id: string; deletedAt: number }[]; deletionCursor: number; hasMoreDeletions: boolean }
@@ -57,7 +59,7 @@ export interface Preview { type: 'preview'; batch: StreamBatch }
 export type DurableChange = Change | Commit;
 export type SyncPacket = DurableChange | Preview | CommitAck | { type: 'snapshot'; snapshot: Snapshot } | { type: 'ready'; seq: number } | { type: 'deleted'; deletedAt: number };
 export interface ModelSelection { providerId: string; model: string }
-export interface SubmitInput { requestId: string; content?: string; imageIds?: string[]; fileIds?: string[]; retryOf?: string; revisionOf?: string; branchHead?: string; summaryThrough?: string; selection?: ModelSelection; showReasoning?: boolean; reasoningEffort?: ReasoningEffort; settings?: ConversationSettings }
+export interface SubmitInput { requestId: string; content?: string; imageIds?: string[]; fileIds?: string[]; retryOf?: string; revisionOf?: string; branchHead?: string; summaryThrough?: string; selection?: ModelSelection; showReasoning?: boolean; reasoningEffort?: ReasoningEffort; settings?: ConversationSettings; tools?: WebToolName[] }
 export interface Submission { runId: string; userId: string; assistantId: string; summaryId?: string }
 export type GenerationExecutor = 'do-v1';
 export interface ChatInput { role: 'system' | 'user' | 'assistant'; content: string; images?: ImagePart[]; files?: DocumentPart[] }

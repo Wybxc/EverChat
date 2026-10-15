@@ -2,6 +2,7 @@
 import fixture, { Conversation as FixtureConversation, Library as ProductionLibrary } from './worker';
 import { authenticated } from '../../worker/auth';
 import type { Env } from '../../worker/env';
+export { WebToolWorkflow } from '../../worker/tool-workflow';
 export class Conversation extends FixtureConversation {
   validationStorageBytes() { return this.ctx.storage.sql.databaseSize; }
 }

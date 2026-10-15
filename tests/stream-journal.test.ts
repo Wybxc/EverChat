@@ -128,3 +128,33 @@ test('a grouped commit persists once, replays every boundary and rolls back with
     assert.throws(() => journal.append({ ...commit, batches: [first, { ...second, chunkSeq: 3 }] }), /gap/);
   } finally { db.close(); }
 });
+
+test('each model round appends to its saved display prefix while private replay remains separate and validates identities', async () => {
+  const { db, sql, query } = database();
+  try {
+    initializeConversation(sql, false);
+    const prefix = { ...message, parts: messageParts('上一轮🙂\n', '先前思考\n') };
+    query('INSERT INTO messages (id, role, content, reasoning, status, createdAt, runId, streamVersion) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      message.id, message.role, messageText(prefix), messageText(prefix, 'reasoning'), message.status, 1, message.runId, STREAM_VERSION);
+    const display = new StreamJournal(query), privateJournal = new StreamJournal(query, 'tool_stream_commits');
+    const raw = new TextEncoder().encode('private signature 🙂'.repeat(2000));
+    const batches = [...streamBatches('run', 'assistant', 0, 0, raw)];
+    privateJournal.append({ runId: 'run', messageId: 'assistant', batches });
+    display.append({ runId: 'run', messageId: 'assistant', batches: [...streamBatches('run', 'assistant', 0, 0, wire('新正文', '新思考'))] });
+    const current = display.materialize(prefix, descriptor);
+    assert.equal(messageText(current), '上一轮🙂\n新正文'); assert.equal(messageText(current, 'reasoning'), '先前思考\n新思考');
+    assert.equal(messageText(new StreamJournal(query).materialize(prefix, descriptor)), messageText(current));
+    assert.deepEqual(new Uint8Array(await new Response(new StreamJournal(query, 'tool_stream_commits').replay('run', 'assistant')).arrayBuffer()), raw);
+    display.compact(current);
+    assert.equal(query<{ count: number }>('SELECT COUNT(*) AS count FROM stream_commits').one().count, 0);
+    assert.equal(query<{ count: number }>('SELECT COUNT(*) AS count FROM tool_stream_commits').one().count, 1);
+    await assert.rejects(async () => new Response(privateJournal.replay('run', 'different')).arrayBuffer(), /identity/);
+    query('UPDATE tool_stream_commits SET endOffset = endOffset + 1');
+    assert.throws(() => privateJournal.replay('run', 'assistant'), /boundary/);
+    privateJournal.purge('run');
+    privateJournal.append({ runId: 'run', messageId: 'assistant', batches: batches.slice(1) });
+    await assert.rejects(async () => new Response(privateJournal.replay('run', 'assistant')).arrayBuffer(), /boundary/);
+    privateJournal.purge('run');
+    assert.equal(query<{ count: number }>('SELECT COUNT(*) AS count FROM tool_stream_commits').one().count, 0);
+  } finally { db.close(); }
+});
