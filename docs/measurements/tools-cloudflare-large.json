@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "runtime": "cloudflare",
+  "workerName": "everchat-tools-validation",
+  "suite": "large",
+  "startedAt": "2026-10-15T02:52:30.858Z",
+  "finishedAt": "2026-10-15T02:52:50.762Z",
+  "complete": true,
+  "expectedScenarios": 1,
+  "identity": {
+    "kind": "everchat-tools-validation",
+    "version": 1,
+    "runId": "9c5db1c5-3e4a-4a13-b6ec-e681863fcb9a",
+    "mockUpstreams": true,
+    "counters": {
+      "generation": false,
+      "local": false
+    },
+    "workload": {
+      "chunks": 120,
+      "size": 200,
+      "interval": 25
+    }
+  },
+  "observations": {
+    "publicSnapshotReads": 2,
+    "conversationStatusReads": 2,
+    "libraryStatusReads": 2
+  },
+  "observationPolicy": {
+    "activeLibraryProbes": false,
+    "offlineSnapshotIntervalMs": 5000,
+    "terminalStatusIntervalMs": 2000
+  },
+  "scope": "All diagnostic counters disabled. Native tool Workflow and production service adapter with isolated mock HTTP; no paid supplier calls. Public WebSocket completion before read-only terminal checks. API setup, fixture bookkeeping SQL and observation requests are part of the reported platform window. Local elapsed time/SQLite allocation are not CPU, billed resources, natural hibernation proof or account totals.",
+  "results": [
+    {
+      "scenario": "responses-large",
+      "protocol": "openai-responses",
+      "conversationId": "67fc5e0a-4137-44ef-aece-3044c5997c9a",
+      "taskId": "9a8031ca-b87c-491c-b160-3be07b1a4953",
+      "status": "completed",
+      "contentCharacters": 90000,
+      "reasoningCharacters": 6,
+      "elapsedMs": 18810,
+      "runtime": {
+        "databaseBytes": 585728,
+        "alarmAt": null,
+        "task": {
+          "status": "completed",
+          "round": 1,
+          "modelRequests": 2,
+          "toolRequests": 2
+        },
+        "workflowStatus": "complete",
+        "pendingSearch": 0,
+        "pendingNotifications": 0,
+        "privateStreams": 0,
+        "privatePayloads": 0,
+        "retainedContexts": 0,
+        "modelCalls": 2,
+        "serviceRequests": 2
+      },
+      "client": {
+        "frames": 51,
+        "bytes": 244898,
+        "disconnected": false
+      },
+      "library": {
+        "databaseBytes": 663552,
+        "alarmAt": null,
+        "pendingBackfills": 0,
+        "usedToday": 20,
+        "usedInWindow": 2
+      }
+    }
+  ]
+}

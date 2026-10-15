@@ -1,0 +1,35 @@
+{
+  "checkedAt": "2026-10-15T02:57:02.582Z",
+  "workerName": "everchat-tools-validation",
+  "workflow": {
+    "name": "everchat-tools-validation-flow",
+    "id": "3e54b6a0-af17-4a4f-ae26-5f1640ceef42",
+    "script_name": "everchat-tools-validation",
+    "created_on": "2026-10-15T02:44:38.792Z",
+    "modified_on": "2026-10-15T02:54:13.077Z",
+    "triggered_on": "2026-10-15T02:54:12.913Z",
+    "instances": {
+      "queued": 0,
+      "running": 0,
+      "paused": 0,
+      "errored": 0,
+      "terminated": 0,
+      "complete": 12,
+      "unknown": 0,
+      "waitingForPause": 0,
+      "waiting": 0,
+      "rollingBack": 0
+    },
+    "class_name": "WebToolWorkflow"
+  },
+  "namespaces": [
+    {
+      "name": "CONVERSATIONS",
+      "id": "36a4758702044bce8eac513184d39f78"
+    },
+    {
+      "name": "LIBRARY",
+      "id": "f5853df8820648bda679eaaded854651"
+    }
+  ]
+}

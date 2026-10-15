@@ -1,0 +1,21 @@
+{
+  "queriedAt": "2026-10-15T03:01:12.211Z",
+  "window": {
+    "start": "2026-10-15T02:48:00.000Z",
+    "end": "2026-10-15T02:57:00.000Z"
+  },
+  "workerName": "everchat-tools-validation",
+  "data": null,
+  "errors": [
+    {
+      "message": "Rate limiter budget depleted. Please try again after 5 minutes. Refer to this page for more details about rate limits: https://developers.cloudflare.com/analytics/graphql-api/limits/",
+      "path": null,
+      "extensions": {
+        "code": "budget",
+        "timestamp": "2026-10-15T03:01:12.075113048Z",
+        "ray_id": "a4ab93ebcc240994-SEA"
+      }
+    }
+  ],
+  "scope": "Raw platform analytics, potentially sampled and delayed. No payloads. Step/state-growth deltas are not retained storage or invoice proof."
+}

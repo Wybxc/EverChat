@@ -76,4 +76,4 @@ SQL 写入均为原生游标行数，两对象分开。Workflow 步骤不包含�
 
 平台入口还需提供关闭计数时的只读终态核对，不能用会触发过期处理的 `tool-runtime` 观察接口替代自然清理。平台轮询频率须单列，避免把本地计量的诊断保活带入资源结论。
 
-上述隔离入口、只读观察接口和执行脚本现已完成，详见[平台验证说明](tool-platform-validation.md)。关闭计数的同一 API-only 入口在本地通过九项功能、90,000 码元和 77.5 秒长流；没有在生成期间轮询 Library。报告明确标记本地运行，不能作为平台资源证据。尚未创建或部署工具验证远程资源；下一步执行隔离 Workers Free 测量及清理。真实 Tavily 权限、检索质量和账户级长期资源消耗仍未证明。[实施核对](implementation-audit.md)继续保留这些缺口，整体目标保持进行中。
+上述隔离入口、只读观察接口和执行脚本现已完成，详见[平台验证说明](tool-platform-validation.md)。关闭计数的同一 API-only 入口在本地通过九项功能、90,000 码元和 77.5 秒长流；没有在生成期间轮询 Library。随后在 Workers Free 完成 11 项平台场景，保存真实 Worker／DO／Workflow 样本并清理全部临时资源，见[平台实测](tools-cloudflare-measurements.md)。本地报告仍不作为 CPU 证据；真实供应商质量、长期共享额度、CPU 高样本及 SQL 存储采样缺失继续单列。[实施核对](implementation-audit.md)据实际证据推进最终审查。

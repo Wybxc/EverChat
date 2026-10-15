@@ -1,0 +1,49 @@
+{
+  "checkedAt": "2026-10-15T02:43:19.205Z",
+  "worker": {
+    "status": 404,
+    "result": null,
+    "success": false,
+    "errors": [
+      {
+        "code": 10007,
+        "message": "This Worker does not exist on your account."
+      }
+    ],
+    "messages": []
+  },
+  "workflow": {
+    "status": 404,
+    "success": false,
+    "messages": [],
+    "errors": [
+      {
+        "code": 10200,
+        "message": "workflows.api.error.workflow.not_found"
+      }
+    ],
+    "result": null
+  },
+  "namespaces": {
+    "status": 200,
+    "result": [],
+    "success": true,
+    "errors": null,
+    "messages": null,
+    "result_info": {
+      "page": 1,
+      "per_page": 1000,
+      "count": 0,
+      "total_count": 0
+    }
+  },
+  "subdomain": {
+    "status": 200,
+    "result": {
+      "subdomain": "wybxc"
+    },
+    "success": true,
+    "errors": [],
+    "messages": []
+  }
+}

@@ -1,0 +1,100 @@
+{
+  "capturedDate": "2026-10-15",
+  "source": "Cloudflare authenticated GraphQL introspection",
+  "sum": {
+    "fields": [
+      {
+        "description": "Total operations across all step types per dimension",
+        "name": "allStepCount"
+      },
+      {
+        "description": "CPU time per dimension (ms)",
+        "name": "cpuTime"
+      },
+      {
+        "description": "Execution duration per dimension (GB*s)",
+        "name": "executionDuration"
+      },
+      {
+        "description": "Number of retries per dimension",
+        "name": "retryCount"
+      },
+      {
+        "description": "Total step.do operations per dimension",
+        "name": "stepCount"
+      },
+      {
+        "description": "Total instance storage growth rate per dimension",
+        "name": "storageRate"
+      },
+      {
+        "description": "Total wall time per dimension",
+        "name": "wallTime"
+      }
+    ],
+    "inputFields": [],
+    "name": "AccountWorkflowsAdaptiveGroupsSum"
+  },
+  "raw": {
+    "fields": [
+      {
+        "description": "Number of operations across all step types during the timestamp interval",
+        "name": "allStepCount"
+      },
+      {
+        "description": "CPU time in timestamp (ms)",
+        "name": "cpuTime"
+      },
+      {
+        "description": "The date when trigger was triggered",
+        "name": "datetime"
+      },
+      {
+        "description": "Instance end timestamp(seconds)",
+        "name": "endTimestamp"
+      },
+      {
+        "description": "Event type",
+        "name": "eventType"
+      },
+      {
+        "description": "Execution duration in timestamp (GB*s)",
+        "name": "executionDuration"
+      },
+      {
+        "description": "Instance Id",
+        "name": "instanceId"
+      },
+      {
+        "description": "Number of retries in timestamp",
+        "name": "retryCount"
+      },
+      {
+        "description": "ABR sample interval",
+        "name": "sampleInterval"
+      },
+      {
+        "description": "Instance start timestamp(seconds)",
+        "name": "startTimestamp"
+      },
+      {
+        "description": "Number of step.do operations during the timestamp interval",
+        "name": "stepCount"
+      },
+      {
+        "description": "Instance storage size growth in timestamp (bytes)",
+        "name": "storageRate"
+      },
+      {
+        "description": "Wall time in seconds",
+        "name": "wallTime"
+      },
+      {
+        "description": "Workflow name",
+        "name": "workflowName"
+      }
+    ],
+    "inputFields": [],
+    "name": "AccountWorkflowsAdaptive"
+  }
+}

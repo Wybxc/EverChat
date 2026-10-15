@@ -1,0 +1,16 @@
+{
+  "checkedAt": "2026-10-15T02:59:09.815Z",
+  "workerName": "everchat-tools-validation",
+  "workerStatus": 404,
+  "workerRemoved": true,
+  "workflowName": "everchat-tools-validation-flow",
+  "workflowStatus": 404,
+  "workflowRemoved": true,
+  "namespacesRemoved": true,
+  "removedNamespaceIds": [
+    "36a4758702044bce8eac513184d39f78",
+    "f5853df8820648bda679eaaded854651"
+  ],
+  "remaining": [],
+  "localValidationSecretsRemoved": true
+}

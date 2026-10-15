@@ -1,0 +1,83 @@
+{
+  "checkedAt": "2026-10-15T02:47:16.126Z",
+  "workerName": "everchat-tools-validation",
+  "sourceCommit": "5ea6900",
+  "namespaces": [
+    {
+      "name": "CONVERSATIONS",
+      "id": "36a4758702044bce8eac513184d39f78"
+    },
+    {
+      "name": "LIBRARY",
+      "id": "f5853df8820648bda679eaaded854651"
+    }
+  ],
+  "usageModel": "standard",
+  "workflow": {
+    "name": "everchat-tools-validation-flow",
+    "id": "3e54b6a0-af17-4a4f-ae26-5f1640ceef42",
+    "script_name": "everchat-tools-validation",
+    "created_on": "2026-10-15T02:44:38.792Z",
+    "modified_on": "2026-10-15T02:44:38.792Z",
+    "triggered_on": null,
+    "instances": {
+      "queued": 0,
+      "running": 0,
+      "paused": 0,
+      "errored": 0,
+      "terminated": 0,
+      "complete": 0,
+      "unknown": 0,
+      "waitingForPause": 0,
+      "waiting": 0,
+      "rollingBack": 0
+    },
+    "class_name": "WebToolWorkflow"
+  },
+  "deployments": [
+    {
+      "id": "713c89cd-3542-4c09-b53b-f851ec6870ca",
+      "source": "wrangler",
+      "strategy": "percentage",
+      "versions": [
+        {
+          "version_id": "d9f2c4d7-2530-45a7-892e-18ecb024540c",
+          "percentage": 100
+        }
+      ],
+      "created_on": "2026-10-15T02:45:02.395305Z"
+    },
+    {
+      "id": "0df32024-1799-4387-8627-f0d3beb136c8",
+      "source": "wrangler",
+      "strategy": "percentage",
+      "versions": [
+        {
+          "version_id": "7c49ea20-9c88-4afa-b899-4bf854bdd8d3",
+          "percentage": 100
+        }
+      ],
+      "created_on": "2026-10-15T02:44:35.125663Z"
+    }
+  ],
+  "identity": {
+    "kind": "everchat-tools-validation",
+    "version": 1,
+    "runId": "9c5db1c5-3e4a-4a13-b6ec-e681863fcb9a",
+    "mockUpstreams": true,
+    "counters": {
+      "generation": false,
+      "local": false
+    },
+    "workload": {
+      "chunks": 120,
+      "size": 200,
+      "interval": 25
+    }
+  },
+  "connection": "explicit existing local HTTP proxy; TLS verification enabled",
+  "accountPlan": {
+    "plan": "Workers Free",
+    "evidence": "User confirmation; usageModel alone does not identify a subscription."
+  }
+}

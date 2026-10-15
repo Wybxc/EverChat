@@ -140,7 +140,7 @@ pnpm measure:stream --interval 100 --output /tmp/everchat-stream-comparison.json
 
 `pnpm measure:tools` 在 5185 端口单独测量有限工具任务：四协议往返、断开客户端、服务拒绝和轮次上限，分别统计模型、两类流日志、Conversation／Library SQL 及真实 Workflow 步骤。要求终态私有数据、通知和 Alarm 清理完成；不调用真实模型或搜索服务。指标边界、基线及下一次平台负载见[工具资源测量](docs/tool-measurements.md)，本地计数不代替 Workers Free 资源验收。
 
-`pnpm measure:tools-platform-local` 在 5191 端口验证专用平台入口，关闭所有诊断计数，覆盖九项功能、大响应和一分钟以上长流。`pnpm measure:cloudflare-tools` 使用相同执行器连接隔离的工具验证 Worker。复现、观察开销与远程清理要求见[平台验证说明](docs/tool-platform-validation.md)；目前仅完成本地验证。
+`pnpm measure:tools-platform-local` 在 5191 端口验证专用平台入口，关闭所有诊断计数，覆盖九项功能、大响应和一分钟以上长流。`pnpm measure:cloudflare-tools` 使用相同执行器连接隔离的工具验证 Worker；11 项平台场景已通过，临时 Worker、Workflow、两个 namespaces 与验证密钥均已清理。复现见[平台验证说明](docs/tool-platform-validation.md)，真实样本与 CPU／采样边界见[平台实测](docs/tools-cloudflare-measurements.md)。
 
 手动验证：
 

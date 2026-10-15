@@ -1,6 +1,6 @@
 # 工具链路平台验证
 
-2026-10-15：隔离入口和执行器已通过本地原生运行时验证，**还没有部署工具验证 Worker，也没有当前工具路径的真实平台资源报告**。这份检查点准备平台测量，不改变[已有本地计数](tool-measurements.md)的口径。
+2026-10-15：隔离入口和执行器已完成本地验证，随后通过 Workers Free 的 11 项平台场景。真实资源样本、限制与远程清理见[平台实测](tools-cloudflare-measurements.md)。下方保留复现方式，不改变[已有本地计数](tool-measurements.md)的口径。
 
 ## 隔离与观察边界
 
@@ -32,12 +32,12 @@ pnpm measure:tools-platform-local --suite sustained --port 5192 --output /tmp/ev
 
 另外，285 项单元测试、应用／Worker／脚本类型检查、改动 fixture 和测试的独立严格类型检查、生产构建及差异检查通过。两项新增单元测试验证错误运行时／开启计数时不会发送密码，以及远程地址限制。专用 Worker `wrangler deploy --dry-run` 打包通过，gzip 526.93 KiB；dry-run 不创建远程资源。
 
-## 下一步：Workers Free 实测
+## Workers Free 复现
 
 1. 检查账户和专用 Worker／Workflow 名称，确认使用本轮隔离资源，保存 namespace ID 和部署版本。使用本地权限为 0600 的随机 Secrets JSON，包含不少于 32 字符的 `APP_PASSWORD`、随机 `SESSION_SECRET` 和 UUID `VALIDATION_RUN_ID`；不得使用正式环境密钥。部署命令为 `pnpm exec wrangler deploy --config wrangler.tool-validation.jsonc`，然后用该配置执行 `wrangler secret bulk`。Secrets 未齐全时入口拒绝业务请求。
 2. 三组分别运行下方命令，保存完整报告。并行启动专用 tail，使用 `--worker everchat-tools-validation`；tail 只保留脱敏路径、状态和可选资源字段。
 3. 每组用 `measure:cloudflare-metrics --functional <该组报告>` 查询对应分钟窗口，使用 `--url` 和同一 Secrets 文件取得终态 SQLite 分配。工具报告必须标记 `runtime: cloudflare`，本地报告会被拒绝。
-4. Worker／DO 图表与 Workflow 图表分别查询；某个数据集缺失不能使其他数据丢失。Workflow 使用官方 [`workflowsAdaptiveGroups`](https://developers.cloudflare.com/workflows/observability/metrics-analytics/) 记录事件数量和 `wallTime`，这些字段不能证明计费 CPU 或引擎存储。实际查询后仍须核对可用字段及缺失项，不写成零。
+4. Worker／DO 图表与 Workflow 图表分别查询；某个数据集缺失不能使其他数据丢失。Workflow 使用 [`workflowsAdaptiveGroups`](https://developers.cloudflare.com/workflows/observability/metrics-analytics/)，本轮实际 schema 另核对 CPU、执行时长、步骤、重试和状态增长字段。`cpuTime` 为毫秒；`storageRate` 不是保留存储或账单。查询后保留缺失项，不写成零。各子窗口分钟取整后可能重叠，应另建总窗口，不能相加。
 5. 保存报告和资源 ID 后，删除本轮 Workflow（含实例）、Worker 和残留的两个 namespace，核实远程已不存在，再删除临时 Secrets。不要用 `--force` 绕过其他 Worker 依赖检查。可以在资源清理后，用保存的 namespace 报告读取迟到指标，不为等待采样保留公共验证资源。
 
 ```sh
@@ -48,4 +48,4 @@ pnpm measure:cloudflare-tools --suite sustained --url https://everchat-tools-val
 pnpm measure:cloudflare-metrics --account YOUR_ACCOUNT_ID --functional /tmp/everchat-tools-functional.json --url https://everchat-tools-validation.YOUR-SUBDOMAIN.workers.dev --credentials /tmp/everchat-tools-validation-secrets.json --output /tmp/everchat-tools-metrics.json
 ```
 
-真实工具平台资源、账户级长期共享额度、Tavily 账户权限／搜索质量仍按[实施核对](implementation-audit.md)保留缺口。这里的本地通过不作为这些条目的完成证据。
+本轮真实平台负载与资源样本已见[实测报告](tools-cloudflare-measurements.md)。账户级长期共享额度、SQL 计费存储采样和真实 Tavily 权限／质量仍保留边界；这里的本地通过不替代平台结果。

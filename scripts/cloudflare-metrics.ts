@@ -53,7 +53,7 @@ const response = await cloudflareQuery<{ viewer: { accounts: Record<string, unkn
 // Query separately: unavailable Workflow analytics must not hide Worker/DO data.
 const workflow = toolRun ? await cloudflareQuery<{ viewer: { accounts: Record<string, unknown>[] } }>(`{ viewer { accounts(filter:{accountTag:${JSON.stringify(values.account)}}) {
   workflowsAdaptiveGroups(limit:1000, filter:{datetimeMinute_geq:${JSON.stringify(start)}, datetimeMinute_lt:${JSON.stringify(end)}, workflowName:"everchat-tools-validation-flow"}) {
-    count dimensions { workflowName eventType } sum { wallTime }
+    count dimensions { workflowName eventType } sum { wallTime cpuTime executionDuration allStepCount stepCount retryCount storageRate }
   }
 } } }`) : undefined;
 const datasets = response.data?.viewer.accounts[0];
@@ -86,6 +86,7 @@ await writeFile(output, JSON.stringify({ version: 1, queriedAt: new Date().toISO
   available, data: response.data, errors: response.errors, deployedStorage,
   workflow: workflow ? { workflowName: 'everchat-tools-validation-flow', available: Boolean(workflow.data?.viewer.accounts[0]?.workflowsAdaptiveGroups instanceof Array
     && (workflow.data.viewer.accounts[0].workflowsAdaptiveGroups as unknown[]).length), data: workflow.data, errors: workflow.errors,
-    scope: 'Event counts and wallTime from the Workflow analytics dataset. Not billed CPU or engine storage; empty/missing data is unavailable, never zero.' } : undefined }, null, 2) + '\n');
+    units: { wallTime: 'seconds', cpuTime: 'milliseconds', executionDuration: 'GB*s', storageRate: 'bytes of state growth' },
+    scope: 'Workflow analytics grouped by eventType; do not add summaries across different lifecycle events without checking their semantics. CPU/execution duration/step fields are platform analytics, not an invoice. storageRate is state growth, not retained storage or byte-days. Empty/missing data is unavailable, never zero.' } : undefined }, null, 2) + '\n');
 if (response.errors?.length) { console.error(JSON.stringify(response.errors)); process.exitCode = 1; }
 else console.log(JSON.stringify(response.data));

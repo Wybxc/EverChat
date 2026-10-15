@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "runtime": "cloudflare",
+  "workerName": "everchat-tools-validation",
+  "sourceCommit": "5ea6900",
+  "suite": "combined",
+  "startedAt": "2026-10-15T02:48:28.920Z",
+  "finishedAt": "2026-10-15T02:55:32.021Z",
+  "complete": true,
+  "expectedScenarios": 11,
+  "identity": {
+    "kind": "everchat-tools-validation",
+    "version": 1,
+    "runId": "9c5db1c5-3e4a-4a13-b6ec-e681863fcb9a",
+    "mockUpstreams": true,
+    "counters": {
+      "generation": false,
+      "local": false
+    },
+    "workload": {
+      "chunks": 120,
+      "size": 200,
+      "interval": 25
+    }
+  },
+  "total": {
+    "tasks": 12,
+    "modelCalls": 22,
+    "serviceRequests": 22,
+    "statuses": {
+      "completed": 7,
+      "failed": 4,
+      "cancelled": 1
+    }
+  },
+  "scope": "Combined time window includes all three suites, their setup, inter-suite metric collection and idle gaps. Minute-rounded per-suite metric windows may overlap and must not be summed.",
+  "sources": [
+    {
+      "file": "tools-cloudflare-functional.json",
+      "sha256": "bb1335822d1e8098118195e9b6c203b275a992dfb1b492804db8bf8a012f4a38",
+      "suite": "functional",
+      "complete": true,
+      "scenarios": 9,
+      "startedAt": "2026-10-15T02:48:28.920Z",
+      "finishedAt": "2026-10-15T02:51:05.903Z"
+    },
+    {
+      "file": "tools-cloudflare-large.json",
+      "sha256": "3033d0ee62aa719ecce815911a448aba599e3915b717281f1c30ce9353b856d0",
+      "suite": "large",
+      "complete": true,
+      "scenarios": 1,
+      "startedAt": "2026-10-15T02:52:30.858Z",
+      "finishedAt": "2026-10-15T02:52:50.762Z"
+    },
+    {
+      "file": "tools-cloudflare-sustained.json",
+      "sha256": "73fe5a688ca8999c389df6e48ec75d135f3950fe24e15f0e57e951c0819e12fb",
+      "suite": "sustained",
+      "complete": true,
+      "scenarios": 1,
+      "startedAt": "2026-10-15T02:54:07.973Z",
+      "finishedAt": "2026-10-15T02:55:32.021Z"
+    }
+  ]
+}

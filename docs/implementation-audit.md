@@ -1,6 +1,6 @@
 # 路线图实施与验收核对
 
-核对日期：2026-10-15；功能核对基准：`12d9cb0`，工具测量及终态清理补充基于 `e9a174c` 后的检查点。范围来自[实施路线图](serverless-feature-roadmap.md)的阶段 0–5、各阶段验收与共享核心行为。这里分别记录功能证据和资源证据；本地模拟通过不能证明真实供应商质量或当前版本的免费账单。
+核对日期：2026-10-15；功能核对基准：`12d9cb0`，工具测量和终态清理补充至 `47aca1e`，工具平台部署基于 `5ea6900`。范围来自[实施路线图](serverless-feature-roadmap.md)的阶段 0–5、各阶段验收与共享核心行为。这里分别记录功能证据和资源证据；本地模拟通过不能证明真实供应商质量或当前版本的免费账单。
 
 ## 功能条目
 
@@ -14,7 +14,7 @@
 | 0.4 实时预览、保存确认和有界缓冲 | [缓冲](../worker/generation-buffer.ts)、[同步](../shared/stream-sync.ts)、[缓存写入](../src/snapshot-writer.ts)；[流式回归](../tests/e2e/streaming.spec.ts)检查预览先于保存、失败不确认、慢订阅和低频缓存 | 通过 |
 | 0.5 四协议原始流解析与最终校验 | [共用解析器](../shared/provider-stream.ts)、[请求构造](../worker/provider.ts)；[逐字节恢复单测](../tests/provider-stream.test.ts)及原生流式回归检查 UTF-8／SSE／JSON 任意切分、正文、思考、终态和用量 | 通过 |
 | 0.6 重连、跨设备、日志整理 | Conversation 的同步入口与最终事务；流式回归比较持久化前缀、实时尾部、完整快照及实例中断；[聊天回归](../tests/e2e/chat.spec.ts)验证页面关闭、离线和第二设备 | 通过 |
-| 0.7 资源验证与个人预算 | [平台及本地报告](stream-measurements.md)、[容量限制](../worker/resource-limits.ts)、[原生容量回归](../tests/e2e/resource-limits.spec.ts)；当前工具路径尚无真实平台用量 | 部分证据，见下文 |
+| 0.7 资源验证与个人预算 | [普通聊天](stream-measurements.md)、[当前工具平台样本](tools-cloudflare-measurements.md)、[容量限制](../worker/resource-limits.ts)、[原生容量回归](../tests/e2e/resource-limits.spec.ts)；CPU 高样本及采样缺失单列 | 已测个人原型负载，见边界 |
 | 1.1 独立 URL 与 SPA | [路由](../src/useConversationRoute.ts)、[SPA 配置](../wrangler.jsonc)；[导航回归](../tests/e2e/navigation.spec.ts)及[生产离线回归](../tests/pwa/navigation.spec.ts)覆盖直达、登录、刷新、前进／后退及无效 URL | 通过 |
 | 1.2 对话管理与持久化删除 | [Library](../worker/library.ts)、[对话操作](../src/ConversationActions.tsx)；[管理回归](../tests/e2e/management.spec.ts)检查排序、第二设备、停止与删除、清理重试、迟到 outbox 和删除游标分页 | 通过 |
 | 1.3 当前／跨对话搜索与定位 | [页面搜索](../src/ConversationSearch.tsx)、[增量索引](../worker/search-index.ts)；[搜索回归](../tests/e2e/search.spec.ts)和[跨对话回归](../tests/e2e/library-search.spec.ts)检查正文／思考、分页、归档、索引失败和 Markdown 高亮 | 通过 |
@@ -63,9 +63,10 @@
 - 工具 Workflow／服务 30 项原生回归通过。新 HTTP 401 清理断言在修复前失败，修复后 HTTP 401／429 都验证通知自动清空；不人工触发 Alarm。
 - `pnpm measure:tools`：默认七场景通过，报告为 [tools-baseline.json](measurements/tools-baseline.json)。四协议、断开订阅、服务拒绝及轮次上限均验证完整终态、私有清理和两个 DO 无待触发 Alarm；运行时身份与自建端口冲突另外验证通过。指标定义见[工具资源测量](tool-measurements.md)。
 - Responses 的 [90,000 码元](measurements/tools-large.json)及[一分钟以上](measurements/tools-sustained.json)负载另行通过。长流首次因 Library 自然休眠丢失计数被拒绝；本地诊断增加只读观察后复测通过，明确排除自然休眠／活跃时长结论。
-- [专用平台入口和执行器](tool-platform-validation.md)关闭上述计数，使用原生生产 Workflow、无 R2 的临时环境，通过本地九项功能、90,000 码元和 77.5 秒长流；生成期间不轮询 Library，终态接口不调用过期处理。三份报告标记 `runtime: local`，远程指标脚本拒绝将其作为平台窗口。专用 Worker dry-run 打包通过；尚未部署。
+- [专用平台入口和执行器](tool-platform-validation.md)关闭上述计数，使用原生生产 Workflow、无 R2 的临时环境，通过本地九项功能、90,000 码元和 77.5 秒长流；生成期间不轮询 Library，终态接口不调用过期处理。三份报告标记 `runtime: local`，远程指标脚本拒绝将其作为平台窗口；专用 Worker dry-run 打包通过，随后部署见下条。
+- 后续以 `5ea6900` 在用户确认的 Workers Free 账户完成[11 项工具平台场景](tools-cloudflare-measurements.md)，含 12 个 Workflow、22 次模型／22 次模拟工具请求。关闭诊断计数；真实 Worker／DO／Workflow 样本及终态 SQLite 分配单列。退避后 Workflow 图表补齐 12 个成功、90 个操作、71ms CPU。Worker、Workflow、两个 namespace 和验证 Secrets 已核实清理。DO 汇总在固定窗口中非单调、CPU 高样本、取消／断流及 SQL 存储无采样均保留，不写成精确账单、零开销或严格低于 10ms。
 
-以上测试只操作临时本地空间与模拟上游。真实 Cloudflare 测量报告为已完成历史证据，列在下一节；本次没有部署、创建远程资源或实际模型／搜索请求。
+本地测试只操作临时空间与模拟上游；后续平台验证创建并清理了明确命名的隔离资源。普通聊天历史报告及当前工具报告分开记录，均未修改正式配置，也没有实际模型／搜索付费请求。
 
 ## 资源证据及未通过的广泛结论
 
@@ -75,14 +76,14 @@
 
 以下结论仍缺少证据，不能标为已验收：
 
-1. **当前工具任务在 Workers Free 上的 CPU、活跃时长、SQL 和 Workflow 引擎用量。** 工具路径增加服务端解析、私有日志及 SDK 回放，普通聊天的平台报告不能证明它。已有七场景可重复本地计数，区分模型轮次、两类流、Conversation／Library SQL、步骤回调及引用结果大小；真实平台样本和引擎内部资源仍缺失。
+1. **当前工具任务的资源边界。** 已有七场景本地计数与 11 项真实平台场景，分别记录 Worker／DO CPU、活跃时长、SQL 和 Workflow CPU／步骤／状态增长；普通聊天报告不再被用来代替工具路径。图表延迟到达、个别 CPU 样本高于 10ms，`storageRate` 也不是引擎保留存储或账单；不能据此宣称所有请求严格低于限制或整个账户长期免费。
 2. **账户级实际存储及长期共享额度。** 历史 GraphQL 存储样本缺失，SQLite 分配只是保留预算参考；其他应用及用户负载无法从当前报告排除。原型容量与 507 错误处理不等于全部免费资源长期可用。
 3. **真实服务质量和账户权限。** Tavily 适配器通过模拟 HTTP 集成，实际密钥权限、结果质量及第三方抓取隔离没有被这些测试证明；真实模型生成的摘要质量同样不由固定 fixture 证明。
 
-阶段 0 已按路线图历史记录在“已测个人负载＋容量保护”边界收敛，不为缺失的存储采样反复部署或无止境调优。工具本地计量与关闭计数的平台入口准备检查点都已完成；下一步按[平台验证步骤](tool-platform-validation.md#下一步workers-free-实测)执行隔离部署，记录真实平台资源与清理证据。本次没有部署，不使用本地计数冒充 CPU 或账单。
+阶段 0 按路线图历史记录在“已测个人负载＋容量保护”边界收敛。当前工具本地计量、关闭计数的平台验证与远程清理也已完成；只补读已有资源 ID 的迟到图表，不为缺失的 SQL 存储采样反复部署或无止境调优。下一步逐项审查最终范围、当前实现与验收证据；不使用本地计数冒充 CPU 或账单，也不把未要求的长期账户保证加入原型完成条件。
 
 ## 条件项与范围
 
 手动排序、同会话新话题历史及跨对话记忆在计划中允许后补或按实际需要引入；Office 文档解析以先验证托管服务为条件。第 5 节的自动命名、图片生成、供应商专用接入及其他按需功能没有在本次自动扩展。原型仍只提供有界只读联网调用，不提供桌面执行环境、代码沙箱、本地桥接或全权限执行。
 
-结论：阶段 0–5 的功能实现及本地原型验收已具备证据；广泛的当前版本免费层适配仍不成立。整体目标保持进行中，后续工作由上述明确缺口驱动，不以功能测试通过替代资源验收，也不自动扩大到条件项。
+结论：阶段 0–5 的功能实现、本地原型验收及当前工具的已测平台负载已有证据；广泛的账户免费保证仍不成立。整体目标保持进行中，下一步完成最终范围和验收审查；不以功能测试通过替代资源边界，也不自动扩大到条件项。

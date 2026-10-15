@@ -1,0 +1,113 @@
+{
+  "version": 1,
+  "queriedAt": "2026-10-15T02:53:20.670Z",
+  "window": {
+    "start": "2026-10-15T02:52:00.000Z",
+    "end": "2026-10-15T02:54:00.000Z"
+  },
+  "storageWindow": {
+    "start": "2026-10-15T02:00:00.000Z",
+    "end": "2026-10-15T02:53:18.726Z"
+  },
+  "workerName": "everchat-tools-validation",
+  "namespaces": [
+    {
+      "name": "CONVERSATIONS",
+      "id": "36a4758702044bce8eac513184d39f78"
+    },
+    {
+      "name": "LIBRARY",
+      "id": "f5853df8820648bda679eaaded854651"
+    }
+  ],
+  "units": {
+    "cpuTime": "microseconds",
+    "cpuTimeUs": "microseconds",
+    "activeTime": "microseconds",
+    "duration": "GB*s",
+    "storedBytes": "bytes",
+    "memoryUsageBytes": "bytes"
+  },
+  "scope": "Isolated deployed namespaces and Worker, diagnostic counters disabled. Adaptive fields may be sampled; empty arrays do not prove zero usage. Invocation minute rounding includes setup and idle activity. Storage uses a separate wider window and reports samples rather than the exact functional-run peak.",
+  "available": {
+    "workersInvocationsAdaptive": true,
+    "durableObjectsInvocationsAdaptiveGroups": false,
+    "durableObjectsPeriodicGroups": false,
+    "durableObjectsSqlStorageGroups": false
+  },
+  "data": {
+    "viewer": {
+      "accounts": [
+        {
+          "durableObjectsInvocationsAdaptiveGroups": [],
+          "durableObjectsPeriodicGroups": [],
+          "durableObjectsSqlStorageGroups": [],
+          "workersInvocationsAdaptive": [
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "status": "success",
+                "usageModel": "standard"
+              },
+              "max": {
+                "cpuTime": 3038,
+                "memoryUsageBytes": 12046810
+              },
+              "quantiles": {
+                "cpuTimeP50": 1206,
+                "cpuTimeP99": 3038
+              },
+              "sum": {
+                "cpuTimeUs": 16803,
+                "errors": 0,
+                "requests": 13
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "errors": null,
+  "deployedStorage": {
+    "sampledAt": "2026-10-15T02:53:20.638Z",
+    "libraryBytes": 663552,
+    "conversationBytes": [
+      585728,
+      262144,
+      253952,
+      249856,
+      258048,
+      323584,
+      376832,
+      368640,
+      372736,
+      372736,
+      376832
+    ],
+    "scope": "Post-run SQLite database allocation from deployed objects. Not a platform billing total or the peak during streaming."
+  },
+  "workflow": {
+    "workflowName": "everchat-tools-validation-flow",
+    "available": false,
+    "data": {
+      "viewer": {
+        "accounts": [
+          {
+            "workflowsAdaptiveGroups": []
+          }
+        ]
+      }
+    },
+    "errors": null,
+    "units": {
+      "wallTime": "seconds",
+      "cpuTime": "milliseconds",
+      "executionDuration": "GB*s",
+      "storageRate": "bytes of state growth"
+    },
+    "scope": "Workflow analytics grouped by eventType; do not add summaries across different lifecycle events without checking their semantics. CPU/execution duration/step fields are platform analytics, not an invoice. storageRate is state growth, not retained storage or byte-days. Empty/missing data is unavailable, never zero."
+  }
+}
