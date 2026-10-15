@@ -1,0 +1,491 @@
+{
+  "version": 1,
+  "recordedAt": "2026-10-15T03:36:10.989Z",
+  "sourceCommit": "a0fff7ce0266b83facca97537105d4716f5fa273",
+  "command": "pnpm check",
+  "exitCode": 0,
+  "environment": {
+    "node": "v26.5.0",
+    "pnpm": "12.6.0",
+    "mockUpstreams": true,
+    "isolatedStorage": true,
+    "testPorts": [
+      5174,
+      5175
+    ]
+  },
+  "unit": {
+    "passed": 285,
+    "failed": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "todo": 0
+  },
+  "build": {
+    "typecheck": true,
+    "production": true,
+    "warning": "Some dynamically loaded language/diagram chunks exceed 500 kB."
+  },
+  "e2e": {
+    "passed": 246,
+    "files": [
+      {
+        "file": "tests/e2e/alarm.spec.ts",
+        "passed": 7,
+        "tests": [
+          { "name": "a live DO owns the task and Alarm re-entry cannot generate twice", "duration": "14.2s" },
+          { "name": "resetting the native DO preserves its checkpoint and never repeats the supplier call", "duration": "3.1s" },
+          { "name": "resetting the native DO during cancellation preserves its checkpoint and never repeats the supplier call", "duration": "3.1s" },
+          { "name": "cancelling an accepted task before its Alarm starts prevents all supplier calls", "duration": "87ms" },
+          { "name": "a cancellation tail write failure records failure rather than a false successful stop", "duration": "3.0s" },
+          { "name": "stopping a silent upstream aborts promptly and leaves the next task scheduled", "duration": "6.0s" },
+          { "name": "cancellation finalizes the last complete CR-delimited SSE event without inventing completion", "duration": "3.0s" }
+        ]
+      },
+      {
+        "file": "tests/e2e/attachment-backup.spec.ts",
+        "passed": 16,
+        "tests": [
+          { "name": "native manifest and staged restore preserve mixed files independently, publish once and never include provider keys", "duration": "4.2s" },
+          { "name": "the real browser ZIP survives source deletion and restores private previews and original bytes on another device", "duration": "5.7s" },
+          { "name": "malformed manifests, missing references and wrong content never publish or change global settings; cancellation cleans staging", "duration": "3.9s" },
+          { "name": "claimed finalization completes after the initiating page closes and a lost reply reuses the same saved identifier", "duration": "5.4s" },
+          { "name": "reset after manifest R2 write fails safely, preserves the source and cleans through a deletion retry", "duration": "33.4s" },
+          { "name": "reset after original R2 write fails safely, preserves the source and cleans through a deletion retry", "duration": "32.5s" },
+          { "name": "concurrent import limits, fixed manifest identity and cancellation retain the original and unchanged settings", "duration": "2.1s" },
+          { "name": "restoring a changed provider endpoint clears its existing key and never calls the new endpoint", "duration": "105ms" },
+          { "name": "deadline during claimed finalization prevents publication and global configuration changes", "duration": "6.1s" },
+          { "name": "cancellation during claimed finalization prevents publication and global configuration changes", "duration": "4.0s" },
+          { "name": "large histories stream natively through manifest export and restore without truncating messages or exceeding RPC object limits", "duration": "815ms" },
+          { "name": "large settings remain readable through native responses and oversized provider rows fail before staging", "duration": "436ms" },
+          { "name": "insufficient daily writes reject a whole import before registering its manifest or target files", "duration": "100ms" },
+          { "name": "the browser rejects a damaged archive locally and replaces an identifier after a confirmed initialization failure", "duration": "837ms" },
+          { "name": "an otherwise empty conversation can back up and restore saved files that have never been sent to a model", "duration": "3.0s" },
+          { "name": "an actor without R2 restores a fileless backup while failed file cleanups wait without repeating Alarms", "duration": "5.1s" }
+        ]
+      },
+      {
+        "file": "tests/e2e/attachment-copy.spec.ts",
+        "passed": 8,
+        "tests": [
+          { "name": "a full copy owns independent image, CSV, PDF and unused raw files after source deletion, with private cross-device previews and usable chat references", "duration": "4.9s" },
+          { "name": "copying a selected path copies only that path attachments and preserves deletion independence", "duration": "4.0s" },
+          { "name": "closing the initiating page does not stop a claimed copy; retry after reopening reuses the saved request and performs no extra R2 writes", "duration": "3.4s" },
+          { "name": "concurrent identical requests share one copy, different sources cannot reuse its ID and the active-copy limit rejects without creating a target", "duration": "2.2s" },
+          { "name": "an instance reset after the raw R2 write stops the copy and durably cleans all staged files before a new explicit attempt", "duration": "6.0s" },
+          { "name": "deadline stops a paused copy without publishing or starting another write", "duration": "4.1s" },
+          { "name": "source-deletion stops a paused copy without publishing or starting another write", "duration": "2.2s" },
+          { "name": "histories larger than the RPC object limit copy through native streams with complete text and independent message IDs", "duration": "590ms" }
+        ]
+      },
+      {
+        "file": "tests/e2e/attachments.spec.ts",
+        "passed": 12,
+        "tests": [
+          { "name": "private R2 upload preserves Unicode bytes, validates integrity, is idempotent and supports another device", "duration": "2.0s" },
+          { "name": "a maximum-size file streams through the Worker and DO and returns exactly the original bytes", "duration": "1.0s" },
+          { "name": "a failed R2 delete retains its reservation across a Library reset and the scheduled retry finishes conversation cleanup", "duration": "31.4s" },
+          { "name": "without an R2 binding storage is explicitly unavailable and its hidden entry leaves the conversation usable", "duration": "537ms" },
+          { "name": "expired registrations release reservations, completed files survive expiry and daily attempts cannot bypass the operation budget", "duration": "2.1s" },
+          { "name": "cleanup closes expired registrations before R2 deletion and rechecks later reservations claimed during its wait", "duration": "2.0s" },
+          { "name": "concurrent registrations cannot exceed conversation byte or file-count reservations", "duration": "473ms" },
+          { "name": "the file manager uploads with progress, preserves the composer and URL, syncs another device and restores focus", "duration": "5.0s" },
+          { "name": "a reset after R2 write never exposes an uncommitted upload, and the durable lease cleans its object without another write", "duration": "2.0s" },
+          { "name": "client cancellation removes the accepted registration, while a mobile file list keeps its close control visible", "duration": "4.4s" },
+          { "name": "attachment routes reject unauthorized, cross-origin, foreign-conversation, oversized and conflicting uploads without making content readable", "duration": "90ms" },
+          { "name": "spoofed media, truncated bytes and a checksum mismatch never become ready; conversation deletion revokes reads", "duration": "98ms" }
+        ]
+      },
+      {
+        "file": "tests/e2e/backup.spec.ts",
+        "passed": 2,
+        "tests": [
+          { "name": "versioned backups exclude API keys and restore messages with model metadata", "duration": "115ms" },
+          { "name": "the client can download text formats and import a backup into a new conversation", "duration": "1.4s" }
+        ]
+      },
+      {
+        "file": "tests/e2e/chat.spec.ts",
+        "passed": 9,
+        "tests": [
+          { "name": "private API requires authentication and rejects cross-origin writes", "duration": "363ms" },
+          { "name": "generation survives offline, tab closure and a second device; retries are idempotent", "duration": "28.7s" },
+          { "name": "offline outbox is persisted, delivered once, and cancellation preserves progress", "duration": "16.8s" },
+          { "name": "mobile and desktop layouts fit their viewports", "duration": "1.4s" },
+          { "name": "new conversation moves keyboard focus to the composer", "duration": "709ms" },
+          { "name": "system theme follows the operating-system color preference", "duration": "735ms" },
+          { "name": "the composer uses the selected model and shows opt-in provider thoughts", "duration": "14.7s" },
+          { "name": "DeepSeek-compatible Responses streams Markdown thoughts, persists them and renders them after reload", "duration": "10.9s" },
+          { "name": "streaming answers and thoughts follow the bottom, pause when scrolled up and resume at the bottom", "duration": "27.4s" }
+        ]
+      },
+      {
+        "file": "tests/e2e/context-budget.spec.ts",
+        "passed": 4,
+        "tests": [
+          { "name": "cloud budgeting rejects oversized fixed input, keeps a complete branch suffix and pins its estimate through copies and restore", "duration": "336ms" },
+          { "name": "composer estimates reflect model prompts and autosaved budgets across devices, branches and offline edits", "duration": "4.9s" },
+          { "name": "an unknown model displays fallback capacity and an over-budget draft stays focused at its original URL", "duration": "2.3s" },
+          { "name": "cloud capacity distinguishes separate input limits from combined windows and clamps custom budgets", "duration": "126ms" }
+        ]
+      },
+      {
+        "file": "tests/e2e/conversation-branches.spec.ts",
+        "passed": 1,
+        "tests": [
+          { "name": "continuing an older branch keeps alternate answers out of the provider context", "duration": "7.8s" }
+        ]
+      },
+      {
+        "file": "tests/e2e/conversation-copy.spec.ts",
+        "passed": 7,
+        "tests": [
+          { "name": "copying a conversation creates a new URL with the same messages and independent IDs", "duration": "1.4s" },
+          { "name": "copying an older answer copies only its parent path, retains settings and metadata, and continues independently", "duration": "10.9s" },
+          { "name": "user and assistant copy actions open independent URLs, preserve the source draft, and retain a copied user tail in context", "duration": "7.9s" },
+          { "name": "invalid, deleted, or broken selected paths fail before creating a conversation; deleted ancestors stay redacted", "duration": "6.1s" },
+          { "name": "copying a streaming answer takes only its durable prefix without stopping or restarting the source task", "duration": "5.5s" },
+          { "name": "copying an answer with live unconfirmed output excludes that preview while the source continues", "duration": "3.5s" },
+          { "name": "copy actions handle offline and errors, block double clicks, and respect navigation while the request finishes", "duration": "1.6s" }
+        ]
+      },
+      {
+        "file": "tests/e2e/conversation-settings.spec.ts",
+        "passed": 4,
+        "tests": [
+          { "name": "conversation settings validate, inherit and pin task configuration, and survive replay, copies and backups", "duration": "437ms" },
+          { "name": "logging out cannot restore parameter drafts when an earlier autosave response arrives late", "duration": "3.4s" },
+          { "name": "conversation settings autosave, preserve failed and invalid drafts, sync devices and hide unsupported sampling controls", "duration": "3.6s" },
+          { "name": "an offline new conversation pins its parameters without overwriting another device settings after acceptance", "duration": "8.1s" }
+        ]
+      },
+      {
+        "file": "tests/e2e/documents.spec.ts",
+        "passed": 14,
+        "tests": [
+          { "name": "openai-chat: file-only task uses private persisted text, survives page close and previews safely on another device", "duration": "4.1s" },
+          { "name": "openai-responses: file-only task uses private persisted text, survives page close and previews safely on another device", "duration": "4.0s" },
+          { "name": "anthropic: file-only task uses private persisted text, survives page close and previews safely on another device", "duration": "4.2s" },
+          { "name": "gemini: file-only task uses private persisted text, survives page close and previews safely on another device", "duration": "4.1s" },
+          { "name": "invalid, incomplete, foreign, unparsed and over-budget documents fail before creating a chat task", "duration": "354ms" },
+          { "name": "document retries, revisions and summaries retain branch references and protect original and parsed objects", "duration": "16.8s" },
+          { "name": "image and CSV can share one task and both allowances are included in the context budget", "duration": "3.1s" },
+          { "name": "unknown parsed R2 write is cleaned after reset before explicit reparsing, with the original retained", "duration": "5.0s" },
+          { "name": "deletion interleaved with parsing or acceptance never leaves an orphan or accepts a removed file", "duration": "3.2s" },
+          { "name": "new-conversation upload preserves text, focus and private metadata drafts; preview close never sends the composer", "duration": "4.7s" },
+          { "name": "file-only offline queue retains references and sends when online; failed parsing preserves the draft", "duration": "4.3s" },
+          { "name": "switching conversations cancels a pending parse and cleans its files without mixing drafts", "duration": "773ms" },
+          { "name": "automatic summary consumes persisted old files and then starts the answer with the new file references", "duration": "9.1s" },
+          { "name": "mobile long-file preview scrolls independently and remote conversation deletion clears its draft", "duration": "900ms" }
+        ]
+      },
+      {
+        "file": "tests/e2e/generation-metadata.spec.ts",
+        "passed": 8,
+        "tests": [
+          { "name": "openai-chat exposes reported usage and cloud timing and preserves it through reconnect, copying and backup restore", "duration": "6.2s" },
+          { "name": "openai-responses exposes reported usage and cloud timing and preserves it through reconnect, copying and backup restore", "duration": "6.2s" },
+          { "name": "anthropic exposes reported usage and cloud timing and preserves it through reconnect, copying and backup restore", "duration": "6.2s" },
+          { "name": "gemini exposes reported usage and cloud timing and preserves it through reconnect, copying and backup restore", "duration": "6.2s" },
+          { "name": "hidden thoughts determine first output before the visible answer, while role and heartbeat frames do not", "duration": "3.4s" },
+          { "name": "missing supplier usage stays unknown and output-free failures do not fabricate a first token", "duration": "5.7s" },
+          { "name": "cancellation retains partial reported usage and model observations; manual revisions and deletion do not reuse them", "duration": "4.6s" },
+          { "name": "an interrupted DO preserves the observed first output without inventing an upstream end time", "duration": "3.0s" }
+        ]
+      },
+      {
+        "file": "tests/e2e/images.spec.ts",
+        "passed": 12,
+        "tests": [
+          { "name": "openai-chat: private persisted image-only task sends native bytes, survives closed pages and is visible on another device", "duration": "3.9s" },
+          { "name": "openai-responses: private persisted image-only task sends native bytes, survives closed pages and is visible on another device", "duration": "3.9s" },
+          { "name": "anthropic: private persisted image-only task sends native bytes, survives closed pages and is visible on another device", "duration": "4.0s" },
+          { "name": "gemini: private persisted image-only task sends native bytes, survives closed pages and is visible on another device", "duration": "3.9s" },
+          { "name": "server rejects unsupported, foreign, incomplete, oversized and invalid images before creating messages", "duration": "241ms" },
+          { "name": "image references survive retries and revisions, stay on their branch and protect deletion until every source is removed", "duration": "12.0s" },
+          { "name": "new conversation picker scales, previews, persists drafts and sends an image-only message", "duration": "4.9s" },
+          { "name": "pasted images retain drafts across routes and unsupported model changes preserve the draft", "duration": "1.0s" },
+          { "name": "concurrent file deletion and task acceptance never leave an accepted image reference unreadable", "duration": "9.2s" },
+          { "name": "uploaded image-only requests remain in the offline outbox and send once after reconnection", "duration": "4.2s" },
+          { "name": "switching conversations cancels an image upload, cleans its registration and leaves the new draft focused", "duration": "963ms" },
+          { "name": "a remote conversation deletion clears image draft metadata from the current page", "duration": "816ms" }
+        ]
+      },
+      {
+        "file": "tests/e2e/library-search.spec.ts",
+        "passed": 4,
+        "tests": [
+          { "name": "cross-conversation search uses paginated literal text and jumps to the matching body or thoughts", "duration": "16.2s" },
+          { "name": "search excludes archived and deleted conversations and invalidates an old cursor after updates", "duration": "7.1s" },
+          { "name": "mobile search closes the sidebar for navigation, shows offline status and debounces rapid typing", "duration": "4.4s" },
+          { "name": "durable search outbox survives an RPC failure and object reset without another supplier request", "duration": "3.1s" }
+        ]
+      },
+      {
+        "file": "tests/e2e/management.spec.ts",
+        "passed": 7,
+        "tests": [
+          { "name": "management API validates changes, requires authentication and same origin, and orders pinned conversations first", "duration": "62ms" },
+          { "name": "deleting a running conversation notifies subscribers, aborts generation, releases storage and rejects late submissions", "duration": "2.0s" },
+          { "name": "the management menu preserves failed edits, syncs metadata to another device, and confirms deletion", "duration": "13.2s" },
+          { "name": "a device reconnects with a late outbox, clears an unselected deleted conversation and preserves another draft", "duration": "15.3s" },
+          { "name": "Library Alarm completes deletion after delete-failure, without starting a queued supplier call", "duration": "2.0s" },
+          { "name": "Library Alarm completes deletion after delete-reset, without starting a queued supplier call", "duration": "2.0s" },
+          { "name": "deletion synchronization pages markers without gaps or duplicates", "duration": "43ms" }
+        ]
+      },
+      {
+        "file": "tests/e2e/message-actions.spec.ts",
+        "passed": 1,
+        "tests": [
+          { "name": "messages can be copied and quoted into the composer while preserving focus", "duration": "927ms" }
+        ]
+      },
+      {
+        "file": "tests/e2e/message-mutations.spec.ts",
+        "passed": 3,
+        "tests": [
+          { "name": "assistant revisions are idempotent and message deletion redacts context, replay, search and backups", "duration": "7.9s" },
+          { "name": "message mutations require authentication and reject generation races or invalid edits", "duration": "2.0s" },
+          { "name": "editing and deleting an answer preserves drafts, syncs another device and restores focus", "duration": "3.6s" }
+        ]
+      },
+      {
+        "file": "tests/e2e/model-metadata.spec.ts",
+        "passed": 3,
+        "tests": [
+          { "name": "unknown model metadata is visible, editable, automatically saved across devices and resettable", "duration": "12.1s" },
+          { "name": "native discovery refreshes reported metadata while preserving overrides, enabled choices and names; changing identity clears reports", "duration": "2.3s" },
+          { "name": "server validates effective output and effort limits before accepting a run and pins model metadata in accepted tasks and backups", "duration": "182ms" }
+        ]
+      },
+      {
+        "file": "tests/e2e/navigation.spec.ts",
+        "passed": 6,
+        "tests": [
+          { "name": "SPA navigation, history and refresh restore the correct conversation and its draft", "duration": "5.4s" },
+          { "name": "a direct conversation URL survives login without an existing local selection", "duration": "2.5s" },
+          { "name": "conversation links open in a new tab through native browser navigation", "duration": "2.8s" },
+          { "name": "missing conversation URL shows a recoverable error and cannot create a replacement conversation", "duration": "509ms" },
+          { "name": "invalid conversation URL shows a recoverable error and cannot create a replacement conversation", "duration": "440ms" },
+          { "name": "an offline submission receives a URL and survives navigation, acceptance and reload", "duration": "2.3s" }
+        ]
+      },
+      {
+        "file": "tests/e2e/pdf.spec.ts",
+        "passed": 11,
+        "tests": [
+          { "name": "openai-chat: real browser PDF extraction persists before a file-only task and survives page close with private cross-device preview", "duration": "5.2s" },
+          { "name": "openai-responses: real browser PDF extraction persists before a file-only task and survives page close with private cross-device preview", "duration": "5.2s" },
+          { "name": "anthropic: real browser PDF extraction persists before a file-only task and survives page close with private cross-device preview", "duration": "5.2s" },
+          { "name": "gemini: real browser PDF extraction persists before a file-only task and survives page close with private cross-device preview", "duration": "5.2s" },
+          { "name": "PDF extraction supports bundled CMaps and originals larger than the text-file limit", "duration": "4.9s" },
+          { "name": "malformed, textless, oversized-page and oversized-text PDFs preserve the draft and make no task or upload", "duration": "2.2s" },
+          { "name": "server binds extracted text to immutable PDF source and rejects missing, changed, foreign and invalid extraction data before tasks", "duration": "2.0s" },
+          { "name": "stalled PDF module loading times out and preserves the draft without registering or sending", "duration": "683ms" },
+          { "name": "stalled PDF worker loading times out and preserves the draft without registering or sending", "duration": "960ms" },
+          { "name": "an unknown PDF extraction write recovers its lease and metadata before an explicit retry", "duration": "2.0s" },
+          { "name": "cancelling a cold PDF module load releases the composer and keeps the destination draft clean", "duration": "675ms" }
+        ]
+      },
+      {
+        "file": "tests/e2e/prompt-presets.spec.ts",
+        "passed": 5,
+        "tests": [
+          { "name": "preset APIs authorize writes, pin copied task prompts, and merge backups without overwriting local presets", "duration": "160ms" },
+          { "name": "preset management autosaves and recovers drafts, applies copies, synchronizes devices and keeps deletion recoverable", "duration": "7.0s" },
+          { "name": "cached presets apply offline and queued tasks retain their text after the preset is deleted on another device", "duration": "1.7s" },
+          { "name": "a late preset autosave cannot repopulate local prompt caches after logout", "duration": "1.8s" },
+          { "name": "a dirty draft whose preset was deleted remotely can be saved under a new ID and discarded safely", "duration": "1.6s" }
+        ]
+      },
+      {
+        "file": "tests/e2e/provider.spec.ts",
+        "passed": 4,
+        "tests": [
+          { "name": "provider settings and model discovery require a session and same-origin writes", "duration": "29ms" },
+          { "name": "omitted output limits default to unset and can be configured or cleared with autosave", "duration": "2.9s" },
+          { "name": "tabbed settings autosave model names and enabled choices; the close button stays visible", "duration": "10.0s" },
+          { "name": "autosave validation and network failures preserve drafts and allow retry", "duration": "3.0s" }
+        ]
+      },
+      {
+        "file": "tests/e2e/resource-limits.spec.ts",
+        "passed": 6,
+        "tests": [
+          { "name": "history capacity rejects generation before writing messages or calling the supplier, without hiding existing history", "duration": "201ms" },
+          { "name": "database allocation reserves space for generation and blocks before accepting an input", "duration": "92ms" },
+          { "name": "capacity reached during generation terminates without retrying, retains the durable prefix and releases stored context", "duration": "5.2s" },
+          { "name": "Library serializes concurrent creations at the limit and allows idempotent retries when full", "duration": "74ms" },
+          { "name": "a native storage error crosses RPC as a sanitized 507 response", "duration": "30ms" },
+          { "name": "a storage sync error is visible, pauses automatic retries and supports manual recovery", "duration": "2.7s" }
+        ]
+      },
+      {
+        "file": "tests/e2e/search.spec.ts",
+        "passed": 8,
+        "tests": [
+          { "name": "unavailable Markdown runtimes preserve messages and drafts, then recover on reconnect", "duration": "1.6s" },
+          { "name": "a failed internal mermaid chunk preserves the page, search and draft until rendering is reloaded", "duration": "3.5s" },
+          { "name": "a failed internal highlighted-body chunk preserves the page, search and draft until rendering is reloaded", "duration": "2.7s" },
+          { "name": "search finds rendered Markdown and literal text, navigates occurrences, excludes controls, and restores focus", "duration": "2.7s" },
+          { "name": "search reveals collapsed thoughts and locates matches in both nested and outer scroll panes", "duration": "1.5s" },
+          { "name": "cached search works offline on mobile, resets on navigation and clears when the conversation is deleted", "duration": "1.7s" },
+          { "name": "streaming search updates its count while retaining the active occurrence and the reading position", "duration": "3.1s" },
+          { "name": "returning to the bottom resumes following when content grows before the scroll event is delivered", "duration": "1.1s" }
+        ]
+      },
+      {
+        "file": "tests/e2e/streaming.spec.ts",
+        "passed": 11,
+        "tests": [
+          { "name": "large completed history crosses the DO response boundary and recovers from an expired WebSocket cursor", "duration": "258ms" },
+          { "name": "previews precede commits and reconnecting subscribers recover the same durable and live boundaries", "duration": "5.8s" },
+          { "name": "premature upstream EOF saves buffered text and thoughts, marks failure and preserves submission idempotency", "duration": "1.9s" },
+          { "name": "an unacknowledged slow subscriber is bounded while other clients and persistence complete", "duration": "14.0s" },
+          { "name": "browser rendering streams ahead of saving, while export and throttled cache contain only durable output", "duration": "5.8s" },
+          { "name": "failed persistence drops the preview tail without publishing a durable confirmation", "duration": "3.9s" },
+          { "name": "logging out clears cached messages even when a delayed durable snapshot write is pending", "duration": "6.2s" },
+          { "name": "openai-chat resumes a committed partial UTF-8 SSE event and matches server-verified output and usage", "duration": "5.9s" },
+          { "name": "openai-responses resumes a committed partial UTF-8 SSE event and matches server-verified output and usage", "duration": "4.9s" },
+          { "name": "anthropic resumes a committed partial UTF-8 SSE event and matches server-verified output and usage", "duration": "4.9s" },
+          { "name": "gemini resumes a committed partial UTF-8 SSE event and matches server-verified output and usage", "duration": "5.9s" }
+        ]
+      },
+      {
+        "file": "tests/e2e/summaries.spec.ts",
+        "passed": 26,
+        "tests": [
+          { "name": "tool-enabled automatic summary completed settles the dependent process and produces a valid backup", "duration": "13.3s" },
+          { "name": "tool-enabled automatic summary failed settles the dependent process and produces a valid backup", "duration": "3.1s" },
+          { "name": "tool-enabled automatic summary cancelled settles the dependent process and produces a valid backup", "duration": "2.0s" },
+          { "name": "automatic compression saves coverage before answering, retains early facts and is idempotent across refresh and a second device", "duration": "3.7s" },
+          { "name": "automatic compression pins both models and chat settings before the summary finishes", "duration": "5.1s" },
+          { "name": "distinct concurrent automatic requests accept only one paid pipeline, and copying a waiting pipeline cannot restart it", "duration": "131ms" },
+          { "name": "automatic benchmark-summary-empty failure retains originals, skips the answer and never retries on Alarm", "duration": "2.0s" },
+          { "name": "automatic benchmark-summary-length failure retains originals, skips the answer and never retries on Alarm", "duration": "3.1s" },
+          { "name": "automatic benchmark-summary-error failure retains originals, skips the answer and never retries on Alarm", "duration": "3.1s" },
+          { "name": "automatic benchmark-summary-write-failure failure retains originals, skips the answer and never retries on Alarm", "duration": "3.0s" },
+          { "name": "automatic compression can stop a waiting answer without starting the answer", "duration": "123ms" },
+          { "name": "automatic compression can stop a live summary without starting the answer", "duration": "3.1s" },
+          { "name": "resetting a live automatic summary preserves its checkpoint and fails its waiting answer without a paid retry", "duration": "3.1s" },
+          { "name": "a reset after the automatic summary is saved resumes only the accepted answer", "duration": "4.3s" },
+          { "name": "automatic compression rejects unavailable or undersized summary models before writes, and stops when the resulting summary still cannot fit", "duration": "3.1s" },
+          { "name": "automatic compression preferences autosave with fee disclosure, offline edits, cross-device sync and an actionable chat preview", "duration": "5.5s" },
+          { "name": "automatic compression does not silently discard an oversized uncompressed recent turn", "duration": "3.0s" },
+          { "name": "manual summaries pin complete input, are idempotent after model changes, and preserve old facts in bounded chat context", "duration": "3.1s" },
+          { "name": "invalid and too-large summaries do not write or call a supplier; cancellation and failed output keep original history", "duration": "8.0s" },
+          { "name": "summary boundaries are branch-specific, incremental compression reuses only earlier coverage, and disabling uses raw history", "duration": "6.1s" },
+          { "name": "copies and backups remap coverage and generation references; deleting a source clears derived summaries and replay", "duration": "6.1s" },
+          { "name": "summary controls stream Markdown, preserve the draft and URL, sync another device, and never replay a paid request on refresh", "duration": "6.9s" },
+          { "name": "an unknown submission result retries the same summary request and leaves a single saved summary", "duration": "3.3s" },
+          { "name": "summary regeneration and deletion controls keep originals and drafts, and are disabled offline", "duration": "6.8s" },
+          { "name": "a reset interrupts partial summary work without re-calling the supplier or replacing originals", "duration": "3.1s" },
+          { "name": "the summary limit rejects before calling a supplier and deleting an old summary frees that quota", "duration": "204ms" }
+        ]
+      },
+      {
+        "file": "tests/e2e/tool-task-journal.spec.ts",
+        "passed": 5,
+        "tests": [
+          { "name": "native DO transactions roll back task registration and deduplicate concurrent model claims", "duration": "123ms" },
+          { "name": "native DO reset preserves a large private turn without exposing it in orchestration state or public snapshots", "duration": "114ms" },
+          { "name": "native tool recovery retains results, does not repeat an uncertain request, and can queue the next model atomically", "duration": "185ms" },
+          { "name": "native stop survives reset and refuses late results or further model requests", "duration": "60ms" },
+          { "name": "native expire survives reset and refuses late results or further model requests", "duration": "62ms" }
+        ]
+      },
+      {
+        "file": "tests/e2e/tool-workflow.spec.ts",
+        "passed": 16,
+        "tests": [
+          { "name": "openai-chat native Workflow completes a durable model-tool-model exchange without a connected client", "duration": "11.2s" },
+          { "name": "openai-responses native Workflow completes a durable model-tool-model exchange without a connected client", "duration": "11.2s" },
+          { "name": "anthropic native Workflow completes a durable model-tool-model exchange without a connected client", "duration": "11.2s" },
+          { "name": "gemini native Workflow completes a durable model-tool-model exchange without a connected client", "duration": "11.1s" },
+          { "name": "the same request ID in different conversations creates independent native Workflows", "duration": "11.2s" },
+          { "name": "native Workflow create-lost recovers without restarting a model request", "duration": "11.1s" },
+          { "name": "native Workflow event-once recovers without restarting a model request", "duration": "16.2s" },
+          { "name": "resetting the DO during a tool request saves an interruption result and resumes the Workflow without another tool fetch", "duration": "11.1s" },
+          { "name": "resetting a claimed tool model preserves its display prefix, fails the root and wakes Workflow without repeating the model", "duration": "4.1s" },
+          { "name": "native context budget stops after saved tool results and never starts a second model", "duration": "8.1s" },
+          { "name": "native round budget stops after four models and six tools with the unexecuted calls recorded as failures", "duration": "23.3s" },
+          { "name": "tool process sync survives page closure and a second device, with no private continuation in frames or caches", "duration": "12.0s" },
+          { "name": "stopping during a native Workflow tool request prevents continuation even with the first model run ID", "duration": "5.1s" },
+          { "name": "expiring a root during a tool request saves an explicit failure and prevents the next model", "duration": "5.0s" },
+          { "name": "the original run ID can stop a later streaming model round without losing earlier results", "duration": "12.1s" },
+          { "name": "tool results survive independent copy and backup restore, and message deletion erases the public process", "duration": "11.2s" }
+        ]
+      },
+      {
+        "file": "tests/e2e/web-tool-service.spec.ts",
+        "passed": 14,
+        "tests": [
+          { "name": "service settings require authentication and same-origin writes, preserve omitted keys, and reject endpoints or invalid values", "duration": "80ms" },
+          { "name": "openai-chat uses the production Tavily adapter and pins its key through settings changes without an online client", "duration": "11.1s" },
+          { "name": "openai-responses uses the production Tavily adapter and pins its key through settings changes without an online client", "duration": "11.1s" },
+          { "name": "anthropic uses the production Tavily adapter and pins its key through settings changes without an online client", "duration": "11.2s" },
+          { "name": "gemini uses the production Tavily adapter and pins its key through settings changes without an online client", "duration": "11.2s" },
+          { "name": "an exhausted daily budget stops before the next model, survives Library reset, and rejects new tasks without breaking idempotency", "duration": "6.1s" },
+          { "name": "concurrent conversations share one atomic daily ledger and cannot exceed its ceiling", "duration": "6.1s" },
+          { "name": "HTTP 401 tool failures are persisted without exposing the key or retrying the service", "duration": "6.1s" },
+          { "name": "HTTP 429 tool failures are persisted without exposing the key or retrying the service", "duration": "6.1s" },
+          { "name": "clearing credentials blocks a new tool task before writing messages or calling a model", "duration": "70ms" },
+          { "name": "stopping the production service fetch aborts it, retains its attempt and never continues the model", "duration": "5.1s" },
+          { "name": "a production service timeout records its attempt and stops the root before a second tool or model", "duration": "19.2s" },
+          { "name": "lowering the daily ceiling applies to an already accepted task before its external requests", "duration": "6.1s" },
+          { "name": "resetting the DO during a production fetch preserves its quota claim and resumes only the unclaimed tool", "duration": "11.1s" }
+        ]
+      },
+      {
+        "file": "tests/e2e/web-tool-ui.spec.ts",
+        "passed": 12,
+        "tests": [
+          { "name": "web settings autosave, validate ceilings, reveal explicitly, hide across tabs and devices, and never cache a service key", "duration": "4.9s" },
+          { "name": "openai-chat browser toggles execute only selected production tools and a new conversation returns to off", "duration": "10.8s" },
+          { "name": "openai-responses browser toggles execute only selected production tools and a new conversation returns to off", "duration": "10.8s" },
+          { "name": "anthropic browser toggles execute only selected production tools and a new conversation returns to off", "duration": "12.4s" },
+          { "name": "gemini browser toggles execute only selected production tools and a new conversation returns to off", "duration": "12.5s" },
+          { "name": "offline queue pins enabled tools and delivers the same request once after reconnect", "duration": "9.9s" },
+          { "name": "unsupported model or removed credentials preserve the draft and enabled choices before queueing anything", "duration": "3.2s" },
+          { "name": "configuring a service from conversation parameters returns to the same dialog with switches available", "duration": "1.8s" },
+          { "name": "invalid new-conversation parameters reject attachments before creating a cloud conversation and preserve the draft", "duration": "1.8s" },
+          { "name": "creating a conversation for an attachment preserves its enabled tools and resets the next new conversation", "duration": "10.2s" },
+          { "name": "copy and restore retain enabled tools and saved sources without executing a model or search", "duration": "12.0s" },
+          { "name": "a late reveal after switching tabs and a late autosave after logout cannot expose or cache credentials", "duration": "1.6s" }
+        ]
+      }
+    ]
+  },
+  "pwa": {
+    "passed": 2,
+    "files": [
+      {
+        "file": "tests/pwa/navigation.spec.ts",
+        "passed": 1,
+        "tests": [
+          { "name": "production PWA restores a conversation URL offline without caching API responses", "duration": "1.6s" }
+        ]
+      },
+      {
+        "file": "tests/pwa/pdf.spec.ts",
+        "passed": 1,
+        "tests": [
+          { "name": "production assets load the real PDF worker and bundled Chinese CMaps and fonts without a public document URL", "duration": "496ms" }
+        ]
+      }
+    ]
+  },
+  "additionalChecks": [
+    {
+      "command": "pnpm exec tsc -p tsconfig.json",
+      "exitCode": 0
+    },
+    {
+      "command": "pnpm exec tsc --ignoreConfig --noEmit --skipLibCheck --strict --target ES2022 --module ESNext --moduleResolution Bundler --types @cloudflare/workers-types,node tests/fixtures/tool-cloudflare-worker.ts tests/fixtures/worker.ts tests/tool-platform-runner.test.ts",
+      "exitCode": 0
+    }
+  ],
+  "scope": "Local prototype acceptance with native Cloudflare Alarm, SQLite, WebSocket and Workflow; PWA tests use the production assets and synthetic APIs. External model/search responses are mocked. Platform measurements and their limits are separate.",
+  "consoleLogSha256": "8732e36cdd78cee87d4d6b7351f5641c0a46e868fa2b9d76efe94e333c85704a"
+}

@@ -2,6 +2,8 @@
 
 个人自用的云端 AI 聊天原型。客户端断网或关闭页面后，已经提交的回答仍由 Conversation Durable Object 的 Alarm 在后台生成；重新打开或换设备后读取持久化结果。
 
+[实施路线图](docs/serverless-feature-roadmap.md)阶段 0–5 的必做功能与原型验收已完成；功能、完整检查结果和资源边界见[实施与验收核对](docs/implementation-audit.md)。
+
 ## 本地运行
 
 需要 Node.js 22.12+（或 24+）、pnpm 12。所有命令在项目根目录执行。
