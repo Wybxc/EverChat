@@ -24,6 +24,7 @@ export function applyChange(snapshot: Snapshot, change: DurableChange): Snapshot
     messages,
     seq: change.seq,
     ...(change.settings ? { settings: change.settings } : {}),
+    ...(change.activity ? { activity: change.activity } : {}),
   };
 }
 

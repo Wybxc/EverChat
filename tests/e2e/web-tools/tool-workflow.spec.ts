@@ -500,6 +500,7 @@ test('tool results survive independent copy and backup restore, and message dele
     expect(copied.snapshot.messages[1].tools).toEqual(answer.tools);
     expect(copied.snapshot.messages[1].generation).toEqual(answer.generation);
     expect(copied.snapshot.messages[1].runId).toBeNull();
+    expect(copied.snapshot.activity).toBeUndefined();
     const backup = await request
       .get(`/api/conversations/${f.id}/backup`)
       .then((response) => response.json());
@@ -507,11 +508,13 @@ test('tool results survive independent copy and backup restore, and message dele
       /encrypted-fixture|redacted-fixture|fixture-signature|integration-test-key|providerOptions/,
     );
     const imported = await request.post('/api/backup/restore', { headers, data: backup });
+    expect(backup).not.toHaveProperty('activity');
     expect(imported.status()).toBe(201);
     const restored = (await imported.json()) as { id: string; snapshot: Snapshot };
     copies.push(restored.id);
     expect(restored.snapshot.messages[1].tools).toEqual(answer.tools);
     expect(restored.snapshot.messages[1].runId).toBeNull();
+    expect(restored.snapshot.activity).toBeUndefined();
     expect(restored.snapshot.messages[1].generation).toEqual(answer.generation);
     expect(
       (await request.delete(`/api/conversations/${f.id}/messages/${answer.id}`, { headers })).ok(),

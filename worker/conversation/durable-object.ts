@@ -84,6 +84,7 @@ import {
 import { ConversationMessages, type Row } from './messages';
 import { DELETION_SCHEMA, initializeConversation } from './schema';
 import { planSubmissionParent } from './submission-plan';
+import { ConversationActivityJournal } from './activity';
 
 import { createHash } from 'node:crypto';
 import { ImageContextError, type ImagePart } from '../../shared/attachments/images';
@@ -163,6 +164,9 @@ export class Conversation extends DurableObject<Env> {
   private deletedAt: number | null = null;
   private deletionCleaned = false;
   private searchFlush?: Promise<boolean>;
+  private readonly activity?: ConversationActivityJournal;
+  private activityFlush?: Promise<void>;
+  private activeAlarmAt?: number;
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     this.subscribers = new ConversationSubscribers(ctx, (packet, recipients) =>
@@ -174,12 +178,19 @@ export class Conversation extends DurableObject<Env> {
         .exec<{ deletedAt: number }>('SELECT deletedAt FROM conversation_deletion WHERE id = 1')
         .toArray()[0]?.deletedAt ?? null;
     this.deletionCleaned = this.deletedAt !== null;
+    if (!this.deletedAt)
+      this.activity = new ConversationActivityJournal(
+        this.query.bind(this),
+        Date.now,
+        () => !this.deletedAt,
+      );
     this.journal = new StreamJournal(this.query.bind(this));
     this.messages = new ConversationMessages(
       this.query.bind(this),
       this.journal,
       (id) => this.run(id)?.config,
       (payload) => this.meter?.event(payload),
+      this.activity,
     );
     this.privateToolStreams = new StreamJournal(this.query.bind(this), 'tool_stream_commits');
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
@@ -210,6 +221,7 @@ export class Conversation extends DurableObject<Env> {
         ).toArray().length
       )
         ctx.waitUntil(this.scheduleAlarm());
+      if (this.activity?.nextAlarm() != null) ctx.waitUntil(this.scheduleAlarm());
     }
   }
   private query<T extends Record<string, SqlStorageValue> = Record<string, SqlStorageValue>>(
@@ -412,6 +424,27 @@ export class Conversation extends DurableObject<Env> {
     if (this.deletedAt) return;
     // Durable confirmations pass through the storage output gate; preview packets never acknowledge storage.
     this.subscribers.send(JSON.stringify(change.type === 'commit' ? commitAck(change) : change));
+    if (change.type === 'change' && change.activity)
+      this.ctx.waitUntil(
+        (async () => {
+          await this.flushActivity();
+          await this.scheduleAlarm();
+        })(),
+      );
+  }
+  private flushActivity(): Promise<void> {
+    if (this.deletedAt || !this.activity) return Promise.resolve();
+    if (this.activityFlush) return this.activityFlush;
+    const operation = this.activity.flush((id, activity) =>
+      this.env.LIBRARY.getByName('personal').reportActivity(id, activity),
+    );
+    this.activityFlush = operation;
+    void operation
+      .finally(() => {
+        if (this.activityFlush === operation) this.activityFlush = undefined;
+      })
+      .catch(() => {});
+    return operation;
   }
   private preview(batch: StreamBatch, target?: WebSocket) {
     if (this.deletedAt) return;
@@ -693,16 +726,21 @@ export class Conversation extends DurableObject<Env> {
           STREAM_VERSION,
           'do-v1',
         );
-        const result = { runId, userId: input.summaryThrough, assistantId: summary.id };
+        const change = this.messages.record(
+          [this.messages.rawMessage(summary.id)!],
+          conversationId,
+        );
+        const result = {
+          runId,
+          userId: input.summaryThrough,
+          assistantId: summary.id,
+          activity: change.activity,
+        };
         this.query(
           'INSERT INTO submissions VALUES (?, ?, ?)',
           input.requestId,
           fingerprint,
           JSON.stringify(result),
-        );
-        const change = this.messages.record(
-          [this.messages.rawMessage(summary.id)!],
-          conversationId,
         );
         await this.ctx.storage.setAlarm(Date.now() + 1000);
         return { result, change };
@@ -857,18 +895,6 @@ export class Conversation extends DurableObject<Env> {
             files,
           }),
         );
-      const result = {
-        runId,
-        userId: user.id,
-        assistantId: assistant.id,
-        ...(summary ? { summaryId: summary.id } : {}),
-      };
-      this.query(
-        'INSERT INTO submissions VALUES (?, ?, ?)',
-        input.requestId,
-        fingerprint,
-        JSON.stringify(result),
-      );
       const change = this.messages.record(
         [
           ...(parent ? [] : [this.messages.rawMessage(user.id)!]),
@@ -877,6 +903,19 @@ export class Conversation extends DurableObject<Env> {
         ],
         conversationId,
         messages.length === 0 ? this.messages.settings() : undefined,
+      );
+      const result = {
+        runId,
+        userId: user.id,
+        assistantId: assistant.id,
+        ...(summary ? { summaryId: summary.id } : {}),
+        activity: change.activity,
+      };
+      this.query(
+        'INSERT INTO submissions VALUES (?, ?, ?)',
+        input.requestId,
+        fingerprint,
+        JSON.stringify(result),
       );
       // The outbox, input/configuration and its alarm commit together before acceptance.
       await this.ctx.storage.setAlarm(Date.now() + 1000);
@@ -1099,7 +1138,9 @@ export class Conversation extends DurableObject<Env> {
     await this.ctx.storage.transaction(async () => {
       if (this.deletedAt) return;
       const times: number[] = [];
-      if (
+      if (this.activeGeneration)
+        times.push(Math.max(Date.now() + 1000, this.activeAlarmAt ?? Date.now() + 30_000));
+      else if (
         this.query(
           `SELECT messages.id FROM messages WHERE messages.status IN ('queued', 'running')
         AND (NOT EXISTS (SELECT 1 FROM message_web_tools WHERE messageId = messages.id) OR
@@ -1115,6 +1156,8 @@ export class Conversation extends DurableObject<Env> {
       if (workflow !== null) times.push(workflow);
       const tools = this.tools.nextAlarm();
       if (tools !== null) times.push(tools);
+      const activity = this.activity?.nextAlarm();
+      if (activity != null) times.push(activity);
       if (this.query('SELECT messageId FROM search_outbox LIMIT 1').toArray().length)
         times.push(
           searchSuccess
@@ -1314,9 +1357,14 @@ export class Conversation extends DurableObject<Env> {
   }
   async alarm() {
     if (this.deletedAt) return;
-    // An RPC re-entry during a live alarm never starts a second upstream call.
-    if (this.activeGeneration) return;
+    await this.flushActivity();
     const searchSuccess = await this.flushSearchIndex();
+    // Retrying lifecycle reports must not start another upstream while a model is live.
+    if (this.activeGeneration) {
+      await this.flushToolWorkflows();
+      await this.scheduleAlarm(searchSuccess);
+      return;
+    }
     if (
       this.query(
         "SELECT messages.id FROM message_web_tools JOIN messages ON messages.id = messageId WHERE messages.status IN ('queued', 'running') LIMIT 1",
@@ -1337,6 +1385,10 @@ export class Conversation extends DurableObject<Env> {
         continue;
       const deletion = await this.env.LIBRARY.getByName('personal').deletedAt(run.conversationId);
       if (this.deletedAt) return;
+      if (this.activeGeneration) {
+        await this.scheduleAlarm(searchSuccess);
+        return;
+      }
       if (deletion) {
         await this.deleteConversation(deletion);
         return;
@@ -1351,6 +1403,7 @@ export class Conversation extends DurableObject<Env> {
     }
     await this.flushToolWorkflows();
     // Acceptance and cleanup both use transactions so cleanup cannot erase a new task's alarm.
+    await this.flushActivity();
     await this.scheduleAlarm(searchSuccess);
   }
   private finishInterrupted(run: Run) {
@@ -1432,6 +1485,7 @@ export class Conversation extends DurableObject<Env> {
       ),
     };
     this.activeGeneration = active;
+    this.activeAlarmAt = toolModel ? deadline : Date.now() + 15 * 60_000;
     if (toolModel)
       active.privateBuffer = new GenerationBuffer(runId, claim.assistantId!, (batches) => {
         if (
@@ -1473,7 +1527,7 @@ export class Conversation extends DurableObject<Env> {
     );
     try {
       // A surviving watchdog or alarm retry will finish an orphaned running task, never replay it.
-      await this.ctx.storage.setAlarm(toolModel ? deadline : Date.now() + 15 * 60_000);
+      await this.scheduleAlarm();
       await this.ctx.storage.sync();
       if (active.cancelled || abort.signal.aborted) throw new GenerationCancelled();
       if (!claim.config) throw new ProviderError('此任务缺少已保存的供应商配置，请主动重新生成。');
@@ -1582,7 +1636,10 @@ export class Conversation extends DurableObject<Env> {
       if (active.timer) clearInterval(active.timer);
       clearTimeout(timeout);
       abort.abort();
-      if (this.activeGeneration === active) this.activeGeneration = undefined;
+      if (this.activeGeneration === active) {
+        this.activeGeneration = undefined;
+        this.activeAlarmAt = undefined;
+      }
     }
   }
   private claim(runId: string): Claim | null {
@@ -1944,16 +2001,18 @@ export class Conversation extends DurableObject<Env> {
       runId = originalMessage.runId;
     const run = this.run(runId),
       message = run && this.messages.rawMessage(run.assistantId);
-    if (!run || !message || !isActive(message)) return;
+    if (!run || !message || !isActive(message)) return this.activity?.snapshot();
     const dependency = this.query<Dependency>(
       'SELECT * FROM run_dependencies WHERE runId = ? OR summaryRunId = ?',
       runId,
       runId,
     ).toArray()[0];
     const ids = dependency ? [dependency.summaryRunId, dependency.runId] : [runId];
-    this.ctx.storage.transactionSync(() => {
+    const stopping = this.ctx.storage.transactionSync(() => {
       for (const id of ids) this.query('UPDATE runs SET cancelRequested = 1 WHERE id = ?', id);
+      return this.messages.record([]);
     });
+    this.broadcast(stopping);
     const active =
       this.activeGeneration && ids.includes(this.activeGeneration.runId)
         ? this.activeGeneration
@@ -1982,6 +2041,7 @@ export class Conversation extends DurableObject<Env> {
     await this.flushToolWorkflows();
     await this.scheduleAlarm();
     await this.ctx.storage.sync();
+    return this.activity?.snapshot();
   }
   protected eraseDeletedStorage() {
     return this.ctx.storage.deleteAll();
@@ -2048,7 +2108,7 @@ export class Conversation extends DurableObject<Env> {
         cursor,
       )) {
         const payload = JSON.parse(row.payload) as
-          Message[] | StreamCommit | Pick<Change, 'messages' | 'settings'>;
+          Message[] | StreamCommit | Pick<Change, 'messages' | 'settings' | 'activity'>;
         this.subscribers.send(
           JSON.stringify(
             Array.isArray(payload)

@@ -263,7 +263,13 @@ test('a cached empty library keeps its empty state while refreshing', async ({ p
   const pattern = /\/api\/conversations\?/;
   await page.route(pattern, (route) =>
     route.fulfill({
-      json: { conversations: [], deletions: [], deletionCursor: 0, hasMoreDeletions: false },
+      json: {
+        conversations: [],
+        activity: {},
+        deletions: [],
+        deletionCursor: 0,
+        hasMoreDeletions: false,
+      },
     }),
   );
   try {

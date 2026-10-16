@@ -48,6 +48,7 @@ const server = createServer(async (request, response) => {
         { id: conversationId, title, createdAt: 1, updatedAt: 1, pinned: false, archived: false },
       ],
       deletions: [],
+      activity: {},
       deletionCursor: 0,
       hasMoreDeletions: false,
     });

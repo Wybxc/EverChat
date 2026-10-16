@@ -4,7 +4,7 @@ import type { Env } from '../../../worker/http/env';
 import { toolWorkflowId } from '../../../worker/web-tools/workflow';
 import type { Conversation } from './conversation';
 import type { MeasurementEnv } from './env';
-import type { AttachmentControl, Library } from './library';
+import type { ActivityControl, AttachmentControl, Library } from './library';
 import { type ToolJournalControl } from './tool-task-journal';
 
 export function createTestWorker(
@@ -97,6 +97,17 @@ export function createTestWorker(
           throw error;
         }
       }
+      if (url.pathname === '/api/__test/library/activity') {
+        if (request.method !== 'POST' || request.headers.get('Origin') !== url.origin)
+          return new Response('Forbidden', { status: 403 });
+        if (!(await authenticated(request, env)))
+          return new Response('Unauthorized', { status: 401 });
+        return Response.json(
+          await (env.LIBRARY as unknown as DurableObjectNamespace<Library>)
+            .getByName('personal')
+            .fixtureActivity((await request.json()) as ActivityControl),
+        );
+      }
       if (url.pathname === '/api/__test/library/capacity') {
         if (request.method !== 'POST' || request.headers.get('Origin') !== url.origin)
           return new Response('Forbidden', { status: 403 });
@@ -152,7 +163,7 @@ export function createTestWorker(
         );
       }
       const match =
-        /^\/api\/__test\/conversations\/([0-9a-f-]{36})\/(state|context|parent|alarm|abort|abort-stop|history|search-history|indexed-history|search-state|search-reset|search-retry|fill|resources|storage-error|delete-failure|delete-reset|deletion-state|late-submit|tool-journal|tool-runtime)$/.exec(
+        /^\/api\/__test\/conversations\/([0-9a-f-]{36})\/(state|context|parent|alarm|abort|abort-stop|history|search-history|indexed-history|search-state|search-reset|search-retry|fill|resources|storage-error|delete-failure|delete-reset|deletion-state|late-submit|tool-journal|tool-runtime|activity)$/.exec(
           url.pathname,
         );
       if (!match) return production.fetch(request, env, ctx);
@@ -193,6 +204,8 @@ export function createTestWorker(
           expire?: boolean;
         };
       switch (match[2]) {
+        case 'activity':
+          return Response.json(await conversation.fixtureActivity(Boolean(expire)));
         case 'tool-runtime':
           return Response.json(await conversation.fixtureToolRuntime(taskId, fault, expire));
         case 'search-history':

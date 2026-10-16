@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import type { Submission } from '../../../shared/conversation/types';
+import type { ConversationActivity } from '../../../shared/conversation/activity';
 import type { SessionInfo } from '../../../shared/auth/types';
 import { api, ApiError } from '../../platform/api';
 import { read, storageEpoch } from '../../platform/storage';
@@ -13,6 +14,7 @@ type OutboxOptions = {
   selectedRef: RefObject<string | null>;
   getView: () => { head: string | null; version: number };
   onAccepted: (result: Submission) => void;
+  onActivity: (id: string, activity: ConversationActivity) => void;
   onUnauthorized: () => void;
   onDeleted: (id: string, time: number) => void;
   refreshLibrary: () => void;
@@ -69,6 +71,7 @@ export function useOutbox(options: OutboxOptions) {
         item.input,
       );
       if (epoch !== storageEpoch() || !networkIdentity()) return;
+      if (accepted.activity) latest.current.onActivity(item.conversation.id, accepted.activity);
       const follow = followRequests.current.get(key);
       if (
         !item.input.summaryThrough &&

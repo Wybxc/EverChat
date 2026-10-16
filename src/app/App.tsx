@@ -168,6 +168,7 @@ export function App({
       branches.choose(accepted.assistantId, { automatic: true });
       scrollToBottom();
     },
+    onActivity: (id, activity) => observeActivity(id, activity),
     onUnauthorized: loggedOut,
     onDeleted: (id, time) => rememberDeletion(id, time),
     refreshLibrary: () => refreshLibrary(),
@@ -290,6 +291,9 @@ export function App({
   const {
     conversations,
     savedIds,
+    activities,
+    observeActivity,
+    activityFresh,
     libraryLoading,
     libraryError,
     setLocalConversations,
@@ -340,6 +344,25 @@ export function App({
     rememberDeletion,
     selected ? deletedAt(selected) : null,
   );
+  useEffect(() => {
+    if (
+      selected &&
+      snapshotFor === selected &&
+      authoritative &&
+      connection === 'connected' &&
+      durableSnapshot.activity &&
+      session?.authenticated
+    )
+      observeActivity(selected, durableSnapshot.activity);
+  }, [
+    selected,
+    snapshotFor,
+    authoritative,
+    connection,
+    durableSnapshot.activity,
+    observeActivity,
+    session?.authenticated,
+  ]);
   const branches = useConversationBranches({
     id: selected,
     messages: snapshot.messages,
@@ -1121,6 +1144,22 @@ export function App({
       const head = id === selected ? branches.head : read<string | null>(`branch-view:${id}`, null);
       await navigator.clipboard.writeText(`${location.origin}${conversationUrl(id, head)}`);
     },
+    viewTask: (id, activity) => {
+      branches.navigationVersion.current++;
+      pauseFollowing();
+      setSearchJump(null);
+      navigate(id, false, activity.messageId);
+      setSidebarOpen(false);
+    },
+    stopTask: async (id, activity) => {
+      const epoch = storageEpoch();
+      const result = await api<{
+        activity?: import('../../shared/conversation/activity').ConversationActivity;
+      }>(`/conversations/${id}/cancel`, 'POST', { runId: activity.runId });
+      if (epoch !== storageEpoch()) return;
+      if (result.activity) observeActivity(id, result.activity);
+      refreshLibrary();
+    },
     beforeDialog: () => setSidebarOpen(false),
     restoreFocus: () => {
       const target = !desktop
@@ -1191,15 +1230,17 @@ export function App({
             <SidebarHeader toggle={toggleSidebar} create={() => select(null)} />
             <Button
               variant="ghost"
-              className="mx-3 mt-1 h-11 justify-start gap-2 px-3"
+              className="mx-3 mt-1 min-h-[44px] h-auto shrink-0 justify-start gap-2 px-3 py-1"
               onClick={openGlobalSearch}
               aria-label="全局搜索"
               aria-keyshortcuts={ariaShortcut('global-search')}
               title={`全局搜索（${shortcutLabel('global-search')}）`}
             >
               <Search className="h-[0.875rem] w-[0.875rem]" />
-              <span className="flex-1 text-left">搜索</span>
-              <kbd className="text-xs text-muted-foreground">{shortcutLabel('global-search')}</kbd>
+              <span className="min-w-0 flex-1 truncate text-left">搜索</span>
+              <kbd className="shrink-0 text-xs text-muted-foreground">
+                {shortcutLabel('global-search')}
+              </kbd>
             </Button>
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pt-2">
               <Tabs
@@ -1226,6 +1267,17 @@ export function App({
                       selected={item.id === selected}
                       pending={pending.find((p) => p.conversation.id === item.id)}
                       saved={savedIds.has(item.id)}
+                      activity={activities[item.id]}
+                      fresh={
+                        activityFresh(item.id) ||
+                        Boolean(
+                          item.id === selected &&
+                          snapshotFor === selected &&
+                          authoritative &&
+                          connection === 'connected' &&
+                          durableSnapshot.activity?.version === activities[item.id]?.version,
+                        )
+                      }
                       disabled={!navigator.onLine || !session.authenticated}
                       actions={conversationActions}
                       select={() => select(item.id)}
@@ -1337,6 +1389,7 @@ export function App({
               <ConversationActions
                 key={selected ?? 'new'}
                 conversation={currentConversation}
+                activity={selected ? activities[selected] : undefined}
                 disabled={!navigator.onLine || !session.authenticated}
                 actions={conversationActions}
                 exports={

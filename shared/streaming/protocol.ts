@@ -1,5 +1,7 @@
 import type { Message, ConversationSettings } from '../conversation/types';
+import type { ConversationActivity } from '../conversation/activity';
 export interface Snapshot {
+  activity?: ConversationActivity;
   messages: Message[];
   seq: number;
   deletedAt?: number;
@@ -7,6 +9,7 @@ export interface Snapshot {
 }
 
 export interface Change {
+  activity?: ConversationActivity;
   type: 'change';
   seq: number;
   messages: Message[];

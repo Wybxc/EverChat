@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type SubmitEvent } from 'react';
 import type { ConversationInfo } from '../../../shared/conversation/types';
+import type { ConversationActivity } from '../../../shared/conversation/activity';
 import { storageEpoch } from '../../platform/storage';
 import { Modal, ModalTitle } from '../../components/Modal';
 import { Input } from '@/components/ui/input';
@@ -28,6 +29,8 @@ export function useConversationActions({
   remove,
   duplicate,
   copyLink,
+  viewTask,
+  stopTask,
   beforeDialog,
   restoreFocus,
 }: {
@@ -36,6 +39,11 @@ export function useConversationActions({
   remove: (id: string) => Promise<void>;
   duplicate: (id: string) => Promise<void>;
   copyLink: (id: string) => Promise<void>;
+  viewTask: (id: string, activity: Exclude<ConversationActivity, { status: 'idle' }>) => void;
+  stopTask: (
+    id: string,
+    activity: Exclude<ConversationActivity, { status: 'idle' }>,
+  ) => Promise<void>;
   beforeDialog: () => void;
   restoreFocus: () => void;
 }) {
@@ -91,6 +99,8 @@ export function useConversationActions({
     remove,
     duplicate,
     copyLink,
+    viewTask,
+    stopTask,
     restoreFocus,
   };
 }

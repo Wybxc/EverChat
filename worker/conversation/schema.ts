@@ -1,4 +1,5 @@
 import { PRIVATE_TOOL_STREAM_SCHEMA, STREAM_JOURNAL_SCHEMA } from '../streaming/journal';
+import { CONVERSATION_ACTIVITY_SCHEMA } from './activity';
 export const DELETION_SCHEMA =
   'CREATE TABLE IF NOT EXISTS conversation_deletion (id INTEGER PRIMARY KEY CHECK (id = 1), deletedAt INTEGER NOT NULL)';
 
@@ -28,6 +29,10 @@ export function initializeConversation(sql: SqlStorage, metrics: boolean) {
   )`);
   sql.exec(
     'CREATE TABLE IF NOT EXISTS events (seq INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL)',
+  );
+  sql.exec(CONVERSATION_ACTIVITY_SCHEMA);
+  sql.exec(
+    "CREATE INDEX IF NOT EXISTS messages_activity ON messages(status) WHERE role = 'assistant'",
   );
   sql.exec(STREAM_JOURNAL_SCHEMA);
   sql.exec(PRIVATE_TOOL_STREAM_SCHEMA);

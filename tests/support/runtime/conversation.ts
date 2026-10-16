@@ -482,6 +482,20 @@ export class Conversation extends ProductionConversation {
   fixtureReenterAlarm() {
     return this.alarm();
   }
+  async fixtureActivity(retry: boolean) {
+    if (retry) {
+      this.ctx.storage.sql.exec('UPDATE conversation_activity SET nextAt = 0 WHERE pending = 1');
+      await this.alarm();
+    }
+    return {
+      row:
+        this.ctx.storage.sql
+          .exec('SELECT * FROM conversation_activity WHERE id = 1')
+          .toArray()[0] ?? null,
+      alarmAt: await this.ctx.storage.getAlarm(),
+      ...this.fixtureResources(),
+    };
+  }
   fixtureRetrySearch() {
     this.ctx.storage.sql.exec('UPDATE search_retry SET nextAt = 0');
     return this.alarm();

@@ -4,6 +4,7 @@ import type { GenerationResult } from '../streaming/generation';
 import type { SummaryCoverage } from './summaries';
 import type { PublicToolTask, WebToolName } from '../web-tools/tasks';
 import type { ModelSelection, ReasoningEffort } from '../models/types';
+import type { ActivityIndex, ConversationActivity } from './activity';
 export type MessageStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 
 export interface Message {
@@ -41,6 +42,7 @@ export interface ConversationInfo {
 
 export interface LibrarySnapshot {
   conversations: ConversationInfo[];
+  activity: ActivityIndex;
   deletions: { id: string; deletedAt: number }[];
   deletionCursor: number;
   hasMoreDeletions: boolean;
@@ -79,4 +81,5 @@ export interface Submission {
   userId: string;
   assistantId: string;
   summaryId?: string;
+  activity?: ConversationActivity;
 }

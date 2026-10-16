@@ -1,4 +1,6 @@
-import { Pin } from 'lucide-react';
+import { CircleDashed, Clock3, Pin, Square } from 'lucide-react';
+import { Spinner } from '@/components/ui/spinner';
+import type { ConversationActivity } from '../../../shared/conversation/activity';
 import type { ConversationInfo } from '../../../shared/conversation/types';
 import { conversationUrl } from '../../app/useConversationRoute';
 import type { Pending } from '../chat/cache';
@@ -13,6 +15,8 @@ export function ConversationListItem({
   disabled,
   actions,
   select,
+  activity,
+  fresh,
 }: {
   conversation: ConversationInfo;
   selected: boolean;
@@ -21,7 +25,19 @@ export function ConversationListItem({
   disabled: boolean;
   actions: ConversationActionController;
   select: () => void;
+  activity?: ConversationActivity;
+  fresh: boolean;
 }) {
+  const active = activity && activity.status !== 'idle' ? activity : undefined;
+  const label = active
+    ? !fresh
+      ? '生成状态待同步'
+      : active.status === 'running'
+        ? '生成中'
+        : active.status === 'stopping'
+          ? '停止中'
+          : '等待生成'
+    : undefined;
   return (
     <div className="sidebar-row flex min-w-0 items-center rounded-lg" data-current={selected}>
       <a
@@ -46,7 +62,25 @@ export function ConversationListItem({
         <span className="truncate">{conversation.title}</span>
         {conversation.pinned && <Pin aria-hidden="true" className="size-3 shrink-0" />}
       </a>
-      {pending && (
+      {active && (
+        <span
+          role="status"
+          aria-label={label}
+          title={label}
+          className="flex size-4 shrink-0 items-center justify-center text-muted-foreground"
+        >
+          {!fresh ? (
+            <CircleDashed aria-hidden="true" className="size-3.5" />
+          ) : active.status === 'running' ? (
+            <Spinner className="size-3.5 motion-reduce:animate-none" />
+          ) : active.status === 'stopping' ? (
+            <Square aria-hidden="true" className="size-3" />
+          ) : (
+            <Clock3 aria-hidden="true" className="size-3.5" />
+          )}
+        </span>
+      )}
+      {pending && !active && (
         <span
           role="status"
           aria-label={pending.error ? '发送失败' : '待发送'}
@@ -59,6 +93,7 @@ export function ConversationListItem({
           conversation={conversation}
           disabled={disabled}
           actions={actions}
+          activity={activity}
           label={`${conversation.title}的更多操作`}
           className="conversation-row-menu shrink-0"
         />

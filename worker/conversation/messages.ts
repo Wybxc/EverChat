@@ -15,6 +15,7 @@ import { STREAM_VERSION } from '../../shared/streaming/batches';
 import type { Change, Snapshot } from '../../shared/streaming/protocol';
 import { type PublicToolTask } from '../../shared/web-tools/tasks';
 import type { SqlQuery } from '../generation/metrics';
+import type { ConversationActivityJournal } from './activity';
 import { StreamJournal } from '../streaming/journal';
 
 export type Row = Omit<Message, 'parts' | 'waitingForSummary'> & {
@@ -35,6 +36,7 @@ export class ConversationMessages {
     private readonly journal: StreamJournal,
     private readonly runConfig: (id: string) => string | null | undefined,
     private readonly onEvent: (payload: string) => void,
+    private readonly activity?: ConversationActivityJournal,
   ) {}
   decorate(row: Row): Message {
     const {
@@ -122,11 +124,24 @@ export class ConversationMessages {
   }
 
   snapshot(): Snapshot {
-    return { messages: this.all(), seq: this.seq(), settings: this.settings() };
+    const activity = this.activity?.snapshot();
+    return {
+      messages: this.all(),
+      seq: this.seq(),
+      settings: this.settings(),
+      ...(activity ? { activity } : {}),
+    };
   }
 
   record(messages: Message[], conversationId?: string, settings?: ConversationSettings): Change {
-    const seq = this.recordPayload(JSON.stringify(settings ? { messages, settings } : messages));
+    const activity = this.activity?.record();
+    const seq = this.recordPayload(
+      JSON.stringify(
+        settings || activity
+          ? { messages, ...(settings ? { settings } : {}), ...(activity ? { activity } : {}) }
+          : messages,
+      ),
+    );
     if (conversationId)
       for (const message of messages)
         if (!isActive(message) && !message.summary) {
@@ -142,7 +157,13 @@ export class ConversationMessages {
             seq,
           );
         }
-    return { type: 'change', seq, messages, ...(settings ? { settings } : {}) };
+    return {
+      type: 'change',
+      seq,
+      messages,
+      ...(settings ? { settings } : {}),
+      ...(activity ? { activity } : {}),
+    };
   }
 
   searchDocument(message: Message, version: number): SearchDocument {

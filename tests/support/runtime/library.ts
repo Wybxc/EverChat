@@ -5,6 +5,9 @@ import { Library as ProductionLibrary } from '../../../worker/index';
 import { MAX_CONVERSATIONS } from '../../../worker/platform/resource-limits';
 import type { MeasurementEnv } from './env';
 import { FixtureResourceMeter } from './resource-meter';
+import type { ConversationActivity } from '../../../shared/conversation/activity';
+
+export type ActivityControl = { id: string; fail?: boolean; report?: ConversationActivity };
 
 export type AttachmentControl = {
   id?: string;
@@ -24,6 +27,36 @@ export type AttachmentControl = {
   noBucket?: boolean;
 };
 export class Library extends ProductionLibrary {
+  private activityFixture() {
+    this.ctx.storage.sql.exec(
+      'CREATE TABLE IF NOT EXISTS fixture_activity (id TEXT PRIMARY KEY, fail INTEGER NOT NULL, calls INTEGER NOT NULL)',
+    );
+  }
+  override reportActivity(id: string, activity: ConversationActivity) {
+    this.activityFixture();
+    const row = this.ctx.storage.sql
+      .exec<{ fail: number }>(
+        'INSERT INTO fixture_activity VALUES (?, 0, 1) ON CONFLICT(id) DO UPDATE SET calls = calls + 1 RETURNING fail',
+        id,
+      )
+      .one();
+    if (row.fail) throw new Error('Injected lifecycle report failure');
+    return super.reportActivity(id, activity);
+  }
+  fixtureActivity({ id, fail, report }: ActivityControl) {
+    this.activityFixture();
+    if (fail !== undefined)
+      this.ctx.storage.sql.exec(
+        'INSERT INTO fixture_activity VALUES (?, ?, 0) ON CONFLICT(id) DO UPDATE SET fail = excluded.fail',
+        id,
+        Number(fail),
+      );
+    if (report) super.reportActivity(id, report);
+    return {
+      ...this.ctx.storage.sql.exec('SELECT * FROM fixture_activity WHERE id = ?', id).toArray()[0],
+      activity: this.indexSnapshot(0).activity[id] ?? null,
+    };
+  }
   private readonly resourceMeter?: FixtureResourceMeter;
   private readonly resourceStorage: DurableObjectStorage;
   async fixtureResourceControl(windowId?: string) {

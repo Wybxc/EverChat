@@ -43,6 +43,8 @@ import {
   searchRetryDelay,
 } from '../search/index';
 import { WebToolSettings } from '../web-tools/settings';
+import type { ConversationActivity } from '../../shared/conversation/activity';
+import { LIBRARY_ACTIVITY_SCHEMA, LibraryActivityIndex } from './activity';
 
 type Deletion = { id: string; deletedAt: number; completed: number } & Record<
   string,
@@ -69,6 +71,7 @@ export class Library extends DurableObject<Env> {
   private readonly copies: CopyJobs;
   private readonly imports: ArchiveImports;
   private readonly webTools: WebToolSettings;
+  private readonly activity: LibraryActivityIndex;
   private readonly interruptedImportFiles = new Set<string>();
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -89,6 +92,13 @@ export class Library extends DurableObject<Env> {
     );
     ctx.storage.sql.exec(
       'CREATE TABLE IF NOT EXISTS conversation_deletions (id TEXT PRIMARY KEY, deletedAt INTEGER NOT NULL, completed INTEGER NOT NULL DEFAULT 0)',
+    );
+    ctx.storage.sql.exec(LIBRARY_ACTIVITY_SCHEMA);
+    this.activity = new LibraryActivityIndex(
+      <T extends Record<string, SqlStorageValue>>(
+        statement: string,
+        ...bindings: SqlStorageValue[]
+      ) => ctx.storage.sql.exec<T>(statement, ...bindings),
     );
     this.providers = new ProviderSettingsStore(ctx.storage, env, this.presets);
     this.searchIndex = new SearchIndex(ctx.storage);
@@ -191,10 +201,14 @@ export class Library extends DurableObject<Env> {
     const page = rows.slice(0, 256);
     return {
       conversations: this.list(),
+      activity: this.activity.snapshot(),
       deletions: page.map(({ id, deletedAt }) => ({ id, deletedAt })),
       deletionCursor: page.at(-1)?.seq ?? after,
       hasMoreDeletions: rows.length > 256,
     };
+  }
+  reportActivity(id: string, activity: ConversationActivity) {
+    this.activity.accept(id, activity);
   }
   get(id: string): ConversationInfo | null {
     const row = this.ctx.storage.sql
@@ -316,6 +330,7 @@ export class Library extends DurableObject<Env> {
     this.ctx.storage.transactionSync(() => {
       this.ctx.storage.sql.exec('DELETE FROM conversations WHERE id = ?', id);
       this.ctx.storage.sql.exec('DELETE FROM conversation_metadata WHERE id = ?', id);
+      this.ctx.storage.sql.exec('DELETE FROM conversation_activity WHERE id = ?', id);
       this.ctx.storage.sql.exec('UPDATE conversation_deletions SET completed = 1 WHERE id = ?', id);
     });
   }

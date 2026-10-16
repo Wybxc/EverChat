@@ -10,8 +10,11 @@ import {
   Pin,
   PinOff,
   Trash2,
+  LocateFixed,
+  Square,
 } from 'lucide-react';
 import type { ConversationInfo } from '../../../shared/conversation/types';
+import type { ConversationActivity } from '../../../shared/conversation/activity';
 import {
   ActionMenu,
   ActionMenuItem,
@@ -28,6 +31,7 @@ export function ConversationActions({
   exports,
   label = '更多会话操作',
   className,
+  activity,
 }: {
   conversation?: ConversationInfo;
   disabled: boolean;
@@ -36,10 +40,12 @@ export function ConversationActions({
   exports?: ReactNode;
   label?: string;
   className?: string;
+  activity?: ConversationActivity;
 }) {
   const [menuOpen, setMenuOpen] = useState(false),
     [error, setError] = useState(''),
     [copied, setCopied] = useState(false);
+  const [task, setTask] = useState<Exclude<ConversationActivity, { status: 'idle' }>>();
   const busy = Boolean(conversation && actions.busy.has(conversation.id));
   const perform = async (action: () => Promise<void>, cloud = true) => {
     if (!conversation || (cloud && busy)) return;
@@ -60,7 +66,10 @@ export function ConversationActions({
       open={menuOpen}
       onOpenChange={(next) => {
         setMenuOpen(next);
-        if (next) setCopied(false);
+        if (next) {
+          setCopied(false);
+          setTask(activity?.status !== 'idle' ? activity : undefined);
+        }
       }}
     >
       {children}
@@ -109,6 +118,26 @@ export function ConversationActions({
         <>
           <ActionMenuLabel>导出</ActionMenuLabel>
           {exports}
+        </>
+      )}
+      {conversation && task && (
+        <>
+          <ActionMenuLabel>任务</ActionMenuLabel>
+          <ActionMenuItem onSelect={() => actions.viewTask(conversation.id, task)}>
+            <LocateFixed className="size-4" />
+            查看生成位置
+          </ActionMenuItem>
+          <ActionMenuItem
+            disabled={
+              disabled || busy || (activity?.status === 'stopping' && activity.runId === task.runId)
+            }
+            onSelect={() => void perform(() => actions.stopTask(conversation.id, task))}
+          >
+            <Square className="size-4" />
+            {activity?.status === 'stopping' && activity.runId === task.runId
+              ? '停止中'
+              : '停止生成'}
+          </ActionMenuItem>
         </>
       )}
       {conversation && (

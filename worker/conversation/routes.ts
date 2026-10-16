@@ -188,7 +188,10 @@ export function registerConversationRoutes(app: ApiRouter) {
     const id = conversationId(context);
     await requireConversation(context, id);
     const { runId } = await parseBody(context, cancelSchema);
-    await context.env.CONVERSATIONS.getByName(id).cancel(runId);
-    return json({ ok: true });
+    // A late stop may be a no-op. Return the confirmed task instead of assuming completion.
+    return json({
+      ok: true,
+      activity: await context.env.CONVERSATIONS.getByName(id).cancel(runId),
+    });
   });
 }

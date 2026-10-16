@@ -27,13 +27,13 @@ export function AppFrame({
 export function SidebarHeader({ toggle, create }: { toggle: () => void; create?: () => void }) {
   return (
     <>
-      <div className="flex items-center justify-between min-h-14 px-3 py-1.5">
+      <div className="flex min-w-0 shrink-0 items-center justify-between min-h-[56px] gap-2 px-3 py-1 [&>button]:shrink-0 [&>div]:min-w-0 [&>div]:overflow-hidden">
         <Brand small />
         <Button variant="ghost" size="icon" aria-label="收起侧栏" onClick={toggle}>
           <X className="size-[1.125rem]" />
         </Button>
       </div>
-      <div className="px-3">
+      <div className="shrink-0 px-3">
         <Button
           variant="secondary"
           disabled={!create}
@@ -41,13 +41,13 @@ export function SidebarHeader({ toggle, create }: { toggle: () => void; create?:
           aria-label="开启新对话"
           aria-keyshortcuts={ariaShortcut('new-chat')}
           title={`开启新对话（${shortcutLabel('new-chat')}）`}
-          className="h-11 w-full justify-between bg-accent px-4 text-sm font-medium text-accent-foreground"
+          className="min-h-[44px] h-auto w-full justify-between gap-1 bg-accent px-3 py-1 text-sm font-medium text-accent-foreground"
         >
-          <span className="flex items-center gap-2.5">
-            <Plus className="size-[1.0625rem]" />
-            开启新对话
+          <span className="flex min-w-0 items-center gap-2">
+            <Plus className="size-[1.0625rem] shrink-0" />
+            <span className="truncate">开启新对话</span>
           </span>
-          <kbd className="text-xs text-muted-foreground">{shortcutLabel('new-chat')}</kbd>
+          <kbd className="shrink-0 text-xs text-muted-foreground">{shortcutLabel('new-chat')}</kbd>
         </Button>
       </div>
     </>
@@ -59,14 +59,14 @@ export function SpaceSettingsButton({ open }: { open: () => void }) {
     <Button
       variant="ghost"
       aria-label="空间设置"
-      className="mx-2 mb-2 flex min-h-11 items-center gap-2 rounded-lg px-3 py-1.5 text-left hover:bg-border"
+      className="mx-2 mb-2 flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-3 py-1.5 text-left hover:bg-border"
       onClick={open}
     >
       <span className="flex h-7 w-7 items-center justify-center rounded-full bg-background text-xs">
         我
       </span>
-      <span className="flex-1">
-        <span className="block text-xs font-medium">私人空间</span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-xs font-medium">私人空间</span>
       </span>
       <Settings className="size-4" />
     </Button>

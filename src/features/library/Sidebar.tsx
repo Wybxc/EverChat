@@ -29,7 +29,7 @@ export function Sidebar({
         side="left"
         showCloseButton={false}
         aria-describedby={undefined}
-        className="sidebar-surface w-65 max-w-[90vw] gap-0 border-0 p-0"
+        className="sidebar-surface data-[side=left]:w-[min(20rem,calc(100dvw-1rem))] gap-0 border-0 p-0"
         onCloseAutoFocus={(event) => {
           event.preventDefault();
           // A new page or dialog can deliberately claim focus while the sheet closes.
