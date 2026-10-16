@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react';
-import { MessageCircle, Plus, Settings, X } from 'lucide-react';
+import { Plus, Settings, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Brand } from './Brand';
+import { ariaShortcut, shortcutLabel } from './commands';
 
 export function AppFrame({
   sidebar,
@@ -37,13 +38,16 @@ export function SidebarHeader({ toggle, create }: { toggle: () => void; create?:
           variant="secondary"
           disabled={!create}
           onClick={create}
+          aria-label="开启新对话"
+          aria-keyshortcuts={ariaShortcut('new-chat')}
+          title={`开启新对话（${shortcutLabel('new-chat')}）`}
           className="h-11 w-full justify-between bg-accent px-4 text-sm font-medium text-accent-foreground"
         >
           <span className="flex items-center gap-2.5">
             <Plus className="size-[1.0625rem]" />
             开启新对话
           </span>
-          <MessageCircle className="size-[0.9375rem]" />
+          <kbd className="text-xs text-muted-foreground">{shortcutLabel('new-chat')}</kbd>
         </Button>
       </div>
     </>

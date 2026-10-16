@@ -590,7 +590,8 @@ test('branch exports and search use the visible path; full copies, idempotent ma
       '没有匹配结果',
     );
     await page.getByRole('button', { name: '关闭对话搜索', exact: true }).click();
-    await page.getByRole('textbox', { name: '搜索对话', exact: true }).fill('另一回答');
+    await page.getByRole('button', { name: '全局搜索', exact: true }).click();
+    await page.getByRole('combobox', { name: '搜索对话', exact: true }).fill('另一回答');
     const result = page.getByRole('region', { name: '正文搜索结果' }).getByRole('link');
     await expect(result).toHaveAttribute('href', `/c/${f.id}?branch=${m[4].id}`);
     const newTab = await context.newPage();
@@ -809,7 +810,8 @@ test('a search URL for an uncached message waits for a fresh authoritative snaps
         data: { requestId: crypto.randomUUID(), content: text },
       })
       .then((response) => response.json());
-    await page.getByRole('textbox', { name: '搜索对话', exact: true }).fill('远端新增版本');
+    await page.getByRole('button', { name: '全局搜索', exact: true }).click();
+    await page.getByRole('combobox', { name: '搜索对话', exact: true }).fill('远端新增版本');
     const result = page.getByRole('region', { name: '正文搜索结果' }).getByRole('link');
     await expect(result).toHaveCount(1);
     const shadow = await page.request.patch(`/api/conversations/${f.id}/messages/${m[4].id}`, {
@@ -824,7 +826,7 @@ test('a search URL for an uncached message waits for a fresh authoritative snaps
     expect(
       (await full.json()).results.map((item: { messageId: string }) => item.messageId),
     ).toEqual([revised.messageId]);
-    await page.getByRole('textbox', { name: '搜索对话', exact: true }).fill(text);
+    await page.getByRole('combobox', { name: '搜索对话', exact: true }).fill(text);
     await expect(result).toHaveCount(1);
     let waiting = false;
     const gate = new Promise<void>((resolve) => {

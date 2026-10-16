@@ -220,6 +220,11 @@
   width: calc(100vw - 2rem);
   border-radius: 1.5rem;
 }
+[data-slot='dialog-content'][data-testid='global-search'] {
+  width: 100vw;
+  border-radius: 0;
+  animation: none;
+}
 [data-slot='dialog-overlay'],
 [data-slot='alert-dialog-overlay'],
 [data-slot='sheet-overlay'] {

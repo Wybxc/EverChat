@@ -62,10 +62,12 @@ test('cross-conversation search uses paginated literal text and jumps to the mat
     for (const query of ['跨越 格式 搜索', '中', 'Åbc', '*', '[a+b]', '😀'])
       expect((await search(page.request, query)).results.length, query).toBeGreaterThan(0);
     await page.goto('/');
-    await page.getByRole('textbox', { name: '搜索对话', exact: true }).fill('全文TOKEN');
+    await page.getByRole('button', { name: '全局搜索', exact: true }).click();
+    await page.getByRole('combobox', { name: '搜索对话', exact: true }).fill('全文TOKEN');
     const results = page.getByRole('region', { name: '正文搜索结果' });
     await expect(results.getByRole('link')).toHaveCount(20);
-    await results.getByRole('button', { name: '加载更多结果' }).click();
+    await results.getByRole('button', { name: '加载更多结果' }).focus();
+    await page.keyboard.press('Enter');
     await expect(results.getByRole('link')).toHaveCount(40);
     await results.getByRole('button', { name: '加载更多结果' }).click();
     await expect(results.getByRole('link')).toHaveCount(47);
@@ -81,7 +83,8 @@ test('cross-conversation search uses paginated literal text and jumps to the mat
       )
       .toBe('全文TOKEN');
     await page.getByRole('button', { name: '关闭对话搜索' }).click();
-    await page.getByRole('textbox', { name: '搜索对话', exact: true }).fill('独立思考 46');
+    await page.getByRole('button', { name: '全局搜索', exact: true }).click();
+    await page.getByRole('combobox', { name: '搜索对话', exact: true }).fill('独立思考 46');
     await expect(results.getByRole('link')).toHaveCount(1);
     await results.getByRole('link').click();
     await expect(
@@ -147,7 +150,9 @@ test('mobile search closes the sidebar for navigation, shows offline status and 
     page.on('request', (request) => {
       if (new URL(request.url()).pathname === '/api/search') calls++;
     });
-    const input = page.getByRole('textbox', { name: '搜索对话', exact: true });
+    await page.getByRole('button', { name: '全局搜索', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: '对话列表', exact: true })).toHaveCount(0);
+    const input = page.getByRole('combobox', { name: '搜索对话', exact: true });
     await input.pressSequentially('全文TOKEN', { delay: 15 });
     const results = page.getByRole('region', { name: '正文搜索结果' });
     await expect(results.getByRole('link')).toHaveCount(1);
@@ -157,6 +162,7 @@ test('mobile search closes the sidebar for navigation, shows offline status and 
     await expect(page.getByRole('textbox', { name: '查找当前对话', exact: true })).toBeFocused();
     await expect(page.getByRole('button', { name: '关闭对话列表', exact: true })).toHaveCount(0);
     await page.getByRole('button', { name: '打开对话列表' }).click();
+    await page.getByRole('button', { name: '全局搜索', exact: true }).click();
     await context.setOffline(true);
     await input.fill('未缓存关键词');
     await expect(results).toContainText('联网后搜索正文');

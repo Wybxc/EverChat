@@ -6,6 +6,7 @@ import { api } from '../../platform/api';
 import { conversationUrl } from '../../app/useConversationRoute';
 import type { LibrarySearch as SearchPage, SearchResult } from '../../../shared/search/query';
 import { deletedAt } from '../chat/cache';
+import { SearchResultItem } from './SearchResultItem';
 
 export function LibrarySearch({
   query,
@@ -69,21 +70,10 @@ export function LibrarySearch({
             .filter((result) => !deletedAt(result.conversationId))
             .map((result) => (
               <li key={`${result.conversationId}:${result.messageId}:${result.field}`}>
-                <a
+                <SearchResultItem
+                  value={`body:${result.conversationId}:${result.messageId}:${result.field}`}
                   href={conversationUrl(result.conversationId, result.messageId)}
-                  className="block min-w-0 rounded-lg px-3 py-2"
-                  onClick={(event) => {
-                    if (
-                      event.button !== 0 ||
-                      event.metaKey ||
-                      event.ctrlKey ||
-                      event.shiftKey ||
-                      event.altKey
-                    )
-                      return;
-                    event.preventDefault();
-                    open(result, debounced);
-                  }}
+                  open={() => open(result, debounced)}
                 >
                   <span className="block truncate text-xs font-medium">
                     {result.title} · {result.field === 'reasoning' ? '思考' : '正文'}
@@ -91,7 +81,7 @@ export function LibrarySearch({
                   <span className="mt-1 block line-clamp-3 break-words text-xs text-muted-foreground">
                     {result.excerpt}
                   </span>
-                </a>
+                </SearchResultItem>
               </li>
             ))}
         </ul>

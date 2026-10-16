@@ -15,6 +15,7 @@ import {
   FolderOpen,
   Globe,
   ImagePlus,
+  Keyboard,
   Menu,
   Paperclip,
   Pin,
@@ -58,7 +59,7 @@ import type { SearchResult } from '../../shared/search/query';
 import { assertWebToolSupport } from '../../shared/web-tools/tasks';
 import { ActionMenu, ActionMenuItem } from '../components/ActionMenu';
 import { Disclosure, DisclosureScope } from '../components/Disclosure';
-import { hasOpenModal } from '../components/Modal';
+import { hasOpenModal, Modal, ModalTitle } from '../components/Modal';
 import { AttachmentDialog } from '../features/attachments/AttachmentDialog';
 import { DocumentPreviews } from '../features/attachments/DocumentPreviews';
 import { ImagePreviews } from '../features/attachments/ImagePreviews';
@@ -91,7 +92,7 @@ import { useConversationBranches } from '../features/chat/useConversationBranche
 import { useFollowScroll } from '../features/chat/useFollowScroll';
 import { useOutbox } from '../features/chat/useOutbox';
 import { conversationGroup } from '../features/library/group-conversations';
-import { LibrarySearch } from '../features/library/LibrarySearch';
+import { GlobalSearch } from '../features/library/GlobalSearch';
 import { Sidebar } from '../features/library/Sidebar';
 import { useLibraryIndex } from '../features/library/useLibraryIndex';
 import { ModelPicker } from '../features/providers/ModelPicker';
@@ -111,6 +112,13 @@ import { ThemeControl } from './ThemeControl';
 import { conversationUrl, useConversationRoute } from './useConversationRoute';
 import { useSession } from './useSession';
 import { useSidebar } from './useSidebar';
+import {
+  ariaShortcut,
+  commandDefinitions,
+  shortcutLabel,
+  useAppCommands,
+  type CommandId,
+} from './commands';
 
 export function App({
   initialSettings,
@@ -175,7 +183,10 @@ export function App({
   }, [selected]);
   const [error, setError] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [search, setSearch] = useState('');
+  const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
+  const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
+  const globalSearchReturn = useRef<HTMLElement | null>(null);
+  const searchNavigated = useRef(false);
   const [archivedList, setArchivedList] = useState(false);
   const [sending, setSending] = useState(false);
   const { viewportRef, contentRef, viewport, content, atBottom, scrollToBottom, pauseFollowing } =
@@ -389,25 +400,6 @@ export function App({
     setConversationSearchFor(null);
     setSearchJump((current) => (current?.id === selected ? current : null));
   }, [selected]);
-  useEffect(() => {
-    const find = (event: KeyboardEvent) => {
-      if (
-        canSearch &&
-        !event.isComposing &&
-        (event.ctrlKey || event.metaKey) &&
-        !event.altKey &&
-        !event.shiftKey &&
-        event.key.toLowerCase() === 'f' &&
-        !hasOpenModal()
-      ) {
-        event.preventDefault();
-        setConversationSearchFor(selected);
-        document.querySelector<HTMLInputElement>('#conversation-search input')?.focus();
-      }
-    };
-    window.addEventListener('keydown', find);
-    return () => window.removeEventListener('keydown', find);
-  }, [canSearch, selected]);
   const currentConversation = conversations.find((item) => item.id === selected);
   const latestCompletedAssistant = useMemo(
     () =>
@@ -448,9 +440,7 @@ export function App({
     session,
   });
   const visibleConversations = conversations.filter(
-    (item) =>
-      Boolean(item.archived) === archivedList &&
-      item.title.toLowerCase().includes(search.toLowerCase()),
+    (item) => Boolean(item.archived) === archivedList,
   );
 
   const { backupOperation, backupTask, exportBackup, importBackup, cancelBackup } = useBackup({
@@ -549,6 +539,52 @@ export function App({
     navigate(id);
     setSidebarOpen(false);
   };
+  const openGlobalSearch = () => {
+    if (globalSearchOpen) {
+      document.querySelector<HTMLInputElement>('[data-testid="global-search"] input')?.focus();
+      return;
+    }
+    globalSearchReturn.current =
+      sidebarOpen && !desktop
+        ? mobileSidebarTrigger.current
+        : document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null;
+    searchNavigated.current = false;
+    setSidebarOpen(false);
+    setGlobalSearchOpen(true);
+  };
+  useAppCommands([
+    {
+      id: 'new-chat',
+      enabled: Boolean(session?.authenticated),
+      allowEditing: true,
+      run: () => select(null),
+    },
+    {
+      id: 'global-search',
+      enabled: Boolean(session?.authenticated),
+      allowEditing: true,
+      allowModal: globalSearchOpen,
+      run: openGlobalSearch,
+    },
+    {
+      id: 'find-in-chat',
+      enabled: canSearch,
+      allowEditing: true,
+      run: () => {
+        setConversationSearchFor(selected);
+        document.querySelector<HTMLInputElement>('#conversation-search input')?.focus();
+      },
+    },
+    {
+      id: 'focus-composer',
+      enabled: Boolean(session?.authenticated && !invalidRoute && !snapshot.deletedAt),
+      allowEditing: true,
+      run: () => editor.current?.focus({ preventScroll: true }),
+    },
+    { id: 'toggle-sidebar', enabled: Boolean(session?.authenticated), run: toggleSidebar },
+  ]);
   useEffect(() => {
     if (!editorFocusTarget) return;
     if (editorFocusTarget.id !== selected) {
@@ -1114,17 +1150,18 @@ export function App({
             trigger={mobileSidebarTrigger}
           >
             <SidebarHeader toggle={toggleSidebar} create={() => select(null)} />
-            <label className="field-control mx-3 mt-2 h-11 w-auto gap-2 border-input bg-background">
+            <Button
+              variant="ghost"
+              className="mx-3 mt-1 h-11 justify-start gap-2 px-3"
+              onClick={openGlobalSearch}
+              aria-label="全局搜索"
+              aria-keyshortcuts={ariaShortcut('global-search')}
+              title={`全局搜索（${shortcutLabel('global-search')}）`}
+            >
               <Search className="h-[0.875rem] w-[0.875rem]" />
-              <input
-                className="text-xs placeholder:text-muted-foreground"
-                placeholder="搜索你的对话"
-                aria-label="搜索对话"
-                maxLength={200}
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-              />
-            </label>
+              <span className="flex-1 text-left">搜索</span>
+              <kbd className="text-xs text-muted-foreground">{shortcutLabel('global-search')}</kbd>
+            </Button>
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pt-2">
               <Tabs
                 value={archivedList ? 'archived' : 'active'}
@@ -1189,7 +1226,7 @@ export function App({
                 !visibleConversations.length &&
                 !libraryError && (
                   <p className="px-3 text-xs text-muted-foreground">
-                    {search ? '没有找到相关对话' : archivedList ? '暂无归档' : '暂无对话'}
+                    {archivedList ? '暂无归档' : '暂无对话'}
                   </p>
                 )
               )}
@@ -1200,9 +1237,6 @@ export function App({
                     重试
                   </Button>
                 </div>
-              )}
-              {search.trim() && (
-                <LibrarySearch query={search} archived={archivedList} open={openSearchResult} />
               )}
             </div>
             <SpaceSettingsButton open={openSettings} />
@@ -1263,7 +1297,8 @@ export function App({
                   aria-label="搜索当前对话"
                   aria-expanded={searchOpen}
                   aria-controls={searchOpen ? 'conversation-search' : undefined}
-                  title="搜索当前对话（Ctrl / ⌘ F）"
+                  title={`搜索当前对话（${shortcutLabel('find-in-chat')}）`}
+                  aria-keyshortcuts={ariaShortcut('find-in-chat')}
                   className="h-11 w-11"
                   onClick={() =>
                     searchOpen ? closeConversationSearch() : setConversationSearchFor(selected)
@@ -1323,6 +1358,10 @@ export function App({
                   </>
                 }
               >
+                <ActionMenuItem onSelect={() => setShortcutHelpOpen(true)}>
+                  <Keyboard className="size-4" />
+                  快捷键
+                </ActionMenuItem>
                 <ActionMenuItem
                   className="md:hidden"
                   disabled={Boolean(invalidRoute || syncError)}
@@ -1901,6 +1940,60 @@ export function App({
           </div>
         </div>
       </AppFrame>
+      {globalSearchOpen && (
+        <GlobalSearch
+          conversations={conversations}
+          loading={libraryLoading}
+          error={libraryError}
+          retry={refreshLibrary}
+          close={() => setGlobalSearchOpen(false)}
+          restoreFocus={() => {
+            if (searchNavigated.current) {
+              requestAnimationFrame(() => {
+                const target =
+                  document.querySelector<HTMLInputElement>('#conversation-search input') ??
+                  editor.current;
+                target?.focus({ preventScroll: true });
+              });
+            } else {
+              const target = globalSearchReturn.current;
+              if (target?.isConnected && target.checkVisibility())
+                target.focus({ preventScroll: true });
+              else mobileSidebarTrigger.current?.focus({ preventScroll: true });
+            }
+          }}
+          select={(id) => {
+            searchNavigated.current = true;
+            setGlobalSearchOpen(false);
+            select(id);
+          }}
+          openResult={(result, query) => {
+            searchNavigated.current = true;
+            setGlobalSearchOpen(false);
+            openSearchResult(result, query);
+          }}
+        />
+      )}
+      <Modal open={shortcutHelpOpen} onOpenChange={setShortcutHelpOpen}>
+        <div className="w-full max-w-md p-5">
+          <div className="flex items-center justify-between">
+            <ModalTitle>快捷键</ModalTitle>
+            <Button variant="ghost" onClick={() => setShortcutHelpOpen(false)}>
+              关闭
+            </Button>
+          </div>
+          <dl className="mt-3 space-y-3 text-sm">
+            {(Object.keys(commandDefinitions) as CommandId[]).map((id) => (
+              <div key={id} className="flex items-center justify-between gap-3">
+                <dt>{commandDefinitions[id].label}</dt>
+                <dd>
+                  <kbd>{shortcutLabel(id)}</kbd>
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      </Modal>
       <SettingsPanel
         open={settingsOpen}
         requestedTab={requestedSettingsTab}
