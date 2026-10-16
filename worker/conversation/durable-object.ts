@@ -1,58 +1,61 @@
 import { DurableObject } from 'cloudflare:workers';
-import { backupMessage,type BackupMessage,type ConversationBackup } from '../../shared/backup/backup';
-import { assertContextFits,buildContext,ContextBudgetError,historyCountWithinLimit } from '../../shared/conversation/context-budget';
-import { applyConversationSettings,DEFAULT_CONVERSATION_SETTINGS } from '../../shared/conversation/settings';
 import { DocumentError,type DocumentPart } from '../../shared/attachments/documents';
-import type { GenerationMeasurements } from '../../shared/streaming/metrics';
-import { messageFiles,messageImages,messageParts,messageText } from '../../shared/conversation/content';
-import { ProviderStream,StreamParseError } from '../../shared/streaming/provider-stream';
-import type { SearchDocument,SearchPage } from '../../shared/search/query';
-import { commitAck,payloadBytes,STREAM_VERSION,validateCommit } from '../../shared/streaming/batches';
-import { MAX_SUMMARIES,MAX_SUMMARY_CHARACTERS,prepareChatContext,summaryContext,summaryGeneration,summaryPrefix } from '../../shared/conversation/summaries';
-import type { Change, Commit, DurableChange, GenerationExecutor, Snapshot, StreamBatch, StreamCommit } from '../../shared/streaming/protocol';
-import type { ChatInput, ProviderConfig } from '../../shared/providers/types';
-import type { ConversationSettings, Message, MessageStatus, Submission, SubmitInput } from '../../shared/conversation/types';
+import { backupMessage,type BackupMessage,type ConversationBackup } from '../../shared/backup/backup';
 import { branchPath } from '../../shared/conversation/branch-path';
+import { messageFiles,messageImages,messageParts,messageText } from '../../shared/conversation/content';
+import { assertContextFits,buildContext,ContextBudgetError,historyCountWithinLimit } from '../../shared/conversation/context-budget';
 import { isActive } from '../../shared/conversation/message-state';
-import { DELETION_SCHEMA,initializeConversation } from './schema';
-import type { Env } from '../http/env';
+import { applyConversationSettings } from '../../shared/conversation/settings';
+import { MAX_SUMMARIES,MAX_SUMMARY_CHARACTERS,prepareChatContext,summaryContext,summaryGeneration,summaryPrefix } from '../../shared/conversation/summaries';
+import type { ConversationSettings,Message,MessageStatus,Submission,SubmitInput } from '../../shared/conversation/types';
+import type { ChatInput,ProviderConfig } from '../../shared/providers/types';
+import type { SearchPage } from '../../shared/search/query';
+import { commitAck,payloadBytes,STREAM_VERSION,validateCommit } from '../../shared/streaming/batches';
+import type { GenerationMeasurements } from '../../shared/streaming/metrics';
+import type { Change,Commit,DurableChange,GenerationExecutor,Snapshot,StreamBatch,StreamCommit } from '../../shared/streaming/protocol';
+import { ProviderStream,StreamParseError } from '../../shared/streaming/provider-stream';
+import { planConversationRestore } from '../backup/restore-plan';
+import { loadGenerationDocument,loadGenerationImage } from '../generation/attachments';
 import { GenerationBuffer } from '../generation/buffer';
+import { consumeModelStream,type ActiveGeneration } from '../generation/consume-stream';
 import { GenerationCancelled,ProviderError } from '../generation/errors';
 import { GenerationMeter,measuredQuery } from '../generation/metrics';
 import { FirstTokenProbe,generationTiming } from '../generation/timing';
+import type { Env } from '../http/env';
 import { json } from '../http/response';
-import { openProviderStream } from '../providers/stream';
 import { DATABASE_LIMIT_MESSAGE,HISTORY_LIMIT_MESSAGE,MAX_DATABASE_BYTES,MAX_DATABASE_START_BYTES,MAX_DATABASE_WRITE_BYTES,MAX_HISTORY_START_BYTES,MAX_MESSAGES,storageErrorMessage } from '../platform/resource-limits';
+import { openProviderStream } from '../providers/stream';
 import { searchRetryDelay } from '../search/index';
 import { StreamJournal } from '../streaming/journal';
+import { ConversationSubscribers,type Attachment } from '../streaming/subscribers';
+import { ConversationMessages,type Row } from './messages';
+import { DELETION_SCHEMA,initializeConversation } from './schema';
+import { planSubmissionParent } from './submission-plan';
 
 import { createHash } from 'node:crypto';
-import { addGenerationUsage } from '../../shared/streaming/generation';
 import { ImageContextError,type ImagePart } from '../../shared/attachments/images';
+import { addGenerationUsage } from '../../shared/streaming/generation';
 import type { WebToolServiceConfig } from '../../shared/web-tools/service';
 import { assertWebToolSupport,type PublicToolTask,type WebToolCall,type WebToolName,type WebToolOutcome } from '../../shared/web-tools/tasks';
 import { collectProviderToolTurn,type ProviderToolTurn } from '../providers/tool-turn';
+import { executeWebTool,terminalWebToolError,type WebToolFetch } from '../web-tools/service';
+import { WEB_TOOL_QUOTA_ERROR } from '../web-tools/settings';
 import { ToolStreamRelay } from '../web-tools/stream-relay';
 import { ToolTaskJournal,type ToolTaskState } from '../web-tools/task-journal';
 import { toolWorkflowId,type ToolWorkflowParams } from '../web-tools/workflow';
-import { executeWebTool,terminalWebToolError,type WebToolFetch } from '../web-tools/service';
-import { WEB_TOOL_QUOTA_ERROR } from '../web-tools/settings';
-
-type Row = Omit<Message, 'parts' | 'waitingForSummary'> & { content: string; reasoning: string | null; generationResult: string | null; summaryResult: string | null; imageResult?: string | null; fileResult?: string | null; toolResult?: string | null; waitingForSummary?: string | null } & Record<string, SqlStorageValue>;
 type Run = { id: string; conversationId: string; assistantId: string; context: string; config: string | null; chunkSeq: number; updatedAt: number;
   streamVersion: string | null; durableOffset: number;
   executor: GenerationExecutor; startedAt: number | null; cancelRequested: number } & Record<string, SqlStorageValue>;
-type Attachment = { expires: number; blocked?: boolean; runId?: string; messageId?: string; sentOffset?: number; ackedOffset?: number; ackAt?: number };
 type Dependency = { runId: string; summaryRunId: string; summaryId: string; payload: string } & Record<string, SqlStorageValue>;
-const SUBSCRIBER_WINDOW_BYTES = 128 * 1024;
 type Failure = { error: string; status: number };
 type Claim = { context: ChatInput[]; config?: ProviderConfig; claimed: boolean; status: MessageStatus; streamVersion?: string; assistantId?: string };
-type ActiveGeneration = { runId: string; abort: AbortController; buffer: GenerationBuffer; privateBuffer?: GenerationBuffer; cancelled: boolean; endedAt?: number; failure?: Error; persistence?: Promise<void>; timer?: ReturnType<typeof setInterval> };
 type ToolRequestRow = { messageId: string; rootId: string; enabled: string; requestHash: string; payload: string } & Record<string, SqlStorageValue>;
 type WorkflowRow = { rootId: string; conversationId: string; created: number; nextAt: number; attempts: number } & Record<string, SqlStorageValue>;
 
 export class Conversation extends DurableObject<Env> {
   private meter?: GenerationMeter;
+  private readonly subscribers: ConversationSubscribers;
+  private readonly messages: ConversationMessages;
   private readonly journal: StreamJournal;
   private readonly privateToolStreams: StreamJournal;
   private readonly tools!: ToolTaskJournal;
@@ -63,10 +66,12 @@ export class Conversation extends DurableObject<Env> {
   private searchFlush?: Promise<boolean>;
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
+    this.subscribers = new ConversationSubscribers(ctx, (packet, recipients) => this.meter?.broadcast(packet, recipients));
     initializeConversation(ctx.storage.sql, env.GENERATION_METRICS === '1');
     this.deletedAt = ctx.storage.sql.exec<{ deletedAt: number }>('SELECT deletedAt FROM conversation_deletion WHERE id = 1').toArray()[0]?.deletedAt ?? null;
     this.deletionCleaned = this.deletedAt !== null;
     this.journal = new StreamJournal(this.query.bind(this));
+    this.messages = new ConversationMessages(this.query.bind(this), this.journal, (id) => this.run(id)?.config, (payload) => this.meter?.event(payload));
     this.privateToolStreams = new StreamJournal(this.query.bind(this), 'tool_stream_commits');
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
     // A new instance cannot resume an old upstream socket. Recover before serving any snapshot.
@@ -79,7 +84,7 @@ export class Conversation extends DurableObject<Env> {
           const state = this.tools.state(tool.rootId);
           if (state.status !== 'active') this.finish(run.id, state.status, state.error);
           else { const change = this.ctx.storage.transactionSync(() => this.refreshToolMessage(tool.rootId, run.conversationId)); if (change) this.broadcast(change); }
-        } else if (this.rawMessage(run.assistantId)?.status === 'running') this.finishInterrupted(run);
+        } else if (this.messages.rawMessage(run.assistantId)?.status === 'running') this.finishInterrupted(run);
       }
       if (this.query(`SELECT rootId FROM tool_workflows WHERE EXISTS (SELECT 1 FROM web_tool_tasks WHERE id = rootId AND status = 'active')
         OR EXISTS (SELECT 1 FROM web_tool_notifications WHERE web_tool_notifications.rootId = tool_workflows.rootId) LIMIT 1`).toArray().length) ctx.waitUntil(this.scheduleAlarm());
@@ -99,27 +104,13 @@ export class Conversation extends DurableObject<Env> {
     const row = this.ctx.storage.sql.exec<{ payload: string }>('SELECT payload FROM generation_measurements WHERE id = 1').toArray()[0];
     return row ? JSON.parse(row.payload) as GenerationMeasurements : null;
   }
-  private decorate(row: Row): Message {
-    const { generationResult, summaryResult, imageResult, fileResult, toolResult, waitingForSummary, content, reasoning, ...message } = row;
-    return { ...message, ...(toolResult && !message.deletedAt ? { tools: JSON.parse(toolResult) as PublicToolTask } : {}), parts: [...messageParts(content, reasoning ?? ''), ...(imageResult ? JSON.parse(imageResult) as ImagePart[] : []), ...(fileResult ? JSON.parse(fileResult) as DocumentPart[] : [])], ...(generationResult ? { generation: JSON.parse(generationResult) as Message['generation'] } : {}),
-      ...(summaryResult ? { summary: JSON.parse(summaryResult) as Message['summary'] } : {}), ...(waitingForSummary ? { waitingForSummary } : {}) };
-  }
-  private materialize(message: Message): Message {
-    if (!isActive(message) || !message.runId || message.streamVersion !== STREAM_VERSION) return message;
-    const config = this.run(message.runId)?.config;
-    if (!config) return message;
-    const descriptor = JSON.parse(config) as ProviderConfig;
-    return this.journal.materialize(message, { protocol: message.tools ? 'openai-chat' : descriptor.provider, showReasoning: descriptor.showReasoning === true });
-  }
-  private rows() { return this.query<Row>('SELECT messages.*, message_deletions.deletedAt, message_generations.payload AS generationResult, message_summaries.payload AS summaryResult, message_images.payload AS imageResult, message_files.payload AS fileResult, message_web_tools.payload AS toolResult, run_dependencies.summaryId AS waitingForSummary FROM messages LEFT JOIN message_deletions ON message_deletions.id = messages.id LEFT JOIN message_generations ON message_generations.messageId = messages.id LEFT JOIN message_summaries ON message_summaries.messageId = messages.id LEFT JOIN message_images ON message_images.messageId = messages.id LEFT JOIN message_files ON message_files.messageId = messages.id LEFT JOIN message_web_tools ON message_web_tools.messageId = messages.id LEFT JOIN run_dependencies ON run_dependencies.runId = messages.runId ORDER BY messages.rowid'); }
-  private all(): Message[] { return Array.from(this.rows(), (row) => this.materialize(this.decorate(row))); }
   backup(): BackupMessage[] {
     if (this.deletedAt) return [];
-    return this.all().map(backupMessage);
+    return this.messages.all().map(backupMessage);
   }
   copySource(headId?: string): { messages: BackupMessage[]; settings: ConversationSettings } | Failure {
     if (this.deletedAt) return { error: '这个对话已删除。', status: 410 };
-    let messages = Array.from(this.rows(), (row) => this.decorate(row));
+    let messages = Array.from(this.messages.rows(), (row) => this.messages.decorate(row));
     if (headId !== undefined) {
       const head = messages.find((message) => message.id === headId);
       if (!head || head.deletedAt) return { error: '找不到这条消息。', status: 404 };
@@ -130,29 +121,23 @@ export class Conversation extends DurableObject<Env> {
       catch { return { error: '消息分支关系无效，无法复制。', status: 409 }; }
     }
     // Read settings and the durable prefix together; never copy browser-only previews or start a generation.
-    return { messages: messages.map((message) => backupMessage(this.materialize(message))), settings: this.settings() };
+    return { messages: messages.map((message) => backupMessage(this.messages.materialize(message))), settings: this.messages.settings() };
   }
   copySourceResponse(headId?: string) {
     const result = this.copySource(headId);
     return json(result, 'error' in result ? result.status : 200);
   }
-  settings(): ConversationSettings {
-    const row = this.query<{ payload: string }>('SELECT payload FROM conversation_settings WHERE id = 1').toArray()[0];
-    return { ...DEFAULT_CONVERSATION_SETTINGS, ...(row ? JSON.parse(row.payload) as ConversationSettings : {}) };
-  }
-  private writeSettings(settings: ConversationSettings) {
-    this.query('INSERT INTO conversation_settings VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET payload = excluded.payload', JSON.stringify(settings));
-  }
+  settings(): ConversationSettings { return this.messages.settings(); }
   async saveSettings(conversationId: string, settings: ConversationSettings): Promise<ConversationSettings | Failure> {
     if (this.deletedAt || await this.env.LIBRARY.getByName('personal').deletedAt(conversationId)) return { error: '这个对话已删除。', status: 410 };
     const result = this.ctx.storage.transactionSync(() => {
       if (this.deletedAt) return { error: '这个对话已删除。', status: 410 };
-      if (JSON.stringify(this.settings()) === JSON.stringify(settings)) {
+      if (JSON.stringify(this.messages.settings()) === JSON.stringify(settings)) {
         // An explicit choice of inherited defaults still counts as configured.
-        if (!this.query('SELECT id FROM conversation_settings WHERE id = 1').toArray().length) this.writeSettings(settings);
+        if (!this.query('SELECT id FROM conversation_settings WHERE id = 1').toArray().length) this.messages.writeSettings(settings);
         return null;
       }
-      this.writeSettings(settings); return this.record([], undefined, settings);
+      this.messages.writeSettings(settings); return this.messages.record([], undefined, settings);
     });
     if (result && 'error' in result) return result;
     if (result) this.broadcast(result);
@@ -161,80 +146,38 @@ export class Conversation extends DurableObject<Env> {
   restore(conversationId: string, backup: ConversationBackup): Snapshot | Failure {
     if (this.deletedAt) return { error: '这个对话已删除。', status: 410 };
     if (this.query('SELECT id FROM messages LIMIT 1').toArray().length) return { error: '目标对话已有消息。', status: 409 };
-    const ids = new Map(backup.messages.map((message) => [message.id, crypto.randomUUID()]));
-    const copiedGeneration = (source: BackupMessage) => {
-      const generation = source.generation;
-      if (!generation?.context?.summaryId) return generation;
-      const { summaryId, ...context } = generation.context;
-      return { ...generation, context: { ...context, ...(ids.has(summaryId) ? { summaryId: ids.get(summaryId)! } : {}) } };
-    };
-    const messages: Message[] = backup.messages.map((source) => ({
-      id: ids.get(source.id)!, role: source.role, parts: source.deletedAt ? [] : source.parts, deletedAt: source.deletedAt,
-      status: source.status, createdAt: source.createdAt, runId: null,
-      parentId: source.parentId ? ids.get(source.parentId) ?? null : null,
-      revisionOf: source.revisionOf ? ids.get(source.revisionOf) ?? null : null,
-      error: source.error, providerId: source.providerId, model: source.model, modelName: source.modelName,
-      ...(!source.deletedAt && source.role === 'assistant' && source.generation ? { generation: copiedGeneration(source) } : {}),
-      ...(source.summary ? { summary: { ...source.summary, throughId: ids.get(source.summary.throughId)!, sourceIds: source.summary.sourceIds.map((id) => ids.get(id)!) } } : {}),
-      ...(!source.deletedAt && source.tools ? { tools: source.tools } : {}),
-    }));
-    const batches: Message[][] = [], settings = backup.settings ?? DEFAULT_CONVERSATION_SETTINGS;
-    const overhead = payloadBytes(JSON.stringify(settings)) + 64;
-    let batch: Message[] = [], bytes = overhead;
-    for (const message of messages) {
-      const size = payloadBytes(JSON.stringify(message)) + 1;
-      if (size + overhead > 1_000_000) return { error: '单条恢复消息过大。', status: 413 };
-      if (batch.length && bytes + size > 1_000_000) { batches.push(batch); batch = []; bytes = overhead; }
-      batch.push(message); bytes += size;
-    }
-    if (batch.length || !batches.length) batches.push(batch);
+    const plan = planConversationRestore(backup);
+    if ('error' in plan) return plan;
+    const { messages, settings, batches } = plan;
     const changes = this.ctx.storage.transactionSync(() => {
       for (const message of messages) {
-        this.insert(message);
+        this.messages.insert(message);
         if (message.deletedAt) this.query('INSERT INTO message_deletions VALUES (?, ?)', message.id, message.deletedAt);
       }
-      this.writeSettings(settings);
-      return batches.map((batch) => this.record(batch, conversationId, settings));
+      this.messages.writeSettings(settings);
+      return batches.map((batch) => this.messages.record(batch, conversationId, settings));
     });
     for (const change of changes) this.broadcast(change);
     this.updateSearchSoon();
-    return this.snapshot();
+    return this.messages.snapshot();
   }
   async restoreResponse(conversationId: string, body: ReadableStream<Uint8Array>) {
     const backup = await new Response(body).json() as ConversationBackup;
     const result = this.restore(conversationId, backup);
     return json(result, 'error' in result ? result.status : 200);
   }
-  private rawMessage(id: string): Message | undefined {
-    const row = this.query<Row>('SELECT messages.*, message_deletions.deletedAt, message_generations.payload AS generationResult, message_summaries.payload AS summaryResult, message_images.payload AS imageResult, message_files.payload AS fileResult, message_web_tools.payload AS toolResult, run_dependencies.summaryId AS waitingForSummary FROM messages LEFT JOIN message_deletions ON message_deletions.id = messages.id LEFT JOIN message_generations ON message_generations.messageId = messages.id LEFT JOIN message_summaries ON message_summaries.messageId = messages.id LEFT JOIN message_images ON message_images.messageId = messages.id LEFT JOIN message_files ON message_files.messageId = messages.id LEFT JOIN message_web_tools ON message_web_tools.messageId = messages.id LEFT JOIN run_dependencies ON run_dependencies.runId = messages.runId WHERE messages.id = ?', id).toArray()[0];
-    return row && this.decorate(row);
-  }
-  private message(id: string): Message | undefined { const message = this.rawMessage(id); return message && this.materialize(message); }
   private run(id: string): Run | undefined { return this.query<Run>('SELECT * FROM runs WHERE id = ?', id).toArray()[0]; }
-  private seq(): number { return this.query<{ seq: number }>('SELECT COALESCE(MAX(seq), 0) AS seq FROM events').one().seq; }
-  private snapshot(): Snapshot { return { messages: this.all(), seq: this.seq(), settings: this.settings() }; }
   snapshotResponse(): Response {
     if (this.deletedAt) return json({ error: '这个对话已删除。' }, 410);
     // RPC transfers a Response body as a stream, keeping history decoding and JSON work out of the Free Worker.
-    return json(this.snapshot());
-  }
-  private record(messages: Message[], conversationId?: string, settings?: ConversationSettings): Change {
-    const seq = this.recordPayload(JSON.stringify(settings ? { messages, settings } : messages));
-    if (conversationId) for (const message of messages) if (!isActive(message) && !message.summary) {
-      this.query('INSERT INTO message_search_versions VALUES (?, ?) ON CONFLICT(messageId) DO UPDATE SET version = excluded.version', message.id, seq);
-      this.query('INSERT INTO search_outbox VALUES (?, ?, ?) ON CONFLICT(messageId) DO UPDATE SET version = excluded.version', message.id, conversationId, seq);
-    }
-    return { type: 'change', seq, messages, ...(settings ? { settings } : {}) };
-  }
-  private searchDocument(message: Message, version: number): SearchDocument {
-    return { messageId: message.id, version, role: message.role, content: messageText(message), reasoning: messageText(message, 'reasoning') };
+    return json(this.messages.snapshot());
   }
   searchDocumentPage(after: number): SearchPage {
     if (this.deletedAt) return { documents: [], after, done: true };
     const rows = this.query<Row & { ordinal: number; version: number }>(`SELECT messages.*, messages.rowid AS ordinal, COALESCE(message_search_versions.version, 0) AS version, NULL AS generationResult
       FROM messages LEFT JOIN message_search_versions ON message_search_versions.messageId = messages.id WHERE messages.rowid > ? AND NOT EXISTS (SELECT 1 FROM message_summaries WHERE message_summaries.messageId = messages.id) ORDER BY messages.rowid LIMIT 5`, after).toArray();
     const page = rows.slice(0, 4);
-    return { documents: page.filter((row) => !isActive(row)).map((row) => this.searchDocument(this.decorate(row), row.version)), after: page.at(-1)?.ordinal ?? after, done: rows.length <= 4 };
+    return { documents: page.filter((row) => !isActive(row)).map((row) => this.messages.searchDocument(this.messages.decorate(row), row.version)), after: page.at(-1)?.ordinal ?? after, done: rows.length <= 4 };
   }
   private flushSearchIndex(): Promise<boolean> {
     if (this.searchFlush) return this.searchFlush;
@@ -245,9 +188,9 @@ export class Conversation extends DurableObject<Env> {
       try {
         const pending = this.query<{ messageId: string; conversationId: string; version: number }>('SELECT * FROM search_outbox ORDER BY version LIMIT 4').toArray();
         for (const item of pending) {
-          const message = this.rawMessage(item.messageId);
+          const message = this.messages.rawMessage(item.messageId);
           if (!message || this.deletedAt) continue;
-          await this.env.LIBRARY.getByName('personal').applySearchDocuments(item.conversationId, [this.searchDocument(message, item.version)]);
+          await this.env.LIBRARY.getByName('personal').applySearchDocuments(item.conversationId, [this.messages.searchDocument(message, item.version)]);
           if (this.deletedAt) return true;
           this.query('DELETE FROM search_outbox WHERE messageId = ? AND version = ?', item.messageId, item.version);
         }
@@ -273,54 +216,14 @@ export class Conversation extends DurableObject<Env> {
       });
     })());
   }
-  private recordPayload(payload: string): number {
-    this.meter?.event(payload);
-    this.query('INSERT INTO events (payload) VALUES (?)', payload);
-    const seq = this.seq();
-    this.query('DELETE FROM events WHERE seq < ?', seq - 500);
-    return seq;
-  }
   private broadcast(change: DurableChange) {
     if (this.deletedAt) return;
     // Durable confirmations pass through the storage output gate; preview packets never acknowledge storage.
-    this.sendPacket(JSON.stringify(change.type === 'commit' ? commitAck(change) : change));
-  }
-  private sendPacket(packet: string, batch?: StreamBatch, target?: WebSocket) {
-    let recipients = 0;
-    for (const socket of target ? [target] : this.ctx.getWebSockets()) {
-      const attachment = socket.deserializeAttachment() as Attachment;
-      if (attachment.blocked) continue;
-      if (attachment.expires <= Date.now() / 1000) { socket.close(4001, 'Session expired'); continue; }
-      if (batch) {
-        if (attachment.runId !== batch.runId || attachment.messageId !== batch.messageId) {
-          Object.assign(attachment, { runId: batch.runId, messageId: batch.messageId, sentOffset: batch.startOffset, ackedOffset: batch.startOffset, ackAt: Date.now() });
-        }
-        if (attachment.sentOffset !== batch.startOffset || batch.endOffset - attachment.ackedOffset! > SUBSCRIBER_WINDOW_BYTES
-          || (attachment.sentOffset! > attachment.ackedOffset! && Date.now() - attachment.ackAt! > 30_000)) {
-          attachment.blocked = true; socket.serializeAttachment(attachment);
-          socket.close(4002, 'Reconnect to sync'); continue;
-        }
-        attachment.sentOffset = batch.endOffset;
-        socket.serializeAttachment(attachment);
-      }
-      try { socket.send(packet); recipients++; }
-      catch { socket.close(1011, 'Reconnect to sync'); }
-    }
-    this.meter?.broadcast(packet, recipients);
+    this.subscribers.send(JSON.stringify(change.type === 'commit' ? commitAck(change) : change));
   }
   private preview(batch: StreamBatch, target?: WebSocket) {
     if (this.deletedAt) return;
-    this.sendPacket(JSON.stringify({ type: 'preview', batch }), batch, target);
-  }
-  private insert(message: Message) {
-    this.query('INSERT INTO messages (id, role, content, status, createdAt, runId, parentId, revisionOf, error, providerId, model, modelName, reasoning, streamVersion, durableOffset) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      message.id, message.role, messageText(message), message.status, message.createdAt, message.runId, message.parentId, message.revisionOf, message.error,
-      message.providerId ?? null, message.model ?? null, message.modelName ?? null, messageText(message, 'reasoning'), message.streamVersion ?? null, message.durableOffset ?? 0);
-    if (message.role === 'assistant' && !message.deletedAt && message.generation) this.query('INSERT INTO message_generations VALUES (?, ?)', message.id, JSON.stringify(message.generation));
-    if (message.summary) this.query('INSERT INTO message_summaries VALUES (?, ?)', message.id, JSON.stringify(message.summary));
-    if (messageFiles(message).length && !message.deletedAt) this.query('INSERT INTO message_files VALUES (?, ?)', message.id, JSON.stringify(messageFiles(message)));
-    if (message.tools && !message.deletedAt) this.query('INSERT INTO message_web_tools VALUES (?, ?, ?, ?, ?)', message.id, crypto.randomUUID(), '[]', '', JSON.stringify(message.tools));
-    if (messageImages(message).length && !message.deletedAt) this.query('INSERT INTO message_images VALUES (?, ?)', message.id, JSON.stringify(messageImages(message)));
+    this.subscribers.send(JSON.stringify({ type: 'preview', batch }), batch, target);
   }
   async reviseAssistant(conversationId: string, messageId: string, requestId: string, content: string): Promise<{ messageId: string } | Failure> {
     if (this.deletedAt || await this.env.LIBRARY.getByName('personal').deletedAt(conversationId)) return { error: '这个对话已删除。', status: 410 };
@@ -329,21 +232,21 @@ export class Conversation extends DurableObject<Env> {
       const fingerprint = JSON.stringify(['assistant-edit', messageId, content.trim()]);
       const existing = this.query<{ fingerprint: string; result: string }>('SELECT fingerprint, result FROM submissions WHERE id = ?', requestId).toArray()[0];
       if (existing) return existing.fingerprint === fingerprint ? JSON.parse(existing.result) as { messageId: string } : { error: '此请求 ID 已用于另一条消息。', status: 409 };
-      const original = this.rawMessage(messageId);
+      const original = this.messages.rawMessage(messageId);
       if (!original || original.deletedAt || original.role !== 'assistant' || original.summary) return { error: '找不到要编辑的回答。', status: 404 };
       if (this.query("SELECT id FROM messages WHERE status IN ('queued', 'running') LIMIT 1").toArray().length) return { error: '请等待生成完成或先停止，再编辑消息。', status: 409 };
       if (!content.trim() || content.trim().length > 100_000) return { error: '请输入 1 到 100,000 字的回答。', status: 400 };
       if (this.ctx.storage.sql.databaseSize > MAX_DATABASE_START_BYTES) return { error: DATABASE_LIMIT_MESSAGE, status: 507 };
-      const messages = this.all();
+      const messages = this.messages.all();
       if (messages.length >= MAX_MESSAGES) return { error: '此对话已达到原型的消息上限，请新建对话。', status: 507 };
       const revision: Message = { id: crypto.randomUUID(), role: 'assistant', parts: messageParts(content.trim()), status: 'completed', createdAt: Date.now(),
         runId: null, parentId: original.parentId, revisionOf: original.id, error: null,
         providerId: original.providerId, model: original.model, modelName: original.modelName };
       if (payloadBytes(JSON.stringify([...messages, revision])) > MAX_HISTORY_START_BYTES) return { error: HISTORY_LIMIT_MESSAGE, status: 507 };
-      this.insert(revision);
+      this.messages.insert(revision);
       const result = { messageId: revision.id };
       this.query('INSERT INTO submissions VALUES (?, ?, ?)', requestId, fingerprint, JSON.stringify(result));
-      return { ...result, change: this.record([this.rawMessage(revision.id)!], conversationId) };
+      return { ...result, change: this.messages.record([this.messages.rawMessage(revision.id)!], conversationId) };
     });
     if ('change' in accepted) { this.broadcast(accepted.change); this.updateSearchSoon(); return { messageId: accepted.messageId }; }
     return accepted;
@@ -352,12 +255,12 @@ export class Conversation extends DurableObject<Env> {
     if (this.deletedAt || await this.env.LIBRARY.getByName('personal').deletedAt(conversationId)) return { error: '这个对话已删除。', status: 410 };
     const accepted = this.ctx.storage.transactionSync<{ deletedAt: number; change: Change } | { deletedAt: number } | Failure>(() => {
       if (this.deletedAt) return { error: '这个对话已删除。', status: 410 };
-      const original = this.rawMessage(messageId);
+      const original = this.messages.rawMessage(messageId);
       if (!original) return { error: '找不到要删除的消息。', status: 404 };
       if (original.deletedAt) return { deletedAt: original.deletedAt };
       if (this.query("SELECT id FROM messages WHERE status IN ('queued', 'running') LIMIT 1").toArray().length) return { error: '请等待生成完成或先停止，再删除消息。', status: 409 };
       const deletedAt = Date.now();
-      const affected = [original, ...Array.from(this.rows(), (row) => this.decorate(row)).filter((message) => !message.deletedAt && message.summary?.sourceIds.includes(messageId))];
+      const affected = [original, ...Array.from(this.messages.rows(), (row) => this.messages.decorate(row)).filter((message) => !message.deletedAt && message.summary?.sourceIds.includes(messageId))];
       for (const message of affected) {
         this.query('UPDATE messages SET content = ?, reasoning = NULL, error = NULL WHERE id = ?', '', message.id);
         this.query('INSERT INTO message_deletions VALUES (?, ?)', message.id, deletedAt);
@@ -375,7 +278,7 @@ export class Conversation extends DurableObject<Env> {
         // Keep request IDs so delayed retries cannot recreate deleted content, but erase their saved text.
         this.query("UPDATE submissions SET fingerprint = '' WHERE json_extract(result, '$.userId') = ? OR json_extract(result, '$.assistantId') = ? OR json_extract(result, '$.messageId') = ?", message.id, message.id, message.id);
       }
-      const change = this.record(affected.map((message) => this.rawMessage(message.id)!), conversationId);
+      const change = this.messages.record(affected.map((message) => this.messages.rawMessage(message.id)!), conversationId);
       // Force stale cursors to use the redacted snapshot instead of replaying deleted text.
       this.query('DELETE FROM events WHERE seq < ?', change.seq);
       return { deletedAt, change };
@@ -411,8 +314,8 @@ export class Conversation extends DurableObject<Env> {
       if (this.ctx.storage.sql.databaseSize > MAX_DATABASE_START_BYTES) return { error: DATABASE_LIMIT_MESSAGE, status: 507 };
       const messages: Message[] = [];
       let historyBytes = 32;
-      for (const row of this.rows()) {
-        const message = this.decorate(row);
+      for (const row of this.messages.rows()) {
+        const message = this.messages.decorate(row);
         historyBytes += payloadBytes(JSON.stringify(message)) + 1;
         if (historyBytes > MAX_HISTORY_START_BYTES) return { error: HISTORY_LIMIT_MESSAGE, status: 507 };
         messages.push(message);
@@ -430,33 +333,18 @@ export class Conversation extends DurableObject<Env> {
           parentId: input.summaryThrough, revisionOf: null, error: null, summary: prepared.coverage,
           providerId: prepared.config.providerId, model: prepared.config.model, modelName: prepared.config.modelName || prepared.config.model,
           streamVersion: STREAM_VERSION, durableOffset: 0, generation: { usage: {}, usageIsFinal: false, context: prepared.estimate } };
-        this.insert(summary);
+        this.messages.insert(summary);
         this.query('INSERT INTO runs (id, conversationId, assistantId, context, chunkSeq, updatedAt, config, streamVersion, executor) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)',
           runId, conversationId, summary.id, JSON.stringify(prepared.context), Date.now(), JSON.stringify(prepared.config), STREAM_VERSION, 'do-v1');
         const result = { runId, userId: input.summaryThrough, assistantId: summary.id };
         this.query('INSERT INTO submissions VALUES (?, ?, ?)', input.requestId, fingerprint, JSON.stringify(result));
-        const change = this.record([this.rawMessage(summary.id)!], conversationId);
+        const change = this.messages.record([this.messages.rawMessage(summary.id)!], conversationId);
         await this.ctx.storage.setAlarm(Date.now() + 1000);
         return { result, change };
       }
-      const ordinary = !input.retryOf && !input.revisionOf;
-      if (input.parentId !== undefined && !ordinary) return { error: '修订或重新生成不能同时指定父消息。', status: 400 };
-      if (ordinary && input.parentId === undefined) return { error: '发送消息必须指定父消息。', status: 400 };
-      const requestedParent = input.parentId ? messages.find((message) => message.id === input.parentId && message.status === 'completed' && !message.deletedAt && !message.summary) : undefined;
-      if (input.parentId && !requestedParent) return { error: '找不到可继续的父消息。', status: 404 };
-      if (ordinary && input.parentId === null && messages.some((message) => !message.summary)) return { error: '请指定当前分支的父消息，或新建对话。', status: 409 };
-      let parent: Message | undefined;
-      let previous: Message | undefined;
-      if (input.retryOf) {
-        previous = messages.find((m) => m.id === input.retryOf && m.role === 'assistant' && !m.deletedAt && !m.summary);
-        parent = messages.find((m) => m.id === previous?.parentId);
-        if (!previous || !parent || parent.deletedAt) return { error: '找不到要重新生成的消息。', status: 404 };
-      }
-      const original = input.revisionOf ? messages.find((m) => m.id === input.revisionOf && m.role === 'user' && !m.deletedAt) : undefined;
-      if (input.revisionOf && !original) return { error: '找不到要编辑的消息。', status: 404 };
-      if (messages.length + (parent ? 1 : 2) > MAX_MESSAGES) return { error: '此对话已达到原型的消息上限，请新建对话。', status: 507 };
-      const content = parent ? messageText(parent) : input.content?.trim() ?? '';
-      if (input.retryOf && (input.imageIds !== undefined || input.fileIds !== undefined)) return { error: '重新生成不能更换原提问的附件。', status: 400 };
+      const plan = planSubmissionParent(messages, input);
+      if ('error' in plan) return plan;
+      const { parent, previous, original, content, userParentId } = plan;
       const references = parent ? { value: messageImages(parent) } : input.imageIds?.length ? await this.env.LIBRARY.getByName('personal').imageReferences(conversationId, input.imageIds) : { value: [] as ImagePart[] };
       if ('error' in references) return references;
       const images = references.value;
@@ -464,12 +352,11 @@ export class Conversation extends DurableObject<Env> {
       if ('error' in documents) return documents;
       const files = documents.value;
       if ((!content && !images.length && !files.length) || content.length > 16_000) return { error: '请输入 1 到 16,000 字的消息。', status: 400 };
-      const settings = input.settings ?? this.settings();
+      const settings = input.settings ?? this.messages.settings();
       let generationConfig: ProviderConfig;
       try { generationConfig = applyConversationSettings(config, settings); }
       catch (error) { return { error: error instanceof Error ? error.message : '会话参数无效。', status: 400 }; }
       const runId = crypto.randomUUID();
-      const userParentId = original ? original.parentId : requestedParent?.id ?? null;
       let context: ChatInput[];
       let contextEstimate;
       let automatic: ReturnType<typeof summaryGeneration> | undefined;
@@ -499,10 +386,10 @@ export class Conversation extends DurableObject<Env> {
         generation: { usage: {}, usageIsFinal: false, ...(!automatic ? { context: contextEstimate } : {}) },
       };
       const initializeSettings = messages.length === 0 && !this.query('SELECT id FROM conversation_settings WHERE id = 1').toArray().length;
-      if (initializeSettings) this.writeSettings(settings);
-      if (!parent) this.insert(user);
+      if (initializeSettings) this.messages.writeSettings(settings);
+      if (!parent) this.messages.insert(user);
       const summary = automatic ? this.queueSummary(conversationId, automatic, true) : undefined;
-      this.insert(assistant);
+      this.messages.insert(assistant);
       if (input.tools) this.query('INSERT INTO message_web_tools VALUES (?, ?, ?, ?, ?)', assistant.id, input.requestId, JSON.stringify(input.tools),
         createHash('sha256').update(fingerprint).digest('hex'), JSON.stringify({ status: 'active', round: 0, calls: [] } satisfies PublicToolTask));
       this.query('INSERT INTO runs (id, conversationId, assistantId, context, chunkSeq, updatedAt, config, streamVersion, executor) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)',
@@ -511,7 +398,7 @@ export class Conversation extends DurableObject<Env> {
         JSON.stringify({ parentId: parent ? parent.parentId : userParentId, content, settings, images, files }));
       const result = { runId, userId: user.id, assistantId: assistant.id, ...(summary ? { summaryId: summary.id } : {}) };
       this.query('INSERT INTO submissions VALUES (?, ?, ?)', input.requestId, fingerprint, JSON.stringify(result));
-      const change = this.record([...(parent ? [] : [this.rawMessage(user.id)!]), ...(summary ? [this.rawMessage(summary.id)!] : []), this.rawMessage(assistant.id)!], conversationId, messages.length === 0 ? this.settings() : undefined);
+      const change = this.messages.record([...(parent ? [] : [this.messages.rawMessage(user.id)!]), ...(summary ? [this.messages.rawMessage(summary.id)!] : []), this.messages.rawMessage(assistant.id)!], conversationId, messages.length === 0 ? this.messages.settings() : undefined);
       // The outbox, input/configuration and its alarm commit together before acceptance.
       await this.ctx.storage.setAlarm(Date.now() + 1000);
       return { result, change };
@@ -525,7 +412,7 @@ export class Conversation extends DurableObject<Env> {
       parentId: prepared.coverage.throughId, revisionOf: null, error: null, summary: { ...prepared.coverage, ...(automatic ? { automatic: true } : {}) },
       providerId: prepared.config.providerId, model: prepared.config.model, modelName: prepared.config.modelName || prepared.config.model,
       streamVersion: STREAM_VERSION, durableOffset: 0, generation: { usage: {}, usageIsFinal: false, context: prepared.estimate } };
-    this.insert(summary);
+    this.messages.insert(summary);
     this.query('INSERT INTO runs (id, conversationId, assistantId, context, chunkSeq, updatedAt, config, streamVersion, executor) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)',
       runId, conversationId, summary.id, JSON.stringify(prepared.context), Date.now(), JSON.stringify(prepared.config), STREAM_VERSION, 'do-v1');
     return summary;
@@ -549,13 +436,13 @@ export class Conversation extends DurableObject<Env> {
     const payload = JSON.stringify(this.tools.publicTask(rootId));
     if (payload === request.payload) return null;
     this.query('UPDATE message_web_tools SET payload = ? WHERE rootId = ?', payload, rootId);
-    return this.record([this.message(request.messageId)!], conversationId);
+    return this.messages.record([this.messages.message(request.messageId)!], conversationId);
   }
   private initializeToolTasks() {
     for (const request of this.query<ToolRequestRow>(`SELECT message_web_tools.* FROM message_web_tools JOIN messages ON messages.id = messageId
       WHERE messages.status = 'queued' AND NOT EXISTS (SELECT 1 FROM web_tool_tasks WHERE web_tool_tasks.id = rootId)
       AND NOT EXISTS (SELECT 1 FROM run_dependencies WHERE run_dependencies.runId = messages.runId)`).toArray()) {
-      const message = this.rawMessage(request.messageId)!, run = this.run(message.runId!)!;
+      const message = this.messages.rawMessage(request.messageId)!, run = this.run(message.runId!)!;
       try {
         this.ctx.storage.transactionSync(() => {
           const estimate = message.generation?.context;
@@ -650,14 +537,14 @@ export class Conversation extends DurableObject<Env> {
       }
       const current = this.tools.state(taskId);
       if (round !== current.round || current.phase !== 'queued') return null;
-      const message = this.rawMessage(current.messageId)!, estimate = message.generation?.context;
+      const message = this.messages.rawMessage(current.messageId)!, estimate = message.generation?.context;
       if (!estimate) throw new ProviderError('工具任务缺少上下文估算。');
       const planned = this.tools.model(current.runId)!.plannedTokens;
       this.query('UPDATE message_generations SET payload = ? WHERE messageId = ?', JSON.stringify({ ...message.generation,
         context: { ...estimate, toolTokens: planned - (estimate.totalTokens - (estimate.toolTokens ?? 0)), totalTokens: planned } }), current.messageId);
       this.query('INSERT INTO tool_model_permits VALUES (?) ON CONFLICT DO NOTHING', current.runId);
       this.query('UPDATE message_web_tools SET payload = ? WHERE rootId = ?', JSON.stringify(this.tools.publicTask(taskId)), taskId);
-      return this.record([this.message(state.messageId)!]);
+      return this.messages.record([this.messages.message(state.messageId)!]);
     }); } catch (error) {
       this.finish(state.runId, 'failed', error instanceof Error ? error.message : '无法登记下一工具模型步骤。');
       await this.scheduleAlarm(); return this.toolTaskState(taskId);
@@ -726,12 +613,12 @@ export class Conversation extends DurableObject<Env> {
     this.expireToolTasks(); this.initializeToolTasks();
     await this.flushToolWorkflows();
     for (const run of this.query<Run>(`SELECT runs.* FROM runs JOIN messages ON messages.id = runs.assistantId WHERE messages.status IN ('queued', 'running') AND NOT EXISTS (SELECT 1 FROM run_dependencies WHERE run_dependencies.runId = runs.id)`).toArray()) {
-      if (this.rawMessage(run.assistantId)?.runId !== run.id) continue;
+      if (this.messages.rawMessage(run.assistantId)?.runId !== run.id) continue;
       if (this.toolRequest(run.assistantId) && !this.query('SELECT runId FROM tool_model_permits WHERE runId = ?', run.id).toArray().length) continue;
       const deletion = await this.env.LIBRARY.getByName('personal').deletedAt(run.conversationId);
       if (this.deletedAt) return;
       if (deletion) { await this.deleteConversation(deletion); return; }
-      const message = this.rawMessage(run.assistantId)!;
+      const message = this.messages.rawMessage(run.assistantId)!;
       if (message.status === 'running') this.finishInterrupted(run);
       else if (run.cancelRequested) this.finish(run.id, 'cancelled');
       else {
@@ -780,7 +667,7 @@ export class Conversation extends DurableObject<Env> {
       }, (batch) => this.preview(batch)) };
     this.activeGeneration = active;
     if (toolModel) active.privateBuffer = new GenerationBuffer(runId, claim.assistantId!, (batches) => {
-      if (this.deletedAt || !isActive(this.rawMessage(claim.assistantId!) ?? { status: 'completed' })) return false;
+      if (this.deletedAt || !isActive(this.messages.rawMessage(claim.assistantId!) ?? { status: 'completed' })) return false;
       this.ctx.storage.transactionSync(() => {
         this.privateToolStreams.append({ runId, messageId: claim.assistantId!, batches });
         if (this.ctx.storage.sql.databaseSize > MAX_DATABASE_WRITE_BYTES) throw new ProviderError(DATABASE_LIMIT_MESSAGE);
@@ -809,32 +696,11 @@ export class Conversation extends DurableObject<Env> {
         if (!this.deletedAt && !active.cancelled) this.query('UPDATE generation_timings SET firstTokenAt = ? WHERE runId = ?', receivedAt, runId);
       });
       const body = await this.openModelStream(claim.config, claim.context, abort.signal, async (image) => {
-        const response = await this.env.LIBRARY.getByName('personal').attachmentResponse(this.run(runId)!.conversationId, image.attachmentId, false);
-        if (!response.ok) throw new ProviderError('图片不可用，回答未调用模型。');
-        const data = new Uint8Array(await response.arrayBuffer());
-        const digest = await crypto.subtle.digest('SHA-256', data);
-        const sha256 = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
-        if (sha256 !== image.sha256 || response.headers.get('Content-Type') !== image.mediaType) throw new ProviderError('图片完整性校验失败，回答未调用模型。');
-        return data;
+        return loadGenerationImage(this.env.LIBRARY.getByName('personal'), this.run(runId)!.conversationId, image);
       }, async (file) => {
-        const result = await this.env.LIBRARY.getByName('personal').documentText(this.run(runId)!.conversationId, file.attachmentId);
-        if ('error' in result) throw new ProviderError(result.error);
-        return result.value.text;
-      }, toolModel ? { enabled: this.tools.enabled(toolModel.rootId), exchanges: this.tools.exchanges(toolModel.rootId, toolModel.round, claim.config) } : undefined), reader = body.getReader();
-      try {
-        while (true) {
-          if (active.cancelled) throw new GenerationCancelled();
-          if (active.failure) throw active.failure;
-          if (abort.signal.aborted) throw new ProviderError('模型供应商连接已中断。');
-          await active.persistence;
-          const next = await reader.read();
-          const receivedAt = Date.now();
-          if (next.done) { active.endedAt ??= receivedAt; probe.end(receivedAt); break; }
-          if (active.cancelled) throw new GenerationCancelled();
-          probe.feed(next.value, receivedAt);
-          if (relay) relay.add(next.value); else active.buffer.add(next.value);
-        }
-      } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
+        return loadGenerationDocument(this.env.LIBRARY.getByName('personal'), this.run(runId)!.conversationId, file);
+      }, toolModel ? { enabled: this.tools.enabled(toolModel.rootId), exchanges: this.tools.exchanges(toolModel.rootId, toolModel.round, claim.config) } : undefined);
+      await consumeModelStream(body, active, probe, (bytes) => { if (relay) relay.add(bytes); else active.buffer.add(bytes); });
       relay?.end(); active.privateBuffer?.flush(); active.buffer.flush();
       await active.persistence;
       const turn = toolModel && !active.cancelled ? await collectProviderToolTurn(claim.config, this.tools.enabled(toolModel.rootId),
@@ -858,7 +724,7 @@ export class Conversation extends DurableObject<Env> {
   }
   private claim(runId: string): Claim | null {
     const run = this.run(runId);
-    const message = run && this.message(run.assistantId);
+    const message = run && this.messages.message(run.assistantId);
     if (!run || !message || run.cancelRequested) return null;
     if (message.status !== 'queued') return { context: [], claimed: false, status: message.status };
     if (this.env.GENERATION_METRICS === '1') this.meter = new GenerationMeter(runId, Date.now, 'claim-to-terminal', 'do-v1');
@@ -866,7 +732,7 @@ export class Conversation extends DurableObject<Env> {
       if (this.tools.model(runId) && !this.tools.claimModel(runId)) return null;
       this.query('UPDATE messages SET status = ? WHERE id = ?', 'running', message.id);
       this.query('UPDATE runs SET updatedAt = ?, startedAt = ? WHERE id = ?', Date.now(), Date.now(), runId);
-      return this.record([this.message(message.id)!]);
+      return this.messages.record([this.messages.message(message.id)!]);
     });
     if (!change) return null;
     this.broadcast(change);
@@ -875,7 +741,7 @@ export class Conversation extends DurableObject<Env> {
   }
   commit(runId: string, batches: StreamBatch[]): boolean {
     if (this.deletedAt) return false;
-    const run = this.run(runId), message = run && this.rawMessage(run.assistantId);
+    const run = this.run(runId), message = run && this.messages.rawMessage(run.assistantId);
     if (!run || !message || message.status !== 'running') return false;
     const commit: StreamCommit = { runId, messageId: run.assistantId, batches };
     if (run.streamVersion !== STREAM_VERSION) throw new Error('Stream identity mismatch');
@@ -894,7 +760,7 @@ export class Conversation extends DurableObject<Env> {
       if (!this.journal.append(commit)) throw new Error('Conflicting stream sequence');
       this.query('UPDATE runs SET chunkSeq = ?, durableOffset = ?, updatedAt = ? WHERE id = ?',
         last.chunkSeq, last.endOffset, Date.now(), runId);
-      const seq = this.recordPayload(JSON.stringify(commit));
+      const seq = this.messages.recordPayload(JSON.stringify(commit));
       if (this.ctx.storage.sql.databaseSize > MAX_DATABASE_WRITE_BYTES) throw new ProviderError(DATABASE_LIMIT_MESSAGE);
       return { type: 'commit', ...commit, seq };
     });
@@ -905,7 +771,7 @@ export class Conversation extends DurableObject<Env> {
   finish(runId: string, status: 'completed' | 'failed' | 'cancelled', error: string | null = null, toolTurn?: ProviderToolTurn) {
     if (this.deletedAt) return;
     const run = this.run(runId);
-    const message = run && this.message(run.assistantId);
+    const message = run && this.messages.message(run.assistantId);
     if (!run || !message || message.runId !== runId || !isActive(message)) return;
     const toolModel = this.tools.model(runId), toolRequest = this.toolRequest(message.id), prior = message.generation;
     if (toolModel && status === 'completed' && !toolTurn) { status = 'failed'; error = '工具模型步骤缺少完整续接资料。'; }
@@ -955,7 +821,7 @@ export class Conversation extends DurableObject<Env> {
       this.query('UPDATE messages SET status = ?, error = ?, streamVersion = ? WHERE id = ?', finalStatus, error,
         toolModel && finalStatus === 'running' ? null : message.streamVersion ?? null, message.id);
       if (finalStatus !== 'running') this.query("UPDATE runs SET config = NULL, context = '[]' WHERE assistantId = ?", message.id);
-      const terminal = this.record([this.message(message.id)!, ...this.resolveDependentAnswers(runId, finalStatus)], run.conversationId);
+      const terminal = this.messages.record([this.messages.message(message.id)!, ...this.resolveDependentAnswers(runId, finalStatus)], run.conversationId);
       if (this.ctx.storage.sql.databaseSize > MAX_DATABASE_BYTES) throw new ProviderError(DATABASE_LIMIT_MESSAGE);
       return { change: terminal, finalStatus };
     });
@@ -966,7 +832,7 @@ export class Conversation extends DurableObject<Env> {
     }
     this.updateSearchSoon();
     if (this.meter?.runId === runId) {
-      const final = this.message(message.id)!;
+      const final = this.messages.message(message.id)!;
       const report = this.meter.report(finalStatus, this.ctx.storage.sql.databaseSize, messageText(final).length, messageText(final, 'reasoning').length);
       this.meter = undefined;
       // One diagnostic row per generation, excluded from the measured application SQL window.
@@ -979,7 +845,7 @@ export class Conversation extends DurableObject<Env> {
   private resolveDependentAnswers(summaryRunId: string, summaryStatus: MessageStatus): Message[] {
     const updated: Message[] = [];
     for (const dependency of this.query<Dependency>('SELECT * FROM run_dependencies WHERE summaryRunId = ?', summaryRunId).toArray()) {
-      const run = this.run(dependency.runId), answer = run && this.rawMessage(run.assistantId);
+      const run = this.run(dependency.runId), answer = run && this.messages.rawMessage(run.assistantId);
       if (!run || !answer || !isActive(answer)) { this.query('DELETE FROM run_dependencies WHERE runId = ?', dependency.runId); continue; }
       let status: MessageStatus = run.cancelRequested || summaryStatus === 'cancelled' ? 'cancelled' : 'failed';
       let error: string | null = status === 'cancelled' ? null : '自动摘要失败，回答未调用模型。原始历史保留，请调整配置后主动重试。';
@@ -987,7 +853,7 @@ export class Conversation extends DurableObject<Env> {
         try {
           const { parentId, content, settings, images, files } = JSON.parse(dependency.payload) as { parentId: string | null; content: string; settings: ConversationSettings; images: ImagePart[]; files: DocumentPart[] };
           if (!run.config) throw new Error('回答配置已丢失。');
-          const prepared = summaryContext(this.all(), parentId, true);
+          const prepared = summaryContext(this.messages.all(), parentId, true);
           if (prepared.summary?.id !== dependency.summaryId) throw new Error('自动摘要覆盖范围不匹配。');
           const built = buildContext(prepared.history, content, JSON.parse(run.config) as ProviderConfig, settings, summaryPrefix(prepared.summary), images, files);
           assertContextFits(built.estimate);
@@ -1006,15 +872,15 @@ export class Conversation extends DurableObject<Env> {
       }
       this.query('UPDATE messages SET status = ?, error = ? WHERE id = ?', status, error, answer.id);
       this.query('DELETE FROM run_dependencies WHERE runId = ?', run.id);
-      updated.push(this.rawMessage(answer.id)!);
+      updated.push(this.messages.rawMessage(answer.id)!);
     }
     return updated;
   }
   async cancel(runId: string) {
     if (this.deletedAt) return;
-    const original = this.run(runId), originalMessage = original && this.rawMessage(original.assistantId);
+    const original = this.run(runId), originalMessage = original && this.messages.rawMessage(original.assistantId);
     if (originalMessage?.runId && this.toolRequest(originalMessage.id)) runId = originalMessage.runId;
-    const run = this.run(runId), message = run && this.rawMessage(run.assistantId);
+    const run = this.run(runId), message = run && this.messages.rawMessage(run.assistantId);
     if (!run || !message || !isActive(message)) return;
     const dependency = this.query<Dependency>('SELECT * FROM run_dependencies WHERE runId = ? OR summaryRunId = ?', runId, runId).toArray()[0];
     const ids = dependency ? [dependency.summaryRunId, dependency.runId] : [runId];
@@ -1067,10 +933,10 @@ export class Conversation extends DurableObject<Env> {
     const expires = Number(request.headers.get('X-Session-Expires'));
     server.serializeAttachment({ expires } satisfies Attachment);
     const cursor = Number(new URL(request.url).searchParams.get('after'));
-    const current = this.seq();
+    const current = this.messages.seq();
     const first = this.query<{ seq: number }>('SELECT COALESCE(MIN(seq), 0) AS seq FROM events').one().seq;
     if (!Number.isSafeInteger(cursor) || cursor < first - 1 || cursor > current) {
-      server.send(JSON.stringify({ type: 'snapshot', snapshot: this.snapshot() }));
+      server.send(JSON.stringify({ type: 'snapshot', snapshot: this.messages.snapshot() }));
     } else {
       for (const row of this.query<{ seq: number; payload: string }>('SELECT * FROM events WHERE seq > ? ORDER BY seq', cursor)) {
         const payload = JSON.parse(row.payload) as Message[] | StreamCommit | Pick<Change, 'messages' | 'settings'>;
@@ -1085,18 +951,7 @@ export class Conversation extends DurableObject<Env> {
   }
   webSocketMessage(socket: WebSocket, data: string | ArrayBuffer) {
     if (this.deletedAt) { socket.send(JSON.stringify({ type: 'deleted', deletedAt: this.deletedAt })); socket.close(4003, 'Conversation deleted'); return; }
-    const attachment = socket.deserializeAttachment() as Attachment;
-    if (attachment.expires <= Date.now() / 1000) { socket.close(4001, 'Session expired'); return; }
-    if (data === 'session-check') return;
-    try {
-      if (typeof data !== 'string' || data.length > 1024) throw new Error('Invalid acknowledgement');
-      const ack = JSON.parse(data) as { type: string; runId: string; messageId: string; offset: number };
-      if (ack.type !== 'preview-ack') throw new Error('Invalid acknowledgement');
-      if (ack.runId !== attachment.runId || ack.messageId !== attachment.messageId) return;
-      if (!Number.isSafeInteger(ack.offset) || ack.offset < attachment.ackedOffset! || ack.offset > attachment.sentOffset!) return;
-      attachment.ackedOffset = ack.offset; attachment.ackAt = Date.now();
-      socket.serializeAttachment(attachment);
-    } catch { socket.close(4002, 'Reconnect to sync'); }
+    this.subscribers.acknowledge(socket, data);
   }
   webSocketClose(socket: WebSocket, code: number, reason: string) {
     // Reserved status codes describe a missing close frame; they cannot be sent back on the wire.
