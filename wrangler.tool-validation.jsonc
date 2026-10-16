@@ -1,7 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "everchat-tools-validation",
-  "main": "tests/fixtures/tool-cloudflare-worker.ts",
+  "main": "scripts/measurements/support/tool-worker.ts",
   "compatibility_date": "2026-10-09",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,

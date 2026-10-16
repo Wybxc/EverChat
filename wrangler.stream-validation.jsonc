@@ -1,7 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "everchat-stream-validation",
-  "main": "tests/fixtures/cloudflare-worker.ts",
+  "main": "scripts/measurements/support/stream-worker.ts",
   "compatibility_date": "2026-10-09",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,

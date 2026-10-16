@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { expect,test } from '@playwright/test';
 
 test('production math renders with real KaTeX fonts after an offline reload without the HTTP cache', async ({ page, context }) => {
   const errors: string[] = [];

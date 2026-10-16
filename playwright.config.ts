@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 const origin = 'http://127.0.0.1:5174';
 export default defineConfig({
-  testDir: './tests/e2e',
+  testDir: './tests',
+  testMatch: ['e2e/**/*.spec.ts', 'integration/**/*.spec.ts'],
   fullyParallel: false,
   workers: 1,
   timeout: 60_000,

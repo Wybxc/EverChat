@@ -7,9 +7,9 @@
     ]
   },
   "include": [
-    "tests/fixtures/**/*.ts"
+    "tests/support/runtime/**/*.ts",
+    "tests/support/providers/**/*.ts",
+    "scripts/measurements/support/*worker.ts"
   ],
-  "exclude": [
-    "tests/fixtures/pwa-server.ts"
-  ]
+  "exclude": []
 }

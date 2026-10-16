@@ -8,7 +8,7 @@ export default defineConfig({
   expect: { timeout: 20_000 },
   use: { baseURL: 'http://127.0.0.1:5175', trace: 'retain-on-failure' },
   webServer: {
-    command: 'node --import tsx/esm tests/fixtures/pwa-server.ts',
+    command: 'node --import tsx/esm tests/support/browser/pwa-server.ts',
     url: 'http://127.0.0.1:5175',
     reuseExistingServer: false,
     gracefulShutdown: { signal: 'SIGTERM', timeout: 5000 },

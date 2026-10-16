@@ -7,18 +7,18 @@
     ]
   },
   "include": [
-    "tests/*.test.ts",
-    "tests/fixtures/pwa-server.ts",
-    "tests/e2e/resource-limits.spec.ts",
-    "tests/e2e/tool-task-journal.spec.ts"
+    "tests/unit/**/*.test.ts",
+    "tests/support/browser/pwa-server.ts",
+    "tests/e2e/platform/resource-limits.spec.ts",
+    "tests/integration/web-tools/tool-task-journal.spec.ts"
   ],
   "exclude": [
-    "tests/api.test.ts",
-    "tests/conversation-search.test.ts",
-    "tests/deletion.test.ts",
-    "tests/markdown-math.test.ts",
-    "tests/snapshot-writer.test.ts",
-    "tests/conversation-settings.test.ts",
-    "tests/pdf.test.ts"
+    "tests/unit/platform/api.test.ts",
+    "tests/unit/chat/conversation-search.test.ts",
+    "tests/unit/chat/deletion.test.ts",
+    "tests/unit/rendering/markdown-math.test.ts",
+    "tests/unit/chat/snapshot-writer.test.ts",
+    "tests/unit/conversation/conversation-settings.test.ts",
+    "tests/unit/attachments/pdf.test.ts"
   ]
 }

@@ -38,7 +38,7 @@ export default defineConfig({
     persistState: process.env.EVERCHAT_TEST_STATE ? { path: process.env.EVERCHAT_TEST_STATE } : true,
     ...(process.env.EVERCHAT_TEST_STATE ? { inspectorPort: false } : {}),
     ...(process.env.EVERCHAT_MOCK_PROVIDER === '1' ? { config: {
-      main: 'tests/fixtures/worker.ts',
+      main: 'tests/support/runtime/worker.ts',
       ...(process.env.EVERCHAT_GENERATION_METRICS === '1' || process.env.EVERCHAT_TOOL_METRICS === '1' ? { vars: {
         ...(process.env.EVERCHAT_GENERATION_METRICS === '1' ? { GENERATION_METRICS: '1' } : {}),
         ...(process.env.EVERCHAT_TOOL_METRICS === '1' ? { LOCAL_RESOURCE_METRICS: '1',

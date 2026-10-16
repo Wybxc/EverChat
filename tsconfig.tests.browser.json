@@ -8,13 +8,14 @@
   },
   "include": [
     "tests/e2e/**/*.ts",
+    "tests/integration/**/*.ts",
     "tests/pwa/**/*.ts",
-    "tests/ui.ts",
+    "tests/support/browser/ui.ts",
     "playwright*.config.ts",
     "vite.config.ts"
   ],
   "exclude": [
-    "tests/e2e/resource-limits.spec.ts",
-    "tests/e2e/tool-task-journal.spec.ts"
+    "tests/e2e/platform/resource-limits.spec.ts",
+    "tests/integration/web-tools/tool-task-journal.spec.ts"
   ]
 }
