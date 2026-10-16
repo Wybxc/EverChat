@@ -252,8 +252,7 @@ test('composer estimates reflect model prompts and autosaved budgets across devi
     const composer = page.getByLabel('消息', { exact: true });
     await composer.fill('next');
     const estimate = page.getByTestId('context-estimate');
-    await expect(estimate).toContainText('上下文 ≈');
-    await expect(estimate).toContainText('/ 300');
+    await expect(estimate).toHaveAttribute('aria-description', /上下文约.*\/ 300 Tokens/);
     await expect(page.getByTestId('context-omission')).toContainText('将省略 2 条');
     await page.getByRole('button', { name: '查看上下文估算' }).click();
     const details = page.getByRole('dialog', { name: '上下文估算', exact: true });
@@ -272,7 +271,7 @@ test('composer estimates reflect model prompts and autosaved budgets across devi
     await modal.getByLabel('最近历史消息条数', { exact: true }).fill('1');
     await expect(modal.getByRole('status')).toHaveText('已保存');
     await modal.getByRole('button', { name: '关闭会话参数' }).click();
-    await expect(estimate).toContainText('/ 350');
+    await expect(estimate).toHaveAttribute('aria-description', /\/ 350 Tokens/);
     await expect(page.getByTestId('context-omission')).toContainText('将省略 4 条');
     await expect(composer).toHaveValue('next');
     await messageMenu(page.getByTestId('assistant-message').first());
@@ -283,12 +282,12 @@ test('composer estimates reflect model prompts and autosaved budgets across devi
     await modal.getByLabel('上下文 Token 预算', { exact: true }).fill('400');
     await expect(modal.getByRole('alert')).toBeVisible();
     await modal.getByRole('button', { name: '关闭会话参数' }).click();
-    await expect(estimate).toContainText('/ 400');
+    await expect(estimate).toHaveAttribute('aria-description', /\/ 400 Tokens/);
     await context.setOffline(false);
     await expect.poll(async () => (await fixture.snapshot()).settings?.contextBudget).toBe(400);
     await page.reload();
     await expect(composer).toHaveValue('next');
-    await expect(estimate).toContainText('/ 400');
+    await expect(estimate).toHaveAttribute('aria-description', /\/ 400 Tokens/);
     await page.getByRole('button', { name: '发送消息', exact: true }).click();
     await expect(page.getByRole('button', { name: '停止生成', exact: true })).toBeVisible();
     const sent = (await fixture.snapshot()).messages.at(-1)!;
@@ -330,7 +329,7 @@ test('an unknown model displays fallback capacity and an over-budget draft stays
     await modal.getByLabel('上下文 Token 预算', { exact: true }).fill('1');
     await expect(modal.getByRole('status')).toHaveText('已保存到本机');
     await modal.getByRole('button', { name: '关闭会话参数' }).click();
-    await expect(page.getByTestId('context-estimate')).toContainText('超过预算');
+    await expect(page.getByTestId('context-budget-warning')).toContainText('超过预算');
     await composer.press('Enter');
     await expect(page.getByRole('alert')).toContainText('超过上下文预算');
     await expect(composer).toHaveValue('保留当前草稿');

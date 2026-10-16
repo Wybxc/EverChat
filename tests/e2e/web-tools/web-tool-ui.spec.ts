@@ -118,6 +118,9 @@ async function tab(page: Page, name: string) {
   await expect(item).toHaveAttribute('aria-selected', 'true');
 }
 async function parameters(page: Page) {
+  await expect(page.getByRole('combobox', { name: '聊天模型', exact: true })).toBeVisible();
+  const more = page.getByRole('button', { name: '更多参数', exact: true });
+  if (await more.count()) await more.click();
   await page.getByRole('button', { name: '联网工具', exact: true }).click();
   return page.getByRole('dialog', { name: /^(新对话参数|会话参数)$/ });
 }

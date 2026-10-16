@@ -115,8 +115,11 @@ test('font changes resize an existing draft and browser default font preferences
       }
       await page.setViewportSize({ width: 320, height: 568 });
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
-      for (const name of ['聊天模型', '思维强度', '发送消息'])
+      for (const name of ['聊天模型', '更多参数', '发送消息'])
         await expect(page.getByLabel(name, { exact: true })).toBeInViewport({ ratio: 1 });
+      await page.getByRole('button', { name: '更多参数', exact: true }).click();
+      await expect(page.getByLabel('思维强度', { exact: true })).toBeInViewport({ ratio: 1 });
+      await page.keyboard.press('Escape');
       await openSpaceSettings(page);
       await settingsTab(page, '供应商');
       await providerDetails(page);

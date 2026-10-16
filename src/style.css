@@ -315,6 +315,20 @@
   background: transparent;
   border-color: transparent;
 }
+.composer-toolbar .composer-icon[data-ui-button] {
+  /* Physical hit areas leave room for the model label when text is enlarged. */
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  flex-shrink: 0;
+}
+.composer-toolbar [aria-label='聊天模型'] {
+  min-width: 44px;
+  flex-shrink: 1;
+  padding-inline: 8px;
+}
 .send-button {
   border-radius: 100%;
 }
@@ -621,7 +635,7 @@
 
 .context-trigger[data-ui-button] {
   display: flex;
-  min-height: 1.5rem;
+  min-height: max(2.75rem, 44px);
   font-size: 0.75rem;
   padding-block: 0;
 }

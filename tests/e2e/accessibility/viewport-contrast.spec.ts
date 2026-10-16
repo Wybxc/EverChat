@@ -144,11 +144,14 @@ test('200% text keeps model selection and sending within a 320px reflow viewport
       document.documentElement.style.fontSize = '200%';
     });
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
-    for (const label of ['聊天模型', '思维强度', '发送消息']) {
+    for (const label of ['聊天模型', '更多参数', '发送消息']) {
       const control = page.getByLabel(label, { exact: true });
       await expect(control).toBeInViewport({ ratio: 1 });
       expect((await control.boundingBox())!.width).toBeGreaterThanOrEqual(44);
     }
+    await page.getByRole('button', { name: '更多参数', exact: true }).click();
+    await expect(page.getByLabel('思维强度', { exact: true })).toBeInViewport({ ratio: 1 });
+    await page.keyboard.press('Escape');
   } finally {
     await source.cleanup();
   }

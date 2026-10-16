@@ -2,7 +2,6 @@ import { completeSignOut, pendingLogout } from '../platform/auth';
 import { useMutationFocus } from '../features/chat/useMutationFocus';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { NativeSelect } from '@/components/ui/native-select';
 import { Spinner } from '@/components/ui/spinner';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
@@ -14,7 +13,6 @@ import {
   CloudOff,
   Download,
   FolderOpen,
-  Globe,
   ImagePlus,
   Keyboard,
   Menu,
@@ -55,7 +53,7 @@ import {
   type Message,
   type SubmitInput,
 } from '../../shared/conversation/types';
-import { effortLabels, modelSelectionKey } from '../../shared/models/selection';
+import { modelSelectionKey } from '../../shared/models/selection';
 import { type ModelSelection, type ReasoningEffort } from '../../shared/models/types';
 import type { SearchResult } from '../../shared/search/query';
 import { assertWebToolSupport } from '../../shared/web-tools/tasks';
@@ -82,7 +80,8 @@ import {
   writePending,
   type Pending,
 } from '../features/chat/cache';
-import { ContextEstimateView } from '../features/chat/ContextEstimate';
+import { ContextEstimateNotices } from '../features/chat/ContextEstimate';
+import { ComposerParameters } from '../features/chat/ComposerParameters';
 import { ConversationActions } from '../features/chat/ConversationActions';
 import { ConversationSearch } from '../features/chat/ConversationSearch';
 import { ConversationSettingsDialog } from '../features/chat/ConversationSettings';
@@ -93,6 +92,7 @@ import { SummaryView } from '../features/chat/SummaryView';
 import { useBranchScrollAnchor } from '../features/chat/useBranchScrollAnchor';
 import { useChatDraft } from '../features/chat/useChatDraft';
 import { useComposerSize } from '../features/chat/useComposerSize';
+import { useComposerLayout } from '../features/chat/useComposerLayout';
 import { useContextPreview } from '../features/chat/useContextPreview';
 import { useConversation } from '../features/chat/useConversation';
 import { useConversationBranches } from '../features/chat/useConversationBranches';
@@ -209,6 +209,7 @@ export function App({
   const searchTrigger = useRef<HTMLButtonElement>(null);
   const backupInput = useRef<HTMLInputElement>(null);
   const editor = useRef<HTMLTextAreaElement>(null);
+  const { toolbarRef, compact: compactComposer } = useComposerLayout();
   const [editorFocusTarget, setEditorFocusTarget] = useState<{ id: string | null } | null>(null);
   const mobileSidebarTrigger = useRef<HTMLButtonElement>(null);
   const closeSidebar = useCallback(() => {
@@ -1798,14 +1799,17 @@ export function App({
                   }}
                 />
                 <div
-                  className="composer-toolbar mt-1 flex min-w-0 flex-wrap items-center gap-1"
+                  ref={toolbarRef}
+                  className="composer-toolbar mt-1 flex min-w-0 items-center gap-1"
                   data-testid="composer-toolbar"
+                  data-compact={compactComposer}
                 >
                   {session.attachmentsConfigured && (
                     <ActionMenu
                       label="添加附件"
                       icon={<Paperclip className="h-[1.125rem] w-[1.125rem]" />}
                       placement="dropdown-top dropdown-start"
+                      className="composer-icon"
                       disabled={attachmentBlocked || !navigator.onLine}
                     >
                       <ActionMenuItem
@@ -1875,49 +1879,29 @@ export function App({
                       配置模型
                     </Button>
                   )}
-                  {selectedModel?.reasoningSupported &&
-                    selectedModel.reasoningEfforts.length > 0 && (
-                      <NativeSelect
-                        aria-label="思维强度"
-                        title={`思维强度：${reasoningEffort ? effortLabels[reasoningEffort] : '默认'}`}
-                        className="h-11 w-16 shrink-0 sm:w-24"
-                        selectClassName="border-transparent pl-1 pr-5 text-xs"
-                        value={reasoningEffort}
-                        onChange={(event) => {
-                          const value = event.target.value as ReasoningEffort | '';
-                          setReasoningEffort(value);
-                          write(`reasoning-effort:${modelSelectionKey(selectedModel)}`, value);
-                        }}
-                      >
-                        <option value="">思考</option>
-                        {selectedModel.reasoningEfforts.map((effort) => (
-                          <option key={effort} value={effort}>
-                            {effortLabels[effort]}
-                          </option>
-                        ))}
-                      </NativeSelect>
-                    )}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    type="button"
-                    className={`   h-11 w-11 shrink-0 ${conversationSettings.tools?.length ? 'bg-muted' : ''}`}
-                    aria-label="联网工具"
-                    aria-pressed={Boolean(conversationSettings.tools?.length)}
-                    title={conversationSettings.tools?.length ? '联网已开启' : '联网工具'}
-                    onClick={() => {
+                  <ComposerParameters
+                    compact={compactComposer}
+                    model={selectedModel}
+                    effort={reasoningEffort}
+                    chooseEffort={(value) => {
+                      setReasoningEffort(value);
+                      if (selectedModel)
+                        write(`reasoning-effort:${modelSelectionKey(selectedModel)}`, value);
+                    }}
+                    webEnabled={Boolean(conversationSettings.tools?.length)}
+                    openWeb={() => {
                       setFocusWebTools(true);
                       setConversationSettingsOpen(true);
                     }}
-                  >
-                    <Globe className="h-[1.125rem] w-[1.125rem]" />
-                  </Button>
+                    estimate={contextPreview?.estimate}
+                    focusComposer={() => editor.current?.focus({ preventScroll: true })}
+                  />
                   {active ? (
                     <Button
                       variant="secondary"
                       size="icon"
                       type="button"
-                      className="send-button ml-auto h-11 w-11 shrink-0"
+                      className="composer-icon send-button ml-auto"
                       aria-label="停止生成"
                       title="停止生成"
                       onClick={cancel}
@@ -1930,7 +1914,7 @@ export function App({
                       variant="default"
                       size="icon"
                       type="submit"
-                      className="send-button ml-auto h-11 w-11 shrink-0"
+                      className="composer-icon send-button ml-auto"
                       aria-label="发送消息"
                       disabled={
                         (!draft.trim() && !draftImages.length && !draftFiles.length) ||
@@ -1943,7 +1927,7 @@ export function App({
                   )}
                 </div>
                 {contextPreview?.estimate && (
-                  <ContextEstimateView
+                  <ContextEstimateNotices
                     estimate={contextPreview.estimate}
                     compressing={contextPreview.compressing}
                   />
