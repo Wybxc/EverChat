@@ -4,9 +4,7 @@ import type { ProviderSettings } from '../../../shared/providers/types';
 const headers = { Origin: 'http://127.0.0.1:5174' };
 
 async function fixture(page: Page) {
-  expect(
-    (await page.request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok(),
-  ).toBe(true);
+  expect((await page.request.post('/__dev/access/login', { headers })).ok()).toBe(true);
   const original = (await page.request
     .get('/api/settings/providers')
     .then((response) => response.json())) as ProviderSettings;

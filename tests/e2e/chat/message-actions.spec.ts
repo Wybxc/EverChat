@@ -3,9 +3,7 @@ import { messageMenu } from '../../support/browser/ui';
 
 const headers = { Origin: 'http://127.0.0.1:5174' };
 async function setup(request: APIRequestContext) {
-  expect(
-    (await request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok(),
-  ).toBe(true);
+  expect((await request.post('/__dev/access/login', { headers })).ok()).toBe(true);
   const id = crypto.randomUUID();
   expect(
     (

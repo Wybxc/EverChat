@@ -1,3 +1,4 @@
+import type { MeasurementAccess } from './credentials';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
@@ -19,7 +20,7 @@ import {
 export type ToolValidationSuite = 'functional' | 'large' | 'sustained';
 export interface ToolValidationOptions {
   url: string;
-  password: string;
+  access: MeasurementAccess;
   runId: string;
   output: string;
   suite: ToolValidationSuite;
@@ -43,19 +44,15 @@ export async function runToolValidation(options: ToolValidationOptions) {
     );
   else
     assert.ok(
-      url.protocol === 'https:' &&
-        url.hostname.startsWith(`${TOOL_VALIDATION_WORKER}.`) &&
-        url.hostname.endsWith('.workers.dev'),
+      url.protocol === 'https:' && url.hostname === `${TOOL_VALIDATION_WORKER}.wybxc.cc`,
       'Use only the isolated tool validation Worker',
     );
-  assert.ok(
-    options.password.length >= 32 && /^[0-9a-f-]{36}$/i.test(options.runId),
-    'Random validation credentials are required',
-  );
+  assert.equal(options.access.origin, origin, 'Credentials require the exact validation origin');
+  assert.ok(Object.keys(options.access.headers).length > 0, 'Validation credentials are required');
+  assert.ok(/^[0-9a-f-]{36}$/i.test(options.runId), 'A random validation run ID is required');
   const startedAt = new Date().toISOString(),
     results: Record<string, unknown>[] = [];
-  let cookie = '',
-    complete = false,
+  let complete = false,
     identity: ToolValidationIdentity | undefined;
   const sockets = new Set<WebSocket>(),
     agent = options.runtime === 'cloudflare' ? new Agent({ proxyEnv: process.env }) : undefined;
@@ -75,7 +72,7 @@ export async function runToolValidation(options: ToolValidationOptions) {
       redirect: 'error',
       headers: {
         Origin: origin,
-        Cookie: cookie,
+        ...options.access.headers,
         ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
         ...headers,
       },
@@ -89,7 +86,6 @@ export async function runToolValidation(options: ToolValidationOptions) {
       response.ok,
       `${method ?? (body === undefined ? 'GET' : 'POST')} ${path}: HTTP ${response.status}`,
     );
-    if (path === '/login') cookie = response.headers.get('set-cookie')!.split(';')[0];
     return response.json() as Promise<T>;
   }
   async function until(
@@ -110,7 +106,7 @@ export async function runToolValidation(options: ToolValidationOptions) {
       {
         ...(agent ? { agent } : {}),
         handshakeTimeout: 30_000,
-        headers: { Cookie: cookie, Origin: origin },
+        headers: { ...options.access.headers, Origin: origin },
       },
     );
     sockets.add(socket);
@@ -333,17 +329,29 @@ export async function runToolValidation(options: ToolValidationOptions) {
     };
   }
   try {
-    // Check identity before sending a password or changing ANY configuration.
+    // Exact-origin credentials are required for Access; verify the runtime before any mutation.
     identity = await api<ToolValidationIdentity>('/__validation/identity');
     assert.equal(identity.kind, TOOL_VALIDATION_WORKER);
     assert.equal(identity.version, 1);
-    assert.equal(identity.runId, options.runId, 'Different runtime; refusing to log in');
+    assert.equal(
+      identity.runId,
+      options.runId,
+      'Different runtime; refusing to change configuration',
+    );
     assert.equal(identity.mockUpstreams, true);
     assert.deepEqual(identity.counters, { generation: false, local: false });
     assert.deepEqual(identity.workload, { chunks: 120, size: 200, interval: 25 });
-    assert.equal((await request('/__validation/library')).status, 401);
+    assert.equal(
+      (
+        await fetch(`${origin}/api/__validation/library`, {
+          redirect: 'manual',
+          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+          signal: AbortSignal.timeout(30000),
+        })
+      ).status,
+      401,
+    );
     assert.equal((await request('/__test/resources/library', {})).status, 404);
-    await api('/login', { password: options.password });
     assert.equal(
       (
         await request(

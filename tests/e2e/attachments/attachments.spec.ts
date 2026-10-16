@@ -10,9 +10,7 @@ import {
 import { conversationMenu } from '../../support/browser/ui';
 const headers = { Origin: 'http://127.0.0.1:5174' };
 async function setup(request: APIRequestContext) {
-  expect(
-    (await request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok(),
-  ).toBe(true);
+  expect((await request.post('/__dev/access/login', { headers })).ok()).toBe(true);
   const id = crypto.randomUUID();
   expect(
     (
@@ -96,7 +94,7 @@ test('private R2 upload preserves Unicode bytes, validates integrity, is idempot
     expect(head.status()).toBe(200);
     expect(head.headers()['content-length']).toBe(String(bytes.length));
     expect((await other.request.get(url)).status()).toBe(401);
-    await other.request.post('/api/login', { headers, data: { password: 'everchat-local' } });
+    await other.request.post('/__dev/access/login', { headers });
     expect(await (await other.request.get(url)).body()).toEqual(bytes);
     expect((await fixture.remove(input.id)).status()).toBe(200);
     expect((await request.get(url)).status()).toBe(404);

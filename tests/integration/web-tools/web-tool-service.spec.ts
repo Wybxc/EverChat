@@ -22,9 +22,7 @@ async function setup(
   provider: ProviderKind = 'openai-chat',
   limit = 20,
 ) {
-  expect(
-    (await request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok(),
-  ).toBe(true);
+  expect((await request.post('/__dev/access/login', { headers })).ok()).toBe(true);
   const original = (await request
     .get('/api/settings/providers')
     .then((r) => r.json())) as ProviderSettings;

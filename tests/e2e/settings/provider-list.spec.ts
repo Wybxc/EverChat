@@ -7,7 +7,7 @@ const headers = { Origin: 'http://127.0.0.1:5174' };
 test('mobile settings browse 200 compact models, mount one editor, preserve edits and confirm deletion', async ({
   page,
 }) => {
-  await page.request.post('/api/login', { headers, data: { password: 'everchat-local' } });
+  await page.request.post('/__dev/access/login', { headers });
   const initial = (await page.request
     .get('/api/settings/providers')
     .then((response) => response.json())) as ProviderSettings;

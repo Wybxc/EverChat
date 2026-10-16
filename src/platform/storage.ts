@@ -3,6 +3,14 @@ import { delMany, entries, set, setMany } from 'idb-keyval';
 const PREFIX = 'everchat:';
 const cache = new Map<string, unknown>();
 let epoch = 0;
+let writesAllowed = true;
+export function lockStorageWrites() {
+  writesAllowed = false;
+  epoch++;
+}
+export function resumeStorageWrites() {
+  writesAllowed = true;
+}
 export const storageEpoch = () => epoch;
 const storageKey = (key: string) => `${PREFIX}${key}`;
 
@@ -49,7 +57,7 @@ export function read<T>(key: string, fallback: T): T {
 }
 
 export function write(key: string, value: unknown, valid: () => boolean = () => true) {
-  if (!valid()) return;
+  if (!writesAllowed || !valid()) return;
   const fullKey = storageKey(key);
   cache.set(fullKey, value);
   const persistEpoch = epoch;
@@ -95,15 +103,26 @@ export function remove(keys: string[]) {
   discard(fullKeys);
 }
 
-export function clearLocal() {
-  epoch++;
-  const keys = [...cache.keys()];
+export async function clearLocal() {
+  lockStorageWrites();
+  const keys = new Set(cache.keys());
   cache.clear();
-  discard(keys);
+  let failure: unknown;
   try {
     for (const key of Object.keys(localStorage))
-      if (key.startsWith(PREFIX)) localStorage.removeItem(key);
-  } catch {
-    /* The in-memory cache is already cleared. */
+      if (key.startsWith(PREFIX)) {
+        keys.add(key);
+        localStorage.removeItem(key);
+      }
+  } catch (error) {
+    failure = error;
   }
+  try {
+    const stored = await entries<string, unknown>();
+    for (const [key] of stored) if (key.startsWith(PREFIX)) keys.add(key);
+    await delMany([...keys]);
+  } catch (error) {
+    failure ??= error;
+  }
+  if (failure) throw new Error('本地记录未能完全清除，请重试。');
 }

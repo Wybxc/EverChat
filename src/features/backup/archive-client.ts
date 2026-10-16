@@ -1,3 +1,5 @@
+import { notifyAuthFailure } from '../../platform/auth';
+import { authenticatedUploadSignal, xhrJson } from '../../platform/xhr';
 import { api, ApiError } from '../../platform/api';
 import { read, storageEpoch, write } from '../../platform/storage';
 
@@ -15,7 +17,10 @@ function archiveWorker<T>(
   return new Promise<T>((resolve, reject) => {
     signal.throwIfAborted();
     const worker = new Worker(new URL('./archive-worker.ts', import.meta.url), { type: 'module' });
+    let finished = false;
     const finish = (error?: unknown, value?: T) => {
+      if (finished) return;
+      finished = true;
       worker.terminate();
       clearTimeout(timeout);
       signal.removeEventListener('abort', abort);
@@ -26,11 +31,20 @@ function archiveWorker<T>(
       timeout = setTimeout(() => finish(new Error('备份处理超过 5 分钟，请重试。')), 5 * 60_000);
     signal.addEventListener('abort', abort, { once: true });
     worker.onmessage = (
-      event: MessageEvent<{ progress?: BackupProgress; error?: string; result?: T }>,
+      event: MessageEvent<{
+        progress?: BackupProgress;
+        error?: string;
+        status?: number;
+        code?: string;
+        result?: T;
+      }>,
     ) => {
       if (event.data.progress) progress(event.data.progress);
-      else if (event.data.error) finish(new Error(event.data.error));
-      else if (event.data.result) finish(undefined, event.data.result);
+      else if (event.data.error) {
+        const { error, status, code } = event.data;
+        finish(status ? new ApiError(status, error, code) : new Error(error));
+        if (status) notifyAuthFailure(status, code);
+      } else if (event.data.result) finish(undefined, event.data.result);
     };
     worker.onerror = () => finish(new Error('备份处理组件加载失败，请刷新后重试。'));
     worker.postMessage(request);
@@ -41,7 +55,13 @@ export async function createArchive(
   signal: AbortSignal,
   progress: (value: BackupProgress) => void,
 ) {
-  return (await archiveWorker<{ blob: Blob }>({ operation: 'export', id }, signal, progress)).blob;
+  return (
+    await archiveWorker<{ blob: Blob }>(
+      { operation: 'export', id },
+      authenticatedUploadSignal(signal),
+      progress,
+    )
+  ).blob;
 }
 function uploadBlob(
   url: string,
@@ -50,6 +70,7 @@ function uploadBlob(
   progress: (loaded: number) => void,
   method = 'PUT',
 ) {
+  signal = authenticatedUploadSignal(signal);
   return new Promise<unknown>((resolve, reject) => {
     signal.throwIfAborted();
     const xhr = new XMLHttpRequest(),
@@ -58,12 +79,11 @@ function uploadBlob(
     xhr.withCredentials = true;
     xhr.timeout = 90_000;
     xhr.setRequestHeader('Content-Type', body.type || 'application/octet-stream');
+    xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
     xhr.upload.onprogress = (event) => progress(Math.min(body.size, event.loaded));
     xhr.onload = () => {
       try {
-        const result = JSON.parse(xhr.responseText);
-        if (xhr.status < 200 || xhr.status >= 300)
-          throw new ApiError(xhr.status, result.error ?? '恢复请求失败。', result.code);
+        const result = xhrJson(xhr, '恢复请求失败。');
         resolve(result);
       } catch (error) {
         reject(error);
@@ -82,6 +102,7 @@ export async function restoreArchive(
   signal: AbortSignal,
   progress: (value: BackupProgress) => void,
 ) {
+  signal = authenticatedUploadSignal(signal);
   const epoch = storageEpoch();
   const archive = await archiveWorker<RestorableArchive>(
     { operation: 'import', file },
@@ -135,7 +156,8 @@ export async function restoreArchive(
         .catch(() => {});
     } else if (
       error instanceof ApiError &&
-      (error.code === 'import-stopped' || (!began && error.status >= 400 && error.status < 500))
+      (error.code === 'import-stopped' ||
+        (!began && error.status >= 400 && error.status < 500 && ![401, 403].includes(error.status)))
     )
       clearIdentifier();
     throw error;

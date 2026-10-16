@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import type { Submission } from '../../../shared/conversation/types';
-import type { SessionInfo } from '../../../shared/providers/types';
+import type { SessionInfo } from '../../../shared/auth/types';
 import { api, ApiError } from '../../platform/api';
-import { read } from '../../platform/storage';
+import { read, storageEpoch } from '../../platform/storage';
+import { networkIdentity } from '../../platform/auth';
+import { identityKey } from '../../../shared/auth/types';
 import { deletedAt, writePending, type Pending } from './cache';
 
 type OutboxOptions = {
@@ -39,6 +41,9 @@ export function useOutbox(options: OutboxOptions) {
   const { sessionRef, selectedRef } = options;
   const deliver = async (item: Pending) => {
     if (deletedAt(item.conversation.id)) return;
+    const identity = networkIdentity();
+    if (!identity || item.owner !== identityKey(identity)) return;
+    const epoch = storageEpoch();
     const key = item.input.requestId;
     if (deliveryLocks.current.has(key) || !navigator.onLine || !sessionRef.current?.authenticated)
       return;
@@ -63,6 +68,7 @@ export function useOutbox(options: OutboxOptions) {
         'POST',
         item.input,
       );
+      if (epoch !== storageEpoch() || !networkIdentity()) return;
       const follow = followRequests.current.get(key);
       if (
         !item.input.summaryThrough &&
@@ -76,10 +82,15 @@ export function useOutbox(options: OutboxOptions) {
       commitPending(pendingRef.current.filter((next) => next.input.requestId !== key));
       latest.current.refreshLibrary();
     } catch (error) {
+      if (epoch !== storageEpoch()) return;
       if (error instanceof ApiError && error.status === 401) latest.current.onUnauthorized();
       else if (error instanceof ApiError && error.status === 410)
         latest.current.onDeleted(item.conversation.id, Date.now());
-      else if (error instanceof ApiError)
+      else if (
+        error instanceof ApiError &&
+        error.code !== 'AUTH_UNAVAILABLE' &&
+        error.code !== 'ACCESS_DENIED'
+      )
         commitPending(
           pendingRef.current.map((next) =>
             next.input.requestId === key ? { ...next, error: error.message } : next,
@@ -98,10 +109,10 @@ export function useOutbox(options: OutboxOptions) {
     };
     flush();
     const timer = setInterval(flush, 5000);
-    window.addEventListener('online', flush);
+    window.addEventListener('everchat:network-ready', flush);
     return () => {
       clearInterval(timer);
-      window.removeEventListener('online', flush);
+      window.removeEventListener('everchat:network-ready', flush);
     };
   }, [options.authenticated, pending.length]);
 

@@ -11,9 +11,7 @@ import { messageMenu } from '../../support/browser/ui';
 const origin = 'http://127.0.0.1:5174',
   headers = { Origin: origin };
 async function setup(request: APIRequestContext) {
-  expect(
-    (await request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok(),
-  ).toBe(true);
+  expect((await request.post('/__dev/access/login', { headers })).ok()).toBe(true);
   const settings = (await request
     .get('/api/settings/providers')
     .then((response) => response.json())) as ProviderSettings;
@@ -380,7 +378,7 @@ test('editing and deleting an answer preserves drafts and focus while another de
   try {
     await fixture.send('界面测试');
     await fixture.done();
-    await second.request.post('/api/login', { headers, data: { password: 'everchat-local' } });
+    await second.request.post('/__dev/access/login', { headers });
     const other = await second.newPage();
     await other.goto(`/c/${fixture.id}`);
     await page.setViewportSize({ width: 390, height: 600 });

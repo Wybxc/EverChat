@@ -86,4 +86,12 @@ test('production PWA restores a conversation URL offline without caching API res
   await expect(other.getByTestId('assistant-message')).toContainText('已保存的正文');
   await other.close();
   await context.setOffline(false);
+  // Auth navigations must reach the server rather than the precached SPA shell.
+  for (const path of ['/auth/resume?returnTo=%2F', '/cdn-cgi/access/logout']) {
+    const auth = await context.newPage();
+    const response = await auth.goto(path);
+    expect(response?.status()).toBe(401);
+    await expect(auth.locator('body')).toHaveText('Access network boundary');
+    await auth.close();
+  }
 });

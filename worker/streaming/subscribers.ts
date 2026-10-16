@@ -2,6 +2,7 @@ import type { StreamBatch } from '../../shared/streaming/protocol';
 
 export type Attachment = {
   expires: number;
+  revalidate: number;
   blocked?: boolean;
   runId?: string;
   messageId?: string;
@@ -9,6 +10,18 @@ export type Attachment = {
   ackedOffset?: number;
   ackAt?: number;
 };
+export function validSubscription(socket: WebSocket, attachment: Attachment): boolean {
+  const now = Date.now() / 1000;
+  if (!Number.isFinite(attachment.expires) || attachment.expires <= now) {
+    socket.close(4001, 'Session expired');
+    return false;
+  }
+  if (!Number.isFinite(attachment.revalidate) || attachment.revalidate <= now) {
+    socket.close(4004, 'Revalidate access');
+    return false;
+  }
+  return true;
+}
 const SUBSCRIBER_WINDOW_BYTES = 128 * 1024;
 
 export class ConversationSubscribers {
@@ -21,10 +34,7 @@ export class ConversationSubscribers {
     for (const socket of target ? [target] : this.ctx.getWebSockets()) {
       const attachment = socket.deserializeAttachment() as Attachment;
       if (attachment.blocked) continue;
-      if (attachment.expires <= Date.now() / 1000) {
-        socket.close(4001, 'Session expired');
-        continue;
-      }
+      if (!validSubscription(socket, attachment)) continue;
       if (batch) {
         if (attachment.runId !== batch.runId || attachment.messageId !== batch.messageId) {
           Object.assign(attachment, {
@@ -60,10 +70,7 @@ export class ConversationSubscribers {
   }
   acknowledge(socket: WebSocket, data: string | ArrayBuffer) {
     const attachment = socket.deserializeAttachment() as Attachment;
-    if (attachment.expires <= Date.now() / 1000) {
-      socket.close(4001, 'Session expired');
-      return;
-    }
+    if (!validSubscription(socket, attachment)) return;
     if (data === 'session-check') return;
     try {
       if (typeof data !== 'string' || data.length > 1024)

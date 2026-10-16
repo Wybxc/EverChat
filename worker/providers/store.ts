@@ -107,12 +107,10 @@ export class ProviderSettingsStore {
     }
   }
 
-  sessionResponse() {
+  sessionSettings() {
     const settings = this.providerSettings(),
       config = this.providerConfig();
-    return json({
-      authenticated: true,
-      configured: Boolean(this.env.APP_PASSWORD && this.env.SESSION_SECRET),
+    return {
       attachmentsConfigured: Boolean(this.env.ATTACHMENTS),
       provider: config?.provider ?? '',
       model: config?.model ?? '',
@@ -122,7 +120,7 @@ export class ProviderSettingsStore {
       showReasoning: settings.showReasoning,
       systemPrompt: settings.systemPrompt,
       maxOutputTokens: settings.maxOutputTokens,
-    });
+    };
   }
 
   backupSettings(): BackupSettings {

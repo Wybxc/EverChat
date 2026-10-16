@@ -6,6 +6,7 @@
   "packageManager": "pnpm@12.6.0",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
+    "dev:access": "vite --host 127.0.0.1 --mode access",
     "build": "pnpm typecheck && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "deploy": "pnpm build && wrangler deploy",
@@ -45,6 +46,7 @@
     "hono": "^4.13.13",
     "idb-keyval": "^6.3.0",
     "image-size": "^2.0.4",
+    "jose": "^6.2.12",
     "katex": "^0.19.0",
     "lucide-react": "^0.577.0",
     "mdast-util-from-markdown": "^2.1.0",

@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ConversationInfo, LibrarySnapshot } from '../../../shared/conversation/types';
 import { api, ApiError } from '../../platform/api';
-import { read, write } from '../../platform/storage';
+import { read, storageEpoch, write } from '../../platform/storage';
 import type { Pending } from '../chat/cache';
 import { deletedAt } from '../chat/cache';
 
@@ -24,11 +24,13 @@ export function useLibraryIndex({
   const libraryQuery = useQuery({
     queryKey: ['conversations'],
     queryFn: async () => {
+      const epoch = storageEpoch();
       let page: LibrarySnapshot;
       do {
         page = await api<LibrarySnapshot>(
           `/conversations?after=${read('library-deletion-cursor', 0)}`,
         );
+        if (epoch !== storageEpoch()) throw new DOMException('Session changed', 'AbortError');
         for (const deletion of page.deletions) onDeleted(deletion.id, deletion.deletedAt);
         write('library-deletion-cursor', page.deletionCursor);
       } while (page.hasMoreDeletions);
@@ -60,11 +62,11 @@ export function useLibraryIndex({
   useEffect(() => {
     if (libraryQuery.error instanceof ApiError && libraryQuery.error.status === 401)
       onUnauthorized();
-    if (libraryQuery.data) {
+    if (enabled && libraryQuery.data) {
       setLocalConversations(libraryQuery.data);
       write('library', libraryQuery.data);
     }
-  }, [libraryQuery.data, libraryQuery.error, onUnauthorized]);
+  }, [enabled, libraryQuery.data, libraryQuery.error, onUnauthorized]);
   const refreshLibrary = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ['conversations'] });
     void queryClient.invalidateQueries({ queryKey: ['body-search'] });

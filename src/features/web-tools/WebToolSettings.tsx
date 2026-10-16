@@ -92,9 +92,9 @@ function ServiceEditor({ initial, active }: { initial: WebToolServiceSettings; a
     const retry = () => {
       void store.flush().catch(() => {});
     };
-    window.addEventListener('online', retry);
+    window.addEventListener('everchat:network-ready', retry);
     return () => {
-      window.removeEventListener('online', retry);
+      window.removeEventListener('everchat:network-ready', retry);
       revealRequest.current?.abort();
       store.dispose();
     };

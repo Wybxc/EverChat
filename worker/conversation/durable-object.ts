@@ -76,7 +76,11 @@ import {
 import { openProviderStream } from '../providers/stream';
 import { searchRetryDelay } from '../search/index';
 import { StreamJournal } from '../streaming/journal';
-import { ConversationSubscribers, type Attachment } from '../streaming/subscribers';
+import {
+  ConversationSubscribers,
+  validSubscription,
+  type Attachment,
+} from '../streaming/subscribers';
 import { ConversationMessages, type Row } from './messages';
 import { DELETION_SCHEMA, initializeConversation } from './schema';
 import { planSubmissionParent } from './submission-plan';
@@ -1957,9 +1961,6 @@ export class Conversation extends DurableObject<Env> {
     await this.scheduleAlarm();
     await this.ctx.storage.sync();
   }
-  closeSessions() {
-    for (const socket of this.ctx.getWebSockets()) socket.close(4001, 'Signed out');
-  }
   protected eraseDeletedStorage() {
     return this.ctx.storage.deleteAll();
   }
@@ -1984,7 +1985,8 @@ export class Conversation extends DurableObject<Env> {
     }
     for (const socket of this.ctx.getWebSockets()) {
       try {
-        socket.send(JSON.stringify({ type: 'deleted', deletedAt }));
+        if (validSubscription(socket, socket.deserializeAttachment() as Attachment))
+          socket.send(JSON.stringify({ type: 'deleted', deletedAt }));
         socket.close(4003, 'Conversation deleted');
       } catch {
         /* A disconnected subscriber reads the Library tombstone on reconnect. */
@@ -1995,17 +1997,29 @@ export class Conversation extends DurableObject<Env> {
     if (this.deletedAt) return json({ error: '这个对话已删除。' }, 410);
     if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket')
       return new Response('WebSocket required', { status: 426 });
+    const expires = Number(request.headers.get('X-Session-Expires'));
+    const revalidate = Number(request.headers.get('X-Session-Revalidate'));
+    if (
+      !Number.isFinite(expires) ||
+      !Number.isFinite(revalidate) ||
+      Math.min(expires, revalidate) <= Date.now() / 1000 ||
+      revalidate > expires
+    )
+      return json({ error: '请重新登录。', code: 'AUTH_REQUIRED' }, 401);
     const [client, server] = Object.values(new WebSocketPair());
     this.ctx.acceptWebSocket(server);
-    const expires = Number(request.headers.get('X-Session-Expires'));
-    server.serializeAttachment({ expires } satisfies Attachment);
+    server.serializeAttachment({ expires, revalidate } satisfies Attachment);
     const cursor = Number(new URL(request.url).searchParams.get('after'));
     const current = this.messages.seq();
     const first = this.query<{ seq: number }>(
       'SELECT COALESCE(MIN(seq), 0) AS seq FROM events',
     ).one().seq;
     if (!Number.isSafeInteger(cursor) || cursor < first - 1 || cursor > current) {
-      server.send(JSON.stringify({ type: 'snapshot', snapshot: this.messages.snapshot() }));
+      this.subscribers.send(
+        JSON.stringify({ type: 'snapshot', snapshot: this.messages.snapshot() }),
+        undefined,
+        server,
+      );
     } else {
       for (const row of this.query<{ seq: number; payload: string }>(
         'SELECT * FROM events WHERE seq > ? ORDER BY seq',
@@ -2013,22 +2027,25 @@ export class Conversation extends DurableObject<Env> {
       )) {
         const payload = JSON.parse(row.payload) as
           Message[] | StreamCommit | Pick<Change, 'messages' | 'settings'>;
-        server.send(
+        this.subscribers.send(
           JSON.stringify(
             Array.isArray(payload)
               ? { type: 'change', seq: row.seq, messages: payload }
               : { type: 'runId' in payload ? 'commit' : 'change', seq: row.seq, ...payload },
           ),
+          undefined,
+          server,
         );
       }
     }
-    server.send(JSON.stringify({ type: 'ready', seq: current }));
+    this.subscribers.send(JSON.stringify({ type: 'ready', seq: current }), undefined, server);
     // No await between replay, ready and this tail: the next live preview follows exactly once.
     for (const batch of this.activeGeneration?.buffer.previewTail ?? [])
       this.preview(batch, server);
     return new Response(null, { status: 101, webSocket: client });
   }
   webSocketMessage(socket: WebSocket, data: string | ArrayBuffer) {
+    if (!validSubscription(socket, socket.deserializeAttachment() as Attachment)) return;
     if (this.deletedAt) {
       socket.send(JSON.stringify({ type: 'deleted', deletedAt: this.deletedAt }));
       socket.close(4003, 'Conversation deleted');

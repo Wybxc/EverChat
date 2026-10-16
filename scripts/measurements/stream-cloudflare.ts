@@ -1,3 +1,4 @@
+import { measurementAccess } from './support/credentials';
 import { messageText } from '../../shared/conversation/content';
 import assert from 'node:assert/strict';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
@@ -32,15 +33,11 @@ assert.ok(values.url && values.credentials, '--url and --credentials are require
 const url = new URL(values.url);
 assert.equal(url.protocol, 'https:');
 assert.ok(
-  url.hostname.startsWith('everchat-stream-validation.') && url.hostname.endsWith('.workers.dev'),
+  url.hostname === 'everchat-stream-validation.wybxc.cc',
   'Use only the isolated validation Worker',
 );
 const origin = url.origin;
-const { APP_PASSWORD } = JSON.parse(await readFile(values.credentials, 'utf8')) as {
-  APP_PASSWORD: string;
-};
-assert.ok(APP_PASSWORD?.length >= 32, 'A random validation password is required');
-let cookie = '';
+const access = await measurementAccess(values.credentials, origin);
 const sockets = new Set<WebSocket>();
 // ws overrides the default connector; supply an explicit agent to honor configured proxies.
 const agent = new Agent({ proxyEnv: process.env });
@@ -51,16 +48,16 @@ async function api<T>(
 ): Promise<T> {
   const response = await fetch(`${origin}/api${path}`, {
     method,
+    redirect: 'error',
     headers: {
       Origin: origin,
-      Cookie: cookie,
+      ...access.headers,
       ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     signal: AbortSignal.timeout(30000),
   });
   assert.ok(response.ok, `${method} ${path}: HTTP ${response.status}`);
-  if (path === '/login') cookie = response.headers.get('set-cookie')!.split(';')[0];
   return response.json() as Promise<T>;
 }
 async function subscriber(
@@ -70,7 +67,7 @@ async function subscriber(
 ) {
   const socket = new WebSocket(
     `${origin.replace('https:', 'wss:')}/api/conversations/${id}/sync?after=${initial.seq}`,
-    { agent, handshakeTimeout: 30000, headers: { Cookie: cookie, Origin: origin } },
+    { agent, handshakeTimeout: 30000, headers: { ...access.headers, Origin: origin } },
   );
   sockets.add(socket);
   const sync = new StreamSync(initial),
@@ -143,12 +140,19 @@ async function until(
 const startedAt = new Date().toISOString();
 const results: Record<string, unknown>[] = [];
 try {
-  assert.equal((await fetch(`${origin}/api/settings/providers`)).status, 401);
-  await api('/login', { password: APP_PASSWORD });
+  assert.equal(
+    (
+      await fetch(`${origin}/api/settings/providers`, {
+        redirect: 'manual',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      })
+    ).status,
+    401,
+  );
   assert.equal(
     (
       await fetch(`${origin}/api/conversations/${crypto.randomUUID()}/measurements`, {
-        headers: { Cookie: cookie },
+        headers: { ...access.headers },
       })
     ).status,
     404,

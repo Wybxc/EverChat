@@ -17,7 +17,12 @@ test('production assets load the real PDF worker and bundled Chinese CMaps and f
     route.fulfill({
       json: {
         authenticated: true,
-        configured: true,
+        identity: {
+          issuer: 'http://everchat.local.invalid',
+          sub: 'local-developer',
+          email: 'developer@everchat.local',
+        },
+        logoutUrl: '/cdn-cgi/access/logout',
         attachmentsConfigured: true,
         provider: '',
         model: '',

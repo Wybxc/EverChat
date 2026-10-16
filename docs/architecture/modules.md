@@ -11,6 +11,8 @@
 | `worker/conversation`  | Conversation DO 的事务、任务生命周期、Alarm 协调     | 消息存储、订阅、生成、搜索、工具任务                        |
 | `worker/library`       | Library DO 的对话索引、RPC 与维护调度                | 供应商存储、附件、预设、备份任务、搜索                      |
 | `shared`               | 业务契约及可跨环境复用的纯规则                       | 标准 Web API；不依赖 src、worker、Node、React 或 Cloudflare |
+| `shared/auth`          | Access 身份／会话契约、同源返回路径规则              | 标准 Web API                                                |
+| `scripts/dev`          | Node 临时签名与独立本地 Worker 入口                  | jose、Vite、生产验证器；生产入口不依赖它                    |
 | `scripts/models`       | 更新模型元数据快照                                   | Node、模型目录规则                                          |
 | `scripts/measurements` | 本地／隔离 Cloudflare 验证与测量                     | 测量支持及测试运行时                                        |
 
@@ -32,3 +34,5 @@ DO 中仍保留提交、修订、完成、取消、工具轮次及恢复的事�
 `pnpm typecheck` 分别检查客户端、Worker、Node 工具、标准 Web Worker shared，以及客户端单测、Node 单测、Cloudflare 夹具、浏览器测试。平台验证 Worker 从 Node 工具检查中排除，进入 Cloudflare 运行时检查。
 
 测试结构、发现规则和合并记录见 [测试说明](../../tests/README.md)。本次迁移的范围与验证记录见 [模块整理计划](../plans/project-organization-plan.md)。
+
+Access 验证由 HTTP 装配层集中执行，业务路由读取已验证身份；供应商存储只提供设置。`src/platform/auth` 持有当前联网授权及中断信号，离线缓存不授予联网权限。生产 `worker/index.ts` 与本地 `scripts/dev/worker.ts` 分离；平台测量入口另行显式允许指定的 Access 服务身份。

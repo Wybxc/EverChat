@@ -21,9 +21,7 @@ async function setup(
   provider: ProviderKind = 'openai-chat',
   vision = false,
 ) {
-  expect(
-    (await request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok(),
-  ).toBe(true);
+  expect((await request.post('/__dev/access/login', { headers })).ok()).toBe(true);
   await control(request, { count: 0 });
   expect(
     (
@@ -161,7 +159,7 @@ for (const provider of [
       expect(again).toEqual(file);
       expect(after.dailyCount).toBe(before.dailyCount);
       expect(after.objects).toEqual(before.objects);
-      await first.request.post('/api/login', { headers, data: { password: 'everchat-local' } });
+      await first.request.post('/__dev/access/login', { headers });
       const page = await first.newPage();
       await page.goto(`/c/${fixture.id}`);
       const input = {
@@ -184,7 +182,7 @@ for (const provider of [
       expect(messageText(await finish(fixture, result))).toContain('答案。');
       expect(await (await fixture.submit(input)).json()).toEqual(result);
       expect((await fixture.snapshot()).messages).toHaveLength(2);
-      await second.request.post('/api/login', { headers, data: { password: 'everchat-local' } });
+      await second.request.post('/__dev/access/login', { headers });
       const other = await second.newPage();
       await other.goto(`/c/${fixture.id}`);
       await other.getByRole('button', { name: `预览 ${file.name}` }).click();
@@ -514,8 +512,8 @@ test('new-conversation upload preserves text, focus and private metadata drafts;
   const fixture = await setup(request);
   try {
     await page.goto('/');
-    await page.getByLabel('访问密码').fill('everchat-local');
-    await page.getByRole('button', { name: '进入我的空间' }).click();
+    await page.request.post('/__dev/access/login');
+    await page.reload();
     await expectChatModel(page, JSON.stringify([providerId, fixture.selection.model]));
     const editor = page.getByRole('textbox', { name: '消息', exact: true });
     await editor.fill('保留我的草稿 expect-files:1');
@@ -560,8 +558,8 @@ test('file-only offline queue retains references and sends when online; failed p
   const fixture = await setup(request);
   try {
     await page.goto(`/c/${fixture.id}`);
-    await page.getByLabel('访问密码').fill('everchat-local');
-    await page.getByRole('button', { name: '进入我的空间' }).click();
+    await page.request.post('/__dev/access/login');
+    await page.reload();
     const editor = page.getByRole('textbox', { name: '消息', exact: true });
     await editor.fill('保留失败草稿');
     await page
@@ -604,8 +602,8 @@ test('switching conversations cancels a pending parse and cleans its files witho
   let release!: () => void;
   try {
     await page.goto(`/c/${fixture.id}`);
-    await page.getByLabel('访问密码').fill('everchat-local');
-    await page.getByRole('button', { name: '进入我的空间' }).click();
+    await page.request.post('/__dev/access/login');
+    await page.reload();
     const wait = new Promise<void>((resolve) => {
       release = resolve;
     });
@@ -696,8 +694,8 @@ test('mobile long-file preview scrolls independently and remote conversation del
   try {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(`/c/${fixture.id}`);
-    await page.getByLabel('访问密码').fill('everchat-local');
-    await page.getByRole('button', { name: '进入我的空间' }).click();
+    await page.request.post('/__dev/access/login');
+    await page.reload();
     await page.getByLabel('选择聊天文件').setInputFiles({
       name: 'long.txt',
       mimeType: 'text/plain',

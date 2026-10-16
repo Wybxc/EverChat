@@ -22,10 +22,20 @@ const server = createServer(async (request, response) => {
     response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     response.end(JSON.stringify(data));
   };
+  if (path.startsWith('/auth/') || path.startsWith('/cdn-cgi/access/')) {
+    response.writeHead(401, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' });
+    response.end('Access network boundary');
+    return;
+  }
   if (path === '/api/session')
     return json({
       authenticated: true,
-      configured: true,
+      identity: {
+        issuer: 'http://everchat.local.invalid',
+        sub: 'local-developer',
+        email: 'developer@everchat.local',
+      },
+      logoutUrl: '/cdn-cgi/access/logout',
       attachmentsConfigured: false,
       provider: '',
       model: '',

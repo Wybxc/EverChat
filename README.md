@@ -10,6 +10,8 @@
 
 项目目录与边界见[模块说明](docs/architecture/modules.md)，验证入口与测试合并记录见[测试说明](tests/README.md)。
 
+访问控制使用 Cloudflare Access；JWT 信任边界、本地联调与验证记录见[访问控制迁移方案](docs/plans/cloudflare-access-migration-plan.md)。
+
 ## 本地运行
 
 需要 Node.js 22.12+（或 24+）、pnpm 12。所有命令在项目根目录执行。
@@ -20,7 +22,9 @@ cp .dev.vars.example .dev.vars
 pnpm dev
 ```
 
-打开 http://127.0.0.1:5173，使用本地密码 `everchat-local` 登录。在空间设置中添加供应商并选择默认模型后即可发送消息。
+打开 http://127.0.0.1:5173，点击「重新登录」进入本地空间。在空间设置中添加供应商并选择默认模型后即可发送消息。日常开发由 Node 临时签发本地身份，只监听 loopback；私钥不传入 Worker 或浏览器，生产构建不包含本地签发入口。每次重启开发服务后需重新登录。
+
+真实 Access 联调使用 `pnpm dev:access`，填写 `.dev.vars.example` 中的 Access 变量，通过已经配置域名保护的命名 Tunnel 访问。它采用生产 JWT 验证入口，不能用日常开发 Cookie 登录；隧道入口必须独立配置可信 Origin 和 Access 应用 AUD。
 
 新对话位于 `/`，每个已创建或离线待发送的对话使用 `/c/:conversationId`。点击侧栏以 SPA 方式切换，支持浏览器前进／后退、直接打开链接和刷新；链接也可在新标签页打开。URL 决定当前对话，访问 `/` 始终进入新对话。各对话草稿独立保存。
 
@@ -114,12 +118,10 @@ pnpm format:check
 
 ## 部署到 Cloudflare
 
-先选择自己的 Cloudflare 账户，并设置登录所需的两个 Secrets。不要使用示例中的本地密码或 session secret 部署。
+先配置下文的 Cloudflare Access 应用，再创建私有 R2 桶并部署。应用不再使用共享密码或 session secret。
 
 ```sh
 pnpm exec wrangler login
-pnpm exec wrangler secret put APP_PASSWORD
-pnpm exec wrangler secret put SESSION_SECRET
 # 可选：通过环境变量配置默认模型密钥时使用；网页配置无需此步骤。
 pnpm exec wrangler secret put AI_API_KEY
 # 先在账户启用 R2；只需为目标账户创建一次，保留私有访问。
@@ -127,7 +129,9 @@ pnpm exec wrangler r2 bucket create everchat-attachments --storage-class Standar
 pnpm deploy
 ```
 
-`SESSION_SECRET` 使用至少 32 字符的随机值，例如 `openssl rand -hex 32` 生成的结果。登录 Secrets 仅存在服务端，不写入前端或 Git。部署后可通过网页配置模型。部署将创建 Worker、两个 SQLite Durable Object namespace 及有限工具编排使用的 Workflow 定义；首次启用服务时按 Cloudflare 提示完成账户配置。费用以账户当前套餐和实际用量为准。
+正式域名为 `chat.wybxc.cc`。上线前在团队 `wybxc.cloudflareaccess.com` 创建覆盖整个域名的 self-hosted Access 应用，仅允许 `wybxc@qq.com`，启用邮件验证码登录。该应用的 AUD 已写入 Wrangler 的 `ACCESS_AUD`；`ACCESS_TEAM_DOMAIN`、`APP_ORIGIN`、`ACCESS_ALLOWED_EMAILS` 已在配置中固定。AUD 是应用标识，不是密钥。保持 `workers_dev: false` 和 `preview_urls: false`，先确认边缘保护再部署；仅填写变量不会启用 Access。
+
+Worker 使用 `jose` 验证断言的签名、issuer、audience、有效期和允许身份。缺少配置或验证服务不可用时拒绝业务访问。无需应用密码或 EverChat 自签登录 Cookie；部署后可通过网页配置模型。部署将创建 Worker、两个 SQLite Durable Object namespace 及有限工具编排使用的 Workflow 定义；首次启用服务时按 Cloudflare 提示完成账户配置。费用以账户当前套餐和实际用量为准。
 
 生产构建有 PWA manifest、应用图标及 Service Worker，支持安装和离线重新打开已访问的应用。开发模式不注册 Service Worker。客户端缓存、快照和离线草稿优先保存在 IndexedDB（由 `idb-keyval` 管理），并保留 localStorage 作为故障回退；共享设备上用“退出并清除本地记录”。主题偏好仍使用 localStorage，以便页面启动前立即恢复主题。
 
@@ -173,14 +177,14 @@ pnpm measure:stream --interval 100 --output /tmp/everchat-stream-comparison.json
 ## 实现与边界
 
 ```text
-PWA → Worker（密码鉴权、API）→ Conversation Durable Object（SQLite、事件序号）
+PWA → Cloudflare Access → Worker（JWT 验证、API）→ Conversation Durable Object（SQLite、事件序号）
                               ↓ 原子保存输入、配置、outbox + alarm
                             Conversation Alarm → 模型供应商
                               ↓ 增量日志 → 终态快照
                             Conversation → 休眠 WebSocket → 多设备
 ```
 
-- `Library` Durable Object 保存个人会话索引、供应商配置、登录频率限制及附件登记／清理信息，`Conversation` 每个对话一个实例。私有 R2 保存原文件和有界文本解析结果；暂不使用 D1 或第三方登录。
+- `Library` Durable Object 保存个人会话索引、供应商配置及附件登记／清理信息，`Conversation` 每个对话一个实例。私有 R2 保存原文件和有界文本解析结果；暂不使用 D1；登录由 Cloudflare Access 管理。
 - 删除先在 Library 保存永久标记，再中止 Conversation 的上游请求、清空 SQLite／任务 Alarm、保存最小删除标记，最后移除索引。Library Alarm 每批最多清理 16 项，失败后 30 秒重试；实例在清空与写入标记之间重置时，Library 标记仍阻止迟到任务和创建请求。重复删除是幂等的，同 ID 的创建、提交和读取返回 410，不重新调用模型。
 - `GET /api/conversations?after=<cursor>` 返回对话索引和每页最多 256 条删除记录，客户端读完分页后保存游标。这样没有打开被删除对话的设备也能清理缓存与离线 outbox。服务端及本地删除标记长期保留，防止旧设备重新恢复数据；它们仍占少量存储，删除不表示账户存储归零。DO 清空存储的行为依据 [SQLite 存储 API](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/)。
 - 在同一个存储事务中保存输入、配置快照、请求 ID、任务 outbox 和 Alarm；提交成功后才确认接受。新任务固定执行器 `do-v1`，由 Conversation Alarm 认领并执行。浏览器保存提交 request ID，未知网络结果继续用它重试。
@@ -198,7 +202,7 @@ PWA → Worker（密码鉴权、API）→ Conversation Durable Object（SQLite�
 - 停止先保存取消意图，DO 立即终止上游并提交已接收尾部，再写入终态；尾部写入失败时标记失败并保留最近检查点。供应商是否及时停止计费由其服务决定。
 - Worker/供应商重启或网络故障不能恢复同一 token 生成。新实例发现已经运行但失去上游连接的 DO 任务，会保留检查点并明确标记中断，供用户主动重新生成；不重复调用模型。DO 保留 14 分钟供应商超时和 15 分钟看门狗 Alarm。
 - 本地断网前最后一条尚未确认提交的消息可能已在云端接受；此时保留同一 request ID 重试。离线缓存仅属于此浏览器，首次访问和登录需要联网。
-- 私人空间使用一个密码、签名 HttpOnly/SameSite cookie、30 天会话、同源写入校验及登录尝试限制。修改 `SESSION_SECRET` 可使所有旧会话失效。当前退出清理本设备 cookie 和缓存，不撤销其他设备的会话。
+- 整个域名由 Cloudflare Access 保护，Worker 再校验 JWT 与指定邮箱；同源写入检查继续保留。WebSocket 在 JWT 到期或最长 5 分钟订阅租期后重新握手，不为每个增量查询身份。退出先清除本地记录再访问 Access 退出入口，后者会影响此账号的其他 Access 应用；离线退出保持锁定，联网后可完成远端退出。获准身份仍共享同一个个人空间。
 - 原型最多 128 个会话，每个 1,000 条消息。启动生成前，完整历史 JSON 的 UTF-8 大小最多 4 MiB，SQLite 分配最多 16 MiB；为新内容、解析检查点与流式日志预留空间。流式提交超过 30 MiB 会回滚并停止，终态保存最多 32 MiB。已有历史继续可读，不自动截断或删除；生成结束清除不再使用的任务上下文。128 × 32 MiB 约为 4.295GB，是应用保留预算，其他应用仍共享账户存储额度。SQLite 已分配页不一定随日志清理缩小。
 - 容量不足返回明确的 507 错误，不自动重新调用模型。同步失败保留草稿和缓存、显示“重新同步”，暂停自动重试；平台存储错误的内部诊断不会直接显示给用户。账户存储完全耗尽时可能无法写入终态，此时不发布完成确认。
 - 输入最多 16,000 字，正文与思考各最多 100,000 字，普通模型原始响应最多 4 MiB，工具任务每轮最多 2 MiB，SSE 数据事件最多 256 Ki 字符。语义长度和完成状态在云端读取／最终整理时校验，原始接收阶段按字节和时间限制停止。发送历史按模型窗口、会话 Token 预算和消息条数选取当前分支的完整轮次，省略条数明确可见。输出 Token 上限仍默认不设置。已有独立文件存储，图片输入已接入并按数量、大小和规划额度限制；轻量文本及 PDF 提取内容按字符数和近似 Tokens 纳入预算；含附件的独立复制与可恢复备份已接入。Tavily 搜索／读取提供网页配置与会话开关，受有限轮数和共享每日请求上限约束；多用户隔离尚未接入。

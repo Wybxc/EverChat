@@ -27,7 +27,7 @@ const manifest = (request: APIRequestContext, id: string) =>
     .get(`/api/conversations/${id}/backup/manifest`)
     .then((response) => response.json()) as Promise<ArchiveManifest>;
 async function setup(request: APIRequestContext) {
-  await request.post('/api/login', { headers, data: { password: 'everchat-local' } });
+  await request.post('/__dev/access/login', { headers });
   await control(request, { count: 0 });
   const providerId = crypto.randomUUID(),
     id = crypto.randomUUID(),
@@ -285,8 +285,8 @@ test('the real browser ZIP survives source deletion and restores private preview
     await upload(request, fixture.id, 'unused.txt', Buffer.from('unused raw'), 'text/plain', false);
     await send(request, fixture.id, { fileIds: [csv.id, pdf.id] });
     await page.goto(`/c/${fixture.id}`);
-    await page.getByLabel('访问密码').fill('everchat-local');
-    await page.getByRole('button', { name: '进入我的空间' }).click();
+    await page.request.post('/__dev/access/login');
+    await page.reload();
     await expect(page.getByTestId('assistant-message')).toHaveCount(1);
     await page.getByRole('button', { name: '更多会话操作' }).click();
     const pending = page.waitForEvent('download');
@@ -298,7 +298,7 @@ test('the real browser ZIP survives source deletion and restores private preview
     expect(decoded.manifest.files).toHaveLength(3);
     expect(bytes.toString()).not.toContain('integration-test-key');
     await request.delete(`/api/conversations/${fixture.id}`, { headers });
-    await device.request.post('/api/login', { headers, data: { password: 'everchat-local' } });
+    await device.request.post('/__dev/access/login', { headers });
     const other = await device.newPage();
     await other.goto('/');
     await expect(other.getByRole('button', { name: '更多会话操作' })).toBeVisible();
@@ -384,8 +384,8 @@ test('claimed finalization completes after the initiating page closes and a lost
     const file = await upload(request, fixture.id);
     await send(request, fixture.id, { fileIds: [file.id] });
     await page.goto(`/c/${fixture.id}`);
-    await page.getByLabel('访问密码').fill('everchat-local');
-    await page.getByRole('button', { name: '进入我的空间' }).click();
+    await page.request.post('/__dev/access/login');
+    await page.reload();
     await expect(page.getByTestId('assistant-message')).toHaveCount(1);
     await page.getByRole('button', { name: '更多会话操作' }).click();
     const pending = page.waitForEvent('download');
@@ -725,8 +725,8 @@ test('the browser rejects a damaged archive locally and replaces an identifier a
   try {
     const saved = await manifest(request, fixture.id);
     await page.goto('/');
-    await page.getByLabel('访问密码').fill('everchat-local');
-    await page.getByRole('button', { name: '进入我的空间' }).click();
+    await page.request.post('/__dev/access/login');
+    await page.reload();
     const input = page.getByRole('banner').locator('input[type="file"]');
     await page.route('**/api/backup/imports/*', async (route) => {
       if (route.request().method() !== 'POST') return route.continue();
@@ -780,8 +780,8 @@ test('an otherwise empty conversation can back up and restore saved files that h
       false,
     );
     await page.goto(`/c/${fixture.id}`);
-    await page.getByLabel('访问密码').fill('everchat-local');
-    await page.getByRole('button', { name: '进入我的空间' }).click();
+    await page.request.post('/__dev/access/login');
+    await page.reload();
     await expect(page.getByRole('banner').getByText('附件备份源', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: '更多会话操作' }).click();
     await expect(page.getByRole('menuitem', { name: '下载备份', exact: true })).toBeEnabled();

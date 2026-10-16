@@ -1,3 +1,4 @@
+import { measurementAccess } from './support/credentials';
 import { messageText } from '../../shared/conversation/content';
 import assert from 'node:assert/strict';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
@@ -21,15 +22,11 @@ assert.ok(values.url && values.credentials, '--url and --credentials are require
 const url = new URL(values.url);
 assert.equal(url.protocol, 'https:');
 assert.ok(
-  url.hostname.startsWith('everchat-stream-validation.') && url.hostname.endsWith('.workers.dev'),
+  url.hostname === 'everchat-stream-validation.wybxc.cc',
   'Use only the isolated validation Worker',
 );
 const origin = url.origin;
-const { APP_PASSWORD } = JSON.parse(await readFile(values.credentials, 'utf8')) as {
-  APP_PASSWORD: string;
-};
-assert.ok(APP_PASSWORD?.length >= 32);
-let cookie = '';
+const access = await measurementAccess(values.credentials, origin);
 const agent = new Agent({ proxyEnv: process.env });
 const sockets = new Set<WebSocket>();
 function request(path: string, body?: unknown) {
@@ -39,7 +36,7 @@ function request(path: string, body?: unknown) {
     signal: AbortSignal.timeout(60000),
     headers: {
       Origin: origin,
-      Cookie: cookie,
+      ...access.headers,
       ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -48,7 +45,6 @@ function request(path: string, body?: unknown) {
 async function api<T>(path: string, body?: unknown): Promise<T> {
   const response = await request(path, body);
   assert.ok(response.ok, `${path}: HTTP ${response.status}`);
-  if (path === '/login') cookie = response.headers.get('set-cookie')!.split(';')[0];
   return response.json() as Promise<T>;
 }
 type Seed = {
@@ -78,7 +74,7 @@ async function replay(history: History, snapshot?: Snapshot) {
       agent,
       handshakeTimeout: 30000,
       maxPayload: 32 * 1024 * 1024,
-      headers: { Cookie: cookie, Origin: origin },
+      headers: { ...access.headers, Origin: origin },
     },
   );
   sockets.add(socket);
@@ -125,7 +121,6 @@ async function replay(history: History, snapshot?: Snapshot) {
 const startedAt = new Date().toISOString(),
   results: Record<string, unknown>[] = [];
 try {
-  await api('/login', { password: APP_PASSWORD });
   let histories: History[] = [];
   if (values.source) {
     const source = JSON.parse(await readFile(values.source, 'utf8')) as {

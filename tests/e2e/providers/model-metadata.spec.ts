@@ -1,15 +1,16 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { DEFAULT_CONVERSATION_SETTINGS } from '../../../shared/conversation/settings';
 import type { Submission } from '../../../shared/conversation/types';
-import type { ProviderSettings, SessionInfo } from '../../../shared/providers/types';
+import { ProviderSettings } from '../../../shared/providers/types';
+import type { SessionInfo } from '../../../shared/auth/types';
 import type { Snapshot } from '../../../shared/streaming/protocol';
 import { editModel, openParameters, openSpaceSettings } from '../../support/browser/ui';
 
 const headers = { Origin: 'http://127.0.0.1:5174' };
 async function login(page: Page) {
   await page.goto('/');
-  await page.getByLabel('访问密码').fill('everchat-local');
-  await page.getByRole('button', { name: '进入我的空间' }).click();
+  await page.request.post('/__dev/access/login');
+  await page.reload();
   await expect(page.getByLabel('消息', { exact: true })).toBeVisible();
 }
 async function providers(page: Page) {
@@ -324,9 +325,7 @@ test('native discovery refreshes reported metadata while preserving overrides, e
 test('server validates effective output and effort limits before accepting a run and pins model metadata in accepted tasks and backups', async ({
   request,
 }) => {
-  expect(
-    (await request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok(),
-  ).toBe(true);
+  expect((await request.post('/__dev/access/login', { headers })).ok()).toBe(true);
   const initial = await getSettings(request),
     providerId = crypto.randomUUID(),
     id = crypto.randomUUID();

@@ -1,3 +1,4 @@
+import { completeSignOut, pendingLogout } from '../platform/auth';
 import { useMutationFocus } from '../features/chat/useMutationFocus';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -105,7 +106,8 @@ import {
 import { api, ApiError } from '../platform/api';
 import { clearLocal, read, storageEpoch, write } from '../platform/storage';
 import { Brand } from './Brand';
-import { Login } from './Login';
+import { AccessGate } from './AccessGate';
+import { identityKey } from '../../shared/auth/types';
 import { SettingsPanel, type SettingsTab } from './SettingsPanel';
 import { ThemeControl } from './ThemeControl';
 import { conversationUrl, useConversationRoute } from './useConversationRoute';
@@ -114,7 +116,20 @@ import { useSidebar } from './useSidebar';
 
 export function App() {
   const queryClient = useQueryClient();
-  const { session, sessionRef, bootError, boot, loggedOut, providerSaved } = useSession();
+  const [logoutTarget, setLogoutTarget] = useState(
+    () => pendingLogout() ?? '/cdn-cgi/access/logout',
+  );
+  const {
+    session,
+    sessionRef,
+    status,
+    bootError,
+    boot,
+    loggedOut,
+    signOut,
+    providerSaved,
+    reportSignOutError,
+  } = useSession();
   const webToolSettings = useWebToolSettings(Boolean(session?.authenticated));
 
   const {
@@ -726,6 +741,7 @@ export function App() {
       archived: false,
     };
     const item: Pending = {
+      owner: identityKey(sessionRef.current!.identity),
       conversation,
       input,
       viewHeadId: requestView,
@@ -785,7 +801,12 @@ export function App() {
       maxOutputTokens: null,
       modelMetadata: model.metadata,
     });
-    const item: Pending = { conversation: currentConversation, input, viewHeadId: branches.head };
+    const item: Pending = {
+      owner: identityKey(sessionRef.current!.identity),
+      conversation: currentConversation,
+      input,
+      viewHeadId: branches.head,
+    };
     if (!commitPending([...pendingRef.current, item])) throw new Error('无法保存待发送请求。');
     await deliver(item);
   };
@@ -897,11 +918,31 @@ export function App() {
       editor.current?.setSelectionRange(next.length, next.length);
     });
   };
+  useEffect(() => {
+    if (status !== 'signed-out') return;
+    queryClient.clear();
+    pendingRef.current = [];
+    setPending([]);
+    setLocalConversations([]);
+    setDraft('');
+    setDraftImages([]);
+    setDraftFiles([]);
+    setRevisionOf(undefined);
+    setSettingsDraft(null);
+    setNewConversationSettings({ ...DEFAULT_CONVERSATION_SETTINGS });
+    setSettingsOpen(false);
+    setConversationSettingsOpen(false);
+  }, [status]);
   const logout = async () => {
     try {
       cancelBackup();
-      await api('/logout', 'POST');
-      clearLocal();
+      const target = session?.logoutUrl ?? logoutTarget;
+      setLogoutTarget(target);
+      signOut();
+      const channel = new BroadcastChannel('everchat-access');
+      channel.postMessage('sign-out');
+      channel.close();
+      await clearLocal();
       pendingRef.current = [];
       setPending([]);
       setLocalConversations([]);
@@ -913,10 +954,10 @@ export function App() {
       setSettingsDraft(null);
       setConversationSettingsOpen(false);
       returnToConversationSettings.current = false;
-      loggedOut();
       setSettingsOpen(false);
+      if (navigator.onLine) completeSignOut(target);
     } catch (error) {
-      setError(error instanceof Error ? error.message : '退出失败，请联网后重试。');
+      reportSignOutError(error instanceof Error ? error.message : '本地记录未能完全清除，请重试。');
       setSettingsOpen(false);
     }
   };
@@ -1007,32 +1048,11 @@ export function App() {
   };
   if (!session)
     return (
-      <main className="flex min-h-dvh flex-col items-center justify-center gap-6">
-        <Brand />
-        {bootError ? (
-          <>
-            <p
-              className="max-w-sm px-5 text-center text-sm font-medium text-foreground"
-              role="alert"
-            >
-              {bootError}
-            </p>
-            <Button variant="secondary" onClick={boot}>
-              重新连接
-            </Button>
-          </>
-        ) : (
-          <Spinner className="text-muted-foreground" />
-        )}
-      </main>
-    );
-  if (!session.authenticated)
-    return (
-      <Login
-        session={session}
-        onLogin={async () => {
-          await boot();
-        }}
+      <AccessGate
+        logoutUrl={logoutTarget}
+        status={status}
+        error={bootError}
+        onRetry={() => void (status === 'signed-out' ? logout() : boot())}
       />
     );
   const statusText =

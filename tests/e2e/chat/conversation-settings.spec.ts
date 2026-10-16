@@ -10,9 +10,7 @@ import { chooseChatModel, openParameters, openSpaceSettings } from '../../suppor
 const origin = 'http://127.0.0.1:5174',
   headers = { Origin: origin };
 async function setup(request: APIRequestContext, model = 'alarm-stall') {
-  expect(
-    (await request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok(),
-  ).toBe(true);
+  expect((await request.post('/__dev/access/login', { headers })).ok()).toBe(true);
   const original = (await request
     .get('/api/settings/providers')
     .then((response) => response.json())) as ProviderSettings;
@@ -348,7 +346,11 @@ test('logging out cannot restore parameter drafts when an earlier autosave respo
       const response = await route.fetch();
       saved();
       await hold;
-      await route.fulfill({ response });
+      try {
+        await route.fulfill({ response });
+      } catch {
+        /* Logout aborts the held browser request. */
+      }
     });
     await page.goto(`/c/${fixture.id}`);
     await openParameters(page);
@@ -359,28 +361,21 @@ test('logging out cannot restore parameter drafts when an earlier autosave respo
     await modal.getByRole('button', { name: '关闭会话参数' }).click();
     await openSpaceSettings(page);
     await page.getByRole('button', { name: '退出并清除本地记录' }).click();
-    await expect(page.getByLabel('访问密码')).toBeVisible();
-    const late = page.waitForResponse(
-      (response) =>
-        response.url().endsWith(`/conversations/${fixture.id}/settings`) &&
-        response.request().postDataJSON()?.systemPrompt === prompt,
-    );
+    await expect(page).toHaveURL(`${origin}/__dev/access/logout`);
     release();
-    await late;
-    await page.waitForTimeout(100);
     expect(
       await page.evaluate(() =>
         Object.keys(localStorage).filter((key) => key.startsWith('everchat:conversation-settings')),
       ),
     ).toEqual([]);
-    await page.getByLabel('访问密码').fill('everchat-local');
-    await page.getByRole('button', { name: '进入我的空间' }).click();
+    await page.request.post('/__dev/access/login');
+    await page.goto('/');
     await openParameters(page);
     await expect(local.getByLabel('自定义会话系统提示词')).not.toBeChecked();
   } finally {
     release();
     await page.unroute('**/api/conversations/*/settings');
-    await page.request.post('/api/login', { headers, data: { password: 'everchat-local' } });
+    await page.request.post('/__dev/access/login', { headers });
     await fixture.cleanup();
   }
 });
@@ -392,7 +387,7 @@ test('conversation settings autosave, preserve failed and invalid drafts, sync d
   const fixture = await setup(page.request);
   const second = await browser.newContext();
   try {
-    await second.request.post('/api/login', { headers, data: { password: 'everchat-local' } });
+    await second.request.post('/__dev/access/login', { headers });
     const other = await second.newPage();
     await other.goto(`/c/${fixture.id}`);
     await openParameters(other);
@@ -471,7 +466,7 @@ test('an offline new conversation pins its parameters without overwriting anothe
   const other = await browser.newContext();
   let id = '';
   try {
-    await other.request.post('/api/login', { headers, data: { password: 'everchat-local' } });
+    await other.request.post('/__dev/access/login', { headers });
     await page.goto('/');
     await openParameters(page);
     const modal = page.getByRole('dialog', { name: '新对话参数', exact: true });

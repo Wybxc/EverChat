@@ -5,9 +5,7 @@ const origin = 'http://127.0.0.1:5174';
 const headers = { Origin: origin };
 
 async function configure(request: APIRequestContext, model = 'benchmark-text-2-10-32') {
-  expect(
-    (await request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok(),
-  ).toBe(true);
+  expect((await request.post('/__dev/access/login', { headers })).ok()).toBe(true);
   const initial = await request.get('/api/settings/providers').then((response) => response.json());
   const providerId = '00000000-0000-4000-8000-000000000099';
   const settings = {
@@ -548,7 +546,7 @@ test('deleted leaves recover locally while deleted connectors keep old descendan
     m = f.messages,
     device = await browser.newContext();
   try {
-    await device.request.post('/api/login', { headers, data: { password: 'everchat-local' } });
+    await device.request.post('/__dev/access/login', { headers });
     const other = await device.newPage();
     await other.goto(`/c/${f.id}?branch=${m[3].id}`);
     await page.goto(`/c/${f.id}?branch=${m[7].id}`);

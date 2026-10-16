@@ -10,9 +10,7 @@ import { messageMenu, openParameters } from '../../support/browser/ui';
 const origin = 'http://127.0.0.1:5174',
   headers = { Origin: origin };
 async function setup(request: APIRequestContext, window: number | null = 4096) {
-  expect(
-    (await request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok(),
-  ).toBe(true);
+  expect((await request.post('/__dev/access/login', { headers })).ok()).toBe(true);
   const original = (await request
     .get('/api/settings/providers')
     .then((response) => response.json())) as ProviderSettings;
@@ -263,7 +261,7 @@ test('composer estimates reflect model prompts and autosaved budgets across devi
     await expect(details).toContainText('系统提示词（估算）');
     await expect(details.locator('dd').first()).toHaveText('10');
     await page.keyboard.press('Escape');
-    await other.request.post('/api/login', { headers, data: { password: 'everchat-local' } });
+    await other.request.post('/__dev/access/login', { headers });
     const second = await other.newPage();
     await second.goto(`/c/${fixture.id}`);
     await openParameters(second);

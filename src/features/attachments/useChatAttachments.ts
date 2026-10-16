@@ -17,7 +17,7 @@ import {
 } from '../../../shared/conversation/types';
 import { canAttemptCapability } from '../../../shared/models/metadata';
 import type { ChatModel } from '../../../shared/models/types';
-import type { SessionInfo } from '../../../shared/providers/types';
+import type { SessionInfo } from '../../../shared/auth/types';
 import { api } from '../../platform/api';
 import { read } from '../../platform/storage';
 import { prepareAttachment, uploadAttachment } from './attachment-upload';

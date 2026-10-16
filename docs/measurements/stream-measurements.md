@@ -23,7 +23,7 @@ pnpm measure:stream
 pnpm measure:stream --chunks 120 --interval 100 --size 200 --output /tmp/everchat-stream-comparison.json
 ```
 
-工具启动独立 Vite／Cloudflare 本地运行时，使用临时存储和 `provider.test` 模拟 HTTP 响应，不调用真实模型。三个场景分别为在线正文、在线正文加思考，以及收到首个实时预览后关闭唯一订阅。每个场景检查完整持久化结果、输出长度和实际供应商增量数；在线场景还检查客户端增量回放与数据库最终快照一致。最后停止服务器并清理本次临时数据。默认监听 5184；可用 `--port` 修改。默认本地密码为 `everchat-local`，环境变量 `EVERCHAT_TEST_PASSWORD` 可覆盖，不输出密码。
+工具启动独立 Vite／Cloudflare 本地运行时，使用临时存储和 `provider.test` 模拟 HTTP 响应，不调用真实模型。三个场景分别为在线正文、在线正文加思考，以及收到首个实时预览后关闭唯一订阅。每个场景检查完整持久化结果、输出长度和实际供应商增量数；在线场景还检查客户端增量回放与数据库最终快照一致。最后停止服务器并清理本次临时数据。默认监听 5184；可用 `--port` 修改。本地身份由临时 RS256 签名夹具提供，不配置应用密码。
 
 报告默认写入系统临时目录中的 `everchat-stream-measurements.json`。首次报告位于 [stream-baseline.json](stream-baseline.json)，增量日志检查点报告位于 [stream-incremental.json](stream-incremental.json)，DO 执行迁移报告位于 [stream-do.json](stream-do.json)，分层保存报告位于 [stream-layered.json](stream-layered.json)。使用 `--output` 保存比较结果；相同负载下检查资源变化，时间调度会让检查点数略有浮动。
 
@@ -179,13 +179,12 @@ Worker 错误计数和资源超限计数均为零；DO HTTP 的断线状态仍�
 
 ### 复现
 
-使用项目的 Node 26 工具环境和 pnpm。先用 `pnpm exec wrangler whoami --json` 确认账户，确认 `everchat-stream-validation` 尚不存在，避免覆盖他人的验证环境。创建权限为 `0600` 的临时 JSON，包含随机 `APP_PASSWORD` 和至少 32 字符的随机 `SESSION_SECRET`；不要使用正式登录密码或供应商密钥，也不要打印或提交该文件。
+使用项目的 Node 26 工具环境和 pnpm。先用 `pnpm exec wrangler whoami --json` 确认账户，确认 `everchat-stream-validation` 尚不存在，避免覆盖他人的验证环境。先创建覆盖隔离验证主机名的 Access 应用和 Service Auth 策略；Worker 配置 `ACCESS_TEAM_DOMAIN`、`ACCESS_AUD`、`APP_ORIGIN` 和 `VALIDATION_ACCESS_SERVICE_IDS`（指定 Client ID）。创建权限为 `0600` 的临时凭据 JSON，包含 `ACCESS_ORIGIN`（与验证 URL 的 origin 完全一致）、`CF_ACCESS_CLIENT_ID`、`CF_ACCESS_CLIENT_SECRET`；不要打印或提交。部署凭据与 Access 服务凭据分别管理。确认域名保护生效后部署，不在正式 EverChat 应用添加服务身份。
 
 ```sh
 pnpm exec wrangler deploy --config wrangler.stream-validation.jsonc
-pnpm exec wrangler secret bulk /tmp/everchat-stream-validation-secrets.json --config wrangler.stream-validation.jsonc
-pnpm measure:cloudflare --url https://everchat-stream-validation.YOUR-SUBDOMAIN.workers.dev --credentials /tmp/everchat-stream-validation-secrets.json --output /tmp/everchat-cloudflare-functional.json
-pnpm measure:cloudflare-metrics --account YOUR_ACCOUNT_ID --functional /tmp/everchat-cloudflare-functional.json --url https://everchat-stream-validation.YOUR-SUBDOMAIN.workers.dev --credentials /tmp/everchat-stream-validation-secrets.json --output /tmp/everchat-cloudflare-metrics.json
+pnpm measure:cloudflare --url https://everchat-stream-validation.wybxc.cc --credentials /tmp/everchat-stream-validation-secrets.json --output /tmp/everchat-cloudflare-functional.json
+pnpm measure:cloudflare-metrics --account YOUR_ACCOUNT_ID --functional /tmp/everchat-cloudflare-functional.json --url https://everchat-stream-validation.wybxc.cc --credentials /tmp/everchat-stream-validation-secrets.json --output /tmp/everchat-cloudflare-metrics.json
 ```
 
 功能报告即使失败也会保存；只有命令成功且 `complete: true`、9 项结果齐全才算通过。分析数据可能延迟，空数组不算零用量。指标读取需要账户分析权限；套餐由账户订阅或人工确认，`usageModel: standard` 不能单独证明 Workers Free。
@@ -194,8 +193,8 @@ pnpm measure:cloudflare-metrics --account YOUR_ACCOUNT_ID --functional /tmp/ever
 
 ```sh
 pnpm measure:cloudflare-tail --seconds 300 --output /tmp/everchat-cloudflare-tail.json
-pnpm measure:cloudflare --suite sustained --url https://everchat-stream-validation.YOUR-SUBDOMAIN.workers.dev --credentials /tmp/everchat-stream-validation-secrets.json --output /tmp/everchat-cloudflare-sustained.json
-pnpm measure:cloudflare --suite reconnect --source /tmp/everchat-cloudflare-sustained.json --url https://everchat-stream-validation.YOUR-SUBDOMAIN.workers.dev --credentials /tmp/everchat-stream-validation-secrets.json --output /tmp/everchat-cloudflare-reconnect.json
+pnpm measure:cloudflare --suite sustained --url https://everchat-stream-validation.wybxc.cc --credentials /tmp/everchat-stream-validation-secrets.json --output /tmp/everchat-cloudflare-sustained.json
+pnpm measure:cloudflare --suite reconnect --source /tmp/everchat-cloudflare-sustained.json --url https://everchat-stream-validation.wybxc.cc --credentials /tmp/everchat-stream-validation-secrets.json --output /tmp/everchat-cloudflare-reconnect.json
 ```
 
 两套报告分别要求 3 项和 30 项完整结果。使用 `measure:cloudflare-metrics --functional` 分别指定其报告，查询对应窗口，保留各自输出。资源删除后仍可用已保存的 namespace IDs 读取历史指标，不必为等待指标保留测试 Worker：
@@ -209,8 +208,8 @@ pnpm measure:cloudflare-metrics --account YOUR_ACCOUNT_ID --functional /tmp/ever
 大历史比较先运行以下两轮；第二轮在部署快照优化后使用第一轮的数据库 ID，不重复写入模拟历史：
 
 ```sh
-pnpm measure:cloudflare-history --url https://everchat-stream-validation.YOUR-SUBDOMAIN.workers.dev --credentials /tmp/everchat-stream-validation-secrets.json --output /tmp/everchat-history-before.json
-pnpm measure:cloudflare-history --source /tmp/everchat-history-before.json --url https://everchat-stream-validation.YOUR-SUBDOMAIN.workers.dev --credentials /tmp/everchat-stream-validation-secrets.json --output /tmp/everchat-history-after.json
+pnpm measure:cloudflare-history --url https://everchat-stream-validation.wybxc.cc --credentials /tmp/everchat-stream-validation-secrets.json --output /tmp/everchat-history-before.json
+pnpm measure:cloudflare-history --source /tmp/everchat-history-before.json --url https://everchat-stream-validation.wybxc.cc --credentials /tmp/everchat-stream-validation-secrets.json --output /tmp/everchat-history-after.json
 ```
 
 历史报告的 `complete` 表示三种大小已测完，`passed` 单独表示正确性通过；测量失败返回非零退出码，仍保存报告。CPU 用平台指标和独立 tail 核实，命令执行耗时不能替代 CPU。

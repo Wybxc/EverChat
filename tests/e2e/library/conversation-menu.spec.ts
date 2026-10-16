@@ -2,8 +2,8 @@ import { expect, test, type Page } from '@playwright/test';
 
 async function login(page: Page) {
   await page.goto('/');
-  await page.getByLabel('访问密码').fill('everchat-local');
-  await page.getByRole('button', { name: '进入我的空间' }).click();
+  await page.request.post('/__dev/access/login');
+  await page.reload();
   await expect(page.getByRole('textbox', { name: '消息', exact: true })).toBeVisible();
 }
 

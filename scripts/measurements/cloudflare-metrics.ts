@@ -1,3 +1,4 @@
+import { measurementAccess } from './support/credentials';
 import assert from 'node:assert/strict';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
@@ -114,13 +115,14 @@ if (values.url || values.credentials) {
   assert.ok(
     url.hostname.startsWith(`${functional.workerName}.`) && url.hostname.endsWith('.workers.dev'),
   );
-  const { APP_PASSWORD, VALIDATION_RUN_ID } = JSON.parse(
-    await readFile(values.credentials, 'utf8'),
-  ) as { APP_PASSWORD: string; VALIDATION_RUN_ID?: string };
-  assert.ok(APP_PASSWORD?.length >= 32);
+  const { VALIDATION_RUN_ID } = JSON.parse(await readFile(values.credentials, 'utf8')) as {
+    VALIDATION_RUN_ID?: string;
+  };
+  const access = await measurementAccess(values.credentials, url.origin);
   if (toolRun) {
     const identity = await fetch(`${url.origin}/api/__validation/identity`, {
       redirect: 'error',
+      headers: access.headers,
       signal: AbortSignal.timeout(30000),
     }).then((r) => {
       assert.ok(r.ok);
@@ -131,18 +133,10 @@ if (values.url || values.credentials) {
     assert.equal(identity.runId, VALIDATION_RUN_ID);
     assert.deepEqual(identity.counters, { local: false, generation: false });
   }
-  const login = await fetch(`${url.origin}/api/login`, {
-    method: 'POST',
-    redirect: 'error',
-    signal: AbortSignal.timeout(30000),
-    headers: { Origin: url.origin, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password: APP_PASSWORD }),
-  });
-  assert.ok(login.ok, `Validation login: HTTP ${login.status}`);
   const storage = await fetch(`${url.origin}/api/__validation/storage`, {
     redirect: 'error',
     signal: AbortSignal.timeout(30000),
-    headers: { Cookie: login.headers.get('set-cookie')!.split(';')[0] },
+    headers: access.headers,
   });
   assert.ok(storage.ok, `Deployed storage sample: HTTP ${storage.status}`);
   deployedStorage = await storage.json();

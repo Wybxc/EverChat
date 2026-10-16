@@ -13,9 +13,7 @@ const png = Buffer.from(
   'base64',
 );
 async function setup(request: APIRequestContext, provider: ProviderKind = 'openai-chat') {
-  expect(
-    (await request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok(),
-  ).toBe(true);
+  expect((await request.post('/__dev/access/login', { headers })).ok()).toBe(true);
   expect(
     (
       await request.put('/api/settings/providers', {
@@ -118,7 +116,7 @@ for (const provider of [
     const first = await browser.newContext(),
       second = await browser.newContext();
     try {
-      await first.request.post('/api/login', { headers, data: { password: 'everchat-local' } });
+      await first.request.post('/__dev/access/login', { headers });
       const page = await first.newPage();
       await page.goto(`/c/${fixture.id}`);
       const input = {
@@ -149,7 +147,7 @@ for (const provider of [
       expect(messageText(await finish(fixture, result))).toContain('答案。');
       expect(await (await fixture.submit(input)).json()).toEqual(result);
       expect((await fixture.snapshot()).messages).toHaveLength(2);
-      await second.request.post('/api/login', { headers, data: { password: 'everchat-local' } });
+      await second.request.post('/__dev/access/login', { headers });
       const other = await second.newPage();
       await other.goto(`/c/${fixture.id}`);
       await expect(other.getByRole('img', { name: image.name })).toBeVisible();
@@ -319,8 +317,8 @@ test('image references survive retries and revisions, stay on their branch and p
 });
 async function login(page: Page) {
   await page.goto('/');
-  await page.getByLabel('访问密码').fill('everchat-local');
-  await page.getByRole('button', { name: '进入我的空间' }).click();
+  await page.request.post('/__dev/access/login');
+  await page.reload();
   await expect(page.getByLabel('消息', { exact: true })).toBeVisible();
 }
 test('new conversation picker scales, previews, persists drafts and sends an image-only message', async ({

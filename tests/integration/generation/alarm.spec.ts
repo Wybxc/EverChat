@@ -7,9 +7,7 @@ import type { Snapshot } from '../../../shared/streaming/protocol';
 const headers = { Origin: 'http://127.0.0.1:5174' };
 
 async function setup(request: APIRequestContext, model = 'alarm-test') {
-  expect(
-    (await request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok(),
-  ).toBe(true);
+  expect((await request.post('/__dev/access/login', { headers })).ok()).toBe(true);
   const settings = (await request
     .get('/api/settings/providers')
     .then((response) => response.json())) as ProviderSettings;

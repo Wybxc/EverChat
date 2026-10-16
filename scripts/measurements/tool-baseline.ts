@@ -82,7 +82,6 @@ async function api<T>(
     signal: AbortSignal.timeout(10_000),
   });
   assert.ok(response.ok, `${method} ${path}: HTTP ${response.status}`);
-  if (path === '/login') cookie = response.headers.get('set-cookie')!.split(';')[0];
   return response.json() as Promise<T>;
 }
 type ConversationSample = {
@@ -207,7 +206,7 @@ try {
       'Fixture server exited before readiness',
     );
     try {
-      if ((await fetch(`${origin}/api/session`, { signal: AbortSignal.timeout(500) })).ok) break;
+      if ((await fetch(`${origin}/`, { signal: AbortSignal.timeout(500) })).ok) break;
     } catch {
       /* Runtime startup. */
     }
@@ -226,7 +225,13 @@ try {
     runtimeId,
     'Port belongs to another runtime; refusing to log in or change its settings',
   );
-  await api('/login', { password: process.env.EVERCHAT_TEST_PASSWORD ?? 'everchat-local' });
+  const login = await fetch(`${origin}/__dev/access/login`, {
+    method: 'POST',
+    headers: { Origin: origin },
+    redirect: 'error',
+  });
+  assert.ok(login.ok, `Local signed identity: HTTP ${login.status}`);
+  cookie = login.headers.get('set-cookie')!.split(';')[0];
   const providers = protocols.map((provider) => ({
     id: crypto.randomUUID(),
     name: provider,

@@ -5,7 +5,7 @@ import { openSpaceSettings } from '../../support/browser/ui';
 const headers = { Origin: 'http://127.0.0.1:5174' };
 
 async function fixture(page: Page) {
-  await page.request.post('/api/login', { headers, data: { password: 'everchat-local' } });
+  await page.request.post('/__dev/access/login', { headers });
   const original = (await page.request
     .get('/api/settings/providers')
     .then((response) => response.json())) as ProviderSettings;

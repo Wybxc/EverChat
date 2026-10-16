@@ -5,9 +5,7 @@ import type { Snapshot } from '../../../shared/streaming/protocol';
 
 const headers = { Origin: 'http://127.0.0.1:5174' };
 async function setup(request: APIRequestContext) {
-  expect(
-    (await request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok(),
-  ).toBe(true);
+  expect((await request.post('/__dev/access/login', { headers })).ok()).toBe(true);
   const original = (await request
     .get('/api/settings/providers')
     .then((response) => response.json())) as ProviderSettings;
@@ -134,8 +132,8 @@ test('a direct conversation URL survives login without an existing local selecti
     const existing = await conversation(page.request, 'Direct');
     await context.clearCookies();
     await page.goto(existing.path);
-    await page.getByLabel('访问密码').fill('everchat-local');
-    await page.getByRole('button', { name: '进入我的空间', exact: true }).click();
+    await page.request.post('/__dev/access/login');
+    await page.reload();
     await expect(page).toHaveURL((url) => url.pathname === existing.path);
     await expect(page.getByTestId('user-message')).toContainText(existing.title);
     await expect(page.getByTestId('assistant-message')).toHaveAttribute('data-status', 'completed');

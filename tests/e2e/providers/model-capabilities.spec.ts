@@ -1,5 +1,6 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
-import type { ProviderSettings, SessionInfo } from '../../../shared/providers/types';
+import { ProviderSettings } from '../../../shared/providers/types';
+import type { SessionInfo } from '../../../shared/auth/types';
 import type { Snapshot } from '../../../shared/streaming/protocol';
 import { editModel, openParameters, openSpaceSettings } from '../../support/browser/ui';
 
@@ -21,9 +22,7 @@ const publicCatalog = {
   },
 };
 async function setup(request: APIRequestContext, id = 'probe-good', modelPatch = {}) {
-  expect(
-    (await request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok(),
-  ).toBe(true);
+  expect((await request.post('/__dev/access/login', { headers })).ok()).toBe(true);
   const original = await getSettings(request),
     providerId = crypto.randomUUID();
   const configuration = {

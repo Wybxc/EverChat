@@ -1,66 +1,107 @@
+import { createRemoteJWKSet, errors, jwtVerify, type JWTVerifyGetKey } from 'jose';
+import type { AccessIdentity } from '../../shared/auth/types';
 import type { Env } from './env';
+import { HttpError } from './response';
 
-const encoder = new TextEncoder();
-const COOKIE = 'everchat_session';
-const TTL = 60 * 60 * 24 * 30;
-const hex = (bytes: ArrayBuffer) =>
-  Array.from(new Uint8Array(bytes), (x) => x.toString(16).padStart(2, '0')).join('');
-
-async function key(secret: string) {
-  return crypto.subtle.importKey(
-    'raw',
-    encoder.encode(secret),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign', 'verify'],
-  );
+export interface AccessPrincipal extends AccessIdentity {
+  expires: number;
 }
-export async function passwordMatches(input: string, expected: string) {
-  const [a, b] = await Promise.all([
-    crypto.subtle.digest('SHA-256', encoder.encode(input)),
-    crypto.subtle.digest('SHA-256', encoder.encode(expected)),
-  ]);
-  const left = new Uint8Array(a),
-    right = new Uint8Array(b);
-  let different = 0;
-  for (let i = 0; i < left.length; i++) different |= left[i] ^ right[i];
-  return different === 0;
+export type Authenticator = (request: Request, env: Env) => Promise<AccessPrincipal>;
+export interface AccessTrust {
+  issuer: string;
+  audience: string;
+  origin: string;
+  emails: string[];
+  jwks: JWTVerifyGetKey;
+  serviceIds?: string[];
 }
-export async function authenticated(request: Request, env: Env) {
-  if (!env.SESSION_SECRET || !env.APP_PASSWORD) return false;
-  const cookie = request.headers
-    .get('Cookie')
-    ?.split(';')
-    .map((x) => x.trim())
-    .find((x) => x.startsWith(`${COOKIE}=`))
-    ?.slice(COOKIE.length + 1);
-  if (!cookie) return false;
-  const [expires, nonce, signature, extra] = cookie.split('.');
+export function createAccessVerifier(trust: AccessTrust): Authenticator {
+  const verified = new WeakMap<Request, Promise<AccessPrincipal>>();
+  return (request) => {
+    const previous = verified.get(request);
+    if (previous) return previous;
+    const result = (async () => {
+      if (new URL(request.url).origin !== trust.origin)
+        throw new HttpError(403, '此应用地址未获准访问。', 'ACCESS_DENIED');
+      const token = request.headers.get('Cf-Access-Jwt-Assertion');
+      if (!token) throw new HttpError(401, '请重新登录。', 'AUTH_REQUIRED');
+      let payload;
+      try {
+        ({ payload } = await jwtVerify(token, trust.jwks, {
+          issuer: trust.issuer,
+          audience: trust.audience,
+          algorithms: ['RS256'],
+          requiredClaims: ['exp', 'iat', 'iss', 'aud', 'type'],
+        }));
+      } catch (error) {
+        if (
+          error instanceof errors.JOSEError &&
+          !(error instanceof errors.JWKSTimeout) &&
+          !(error instanceof errors.JWKSInvalid) &&
+          !(error instanceof errors.JWKInvalid)
+        )
+          throw new HttpError(401, '请重新登录。', 'AUTH_REQUIRED');
+        throw new HttpError(503, '暂时无法验证访问身份，请稍后重试。', 'AUTH_UNAVAILABLE');
+      }
+      const email = typeof payload.email === 'string' ? payload.email.toLowerCase() : '';
+      const service = typeof payload.common_name === 'string' ? payload.common_name : '';
+      if (payload.type !== 'app')
+        throw new HttpError(403, '此身份无法访问这个空间。', 'ACCESS_DENIED');
+      if (service && trust.serviceIds?.includes(service))
+        return {
+          issuer: trust.issuer,
+          sub: `service:${service}`,
+          email: '',
+          expires: payload.exp!,
+        };
+      if (!payload.sub || !email || !trust.emails.includes(email))
+        throw new HttpError(403, '此身份无法访问这个空间。', 'ACCESS_DENIED');
+      return { issuer: trust.issuer, sub: payload.sub, email, expires: payload.exp! };
+    })();
+    verified.set(request, result);
+    return result;
+  };
+}
+const verifiers = new Map<string, Authenticator>();
+export function accessAuthenticator(env: Env, serviceIds?: string[]): Authenticator {
+  const domain = env.ACCESS_TEAM_DOMAIN?.trim().toLowerCase();
+  const emails = (env.ACCESS_ALLOWED_EMAILS ?? '')
+    .split(',')
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean);
+  let origin: string;
+  try {
+    const url = new URL(env.APP_ORIGIN ?? '');
+    if (url.protocol !== 'https:' || url.href !== `${url.origin}/`) throw new Error();
+    origin = url.origin;
+  } catch {
+    throw new HttpError(503, '请配置 Access 应用地址。', 'AUTH_CONFIGURATION');
+  }
   if (
-    extra ||
-    !/^\d+$/.test(expires ?? '') ||
-    Number(expires) <= Date.now() / 1000 ||
-    !/^[0-9a-f]{32}$/.test(nonce ?? '') ||
-    !/^[0-9a-f]{64}$/.test(signature ?? '')
+    !domain ||
+    !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.cloudflareaccess\.com$/.test(domain) ||
+    !env.ACCESS_AUD ||
+    (!emails.length && !serviceIds?.length)
   )
-    return false;
-  const bytes = Uint8Array.from(signature.match(/../g)!, (x) => parseInt(x, 16));
-  return crypto.subtle.verify(
-    'HMAC',
-    await key(env.SESSION_SECRET),
-    bytes,
-    encoder.encode(`${expires}.${nonce}`),
-  );
+    throw new HttpError(503, '请配置 Access 团队域名、AUD 和允许的身份。', 'AUTH_CONFIGURATION');
+  const key = JSON.stringify([domain, env.ACCESS_AUD, origin, emails, serviceIds]);
+  let verifier = verifiers.get(key);
+  if (!verifier) {
+    const issuer = `https://${domain}`;
+    verifier = createAccessVerifier({
+      issuer,
+      origin,
+      audience: env.ACCESS_AUD,
+      emails,
+      serviceIds,
+      jwks: createRemoteJWKSet(new URL(`${issuer}/cdn-cgi/access/certs`), {
+        timeoutDuration: 5000,
+      }),
+    });
+    if (verifiers.size >= 8) verifiers.clear();
+    verifiers.set(key, verifier);
+  }
+  return verifier;
 }
-function cookieOptions(request: Request) {
-  return `Path=/; HttpOnly; SameSite=Strict${new URL(request.url).protocol === 'https:' ? '; Secure' : ''}`;
-}
-export async function sessionCookie(request: Request, secret: string) {
-  const expires = Math.floor(Date.now() / 1000) + TTL;
-  const nonce = crypto.randomUUID().replaceAll('-', '');
-  const value = `${expires}.${nonce}`;
-  const signature = hex(await crypto.subtle.sign('HMAC', await key(secret), encoder.encode(value)));
-  return `${COOKIE}=${value}.${signature}; Max-Age=${TTL}; ${cookieOptions(request)}`;
-}
-export const logoutCookie = (request: Request) =>
-  `${COOKIE}=; Max-Age=0; ${cookieOptions(request)}`;
+export const authenticateAccess: Authenticator = async (request, env) =>
+  accessAuthenticator(env)(request, env);

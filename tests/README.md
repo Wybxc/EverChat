@@ -33,3 +33,11 @@
 | Alarm／工具日志／生产联网服务请求场景                                             | 移至 integration；保留真实 workerd、事务、恢复和额度断言                                                                      |
 
 API、模型、消息、工具和附件的故障恢复测试均保留。`support/providers/consume-stream.ts` 是消费生产协议流的测试适配器，不作为业务实现发布。
+
+## Access 身份夹具
+
+`pnpm test:e2e` 的 Node/Vite 辅助工具每次生成临时 RS256 私钥，`POST /__dev/access/login` 将签名身份放入 HttpOnly Cookie；浏览器和 request 夹具共用该入口。测试 Worker 只接收公钥，并复用生产 JWT 校验。端口、Origin 与 loopback 均受限制，生产构建没有此入口。
+
+`unit/platform/access.test.ts` 验证签名、声明、固定信任源、错误身份、服务身份、依赖故障、重定向及订阅租期；`e2e/platform/access.spec.ts` 验证缓存不能恢复失效的联网认证、URL／草稿恢复和离线跨标签页退出。PWA 测试使用合成 Session DTO，不能替代真实 Access 边缘验证。
+
+远端测量使用隔离 Access 应用的 Service Auth 凭据，详情见[迁移方案](../docs/plans/cloudflare-access-migration-plan.md)。不再配置应用密码。

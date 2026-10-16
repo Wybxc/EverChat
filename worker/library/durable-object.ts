@@ -90,9 +90,6 @@ export class Library extends DurableObject<Env> {
     ctx.storage.sql.exec(
       'CREATE TABLE IF NOT EXISTS conversation_deletions (id TEXT PRIMARY KEY, deletedAt INTEGER NOT NULL, completed INTEGER NOT NULL DEFAULT 0)',
     );
-    ctx.storage.sql.exec(
-      `CREATE TABLE IF NOT EXISTS login_attempts (ip TEXT PRIMARY KEY, attempts INTEGER NOT NULL, startedAt INTEGER NOT NULL)`,
-    );
     this.providers = new ProviderSettingsStore(ctx.storage, env, this.presets);
     this.searchIndex = new SearchIndex(ctx.storage);
     this.attachments = new AttachmentStore(ctx.storage, env.ATTACHMENTS, (id) =>
@@ -707,8 +704,8 @@ export class Library extends DurableObject<Env> {
   async saveProviderSettingsResponse(body: ReadableStream<Uint8Array>) {
     return this.providers.saveProviderSettingsResponse(body);
   }
-  sessionResponse() {
-    return this.providers.sessionResponse();
+  sessionSettings() {
+    return this.providers.sessionSettings();
   }
   private async attachmentAction<T>(
     action: () => T | Promise<T>,
@@ -806,23 +803,5 @@ export class Library extends DurableObject<Env> {
     options: { restoreModelMetadata?: boolean; preserveKeysAcrossConnections?: boolean } = {},
   ): { settings: ProviderSettings } | { error: string; status?: number } {
     return this.providers.saveProviderSettings(input, importedPresets, options);
-  }
-  // Count before password checking so concurrent failures cannot bypass the limit.
-  allowLogin(ip: string) {
-    const now = Date.now();
-    this.ctx.storage.sql.exec('DELETE FROM login_attempts WHERE startedAt < ?', now - 15 * 60_000);
-    this.ctx.storage.sql.exec(
-      'INSERT INTO login_attempts VALUES (?, 1, ?) ON CONFLICT(ip) DO UPDATE SET attempts = attempts + 1',
-      ip,
-      now,
-    );
-    return (
-      this.ctx.storage.sql
-        .exec<{ attempts: number }>('SELECT attempts FROM login_attempts WHERE ip = ?', ip)
-        .one().attempts <= 10
-    );
-  }
-  clearLogin(ip: string) {
-    this.ctx.storage.sql.exec('DELETE FROM login_attempts WHERE ip = ?', ip);
   }
 }

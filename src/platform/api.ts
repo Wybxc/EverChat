@@ -1,3 +1,5 @@
+import { authFailure, authSignal, networkIdentity, notifyAuthFailure } from './auth';
+export { authFailure };
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -13,27 +15,37 @@ export async function api<T>(
   body?: unknown,
   signal?: AbortSignal,
 ): Promise<T> {
+  if (path !== '/session' && typeof window !== 'undefined' && !networkIdentity())
+    throw new ApiError(503, '请先恢复连接并确认访问身份。', 'AUTH_UNAVAILABLE');
   const response = await fetch(`/api${path}`, {
     method,
     credentials: 'same-origin',
-    headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
+    headers: {
+      'X-Requested-With': 'XMLHttpRequest',
+      ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+    },
     body: body === undefined ? undefined : JSON.stringify(body),
-    signal: signal
-      ? AbortSignal.any([signal, AbortSignal.timeout(20_000)])
-      : AbortSignal.timeout(20_000),
+    signal: AbortSignal.any([
+      ...(signal ? [signal] : []),
+      AbortSignal.timeout(20_000),
+      ...(path !== '/session' ? [authSignal()] : []),
+    ]),
   });
   let result: { error?: string; code?: string };
   try {
     result = await response.json();
   } catch {
+    notifyAuthFailure(response.status);
     if (!response.ok) throw new ApiError(response.status, '云端服务暂时不可用，请稍后重试。');
     throw new Error('云端响应格式无效，请重新同步。');
   }
-  if (!response.ok)
+  if (!response.ok) {
+    notifyAuthFailure(response.status, result?.code);
     throw new ApiError(
       response.status,
       typeof result?.error === 'string' ? result.error : '请求失败，请稍后重试。',
       typeof result?.code === 'string' ? result.code : undefined,
     );
+  }
   return result as T;
 }

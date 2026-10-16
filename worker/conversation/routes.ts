@@ -82,9 +82,17 @@ export function registerConversationRoutes(app: ApiRouter) {
     await requireAuth(context);
     const id = conversationId(context);
     await requireConversation(context, id);
-    const token = context.req.header('Cookie')?.match(/everchat_session=(\d+)/)?.[1] ?? '0';
+    const principal = await requireAuth(context);
     const headers = new Headers(context.req.raw.headers);
-    headers.set('X-Session-Expires', token);
+    for (const name of [...headers.keys()])
+      if (name.toLowerCase().startsWith('x-session-')) headers.delete(name);
+    headers.set('X-Session-Expires', String(principal.expires));
+    headers.set(
+      'X-Session-Revalidate',
+      String(Math.min(principal.expires, Math.floor(Date.now() / 1000) + 300)),
+    );
+    headers.delete('Cf-Access-Jwt-Assertion');
+    headers.delete('Cookie');
     return context.env.CONVERSATIONS.getByName(id).fetch(new Request(context.req.raw, { headers }));
   });
 

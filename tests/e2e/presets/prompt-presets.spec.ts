@@ -13,9 +13,7 @@ const list = (request: APIRequestContext) =>
     PromptPreset[]
   >;
 async function setup(request: APIRequestContext) {
-  expect(
-    (await request.post('/api/login', { headers, data: { password: 'everchat-local' } })).status(),
-  ).toBe(200);
+  expect((await request.post('/__dev/access/login', { headers })).status()).toBe(200);
   const original = (await request
     .get('/api/settings/providers')
     .then((response) => response.json())) as ProviderSettings;
@@ -204,7 +202,7 @@ test('preset management autosaves and recovers drafts, applies copies, synchroni
   const fixture = await setup(page.request),
     second = await browser.newContext();
   try {
-    await second.request.post('/api/login', { headers, data: { password: 'everchat-local' } });
+    await second.request.post('/__dev/access/login', { headers });
     await page.setViewportSize({ width: 390, height: 700 });
     await page.goto(`/c/${fixture.id}`);
     await page.getByRole('textbox', { name: '消息', exact: true }).fill('保留聊天草稿');
@@ -319,7 +317,7 @@ test('cached presets apply offline and queued tasks retain their text after the 
     second = await browser.newContext();
   let newId = '';
   try {
-    await second.request.post('/api/login', { headers, data: { password: 'everchat-local' } });
+    await second.request.post('/__dev/access/login', { headers });
     const id = crypto.randomUUID();
     await page.request.put(`/api/settings/presets/${id}`, {
       headers,
@@ -400,7 +398,11 @@ test('a late preset autosave cannot repopulate local prompt caches after logout'
       const response = await route.fetch();
       ready();
       await hold;
-      await route.fulfill({ response });
+      try {
+        await route.fulfill({ response });
+      } catch {
+        /* Logout aborts the held browser request. */
+      }
     });
     await page.goto(`/c/${fixture.id}`);
     await openSpaceSettings(page);
@@ -413,15 +415,8 @@ test('a late preset autosave cannot repopulate local prompt caches after logout'
     await general.focus();
     await general.press('Space');
     await page.getByRole('button', { name: '退出并清除本地记录' }).click();
-    await expect(page.getByLabel('访问密码')).toBeVisible();
-    const late = page.waitForResponse(
-      (response) =>
-        response.url().includes('/settings/presets/') &&
-        response.request().postDataJSON()?.systemPrompt === prompt,
-    );
+    await expect(page).toHaveURL(`${headers.Origin}/__dev/access/logout`);
     release();
-    await late;
-    await page.waitForTimeout(100);
     expect(
       await page.evaluate(() =>
         Object.keys(localStorage).filter((key) => key.startsWith('everchat:prompt-preset')),
@@ -430,7 +425,7 @@ test('a late preset autosave cannot repopulate local prompt caches after logout'
   } finally {
     release();
     await page.unroute('**/api/settings/presets/*');
-    await page.request.post('/api/login', { headers, data: { password: 'everchat-local' } });
+    await page.request.post('/__dev/access/login', { headers });
     await fixture.cleanup();
   }
 });
@@ -443,7 +438,7 @@ test('a dirty draft whose preset was deleted remotely can be saved under a new I
     second = await browser.newContext(),
     id = crypto.randomUUID();
   try {
-    await second.request.post('/api/login', { headers, data: { password: 'everchat-local' } });
+    await second.request.post('/__dev/access/login', { headers });
     await page.request.put(`/api/settings/presets/${id}`, {
       headers,
       data: { name: '原预设', systemPrompt: '原内容' },

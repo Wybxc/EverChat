@@ -1,12 +1,12 @@
 import * as v from 'valibot';
-import { authenticated } from './auth';
 import { HttpError, type AppContext } from './response';
 
 export const uuidSchema = v.pipe(v.string(), v.uuid());
 
 export const requireAuth = async (context: AppContext) => {
-  if (!(await authenticated(context.req.raw, context.env)))
-    throw new HttpError(401, '请先登录你的私人空间。');
+  const principal = context.get('principal');
+  if (!principal) throw new HttpError(401, '请重新登录。', 'AUTH_REQUIRED');
+  return principal;
 };
 
 export const conversationId = (context: AppContext) => {

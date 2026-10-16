@@ -61,9 +61,7 @@ async function setup(
   longTail = false,
   longHistory = false,
 ) {
-  expect(
-    (await request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok(),
-  ).toBe(true);
+  expect((await request.post('/__dev/access/login', { headers })).ok()).toBe(true);
   const original = (await request
     .get('/api/settings/providers')
     .then((response) => response.json())) as ProviderSettings;
@@ -338,7 +336,7 @@ test('automatic compression saves coverage before answering, retains early facts
       (await action(request, fixture.id, 'state', task.runId).then((response) => response.json()))
         .calls,
     ).toBe(0);
-    await other.request.post('/api/login', { headers, data: { password: 'everchat-local' } });
+    await other.request.post('/__dev/access/login', { headers });
     const page = await other.newPage();
     await page.goto(`/c/${fixture.id}`);
     await page.reload();
@@ -691,7 +689,7 @@ test('automatic compression preferences autosave with fee disclosure, offline ed
         modelSelectionKey({ providerId: fixture.providerId, model: 'benchmark-summary-slow' }),
       );
     await expect(modal.getByRole('status')).toHaveText('已保存');
-    await other.request.post('/api/login', { headers, data: { password: 'everchat-local' } });
+    await other.request.post('/__dev/access/login', { headers });
     const second = await other.newPage();
     await second.goto(`/c/${fixture.id}`);
     await openParameters(second);

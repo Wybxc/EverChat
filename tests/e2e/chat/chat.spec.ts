@@ -6,8 +6,8 @@ import { chooseChatModel, expectChatModel, openSpaceSettings } from '../../suppo
 const origin = 'http://127.0.0.1:5174';
 async function login(page: Page) {
   await page.goto('/');
-  await page.getByLabel('访问密码').fill('everchat-local');
-  await page.getByRole('button', { name: '进入我的空间' }).click();
+  await page.request.post('/__dev/access/login');
+  await page.reload();
   await expect(page.getByLabel('消息', { exact: true })).toBeVisible();
   const response = await page.request.put('/api/settings/providers', {
     headers: { Origin: origin },
@@ -40,16 +40,17 @@ test('private API requires authentication and rejects cross-origin writes', asyn
   expect((await request.get('/api/conversations')).status()).toBe(401);
   expect(
     (
-      await request.post('/api/login', {
+      await request.post('/__dev/access/login', {
         headers: { Origin: 'https://untrusted.invalid' },
-        data: { password: 'everchat-local' },
       })
     ).status(),
   ).toBe(403);
   await page.goto('/');
-  await page.getByLabel('访问密码').fill('incorrect-password');
-  await page.getByRole('button', { name: '进入我的空间' }).click();
-  await expect(page.getByRole('alert')).toContainText('不正确');
+  await expect(page.getByRole('button', { name: '重新登录' })).toBeVisible();
+  await page
+    .context()
+    .addCookies([{ name: 'everchat_session', value: 'forged-old-cookie', url: origin }]);
+  expect((await page.request.get('/api/session')).status()).toBe(401);
 });
 
 test('generation survives offline, tab closure and a second device; retries are idempotent', async ({
@@ -204,8 +205,8 @@ test('mobile and desktop layouts fit their viewports', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/');
   await page.screenshot({ path: 'test-results/login-desktop.png' });
-  await page.getByLabel('访问密码').fill('everchat-local');
-  await page.getByRole('button', { name: '进入我的空间' }).click();
+  await page.request.post('/__dev/access/login');
+  await page.reload();
   await expect(page.getByRole('heading', { name: '今天想聊些什么？' })).toBeVisible();
   await page.screenshot({ path: 'test-results/desktop.png' });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

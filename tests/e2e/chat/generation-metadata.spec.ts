@@ -13,7 +13,7 @@ async function setup(
   model: string,
   showReasoning = false,
 ) {
-  await request.post('/api/login', { headers, data: { password: 'everchat-local' } });
+  await request.post('/__dev/access/login', { headers });
   const original = (await request
     .get('/api/settings/providers')
     .then((response) => response.json())) as ProviderSettings;
@@ -119,7 +119,7 @@ for (const protocol of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
       await messageMenu(page.getByTestId('assistant-message'));
       await page.getByRole('menuitem', { name: '生成信息', exact: true }).click();
       await expect(page.getByTestId('message-generation')).toBeVisible();
-      await second.request.post('/api/login', { headers, data: { password: 'everchat-local' } });
+      await second.request.post('/__dev/access/login', { headers });
       expect(
         (
           await second.request

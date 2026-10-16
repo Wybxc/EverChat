@@ -8,8 +8,10 @@ export interface Env {
   LIBRARY: DurableObjectNamespace<Library>;
   WEB_TOOLS: Workflow<ToolWorkflowParams>;
   ATTACHMENTS?: R2Bucket;
-  APP_PASSWORD?: string;
-  SESSION_SECRET?: string;
+  ACCESS_TEAM_DOMAIN?: string;
+  ACCESS_AUD?: string;
+  ACCESS_ALLOWED_EMAILS?: string;
+  APP_ORIGIN?: string;
   AI_API_KEY?: string;
   AI_PROVIDER: string;
   AI_BASE_URL: string;

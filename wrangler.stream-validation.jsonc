@@ -4,7 +4,9 @@
   "main": "scripts/measurements/support/stream-worker.ts",
   "compatibility_date": "2026-10-09",
   "compatibility_flags": ["nodejs_compat"],
-  "workers_dev": true,
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "everchat-stream-validation.wybxc.cc", "custom_domain": true }],
   "vars": {
     "AI_PROVIDER": "",
     "AI_BASE_URL": "https://provider.test/v1",

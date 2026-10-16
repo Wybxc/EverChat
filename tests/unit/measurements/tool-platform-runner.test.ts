@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import { runToolValidation } from '../../../scripts/measurements/support/tool-platform-runner';
 import { TOOL_VALIDATION_WORKER } from '../../../scripts/measurements/support/validation';
 
-test('tool platform validation refuses a different runtime or enabled counters before sending credentials', async () => {
+test('tool platform validation refuses a different runtime or enabled counters before changing configuration', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'everchat-validation-guard-')),
     original = globalThis.fetch;
   try {
@@ -36,7 +36,10 @@ test('tool platform validation refuses a different runtime or enabled counters b
         runToolValidation({
           url: 'http://127.0.0.1:5191',
           runId,
-          password: 'private-password-that-must-not-be-sent',
+          access: {
+            origin: 'http://127.0.0.1:5191',
+            headers: { Cookie: 'private-validation-cookie' },
+          },
           output,
           runtime: 'local',
           suite: 'functional',
@@ -47,7 +50,7 @@ test('tool platform validation refuses a different runtime or enabled counters b
       ]);
       const report = await readFile(output, 'utf8');
       assert.equal(JSON.parse(report).complete, false);
-      assert.ok(!report.includes('private-password'));
+      assert.ok(!report.includes('private-validation-cookie'));
     }
   } finally {
     globalThis.fetch = original;
@@ -74,7 +77,10 @@ test('tool platform validation accepts only isolated remote URLs or explicit loc
         runToolValidation({
           url,
           runId: crypto.randomUUID(),
-          password: 'x'.repeat(32),
+          access: {
+            origin: new URL(url).origin,
+            headers: { 'CF-Access-Client-Secret': 'private-key' },
+          },
           output: '/tmp/unused-validation-report',
           runtime: 'cloudflare',
           suite: 'functional',

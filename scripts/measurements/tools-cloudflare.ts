@@ -1,3 +1,4 @@
+import { measurementAccess } from './support/credentials';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
@@ -12,12 +13,11 @@ const { values } = parseArgs({
 });
 assert.ok(values.url && values.credentials, '--url and --credentials are required');
 const credentials = JSON.parse(await readFile(values.credentials, 'utf8')) as {
-  APP_PASSWORD: string;
   VALIDATION_RUN_ID: string;
 };
 await runToolValidation({
   url: values.url,
-  password: credentials.APP_PASSWORD,
+  access: await measurementAccess(values.credentials!, new URL(values.url!).origin),
   runId: credentials.VALIDATION_RUN_ID,
   output: values.output!,
   suite: values.suite as ToolValidationSuite,

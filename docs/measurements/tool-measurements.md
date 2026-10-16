@@ -10,7 +10,7 @@ pnpm measure:tools --scenario online-openai-responses --size 750 --output /tmp/e
 pnpm measure:tools --scenario online-openai-responses --interval 500 --output /tmp/everchat-tools-sustained.json
 ```
 
-默认监听 5185，使用新建临时数据库、模拟模型 HTTP 响应和生产 Tavily 适配器的模拟 HTTP 响应；结束时停止自己的服务器并删除临时状态。登录前校验本次运行时身份，端口属于其他实例时拒绝登录和修改配置。默认本地密码为 `everchat-local`，可通过 `EVERCHAT_TEST_PASSWORD` 覆盖。配置、正文、密钥及私有续接内容不进入报告。
+默认监听 5185，使用新建临时数据库、模拟模型 HTTP 响应和生产 Tavily 适配器的模拟 HTTP 响应；结束时停止自己的服务器并删除临时状态。登录前校验本次运行时身份，端口属于其他实例时拒绝登录和修改配置。本地身份由临时 RS256 签名夹具提供，不配置应用密码。配置、正文、密钥及私有续接内容不进入报告。
 
 默认最终回答为 120 个增量、每段 200 个 UTF-16 码元、间隔 25ms，共 24,000 码元。两次工具响应各等待 1.5 秒。`--chunks` 为 1–200，`--size` 为 4–750，二者乘积最多 90,000；`--interval` 为 1–500ms，`--port` 可换端口。`--scenario` 可单独选择报告中的场景。单次模拟模型响应的真实事件数、协议完整事件和 EOF 都保留，因此不同协议并非完全相同的原始字节负载。
 

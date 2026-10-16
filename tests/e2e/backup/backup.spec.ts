@@ -9,9 +9,7 @@ const fixture = (request: APIRequestContext, id: string, name: string) =>
   request.post(`/api/__test/conversations/${id}/${name}`, { headers, data: {} });
 
 async function setup(request: APIRequestContext) {
-  expect(
-    (await request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok(),
-  ).toBe(true);
+  expect((await request.post('/__dev/access/login', { headers })).ok()).toBe(true);
   const original = (await request
     .get('/api/settings/providers')
     .then((response) => response.json())) as ProviderSettings;

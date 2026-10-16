@@ -1,3 +1,4 @@
+import { storageEpoch } from '../platform/storage';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -77,12 +78,17 @@ function SettingsForm({
   const queryClient = useQueryClient();
   const onSavedRef = useRef(onSaved);
   onSavedRef.current = onSaved;
+  const [epoch] = useState(storageEpoch);
   const [store] = useState(
     () =>
       new SettingsAutosave(
         initial,
-        (input) => api<ProviderSettings>('/settings/providers', 'PUT', input),
+        (input) => {
+          if (epoch !== storageEpoch()) throw new Error('登录状态已改变。');
+          return api<ProviderSettings>('/settings/providers', 'PUT', input);
+        },
         (result) => {
+          if (epoch !== storageEpoch()) return;
           queryClient.setQueryData(['provider-settings'], result);
           onSavedRef.current(result);
         },
@@ -109,8 +115,8 @@ function SettingsForm({
     const retry = () => {
       void store.flush().catch(() => {});
     };
-    window.addEventListener('online', retry);
-    return () => window.removeEventListener('online', retry);
+    window.addEventListener('everchat:network-ready', retry);
+    return () => window.removeEventListener('everchat:network-ready', retry);
   }, [store]);
   return render(
     <DisclosureScope>
@@ -171,6 +177,9 @@ function SettingsForm({
                 <LogOut className="h-[0.9375rem] w-[0.9375rem]" />
                 退出并清除本地记录
               </Button>
+              <p className="text-xs text-muted-foreground">
+                同时退出此账号的其他 Cloudflare Access 应用。
+              </p>
             </section>
             <section
               id="settings-panel-providers"

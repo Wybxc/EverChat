@@ -5,6 +5,7 @@ import type { ConversationInfo, SubmitInput } from '../../../shared/conversation
 import type { Snapshot } from '../../../shared/streaming/protocol';
 
 export interface Pending {
+  owner: string;
   conversation: ConversationInfo;
   input: SubmitInput;
   viewHeadId?: string | null;

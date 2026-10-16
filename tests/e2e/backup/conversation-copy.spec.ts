@@ -14,9 +14,7 @@ import { messageMenu } from '../../support/browser/ui';
 
 const headers = { Origin: 'http://127.0.0.1:5174' };
 async function setup(request: APIRequestContext) {
-  expect(
-    (await request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok(),
-  ).toBe(true);
+  expect((await request.post('/__dev/access/login', { headers })).ok()).toBe(true);
   const id = crypto.randomUUID();
   expect(
     (
@@ -85,9 +83,7 @@ test('copying a conversation creates a new URL with the same messages and indepe
 });
 
 async function generationSource(request: APIRequestContext, model = 'metadata-copy') {
-  expect(
-    (await request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok(),
-  ).toBe(true);
+  expect((await request.post('/__dev/access/login', { headers })).ok()).toBe(true);
   const initial = (await request
     .get('/api/settings/providers')
     .then((response) => response.json())) as ProviderSettings;
@@ -342,9 +338,8 @@ test('user and assistant copy actions open independent URLs, preserve the source
     expectPathCopy(copied, branchPath(original.messages, second.userId), fixture.settings);
     expect(copied.messages).toHaveLength(3);
     await expect(page.getByTestId('assistant-message')).toHaveCount(1);
-    await secondDevice.request.post('/api/login', {
+    await secondDevice.request.post('/__dev/access/login', {
       headers,
-      data: { password: 'everchat-local' },
     });
     const other = await secondDevice.newPage();
     await other.goto(`/c/${copyId}`);

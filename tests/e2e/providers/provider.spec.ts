@@ -23,8 +23,8 @@ async function saved(page: Page) {
 }
 async function login(page: Page) {
   await page.goto('/');
-  await page.getByLabel('访问密码').fill('everchat-local');
-  await page.getByRole('button', { name: '进入我的空间' }).click();
+  await page.request.post('/__dev/access/login');
+  await page.reload();
   await expect(page.getByLabel('消息', { exact: true })).toBeVisible();
 }
 
@@ -33,7 +33,7 @@ test('provider settings and model discovery require a session and same-origin wr
 }) => {
   expect(
     (await request.get(`/api/conversations/${crypto.randomUUID()}/measurements`)).status(),
-  ).toBe(404);
+  ).toBe(401);
   expect((await request.get('/api/settings/providers')).status()).toBe(401);
   expect((await request.put('/api/settings/providers', { headers, data: {} })).status()).toBe(401);
   expect((await request.put('/api/settings/providers', { data: {} })).status()).toBe(403);
@@ -460,11 +460,7 @@ test('tabbed settings autosave model names and enabled choices; the close button
     settings = await getSettings();
     const second = await browser.newContext();
     try {
-      expect(
-        (
-          await second.request.post('/api/login', { headers, data: { password: 'everchat-local' } })
-        ).status(),
-      ).toBe(200);
+      expect((await second.request.post('/__dev/access/login', { headers })).status()).toBe(200);
       expect(
         await second.request.get('/api/settings/providers').then((response) => response.json()),
       ).toEqual(settings);

@@ -10,5 +10,9 @@
     "types": ["node"]
   },
   "include": ["scripts", "shared"],
-  "exclude": ["scripts/measurements/support/*worker.ts"]
+  "exclude": [
+    "scripts/measurements/support/*worker.ts",
+    "scripts/dev/*worker.ts",
+    "scripts/measurements/support/access.ts"
+  ]
 }

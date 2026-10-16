@@ -1,7 +1,9 @@
+import { unstable_readConfig } from 'wrangler';
+import { exportJWK, generateKeyPair, SignJWT } from 'jose';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { randomBytes, randomUUID } from 'node:crypto';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -20,18 +22,38 @@ assert.ok(Number.isInteger(port) && port >= 1024 && port <= 65535, 'Invalid port
 assert.ok(['all', 'functional', 'large', 'sustained'].includes(values.suite!), 'Invalid suite');
 const directory = await mkdtemp(join(tmpdir(), 'everchat-tool-platform-')),
   origin = `http://127.0.0.1:${port}`;
-const password = randomBytes(32).toString('hex'),
-  secret = randomBytes(32).toString('hex'),
-  runId = randomUUID();
-const config = JSON.parse(await readFile('wrangler.tool-validation.jsonc', 'utf8'));
-delete config.$schema;
-config.main = resolve(config.main);
+const runId = randomUUID();
+const { publicKey, privateKey } = await generateKeyPair('RS256');
+const jwk = { ...(await exportJWK(publicKey)), kid: runId, alg: 'RS256', use: 'sig' };
+const token = await new SignJWT({ type: 'app', email: 'developer@everchat.local' })
+  .setProtectedHeader({ alg: 'RS256', kid: runId })
+  .setIssuer('http://everchat.local.invalid')
+  .setAudience('everchat-local')
+  .setSubject('local-developer')
+  .setIssuedAt()
+  .setExpirationTime('12h')
+  .sign(privateKey);
+const access = { origin, headers: { Cookie: `everchat_dev_access=${token}` } };
+const source = unstable_readConfig({ config: 'wrangler.tool-validation.jsonc' });
+const config = {
+  name: source.name,
+  compatibility_date: source.compatibility_date,
+  compatibility_flags: source.compatibility_flags,
+  vars: source.vars,
+  durable_objects: source.durable_objects,
+  workflows: source.workflows,
+  migrations: source.migrations,
+  observability: source.observability,
+  main: '',
+};
+config.main = resolve('scripts/dev/validation-worker.ts');
+config.vars = {
+  ...config.vars,
+  VALIDATION_RUN_ID: runId,
+  DEV_ACCESS_PUBLIC_JWK: JSON.stringify(jwk),
+  DEV_ACCESS_ORIGIN: origin,
+};
 await writeFile(join(directory, 'wrangler.json'), JSON.stringify(config));
-await writeFile(
-  join(directory, '.dev.vars'),
-  `APP_PASSWORD=${password}\nSESSION_SECRET=${secret}\nVALIDATION_RUN_ID=${runId}\n`,
-  { mode: 0o600 },
-);
 const child = spawn(
   process.execPath,
   [
@@ -88,7 +110,11 @@ try {
       /* Startup only; identity checked before any mutations. */
     }
     if (identity) {
-      assert.equal(identity.runId, runId, 'Another runtime owns the port; refusing to log in');
+      assert.equal(
+        identity.runId,
+        runId,
+        'Another runtime owns the port; refusing to change configuration',
+      );
       break;
     }
     assert.ok(Date.now() < deadline, 'Validation runtime startup timed out');
@@ -100,7 +126,7 @@ try {
   for (const suite of suites)
     await runToolValidation({
       url: origin,
-      password,
+      access,
       runId,
       runtime: 'local',
       suite,
@@ -115,7 +141,7 @@ try {
     clearTimeout(force);
   }
   if (!complete) {
-    for (const value of [password, secret, runId]) log = log.replaceAll(value, '[redacted]');
+    for (const value of [token, runId]) log = log.replaceAll(value, '[redacted]');
     await writeFile(join(tmpdir(), 'everchat-tool-platform-failure.log'), log, { mode: 0o600 });
   }
   await rm(directory, { recursive: true, force: true });

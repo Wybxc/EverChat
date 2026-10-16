@@ -1,6 +1,11 @@
 // API-only isolated deployment: native Workflow, mock supplier HTTP and no R2 dependency.
-import fixture, { Conversation as BaseConversation, Library as BaseLibrary } from './stream-worker';
-import { authenticated } from '../../../worker/http/auth';
+import {
+  createStreamWorker,
+  Conversation as BaseConversation,
+  Library as BaseLibrary,
+} from './stream-worker';
+import type { Authenticator } from '../../../worker/http/auth';
+import { authenticateValidation } from './access';
 import { json } from '../../../worker/http/response';
 import type { Env } from '../../../worker/http/env';
 import { toolWorkflowId } from '../../../worker/web-tools/workflow';
@@ -92,79 +97,87 @@ export class Library extends BaseLibrary {
     };
   }
 }
-export default {
-  async fetch(request: Request, env: ValidationEnv, ctx: ExecutionContext) {
-    const url = new URL(request.url),
-      path = url.pathname;
-    const identity: ToolValidationIdentity = {
-      kind: TOOL_VALIDATION_WORKER,
-      version: 1,
-      runId: env.VALIDATION_RUN_ID ?? '',
-      mockUpstreams: true,
-      counters: {
-        generation: env.GENERATION_METRICS === '1',
-        local: env.LOCAL_RESOURCE_METRICS === '1',
-      },
-      workload: env.LOCAL_TOOL_WORKLOAD
-        ? JSON.parse(env.LOCAL_TOOL_WORKLOAD)
-        : { chunks: 120, size: 200, interval: 25 },
-    };
-    if (path === '/api/__validation/identity' && request.method === 'GET') return json(identity);
-    if (identity.counters.generation || identity.counters.local || !uuid.test(identity.runId))
-      return json({ error: 'Validation configuration is unsafe' }, 503);
-    if (path.startsWith('/api/__test/')) return json({ error: 'Not found' }, 404);
-    if (path.startsWith('/api/__validation/') && path !== '/api/__validation/storage') {
-      if (!(await authenticated(request, env))) return json({ error: 'Unauthorized' }, 401);
-      if (path === '/api/__validation/library' && request.method === 'GET')
-        return json(
-          await (env.LIBRARY as unknown as DurableObjectNamespace<Library>)
-            .getByName('personal')
-            .validationStatus(),
-        );
-      const match = /^\/api\/__validation\/conversations\/([^/]+)\/(prepare|status)$/.exec(path);
-      if (!match || !uuid.test(match[1])) return json({ error: 'Not found' }, 404);
-      const conversation = (
-        env.CONVERSATIONS as unknown as DurableObjectNamespace<Conversation>
-      ).getByName(match[1]);
-      if (match[2] === 'status' && request.method === 'GET') {
-        const taskId = url.searchParams.get('taskId');
-        return taskId && uuid.test(taskId)
-          ? json(await conversation.validationStatus(taskId))
-          : json({ error: 'Invalid task ID' }, 400);
-      }
-      if (match[2] === 'prepare' && request.method === 'POST') {
-        if (request.headers.get('Origin') !== url.origin)
-          return json({ error: 'Untrusted origin' }, 403);
-        // Only two bounded preparation modes; no generic fixture mutation RPCs.
-        const reader = request.body?.getReader();
-        let text = '';
-        if (!reader) return json({ error: 'Missing body' }, 400);
+export function createToolWorker(authenticate: Authenticator = authenticateValidation) {
+  const fixture = createStreamWorker(authenticate);
+  return {
+    async fetch(request: Request, env: ValidationEnv, ctx: ExecutionContext) {
+      const url = new URL(request.url),
+        path = url.pathname;
+      const identity: ToolValidationIdentity = {
+        kind: TOOL_VALIDATION_WORKER,
+        version: 1,
+        runId: env.VALIDATION_RUN_ID ?? '',
+        mockUpstreams: true,
+        counters: {
+          generation: env.GENERATION_METRICS === '1',
+          local: env.LOCAL_RESOURCE_METRICS === '1',
+        },
+        workload: env.LOCAL_TOOL_WORKLOAD
+          ? JSON.parse(env.LOCAL_TOOL_WORKLOAD)
+          : { chunks: 120, size: 200, interval: 25 },
+      };
+      if (path === '/api/__validation/identity' && request.method === 'GET') return json(identity);
+      if (identity.counters.generation || identity.counters.local || !uuid.test(identity.runId))
+        return json({ error: 'Validation configuration is unsafe' }, 503);
+      if (path.startsWith('/api/__test/')) return json({ error: 'Not found' }, 404);
+      if (path.startsWith('/api/__validation/') && path !== '/api/__validation/storage') {
         try {
-          const decoder = new TextDecoder();
-          let bytes = 0;
-          while (true) {
-            const part = await reader.read();
-            if (part.done) break;
-            bytes += part.value.byteLength;
-            if (bytes > 1024) {
-              await reader.cancel();
-              return json({ error: 'Body too large' }, 413);
-            }
-            text += decoder.decode(part.value, { stream: true });
-          }
-          const body = JSON.parse(text + decoder.decode()) as { mode?: unknown };
-          if (body.mode !== 'service' && body.mode !== 'service-401')
-            return json({ error: 'Invalid preparation mode' }, 400);
-          await conversation.validationPrepare(body.mode);
-          return json({ prepared: true });
+          await authenticate(request, env);
         } catch {
-          return json({ error: 'Invalid preparation' }, 400);
-        } finally {
-          reader.releaseLock();
+          return json({ error: 'Unauthorized' }, 401);
         }
+        if (path === '/api/__validation/library' && request.method === 'GET')
+          return json(
+            await (env.LIBRARY as unknown as DurableObjectNamespace<Library>)
+              .getByName('personal')
+              .validationStatus(),
+          );
+        const match = /^\/api\/__validation\/conversations\/([^/]+)\/(prepare|status)$/.exec(path);
+        if (!match || !uuid.test(match[1])) return json({ error: 'Not found' }, 404);
+        const conversation = (
+          env.CONVERSATIONS as unknown as DurableObjectNamespace<Conversation>
+        ).getByName(match[1]);
+        if (match[2] === 'status' && request.method === 'GET') {
+          const taskId = url.searchParams.get('taskId');
+          return taskId && uuid.test(taskId)
+            ? json(await conversation.validationStatus(taskId))
+            : json({ error: 'Invalid task ID' }, 400);
+        }
+        if (match[2] === 'prepare' && request.method === 'POST') {
+          if (request.headers.get('Origin') !== url.origin)
+            return json({ error: 'Untrusted origin' }, 403);
+          // Only two bounded preparation modes; no generic fixture mutation RPCs.
+          const reader = request.body?.getReader();
+          let text = '';
+          if (!reader) return json({ error: 'Missing body' }, 400);
+          try {
+            const decoder = new TextDecoder();
+            let bytes = 0;
+            while (true) {
+              const part = await reader.read();
+              if (part.done) break;
+              bytes += part.value.byteLength;
+              if (bytes > 1024) {
+                await reader.cancel();
+                return json({ error: 'Body too large' }, 413);
+              }
+              text += decoder.decode(part.value, { stream: true });
+            }
+            const body = JSON.parse(text + decoder.decode()) as { mode?: unknown };
+            if (body.mode !== 'service' && body.mode !== 'service-401')
+              return json({ error: 'Invalid preparation mode' }, 400);
+            await conversation.validationPrepare(body.mode);
+            return json({ prepared: true });
+          } catch {
+            return json({ error: 'Invalid preparation' }, 400);
+          } finally {
+            reader.releaseLock();
+          }
+        }
+        return json({ error: 'Not found' }, 404);
       }
-      return json({ error: 'Not found' }, 404);
-    }
-    return fixture.fetch(request, env, ctx);
-  },
-} satisfies ExportedHandler<ValidationEnv>;
+      return fixture.fetch(request, env, ctx);
+    },
+  } satisfies ExportedHandler<ValidationEnv>;
+}
+export default createToolWorker();

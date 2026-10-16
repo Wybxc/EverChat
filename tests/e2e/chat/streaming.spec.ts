@@ -80,9 +80,7 @@ test('large completed history crosses the DO response boundary and recovers from
 }) => {
   const id = crypto.randomUUID();
   expect((await request.get(`/api/conversations/${id}`)).status()).toBe(401);
-  expect(
-    (await request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok(),
-  ).toBe(true);
+  expect((await request.post('/__dev/access/login', { headers })).ok()).toBe(true);
   expect(
     (
       await request.post('/api/conversations', { headers, data: { id, title: 'Large history' } })
@@ -130,9 +128,7 @@ test('large completed history crosses the DO response boundary and recovers from
 test('previews precede commits and reconnecting subscribers recover the same durable and live boundaries', async ({
   request,
 }) => {
-  expect(
-    (await request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok(),
-  ).toBe(true);
+  expect((await request.post('/__dev/access/login', { headers })).ok()).toBe(true);
   const initial = (await request
     .get('/api/settings/providers')
     .then((response) => response.json())) as ProviderSettings;
@@ -238,9 +234,7 @@ test('previews precede commits and reconnecting subscribers recover the same dur
 test('premature upstream EOF saves buffered text and thoughts, marks failure and preserves submission idempotency', async ({
   request,
 }) => {
-  expect(
-    (await request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok(),
-  ).toBe(true);
+  expect((await request.post('/__dev/access/login', { headers })).ok()).toBe(true);
   const initial = (await request
     .get('/api/settings/providers')
     .then((response) => response.json())) as ProviderSettings;
@@ -329,9 +323,7 @@ test('premature upstream EOF saves buffered text and thoughts, marks failure and
 test('an unacknowledged slow subscriber is bounded while other clients and persistence complete', async ({
   request,
 }) => {
-  expect(
-    (await request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok(),
-  ).toBe(true);
+  expect((await request.post('/__dev/access/login', { headers })).ok()).toBe(true);
   const initial = (await request
     .get('/api/settings/providers')
     .then((response) => response.json())) as ProviderSettings;
@@ -421,11 +413,7 @@ test('browser rendering streams ahead of saving, while export and throttled cach
   page,
   context,
 }) => {
-  expect(
-    (
-      await context.request.post('/api/login', { headers, data: { password: 'everchat-local' } })
-    ).ok(),
-  ).toBe(true);
+  expect((await context.request.post('/__dev/access/login', { headers })).ok()).toBe(true);
   const initial = (await context.request
     .get('/api/settings/providers')
     .then((response) => response.json())) as ProviderSettings;
@@ -536,9 +524,7 @@ test('browser rendering streams ahead of saving, while export and throttled cach
 test('failed persistence drops the preview tail without publishing a durable confirmation', async ({
   request,
 }) => {
-  expect(
-    (await request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok(),
-  ).toBe(true);
+  expect((await request.post('/__dev/access/login', { headers })).ok()).toBe(true);
   const initial = (await request
     .get('/api/settings/providers')
     .then((response) => response.json())) as ProviderSettings;
@@ -610,11 +596,7 @@ test('logging out clears cached messages even when a delayed durable snapshot wr
   page,
   context,
 }) => {
-  expect(
-    (
-      await context.request.post('/api/login', { headers, data: { password: 'everchat-local' } })
-    ).ok(),
-  ).toBe(true);
+  expect((await context.request.post('/__dev/access/login', { headers })).ok()).toBe(true);
   const initial = (await context.request
     .get('/api/settings/providers')
     .then((response) => response.json())) as ProviderSettings;
@@ -657,7 +639,7 @@ test('logging out clears cached messages even when a delayed durable snapshot wr
     id = new URL(page.url()).pathname.split('/')[2];
     await openSpaceSettings(page);
     await page.getByRole('button', { name: '退出并清除本地记录' }).click();
-    await expect(page.getByLabel('访问密码')).toBeVisible();
+    await expect(page).toHaveURL(`${headers.Origin}/__dev/access/logout`);
     // Advance beyond the cache writer's two-second window and sample throughout it.
     const samples = await page.evaluate(async () => {
       const found: string[] = [];
@@ -687,11 +669,7 @@ test('logging out clears cached messages even when a delayed durable snapshot wr
     );
     expect(keys.filter((key) => String(key).startsWith('everchat:snapshot:'))).toEqual([]);
   } finally {
-    expect(
-      (
-        await context.request.post('/api/login', { headers, data: { password: 'everchat-local' } })
-      ).ok(),
-    ).toBe(true);
+    expect((await context.request.post('/__dev/access/login', { headers })).ok()).toBe(true);
     if (id) {
       const stored = (await context.request
         .get(`/api/conversations/${id}`)
@@ -719,9 +697,7 @@ for (const protocol of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
   test(`${protocol} resumes a committed partial UTF-8 SSE event and matches server-verified output and usage`, async ({
     request,
   }) => {
-    expect(
-      (await request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok(),
-    ).toBe(true);
+    expect((await request.post('/__dev/access/login', { headers })).ok()).toBe(true);
     const initial = (await request
       .get('/api/settings/providers')
       .then((response) => response.json())) as ProviderSettings;

@@ -22,9 +22,7 @@ const search = async (
   return response.json() as Promise<LibrarySearch>;
 };
 async function seed(request: APIRequestContext, count = 1) {
-  expect(
-    (await request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok(),
-  ).toBe(true);
+  expect((await request.post('/__dev/access/login', { headers })).ok()).toBe(true);
   const id = crypto.randomUUID();
   expect(
     (
@@ -176,9 +174,7 @@ test('mobile search closes the sidebar for navigation, shows offline status and 
 test('durable search outbox survives an RPC failure and object reset without another supplier request', async ({
   request,
 }) => {
-  expect(
-    (await request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok(),
-  ).toBe(true);
+  expect((await request.post('/__dev/access/login', { headers })).ok()).toBe(true);
   const settings = (await request
     .get('/api/settings/providers')
     .then((r) => r.json())) as ProviderSettings;

@@ -9,6 +9,7 @@ import {
   type AttachmentInput,
 } from '../../../shared/attachments/files';
 import { api, ApiError } from '../../platform/api';
+import { authenticatedUploadSignal, xhrJson } from '../../platform/xhr';
 
 export async function prepareAttachment(file: File, signal: AbortSignal): Promise<AttachmentInput> {
   const mediaType = fileMediaType(file.name);
@@ -36,6 +37,7 @@ export async function uploadAttachment(
   signal: AbortSignal,
   progress: (received: number) => void,
 ) {
+  signal = authenticatedUploadSignal(signal);
   try {
     await api<Attachment>(`/conversations/${conversationId}/attachments`, 'POST', input, signal);
     signal.throwIfAborted();
@@ -46,12 +48,11 @@ export async function uploadAttachment(
       xhr.timeout = ATTACHMENT_UPLOAD_TIMEOUT;
       xhr.withCredentials = true;
       xhr.setRequestHeader('Content-Type', input.mediaType);
+      xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
       xhr.upload.onprogress = (event) => progress(Math.min(file.size, event.loaded));
       xhr.onload = () => {
         try {
-          const body = JSON.parse(xhr.responseText);
-          if (xhr.status < 200 || xhr.status >= 300)
-            throw new ApiError(xhr.status, body.error ?? '附件上传失败。');
+          const body = xhrJson(xhr, '附件上传失败。');
           resolve(body as Attachment);
         } catch (error) {
           reject(error instanceof Error ? error : new Error('附件响应无效。'));

@@ -8,18 +8,33 @@ import {
 } from '../../../shared/backup/archive';
 import { attachmentUrl } from '../../../shared/attachments/files';
 
+class PrivateReadError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code?: string,
+  ) {
+    super(message);
+  }
+}
 const progress = (value: number, label: string) => self.postMessage({ progress: { value, label } });
 async function privateGet(url: string) {
-  const response = await fetch(url, { credentials: 'same-origin', cache: 'no-store' });
+  const response = await fetch(url, {
+    credentials: 'same-origin',
+    cache: 'no-store',
+    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+  });
   if (!response.ok) {
-    let message = '备份资料无法读取。';
+    let message = '备份资料无法读取。',
+      code: string | undefined;
     try {
-      const body = (await response.json()) as { error?: string };
+      const body = (await response.json()) as { error?: string; code?: string };
       if (body.error) message = body.error;
+      code = body.code;
     } catch {
       /* Keep the readable fallback. */
     }
-    throw new Error(message);
+    throw new PrivateReadError(message, response.status, code);
   }
   return response;
 }
@@ -83,6 +98,9 @@ self.onmessage = async (
       });
     }
   } catch (error) {
-    self.postMessage({ error: error instanceof Error ? error.message : '备份处理失败。' });
+    self.postMessage({
+      error: error instanceof Error ? error.message : '备份处理失败。',
+      ...(error instanceof PrivateReadError ? { status: error.status, code: error.code } : {}),
+    });
   }
 };

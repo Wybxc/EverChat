@@ -16,7 +16,7 @@ const control = (request: APIRequestContext, data: object = {}) =>
     .post('/api/__test/library/attachments', { headers, data })
     .then((response) => response.json());
 async function setup(request: APIRequestContext, provider: ProviderKind = 'openai-chat') {
-  await request.post('/api/login', { headers, data: { password: 'everchat-local' } });
+  await request.post('/__dev/access/login', { headers });
   await control(request, { count: 0 });
   expect(
     (
@@ -62,8 +62,8 @@ async function setup(request: APIRequestContext, provider: ProviderKind = 'opena
 }
 async function login(page: Page, id: string) {
   await page.goto(`/c/${id}`);
-  await page.getByLabel('访问密码').fill('everchat-local');
-  await page.getByRole('button', { name: '进入我的空间' }).click();
+  await page.request.post('/__dev/access/login');
+  await page.reload();
   await expect(page.getByRole('button', { name: '添加附件', exact: true })).toBeEnabled();
 }
 async function finish(fixture: Awaited<ReturnType<typeof setup>>, submission: Submission) {
@@ -142,7 +142,7 @@ for (const provider of [
       expect(JSON.stringify(await fixture.snapshot())).not.toContain('Second page reference');
       await first.close();
       expect(messageText(await finish(fixture, result))).toContain('答案。');
-      await second.request.post('/api/login', { headers, data: { password: 'everchat-local' } });
+      await second.request.post('/__dev/access/login', { headers });
       const other = await second.newPage();
       await other.goto(`/c/${fixture.id}`);
       await other.getByRole('button', { name: '预览 budget.pdf' }).click();

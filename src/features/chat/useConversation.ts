@@ -4,6 +4,7 @@ import { StreamSync } from '../../../shared/streaming/sync';
 import { isActive } from '../../../shared/conversation/message-state';
 import { type Snapshot, type SyncPacket } from '../../../shared/streaming/protocol';
 import { api, ApiError } from '../../platform/api';
+import { notifyAuthFailure } from '../../platform/auth';
 import { SnapshotWriter } from './snapshot-writer';
 import { storageEpoch } from '../../platform/storage';
 import { cachedSnapshot, writeChatCache as write } from './cache';
@@ -123,12 +124,7 @@ export function useConversation(
       }
       setConnection('connecting');
       if (!id) {
-        try {
-          await api('/session');
-          if (alive) setConnection('connected');
-        } catch {
-          if (alive) setConnection('offline');
-        }
+        setConnection('connected');
         return;
       }
       setLoading(sync.durable.messages.length === 0);
@@ -189,9 +185,9 @@ export function useConversation(
           if (!alive || token !== generation) return;
           stopHeartbeat();
           resetPreview();
-          if (event.code === 4001) {
+          if (event.code === 4001 || event.code === 4004) {
             socket?.close();
-            unauthorized.current();
+            void connect();
             return;
           }
           if (event.code === 4003) {
@@ -199,6 +195,10 @@ export function useConversation(
             return;
           }
           setConnection(navigator.onLine ? 'connecting' : 'offline');
+          if (navigator.onLine) {
+            socket?.close();
+            retry = setTimeout(() => void connect(), Math.min(15_000, 1000 * 2 ** attempt++));
+          }
         };
       } catch (error) {
         if (!alive || token !== generation) return;
@@ -259,7 +259,7 @@ export function useConversation(
         online();
     };
     void connect();
-    window.addEventListener('online', online);
+    window.addEventListener('everchat:network-ready', online);
     window.addEventListener('offline', offline);
     document.addEventListener('visibilitychange', visible);
     return () => {
@@ -269,7 +269,7 @@ export function useConversation(
       if (retry) clearTimeout(retry);
       stopHeartbeat();
       socket?.close();
-      window.removeEventListener('online', online);
+      window.removeEventListener('everchat:network-ready', online);
       window.removeEventListener('offline', offline);
       document.removeEventListener('visibilitychange', visible);
     };

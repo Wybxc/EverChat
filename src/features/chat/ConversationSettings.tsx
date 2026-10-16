@@ -177,9 +177,9 @@ export function ConversationSettingsDialog({
     const retry = () => {
       void store.flush().catch(() => {});
     };
-    window.addEventListener('online', retry);
+    window.addEventListener('everchat:network-ready', retry);
     return () => {
-      window.removeEventListener('online', retry);
+      window.removeEventListener('everchat:network-ready', retry);
       void store.flush().catch(() => {});
       store.dispose();
     };

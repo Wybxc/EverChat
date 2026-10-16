@@ -17,7 +17,7 @@ import { type ConversationSettings, type Message } from '../../../shared/convers
 import { modelSelectionKey } from '../../../shared/models/selection';
 import type { ChatModel } from '../../../shared/models/types';
 import { type ReasoningEffort } from '../../../shared/models/types';
-import { type SessionInfo } from '../../../shared/providers/types';
+import type { SessionInfo } from '../../../shared/auth/types';
 
 export function useContextPreview({
   messages,

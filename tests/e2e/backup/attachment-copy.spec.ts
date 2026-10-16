@@ -19,7 +19,7 @@ const control = (request: APIRequestContext, data: object = {}) =>
 const snapshot = (request: APIRequestContext, id: string) =>
   request.get(`/api/conversations/${id}`).then((response) => response.json()) as Promise<Snapshot>;
 async function setup(request: APIRequestContext) {
-  await request.post('/api/login', { headers, data: { password: 'everchat-local' } });
+  await request.post('/__dev/access/login', { headers });
   await control(request, { count: 0 });
   const providerId = crypto.randomUUID(),
     id = crypto.randomUUID(),
@@ -188,7 +188,7 @@ test('a full copy owns independent image, CSV, PDF and unused raw files after so
     }
     const device = await browser.newContext();
     try {
-      await device.request.post('/api/login', { headers, data: { password: 'everchat-local' } });
+      await device.request.post('/__dev/access/login', { headers });
       const page = await device.newPage();
       await page.goto(`/c/${copyId}`);
       await page.getByRole('button', { name: '预览 budget.pdf' }).click();
@@ -255,7 +255,7 @@ test('closing the initiating page does not stop a claimed copy; retry after reop
     const file = await upload(request, fixture.id);
     await send(request, fixture.id, { fileIds: [file.id] });
     await control(request, { holdTextRead: file.id });
-    await page.request.post('/api/login', { headers, data: { password: 'everchat-local' } });
+    await page.request.post('/__dev/access/login', { headers });
     await page.goto(`/c/${fixture.id}`);
     await page.getByRole('textbox', { name: '消息', exact: true }).fill('来源草稿');
     await page.route('**/duplicate', async (route) => {

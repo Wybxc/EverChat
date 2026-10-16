@@ -20,9 +20,7 @@ $$`,
 ];
 
 async function fixture(request: APIRequestContext) {
-  expect(
-    (await request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok(),
-  ).toBe(true);
+  expect((await request.post('/__dev/access/login', { headers })).ok()).toBe(true);
   const empty = crypto.randomUUID();
   expect(
     (

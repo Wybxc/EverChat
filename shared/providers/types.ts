@@ -14,14 +14,12 @@ export interface ChatInput {
   files?: DocumentPart[];
 }
 
-export interface SessionInfo {
-  authenticated: boolean;
+export interface SessionSettings {
   provider: string;
   model: string;
   modelName?: string;
   activeProviderId?: string | null;
   models?: ChatModel[];
-  configured: boolean;
   attachmentsConfigured: boolean;
   showReasoning?: boolean;
   systemPrompt?: string;

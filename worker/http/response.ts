@@ -1,11 +1,13 @@
 import type { Context } from 'hono';
 import * as v from 'valibot';
 import type { Env } from './env';
+import type { AccessPrincipal } from './auth';
 
 export class HttpError extends Error {
   constructor(
     public status: number,
     message: string,
+    public code?: string,
   ) {
     super(message);
   }
@@ -66,7 +68,8 @@ export function jsonWithStream(
   );
 }
 
-export type AppContext = Context<{ Bindings: Env }>;
+export type AppEnv = { Bindings: Env; Variables: { principal: AccessPrincipal } };
+export type AppContext = Context<AppEnv>;
 
 /** Decode bounded JSON in the owning DO; native streams do not count against object RPC payload limits. */
 export async function readJsonStream(

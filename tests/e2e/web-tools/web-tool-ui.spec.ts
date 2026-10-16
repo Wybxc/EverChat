@@ -11,9 +11,7 @@ const origin = 'http://127.0.0.1:5174',
   headers = { Origin: origin },
   key = 'tvly-browser-private-service-key';
 async function setup(request: APIRequestContext, provider: ProviderKind = 'openai-chat') {
-  expect(
-    (await request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok(),
-  ).toBe(true);
+  expect((await request.post('/__dev/access/login', { headers })).ok()).toBe(true);
   const original = (await request
     .get('/api/settings/providers')
     .then((r) => r.json())) as ProviderSettings;
@@ -88,9 +86,7 @@ async function setup(request: APIRequestContext, provider: ProviderKind = 'opena
     saveService,
     runtime,
     cleanup: async () => {
-      expect(
-        (await request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok(),
-      ).toBe(true);
+      expect((await request.post('/__dev/access/login', { headers })).ok()).toBe(true);
       for (const id of ids) await request.delete(`/api/conversations/${id}`, { headers });
       expect(
         (
@@ -662,13 +658,8 @@ test('a late reveal after switching tabs and a late autosave after logout cannot
     await saveReached;
     await tab(page, '通用');
     await page.getByRole('button', { name: '退出并清除本地记录', exact: true }).click();
-    await expect(page.getByLabel('访问密码')).toBeVisible();
-    const late = page.waitForResponse(
-      (response) =>
-        response.url().endsWith('/api/settings/web-tools') && response.request().method() === 'PUT',
-    );
+    await expect(page).toHaveURL(`${headers.Origin}/__dev/access/logout`);
     releaseSave();
-    await (await late).finished();
     await page.evaluate(
       () =>
         new Promise<void>((resolve) =>
@@ -686,6 +677,7 @@ test('a late reveal after switching tabs and a late autosave after logout cannot
     releaseReveal();
     releaseSave();
     await page.close();
+    await context.request.post('/__dev/access/login', { headers });
     await f.cleanup();
   }
 });

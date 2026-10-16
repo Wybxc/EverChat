@@ -15,9 +15,7 @@ const deletion = (request: APIRequestContext, id: string) =>
     .post('/api/__test/library/deletion', { headers, data: { id } })
     .then((response) => response.json()) as Promise<{ deletedAt: number; calls: number }>;
 async function setup(request: APIRequestContext, model = 'benchmark-text-2-10-32') {
-  expect(
-    (await request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok(),
-  ).toBe(true);
+  expect((await request.post('/__dev/access/login', { headers })).ok()).toBe(true);
   const original = (await request
     .get('/api/settings/providers')
     .then((response) => response.json())) as ProviderSettings;
@@ -188,11 +186,7 @@ test('deleting a running conversation notifies subscribers, aborts generation, r
     await page.goto(`/c/${fixture.id}`);
     await expect(page.getByTestId('assistant-message')).toContainText('等待上游的正文');
     await page.getByRole('textbox', { name: '消息', exact: true }).fill('尚未发送的草稿');
-    expect(
-      (
-        await other.request.post('/api/login', { headers, data: { password: 'everchat-local' } })
-      ).ok(),
-    ).toBe(true);
+    expect((await other.request.post('/__dev/access/login', { headers })).ok()).toBe(true);
     const second = await other.newPage();
     await second.goto(`/c/${fixture.id}`);
     await expect(second.getByTestId('assistant-message')).toContainText('等待上游的正文');
@@ -296,11 +290,7 @@ test('the management menu preserves failed edits, syncs metadata to another devi
   const other = await browser.newContext();
   try {
     await page.goto(`/c/${fixture.id}`);
-    expect(
-      (
-        await other.request.post('/api/login', { headers, data: { password: 'everchat-local' } })
-      ).ok(),
-    ).toBe(true);
+    expect((await other.request.post('/__dev/access/login', { headers })).ok()).toBe(true);
     const second = await other.newPage();
     await second.goto(`/c/${fixture.id}`);
     await expect(second.getByRole('banner')).toContainText(fixture.title);
@@ -425,11 +415,7 @@ test('a device reconnects with a late outbox, clears an unselected deleted conve
     await expect(page.getByText('等待发送', { exact: true })).toBeVisible();
     await page.locator('aside').getByRole('button', { name: '开启新对话', exact: true }).click();
     await page.getByRole('textbox', { name: '消息', exact: true }).fill('保留新对话的草稿');
-    expect(
-      (
-        await second.request.post('/api/login', { headers, data: { password: 'everchat-local' } })
-      ).ok(),
-    ).toBe(true);
+    expect((await second.request.post('/__dev/access/login', { headers })).ok()).toBe(true);
     expect(
       (await second.request.delete(`/api/conversations/${fixture.id}`, { headers })).status(),
     ).toBe(200);
@@ -521,9 +507,7 @@ for (const fault of ['delete-failure', 'delete-reset'])
   });
 
 test('deletion synchronization pages markers without gaps or duplicates', async ({ request }) => {
-  expect(
-    (await request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok(),
-  ).toBe(true);
+  expect((await request.post('/__dev/access/login', { headers })).ok()).toBe(true);
   const seed = (count: number) =>
     request.post('/api/__test/library/deletion-history', { headers, data: { count } });
   let before = await index(request);

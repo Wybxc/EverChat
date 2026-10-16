@@ -13,9 +13,7 @@ const headers = { Origin: 'http://127.0.0.1:5174' };
 const action = (request: APIRequestContext, id: string, name: string, data: unknown = {}) =>
   request.post(`/api/__test/conversations/${id}/${name}`, { headers, data });
 async function setup(request: APIRequestContext) {
-  expect(
-    (await request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok(),
-  ).toBe(true);
+  expect((await request.post('/__dev/access/login', { headers })).ok()).toBe(true);
   const original = (await request
     .get('/api/settings/providers')
     .then((response) => response.json())) as ProviderSettings;
@@ -176,9 +174,7 @@ test('capacity reached during generation terminates without retrying, retains th
 test('Library serializes concurrent creations at the limit and allows idempotent retries when full', async ({
   request,
 }) => {
-  expect(
-    (await request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok(),
-  ).toBe(true);
+  expect((await request.post('/__dev/access/login', { headers })).ok()).toBe(true);
   const capacity = (seed: boolean) =>
     request.post('/api/__test/library/capacity', { headers, data: { seed } });
   let createdId: string | undefined;
