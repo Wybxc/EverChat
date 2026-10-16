@@ -7,8 +7,8 @@ import { useId, useRef, useState, type SubmitEvent } from 'react';
 import { X } from 'lucide-react';
 import type { Message } from '../../../shared/conversation/types';
 
-export function MessageMutationDialog({ message, mode, affectsSummaries = false, confirm, close, completedFocus }: {
-  message: Message; mode: 'edit' | 'delete'; affectsSummaries?: boolean; confirm: (content: string, requestId: string) => Promise<void>; close: () => void; completedFocus?: () => HTMLElement | null;
+export function MessageMutationDialog({ message, mode, affectsSummaries = false, confirm, close, restoreCompletedFocus }: {
+  message: Message; mode: 'edit' | 'delete'; affectsSummaries?: boolean; confirm: (content: string, requestId: string) => Promise<void>; close: () => void; restoreCompletedFocus?: () => void;
 }) {
   const titleId = useId(), input = useRef<HTMLTextAreaElement>(null), cancel = useRef<HTMLButtonElement>(null);
   const [content, setContent] = useState(messageText(message)), [busy, setBusy] = useState(false), [error, setError] = useState('');
@@ -24,7 +24,7 @@ export function MessageMutationDialog({ message, mode, affectsSummaries = false,
     finally { setBusy(false); }
   };
   return <Modal open onOpenChange={(next) => { if (!next) close(); }} alert={mode === 'delete'} busy={busy} initialFocus={mode === 'edit' ? input : cancel} aria-labelledby={titleId}
-    onCloseAutoFocus={(event) => { const target = confirmed.current ? completedFocus?.() : null; if (target) { event.preventDefault(); target.focus({ preventScroll: true }); } }}>
+    onCloseAutoFocus={(event) => { if (confirmed.current && restoreCompletedFocus) { event.preventDefault(); restoreCompletedFocus(); } }}>
     <div className="p-5 flex max-h-[85dvh] max-w-2xl flex-col overflow-hidden">
       <div className="mb-4 flex shrink-0 items-center justify-between gap-3">
         <ModalTitle id={titleId} className="text-lg font-semibold">{mode === 'edit' ? '编辑回答' : message.summary ? '删除摘要' : '删除消息'}</ModalTitle>

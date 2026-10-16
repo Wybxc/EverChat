@@ -131,6 +131,11 @@ test('message mutations require authentication and reject generation races or in
 });
 
 test('editing and deleting an answer preserves drafts and focus while another device keeps its own reading position', async ({ page, browser }) => {
+  await page.routeWebSocket('**/api/conversations/*/sync?*', (socket) => {
+    const upstream = socket.connectToServer(); let closed = false;
+    upstream.onMessage((message) => { setTimeout(() => { if (!closed) socket.send(message); }, 250); });
+    socket.onClose(() => { closed = true; upstream.close(); });
+  });
   const fixture = await setup(page.request);
   const second = await browser.newContext();
   try {

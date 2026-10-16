@@ -1,3 +1,4 @@
+import { useMutationFocus } from '../features/chat/useMutationFocus';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { NativeSelect } from '@/components/ui/native-select';
@@ -149,6 +150,7 @@ export function App() {
   const currentPending = pending.find((item) => item.conversation.id === selected);
   const { snapshot, snapshotFor, authoritative, durableSnapshot, hasUnconfirmed, connection, syncedAt, loading, syncError, reconnect } = useConversation(selected, Boolean(session?.authenticated), loggedOut, Boolean(currentPending && !currentPending.error), rememberDeletion, selected ? deletedAt(selected) : null);
   const branches = useConversationBranches({ id: selected, messages: snapshot.messages, ready: snapshotFor === selected, authoritative, routeHead: routeBranch, navigate });
+  const { prepareMutationFocus, closeMutationFocus } = useMutationFocus({ selected, messages: snapshot.messages, visibleIds: branches.ids, navigationVersion: branches.navigationVersion, editor });
   const branchSummaries = summariesOnBranch(snapshot.messages, branches.path);
   const active = snapshot.messages.find(isActive);
   const activeChat = snapshot.messages.find((message) => isActive(message) && !message.summary) ?? active;
@@ -445,10 +447,12 @@ export function App() {
     if (messageMutation.mode === 'edit') {
       const version = branches.navigationVersion.current;
       const result = await api<{ messageId: string }>(`/conversations/${selected}/messages/${messageMutation.id}`, 'PATCH', { requestId, content });
-      if (selectedRef.current === selected && version === branches.navigationVersion.current) { branches.choose(result.messageId, { automatic: true }); scrollToBottom(); }
+      if (selectedRef.current === selected && version === branches.navigationVersion.current) { branches.choose(result.messageId, { automatic: true }); scrollToBottom(); prepareMutationFocus(selected, result.messageId, 'visible', version); }
       refreshLibrary();
     } else {
+      const version = branches.navigationVersion.current;
       await api(`/conversations/${selected}/messages/${messageMutation.id}`, 'DELETE');
+      if (selectedRef.current === selected && version === branches.navigationVersion.current) prepareMutationFocus(selected, messageMutation.id, 'deleted', version);
       if (revisionOf === messageMutation.id) { setRevisionOf(undefined); writeChatCache(`draft:${selected}`, { text: draft, images: draftImages, files: draftFiles }); }
     }
   };
@@ -644,10 +648,6 @@ export function App() {
     {session?.authenticated && <ConversationSettingsDialog key={selected ?? 'new'} id={selected} initial={selected ? snapshot.settings ?? DEFAULT_CONVERSATION_SETTINGS : newConversationSettings} model={selectedModel} models={models} effort={reasoningEffort} showReasoning={session.showReasoning ?? false} open={conversationSettingsOpen} focusTools={focusWebTools} close={() => { setConversationSettingsOpen(false); setFocusWebTools(false); }} onDraft={settingsDraftChanged} managePresets={() => { returnToConversationSettings.current = true; setRequestedSettingsTab('presets'); openSettings(); }} manageWebTools={() => { returnToConversationSettings.current = true; setRequestedSettingsTab('web-tools'); openSettings(); }} />}
     {session.attachmentsConfigured && selected && currentConversation && !snapshot.deletedAt && <AttachmentDialog key={`attachments:${selected}`} id={selected} open={attachmentsFor === selected} close={() => setAttachmentsFor(null)} />}
     {summaryOpen && selected && <SummaryDialog messages={snapshot.messages} headId={summaryTarget?.throughId ?? contextSource(snapshot.messages, { parentId: branches.continuationParentId }).parentId} models={models} preferred={selectedModel} target={summaryTarget ?? undefined} busy={busy} submit={queueSummary} close={() => { setSummaryOpen(false); setSummaryTarget(null); }} focusComposer={() => { if (selectedRef.current === selected) editor.current?.focus({ preventScroll: true }); }} />}
-    {messageMutation && mutationMessage && <MessageMutationDialog key={`${selected}:${messageMutation.id}:${messageMutation.mode}`} message={mutationMessage} mode={messageMutation.mode} affectsSummaries={snapshot.messages.some((message) => !message.deletedAt && message.summary?.sourceIds.includes(mutationMessage.id))} confirm={confirmMessageMutation} close={() => setMessageMutation(null)} completedFocus={() => {
-      if (selectedRef.current !== selected) return null;
-      return document.querySelector<HTMLElement>(`[data-message-id="${mutationMessage.id}"] button[aria-label="更多消息操作"]`)
-        ?? [...document.querySelectorAll<HTMLElement>('[data-message-id] button[aria-label="更多消息操作"]')].at(-1) ?? editor.current;
-    }} />}
+    {messageMutation && mutationMessage && <MessageMutationDialog key={`${selected}:${messageMutation.id}:${messageMutation.mode}`} message={mutationMessage} mode={messageMutation.mode} affectsSummaries={snapshot.messages.some((message) => !message.deletedAt && message.summary?.sourceIds.includes(mutationMessage.id))} confirm={confirmMessageMutation} close={() => setMessageMutation(null)} restoreCompletedFocus={closeMutationFocus} />}
   </div>;
 }
