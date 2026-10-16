@@ -9,7 +9,7 @@ import { fragmentedToolBody, toolQuery, toolStream } from './fixtures/tool-strea
 
 const kinds: ProviderKind[] = ['openai-chat', 'openai-responses', 'anthropic', 'gemini'];
 const enabled = ['web_search', 'read_webpage'] as const;
-const metadata = resolveModelMetadata('openai-chat', { id: 'tool-fixture', name: 'Fixture', enabled: true, metadataOverrides: { toolCalls: true } });
+const metadata = resolveModelMetadata('openai-chat', { id: 'tool-fixture', name: 'Fixture', enabled: true, reasoningSupport: 'supported', metadataOverrides: { toolCalls: true } });
 const configuration = (provider: ProviderKind): ProviderConfig => ({ provider, baseUrl: provider === 'openai-chat' ? 'https://api.deepseek.com/v1' : 'https://provider.example/v1',
   model: 'tool-fixture', systemPrompt: '系统指令', apiKey: 'private-fixture-key', maxOutputTokens: null, modelMetadata: metadata, reasoningEnabled: true, showReasoning: false });
 const outcome = (id: string): WebToolOutcome => ({ id, name: 'web_search', status: 'completed', sources: [{ title: 'Cloudflare 文档', url: 'https://developers.cloudflare.com/', content: '资料正文🙂' }] });
@@ -124,7 +124,7 @@ test('public tool inputs and sources reject credentials, local addresses and ove
     title: '字'.repeat(300), url: 'https://example.org/' + '字'.repeat(2000), content: '字'.repeat(2400),
   })) }));
   assert.throws(() => validateWebToolOutcome({ ...outcome('call'), apiKey: 'not-allowed' }));
-  assert.throws(() => assertWebToolSupport(undefined, enabled), /未声明/);
+  assert.throws(() => assertWebToolSupport(undefined, enabled), /不支持/);
   assert.throws(() => assertWebToolSupport(metadata, []), /选择/);
 });
 
@@ -183,10 +183,10 @@ test('unfinished content blocks and missing signed reasoning cannot be saved as 
   await assert.rejects(collectProviderToolTurn(configuration('openai-responses'), enabled, fragmentedToolBody(missingEncrypted), signal()), /完整推理资料/);
 });
 
-test('unknown model capability and invalid saved results fail before any supplier request', async (t) => {
+test('missing model metadata and invalid saved results fail before any supplier request', async (t) => {
   let requests = 0; t.mock.method(globalThis, 'fetch', async () => { requests++; throw new Error('not expected'); });
   const config = configuration('openai-chat'), context = [{ role: 'user' as const, content: 'hello' }];
-  await assert.rejects(openProviderStream({ ...config, modelMetadata: undefined }, context, signal(), undefined, undefined, { enabled }), /未声明/);
+  await assert.rejects(openProviderStream({ ...config, modelMetadata: undefined }, context, signal(), undefined, undefined, { enabled }), /不支持/);
   const turn = await collectProviderToolTurn(config, enabled, fragmentedToolBody(toolStream('openai-chat')), signal());
   await assert.rejects(openProviderStream(config, context, signal(), undefined, undefined, { enabled, exchanges: [{ turn, outcomes: [] }] }), /不符/);
   assert.equal(requests, 0);

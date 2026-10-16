@@ -20,6 +20,8 @@ export const modelSchema = v.object({
   systemPrompt: v.optional(v.pipe(v.string(), v.maxLength(20_000))),
   reasoningSupport: v.optional(v.picklist(['auto', 'supported', 'unsupported'])),
   reportedMetadata: v.optional(v.strictObject({ ...metadataFields, reasoning: v.optional(v.boolean()) })),
+  directoryMetadata: v.optional(v.strictObject({ values: v.strictObject({ ...metadataFields, reasoning: v.optional(v.boolean()) }), match: v.picklist(['exact', 'alias']), updatedAt: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(Number.MAX_SAFE_INTEGER)) })),
+  testedCapabilities: v.optional(v.strictObject({ imageInput: v.optional(v.literal(true)), toolCalls: v.optional(v.literal(true)), testedAt: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(Number.MAX_SAFE_INTEGER)) })),
   metadataOverrides: v.optional(v.strictObject(metadataFields)),
 });
 const profileSchema = v.object({
@@ -51,20 +53,28 @@ export function normalizeBaseUrl(value: string): string {
   return baseUrl;
 }
 
-export function mergeProviderSettings(current: ProviderSettingsInput, input: unknown, options: { restoreModelMetadata?: boolean } = {}): ProviderSettingsInput {
+export function mergeProviderSettings(current: ProviderSettingsInput, input: unknown, options: { restoreModelMetadata?: boolean; preserveKeysAcrossConnections?: boolean } = {}): ProviderSettingsInput {
   const parsed = v.safeParse(providerSettingsSchema, input);
-  if (!parsed.success) throw new Error('请检查名称、模型 ID 和 Token 限制（正整数）；模型能力配置无效。');
+  if (!parsed.success) {
+    if (parsed.issues.some((issue) => issue.path?.[0]?.key === 'providers' && issue.path?.[2]?.key === 'name' && typeof issue.input === 'string' && !issue.input.trim())) {
+      throw new Error('请填写供应商名称。');
+    }
+    throw new Error('请检查名称、模型 ID 和 Token 限制（正整数）；模型能力配置无效。');
+  }
   const seenIds = new Set<string>();
   const providers = parsed.output.providers.map((profile) => {
     if (seenIds.has(profile.id)) throw new Error('供应商 ID 不能重复。');
     seenIds.add(profile.id);
     const baseUrl = normalizeBaseUrl(profile.baseUrl);
     const existing = current.providers.find((item) => item.id === profile.id);
-    const sameEndpoint = existing?.provider === profile.provider && existing.baseUrl.replace(/\/+$/, '') === baseUrl;
-    const apiKey = profile.apiKey || (sameEndpoint ? existing?.apiKey : undefined);
+    const sameEndpoint = existing?.baseUrl.replace(/\/+$/, '') === baseUrl;
+    const sameConnection = sameEndpoint && existing?.provider === profile.provider;
+    const apiKey = profile.apiKey || (sameConnection || options.preserveKeysAcrossConnections !== false ? existing?.apiKey : undefined);
     if (apiKey && /[\r\n]/.test(apiKey)) throw new Error('API 密钥不能包含换行。');
     if (new Set(profile.models.map((model) => model.id)).size !== profile.models.length) throw new Error('模型 ID 不能重复。');
-    const models = existing && !sameEndpoint && !options.restoreModelMetadata ? profile.models.map((model) => ({ ...model, reportedMetadata: undefined })) : profile.models;
+    const models = existing && !options.restoreModelMetadata ? profile.models.map((model) => !sameConnection
+      ? { ...model, reportedMetadata: undefined, directoryMetadata: undefined, testedCapabilities: undefined }
+      : apiKey !== existing.apiKey ? { ...model, testedCapabilities: undefined } : model) : profile.models;
     const merged = { ...profile, models, baseUrl, apiKey };
     if (new TextEncoder().encode(JSON.stringify(merged)).byteLength > MAX_PROVIDER_PROFILE_BYTES) throw new Error('单个供应商配置超过云端存储上限，请减少模型或系统提示词。');
     return merged;

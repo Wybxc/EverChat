@@ -47,6 +47,28 @@ test('autosave keeps invalid drafts without replacing the saved configuration', 
   } finally { store.dispose(); }
 });
 
+test('an unnamed provider stays in the draft until a nonblank name permits autosave', async () => {
+  const calls: ProviderSettingsInput[] = [];
+  const store = new SettingsAutosave(initial, async (input) => { calls.push(input); return publicProviderSettings(input); }, () => {}, 60_000);
+  const profile = { id: crypto.randomUUID(), name: '', provider: 'openai-chat' as const, baseUrl: 'https://provider.test/v1', apiKey: 'test-key', hasApiKey: false,
+    models: [{ id: 'custom-model', name: '自定义模型', enabled: true }] };
+  try {
+    for (const name of ['', '   ']) {
+      store.update({ ...initial, providers: [{ ...profile, name }] });
+      await assert.rejects(store.flush(), /请填写供应商名称/);
+      assert.equal(calls.length, 0);
+      assert.deepEqual(store.getSnapshot().settings.providers, [{ ...profile, name }]);
+      assert.equal(store.getSnapshot().status, 'error');
+    }
+    store.update({ ...store.getSnapshot().settings, providers: [{ ...profile, name: '  我的供应商  ' }] });
+    await store.flush();
+    assert.equal(calls.length, 1);
+    const { hasApiKey: _flag, ...inputProfile } = profile;
+    assert.deepEqual(calls[0].providers, [{ ...inputProfile, name: '我的供应商' }]);
+    assert.equal(store.getSnapshot().status, 'saved');
+  } finally { store.dispose(); }
+});
+
 test('failed autosave retains the latest changes for retry', async () => {
   let fail = true;
   const store = new SettingsAutosave(initial, async (input) => {

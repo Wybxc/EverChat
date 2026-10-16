@@ -24,7 +24,8 @@ test('production PWA restores a conversation URL offline without caching API res
   await expect(search.getByRole('status')).toContainText('1 / 2');
   for (const colorScheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme });
-    await expect(page.locator('html')).toHaveAttribute('data-theme', colorScheme);
+    if (colorScheme === 'dark') await expect(page.locator('html')).toHaveClass(/dark/);
+    else await expect(page.locator('html')).not.toHaveClass(/dark/);
     const contrast = await page.evaluate(() => {
       const range = CSS.highlights.get('everchat-search')!.values().next().value as Range;
       const style = getComputedStyle(range.startContainer.parentElement!, '::highlight(everchat-search)');

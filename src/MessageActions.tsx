@@ -1,3 +1,6 @@
+import { IconButton } from './IconButton';
+import { ActionMenuItem } from './ActionMenu';
+import { Spinner } from '@/components/ui/spinner';
 import { Check, Copy, MoreHorizontal, Pencil, Quote, RefreshCw, Trash2 } from 'lucide-react';
 import type { Message } from '../shared/types';
 import { isActive } from '../shared/types';
@@ -9,18 +12,18 @@ export function MessageActions({ message, busy, copied, forking, canFork, canRet
   copy: () => void; quote: () => void; edit: () => void; remove: () => void; fork: () => void; retry: () => void; selectBranch: () => void;
 }) {
   const active = isActive(message), user = message.role === 'user';
-  return <div className={`message-actions mt-2 flex flex-wrap items-center gap-1 text-base-content/80 ${user ? 'justify-end' : ''}`}>
-    <button type="button" className="btn btn-ghost btn-sm gap-1.5" onClick={copy} aria-label="复制消息">{copied ? <Check size={14} /> : <Copy size={14} />}{copied ? '已复制' : '复制'}</button>
-    {user ? <button type="button" className="btn btn-ghost btn-sm gap-1.5" onClick={quote} aria-label="引用消息"><Quote size={14} />引用</button>
-      : <button type="button" className="btn btn-ghost btn-sm gap-1.5" disabled={active || busy || !canRetry} onClick={retry}><RefreshCw size={14} />重新生成</button>}
-    <ActionMenu label="更多消息操作" icon={<MoreHorizontal size={17} />} className="btn btn-ghost btn-sm btn-square" placement="dropdown-top dropdown-end">
-      {!user && <li><button type="button" onClick={quote} aria-label="引用消息"><Quote size={15} />引用</button></li>}
-      <li><button type="button" disabled={!canFork || forking} onClick={fork} aria-label="复制到新对话">{forking ? <span className="loading loading-spinner loading-xs" /> : <Copy size={15} />}复制到新对话</button></li>
-      {!user && message.status === 'completed' && !branchSelected && <li><button type="button" disabled={busy} onClick={selectBranch}>继续此分支</button></li>}
-      <li><button type="button" disabled={active || busy || (!user && !navigator.onLine)} onClick={edit} aria-label={user ? '编辑为新版本' : '编辑回答'}><Pencil size={15} />{user ? '编辑为新版本' : '编辑回答'}</button></li>
-      {!active && message.generation && <li><GenerationMetadata generation={message.generation} /></li>}
-      <li><button type="button" disabled={active || busy || !navigator.onLine} onClick={remove} aria-label="删除消息"><Trash2 size={15} />删除消息</button></li>
+  return <div className={`message-actions mt-1 flex flex-wrap items-center gap-1 text-muted-foreground ${user ? 'justify-end' : ''}`}>
+    <IconButton type="button" onClick={copy} label="复制消息">{copied ? <Check className="h-[0.875rem] w-[0.875rem]" /> : <Copy className="h-[0.875rem] w-[0.875rem]" />}</IconButton>
+    {user ? <IconButton type="button" onClick={quote} label="引用消息"><Quote className="h-[0.875rem] w-[0.875rem]" /></IconButton>
+      : <IconButton type="button" label="重新生成" disabled={active || busy || !canRetry} onClick={retry}><RefreshCw className="h-[0.875rem] w-[0.875rem]" /></IconButton>}
+    <ActionMenu label="更多消息操作" icon={<MoreHorizontal className="h-[1.0625rem] w-[1.0625rem]" />} placement="dropdown-top dropdown-end">
+      {!user && <ActionMenuItem onSelect={quote} aria-label="引用消息"><Quote className="h-[0.9375rem] w-[0.9375rem]" />引用</ActionMenuItem>}
+      <ActionMenuItem disabled={!canFork || forking} onSelect={fork} aria-label="复制到新对话">{forking ? <Spinner /> : <Copy className="h-[0.9375rem] w-[0.9375rem]" />}复制到新对话</ActionMenuItem>
+      {!user && message.status === 'completed' && !branchSelected && <ActionMenuItem disabled={busy} onSelect={selectBranch}>继续此分支</ActionMenuItem>}
+      <ActionMenuItem disabled={active || busy || (!user && !navigator.onLine)} onSelect={edit} aria-label={user ? '编辑为新版本' : '编辑回答'}><Pencil className="h-[0.9375rem] w-[0.9375rem]" />{user ? '编辑为新版本' : '编辑回答'}</ActionMenuItem>
+      {!active && message.generation && <GenerationMetadata generation={message.generation} />}
+      <ActionMenuItem disabled={active || busy || !navigator.onLine} onSelect={remove} aria-label="删除消息"><Trash2 className="h-[0.9375rem] w-[0.9375rem]" />删除消息</ActionMenuItem>
     </ActionMenu>
-    {!user && branchSelected && <span className="ml-1 text-xs text-base-content/70">当前分支</span>}
+    {!user && branchSelected && <span className="ml-1 text-xs text-muted-foreground">当前分支</span>}
   </div>;
 }

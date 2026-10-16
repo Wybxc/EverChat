@@ -1,3 +1,4 @@
+import { chooseChatModel } from '../ui';
 import { openSpaceSettings } from '../ui';
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import type { ConversationSettings, ProviderKind, ProviderSettings, Snapshot } from '../../shared/types';
@@ -15,6 +16,7 @@ async function setup(request: APIRequestContext, provider: ProviderKind = 'opena
   const config = { providers: [{ id: providerId, name: '联网测试', provider, baseUrl: 'https://provider.test/v1', apiKey: 'integration-test-key', models: [
     { id: model, name: '联网模型', enabled: true, reasoningSupport: 'supported', metadataOverrides: { toolCalls: true, contextWindow: 131072 } },
     { id: 'unknown-tools-model', name: '未知能力模型', enabled: true },
+    { id: 'unsupported-tools-model', name: '不支持工具的模型', enabled: true, metadataOverrides: { toolCalls: false } },
   ] }], activeProviderId: providerId, activeModel: model, systemPrompt: '', maxOutputTokens: null, showReasoning: true };
   expect((await request.put('/api/settings/providers', { headers, data: config })).ok()).toBe(true);
   const saveService = async (apiKey = key, limit = service.usedToday + 40) => {
@@ -47,7 +49,7 @@ async function parameters(page: Page) {
 async function enable(page: Page, tools: WebToolName[]) {
   const modal = await parameters(page);
   for (const [name, label] of [['web_search', '联网搜索'], ['read_webpage', '网页读取']] as const) {
-    const checkbox = modal.getByRole('checkbox', { name: label, exact: true });
+    const checkbox = modal.getByRole('switch', { name: label, exact: true });
     await expect(checkbox).not.toBeChecked();
     if (tools.includes(name)) { await expect(checkbox).toBeEnabled(); await checkbox.check(); }
   }
@@ -116,6 +118,30 @@ test('web settings autosave, validate ceilings, reveal explicitly, hide across t
 const combinations: [ProviderKind, WebToolName[]][] = [
   ['openai-chat', ['web_search']], ['openai-responses', ['read_webpage']], ['anthropic', ['web_search', 'read_webpage']], ['gemini', ['web_search', 'read_webpage']],
 ];
+
+test('a failed tool has one visible error while collapsed and can reveal and focus its call', async ({ page, context }) => {
+  const f = await setup(context.request);
+  const id = crypto.randomUUID(), taskId = crypto.randomUUID(); f.ids.push(id);
+  try {
+    expect((await context.request.post('/api/conversations', { headers, data: { id, title: '失败调用定位' } })).status()).toBe(201);
+    expect((await context.request.post(`/api/__test/conversations/${id}/tool-runtime`, { headers, data: { taskId, fault: 'service-401' } })).ok()).toBe(true);
+    expect((await context.request.post(`/api/conversations/${id}/messages`, { headers, data: { requestId: taskId, content: '检查失败调用', tools: ['web_search'] } })).status()).toBe(202);
+    await page.goto(`/c/${id}`);
+    const answer = page.getByTestId('assistant-message'), activity = page.getByTestId('tool-activity');
+    await expect(answer).toHaveAttribute('data-status', 'failed');
+    await expect(activity).not.toHaveAttribute('open');
+    await expect(answer.getByRole('alert')).toHaveCount(1);
+    const error = answer.getByRole('alert'); await expect(error).toContainText('联网服务密钥无效或没有访问权限。');
+    await expect(error).toBeVisible(); await expect(answer.getByText('生成失败', { exact: true })).toBeVisible();
+    await answer.getByRole('button', { name: /^查看失败调用/ }).click();
+    await expect(activity).toHaveAttribute('open');
+    const call = activity.locator('[data-tool-state="failed"]');
+    await expect(call).toBeFocused(); await expect(call).toHaveAttribute('aria-describedby', await error.getAttribute('id') as string);
+    await expect(answer.getByRole('alert')).toHaveCount(1);
+    await activity.locator(':scope > summary').click(); await expect(error).toBeVisible();
+  } finally { await page.close(); await f.cleanup(); }
+});
+
 for (const [provider, tools] of combinations) test(`${provider} browser toggles execute only selected production tools and a new conversation returns to off`, async ({ page, context }) => {
   const f = await setup(context.request, provider);
   try {
@@ -129,11 +155,11 @@ for (const [provider, tools] of combinations) test(`${provider} browser toggles 
     const state = await f.runtime(sent.id, sent.input.requestId); expect(state.modelCalls).toBe(2); expect(state.serviceRequests).toHaveLength(tools.length);
     expect(state.serviceRequests.map((call: { url: string }) => call.url)).toEqual(tools.map((name) => `https://api.tavily.com/${name === 'web_search' ? 'search' : 'extract'}`));
     await page.reload(); const restored = await parameters(page);
-    for (const [name, label] of [['web_search', '联网搜索'], ['read_webpage', '网页读取']] as const) await expect(restored.getByRole('checkbox', { name: label, exact: true })).toBeChecked({ checked: tools.includes(name) });
+    for (const [name, label] of [['web_search', '联网搜索'], ['read_webpage', '网页读取']] as const) await expect(restored.getByRole('switch', { name: label, exact: true })).toBeChecked({ checked: tools.includes(name) });
     await restored.getByRole('button', { name: '关闭会话参数', exact: true }).click();
     await page.getByRole('button', { name: '开启新对话', exact: true }).click();
     const fresh = await parameters(page);
-    for (const label of ['联网搜索', '网页读取']) await expect(fresh.getByRole('checkbox', { name: label, exact: true })).not.toBeChecked();
+    for (const label of ['联网搜索', '网页读取']) await expect(fresh.getByRole('switch', { name: label, exact: true })).not.toBeChecked();
     await noCachedKey(page);
   } finally { await page.close(); await f.cleanup(); }
 });
@@ -160,17 +186,17 @@ test('unsupported model or removed credentials preserve the draft and enabled ch
   const f = await setup(context.request);
   try {
     await page.goto('/'); await enable(page, ['web_search']);
-    await page.getByLabel('聊天模型', { exact: true }).selectOption(JSON.stringify([f.providerId, 'unknown-tools-model']));
+    await chooseChatModel(page, JSON.stringify([f.providerId, 'unsupported-tools-model']));
     await page.getByLabel('消息', { exact: true }).fill('模型不支持时保留'); await page.getByRole('button', { name: '发送消息', exact: true }).click();
-    await expect(page.getByRole('alert')).toContainText('未声明支持工具调用'); await expect(page.getByLabel('消息', { exact: true })).toHaveValue('模型不支持时保留');
+    await expect(page.getByRole('alert')).toContainText('当前模型不支持工具调用'); await expect(page.getByLabel('消息', { exact: true })).toHaveValue('模型不支持时保留');
     expect(await page.evaluate(() => JSON.parse(localStorage.getItem('everchat:pending') ?? '[]'))).toHaveLength(0);
-    const modal = await parameters(page); await expect(modal.getByRole('checkbox', { name: '联网搜索', exact: true })).toBeChecked();
-    await expect(modal.getByRole('checkbox', { name: '网页读取', exact: true })).toBeDisabled(); await modal.getByRole('button', { name: '关闭会话参数', exact: true }).click();
-    await page.getByLabel('聊天模型', { exact: true }).selectOption(JSON.stringify([f.providerId, f.model]));
+    const modal = await parameters(page); await expect(modal.getByRole('switch', { name: '联网搜索', exact: true })).toBeChecked();
+    await expect(modal.getByRole('switch', { name: '网页读取', exact: true })).toBeDisabled(); await modal.getByRole('button', { name: '关闭会话参数', exact: true }).click();
+    await chooseChatModel(page, JSON.stringify([f.providerId, f.model]));
     await f.saveService(''); await page.getByRole('button', { name: '发送消息', exact: true }).click();
     await expect(page.getByRole('alert')).toContainText('请先配置联网服务'); await expect(page.getByLabel('消息', { exact: true })).toHaveValue('模型不支持时保留');
     expect(await page.evaluate(() => JSON.parse(localStorage.getItem('everchat:pending') ?? '[]'))).toHaveLength(0);
-    const unchanged = await parameters(page); await unchanged.getByRole('checkbox', { name: '联网搜索', exact: true }).uncheck();
+    const unchanged = await parameters(page); await unchanged.getByRole('switch', { name: '联网搜索', exact: true }).uncheck();
     await unchanged.getByRole('button', { name: '关闭会话参数', exact: true }).click();
     const sent = await send(page, '关闭后正常聊天'); f.ids.push(sent.id); expect(sent.input.tools).toBeUndefined();
     await expect(page.getByTestId('assistant-message')).toHaveAttribute('data-status', 'completed'); await expect(page.getByTestId('tool-activity')).toHaveCount(0);
@@ -182,12 +208,14 @@ test('configuring a service from conversation parameters returns to the same dia
   const f = await setup(context.request);
   try {
     await f.saveService(''); await page.goto('/'); const modal = await parameters(page);
-    await expect(modal.getByRole('checkbox', { name: '联网搜索', exact: true })).toBeDisabled();
+    await expect(modal.getByRole('switch', { name: '联网搜索', exact: true })).toBeDisabled();
     await modal.getByRole('button', { name: '配置联网服务', exact: true }).click();
     await expect(page.getByRole('tab', { name: '联网', exact: true })).toHaveAttribute('aria-selected', 'true');
     await page.getByLabel('联网服务 API 密钥', { exact: true }).fill(key); await expect(page.getByTestId('web-tool-save-status')).toHaveText('已保存');
     await page.getByRole('button', { name: '关闭设置', exact: true }).click();
-    await expect(modal).toBeVisible(); await expect(modal.getByRole('checkbox', { name: '联网搜索', exact: true })).toBeEnabled();
+    await expect(modal).toBeVisible();
+    await expect(modal.getByRole('switch', { name: '联网搜索', exact: true })).toBeVisible();
+    await expect(modal.getByRole('switch', { name: '联网搜索', exact: true })).toBeEnabled();
   } finally { await page.close(); await f.cleanup(); }
 });
 
@@ -197,7 +225,7 @@ test('invalid new-conversation parameters reject attachments before creating a c
     await page.goto('/');
     await page.getByLabel('消息', { exact: true }).fill('参数无效时保留附件提问');
     const modal = await parameters(page);
-    await modal.getByText('上下文预算与条数', { exact: true }).click();
+    await modal.locator('summary').filter({ hasText: /^上下文/ }).click();
     await modal.getByLabel('上下文 Token 预算', { exact: true }).fill('0');
     await modal.getByRole('button', { name: '关闭会话参数', exact: true }).click();
     await expect(modal).not.toBeVisible();
@@ -221,7 +249,7 @@ test('creating a conversation for an attachment preserves its enabled tools and 
     const sent = await send(page); expect(sent.id).toBe(id); expect(sent.input.tools).toEqual(['web_search']);
     await expect(page.getByTestId('assistant-message')).toHaveAttribute('data-status', 'completed');
     await page.getByRole('button', { name: '开启新对话', exact: true }).click(); const fresh = await parameters(page);
-    await expect(fresh.getByRole('checkbox', { name: '联网搜索', exact: true })).not.toBeChecked();
+    await expect(fresh.getByRole('switch', { name: '联网搜索', exact: true })).not.toBeChecked();
   } finally { await page.close(); await f.cleanup(); }
 });
 
@@ -243,7 +271,7 @@ test('copy and restore retain enabled tools and saved sources without executing 
     await page.goto(`/c/${restored.id}`);
     await page.getByTestId('tool-activity').locator(':scope > summary').click();
     await expect(page.getByTestId('tool-activity').getByRole('link')).toHaveCount(2);
-    const modal = await parameters(page); for (const label of ['联网搜索', '网页读取']) await expect(modal.getByRole('checkbox', { name: label, exact: true })).toBeChecked();
+    const modal = await parameters(page); for (const label of ['联网搜索', '网页读取']) await expect(modal.getByRole('switch', { name: label, exact: true })).toBeChecked();
     await noCachedKey(page);
   } finally { await page.close(); await f.cleanup(); }
 });

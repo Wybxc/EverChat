@@ -1,3 +1,4 @@
+import { chooseChatModel, expectChatModel } from '../ui';
 import { openSpaceSettings } from '../ui';
 import { messageText } from '../../shared/message-content';
 import { test, expect, type BrowserContext, type Page } from '@playwright/test';
@@ -116,7 +117,7 @@ test('mobile and desktop layouts fit their viewports', async ({ page }) => {
   await page.screenshot({ path: 'test-results/login-desktop.png' });
   await page.getByLabel('访问密码').fill('everchat-local');
   await page.getByRole('button', { name: '进入我的空间' }).click();
-  await expect(page.getByRole('heading', { name: '新对话' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '今天想聊些什么？' })).toBeVisible();
   await page.screenshot({ path: 'test-results/desktop.png' });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.setViewportSize({ width: 390, height: 844 });
@@ -129,13 +130,13 @@ test('mobile and desktop layouts fit their viewports', async ({ page }) => {
   await openSpaceSettings(page);
   await page.getByRole('radio', { name: '深色' }).focus();
   await page.getByRole('radio', { name: '深色' }).press('Space');
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect(page.locator('html')).toHaveClass(/dark/);
   await page.reload();
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect(page.locator('html')).toHaveClass(/dark/);
   await openSpaceSettings(page);
   await page.getByRole('radio', { name: '浅色' }).focus();
   await page.getByRole('radio', { name: '浅色' }).press('Space');
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await expect(page.locator('html')).not.toHaveClass(/dark/);
 });
 
 test('new conversation moves keyboard focus to the composer', async ({ page }) => {
@@ -150,9 +151,9 @@ test('system theme follows the operating-system color preference', async ({ page
   await openSpaceSettings(page);
   await page.getByRole('radio', { name: '系统' }).focus();
   await page.getByRole('radio', { name: '系统' }).press('Space');
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect(page.locator('html')).toHaveClass(/dark/);
   await page.emulateMedia({ colorScheme: 'light' });
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await expect(page.locator('html')).not.toHaveClass(/dark/);
 });
 
 test('the composer uses the selected model and shows opt-in provider thoughts', async ({ page, context }) => {
@@ -171,8 +172,8 @@ test('the composer uses the selected model and shows opt-in provider thoughts', 
   expect(unsupported.status()).toBe(400);
   expect(await unsupported.json()).toMatchObject({ error: '所选模型不支持此思维强度。' });
   await page.reload();
-  await page.getByLabel('聊天模型').selectOption(JSON.stringify([settings.providers[0].id, 'test-model-2']));
-  await expect(page.getByLabel('聊天模型')).toHaveValue(JSON.stringify([settings.providers[0].id, 'test-model-2']));
+  await chooseChatModel(page, JSON.stringify([settings.providers[0].id, 'test-model-2']));
+  await expectChatModel(page, JSON.stringify([settings.providers[0].id, 'test-model-2']));
   await page.getByLabel('思维强度').selectOption('high');
   await page.getByLabel('消息', { exact: true }).fill('用选定模型回答');
   await page.getByRole('button', { name: '发送消息', exact: true }).click();
@@ -189,12 +190,12 @@ test('the composer uses the selected model and shows opt-in provider thoughts', 
   await expect(answer).toContainText('第二模型：'); await expect(answer).toContainText('第二模型');
   await expect(answer.getByTestId('message-reasoning')).toContainText('集成思考。');
   await expect(answer.getByTestId('message-reasoning')).toHaveJSProperty('open', true);
-  await expect(answer.getByTestId('message-reasoning').locator('.collapse-content [data-streamdown="strong"]')).toContainText('集成思考。');
+  await expect(answer.getByTestId('message-reasoning').locator('.disclosure-content [data-streamdown="strong"]')).toContainText('集成思考。');
   const id = new URL(page.url()).pathname.split('/')[2];
   const snapshot = await context.request.get(`/api/conversations/${id}`).then((response) => response.json());
   expect(snapshot.messages[1]).toMatchObject({ model: 'test-model-2', modelName: '第二模型', parts: expect.arrayContaining([{ type: 'reasoning', text: '**集成思考。**' }]) });
 
-  await page.getByLabel('聊天模型').selectOption(JSON.stringify([settings.providers[0].id, 'test-model']));
+  await chooseChatModel(page, JSON.stringify([settings.providers[0].id, 'test-model']));
   await answer.getByRole('button', { name: '重新生成' }).click();
   const retry = page.getByTestId('assistant-message').last();
   await expect(retry).toHaveAttribute('data-status', 'completed', { timeout: 30_000 });
@@ -222,9 +223,12 @@ test('DeepSeek-compatible Responses streams Markdown thoughts, persists them and
   await expect(thoughts.locator('[data-streamdown="strong"]')).toBeVisible();
   await expect(answer).toHaveAttribute('data-status', 'running');
   await expect(answer.locator('[data-streamdown="strong"]').filter({ hasText: '集成测试回答。' })).toHaveCount(0);
+  await thoughts.locator('summary').click();
+  await expect(thoughts).not.toHaveAttribute('open');
   await expect(answer.locator('[data-streamdown="strong"]').filter({ hasText: '集成测试回答。' })).toBeVisible();
   await expect(answer).toHaveAttribute('data-status', 'running');
   await expect(answer).toHaveAttribute('data-status', 'completed');
+  await expect(thoughts).not.toHaveAttribute('open');
   const id = new URL(page.url()).pathname.split('/')[2];
   const snapshot = await context.request.get(`/api/conversations/${id}`).then((response) => response.json());
   expect(snapshot.messages[1]).toMatchObject({ model: 'deepseek-flash', parts: expect.arrayContaining([{ type: 'reasoning', text: '**集成思考。**' }]) });
@@ -290,6 +294,6 @@ test('streaming answers and thoughts follow the bottom, pause when scrolled up a
   await expect(page.getByRole('button', { name: '滚动到最新消息' })).toBeVisible();
   await page.getByRole('button', { name: '打开对话列表' }).click();
   await page.getByRole('button', { name: '开启新对话' }).click();
-  await expect(page.getByRole('heading', { name: '新对话' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '今天想聊些什么？' })).toBeVisible();
   await expect(page.getByRole('button', { name: '滚动到最新消息' })).toHaveCount(0);
 });

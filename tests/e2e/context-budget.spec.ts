@@ -91,8 +91,11 @@ test('composer estimates reflect model prompts and autosaved budgets across devi
     const estimate = page.getByTestId('context-estimate');
     await expect(estimate).toContainText('上下文 ≈'); await expect(estimate).toContainText('/ 300');
     await expect(page.getByTestId('context-omission')).toContainText('将省略 2 条');
-    await page.getByRole('button', { name: '查看上下文估算' }).click(); await expect(estimate).toContainText('系统提示词（估算）');
-    await expect(estimate.locator('dd').first()).toHaveText('10');
+    await page.getByRole('button', { name: '查看上下文估算' }).click();
+    const details = page.getByRole('dialog', { name: '上下文估算', exact: true });
+    await expect(details).toContainText('系统提示词（估算）');
+    await expect(details.locator('dd').first()).toHaveText('10');
+    await page.keyboard.press('Escape');
     await other.request.post('/api/login', { headers, data: { password: 'everchat-local' } });
     const second = await other.newPage(); await second.goto(`/c/${fixture.id}`);
     await openParameters(second);
@@ -107,7 +110,7 @@ test('composer estimates reflect model prompts and autosaved budgets across devi
     await expect(estimate).toContainText('/ 350'); await expect(page.getByTestId('context-omission')).toContainText('将省略 4 条');
     await expect(composer).toHaveValue('next');
     await messageMenu(page.getByTestId('assistant-message').first());
-    await page.getByRole('button', { name: '继续此分支', exact: true }).first().click();
+    await page.getByRole('menuitem', { name: '继续此分支', exact: true }).first().click();
     await expect(page.getByTestId('context-omission')).toContainText('将省略 2 条');
     await openParameters(page);
     await context.setOffline(true); await modal.getByLabel('上下文 Token 预算', { exact: true }).fill('400');
@@ -121,7 +124,7 @@ test('composer estimates reflect model prompts and autosaved budgets across devi
     expect(sent.generation!.context).toMatchObject({ inputBudget: 400, retainedMessages: 0, omittedMessages: 2 });
     await page.getByRole('button', { name: '停止生成', exact: true }).click();
     await messageMenu(page.getByTestId('assistant-message').last());
-    const info = page.getByTestId('assistant-message').last().getByTestId('message-generation'); await info.locator('summary').click();
+    const info = page.getByTestId('message-generation'); await page.getByRole('menuitem', { name: '生成信息', exact: true }).click();
     await expect(info.getByTestId('generation-contextMessages')).toHaveText('0 条 · 省略 2 条');
   } finally { await context.setOffline(false); await other.close(); await fixture.cleanup(); }
 });
@@ -130,7 +133,9 @@ test('an unknown model displays fallback capacity and an over-budget draft stays
   const fixture = await setup(page.request, null);
   try {
     await page.goto('/'); const composer = page.getByLabel('消息', { exact: true }); await composer.fill('保留当前草稿');
-    await expect(page.getByTestId('context-estimate')).toContainText('窗口未识别');
+    await page.getByRole('button', { name: '查看上下文估算' }).click();
+    await expect(page.getByRole('dialog', { name: '上下文估算', exact: true })).toContainText('窗口未识别');
+    await page.keyboard.press('Escape');
     await openParameters(page);
     const modal = page.getByRole('dialog', { name: '新对话参数', exact: true });
     await modal.getByLabel('上下文 Token 预算', { exact: true }).fill('1');

@@ -154,7 +154,7 @@ test('cached search works offline on mobile, resets on navigation and clears whe
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.getByRole('button', { name: '关闭对话搜索' }).click();
     await page.getByRole('button', { name: '打开对话列表' }).click();
-    await page.locator('aside').getByRole('button', { name: '开启新对话' }).click();
+    await page.getByRole('dialog', { name: '对话列表' }).getByRole('button', { name: '开启新对话' }).click();
     await expect(page).toHaveURL('/'); expect(await highlighted(page)).toBe('');
     await page.goBack();
     await expect(page).toHaveURL(`/c/${fixture.id}`); await expect(toolbar(page)).toHaveCount(0);

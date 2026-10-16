@@ -1,8 +1,9 @@
 import type { MetadataSource, ModelMetadata, ProviderApiKind, ProviderModel, ResolvedModelMetadata } from './types';
+import { matchModelCatalog } from './model-catalog';
 
 export const MAX_MODEL_TOKENS = 10_000_000;
 export const reasoningEfforts = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
-export const metadataSourceLabels: Record<MetadataSource, string> = { manual: '自定义', provider: '供应商', catalog: '内置', fallback: '保守回退' };
+export const metadataSourceLabels: Record<MetadataSource, string> = { manual: '自定义', provider: '供应商', tested: '已验证', catalog: '内置', directory: '模型目录', inferred: '别名推断', fallback: '未识别' };
 export const FALLBACK_MODEL_METADATA: Readonly<ModelMetadata> = {
   contextWindow: 32_768, contextScope: 'combined', maxOutputTokens: 8_192,
   imageInput: false, toolCalls: false, structuredOutput: false, reasoning: false,
@@ -48,17 +49,30 @@ export function resolveModelMetadata(provider: ProviderApiKind, model: ProviderM
   const known = catalog(provider, model.id);
   // Drafts use undefined to restore individual fields to automatic inheritance.
   const defined = (values?: Partial<ModelMetadata>) => Object.fromEntries(Object.entries(values ?? {}).filter(([, value]) => value !== undefined)) as Partial<ModelMetadata>;
-  const automatic = { ...known, ...defined(model.reportedMetadata) };
+  const matched = model.directoryMetadata ?? matchModelCatalog(provider, model.id);
+  const directory = defined(matched?.values);
+  if (matched?.match === 'alias') {
+    for (const field of ['contextWindow', 'contextScope', 'maxOutputTokens', 'reasoningEfforts'] as const) delete directory[field];
+  }
+  const tested = model.testedCapabilities;
+  const automatic = { ...directory, ...known, ...(tested?.imageInput ? { imageInput: true } : {}), ...(tested?.toolCalls ? { toolCalls: true } : {}), ...defined(model.reportedMetadata) };
   const overrides: Partial<ModelMetadata> = { ...defined(model.metadataOverrides),
     ...(model.reasoningSupport === 'supported' ? { reasoning: true } : model.reasoningSupport === 'unsupported' ? { reasoning: false } : {}),
   };
   const sources = {} as ResolvedModelMetadata['sources'];
   for (const key of Object.keys(FALLBACK_MODEL_METADATA) as (keyof ModelMetadata)[]) {
-    sources[key] = overrides[key] !== undefined ? 'manual' : model.reportedMetadata?.[key] !== undefined ? 'provider' : known[key] !== undefined ? 'catalog' : 'fallback';
+    sources[key] = overrides[key] !== undefined ? 'manual' : model.reportedMetadata?.[key] !== undefined ? 'provider'
+      : (key === 'imageInput' || key === 'toolCalls') && tested?.[key] ? 'tested' : known[key] !== undefined ? 'catalog'
+      : directory[key] !== undefined ? matched?.match === 'alias' ? 'inferred' : 'directory' : 'fallback';
   }
   const resolved = { ...FALLBACK_MODEL_METADATA, ...automatic, ...overrides, sources };
   // Copy arrays so editing provider settings cannot change a previously accepted run.
-  return { ...resolved, reasoningEfforts: resolved.reasoning ? [...resolved.reasoningEfforts] : [] };
+  return { ...resolved, reasoningEfforts: resolved.reasoning && (sources.reasoningEfforts !== 'fallback' || model.reasoningSupport === 'supported') ? [...resolved.reasoningEfforts] : [] };
+}
+
+// This only permits requests the user has chosen; it never enables tools or starts requests.
+export function canAttemptCapability(metadata: ResolvedModelMetadata | undefined, field: 'imageInput' | 'toolCalls'): boolean {
+  return Boolean(metadata && (metadata[field] || metadata.sources[field] === 'fallback' || metadata.sources[field] === 'inferred'));
 }
 
 export function validateOutputLimit(metadata: ResolvedModelMetadata | undefined, limit: number | null): void {

@@ -562,6 +562,16 @@ globalThis.fetch = async (input, init) => {
     tools?: { name?: string; function?: { name: string }; functionDeclarations?: { name: string }[] }[] };
   const encoder = new TextEncoder();
   const modelId = requestBody.model ?? /\/models\/([^/:]+):/.exec(url.pathname)?.[1];
+  if (modelId?.startsWith('probe-') && !(requestBody as { stream?: boolean }).stream) {
+    const serialized = JSON.stringify(requestBody), challenge = /[A-F0-9]{6}/.exec(serialized)?.[0] ?? 'missing';
+    if (modelId === 'probe-failed') return new Response('integration-test-key private diagnostics', { status: 401 });
+    const tool = requestBody.tools?.[0]?.function?.name;
+    const text = serialized.includes('data:image/png') || modelId === 'probe-mismatch' ? 'UNCONFIRMED' : challenge;
+    return Response.json({ id: 'probe', model: modelId, choices: [{ finish_reason: tool ? 'tool_calls' : 'stop', message: {
+      role: 'assistant', content: tool ? null : text,
+      ...(tool ? { tool_calls: [{ id: 'probe-call', type: 'function', function: { name: tool, arguments: JSON.stringify({ challenge }) } }] } : {}),
+    } }], usage: { prompt_tokens: 10, completion_tokens: 4, total_tokens: 14 } });
+  }
   const toolModel = /^tools-(?:(loop|pause|service)-)?(?:(large|sustained)-)?(openai-chat|openai-responses|anthropic|gemini)$/.exec(modelId ?? '');
   const toolKind = toolModel?.[3] as ProviderKind | undefined;
   if (toolKind && providerStreams[toolKind]) {

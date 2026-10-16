@@ -139,7 +139,7 @@ test('editing and deleting an answer preserves drafts, syncs another device and 
     const composer = page.getByRole('textbox', { name: '消息', exact: true });
     await composer.fill('保留草稿');
     await messageMenu(page.getByTestId('assistant-message'));
-    await page.getByRole('button', { name: '编辑回答', exact: true }).click();
+    await page.getByRole('menuitem', { name: '编辑回答', exact: true }).click();
     const editor = page.getByRole('dialog', { name: '编辑回答', exact: true });
     await expect(editor.getByLabel('回答内容')).toBeFocused();
     await expect(editor.getByRole('button', { name: '关闭消息操作' })).toBeInViewport();
@@ -160,13 +160,13 @@ test('editing and deleting an answer preserves drafts, syncs another device and 
     await expect(other.getByTestId('assistant-message').last()).toContainText('手动修改后的回答');
     const revised = page.getByTestId('assistant-message').last();
     await messageMenu(revised);
-    await revised.getByRole('button', { name: '删除消息', exact: true }).click();
-    const deletion = page.getByRole('dialog', { name: '删除消息', exact: true });
+    await page.getByRole('menuitem', { name: '删除消息', exact: true }).click();
+    const deletion = page.getByRole('alertdialog', { name: '删除消息', exact: true });
     await expect(deletion.getByRole('button', { name: '取消', exact: true })).toBeFocused();
     await deletion.getByRole('button', { name: '取消', exact: true }).click();
     await expect(revised.getByRole('button', { name: '更多消息操作', exact: true })).toBeFocused();
     await messageMenu(revised);
-    await revised.getByRole('button', { name: '删除消息', exact: true }).click();
+    await page.getByRole('menuitem', { name: '删除消息', exact: true }).click();
     await deletion.getByRole('button', { name: '确认删除', exact: true }).click();
     await expect(revised).toHaveText('消息已删除');
     await expect(other.getByTestId('assistant-message').last()).toHaveText('消息已删除');

@@ -34,7 +34,7 @@ test('mobile settings browse 200 compact models, mount one editor, preserve edit
     const saved = await page.request.get('/api/settings/providers').then((response) => response.json()) as ProviderSettings;
     expect(saved.providers[0].models[199]).toMatchObject({ id: 'model-199', name: '已自定义', enabled: true });
     await page.getByRole('button', { name: '删除模型 已自定义', exact: true }).click();
-    const confirmation = page.getByRole('dialog', { name: '删除模型', exact: true });
+    const confirmation = page.getByRole('alertdialog', { name: '删除模型', exact: true });
     await expect(confirmation.getByRole('button', { name: '取消', exact: true })).toBeFocused();
     await confirmation.getByRole('button', { name: '取消', exact: true }).click();
     expect((await page.request.get('/api/settings/providers').then((response) => response.json())).providers[0].models).toHaveLength(200);

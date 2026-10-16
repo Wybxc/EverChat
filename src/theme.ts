@@ -8,8 +8,8 @@ const media = window.matchMedia('(prefers-color-scheme: dark)');
 const listeners = new Set<() => void>();
 function apply() {
   const theme = mode === 'system' ? media.matches ? 'dark' : 'light' : mode;
-  document.documentElement.dataset.theme = theme;
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#1d232a' : '#ffffff');
+  document.documentElement.classList.toggle('dark', theme === 'dark');
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#151517' : '#ffffff');
 }
 apply();
 media.addEventListener('change', () => { if (mode === 'system') apply(); });

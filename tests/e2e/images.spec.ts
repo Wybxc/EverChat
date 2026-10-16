@@ -1,3 +1,4 @@
+import { chooseChatModel } from '../ui';
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import { attachmentUrl } from '../../shared/attachments';
@@ -10,7 +11,7 @@ async function setup(request: APIRequestContext, provider: ProviderKind = 'opena
   expect((await request.put('/api/settings/providers', { headers, data: {
     providers: [{ id: providerId, name: 'Vision fixture', provider, baseUrl: 'https://provider.test/v1', apiKey: 'integration-test-key', models: [
       { id: `vision-${provider}`, name: '视觉模型', enabled: true, metadataOverrides: { imageInput: true, contextWindow: 200000 } },
-      { id: 'text-only', name: '文本模型', enabled: true },
+      { id: 'text-only', name: '文本模型', enabled: true, metadataOverrides: { imageInput: false } },
     ] }], activeProviderId: providerId, activeModel: `vision-${provider}`, systemPrompt: '', maxOutputTokens: null,
   } })).ok()).toBe(true);
   const id = crypto.randomUUID();
@@ -117,7 +118,7 @@ test('new conversation picker scales, previews, persists drafts and sends an ima
     expect(await page.getByRole('dialog').getByRole('img').evaluate((image) => (image as HTMLImageElement).naturalWidth)).toBe(1536);
     await page.getByRole('button', { name: '关闭图片预览' }).click();
     await page.getByRole('button', { name: '预览 large.webp' }).click();
-    await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).evaluate((button) => (button as HTMLButtonElement).click());
+    await page.getByRole('dialog').getByRole('button', { name: '关闭图片预览', exact: true }).evaluate((button) => (button as HTMLButtonElement).click());
     await expect(page.getByRole('dialog')).toHaveCount(0);
     expect((await (await request.get(`/api/conversations/${id}`)).json()).messages).toHaveLength(0);
     await page.getByLabel('消息', { exact: true }).fill(''); await page.getByRole('button', { name: '发送消息' }).click();
@@ -136,7 +137,7 @@ test('pasted images retain drafts across routes and unsupported model changes pr
       textarea.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, clipboardData: data }));
     }, png.toString('base64'));
     await expect(page.getByLabel('待发送图片')).toBeVisible();
-    await page.getByLabel('聊天模型').selectOption(JSON.stringify([providerId, 'text-only']));
+    await chooseChatModel(page, JSON.stringify([providerId, 'text-only']));
     await page.getByRole('button', { name: '发送消息' }).click();
     await expect(page.getByText('所选模型不支持图片，请选择视觉模型或调整模型能力设置。').first()).toBeVisible();
     await expect(page.getByLabel('消息', { exact: true })).toHaveValue('粘贴图片');

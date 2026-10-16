@@ -2,6 +2,7 @@ import * as v from 'valibot';
 import { imageSize } from 'image-size';
 import { attachmentInputSchema, attachmentSignatureMatches } from './attachments';
 import type { ChatInput, ProviderConfig } from './types';
+import { canAttemptCapability } from './model-metadata';
 
 export const MAX_MESSAGE_IMAGES = 4, MAX_CONTEXT_IMAGES = 8;
 export const MAX_CHAT_IMAGE_BYTES = 1024 * 1024, MAX_CHAT_IMAGE_EDGE = 1536;
@@ -29,7 +30,7 @@ export function assertImageContext(context: readonly ChatInput[], config: Pick<P
       bytes += image.size;
     }
   }
-  if (count && !config.modelMetadata?.imageInput) throw new ImageContextError('所选模型不支持图片，请选择视觉模型或调整模型能力设置。');
+  if (count && !canAttemptCapability(config.modelMetadata, 'imageInput')) throw new ImageContextError('所选模型不支持图片，请选择视觉模型或调整模型能力设置。');
   if (count > MAX_CONTEXT_IMAGES || bytes > MAX_CONTEXT_IMAGES * MAX_CHAT_IMAGE_BYTES) throw new ImageContextError('本次上下文最多包含 8 张图片，请缩短历史或新建对话。');
 }
 export function imageDimensions(bytes: Uint8Array, mediaType: ImagePart['mediaType']) {

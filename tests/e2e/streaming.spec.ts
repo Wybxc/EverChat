@@ -195,7 +195,7 @@ test('browser rendering streams ahead of saving, while export and throttled cach
     await expect(page.getByRole('banner')).toContainText('保存中');
     const download = page.waitForEvent('download');
     await page.getByRole('button', { name: '更多会话操作' }).click();
-    await page.getByRole('button', { name: 'Markdown', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Markdown', exact: true }).click();
     const saved = await download;
     const exported = await readFile((await saved.path())!, 'utf8');
     expect(exported).toContain('验证持久化导出'); expect(exported).not.toContain('正文');

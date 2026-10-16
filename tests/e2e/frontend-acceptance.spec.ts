@@ -30,7 +30,8 @@ test('viewport matrix preserves usable reading, compact navigation, menus and ri
   const source = await fixture(page);
   try {
     await page.goto(`/c/${source.id}`);
-    await page.getByText('mermaid', { exact: true }).first().scrollIntoViewIfNeeded();
+    await expect(page.getByTestId('assistant-message').last()).toBeVisible();
+    await page.locator('[data-streamdown="mermaid-block"]').scrollIntoViewIfNeeded();
     await expect(page.locator('[data-streamdown="mermaid"] svg').first()).toBeVisible();
     for (const mode of ['浅色', '深色']) {
       await theme(page, mode);
@@ -42,7 +43,8 @@ test('viewport matrix preserves usable reading, compact navigation, menus and ri
         const composer = await page.getByTestId('chat-composer').boundingBox();
         const reading = await page.getByTestId('message-viewport').boundingBox();
         expect(composer!.height, `${mode} ${width} input`).toBeLessThanOrEqual(160);
-        if (height >= 568) expect(reading!.height, `${mode} ${width} reading`).toBeGreaterThanOrEqual(300);
+        const greeting = await page.getByRole('heading', { name: '今天想聊些什么？' }).boundingBox();
+        expect(greeting!.y).toBeGreaterThan(50); expect(composer!.y + composer!.height).toBeLessThanOrEqual(height);
         expect(await page.evaluate(() => document.documentElement.scrollWidth), `${mode} ${width} overflow`).toBe(width);
         const header = page.getByRole('banner');
         expect(await header.locator('button:visible').count()).toBeLessThanOrEqual(width >= 768 && width < 1024 ? 4 : 3);
@@ -50,12 +52,13 @@ test('viewport matrix preserves usable reading, compact navigation, menus and ri
           const box = await control.boundingBox(); expect(box!.x).toBeGreaterThanOrEqual(0); expect(box!.x + box!.width).toBeLessThanOrEqual(width);
         }
         await page.getByRole('button', { name: '更多会话操作' }).click();
-        const menu = page.locator('ul[popover]:popover-open');
+        const menu = page.getByRole('menu');
         const box = await menu.boundingBox();
         expect(box!.y).toBeGreaterThanOrEqual(0); expect(box!.y + box!.height).toBeLessThanOrEqual(height);
         await page.keyboard.press('Escape');
         await page.goto(`/c/${source.id}`);
-        await page.getByText('mermaid', { exact: true }).first().scrollIntoViewIfNeeded();
+        await expect(page.getByTestId('assistant-message').last()).toBeVisible();
+        await page.locator('[data-streamdown="mermaid-block"]').scrollIntoViewIfNeeded();
         await expect(page.locator('[data-streamdown="mermaid"] svg').first()).toBeVisible();
         expect(await page.evaluate(() => document.documentElement.scrollWidth), `${mode} ${width} rich content overflow`).toBe(width);
         if (height >= 568) expect((await page.getByTestId('message-viewport').boundingBox())!.height).toBeGreaterThanOrEqual(300);
@@ -120,6 +123,10 @@ test('semantic theme text, selected navigation, placeholders and focus meet cont
         { selector: '[data-testid="chat-composer"]', property: 'outlineColor', minimum: 3 },
         { selector: '[aria-label="发送消息"]' }, { selector: '.context-trigger' },
       ]);
+      await page.getByRole('button', { name: '发送消息', exact: true }).hover();
+      await contrast(page, [{ selector: '[aria-label="发送消息"]' }]);
+      await page.getByRole('button', { name: '会话参数', exact: true }).focus();
+      await contrast(page, [{ selector: '[aria-label="会话参数"]', property: 'outlineColor', minimum: 3 }]);
       await openSpaceSettings(page);
       await contrast(page, [{ selector: '#space-settings-title' }, { selector: '#settings-tab-providers' }, { selector: '[data-testid="settings-save-status"]' }]);
       await page.getByRole('button', { name: '关闭设置', exact: true }).click();

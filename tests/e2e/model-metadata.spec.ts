@@ -31,8 +31,8 @@ test('unknown model metadata is visible, editable, automatically saved across de
     const maximum = page.getByLabel('最大输出（Tokens） 1', { exact: true });
     await expect(window).toHaveValue(''); await expect(window).toHaveAttribute('placeholder', '32768');
     await expect(maximum).toHaveAttribute('placeholder', '8192');
-    await expect(page.getByLabel('图片输入 1')).toContainText('自动（未识别）');
-    await expect(page.getByText('保守回退', { exact: true }).first()).toBeVisible();
+    await expect(page.getByLabel('图片输入 1')).toContainText('自动（未识别，可尝试）');
+    await expect(page.getByText('未识别', { exact: true }).first()).toBeVisible();
     await window.fill('65536'); await saved(page); await expect(window).toBeFocused();
     await maximum.fill('2048');
     await page.getByLabel('窗口范围 1').selectOption('input');

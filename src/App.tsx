@@ -1,3 +1,14 @@
+import { Modal, ModalTitle, hasOpenModal } from './Modal';
+import { ModelPicker } from './ModelPicker';
+import { Sidebar } from './Sidebar';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Spinner } from '@/components/ui/spinner';
+import { ActionMenuItem } from './ActionMenu';
+import { Alert } from '@/components/ui/alert';
+import { Textarea } from '@/components/ui/textarea';
+import { NativeSelect } from '@/components/ui/native-select';
 import { documentMediaTypeSchema, MAX_DOCUMENT_BYTES, MAX_MESSAGE_DOCUMENTS, type DocumentPart } from '../shared/documents';
 import { fileMediaType } from '../shared/attachments';
 import { DocumentPreviews } from './DocumentPreviews';
@@ -6,7 +17,7 @@ import type { PDFExtraction } from '../shared/pdf';
 import { messageFiles, messageImages, messageText } from '../shared/message-content';
 import { Component, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode, type SubmitEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowDown, ArrowRight, ArrowUp, BookOpen, CloudOff, Feather, FolderOpen, Globe, ImagePlus, Infinity as InfinityIcon, Lightbulb, LockKeyhole, Menu, MessageCircle, Monitor, Moon, Paperclip, Pin, Plus, RefreshCw, Search, Settings, SlidersHorizontal, Square, Sun, WifiOff, X } from 'lucide-react';
+import { ArrowDown, ArrowRight, ArrowUp, BookOpen, CloudOff, FolderOpen, Globe, ImagePlus, Infinity as InfinityIcon, LockKeyhole, Menu, MessageCircle, Monitor, Moon, MoreHorizontal, Paperclip, Pin, Plus, RefreshCw, Search, Settings, SlidersHorizontal, Square, Sun, Trash2, WifiOff, X } from 'lucide-react';
 import 'streamdown/styles.css';
 import 'katex/dist/katex.min.css';
 import type { PluginConfig } from 'streamdown';
@@ -22,6 +33,7 @@ import { loadWebToolSettings, useWebToolSettings, WEB_TOOL_SETTINGS_KEY } from '
 import { ContextEstimateView } from './ContextEstimate';
 import { buildContext, contextSource } from '../shared/context-budget';
 import { chatModels, effortLabels, modelSelectionKey } from '../shared/models';
+import { canAttemptCapability } from '../shared/model-metadata';
 import { useThemeMode } from './theme';
 import { useFollowScroll } from './useFollowScroll';
 import { useSidebar } from './useSidebar';
@@ -29,6 +41,7 @@ import { conversationUrl, useConversationRoute } from './useConversationRoute';
 import { ConversationActions } from './ConversationActions';
 import { ActionMenu } from './ActionMenu';
 import { MessageActions } from './MessageActions';
+import { Disclosure, DisclosureScope } from './Disclosure';
 import { ConversationSearch } from './ConversationSearch';
 import { LibrarySearch } from './LibrarySearch';
 import type { SearchResult } from '../shared/search';
@@ -61,11 +74,7 @@ const markdownPluginLoaders = {
   math: () => import('@streamdown/math').then(({ createMathPlugin }) => createMathPlugin({ singleDollarTextMath: false })),
   mermaid: () => import('@streamdown/mermaid').then(({ createMermaidPlugin }) => createMermaidPlugin({ config: { securityLevel: 'strict', startOnLoad: false, suppressErrorRendering: true, theme: 'base' } })),
 };
-const starters = [
-  { icon: Lightbulb, title: '梳理想法', prompt: '帮我梳理一个新项目的想法。请先问我三个能让方向更清晰的问题。' },
-  { icon: Feather, title: '写一段文字', prompt: '我想写一个关于重逢的短篇故事，帮我构思一个有画面感的开头。' },
-  { icon: Search, title: '解释概念', prompt: '用简单的语言和生活中的例子，向我解释什么是 Serverless。' },
-];
+
 
 // Streamdown also loads internal React.lazy chunks, whose rejection escapes the plugin loaders.
 class MarkdownBoundary extends Component<{ children: ReactNode; fallback: ReactNode }, { failed: boolean }> {
@@ -84,7 +93,7 @@ function MarkdownFallback({ content, className }: { content: string; className: 
   return <div data-testid="markdown-fallback">
     <div className={`${className} whitespace-pre-wrap`}>{content}</div>
     {/* React.lazy retains a rejected promise. A new page runtime is needed to retry that chunk. */}
-    <button type="button" className="btn btn-ghost btn-xs mt-2" disabled={!online} onClick={() => location.reload()}>重新加载</button>
+    <Button variant="ghost" type="button" className="mt-2" disabled={!online} onClick={() => location.reload()}>重新加载</Button>
   </div>;
 }
 
@@ -116,23 +125,36 @@ function MarkdownContent({ content, streaming, searchId, className = 'markdown' 
     return () => { active = false; window.removeEventListener('online', load); };
   }, [needsCode, needsMath, needsMermaid]);
   return <div data-search-content={searchId}><MarkdownBoundary fallback={<MarkdownFallback content={content} className={className} />}>{Renderer ?
-    <Renderer className={className} mode={streaming ? 'streaming' : 'static'} isAnimating={streaming} components={{
+    <Renderer className={`${className} space-y-3`} mode={streaming ? 'streaming' : 'static'} isAnimating={streaming} components={{
       a: ({ children, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer">{children}</a>,
-      img: ({ alt }) => <span className="text-base-content/70">[图片：{alt ?? '附件'}]</span>,
+      img: ({ alt }) => <span className="text-muted-foreground">[图片：{alt ?? '附件'}]</span>,
     }} plugins={plugins ?? undefined} controls={{ code: { copy: true, download: false }, mermaid: { fullscreen: true, download: false, copy: false, panZoom: true } }}>{content}</Renderer>
     : <div className={`${className} whitespace-pre-wrap`}>{content}</div>}</MarkdownBoundary></div>;
 }
 
 function Brand({ small = false }: { small?: boolean }) {
-  return <div className="flex items-center gap-3"><span className={`${small ? 'h-9 w-9' : 'h-11 w-11'} inline-flex shrink-0 items-center justify-center rounded-lg bg-neutral text-neutral-content`}><InfinityIcon size={small ? 24 : 29} strokeWidth={1.7} /></span><span className="text-xl font-semibold">EverChat</span></div>;
+  return <div className="flex items-center gap-2 text-primary"><InfinityIcon className={small ? 'size-8' : 'size-10'} strokeWidth={1.8} /><span className="text-xl font-bold tracking-tight">EverChat</span></div>;
+}
+
+function conversationGroup(item: ConversationInfo) {
+  if (item.pinned) return '置顶';
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const date = new Date(item.updatedAt);
+  if (date >= today) return '今天';
+  const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
+  if (date >= yesterday) return '昨天';
+  const week = new Date(today); week.setDate(week.getDate() - 7);
+  if (date >= week) return '过去 7 天';
+  return new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long' }).format(date);
 }
 
 function ThemeControl() {
   const [theme, choose] = useThemeMode();
-  return <fieldset className="space-y-2"><legend className="text-sm font-medium">颜色模式</legend><div className="join">
-    <label className={`join-item btn btn-sm gap-2 ${theme === 'light' ? 'btn-active' : ''}`}><input type="radio" name="theme" value="light" className="sr-only" checked={theme === 'light'} onChange={() => choose('light')} /><Sun size={14} />浅色</label>
-    <label className={`join-item btn btn-sm gap-2 ${theme === 'dark' ? 'btn-active' : ''}`}><input type="radio" name="theme" value="dark" className="sr-only" checked={theme === 'dark'} onChange={() => choose('dark')} /><Moon size={14} />深色</label>
-    <label className={`join-item btn btn-sm gap-2 ${theme === 'system' ? 'btn-active' : ''}`}><input type="radio" name="theme" value="system" className="sr-only" checked={theme === 'system'} onChange={() => choose('system')} /><Monitor size={14} />系统</label>
+  return <fieldset className="space-y-2"><legend className="text-sm font-medium">颜色模式</legend><div className="grid grid-cols-3 gap-2">
+    {([{ value: 'light', label: '浅色', icon: Sun }, { value: 'dark', label: '深色', icon: Moon }, { value: 'system', label: '系统', icon: Monitor }] as const).map(({ value, label, icon: Icon }) => <label key={value} className="relative cursor-pointer">
+      <input type="radio" name="theme" value={value} className="peer sr-only" checked={theme === value} onChange={() => choose(value)} />
+      <span className="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-muted px-3 text-sm peer-checked:bg-accent peer-checked:text-accent-foreground peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-ring"><Icon className="size-4" />{label}</span>
+    </label>)}
   </div></fieldset>;
 }
 
@@ -154,40 +176,40 @@ function Login({ session, onLogin }: { session: SessionInfo; onLogin: () => Prom
     catch (error) { setError(error instanceof Error ? error.message : '登录失败。'); }
     finally { setBusy(false); }
   };
-  return <main className="flex min-h-dvh flex-col bg-base-200">
+  return <main className="flex min-h-dvh flex-col bg-muted">
     <header className="flex items-start justify-between px-7 py-7 sm:px-12"><Brand /><ThemeControl /></header>
     <section className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-7 pb-20">
-      <span className="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-base-100"><LockKeyhole size={24} strokeWidth={1.5} /></span>
+      <span className="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-background"><LockKeyhole strokeWidth={1.5} className="h-[1.5rem] w-[1.5rem]" /></span>
       <h1 className="text-3xl font-semibold leading-snug tracking-tight">登录</h1>
       <form onSubmit={submit} className="mt-7">
         <label htmlFor="password" className="mb-2 block text-xs font-medium">访问密码</label>
-        <input id="password" autoFocus={matchMedia('(min-width: 768px) and (pointer: fine)').matches} required type="password" autoComplete="current-password" className="input h-12 w-full border-base-content/50 bg-base-100" placeholder="输入你的私人空间密码" value={password} onChange={(event) => setPassword(event.target.value)} disabled={!session.configured} />
-        <button className="btn btn-primary mt-4 h-12 w-full justify-between px-5" disabled={busy || !session.configured || !password.trim()}>{busy ? '正在进入…' : '进入我的空间'}{busy ? <span className="loading loading-spinner loading-xs" /> : <ArrowRight size={17} />}</button>
+        <Input id="password" autoFocus={matchMedia('(min-width: 48rem) and (pointer: fine)').matches} required type="password" autoComplete="current-password" className="h-12 w-full border-input bg-background" placeholder="输入你的私人空间密码" value={password} onChange={(event) => setPassword(event.target.value)} disabled={!session.configured} />
+        <Button variant="default" className="mt-4 h-12 w-full justify-between px-5" disabled={busy || !session.configured || !password.trim()}>{busy ? '正在进入…' : '进入我的空间'}{busy ? <Spinner /> : <ArrowRight className="h-[1.0625rem] w-[1.0625rem]" />}</Button>
       </form>
-      {error && <p role="alert" className="mt-4 text-sm font-medium text-base-content">{error}</p>}
-      {!session.configured && <p role="alert" className="mt-4 text-sm font-medium leading-6 text-base-content">服务尚未设置访问密码。请按照 README 配置服务端 Secrets 后重试。</p>}
-      {local && <p className="mt-4 text-xs text-base-content/70">本地密码：<code>everchat-local</code></p>}
+      {error && <p role="alert" className="mt-4 text-sm font-medium text-foreground">{error}</p>}
+      {!session.configured && <p role="alert" className="mt-4 text-sm font-medium leading-6 text-foreground">服务尚未设置访问密码。请按照 README 配置服务端 Secrets 后重试。</p>}
+      {local && <p className="mt-4 text-xs text-muted-foreground">本地密码：<code>everchat-local</code></p>}
     </section>
-    <footer className="pb-6 text-center text-xs text-base-content/70">EverChat</footer>
+    <footer className="pb-6 text-center text-xs text-muted-foreground">EverChat</footer>
   </main>;
 }
 
 function SummaryView({ message, busy, onRetry, onDelete, selected }: { message: Message; busy: boolean; onRetry: () => void; onDelete: () => void; selected: boolean }) {
-  const [open, setOpen] = useState(isActive(message));
   const scroll = useFollowScroll(message.id);
-  if (message.deletedAt) return <article data-testid="summary-message" data-message-id={message.id} className="text-xs text-base-content/70">摘要已删除或失效</article>;
+  if (message.deletedAt) return <article data-testid="summary-message" data-message-id={message.id} className="text-xs text-muted-foreground">摘要已删除或失效</article>;
   return <article data-testid="summary-message" data-message-id={message.id} data-status={message.status} className="space-y-2">
-    <details className="collapse collapse-arrow bg-base-200" open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
-      <summary className="collapse-title min-h-0 py-3 text-sm">{message.summary!.automatic ? '自动历史摘要' : '历史摘要'} · 覆盖 {message.summary!.sourceIds.length} 条{isActive(message) ? ' · 生成中' : message.status === 'failed' ? ' · 生成失败' : message.status === 'cancelled' ? ' · 已停止' : selected ? ' · 当前分支使用' : ' · 未用于当前分支'}</summary>
-      <div className="collapse-content"><div ref={scroll.viewportRef} className="max-h-[min(22rem,40dvh)] overflow-y-auto overscroll-contain"><div ref={scroll.contentRef}>{messageText(message) && <MarkdownContent content={messageText(message)} streaming={isActive(message)} />}</div></div>
-        {message.error && <p role="alert" className="mt-3 text-sm">{message.error}</p>}
-        {message.status === 'cancelled' && <p className="mt-3 text-sm">已停止，摘要未用于上下文。</p>}
-        {!isActive(message) && <GenerationMetadata generation={message.generation} />}
-      </div>
-    </details>
-    <div className="flex flex-wrap gap-2"><button type="button" className="btn btn-ghost btn-xs" disabled={busy || !navigator.onLine} onClick={onRetry}>重新生成摘要</button>
-      <button type="button" className="btn btn-ghost btn-xs" disabled={busy || !navigator.onLine} onClick={onDelete}>删除摘要</button>
+    <div className="flex items-start gap-1">
+      <Disclosure stateKey={`summary:${message.id}`} defaultOpen={isActive(message)} className="min-w-0 flex-1" title={<>{message.summary!.automatic ? '自动历史摘要' : '历史摘要'} · 覆盖 {message.summary!.sourceIds.length} 条{isActive(message) ? ' · 生成中' : message.status === 'failed' ? ' · 生成失败' : message.status === 'cancelled' ? ' · 已停止' : selected ? ' · 当前分支使用' : ' · 未用于当前分支'}</>}>
+        <div ref={scroll.viewportRef} className="max-h-[min(22rem,40dvh)] overflow-y-auto overscroll-contain"><div ref={scroll.contentRef}>{messageText(message) && <MarkdownContent content={messageText(message)} streaming={isActive(message)} />}</div></div>
+      </Disclosure>
+      <ActionMenu label="更多摘要操作" icon={<MoreHorizontal className="h-[1.0625rem] w-[1.0625rem]" />} placement="dropdown-top dropdown-end">
+        <ActionMenuItem disabled={busy || !navigator.onLine} onSelect={onRetry}><RefreshCw className="h-[0.9375rem] w-[0.9375rem]" />重新生成摘要</ActionMenuItem>
+        {!isActive(message) && message.generation && <GenerationMetadata generation={message.generation} />}
+        <ActionMenuItem disabled={busy || !navigator.onLine} onSelect={onDelete}><Trash2 className="h-[0.9375rem] w-[0.9375rem]" />删除摘要</ActionMenuItem>
+      </ActionMenu>
     </div>
+    {message.error && <p role="alert" className="text-sm">{message.error}</p>}
+    {message.status === 'cancelled' && <p className="text-sm">已停止，摘要未用于上下文。</p>}
   </article>;
 }
 
@@ -195,7 +217,6 @@ function MessageView({ conversationId, message, busy, onRetry, onEdit, onQuote, 
   const [copied, setCopied] = useState(false);
   const [forking, setForking] = useState(false), [forkError, setForkError] = useState('');
   const forkLock = useRef(false);
-  const [reasoningOpen, setReasoningOpen] = useState(true);
   const reasoningScroll = useFollowScroll(message.id);
   const copy = async () => {
     try { await navigator.clipboard.writeText(messageText(message)); setCopied(true); setTimeout(() => setCopied(false), 1800); } catch { /* Clipboard can be unavailable outside HTTPS. */ }
@@ -208,32 +229,29 @@ function MessageView({ conversationId, message, busy, onRetry, onEdit, onQuote, 
     finally { forkLock.current = false; setForking(false); }
   };
   if (message.summary) return <SummaryView message={message} busy={busy} onRetry={onRetry} onDelete={onDelete} selected={Boolean(summarySelected)} />;
-  if (message.deletedAt) return <article data-testid={`${message.role}-message`} data-message-id={message.id} data-deleted="true" className={`py-2 text-xs text-base-content/70 ${message.role === 'user' ? 'text-right' : ''}`}>消息已删除</article>;
+  if (message.deletedAt) return <article data-testid={`${message.role}-message`} data-message-id={message.id} data-deleted="true" className={`py-2 text-xs text-muted-foreground ${message.role === 'user' ? 'text-right' : ''}`}>消息已删除</article>;
   const actions = <MessageActions message={message} busy={busy} copied={copied} forking={forking} canFork={canFork} canRetry={canRetry} branchSelected={branchSelected}
     copy={() => void copy()} quote={onQuote} edit={onEdit} remove={onDelete} fork={() => void fork()} retry={onRetry} selectBranch={onSelectBranch} />;
   if (message.role === 'user') return <article data-testid="user-message" data-message-id={message.id} className="group ml-auto w-fit max-w-[90%] sm:max-w-[82%]">
     <DocumentPreviews conversationId={conversationId} files={messageFiles(message)} />
     <ImagePreviews conversationId={conversationId} images={messageImages(message)} />
-    {messageText(message) && <div data-search-content={`${message.id}:content`} className="rounded-2xl rounded-br-md bg-base-200 px-5 py-3.5 text-[15px] leading-7 whitespace-pre-wrap break-words">{messageText(message)}</div>}
+    {messageText(message) && <div data-search-content={`${message.id}:content`} className="rounded-[1.375rem] bg-user-message text-user-message-foreground px-4 py-2.5 text-base leading-7 whitespace-pre-wrap break-words sm:px-4 sm:py-2.5">{messageText(message)}</div>}
     {actions}
-    {message.revisionOf && <p className="mt-1 text-right text-xs text-base-content/70">新版本</p>}
+    {message.revisionOf && <p className="mt-1 text-right text-xs text-muted-foreground">新版本</p>}
     {forkError && <p role="alert" className="mt-1 text-xs">{forkError}</p>}
   </article>;
-  return <article data-testid="assistant-message" data-message-id={message.id} data-status={message.status} data-durable-offset={message.durableOffset ?? 0} data-live-offset={message.liveOffset ?? message.durableOffset ?? 0} className="group flex gap-3 sm:gap-4">
-    <span className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-base-200"><InfinityIcon size={20} strokeWidth={1.7} /></span>
-    <div className="min-w-0 flex-1 pt-1">
-      <div className="mb-3 flex items-center gap-3 text-xs"><span className="font-semibold">{message.modelName || message.model || 'EverChat'}</span>{message.revisionOf && <span className="text-base-content/70">新版本</span>}{isActive(message) && <span className="flex items-center gap-1.5 text-base-content/70"><span className="loading loading-dots loading-xs" />{message.waitingForSummary ? '等待历史摘要' : message.status === 'queued' ? '排队中' : '生成中'}</span>}</div>
-      {messageText(message, 'reasoning') && <details open={reasoningOpen} onToggle={(event) => setReasoningOpen(event.currentTarget.open)} className="collapse collapse-arrow mb-4 bg-base-200" data-testid="message-reasoning">
-        <summary className="collapse-title min-h-0 py-3 text-sm font-medium">思考过程</summary>
-        <div className="collapse-content text-sm"><div ref={reasoningScroll.viewportRef} className="max-h-[min(22rem,40dvh)] overflow-y-auto overscroll-contain break-words"><div ref={reasoningScroll.contentRef}><MarkdownContent content={messageText(message, 'reasoning')} searchId={`${message.id}:reasoning`} streaming={isActive(message)} /></div></div></div>
-      </details>}
-      <ToolActivity task={message.tools} />
-      {messageText(message) ? <MarkdownContent content={messageText(message)} searchId={`${message.id}:content`} streaming={isActive(message)} /> : isActive(message) && !messageText(message, 'reasoning') && !message.tools ? <p className="py-2 text-sm text-base-content/70">{message.waitingForSummary ? '压缩历史后开始回答…' : '准备中…'}</p> : null}
-      {message.status === 'failed' && <p role="alert" className="mt-4 rounded-lg bg-error/5 px-3 py-2 text-xs font-medium leading-6 text-base-content">{message.error ?? '生成失败，已保存部分内容。'}</p>}
-      {message.status === 'cancelled' && <p className="mt-4 text-xs text-base-content/70">已停止</p>}
+  const toolErrorVisible = Boolean(message.error && message.tools?.calls.some(({ result }) => result?.status === 'failed' && result.error === message.error));
+  return <article data-testid="assistant-message" data-message-id={message.id} data-status={message.status} data-durable-offset={message.durableOffset ?? 0} data-live-offset={message.liveOffset ?? message.durableOffset ?? 0} className="group min-w-0">
+      <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs"><InfinityIcon className="h-4 w-4 shrink-0" aria-hidden="true" strokeWidth={1.7} /><span className="min-w-0 break-words font-semibold">{message.modelName || message.model || 'EverChat'}</span>{message.revisionOf && <span className="text-muted-foreground">新版本</span>}{isActive(message) && <span className="flex items-center gap-1.5 text-muted-foreground"><Spinner />{message.waitingForSummary ? '等待历史摘要' : message.status === 'queued' ? '排队中' : '生成中'}</span>}{message.status === 'failed' && toolErrorVisible && <span>生成失败</span>}</div>
+      {messageText(message, 'reasoning') && <Disclosure stateKey={`reasoning:${message.id}`} defaultOpen title="思考过程" className="mb-2" testId="message-reasoning">
+        <div ref={reasoningScroll.viewportRef} className="reasoning-content max-h-[min(22rem,40dvh)] overflow-y-auto overscroll-contain break-words"><div ref={reasoningScroll.contentRef}><MarkdownContent content={messageText(message, 'reasoning')} searchId={`${message.id}:reasoning`} streaming={isActive(message)} /></div></div>
+      </Disclosure>}
+      <ToolActivity task={message.tools} stateKey={`tools:${message.id}`} />
+      {messageText(message) ? <MarkdownContent content={messageText(message)} searchId={`${message.id}:content`} streaming={isActive(message)} /> : isActive(message) && !messageText(message, 'reasoning') && !message.tools ? <p className="py-2 text-sm text-muted-foreground">{message.waitingForSummary ? '压缩历史后开始回答…' : '准备中…'}</p> : null}
+      {message.status === 'failed' && !toolErrorVisible && <p role="alert" className="mt-4 rounded-lg bg-destructive/5 px-3 py-2 text-xs font-medium leading-6 text-foreground">{message.error ?? '生成失败，已保存部分内容。'}</p>}
+      {message.status === 'cancelled' && <p className="mt-4 text-xs text-muted-foreground">已停止</p>}
       {actions}
       {forkError && <p role="alert" className="mt-1 text-xs">{forkError}</p>}
-    </div>
   </article>;
 }
 
@@ -277,8 +295,9 @@ export function App() {
     setSidebarOpen(false);
     requestAnimationFrame(() => { if (mobileSidebarTrigger.current?.checkVisibility()) mobileSidebarTrigger.current.focus(); });
   }, []);
-  const { sidebar, desktop, modal: sidebarModal } = useSidebar(sidebarOpen, closeSidebar);
-  const settings = useRef<HTMLDialogElement>(null);
+  const { desktop } = useSidebar(sidebarOpen, closeSidebar);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => read('sidebar-collapsed', false));
+  const toggleSidebar = () => { if (desktop) setSidebarCollapsed((value) => { write('sidebar-collapsed', !value); return !value; }); else setSidebarOpen((value) => !value); };
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [requestedSettingsTab, setRequestedSettingsTab] = useState<SettingsTab | undefined>();
   const returnToConversationSettings = useRef(false);
@@ -286,6 +305,7 @@ export function App() {
   const [branchHead, setBranchHead] = useState<string | null>(null);
   const [messageMutation, setMessageMutation] = useState<{ id: string; mode: 'edit' | 'delete' } | null>(null);
   const [conversationSettingsOpen, setConversationSettingsOpen] = useState(false);
+  const [focusWebTools, setFocusWebTools] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [summaryTarget, setSummaryTarget] = useState<{ throughId: string; selection?: ModelSelection } | null>(null);
   const [newConversationSettings, setNewConversationSettings] = useState(() => ({ ...DEFAULT_CONVERSATION_SETTINGS, ...read('conversation-settings:new', DEFAULT_CONVERSATION_SETTINGS) }));
@@ -303,7 +323,7 @@ export function App() {
   const settingsTrigger = useRef<HTMLElement | null>(null);
   const openSettings = () => {
     settingsTrigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    setSidebarOpen(false); setSettingsOpen(true); settings.current?.showModal();
+    setSidebarOpen(false); setSettingsOpen(true);
   };
   const providerSaved = useCallback((config: ProviderSettings) => {
     const profile = config.providers.find((profile) => profile.id === config.activeProviderId);
@@ -337,7 +357,7 @@ export function App() {
   useEffect(() => { setConversationSearchFor(null); setSearchJump((current) => current?.id === selected ? current : null); }, [selected]);
   useEffect(() => {
     const find = (event: KeyboardEvent) => {
-      if (canSearch && !event.isComposing && (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'f' && !document.querySelector('dialog[open]')) {
+      if (canSearch && !event.isComposing && (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'f' && !hasOpenModal()) {
         event.preventDefault(); setConversationSearchFor(selected);
         document.querySelector<HTMLInputElement>('#conversation-search input')?.focus();
       }
@@ -464,7 +484,7 @@ export function App() {
     setDraft(saved.text); setRevisionOf(saved.revisionOf); setDraftImages(saved.images ?? []); setDraftFiles(saved.files ?? []); setError('');
   }, [selected]);
   useEffect(() => { setBranchHead(selected ? read<string | null>(`branch-head:${selected}`, null) : null); }, [selected]);
-  useEffect(() => { setConversationSettingsOpen(false); }, [selected]);
+  useEffect(() => { setConversationSettingsOpen(false); setFocusWebTools(false); }, [selected]);
   useEffect(() => { setSummaryOpen(false); setSummaryTarget(null); }, [selected]);
   useEffect(() => {
     if (!selectedModel?.reasoningSupported) { setReasoningEffort(''); return; }
@@ -473,7 +493,21 @@ export function App() {
   }, [selectedModel]);
   useEffect(() => {
     const node = editor.current;
-    if (node) { node.style.height = 'auto'; node.style.height = `${Math.min(node.scrollHeight, 160)}px`; }
+    if (!node) return;
+    const resize = () => { node.style.height = 'auto'; node.style.height = `${node.scrollHeight}px`; };
+    resize();
+    // Font preferences and wrapping can change without changing the draft.
+    const metrics = () => { const style = getComputedStyle(node); return `${node.clientWidth}:${style.fontSize}:${style.lineHeight}:${style.paddingBlock}`; };
+    let previous = metrics();
+    let frame = 0;
+    const schedule = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(resize); };
+    const observer = new ResizeObserver(() => {
+      const next = metrics();
+      if (next !== previous) { previous = next; schedule(); }
+    });
+    observer.observe(node);
+    window.addEventListener('resize', schedule);
+    return () => { cancelAnimationFrame(frame); observer.disconnect(); window.removeEventListener('resize', schedule); };
   }, [draft]);
   const updateDraft = (text: string) => { setDraft(text); write(`draft:${selected ?? 'new'}`, { text, revisionOf, images: draftImages, files: draftFiles }); };
   useEffect(() => {
@@ -492,7 +526,7 @@ export function App() {
     if (!inputFiles.length || busy || imageUpload.current) return;
     if (!navigator.onLine || !session?.attachmentsConfigured) { setError('附件上传需要联网并配置文件存储。'); return; }
     if (selected && !currentConversation) { setError('请等待对话同步后再添加附件。'); return; }
-    if (kind === 'image' && !selectedModel?.metadata.imageInput) { setError('请先选择支持图片的视觉模型。'); return; }
+    if (kind === 'image' && !canAttemptCapability(selectedModel?.metadata, 'imageInput')) { setError('请先选择支持图片的视觉模型。'); return; }
     if (inputFiles.length + (kind === 'image' ? draftImages.length : draftFiles.length) > (kind === 'image' ? MAX_MESSAGE_IMAGES : MAX_MESSAGE_DOCUMENTS)) { setError(kind === 'image' ? '每条消息最多添加 4 张图片。' : '每条消息最多添加 4 个文本文件。'); return; }
     const origin = selected, controller = new AbortController(), operation = { origin, controller };
     imageUpload.current = operation; setImageProgress({ name: inputFiles[0].name, percent: 0, kind }); setError('');
@@ -555,7 +589,7 @@ export function App() {
     if (snapshot.deletedAt) return;
     const target = editorFocusTarget.id;
     const frame = requestAnimationFrame(() => {
-      if (selectedRef.current === target && editor.current && !editor.current.disabled && !document.querySelector('dialog[open]')) editor.current.focus();
+      if (selectedRef.current === target && editor.current && !editor.current.disabled && !hasOpenModal()) editor.current.focus();
       setEditorFocusTarget(null);
     });
     return () => cancelAnimationFrame(frame);
@@ -639,7 +673,6 @@ export function App() {
     const item = { conversation: currentConversation, input };
     if (!commitPending([...pendingRef.current, item])) throw new Error('无法保存待发送请求。');
     await deliver(item);
-    requestAnimationFrame(() => { if (selectedRef.current === item.conversation.id) editor.current?.focus(); });
   };
   const cancel = async () => {
     if (!active?.runId || !selected) return;
@@ -694,8 +727,8 @@ export function App() {
       setLocalConversations([]); queryClient.clear(); navigate(null, true); setDraft(''); setRevisionOf(undefined);
       setNewConversationSettings({ ...DEFAULT_CONVERSATION_SETTINGS }); setSettingsDraft(null); setConversationSettingsOpen(false);
       returnToConversationSettings.current = false;
-      loggedOut(); settings.current?.close();
-    } catch (error) { setError(error instanceof Error ? error.message : '退出失败，请联网后重试。'); settings.current?.close(); }
+      loggedOut(); setSettingsOpen(false);
+    } catch (error) { setError(error instanceof Error ? error.message : '退出失败，请联网后重试。'); setSettingsOpen(false); }
   };
   const exportChat = (format: 'md' | 'txt' | 'html') => {
     if (!selected) return;
@@ -772,124 +805,124 @@ export function App() {
     if (selectedRef.current === sourceId) select(result.id);
   };
 
-  if (!session) return <main className="flex min-h-dvh flex-col items-center justify-center gap-6"><Brand />{bootError ? <><p className="max-w-sm px-5 text-center text-sm font-medium text-base-content" role="alert">{bootError}</p><button className="btn" onClick={boot}>重新连接</button></> : <span className="loading loading-dots loading-sm text-base-content/70" />}</main>;
-  if (!session.authenticated) return <Login session={session} onLogin={async () => { await boot(); }} />;
-  const statusText = connection === 'unavailable' ? '同步失败' : connection === 'offline' ? '离线' : connection === 'connecting' ? '连接中' : hasUnconfirmed ? '保存中' : '已同步';
-  const welcome = !invalidRoute && !syncError && (!selected || (!snapshot.messages.length && !currentPending && !loading));
-  return <div className="flex h-dvh min-h-0 overflow-hidden">
-    {sidebarModal && <button tabIndex={-1} aria-label="关闭对话列表" className="fixed inset-0 z-30 bg-neutral/20 lg:hidden" onClick={closeSidebar} />}
-    <aside ref={sidebar} inert={!desktop && !sidebarOpen} role={sidebarModal ? 'dialog' : undefined} aria-modal={sidebarModal || undefined} aria-label="对话列表" className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} sidebar-surface fixed inset-y-0 left-0 z-40 flex w-70 max-w-[90vw] shrink-0 flex-col border-r border-base-300 bg-base-200 transition-transform lg:static lg:translate-x-0`}>
-      <div className="flex items-center justify-between px-5 py-5"><Brand small /><button className="btn btn-ghost btn-sm btn-square lg:hidden" aria-label="收起侧栏" onClick={closeSidebar}><X size={18} /></button></div>
-      <div className="px-4"><button className="btn h-11 w-full justify-between border-base-content/50 bg-base-100 px-4 text-sm font-medium" onClick={() => select(null)}><span className="flex items-center gap-2.5"><Plus size={17} />开启新对话</span><span><MessageCircle size={15} /></span></button></div>
-      <label className="input mx-4 mt-3 h-11 w-auto gap-2 border-base-content/50 bg-base-100"><Search size={14} /><input className="text-xs placeholder:text-base-content/70" placeholder="搜索你的对话" aria-label="搜索对话" maxLength={200} value={search} onChange={(event) => setSearch(event.target.value)} /></label>
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pt-4">
-        <div role="tablist" className="tabs tabs-border tabs-sm mb-3"><input type="radio" role="tab" name="conversation-list" className="tab" aria-label="对话" aria-selected={!archivedList} checked={!archivedList} onChange={() => setArchivedList(false)} /><input type="radio" role="tab" name="conversation-list" className="tab" aria-label="归档" aria-selected={archivedList} checked={archivedList} onChange={() => setArchivedList(true)} /></div>
-        <ul className="menu w-full gap-1 p-0 text-sm">
-          {visibleConversations.map((item) => <li key={item.id}><a href={conversationUrl(item.id)} onClick={(event) => {
-            if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-            event.preventDefault(); select(item.id);
-          }} aria-current={item.id === selected ? 'page' : undefined} className={`${item.id === selected ? 'menu-active bg-primary! text-primary-content! hover:bg-primary!' : ''} h-11 min-w-0 gap-3 rounded-lg px-3 font-normal`}><MessageCircle size={15} className="shrink-0" /><span className="truncate">{item.title}</span>{item.pinned && <Pin size={12} aria-hidden="true" className="shrink-0" />}{pending.some((p) => p.conversation.id === item.id) && <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />}</a></li>)}
-        </ul>
-        {!visibleConversations.length && <p className="px-3 text-xs text-base-content/70">{search ? '没有找到相关对话' : archivedList ? '暂无归档' : '暂无对话'}</p>}
-        {search.trim() && <LibrarySearch query={search} archived={archivedList} open={openSearchResult} />}
-      </div>
-      <button aria-label="空间设置" className="mx-3 mb-3 flex items-center gap-3 rounded-lg px-3 py-3 text-left hover:bg-base-300" onClick={openSettings}><span className="flex h-8 w-8 items-center justify-center rounded-full bg-base-100 text-xs">我</span><span className="flex-1"><span className="block text-xs font-medium">私人空间</span></span><Settings size={16} /></button>
-    </aside>
-
-    <div inert={sidebarModal} className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <header className="chat-header flex h-14 shrink-0 items-center gap-2 border-b border-base-300 px-2 sm:h-16 sm:px-6">
-        <button ref={mobileSidebarTrigger} className="btn btn-ghost btn-square h-11 w-11 shrink-0 lg:hidden" onClick={() => setSidebarOpen(true)} aria-label="打开对话列表" aria-expanded={sidebarOpen}><Menu size={20} /></button>
-        <p data-testid="conversation-title" className="min-w-0 flex-1 truncate text-sm font-medium" title={currentConversation?.title}>{invalidRoute ? '页面不可用' : currentConversation?.title ?? (selected ? '对话' : '新对话')}</p>
-        <div className="flex shrink-0 items-center gap-0 sm:gap-1">
-          <span aria-live="polite" className="mr-3 hidden items-center gap-1.5 text-xs text-base-content/70 md:flex" title={syncedAt ? `上次同步 ${new Date(syncedAt).toLocaleTimeString('zh-CN')}` : undefined}>{connection === 'offline' ? <CloudOff size={14} /> : <span className={`status status-xs ${connection === 'connected' && !hasUnconfirmed ? 'status-success' : 'status-warning'}`} />}{statusText}</span>
-          {canSearch && <button ref={searchTrigger} type="button" aria-label="搜索当前对话" aria-expanded={searchOpen} aria-controls={searchOpen ? 'conversation-search' : undefined} title="搜索当前对话（Ctrl / ⌘ F）" className="btn btn-ghost btn-square h-11 w-11" onClick={() => searchOpen ? closeConversationSearch() : setConversationSearchFor(selected)}><Search size={18} /></button>}
-          <button type="button" aria-label="会话参数" title="会话参数" className="btn btn-ghost btn-square h-11 w-11 hidden md:inline-flex" disabled={Boolean(invalidRoute || syncError)} onClick={() => setConversationSettingsOpen(true)}><SlidersHorizontal size={18} /></button>
-          <ConversationActions key={selected ?? 'new'} conversation={currentConversation} disabled={connection === 'offline'} update={updateConversation} remove={deleteConversation} duplicate={duplicateConversation} exports={<>
-            <li><button type="button" disabled={!snapshot.messages.length} onClick={() => exportChat('md')}>Markdown</button></li>
-            <li><button type="button" disabled={!snapshot.messages.length} onClick={() => exportChat('txt')}>纯文本</button></li>
-            <li><button type="button" disabled={!snapshot.messages.length} onClick={() => exportChat('html')}>HTML</button></li>
-            <li><button type="button" disabled={!currentConversation} onClick={() => void exportBackup()}>下载备份</button></li>
-            <li><button type="button" onClick={() => backupInput.current?.click()}>导入备份</button></li>
-          </>}>
-            <li className="md:hidden"><button type="button" disabled={Boolean(invalidRoute || syncError)} onClick={() => setConversationSettingsOpen(true)}><SlidersHorizontal size={16} />会话参数</button></li>
-            {session.attachmentsConfigured && selected && currentConversation && !snapshot.deletedAt && <li><button type="button" aria-label="管理对话文件" onClick={() => setAttachmentsFor(selected)}><FolderOpen size={16} />对话文件</button></li>}
-            {selected && latestCompletedAssistant && <li><button type="button" disabled={busy || connection === 'offline' || loading} onClick={() => { setSummaryTarget(null); setSummaryOpen(true); }}><BookOpen size={16} />压缩历史</button></li>}
-          </ConversationActions>
-          <input ref={backupInput} type="file" accept=".zip,.json,application/zip,application/json" className="hidden" onChange={(event) => void importBackup(event)} />
-        </div>
-      </header>
-      {searchOpen && <ConversationSearch key={`${selected}:${searchJump?.token ?? ''}`} content={content} viewport={viewport} close={closeConversationSearch} initial={searchJump ?? undefined} />}
-      {connection === 'offline' && <div role="status" className="flex items-center justify-center gap-2 border-b border-base-300 bg-base-200 px-4 py-2 text-xs text-base-content"><WifiOff size={13} />你现在离线，已保存的对话仍可阅读。新消息将在联网后发送。</div>}
-      <div ref={viewportRef} data-testid="message-viewport" className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain">
-        {welcome ? <section ref={contentRef} className="welcome mx-auto flex min-h-full w-full max-w-3xl flex-col justify-center px-6 py-8 sm:px-10">
-          <h1 className="text-2xl leading-snug font-semibold sm:text-3xl">新对话</h1>
-          {selectedModel && <div className="mt-5 flex flex-wrap gap-2">
-            {starters.map(({ icon: Icon, title, prompt }) => <button key={title} className="btn btn-ghost min-h-11 gap-2 px-3 text-sm font-normal" onClick={() => { updateDraft(prompt); editor.current?.focus(); }}><Icon size={16} strokeWidth={1.5} />{title}</button>)}
-          </div>}
-        </section> : <section ref={contentRef} aria-label="对话消息" className="mx-auto w-full max-w-3xl space-y-8 px-5 py-8 sm:px-9 sm:py-10">
-          {loading && !snapshot.messages.length && <div className="py-10 text-center text-xs text-base-content/70"><span className="loading loading-dots loading-sm" /><p className="mt-3">正在找回我们的对话…</p></div>}
-          {snapshot.messages.map((message) => <MessageView conversationId={selected!} key={message.id} message={message} busy={busy} onRetry={() => void retry(message)} onEdit={() => edit(message)} onQuote={() => quote(message)} onDelete={() => setMessageMutation({ id: message.id, mode: 'delete' })} canRetry={liveUserIds.has(message.parentId ?? '')} branchSelected={message.role === 'assistant' && message.status === 'completed' && message.id === currentBranchHead} onSelectBranch={() => selectBranch(message)} canFork={Boolean(selected && connection !== 'offline' && !syncError && !loading)} onFork={() => duplicateConversation(message.id)} summarySelected={previewHistory?.summary?.id === message.id} />)}
-          {currentPending && <article className="ml-auto max-w-[90%] rounded-2xl border border-dashed border-base-content/50 bg-base-200 px-5 py-4"><DocumentPreviews conversationId={currentPending.conversation.id} files={currentPending.files ?? []} /><ImagePreviews conversationId={currentPending.conversation.id} images={currentPending.images ?? []} /><p className="text-sm leading-7 whitespace-pre-wrap">{currentPending.input.summaryThrough ? '历史摘要请求' : currentPending.input.content ?? '新版本'}</p><div className="mt-2 flex items-center gap-2 text-xs text-base-content/70"><CloudOff size={12} />{currentPending.error ? '发送失败' : '等待发送'}</div>{currentPending.error && <p className="mt-2 text-xs font-medium leading-5 text-base-content">{currentPending.error}</p>}<div className="mt-2 flex gap-1"><button className="btn btn-ghost btn-xs" onClick={() => { const clean = { ...currentPending, error: undefined }; commitPending(pendingRef.current.map((item) => item.input.requestId === clean.input.requestId ? clean : item)); void deliver(clean); }}>重试</button>{(!currentPending.input.summaryThrough || currentPending.error) && <button className="btn btn-ghost btn-xs" onClick={() => { setDraft(currentPending.input.content ?? ''); setRevisionOf(currentPending.input.revisionOf); setDraftImages(currentPending.images ?? []); setDraftFiles(currentPending.files ?? []); write(`draft:${selected}`, { text: currentPending.input.content ?? '', revisionOf: currentPending.input.revisionOf, images: currentPending.images ?? [], files: currentPending.files ?? [] }); commitPending(pendingRef.current.filter((item) => item.input.requestId !== currentPending.input.requestId)); }}>{currentPending.input.summaryThrough ? '取消请求' : '编辑'}</button>}</div></article>}
-        </section>}
-      </div>
-
-      <div className="composer-region relative shrink-0 px-3 pt-2 pb-3 sm:px-8 sm:pb-5" style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
-        {!atBottom && <button className="btn btn-circle btn-sm absolute -top-12 left-1/2 z-10 border-base-content/50 bg-base-100 shadow-sm" aria-label="滚动到最新消息" onClick={scrollToBottom}><ArrowDown size={16} /></button>}
-        <div className="mx-auto w-full max-w-3xl">
-          {invalidRoute && <div role="alert" className="alert alert-error mb-3 text-xs"><span>找不到这个页面。</span><button type="button" className="btn btn-sm" onClick={() => select(null)}>开启新对话</button></div>}
-          {syncError && <div role="alert" className="alert alert-error mb-3 text-xs"><span>{syncError}</span><button type="button" className="btn btn-sm" onClick={reconnect}>重新同步</button></div>}
-          {error && <p role="alert" className="mb-3 text-xs font-medium text-base-content">{error}</p>}
-          {revisionOf && <div className="mb-2 flex items-center justify-between text-xs text-base-content/70"><span>编辑消息</span><button className="btn btn-ghost btn-xs" onClick={() => { setRevisionOf(undefined); write(`draft:${selected}`, { text: draft, images: draftImages, files: draftFiles }); }}>取消</button></div>}
-          <form onSubmit={submit} data-testid="chat-composer" className="chat-composer rounded-2xl border border-base-content/50 bg-base-100 p-2 sm:p-3">
-            {selected && (draftFiles.length > 0 || draftImages.length > 0) && <div data-testid="draft-previews" className="draft-previews mb-2 max-h-[min(9rem,20dvh)] overflow-y-auto overscroll-contain p-1">
-              <DocumentPreviews conversationId={selected} files={draftFiles} remove={imageProgress ? undefined : removeDocument} />
-              <ImagePreviews conversationId={selected} images={draftImages} remove={imageProgress ? undefined : removeImage} />
-            </div>}
-            {imageProgress && <div className="flex items-center gap-2 py-2 text-xs" role="status"><span className="min-w-0 flex-1 truncate">{imageProgress.name}</span><progress className="progress w-20 shrink-0" value={imageProgress.percent} max={100} aria-label={imageProgress.kind === 'image' ? '图片上传进度' : '文件上传进度'} /><button type="button" className="btn btn-ghost btn-sm" onClick={() => imageUpload.current?.controller.abort()}>取消上传</button></div>}
-            <textarea onPaste={(event) => { const files = Array.from(event.clipboardData.files); if (files.length) { event.preventDefault(); void addImages(files); } }} ref={editor} disabled={Boolean(snapshot.deletedAt)} aria-label="消息" className="composer-editor textarea textarea-ghost block min-h-12 w-full resize-none border-0 px-2 py-1 text-base leading-6 placeholder:text-base-content/70 outline-none! focus:outline-none!" placeholder={active ? '生成中…' : '输入消息…'} value={draft} maxLength={16000} rows={2} onChange={(event) => updateDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void submit(); } }} />
-            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1" data-testid="composer-toolbar">
-              {session.attachmentsConfigured && <ActionMenu label="添加附件" icon={<Paperclip size={18} />} placement="dropdown-top dropdown-start" disabled={busy || !navigator.onLine}>
-                <li><button type="button" aria-label="添加文件" disabled={draftFiles.length >= MAX_MESSAGE_DOCUMENTS} onClick={() => fileInput.current?.click()}><Paperclip size={16} />文件</button></li>
-                <li><button type="button" aria-label="添加图片" disabled={draftImages.length >= MAX_MESSAGE_IMAGES} onClick={() => imageInput.current?.click()}><ImagePlus size={16} />图片</button></li>
-              </ActionMenu>}
-              <input ref={fileInput} type="file" accept=".pdf,.txt,.md,.csv,.js,.jsx,.ts,.tsx,.py,.rs,.go,.c,.cpp,.h,.css,.json,.yaml,.yml,.toml,.sh" multiple className="hidden" aria-label="选择聊天文件" onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ''; void addDocuments(files); }} />
-              <input ref={imageInput} type="file" accept="image/png,image/jpeg,image/webp" multiple className="hidden" aria-label="选择聊天图片" onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ''; void addImages(files); }} />
-              {selectedModel ? <select aria-label="聊天模型" title={`${selectedModel.providerName} · ${selectedModel.name}`} className="select select-ghost h-11 min-w-[44px] flex-1 truncate border-transparent pl-2 pr-6 text-xs sm:max-w-80 sm:text-sm" value={modelSelectionKey(selectedModel)} onChange={(event) => { setModelChoice(event.target.value); write('chat-model', event.target.value); }}>
-                {[...new Set(models.map((model) => model.providerId))].map((providerId) => <optgroup key={providerId} label={models.find((model) => model.providerId === providerId)!.providerName}>
-                  {models.filter((model) => model.providerId === providerId).map((model) => <option key={model.model} value={modelSelectionKey(model)}>{model.name}</option>)}
-                </optgroup>)}
-              </select> : <button type="button" className="btn btn-ghost min-w-0 flex-1 text-sm" onClick={() => { setRequestedSettingsTab('providers'); openSettings(); }}>配置模型</button>}
-              {selectedModel?.reasoningSupported && selectedModel.reasoningEfforts.length > 0 && <select aria-label="思维强度" title={`思维强度：${reasoningEffort ? effortLabels[reasoningEffort] : '默认'}`} className="select select-ghost h-11 w-16 shrink-0 border-transparent pl-1 pr-5 text-xs sm:w-24" value={reasoningEffort} onChange={(event) => { const value = event.target.value as ReasoningEffort | ''; setReasoningEffort(value); write(`reasoning-effort:${modelSelectionKey(selectedModel)}`, value); }}>
-                <option value="">思考</option>{selectedModel.reasoningEfforts.map((effort) => <option key={effort} value={effort}>{effortLabels[effort]}</option>)}
-              </select>}
-              <button type="button" className={`btn btn-ghost btn-square h-11 w-11 shrink-0 ${conversationSettings.tools?.length ? 'bg-base-200' : ''}`} aria-label="联网工具" aria-pressed={Boolean(conversationSettings.tools?.length)} title={conversationSettings.tools?.length ? '联网已开启' : '联网工具'} onClick={() => setConversationSettingsOpen(true)}><Globe size={18} /></button>
-              {active ? <button type="button" className="btn btn-square ml-auto h-11 w-11 shrink-0 rounded-xl" aria-label="停止生成" title="停止生成" onClick={cancel} disabled={!navigator.onLine}><Square size={16} /></button> : <button type="submit" className="btn btn-primary btn-square ml-auto h-11 w-11 shrink-0 rounded-xl" aria-label="发送消息" disabled={(!draft.trim() && !draftImages.length && !draftFiles.length) || busy || !selectedModel}>{sending ? <span className="loading loading-spinner loading-xs" /> : <ArrowUp size={19} />}</button>}
-            </div>
-            {contextPreview?.estimate && <ContextEstimateView estimate={contextPreview.estimate} compressing={contextPreview.compressing} />}
-            {contextPreview?.error && <p className="mt-2 text-xs text-base-content/80">{contextPreview.error}</p>}
-          </form>
-        </div>
-      </div>
-    </div>
-    <dialog id="space-settings" ref={settings} className="modal" onClose={() => {
+  const closeSettings = () => {
       setSettingsOpen(false); setRequestedSettingsTab(undefined);
       if (!returnToConversationSettings.current) requestAnimationFrame(() => {
         const target = settingsTrigger.current;
         if (target?.isConnected && target.checkVisibility() && !target.closest('[inert]')) target.focus({ preventScroll: true });
         else if (mobileSidebarTrigger.current?.checkVisibility()) mobileSidebarTrigger.current.focus({ preventScroll: true });
       });
-      if (returnToConversationSettings.current) { returnToConversationSettings.current = false; setConversationSettingsOpen(true); }
-    }} aria-labelledby="space-settings-title">
-      <div className="settings-dialog modal-box flex h-[min(48rem,92dvh)] max-h-[92dvh] max-w-5xl flex-col overflow-hidden p-0">
-        <div className="flex shrink-0 items-center justify-between border-b border-base-content/30 px-6 py-4"><h2 id="space-settings-title" className="text-lg font-semibold">设置</h2><form method="dialog"><button className="btn btn-ghost btn-sm btn-square" aria-label="关闭设置"><X size={18} /></button></form></div>
-        {backupTask && <BackupProgressDialog title={backupTask.title} progress={backupTask.progress} cancel={() => backupOperation.current?.abort()} canRestoreFocus={() => selectedRef.current === backupTask.route && storageEpoch() === backupTask.epoch} />}
-        <ProviderSettingsPanel open={settingsOpen} requestedTab={requestedSettingsTab} onSaved={providerSaved} themeControl={<ThemeControl />} onLogout={() => void logout()} />
+      if (returnToConversationSettings.current) {
+        returnToConversationSettings.current = false;
+        setFocusWebTools(requestedSettingsTab === 'web-tools');
+        setConversationSettingsOpen(true);
+      }
+  };
+  if (!session) return <main className="flex min-h-dvh flex-col items-center justify-center gap-6"><Brand />{bootError ? <><p className="max-w-sm px-5 text-center text-sm font-medium text-foreground" role="alert">{bootError}</p><Button variant="secondary" onClick={boot}>重新连接</Button></> : <Spinner className="text-muted-foreground" />}</main>;
+  if (!session.authenticated) return <Login session={session} onLogin={async () => { await boot(); }} />;
+  const statusText = connection === 'unavailable' ? '同步失败' : connection === 'offline' ? '离线' : connection === 'connecting' ? '连接中' : hasUnconfirmed ? '保存中' : '已同步';
+  const welcome = !invalidRoute && !syncError && (!selected || (!snapshot.messages.length && !currentPending && !loading));
+  return <div className="flex h-dvh min-h-0 overflow-hidden">
+    <Sidebar desktop={desktop} collapsed={sidebarCollapsed} open={sidebarOpen} onOpenChange={setSidebarOpen} trigger={mobileSidebarTrigger}>
+      <div className="flex items-center justify-between min-h-14 px-3 py-1.5"><Brand small /><Button variant="ghost" size="icon" aria-label="收起侧栏" onClick={toggleSidebar}><X className="h-[1.125rem] w-[1.125rem]" /></Button></div>
+      <div className="px-3"><Button variant="secondary" className="h-11 w-full justify-between bg-accent px-4 text-sm font-medium text-accent-foreground" onClick={() => select(null)}><span className="flex items-center gap-2.5"><Plus className="h-[1.0625rem] w-[1.0625rem]" />开启新对话</span><span><MessageCircle className="h-[0.9375rem] w-[0.9375rem]" /></span></Button></div>
+      <label className="field-control mx-3 mt-2 h-11 w-auto gap-2 border-input bg-background"><Search className="h-[0.875rem] w-[0.875rem]" /><input className="text-xs placeholder:text-muted-foreground" placeholder="搜索你的对话" aria-label="搜索对话" maxLength={200} value={search} onChange={(event) => setSearch(event.target.value)} /></label>
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pt-2">
+        <Tabs value={archivedList ? 'archived' : 'active'} onValueChange={(value) => setArchivedList(value === 'archived')}><TabsList className="mb-1 h-auto w-full bg-transparent p-0"><TabsTrigger value="active">对话</TabsTrigger><TabsTrigger value="archived">归档</TabsTrigger></TabsList></Tabs>
+        <ul className="w-full space-y-0.5 p-0 text-sm">
+          {visibleConversations.map((item, index) => <li key={item.id}>{(!index || conversationGroup(item) !== conversationGroup(visibleConversations[index - 1])) && <h2 className="px-3 pt-3 pb-1 text-xs font-normal text-muted-foreground">{conversationGroup(item)}</h2>}<a href={conversationUrl(item.id)} onClick={(event) => {
+            if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+            event.preventDefault(); select(item.id);
+          }} aria-current={item.id === selected ? 'page' : undefined} aria-description={[item.pinned ? '已置顶' : '', pending.some((p) => p.conversation.id === item.id) ? '有待发送消息' : ''].filter(Boolean).join('，') || undefined} className="sidebar-link min-w-0 font-normal"><span className="truncate">{item.title}</span>{item.pinned && <Pin aria-hidden="true" className="shrink-0 h-[0.75rem] w-[0.75rem]" />}{pending.some((p) => p.conversation.id === item.id) && <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />}</a></li>)}
+        </ul>
+        {!visibleConversations.length && <p className="px-3 text-xs text-muted-foreground">{search ? '没有找到相关对话' : archivedList ? '暂无归档' : '暂无对话'}</p>}
+        {search.trim() && <LibrarySearch query={search} archived={archivedList} open={openSearchResult} />}
       </div>
-      <form method="dialog" className="modal-backdrop"><button>关闭</button></form>
-    </dialog>
-    {session?.authenticated && <ConversationSettingsDialog key={selected ?? 'new'} id={selected} initial={selected ? snapshot.settings ?? DEFAULT_CONVERSATION_SETTINGS : newConversationSettings} model={selectedModel} models={models} effort={reasoningEffort} showReasoning={session.showReasoning ?? false} open={conversationSettingsOpen} close={() => setConversationSettingsOpen(false)} onDraft={settingsDraftChanged} managePresets={() => { returnToConversationSettings.current = true; setRequestedSettingsTab('presets'); openSettings(); }} manageWebTools={() => { returnToConversationSettings.current = true; setRequestedSettingsTab('web-tools'); openSettings(); }} />}
+      <Button variant="ghost" aria-label="空间设置" className="mx-2 mb-2 flex min-h-11 items-center gap-2 rounded-lg px-3 py-1.5 text-left hover:bg-border" onClick={openSettings}><span className="flex h-7 w-7 items-center justify-center rounded-full bg-background text-xs">我</span><span className="flex-1"><span className="block text-xs font-medium">私人空间</span></span><Settings className="h-[1rem] w-[1rem]" /></Button>
+    </Sidebar>
+
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <header className="chat-header flex shrink-0 items-center gap-2">
+        <Button variant="ghost" size="icon" ref={mobileSidebarTrigger} className={`h-11 w-11 shrink-0 ${desktop && !sidebarCollapsed ? 'hidden' : ''}`} onClick={toggleSidebar} aria-label="打开对话列表" aria-expanded={desktop ? !sidebarCollapsed : sidebarOpen}><Menu className="h-[1.25rem] w-[1.25rem]" /></Button>
+        <p data-testid="conversation-title" className="min-w-0 flex-1 truncate text-sm font-medium" title={currentConversation?.title}>{invalidRoute ? '页面不可用' : currentConversation?.title ?? (selected ? '对话' : '新对话')}</p>
+        <div className="flex shrink-0 items-center gap-0 sm:gap-1">
+          <span aria-live="polite" className="mr-3 hidden items-center gap-1.5 text-xs text-muted-foreground md:flex" title={syncedAt ? `已同步 · 上次同步 ${new Date(syncedAt).toLocaleTimeString('zh-CN')}` : undefined}>{connection === 'offline' ? <CloudOff className="h-[0.875rem] w-[0.875rem]" /> : <span className="status-dot" data-pending={connection !== 'connected' || hasUnconfirmed} />}<span className={connection === 'connected' && !hasUnconfirmed ? 'sr-only' : undefined}>{statusText}</span></span>
+          {canSearch && <Button variant="ghost" size="icon" ref={searchTrigger} type="button" aria-label="搜索当前对话" aria-expanded={searchOpen} aria-controls={searchOpen ? 'conversation-search' : undefined} title="搜索当前对话（Ctrl / ⌘ F）" className="h-11 w-11" onClick={() => searchOpen ? closeConversationSearch() : setConversationSearchFor(selected)}><Search className="h-[1.125rem] w-[1.125rem]" /></Button>}
+          <Button variant="ghost" size="icon" type="button" aria-label="会话参数" title="会话参数" className="h-11 w-11 hidden md:inline-flex" disabled={Boolean(invalidRoute || syncError)} onClick={() => setConversationSettingsOpen(true)}><SlidersHorizontal className="h-[1.125rem] w-[1.125rem]" /></Button>
+          <ConversationActions key={selected ?? 'new'} conversation={currentConversation} disabled={connection === 'offline'} update={updateConversation} remove={deleteConversation} duplicate={duplicateConversation} exports={<>
+            <ActionMenuItem disabled={!snapshot.messages.length} onSelect={() => exportChat('md')}>Markdown</ActionMenuItem>
+            <ActionMenuItem disabled={!snapshot.messages.length} onSelect={() => exportChat('txt')}>纯文本</ActionMenuItem>
+            <ActionMenuItem disabled={!snapshot.messages.length} onSelect={() => exportChat('html')}>HTML</ActionMenuItem>
+            <ActionMenuItem disabled={!currentConversation} onSelect={() => void exportBackup()}>下载备份</ActionMenuItem>
+            <ActionMenuItem onSelect={() => backupInput.current?.click()}>导入备份</ActionMenuItem>
+          </>}>
+            <ActionMenuItem className="md:hidden" disabled={Boolean(invalidRoute || syncError)} onSelect={() => setConversationSettingsOpen(true)}><SlidersHorizontal className="h-[1rem] w-[1rem]" />会话参数</ActionMenuItem>
+            {session.attachmentsConfigured && selected && currentConversation && !snapshot.deletedAt && <ActionMenuItem aria-label="管理对话文件" onSelect={() => setAttachmentsFor(selected)}><FolderOpen className="h-[1rem] w-[1rem]" />对话文件</ActionMenuItem>}
+            {selected && latestCompletedAssistant && <ActionMenuItem disabled={busy || connection === 'offline' || loading} onSelect={() => { setSummaryTarget(null); setSummaryOpen(true); }}><BookOpen className="h-[1rem] w-[1rem]" />压缩历史</ActionMenuItem>}
+          </ConversationActions>
+          <input ref={backupInput} type="file" accept=".zip,.json,application/zip,application/json" className="hidden" onChange={(event) => void importBackup(event)} />
+        </div>
+      </header>
+      {searchOpen && <ConversationSearch key={`${selected}:${searchJump?.token ?? ''}`} content={content} viewport={viewport} close={closeConversationSearch} initial={searchJump ?? undefined} />}
+      {connection === 'offline' && <div role="status" className="flex items-center justify-center gap-2 border-b border-border bg-muted px-4 py-2 text-xs text-foreground"><WifiOff className="h-[0.8125rem] w-[0.8125rem]" />你现在离线，已保存的对话仍可阅读。新消息将在联网后发送。</div>}
+      <div className="conversation-body" data-welcome={welcome}>
+      <div ref={viewportRef} data-testid="message-viewport" className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain"><DisclosureScope key={selected ?? 'new'}>
+        {welcome ? <div ref={contentRef} /> : <section ref={contentRef} aria-label="对话消息" className="mx-auto w-full max-w-[49rem] space-y-6 px-4 py-4 sm:py-6">
+          {loading && !snapshot.messages.length && <div className="py-10 text-center text-xs text-muted-foreground"><Spinner /><p className="mt-3">正在找回我们的对话…</p></div>}
+          {snapshot.messages.map((message) => <MessageView conversationId={selected!} key={message.id} message={message} busy={busy} onRetry={() => void retry(message)} onEdit={() => edit(message)} onQuote={() => quote(message)} onDelete={() => setMessageMutation({ id: message.id, mode: 'delete' })} canRetry={liveUserIds.has(message.parentId ?? '')} branchSelected={message.role === 'assistant' && message.status === 'completed' && message.id === currentBranchHead} onSelectBranch={() => selectBranch(message)} canFork={Boolean(selected && connection !== 'offline' && !syncError && !loading)} onFork={() => duplicateConversation(message.id)} summarySelected={previewHistory?.summary?.id === message.id} />)}
+          {currentPending && <article className="ml-auto max-w-[90%] rounded-2xl border border-dashed border-input bg-muted px-5 py-4"><DocumentPreviews conversationId={currentPending.conversation.id} files={currentPending.files ?? []} /><ImagePreviews conversationId={currentPending.conversation.id} images={currentPending.images ?? []} /><p className="text-sm leading-7 whitespace-pre-wrap">{currentPending.input.summaryThrough ? '历史摘要请求' : currentPending.input.content ?? '新版本'}</p><div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground"><CloudOff className="h-[0.75rem] w-[0.75rem]" />{currentPending.error ? '发送失败' : '等待发送'}</div>{currentPending.error && <p className="mt-2 text-xs font-medium leading-5 text-foreground">{currentPending.error}</p>}<div className="mt-2 flex gap-1"><Button variant="ghost" onClick={() => { const clean = { ...currentPending, error: undefined }; commitPending(pendingRef.current.map((item) => item.input.requestId === clean.input.requestId ? clean : item)); void deliver(clean); }}>重试</Button>{(!currentPending.input.summaryThrough || currentPending.error) && <Button variant="ghost" onClick={() => { setDraft(currentPending.input.content ?? ''); setRevisionOf(currentPending.input.revisionOf); setDraftImages(currentPending.images ?? []); setDraftFiles(currentPending.files ?? []); write(`draft:${selected}`, { text: currentPending.input.content ?? '', revisionOf: currentPending.input.revisionOf, images: currentPending.images ?? [], files: currentPending.files ?? [] }); commitPending(pendingRef.current.filter((item) => item.input.requestId !== currentPending.input.requestId)); }}>{currentPending.input.summaryThrough ? '取消请求' : '编辑'}</Button>}</div></article>}
+        </section>}</DisclosureScope>
+      </div>
+
+      <div className="composer-region relative shrink-0 pt-2 pb-3" style={{ paddingBottom: 'max(.75rem, env(safe-area-inset-bottom))' }}>
+        {!atBottom && <Button variant="secondary" size="icon" className="absolute -top-12 left-1/2 z-10 border-input bg-background shadow-sm" aria-label="滚动到最新消息" onClick={scrollToBottom}><ArrowDown className="h-[1rem] w-[1rem]" /></Button>}
+        <div className="mx-auto w-full max-w-[48.5rem]">
+          {welcome && <h1 className="mb-6 text-center text-xl font-semibold leading-snug sm:text-2xl">今天想聊些什么？</h1>}
+          {invalidRoute && <Alert variant="destructive" role="alert" className="mb-3 text-xs"><span>找不到这个页面。</span><Button variant="secondary" type="button" onClick={() => select(null)}>开启新对话</Button></Alert>}
+          {syncError && <Alert variant="destructive" role="alert" className="mb-3 text-xs"><span>{syncError}</span><Button variant="secondary" type="button" onClick={reconnect}>重新同步</Button></Alert>}
+          {error && <p role="alert" className="mb-3 text-xs font-medium text-foreground">{error}</p>}
+          {revisionOf && <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground"><span>编辑消息</span><Button variant="ghost" onClick={() => { setRevisionOf(undefined); write(`draft:${selected}`, { text: draft, images: draftImages, files: draftFiles }); }}>取消</Button></div>}
+          <form onSubmit={submit} data-testid="chat-composer" className="chat-composer">
+            {selected && (draftFiles.length > 0 || draftImages.length > 0) && <div data-testid="draft-previews" className="draft-previews mb-2 max-h-[min(9rem,20dvh)] overflow-y-auto overscroll-contain p-1">
+              <DocumentPreviews conversationId={selected} files={draftFiles} remove={imageProgress ? undefined : removeDocument} />
+              <ImagePreviews conversationId={selected} images={draftImages} remove={imageProgress ? undefined : removeImage} />
+            </div>}
+            {imageProgress && <div className="flex items-center gap-2 py-2 text-xs" role="status"><span className="min-w-0 flex-1 truncate">{imageProgress.name}</span><progress className="progress-meter w-20 shrink-0" value={imageProgress.percent} max={100} aria-label={imageProgress.kind === 'image' ? '图片上传进度' : '文件上传进度'} /><Button variant="ghost" type="button" onClick={() => imageUpload.current?.controller.abort()}>取消上传</Button></div>}
+            <Textarea onPaste={(event) => { const files = Array.from(event.clipboardData.files); if (files.length) { event.preventDefault(); void addImages(files); } }} ref={editor} disabled={Boolean(snapshot.deletedAt)} aria-label="消息" className="composer-editor block min-h-11 w-full resize-none border-0 px-2 py-1 text-base leading-6 placeholder:text-muted-foreground outline-none! focus:outline-none!" placeholder={active ? '生成中…' : '输入消息…'} value={draft} maxLength={16000} rows={1} onChange={(event) => updateDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void submit(); } }} />
+            <div className="composer-toolbar mt-1 flex min-w-0 flex-wrap items-center gap-1" data-testid="composer-toolbar">
+              {session.attachmentsConfigured && <ActionMenu label="添加附件" icon={<Paperclip className="h-[1.125rem] w-[1.125rem]" />} placement="dropdown-top dropdown-start" disabled={busy || !navigator.onLine}>
+                <ActionMenuItem aria-label="添加文件" disabled={draftFiles.length >= MAX_MESSAGE_DOCUMENTS} onSelect={() => fileInput.current?.click()}><Paperclip className="h-[1rem] w-[1rem]" />文件</ActionMenuItem>
+                <ActionMenuItem aria-label="添加图片" disabled={draftImages.length >= MAX_MESSAGE_IMAGES} onSelect={() => imageInput.current?.click()}><ImagePlus className="h-[1rem] w-[1rem]" />图片</ActionMenuItem>
+              </ActionMenu>}
+              <input ref={fileInput} type="file" accept=".pdf,.txt,.md,.csv,.js,.jsx,.ts,.tsx,.py,.rs,.go,.c,.cpp,.h,.css,.json,.yaml,.yml,.toml,.sh" multiple className="hidden" aria-label="选择聊天文件" onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ''; void addDocuments(files); }} />
+              <input ref={imageInput} type="file" accept="image/png,image/jpeg,image/webp" multiple className="hidden" aria-label="选择聊天图片" onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ''; void addImages(files); }} />
+              {selectedModel ? <ModelPicker focusComposer={() => editor.current?.focus({ preventScroll: true })} models={models} selected={selectedModel} choose={(value) => { setModelChoice(value); write('chat-model', value); }} /> : <Button variant="ghost" type="button" className="min-w-0 flex-1 text-sm" onClick={() => { setRequestedSettingsTab('providers'); openSettings(); }}>配置模型</Button>}
+              {selectedModel?.reasoningSupported && selectedModel.reasoningEfforts.length > 0 && <NativeSelect aria-label="思维强度" title={`思维强度：${reasoningEffort ? effortLabels[reasoningEffort] : '默认'}`} className="h-11 w-16 shrink-0 sm:w-24" selectClassName="border-transparent pl-1 pr-5 text-xs" value={reasoningEffort} onChange={(event) => { const value = event.target.value as ReasoningEffort | ''; setReasoningEffort(value); write(`reasoning-effort:${modelSelectionKey(selectedModel)}`, value); }}>
+                <option value="">思考</option>{selectedModel.reasoningEfforts.map((effort) => <option key={effort} value={effort}>{effortLabels[effort]}</option>)}
+              </NativeSelect>}
+              <Button variant="ghost" size="icon" type="button" className={`   h-11 w-11 shrink-0 ${conversationSettings.tools?.length ? 'bg-muted' : ''}`} aria-label="联网工具" aria-pressed={Boolean(conversationSettings.tools?.length)} title={conversationSettings.tools?.length ? '联网已开启' : '联网工具'} onClick={() => { setFocusWebTools(true); setConversationSettingsOpen(true); }}><Globe className="h-[1.125rem] w-[1.125rem]" /></Button>
+              {active ? <Button variant="secondary" size="icon" type="button" className="send-button ml-auto h-11 w-11 shrink-0" aria-label="停止生成" title="停止生成" onClick={cancel} disabled={!navigator.onLine}><Square className="h-[1rem] w-[1rem]" /></Button> : <Button variant="default" size="icon" type="submit" className="send-button ml-auto h-11 w-11 shrink-0" aria-label="发送消息" disabled={(!draft.trim() && !draftImages.length && !draftFiles.length) || busy || !selectedModel}>{sending ? <Spinner /> : <ArrowUp className="h-[1.1875rem] w-[1.1875rem]" />}</Button>}
+            </div>
+            {contextPreview?.estimate && <ContextEstimateView estimate={contextPreview.estimate} compressing={contextPreview.compressing} />}
+            {contextPreview?.error && <p className="mt-2 text-xs text-muted-foreground">{contextPreview.error}</p>}
+          </form>
+        </div>
+      </div>
+      </div>
+    </div>
+    <ProviderSettingsPanel open={settingsOpen} requestedTab={requestedSettingsTab} onSaved={providerSaved} themeControl={<ThemeControl />} onLogout={() => void logout()} render={(content) => (
+<Modal open={settingsOpen} onOpenChange={(next) => { if (!next) closeSettings(); }} onCloseAutoFocus={(event) => event.preventDefault()} aria-labelledby="space-settings-title">
+      <div className="settings-dialog flex h-[min(48rem,92dvh)] max-h-[92dvh] max-w-[60rem] flex-col overflow-hidden p-0">
+        <div className="flex shrink-0 items-center justify-between px-3 py-1.5 sm:px-4"><ModalTitle id="space-settings-title" className="text-lg font-semibold">设置</ModalTitle><Button type="button" onClick={closeSettings} variant="ghost" size="icon" aria-label="关闭设置"><X className="h-[1.125rem] w-[1.125rem]" /></Button></div>
+
+        {content}
+      </div>
+    </Modal>
+    )} />
+    {backupTask && <BackupProgressDialog title={backupTask.title} progress={backupTask.progress} cancel={() => backupOperation.current?.abort()} canRestoreFocus={() => selectedRef.current === backupTask.route && storageEpoch() === backupTask.epoch} />}
+    {session?.authenticated && <ConversationSettingsDialog key={selected ?? 'new'} id={selected} initial={selected ? snapshot.settings ?? DEFAULT_CONVERSATION_SETTINGS : newConversationSettings} model={selectedModel} models={models} effort={reasoningEffort} showReasoning={session.showReasoning ?? false} open={conversationSettingsOpen} focusTools={focusWebTools} close={() => { setConversationSettingsOpen(false); setFocusWebTools(false); }} onDraft={settingsDraftChanged} managePresets={() => { returnToConversationSettings.current = true; setRequestedSettingsTab('presets'); openSettings(); }} manageWebTools={() => { returnToConversationSettings.current = true; setRequestedSettingsTab('web-tools'); openSettings(); }} />}
     {session.attachmentsConfigured && selected && currentConversation && !snapshot.deletedAt && <AttachmentDialog key={`attachments:${selected}`} id={selected} open={attachmentsFor === selected} close={() => setAttachmentsFor(null)} />}
-    {summaryOpen && selected && <SummaryDialog messages={snapshot.messages} headId={summaryTarget?.throughId ?? contextSource(snapshot.messages, { branchHead: validBranchHead }).parentId} models={models} preferred={selectedModel} target={summaryTarget ?? undefined} busy={busy} submit={queueSummary} close={() => { setSummaryOpen(false); setSummaryTarget(null); }} />}
+    {summaryOpen && selected && <SummaryDialog messages={snapshot.messages} headId={summaryTarget?.throughId ?? contextSource(snapshot.messages, { branchHead: validBranchHead }).parentId} models={models} preferred={selectedModel} target={summaryTarget ?? undefined} busy={busy} submit={queueSummary} close={() => { setSummaryOpen(false); setSummaryTarget(null); }} focusComposer={() => { if (selectedRef.current === selected) editor.current?.focus({ preventScroll: true }); }} />}
     {messageMutation && mutationMessage && <MessageMutationDialog key={`${selected}:${messageMutation.id}:${messageMutation.mode}`} message={mutationMessage} mode={messageMutation.mode} affectsSummaries={snapshot.messages.some((message) => !message.deletedAt && message.summary?.sourceIds.includes(mutationMessage.id))} confirm={confirmMessageMutation} close={() => setMessageMutation(null)} />}
   </div>;
 }

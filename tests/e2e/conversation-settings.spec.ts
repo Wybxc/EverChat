@@ -1,3 +1,4 @@
+import { chooseChatModel } from '../ui';
 import { openSpaceSettings, openParameters } from '../ui';
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import WebSocket from 'ws';
@@ -177,7 +178,7 @@ test('conversation settings autosave, preserve failed and invalid drafts, sync d
     await expect(modal.getByRole('button', { name: '恢复继承' })).toBeInViewport();
     await modal.getByRole('button', { name: '关闭会话参数' }).click(); await expect(trigger).toBeFocused();
     await expect(composer).toHaveValue('保留聊天草稿');
-    await page.getByLabel('聊天模型', { exact: true }).selectOption(modelSelectionKey({ providerId: fixture.providerId, model: 'o3' }));
+    await chooseChatModel(page, modelSelectionKey({ providerId: fixture.providerId, model: 'o3' }));
     await openParameters(page); await expect(modal.getByLabel('Temperature', { exact: true })).toHaveCount(0); await expect(modal.getByLabel('Top P', { exact: true })).toHaveCount(0);
     await expect(modal.getByLabel('会话系统提示词', { exact: true })).toHaveValue('保留未保存的会话提示');
   } finally { await second.close(); await fixture.cleanup(); }

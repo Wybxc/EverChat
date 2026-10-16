@@ -9,6 +9,8 @@ import { HttpError, json, jsonWithStream, parseBody, type AppContext } from './h
 import { ARCHIVE_FORMAT, ARCHIVE_VERSION } from '../shared/archive';
 import type { ImportResult } from './archive-imports';
 import { ProviderModelError, fetchProviderModels } from './provider-models';
+import { modelProbeInputSchema } from '../shared/model-probe';
+import { probeModelCapability } from './model-probe';
 import { storageErrorMessage } from './resource-limits';
 import { SEARCH_QUERY_LIMIT } from '../shared/search';
 import { conversationSettingsSchema } from '../shared/conversation-settings';
@@ -142,6 +144,17 @@ app.get('/settings/providers/:id/models', async (context) => {
     if (error instanceof ProviderModelError) throw new HttpError(error.status, error.message);
     throw new HttpError(502, '获取模型列表失败。');
   }
+});
+
+app.post('/settings/providers/:id/models/test', async (context) => {
+  await requireAuth(context);
+  const id = context.req.param('id');
+  if (!v.safeParse(uuidSchema, id).success) throw new HttpError(404, '找不到这个供应商。');
+  const input = await parseBody(context, modelProbeInputSchema, { maxBytes: 2048, tooLarge: '测试请求过大。' });
+  const profile = await context.env.LIBRARY.getByName('personal').providerForModelList(id);
+  if (!profile || !profile.models.some((model) => model.id === input.model)) throw new HttpError(404, '找不到这个模型。');
+  if (!profile.apiKey) throw new HttpError(400, '请先配置 API 密钥。');
+  return json(await probeModelCapability({ ...profile, model: input.model, systemPrompt: '', maxOutputTokens: null }, input.capability, context.req.raw.signal));
 });
 
 app.post('/login', async (context) => {

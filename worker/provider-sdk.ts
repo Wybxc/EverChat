@@ -27,7 +27,9 @@ export function providerCallOptions(config: ProviderConfig, prompt: LanguageMode
   tools?: LanguageModelV4CallOptions['tools']): LanguageModelV4CallOptions {
   const compatible = config.provider === 'openai-chat' && new URL(config.baseUrl).hostname !== 'api.openai.com';
   const deepseek = compatible && new URL(config.baseUrl).hostname === 'api.deepseek.com';
-  const effort = config.reasoningEnabled ? config.reasoningEffort : undefined;
+  // Recognizing thought output does not establish how to enable/control it.
+  const controlReasoning = config.reasoningEnabled && (!config.modelMetadata || config.modelMetadata.reasoningEfforts.length > 0);
+  const effort = controlReasoning ? config.reasoningEffort : undefined;
   const toolMode = Boolean(tools?.length);
   return {
     prompt, tools, ...(toolMode ? { toolChoice: { type: 'auto' as const } } : {}),
@@ -36,15 +38,15 @@ export function providerCallOptions(config: ProviderConfig, prompt: LanguageMode
     reasoning: deepseek ? undefined : effort,
     providerOptions: compatible ? { compatible: {
       store: false,
-      ...(deepseek && config.reasoningEnabled ? effort === 'none'
+      ...(deepseek && controlReasoning ? effort === 'none'
         ? { thinking: { type: 'disabled' } }
         : { thinking: { type: 'enabled' }, ...(effort ? { reasoningEffort: effort } : {}) } : {}),
     } } : config.provider.startsWith('openai-') ? { openai: {
       store: false,
       ...(toolMode && config.provider === 'openai-responses' ? { include: ['reasoning.encrypted_content'] } : {}),
-      ...(config.reasoningEnabled && config.provider === 'openai-responses' ? { forceReasoning: true, reasoningSummary: 'auto' } : {}),
+      ...(controlReasoning && config.provider === 'openai-responses' ? { forceReasoning: true, reasoningSummary: 'auto' } : {}),
     } } : config.provider === 'anthropic' && (toolMode || config.reasoningEnabled && config.showReasoning)
-      ? { anthropic: { ...(config.reasoningEnabled ? { thinking: { type: 'adaptive', display: 'summarized' } } : {}), sendReasoning: true } }
+      ? { anthropic: { ...(controlReasoning ? { thinking: { type: 'adaptive', display: 'summarized' } } : {}), sendReasoning: true } }
       : config.provider === 'gemini' && config.reasoningEnabled
       ? { google: { thinkingConfig: { includeThoughts: true } } } : undefined,
     abortSignal: signal,

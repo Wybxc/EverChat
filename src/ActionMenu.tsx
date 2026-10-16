@@ -1,32 +1,30 @@
-import { useId, useRef, type ReactNode, type RefObject } from 'react';
+import { createContext, useContext, useRef, type ComponentProps, type ReactNode } from 'react';
+import { Button } from '@/components/ui/button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 
-/** Native popovers escape scroll containers and restore focus before invoking an action. */
-export function ActionMenu({ label, icon, children, className = 'btn btn-ghost btn-square h-11 w-11 shrink-0', placement = 'dropdown-end', menuRef, disabled = false }: {
+let lastTrigger: HTMLButtonElement | null = null;
+export const actionMenuReturnTarget = () => lastTrigger;
+const PendingAction = createContext<((action: () => void) => void) | null>(null);
+export function ActionMenuItem({ onSelect, keepOpen = false, ...props }: ComponentProps<typeof DropdownMenuItem> & { keepOpen?: boolean }) {
+  const queue = useContext(PendingAction);
+  return <DropdownMenuItem {...props} onSelect={(event) => {
+    if (keepOpen) { event.preventDefault(); onSelect?.(event); }
+    else if (onSelect && queue) queue(() => onSelect(event));
+    else onSelect?.(event);
+  }} />;
+}
+export const ActionMenuLabel = DropdownMenuLabel;
+export const ActionMenuSeparator = DropdownMenuSeparator;
+export function ActionMenu({ label, icon, children, className = '', placement = '', disabled = false, open, onOpenChange }: {
   label: string; icon: ReactNode; children: ReactNode; className?: string; placement?: string;
-  menuRef?: RefObject<HTMLUListElement | null>; disabled?: boolean;
+  disabled?: boolean; open?: boolean; onOpenChange?: (open: boolean) => void;
 }) {
-  const id = useId(), anchor = `--menu-${id.replace(/[^a-z0-9_-]/gi, '')}`;
-  const local = useRef<HTMLUListElement>(null), trigger = useRef<HTMLButtonElement>(null);
-  const menu = menuRef ?? local;
-  return <>
-    <button ref={trigger} type="button" className={className} aria-label={label} title={label} aria-haspopup="true" popoverTarget={id} style={{ anchorName: anchor }} disabled={disabled} onKeyDown={(event) => {
-      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-        event.preventDefault(); menu.current?.showPopover();
-        const items = Array.from(menu.current?.querySelectorAll<HTMLElement>('button:not(:disabled), summary') ?? []).filter((item) => item.checkVisibility());
-        (event.key === 'ArrowUp' ? items[items.length - 1] : items[0])?.focus();
-      }
-    }}>{icon}</button>
-    <ul ref={menu} id={id} popover="auto" aria-label={label} style={{ positionAnchor: anchor }} className={`action-menu dropdown ${placement} menu w-60 max-w-[calc(100vw-1rem)] rounded-box border border-base-300 bg-base-100 p-2 shadow-lg`} onClickCapture={(event) => {
-      if ((event.target as Element).closest('button:not(:disabled)')) {
-        menu.current?.hidePopover(); trigger.current?.focus({ preventScroll: true });
-      }
-    }} onKeyDown={(event) => {
-      if (event.key === 'Escape') { event.preventDefault(); menu.current?.hidePopover(); trigger.current?.focus({ preventScroll: true }); }
-      if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
-      const items = Array.from(menu.current?.querySelectorAll<HTMLElement>('button:not(:disabled), summary') ?? []).filter((item) => item.checkVisibility());
-      const current = items.indexOf(document.activeElement as HTMLElement);
-      const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (current + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
-      event.preventDefault(); items[next]?.focus();
-    }}>{children}</ul>
-  </>;
+  const trigger = useRef<HTMLButtonElement>(null), pending = useRef<(() => void) | null>(null);
+  return <PendingAction.Provider value={(action) => { pending.current = action; }}><DropdownMenu open={open} onOpenChange={(next) => { if (next) lastTrigger = trigger.current; onOpenChange?.(next); }}>
+    <DropdownMenuTrigger asChild><Button ref={trigger} type="button" variant="ghost" size="icon" className={className} aria-label={label} title={label} disabled={disabled}>{icon}</Button></DropdownMenuTrigger>
+    <DropdownMenuContent onCloseAutoFocus={(event) => {
+      const action = pending.current; pending.current = null;
+      if (action) { event.preventDefault(); trigger.current?.focus({ preventScroll: true }); action(); }
+    }} aria-label={label} side={placement.includes('top') ? 'top' : 'bottom'} align={placement.includes('start') ? 'start' : 'end'} sideOffset={4} className="w-60 max-w-[calc(100vw-1rem)]">{children}</DropdownMenuContent>
+  </DropdownMenu></PendingAction.Provider>;
 }

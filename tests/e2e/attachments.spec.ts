@@ -72,7 +72,7 @@ test('without an R2 binding storage is explicitly unavailable and its hidden ent
       const response = await route.fetch(); await route.fulfill({ response, json: { ...await response.json(), attachmentsConfigured: false } });
     });
     await page.goto(`/c/${fixture.id}`); await expect(page.getByLabel('消息', { exact: true })).toBeVisible();
-    await expect(page.getByRole('button', { name: '管理对话文件', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('menuitem', { name: '管理对话文件', exact: true })).toHaveCount(0);
     await page.getByLabel('消息', { exact: true }).fill('普通聊天草稿'); await expect(page.getByLabel('消息', { exact: true })).toHaveValue('普通聊天草稿');
   } finally { await fixture.cleanup(); }
 });
@@ -123,7 +123,7 @@ test('the file manager uploads with progress, preserves the composer and URL, sy
   const fixture = await setup(page.request), other = await browser.newContext({ storageState: await page.context().storageState() });
   try {
     await page.goto(`/c/${fixture.id}`); const composer = page.getByLabel('消息', { exact: true }); await composer.fill('保留草稿');
-    await conversationMenu(page); await page.getByRole('button', { name: '管理对话文件', exact: true }).click(); const dialog = page.getByRole('dialog', { name: '对话文件', exact: true });
+    await conversationMenu(page); await page.getByRole('menuitem', { name: '管理对话文件', exact: true }).click(); const dialog = page.getByRole('dialog', { name: '对话文件', exact: true });
     await expect(dialog.getByLabel('上传文件', { exact: true })).toBeFocused();
     await page.route('**/api/conversations/*/attachments/*/content', async (route) => {
       if (route.request().method() === 'PUT') { const response = await route.fetch(); await new Promise((resolve) => setTimeout(resolve, 400)); await route.fulfill({ response }); }
@@ -132,11 +132,11 @@ test('the file manager uploads with progress, preserves the composer and URL, sy
     const bytes = Buffer.from('# 文件\n42 元🙂'); await dialog.getByLabel('上传文件', { exact: true }).setInputFiles({ name: '预算.md', mimeType: 'text/markdown', buffer: bytes });
     await expect(dialog.getByRole('progressbar', { name: '上传进度' })).toBeVisible();
     await expect(dialog.getByRole('link', { name: '下载', exact: true })).toBeVisible(); await expect(dialog).toContainText('已保存');
-    const second = await other.newPage(); await second.goto(`/c/${fixture.id}`); await conversationMenu(second); await second.getByRole('button', { name: '管理对话文件', exact: true }).click();
+    const second = await other.newPage(); await second.goto(`/c/${fixture.id}`); await conversationMenu(second); await second.getByRole('menuitem', { name: '管理对话文件', exact: true }).click();
     await expect(second.getByRole('dialog', { name: '对话文件', exact: true })).toContainText('预算.md');
     await dialog.getByRole('button', { name: '关闭对话文件' }).click(); await expect(page.getByRole('button', { name: '更多会话操作', exact: true })).toBeFocused();
     await expect(composer).toHaveValue('保留草稿'); await expect(page).toHaveURL(`/c/${fixture.id}`);
-    await page.reload(); await conversationMenu(page); await page.getByRole('button', { name: '管理对话文件', exact: true }).click(); await expect(dialog).toContainText('预算.md');
+    await page.reload(); await conversationMenu(page); await page.getByRole('menuitem', { name: '管理对话文件', exact: true }).click(); await expect(dialog).toContainText('预算.md');
     await dialog.getByRole('button', { name: '删除文件 预算.md', exact: true }).click(); await expect(dialog).toContainText('暂无文件');
     await expect(second.getByRole('dialog', { name: '对话文件', exact: true })).toContainText('暂无文件');
   } finally { await other.close(); await fixture.cleanup(); }
@@ -163,13 +163,13 @@ test('client cancellation removes the accepted registration, while a mobile file
   const held = new Promise<void>((resolve) => { release = resolve; }), sent = new Promise<void>((resolve) => { arrived = resolve; });
   try {
     await page.setViewportSize({ width: 390, height: 780 }); await page.goto(`/c/${fixture.id}`);
-    await conversationMenu(page); await page.getByRole('button', { name: '管理对话文件', exact: true }).click(); const dialog = page.getByRole('dialog', { name: '对话文件', exact: true });
+    await conversationMenu(page); await page.getByRole('menuitem', { name: '管理对话文件', exact: true }).click(); const dialog = page.getByRole('dialog', { name: '对话文件', exact: true });
     await page.route('**/api/conversations/*/attachments/*/content', async (route) => { if (route.request().method() !== 'PUT') return route.continue(); arrived(); await held; await route.continue().catch(() => {}); });
     await dialog.getByLabel('上传文件', { exact: true }).setInputFiles({ name: 'cancel.txt', mimeType: 'text/plain', buffer: Buffer.from('pending file') }); await sent;
     await dialog.getByRole('button', { name: '取消上传', exact: true }).click(); await expect(dialog.getByRole('progressbar')).toHaveCount(0);
     await expect.poll(fixture.list).toEqual([]); release(); await page.unroute('**/api/conversations/*/attachments/*/content');
     for (let index = 0; index < 20; index++) await fixture.register(file(Buffer.from('file'), `第 ${index} 个文件.txt`, 'text/plain'));
-    await expect(dialog.locator('.list-row')).toHaveCount(20);
+    await expect(dialog.getByRole('listitem')).toHaveCount(20);
     await dialog.locator('.overflow-y-auto').evaluate((element) => { element.scrollTop = element.scrollHeight; });
     await expect(dialog.getByRole('button', { name: '关闭对话文件' })).toBeInViewport(); await dialog.getByRole('button', { name: '关闭对话文件' }).click();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

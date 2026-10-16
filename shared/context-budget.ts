@@ -12,7 +12,7 @@ const count = v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(100_000_
 export const contextEstimateSchema = v.strictObject({
   method: v.literal('approximate-v1'), inputTokens: count, systemTokens: count, historyTokens: count, totalTokens: count,
   inputBudget: count, contextWindow: count, outputReserve: count, safetyMargin: count,
-  contextScope: v.picklist(['combined', 'input']), windowSource: v.picklist(['manual', 'provider', 'catalog', 'fallback']),
+  contextScope: v.picklist(['combined', 'input']), windowSource: v.picklist(['manual', 'provider', 'tested', 'catalog', 'directory', 'inferred', 'fallback']),
   retainedMessages: count, omittedMessages: count,
   summaryTokens: v.optional(count), summarizedMessages: v.optional(count), summaryId: v.optional(v.pipe(v.string(), v.uuid())),
   imageTokens: v.optional(count),

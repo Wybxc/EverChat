@@ -13,10 +13,10 @@ async function login(page: Page) {
 test('mobile sidebar contains keyboard focus and returns it without opening the keyboard', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await login(page);
-  const sidebar = page.locator('aside'), trigger = page.getByRole('button', { name: '打开对话列表' });
-  await expect(sidebar).toHaveAttribute('inert', '');
+  const sidebar = page.getByRole('dialog', { name: '对话列表' }), trigger = page.getByRole('button', { name: '打开对话列表' });
+  await expect(sidebar).toHaveCount(0);
   await trigger.focus(); await page.keyboard.press('Tab');
-  expect(await sidebar.evaluate((node) => node.contains(document.activeElement))).toBe(false);
+  await expect(trigger).not.toBeFocused();
   await trigger.click();
   await expect(page.getByRole('dialog', { name: '对话列表' })).toBeVisible();
   await expect(page.getByRole('button', { name: '收起侧栏' })).toBeFocused();
@@ -25,10 +25,10 @@ test('mobile sidebar contains keyboard focus and returns it without opening the 
   await page.keyboard.press('Tab');
   await expect(page.getByRole('button', { name: '收起侧栏' })).toBeFocused();
   await page.keyboard.press('Escape');
-  await expect(sidebar).toHaveAttribute('inert', '');
+  await expect(sidebar).toHaveCount(0);
   await expect(trigger).toBeFocused();
   await page.setViewportSize({ width: 1280, height: 720 });
-  await expect(sidebar).not.toHaveAttribute('inert');
+  await expect(page.getByRole('complementary', { name: '对话列表' })).toBeVisible();
 });
 
 test('the composer has a visible focus boundary without stealing focus on load', async ({ page }) => {
@@ -55,21 +55,22 @@ test('a narrow viewport keeps long model names, reasoning controls and send/stop
     await page.reload();
     await expect(page.getByLabel('思维强度', { exact: true })).toBeVisible();
     const composer = await page.getByTestId('chat-composer').boundingBox();
-    const reading = await page.getByTestId('message-viewport').boundingBox();
-    expect(composer!.height).toBeLessThanOrEqual(160);
-    expect(reading!.height).toBeGreaterThanOrEqual(300);
+    expect(composer!.height).toBeLessThanOrEqual(144);
+    await expect(page.getByRole('heading', { name: '今天想聊些什么？' })).toBeVisible();
     const send = await page.getByRole('button', { name: '发送消息', exact: true }).boundingBox();
     expect(send!.x + send!.width).toBeLessThanOrEqual(320);
     const toolbar = page.getByTestId('composer-toolbar');
     for (const control of await toolbar.locator('button:visible, select:visible').all()) {
       const box = await control.boundingBox();
       expect(Math.abs(box!.y - send!.y)).toBeLessThanOrEqual(2);
-      expect(box!.width).toBeGreaterThanOrEqual(24);
+      expect(box!.width).toBeGreaterThanOrEqual(44);
+      expect(box!.height).toBeGreaterThanOrEqual(44);
     }
     await page.getByLabel('消息', { exact: true }).fill('布局检查');
     await page.getByRole('button', { name: '发送消息', exact: true }).click();
     const stop = page.getByRole('button', { name: '停止生成', exact: true });
     await expect(stop).toBeVisible();
+    expect((await page.getByTestId('message-viewport').boundingBox())!.height).toBeGreaterThanOrEqual(300);
     const stopping = await stop.boundingBox();
     expect(stopping!.x).toBe(send!.x); expect(stopping!.width).toBe(send!.width);
     await stop.click();
@@ -87,12 +88,12 @@ test('the unified conversation menu supports keyboard access, bounded scrolling 
   await login(page);
   const trigger = page.getByRole('button', { name: '更多会话操作' });
   await trigger.focus(); await trigger.press('ArrowDown');
-  await expect(page.getByRole('button', { name: '会话参数', exact: true })).toBeFocused();
+  await expect(page.getByRole('menuitem', { name: '会话参数', exact: true })).toBeFocused();
   await page.keyboard.press('End');
-  await expect(page.getByRole('button', { name: '导入备份', exact: true })).toBeFocused();
+  await expect(page.getByRole('menuitem', { name: '导入备份', exact: true })).toBeFocused();
   await page.keyboard.press('Escape'); await expect(trigger).toBeFocused();
   await trigger.click();
-  await page.getByRole('button', { name: '会话参数', exact: true }).click();
+  await page.getByRole('menuitem', { name: '会话参数', exact: true }).click();
   const settings = page.getByRole('dialog', { name: '新对话参数' });
   await expect(settings).toBeVisible();
   await settings.getByRole('button', { name: '关闭会话参数' }).click();

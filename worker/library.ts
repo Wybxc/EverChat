@@ -438,7 +438,7 @@ export class Library extends DurableObject<Env> {
           const existing = prior.providers.find((saved) => saved.id === profile.id);
           return { ...profile, ...(existing && (existing.provider !== profile.provider || existing.baseUrl !== profile.baseUrl) ? { apiKey: '' } : {}) };
         });
-        const settings = this.saveProviderSettings({ ...manifest.backup.settings, providers, activeProviderId: null, activeModel: '' }, manifest.backup.settings.promptPresets, { restoreModelMetadata: true });
+        const settings = this.saveProviderSettings({ ...manifest.backup.settings, providers, activeProviderId: null, activeModel: '' }, manifest.backup.settings.promptPresets, { restoreModelMetadata: true, preserveKeysAcrossConnections: false });
         if ('error' in settings) throw new HttpError(settings.status ?? 400, settings.error);
         this.imports.complete(id); this.touch(id); this.ctx.storage.sql.exec('INSERT OR IGNORE INTO search_backfill(conversationId) VALUES (?)', id);
       });
@@ -553,7 +553,7 @@ export class Library extends DurableObject<Env> {
   providerForModelList(id: string): ProviderModelConfig | null {
     return this.providerSettingsData().providers.find((profile) => profile.id === id) ?? null;
   }
-  saveProviderSettings(input: ProviderSettingsInput, importedPresets?: PromptPreset[], options: { restoreModelMetadata?: boolean } = {}): { settings: ProviderSettings } | { error: string; status?: number } {
+  saveProviderSettings(input: ProviderSettingsInput, importedPresets?: PromptPreset[], options: { restoreModelMetadata?: boolean; preserveKeysAcrossConnections?: boolean } = {}): { settings: ProviderSettings } | { error: string; status?: number } {
     let settings: ProviderSettingsInput;
     let presets: PromptPreset[] = [];
     try {

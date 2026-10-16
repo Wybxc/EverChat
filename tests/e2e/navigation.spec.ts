@@ -55,7 +55,7 @@ test('SPA navigation, history and refresh restore the correct conversation and i
     await expect(page.getByTestId('user-message')).toContainText(second.title);
     await expect(editor).toHaveValue('第二个对话的草稿');
     await page.goto('/');
-    await expect(page.getByRole('heading', { name: '新对话', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '今天想聊些什么？', exact: true })).toBeVisible();
     await expect(page.getByTestId('user-message')).toHaveCount(0);
   } finally { await fixture.restore(); }
 });

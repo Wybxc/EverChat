@@ -65,7 +65,7 @@ test('invalid IDs, unknown capabilities and insufficient initial context cannot 
   for (const input of [start({ id: 'invalid' }), start({ requestHash: 'A'.repeat(64) }), start({ enabled: [] }),
     start({ enabled: ['web_search', 'web_search'] }), start({ inputBudget: 10_000_001 }), start({ initialTokens: -1 }),
     start({ inputBudget: 1000 + TOOL_DEFINITION_TOKENS - 1 })]) assert.throws(() => begin(input));
-  assert.throws(() => begin(start(), { ...config, modelMetadata: undefined }), /未声明/);
+  assert.throws(() => begin(start(), { ...config, modelMetadata: undefined }), /不支持/);
   assert.equal(query<{ count: number }>('SELECT COUNT(*) AS count FROM web_tool_tasks').one().count, 0);
 });
 

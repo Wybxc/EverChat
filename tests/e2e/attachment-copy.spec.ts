@@ -97,7 +97,7 @@ test('closing the initiating page does not stop a claimed copy; retry after reop
     await control(request, { holdTextRead: file.id }); await page.request.post('/api/login', { headers, data: { password: 'everchat-local' } });
     await page.goto(`/c/${fixture.id}`); await page.getByRole('textbox', { name: '消息', exact: true }).fill('来源草稿');
     await page.route('**/duplicate', async (route) => { copyId = route.request().postDataJSON().requestId; fixture.copies.push(copyId); await route.continue(); });
-    await page.getByRole('button', { name: '更多会话操作', exact: true }).click(); await page.getByRole('button', { name: '复制对话', exact: true }).click();
+    await page.getByRole('button', { name: '更多会话操作', exact: true }).click(); await page.getByRole('menuitem', { name: '复制对话', exact: true }).click();
     await expect.poll(async () => (await control(request)).textWaiting).toBe(true);
     expect((await request.get(`/api/conversations/${copyId}`)).status()).toBe(404);
     expect((await request.get('/api/conversations').then((response) => response.json())).conversations.some((item: { id: string }) => item.id === copyId)).toBe(false);
@@ -106,7 +106,7 @@ test('closing the initiating page does not stop a claimed copy; retry after reop
     const writes = (await control(request)).dailyCount;
     const reopened = await context.newPage(); await reopened.goto(`/c/${fixture.id}`);
     await expect(reopened.getByRole('textbox', { name: '消息', exact: true })).toHaveValue('来源草稿');
-    await reopened.getByRole('button', { name: '更多会话操作', exact: true }).click(); await reopened.getByRole('button', { name: '复制对话', exact: true }).click();
+    await reopened.getByRole('button', { name: '更多会话操作', exact: true }).click(); await reopened.getByRole('menuitem', { name: '复制对话', exact: true }).click();
     await expect(reopened).toHaveURL(`/c/${copyId}`); expect((await control(request)).dailyCount).toBe(writes);
   } finally { await fixture.cleanup(); }
 });

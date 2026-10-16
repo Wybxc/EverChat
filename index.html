@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN" data-theme="light">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
@@ -10,5 +10,5 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <title>EverChat</title>
   </head>
-  <body><div id="root"></div><script>let t='system';try{t=localStorage.getItem('everchat:theme')||'system'}catch{}const resolved=t==='dark'||t==='light'?t:matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.dataset.theme=resolved;document.querySelector('meta[name="theme-color"]').content=resolved==='dark'?'#1d232a':'#ffffff';</script><script type="module" src="/src/main.tsx"></script></body>
+  <body><div id="root"></div><script>let t='system';try{t=localStorage.getItem('everchat:theme')||'system'}catch{}const resolved=t==='dark'||t==='light'?t:matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.classList.toggle('dark',resolved==='dark');document.querySelector('meta[name="theme-color"]').content=resolved==='dark'?'#151517':'#ffffff';</script><script type="module" src="/src/main.tsx"></script></body>
 </html>

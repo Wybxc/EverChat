@@ -31,8 +31,8 @@ test('model metadata resolves each field using manual, provider, catalog then co
   assert.deepEqual(result.reasoningEfforts, ['none', 'low', 'medium', 'high', 'xhigh']);
 });
 
-test('unknown IDs and wrong protocols do not inherit capabilities from model-family regular expressions', () => {
-  for (const [provider, id] of [['openai-chat', 'gpt-9-future'], ['openai-chat', 'gpt-5.4-custom'], ['openai-chat', 'constructor'], ['openai-chat', '__proto__'], ['gemini', 'gemini-9-future'], ['anthropic', 'claude-opus-9'], ['anthropic', 'gpt-5.4']] as const) {
+test('unmatched IDs and wrong protocols keep their fields unknown', () => {
+  for (const [provider, id] of [['openai-chat', 'gpt-9-future'], ['openai-chat', 'constructor'], ['openai-chat', '__proto__'], ['gemini', 'gemini-9-future'], ['anthropic', 'claude-opus-9'], ['anthropic', 'gpt-5.4']] as const) {
     const metadata = resolveModelMetadata(provider, { ...model, id });
     assert.equal(metadata.contextWindow, FALLBACK_MODEL_METADATA.contextWindow);
     assert.equal(metadata.maxOutputTokens, 8192); assert.equal(metadata.reasoning, false);

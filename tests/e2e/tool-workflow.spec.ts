@@ -54,7 +54,7 @@ for (const provider of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
     for (const profile of configured.providers) for (const model of profile.models) model.metadataOverrides = { ...model.metadataOverrides, toolCalls: false };
     expect((await request.put('/api/settings/providers', { headers, data: configured })).ok()).toBe(true);
     const rejected = await request.post(`/api/conversations/${f.id}/messages`, { headers, data: { ...f.input, requestId: crypto.randomUUID() } });
-    expect(rejected.status()).toBe(400); expect(await rejected.text()).toContain('未声明支持工具调用');
+    expect(rejected.status()).toBe(400); expect(await rejected.json()).toEqual({ error: '当前模型不支持工具调用。' });
     expect(await f.snapshot()).toEqual(snapshot); expect((await f.state()).modelCalls).toBe(2);
   } finally { await f.cleanup(); }
 });
@@ -140,8 +140,11 @@ test('tool process sync survives page closure and a second device, with no priva
     await other.getByTestId('tool-activity').locator(':scope > summary').click();
     await expect(other.getByTestId('tool-activity').getByRole('link')).toHaveCount(2);
     await messageMenu(other.getByTestId('assistant-message'));
-    await other.getByTestId('message-generation').locator('summary').click();
+    await other.getByRole('menuitem', { name: '生成信息', exact: true }).click();
     await expect(other.getByTestId('generation-toolTokens')).toBeVisible();
+    await other.getByRole('dialog', { name: '生成信息', exact: true }).getByRole('button', { name: '关闭', exact: true }).click();
+    await expect(other.getByRole('dialog', { name: '生成信息', exact: true })).toHaveCount(0);
+    await other.keyboard.press('Escape'); await expect(other.getByRole('menu')).toHaveCount(0);
     expect(await other.getByTestId('tool-activity').getByRole('link').first().getAttribute('href')).toBe('https://developers.cloudflare.com/');
     const cached = await other.evaluate((id) => localStorage.getItem(`everchat:snapshot:parts-v1:${id}`), f.id);
     expect(cached).toBeTruthy(); expect(cached).not.toMatch(/fixture-signature|encrypted-fixture|redacted-fixture|providerOptions/);

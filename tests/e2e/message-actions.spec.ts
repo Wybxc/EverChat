@@ -36,7 +36,7 @@ test('messages can be copied and quoted into the composer while preserving focus
 
     await editor.fill('请结合下面内容回答：');
     await messageMenu(assistant);
-    await assistant.getByRole('button', { name: '引用消息', exact: true }).click();
+    await page.getByRole('menuitem', { name: '引用消息', exact: true }).click();
     await expect(editor).toBeFocused();
     await expect(editor).toHaveValue(/^请结合下面内容回答：\n\n> ## 章节/u);
     await expect(editor).toHaveValue(/TARGET 起点/u);

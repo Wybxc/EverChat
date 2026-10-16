@@ -131,17 +131,40 @@ test('output limits default to unset while explicit configured limits remain ava
   assert.equal(mergeProviderSettings(settings, settings).maxOutputTokens, 128);
 });
 
-test('provider profiles retain keys only for the same endpoint and return saved keys to settings', () => {
+test('editing a provider retains its key across protocol and endpoint changes', () => {
   const blankKey = { ...settings, providers: [{ ...settings.providers[0], apiKey: '' }] };
-  assert.equal(mergeProviderSettings(settings, blankKey).providers[0].apiKey, 'private-key');
-  assert.throws(() => mergeProviderSettings(settings, { ...blankKey, providers: [{ ...blankKey.providers[0], baseUrl: 'https://another.example/v1' }] }), /默认模型/);
-  assert.throws(() => mergeProviderSettings(settings, { ...blankKey, providers: [{ ...blankKey.providers[0], provider: 'anthropic' }] }), /默认模型/);
-  const moved = mergeProviderSettings(settings, { ...blankKey, activeProviderId: null, activeModel: '', providers: [{ ...blankKey.providers[0], baseUrl: 'https://another.example/v1' }] });
-  assert.equal(moved.providers[0].apiKey, undefined);
+  for (const patch of [{}, { baseUrl: 'https://another.example/v1' }, { provider: 'anthropic' as const }, { provider: 'gemini' as const, baseUrl: 'https://another.example/v1' }]) {
+    const edited = mergeProviderSettings(settings, { ...blankKey, providers: [{ ...blankKey.providers[0], ...patch }] });
+    assert.equal(edited.providers[0].apiKey, 'private-key');
+    assert.equal(edited.activeProviderId, profileId);
+    assert.equal(edited.activeModel, 'test-model');
+    assert.deepEqual(edited.providers[0].models.map(({ reportedMetadata: _automatic, directoryMetadata: _directory, testedCapabilities: _tested, ...model }) => model), settings.providers[0].models);
+  }
+  const replaced = mergeProviderSettings(settings, { ...settings, providers: [{ ...settings.providers[0], apiKey: 'replacement-key' }] });
+  assert.equal(replaced.providers[0].apiKey, 'replacement-key');
+  const newProfile = mergeProviderSettings(settings, { ...blankKey, activeProviderId: null, activeModel: '', providers: [{ ...blankKey.providers[0], id: crypto.randomUUID() }] });
+  assert.equal(newProfile.providers[0].apiKey, undefined);
   assert.equal(publicProviderSettings(settings).providers[0].apiKey, 'private-key');
   assert.equal(publicProviderSettings(settings).providers[0].hasApiKey, true);
   assert.equal(providerConfigFromEnv({ AI_PROVIDER: 'openai-chat', AI_MODEL: 'env-model' } as Env)?.provider, 'openai-chat');
   assert.equal(runtimeProviderConfig({ ...settings, activeProviderId: null, activeModel: '' }), null);
+});
+
+test('backup restore only retains keys for matching provider connections', () => {
+  const blankKey = { ...settings, activeProviderId: null, activeModel: '', providers: [{ ...settings.providers[0], apiKey: '' }] };
+  const options = { restoreModelMetadata: true, preserveKeysAcrossConnections: false };
+  assert.equal(mergeProviderSettings(settings, blankKey, options).providers[0].apiKey, 'private-key');
+  for (const patch of [{ baseUrl: 'https://another.example/v1' }, { provider: 'anthropic' as const }]) {
+    assert.equal(mergeProviderSettings(settings, { ...blankKey, providers: [{ ...blankKey.providers[0], ...patch }] }, options).providers[0].apiKey, undefined);
+  }
+});
+
+test('provider names must contain non-whitespace characters', () => {
+  for (const name of ['', '   ', '\t\n']) {
+    assert.throws(() => mergeProviderSettings(settings, { ...settings, providers: [{ ...settings.providers[0], name }] }), /请填写供应商名称/);
+  }
+  const named = mergeProviderSettings(settings, { ...settings, providers: [{ ...settings.providers[0], name: '  我的供应商  ' }] });
+  assert.equal(named.providers[0].name, '我的供应商');
 });
 
 test('missing model configuration cannot generate and unknown provider types are rejected', () => {

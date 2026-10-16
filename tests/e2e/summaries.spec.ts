@@ -406,7 +406,7 @@ test('summary controls stream Markdown, preserve the draft and URL, sync another
   const fixture = await setup(page.request), other = await browser.newContext({ storageState: await page.context().storageState() });
   try {
     await page.goto(`/c/${fixture.id}`); const composer = page.getByLabel('消息', { exact: true }); await composer.fill('保留的聊天草稿');
-    await conversationMenu(page); await page.getByRole('button', { name: '压缩历史', exact: true }).click(); const modal = page.getByRole('dialog', { name: '压缩历史', exact: true });
+    await conversationMenu(page); await page.getByRole('menuitem', { name: '压缩历史', exact: true }).click(); const modal = page.getByRole('dialog', { name: '压缩历史', exact: true });
     await expect(modal.getByLabel('摘要模型', { exact: true })).toBeFocused(); await expect(modal).toContainText('会额外调用所选模型，可能产生费用');
     await modal.getByLabel('摘要模型', { exact: true }).selectOption(modelSelectionKey({ providerId: fixture.providerId, model: 'benchmark-summary-slow' }));
     await modal.getByLabel('摘要覆盖边界', { exact: true }).selectOption(fixture.seeded.messages[1].id);
@@ -419,12 +419,17 @@ test('summary controls stream Markdown, preserve the draft and URL, sync another
     const persisted = second.getByTestId('summary-message');
     if (!await persisted.locator('details').first().evaluate((element: HTMLDetailsElement) => element.open)) await persisted.locator('summary').first().click();
     await expect(persisted.locator('[data-streamdown="strong"]').filter({ hasText: /^42 元$/ })).toHaveText('42 元');
-    await expect(second.getByTestId('context-estimate')).toContainText('覆盖 2 条');
+    await second.getByRole('button', { name: '查看上下文估算' }).click();
+    await expect(second.getByRole('dialog', { name: '上下文估算', exact: true })).toContainText('覆盖 2 条');
+    await second.keyboard.press('Escape');
     expect((await fixture.resources()).calls).toBe(1);
     await second.reload(); await expect(second.getByTestId('summary-message')).toHaveAttribute('data-status', 'completed'); expect((await fixture.resources()).calls).toBe(1);
     await openParameters(second); const settings = second.getByRole('dialog', { name: '会话参数', exact: true });
     await settings.getByLabel('使用历史摘要', { exact: true }).uncheck(); await expect(settings.getByRole('status')).toHaveText('已保存');
-    await settings.getByRole('button', { name: '关闭会话参数' }).click(); await expect(second.getByTestId('context-estimate')).not.toContainText('覆盖 2 条');
+    await settings.getByRole('button', { name: '关闭会话参数' }).click();
+    await second.getByRole('button', { name: '查看上下文估算' }).click();
+    await expect(second.getByRole('dialog', { name: '上下文估算', exact: true })).not.toContainText('覆盖 2 条');
+    await second.keyboard.press('Escape');
     expect((await fixture.snapshot()).settings!.useSummaries).toBe(false);
   } finally { await other.close(); await fixture.cleanup(); }
 });
@@ -434,7 +439,7 @@ test('an unknown submission result retries the same summary request and leaves a
   try {
     await page.goto(`/c/${fixture.id}`); await page.getByLabel('消息', { exact: true }).fill('草稿不丢');
     await page.route(`**/api/conversations/${fixture.id}/messages`, async (route) => { await route.fetch(); await route.abort('failed'); }, { times: 1 });
-    await conversationMenu(page); await page.getByRole('button', { name: '压缩历史', exact: true }).click(); const modal = page.getByRole('dialog', { name: '压缩历史', exact: true });
+    await conversationMenu(page); await page.getByRole('menuitem', { name: '压缩历史', exact: true }).click(); const modal = page.getByRole('dialog', { name: '压缩历史', exact: true });
     await modal.getByLabel('摘要模型', { exact: true }).selectOption(modelSelectionKey({ providerId: fixture.providerId, model: 'benchmark-summary-ok' }));
     await modal.getByRole('button', { name: '生成摘要', exact: true }).click();
     await expect(page.getByText('历史摘要请求', { exact: true })).toBeVisible();
@@ -450,23 +455,27 @@ test('summary regeneration and deletion controls keep originals and drafts, and 
   try {
     const task = await fixture.startSummary(); await fixture.terminal(task);
     await page.goto(`/c/${fixture.id}`); const composer = page.getByLabel('消息', { exact: true }); await composer.fill('保留草稿');
-    const first = page.getByTestId('summary-message'); await expect(first).toHaveAttribute('data-status', 'completed');
-    await first.getByRole('button', { name: '重新生成摘要', exact: true }).click();
+    const first = page.getByTestId('summary-message').first(); await expect(first).toHaveAttribute('data-status', 'completed');
+    await first.getByRole('button', { name: '更多摘要操作', exact: true }).click();
+    await page.getByRole('menuitem', { name: '重新生成摘要', exact: true }).click();
     const modal = page.getByRole('dialog', { name: '重新生成摘要', exact: true });
     await expect(modal.getByLabel('摘要模型', { exact: true })).toHaveValue(modelSelectionKey({ providerId: fixture.providerId, model: 'benchmark-summary-ok' }));
     await expect(modal.getByLabel('摘要覆盖边界', { exact: true })).toHaveValue(fixture.seeded.messages[1].id);
     await modal.getByRole('button', { name: '生成摘要', exact: true }).click();
     await expect(page.getByTestId('summary-message').nth(1)).toHaveAttribute('data-status', 'completed');
     expect((await fixture.resources()).calls).toBe(2); await expect(composer).toHaveValue('保留草稿');
-    await page.getByTestId('summary-message').first().getByRole('button', { name: '删除摘要', exact: true }).click();
-    const deletion = page.getByRole('dialog', { name: '删除摘要', exact: true }); await expect(deletion).toContainText('原始消息仍保留');
+    await first.getByRole('button', { name: '更多摘要操作', exact: true }).click();
+    await page.getByRole('menuitem', { name: '删除摘要', exact: true }).click();
+    const deletion = page.getByRole('alertdialog', { name: '删除摘要', exact: true }); await expect(deletion).toContainText('原始消息仍保留');
     await deletion.getByRole('button', { name: '确认删除', exact: true }).click();
     await expect(page.getByTestId('summary-message').first()).toHaveText('摘要已删除或失效');
     expect((await fixture.snapshot()).messages.slice(0, 6)).toEqual(fixture.seeded.messages);
     await page.context().setOffline(true);
     await conversationMenu(page);
-    await expect(page.getByRole('button', { name: '压缩历史', exact: true })).toBeDisabled();
-    await expect(page.getByRole('button', { name: '重新生成摘要', exact: true })).toBeDisabled(); await expect(composer).toHaveValue('保留草稿');
+    await expect(page.getByRole('menuitem', { name: '压缩历史', exact: true })).toBeDisabled();
+    await page.keyboard.press('Escape');
+    await page.getByTestId('summary-message').last().getByRole('button', { name: '更多摘要操作', exact: true }).click();
+    await expect(page.getByRole('menuitem', { name: '重新生成摘要', exact: true })).toBeDisabled(); await expect(composer).toHaveValue('保留草稿');
   } finally { await page.context().setOffline(false); await fixture.cleanup(); }
 });
 

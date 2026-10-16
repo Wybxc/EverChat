@@ -104,10 +104,11 @@ test('preset management autosaves and recovers drafts, applies copies, synchroni
     await openSpaceSettings(page); panel = await presetsTab(page);
     await expect(panel.getByLabel('预设名称', { exact: true })).toHaveValue('远端新名称');
     await page.route('**/api/settings/presets/*', (route) => route.request().method() === 'DELETE' ? route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '暂时无法删除预设' }) }) : route.continue());
-    await panel.getByRole('button', { name: '删除预设', exact: true }).click(); await expect(panel.getByRole('button', { name: '取消删除预设' })).toBeFocused();
-    await panel.getByRole('button', { name: '确认删除预设', exact: true }).click(); await expect(panel.getByRole('alert')).toContainText('暂时无法删除预设');
-    await expect(panel.getByLabel('预设系统提示词', { exact: true })).toHaveValue('远端提示词');
-    await page.unroute('**/api/settings/presets/*'); await panel.getByRole('button', { name: '确认删除预设', exact: true }).click();
+    await panel.getByRole('button', { name: '删除预设', exact: true }).click(); await expect(page.getByRole('button', { name: '取消删除预设' })).toBeFocused();
+    await page.getByRole('button', { name: '确认删除预设', exact: true }).click(); await expect(page.getByRole('alertdialog').getByRole('alert')).toContainText('暂时无法删除预设');
+    // AlertDialog hides the underlying settings panel from the accessibility tree.
+    await expect(page.getByLabel('预设系统提示词', { exact: true })).toHaveValue('远端提示词');
+    await page.unroute('**/api/settings/presets/*'); await page.getByRole('button', { name: '确认删除预设', exact: true }).click();
     await expect(panel.getByRole('button', { name: '添加预设' })).toBeFocused();
     await page.getByRole('button', { name: '关闭设置', exact: true }).click(); await openParameters(page);
     await expect(parameters.getByLabel('会话系统提示词', { exact: true })).toHaveValue('你是写作助手。');
@@ -176,7 +177,7 @@ test('a dirty draft whose preset was deleted remotely can be saved under a new I
     expect(copy.id).not.toBe(id); expect(copy.name).toBe('原预设');
     expect((await page.request.put(`/api/settings/presets/${id}`, { headers, data: { name: '原预设', systemPrompt: '迟到内容' } })).status()).toBe(410);
     await panel.getByLabel('编辑预设', { exact: true }).selectOption(id); await panel.getByRole('button', { name: '删除预设', exact: true }).click();
-    await panel.getByRole('button', { name: '确认删除预设', exact: true }).click();
+    await page.getByRole('button', { name: '确认删除预设', exact: true }).click();
     await expect(panel.getByLabel('编辑预设', { exact: true })).toHaveValue(copy.id);
     await expect(panel.getByLabel('预设系统提示词', { exact: true })).toHaveValue('待恢复的内容');
     expect(await page.evaluate((id) => id in JSON.parse(localStorage.getItem('everchat:prompt-preset-drafts') ?? '{}'), id)).toBe(false);

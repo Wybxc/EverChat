@@ -1,3 +1,7 @@
+import { useState } from 'react';
+import { Modal, ModalTitle } from './Modal';
+import { ActionMenuItem } from './ActionMenu';
+
 import type { GenerationResult } from '../shared/generation';
 import type { StreamUsage } from '../shared/provider-stream';
 
@@ -11,11 +15,10 @@ const number = new Intl.NumberFormat('zh-CN');
 const duration = (ms: number) => ms < 1000 ? `${number.format(ms)} ms` : `${(ms / 1000).toFixed(2)} s`;
 
 export function GenerationMetadata({ generation }: { generation?: GenerationResult }) {
+  const [open, setOpen] = useState(false);
   if (!generation) return null;
   const fields = usageFields.filter(([key]) => generation.usage[key] !== undefined);
-  return <details data-testid="message-generation" className="w-full text-xs">
-    <summary className="min-h-11 cursor-pointer py-3 text-sm font-medium">生成信息</summary>
-    <div className="py-2">
+  return <><ActionMenuItem keepOpen onSelect={(event) => { event.preventDefault(); setOpen(true); }}>生成信息</ActionMenuItem><Modal showCloseButton open={open} onOpenChange={setOpen}><div data-testid="message-generation" className="w-full max-w-md space-y-4 p-5 text-xs"><ModalTitle>生成信息</ModalTitle><div className="py-2">
       <dl className="space-y-2">
         <div className="flex items-baseline justify-between gap-4 sm:gap-6"><dt>Token 用量</dt><dd>{fields.length ? generation.usageIsFinal ? '供应商报告' : '部分报告' : '供应商未返回'}</dd></div>
         {fields.map(([key, label]) => <div key={key} className="flex items-baseline justify-between gap-4 sm:gap-6"><dt>{label}</dt><dd data-testid={`generation-${key}`}>{number.format(generation.usage[key]!)}</dd></div>)}
@@ -28,5 +31,5 @@ export function GenerationMetadata({ generation }: { generation?: GenerationResu
         </>}
       </dl>
     </div>
-  </details>;
+  </div></Modal></>;
 }

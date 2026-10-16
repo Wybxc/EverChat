@@ -1,3 +1,4 @@
+import { expectChatModel } from '../ui';
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import { attachmentUrl } from '../../shared/attachments';
@@ -168,7 +169,7 @@ test('new-conversation upload preserves text, focus and private metadata drafts;
   const fixture = await setup(request);
   try {
     await page.goto('/'); await page.getByLabel('访问密码').fill('everchat-local'); await page.getByRole('button', { name: '进入我的空间' }).click();
-    await expect(page.getByLabel('聊天模型')).toHaveValue(JSON.stringify([providerId, fixture.selection.model]));
+    await expectChatModel(page, JSON.stringify([providerId, fixture.selection.model]));
     const editor = page.getByRole('textbox', { name: '消息', exact: true }); await editor.fill('保留我的草稿 expect-files:1');
     await page.getByLabel('选择聊天文件').setInputFiles({ name: 'draft.ts', mimeType: 'text/plain', buffer: Buffer.from(text) });
     await expect(page).toHaveURL(/\/c\/[a-f0-9-]+$/); const id = page.url().split('/').at(-1)!;
@@ -177,7 +178,7 @@ test('new-conversation upload preserves text, focus and private metadata drafts;
       await page.reload(); await expect(page.getByRole('button', { name: '预览 draft.ts' })).toBeVisible(); await expect(editor).toHaveValue('保留我的草稿 expect-files:1');
       expect(await page.evaluate(() => JSON.stringify(localStorage))).not.toContain('documentExecuted');
       await page.getByRole('button', { name: '预览 draft.ts' }).click(); await expect(page.getByRole('dialog').locator('pre')).toContainText('预算：42 元');
-      await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click({ position: { x: 8, y: 8 } });
+      await page.getByRole('dialog').getByRole('button', { name: '关闭文件预览', exact: true }).click({ position: { x: 8, y: 8 } });
       await expect(page.getByRole('dialog')).not.toBeVisible();
       expect((await (await request.get(`/api/conversations/${id}`)).json() as Snapshot).messages).toHaveLength(0);
       await page.getByRole('button', { name: '发送消息' }).click(); await expect(page.getByTestId('assistant-message')).toContainText('答案。');

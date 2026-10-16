@@ -3,8 +3,12 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { cloudflare } from '@cloudflare/vite-plugin';
 import { VitePWA } from 'vite-plugin-pwa';
+import { fileURLToPath } from 'node:url';
 
 export default defineConfig({
+  cacheDir: process.env.EVERCHAT_TEST_STATE ? `${process.env.EVERCHAT_TEST_STATE}/vite-cache` : 'node_modules/.vite',
+  optimizeDeps: { include: ['fflate'] },
+  resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
   plugins: [react(), tailwindcss(), VitePWA({
     injectRegister: false,
     registerType: 'autoUpdate',
@@ -18,8 +22,8 @@ export default defineConfig({
       start_url: '/',
       scope: '/',
       display: 'standalone',
-      background_color: '#fcfcfa',
-      theme_color: '#285c50',
+      background_color: '#ffffff',
+      theme_color: '#3964fe',
       icons: [
         { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
         { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },

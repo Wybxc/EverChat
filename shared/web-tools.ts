@@ -1,5 +1,6 @@
 import * as v from 'valibot';
 import type { ResolvedModelMetadata } from './types';
+import { canAttemptCapability } from './model-metadata';
 
 export const WEB_TOOL_NAMES = ['web_search', 'read_webpage'] as const;
 export type WebToolName = typeof WEB_TOOL_NAMES[number];
@@ -72,5 +73,5 @@ export function validateWebToolOutcome(value: unknown): WebToolOutcome {
 }
 export function assertWebToolSupport(metadata: ResolvedModelMetadata | undefined, enabled: readonly WebToolName[]) {
   if (!enabled.length || enabled.length > WEB_TOOL_NAMES.length || new Set(enabled).size !== enabled.length || enabled.some((name) => !WEB_TOOL_NAMES.includes(name))) throw new Error('工具选择无效。');
-  if (!metadata?.toolCalls) throw new Error('当前模型未声明支持工具调用。');
+  if (!canAttemptCapability(metadata, 'toolCalls')) throw new Error('当前模型不支持工具调用。');
 }

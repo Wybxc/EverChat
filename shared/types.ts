@@ -98,7 +98,7 @@ export interface ModelMetadata {
   reasoning: boolean;
   reasoningEfforts: ReasoningEffort[];
 }
-export type MetadataSource = 'manual' | 'provider' | 'catalog' | 'fallback';
+export type MetadataSource = 'manual' | 'provider' | 'tested' | 'catalog' | 'directory' | 'inferred' | 'fallback';
 export interface ResolvedModelMetadata extends ModelMetadata {
   sources: Record<keyof ModelMetadata, MetadataSource>;
 }
@@ -110,6 +110,8 @@ export interface ProviderModel {
   systemPrompt?: string;
   reasoningSupport?: 'auto' | 'supported' | 'unsupported';
   reportedMetadata?: Partial<ModelMetadata>;
+  directoryMetadata?: { values: Partial<ModelMetadata>; match: 'exact' | 'alias'; updatedAt: number };
+  testedCapabilities?: { imageInput?: true; toolCalls?: true; testedAt: number };
   metadataOverrides?: ModelMetadataOverrides;
 }
 export interface ProviderProfile {
