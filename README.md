@@ -12,6 +12,8 @@
 
 访问控制使用 Cloudflare Access；JWT 信任边界、本地联调与验证记录见[访问控制迁移方案](docs/plans/cloudflare-access-migration-plan.md)。
 
+正式网站为 [chat.wybxc.cc](https://chat.wybxc.cc)，私有代码仓库为 [Wybxc/EverChat](https://github.com/Wybxc/EverChat)。GitHub 自动部署、生产资源与 Cloudflare 原生费用告警见[部署运维记录](docs/operations/cloudflare-deployment.md)。
+
 ## 本地运行
 
 需要 Node.js 22.12+（或 24+）、pnpm 12。所有命令在项目根目录执行。
@@ -129,7 +131,7 @@ pnpm exec wrangler r2 bucket create everchat-attachments --storage-class Standar
 pnpm deploy
 ```
 
-正式域名为 `chat.wybxc.cc`。上线前在团队 `wybxc.cloudflareaccess.com` 创建覆盖整个域名的 self-hosted Access 应用，仅允许 `wybxc@qq.com`，启用邮件验证码登录。该应用的 AUD 已写入 Wrangler 的 `ACCESS_AUD`；`ACCESS_TEAM_DOMAIN`、`APP_ORIGIN`、`ACCESS_ALLOWED_EMAILS` 已在配置中固定。AUD 是应用标识，不是密钥。保持 `workers_dev: false` 和 `preview_urls: false`，先确认边缘保护再部署；仅填写变量不会启用 Access。
+正式域名为 `chat.wybxc.cc`。已在团队 `wybxc.cloudflareaccess.com` 创建覆盖整个域名的 self-hosted Access 应用，仅允许 `wybxc@qq.com`，启用邮件验证码登录。该应用的 AUD 已写入 Wrangler 的 `ACCESS_AUD`；`ACCESS_TEAM_DOMAIN`、`APP_ORIGIN`、`ACCESS_ALLOWED_EMAILS` 已在配置中固定。AUD 是应用标识，不是密钥。保持 `workers_dev: false` 和 `preview_urls: false`；迁移到其他域名或账户时须先配置对应的边缘保护，仅填写变量不会启用 Access。
 
 Worker 使用 `jose` 验证断言的签名、issuer、audience、有效期和允许身份。缺少配置或验证服务不可用时拒绝业务访问。无需应用密码或 EverChat 自签登录 Cookie；部署后可通过网页配置模型。部署将创建 Worker、两个 SQLite Durable Object namespace 及有限工具编排使用的 Workflow 定义；首次启用服务时按 Cloudflare 提示完成账户配置。费用以账户当前套餐和实际用量为准。
 
@@ -145,7 +147,7 @@ pnpm test:e2e
 pnpm test:pwa
 ```
 
-端到端测试使用本地 Cloudflare 运行时及真实 Durable Object Alarm、SQLite、WebSocket 和 Workflow。测试入口提供模拟供应商、联网工具及实例重置、写入失败等故障注入，不发起付费模型或搜索调用。`pnpm test:e2e` 在 5174 端口启动独立服务器，使用临时存储目录，避免修改日常聊天及供应商设置；需要 `.dev.vars.example` 中的本地密码。测试包含鉴权、跨域写入拒绝、请求幂等、会话并发限制、断网恢复、第二设备同步、页面关闭后继续生成、离线待发送、取消、重新生成、响应式截图，以及多供应商增删改、模型获取与编辑、密钥查看与遮蔽、跨设备读取和未配置模型时禁止生成。执行器回归还覆盖 Alarm 重入、原生实例重置、取消静默上游、尾部保存失败及有限工具任务的逐轮恢复、预算、私有续接隔离和过程备份。单元测试检查四种协议的请求及模型目录解析。
+端到端测试使用本地 Cloudflare 运行时及真实 Durable Object Alarm、SQLite、WebSocket 和 Workflow。测试入口提供模拟供应商、联网工具及实例重置、写入失败等故障注入，不发起付费模型或搜索调用。`pnpm test:e2e` 在 5174 端口启动独立服务器，使用临时存储目录和独立的签名身份夹具，避免修改日常聊天及供应商设置。测试包含鉴权、跨域写入拒绝、请求幂等、会话并发限制、断网恢复、第二设备同步、页面关闭后继续生成、离线待发送、取消、重新生成、响应式截图，以及多供应商增删改、模型获取与编辑、密钥查看与遮蔽、跨设备读取和未配置模型时禁止生成。执行器回归还覆盖 Alarm 重入、原生实例重置、取消静默上游、尾部保存失败及有限工具任务的逐轮恢复、预算、私有续接隔离和过程备份。单元测试检查四种协议的请求及模型目录解析。
 
 导航回归检查直接链接登录、无整页刷新切换、前进／后退、草稿恢复、新标签页和离线待发送。不存在或无效的 URL 显示错误，可开启新对话，不自动创建同 ID 的替代对话。`pnpm test:pwa` 需要先构建，在 5175 端口服务生产静态文件与合成只读 API，验证 Service Worker 激活后的离线刷新和新标签页能恢复缓存正文／思考，API 响应不进入离线缓存；后台生成仍由主端到端套件验证。
 

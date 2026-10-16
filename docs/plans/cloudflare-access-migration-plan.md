@@ -1,6 +1,6 @@
 # Cloudflare Access 访问控制迁移方案
 
-日期：2026-10-16。状态：代码迁移与本地验证完成，正式部署验证进行中。基于当前源码及当日 Cloudflare 官方文档。
+日期：2026-10-16。状态：代码迁移、正式部署和上线基本验证完成；扩展的真实撤销及故障测量另行记录。基于当前源码及当日 Cloudflare 官方文档。
 
 ## 1. 目标与迁移方式
 
@@ -167,7 +167,7 @@ Wrangler 的 `access.dev` 模拟的是 `ctx.access`，不能直接替代本项�
 
 ## 10. 实施顺序与交付边界
 
-阶段 1–4 已实现，阶段 5 的本地测试与说明已完成；阶段 6 正在执行。阶段是代码组织顺序，不是在生产环境并行运行新旧认证。
+阶段 1–5 已完成；阶段 6 已完成正式域名切换与基本上线验证，隔离环境的扩展撤销／费用测量尚未执行。阶段是代码组织顺序，不是在生产环境并行运行新旧认证。
 
 | 阶段           | 工作                                                                                | 通过条件                                                          |
 | -------------- | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
@@ -180,7 +180,7 @@ Wrangler 的 `access.dev` 模拟的是 `ctx.access`，不能直接替代本项�
 
 阶段 2–4 作为同一次功能切换交付，不单独上线不完整状态。实现前先核对工作区未提交修改，保留已有修改；按完整、可验证的边界提交代码。
 
-已创建并在控制台核对 EverChat self-hosted Access 应用（`b0bd02c9-4d18-4df8-9e70-65ee370b5bbc`）：团队域名 `wybxc.cloudflareaccess.com`，覆盖整个 `chat.wybxc.cc`，唯一 Allow 策略限定 `wybxc@qq.com`，使用 One-time PIN，应用会话 24 小时，HttpOnly、SameSite Lax。实际 AUD 已写入 `wrangler.jsonc`。不设置 Bypass，关闭 WARP 登录。Access 控制台策略与 Wrangler 变量分别配置。原域名指向已下线的 `clab` Tunnel；用户已明确授权切换到 EverChat Worker。
+已创建并在控制台核对 EverChat self-hosted Access 应用（`b0bd02c9-4d18-4df8-9e70-65ee370b5bbc`）：团队域名 `wybxc.cloudflareaccess.com`，覆盖整个 `chat.wybxc.cc`，唯一 Allow 策略限定 `wybxc@qq.com`，使用 One-time PIN，应用会话 24 小时，HttpOnly、SameSite Lax。实际 AUD 已写入 `wrangler.jsonc`。不设置 Bypass，关闭 WARP 登录。Access 控制台策略与 Wrangler 变量分别配置。经用户授权，已移除指向已下线 `clab` Tunnel 的旧 `chat` CNAME，并将该域名切换为 EverChat Worker 的 Custom Domain；其他 DNS 和 Tunnel 保留。
 
 上线顺序为：备份业务数据 → 配置域名 Access 与入口封闭 → 验证边缘保护 → 部署完整切换版本 → 验证后删除旧 Secrets。整个窗口保持域名受保护，不先拆除密码再等待 Access 生效。若必须回滚代码，继续保留域名 Access 保护。
 
@@ -209,4 +209,8 @@ Worker 侧的新增负担集中在每次 HTTP 请求／握手的验签、低频 
 - 321 项单元测试通过，包含签名、声明、密钥轮换、JWKS 故障、Origin、服务身份和 WS 租期。完整浏览器回归首轮 275/285 通过，10 项失败经定位修复，失败项复跑通过；新增的离线退出跨标签页回归也已通过。最终相关回归 29 项全部通过。
 - 生产构建和类型检查通过；3 项生产 PWA 测试通过，认证导航确实到达服务器，未被离线 SPA 回退吞掉。
 - 本地流式测量 3 场景、工具测量 7 场景，以及 Wrangler 原生工具功能验证 9 场景通过。远程测量改用隔离自定义域名和绑定 origin 的 Access 服务凭据；本轮未创建远程验证应用或服务令牌，不能把本地结果当成真实 Access 撤销／平台费用证据。
-- 真实平台仍需验证正式域名登录、JWT 初始化、WebSocket、过期及撤销后的重新鉴权、原生文件导航和备用入口封闭。没有完成的项目继续保留在验收范围内。
+- 正式 Worker `everchat` 已部署，初始版本为 `91f7fe4e-85b0-43fb-a383-eb97af3843f0`。`chat.wybxc.cc` 已切换到新服务，`workers.dev` 和预览入口在配置中关闭。私有 R2、两个 DO namespace 及工具 Workflow 已绑定；旧生产密码 Secrets 不再需要，本地旧认证变量已移除。
+- 未登录访问正式首页、对话深链接、静态图标和 `/auth/resume` 均进入 Access；带 AJAX 标记的 `/api/session` 返回 401，伪造旧 Cookie 和邮箱头不能恢复访问。用户完成 One-time PIN 后，真实 JWT 初始化成功。
+- 经用户授权上传纯测试文本，生成独立对话 URL，收到 WebSocket `ready` 后显示已同步；私有文本预览成功，原生下载的 70 字节与原文件 SHA-256 一致。验证对话按用户要求保留，不调用真实模型。
+- 代码已推送至私有 GitHub 仓库 `Wybxc/EverChat`，Worker 已关联 `main`，使用专用构建令牌。部署与平台原生告警配置见[运维记录](../operations/cloudflare-deployment.md)。
+- 真实令牌自然过期、管理员撤销、原生文件导航在失效后的恢复，以及新增 Access 验签的 CPU／重连平台测量尚未执行；这些边界已有本地回归，但不将其声称为真实平台验收结果。
