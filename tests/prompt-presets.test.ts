@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
-import { PromptPresets, PromptPresetError } from '../worker/prompt-presets';
+import { PromptPresets, PromptPresetError } from '../worker/presets/store';
 import { MAX_PROMPT_PRESETS, promptPresetInputSchema, promptPresetListSchema } from '../shared/presets/schema';
 
 function fixture() {

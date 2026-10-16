@@ -1,11 +1,11 @@
 // API-only isolated deployment: native Workflow, mock supplier HTTP and no R2 dependency.
 import fixture, { Conversation as BaseConversation, Library as BaseLibrary } from './cloudflare-worker';
-import { authenticated } from '../../worker/auth';
-import { json } from '../../worker/http';
-import type { Env } from '../../worker/env';
-import { toolWorkflowId } from '../../worker/tool-workflow';
+import { authenticated } from '../../worker/http/auth';
+import { json } from '../../worker/http/response';
+import type { Env } from '../../worker/http/env';
+import { toolWorkflowId } from '../../worker/web-tools/workflow';
 import { TOOL_VALIDATION_WORKER, type ToolValidationConversation, type ToolValidationIdentity, type ToolValidationLibrary } from '../../scripts/measurements/support/validation';
-export { WebToolWorkflow } from '../../worker/tool-workflow';
+export { WebToolWorkflow } from '../../worker/web-tools/workflow';
 type ValidationEnv = Env & { VALIDATION_RUN_ID?: string; LOCAL_RESOURCE_METRICS?: string; LOCAL_TOOL_WORKLOAD?: string };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export class Conversation extends BaseConversation {

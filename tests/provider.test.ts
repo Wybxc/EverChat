@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { ProviderConfig, ProviderKind, ProviderSettingsInput } from '../shared/providers/types';
-import { GenerationCancelled } from '../worker/provider';
+import { GenerationCancelled } from '../worker/providers/stream';
 import { generate } from './fixtures/generate';
-import { defaultProviderSettings, mergeProviderSettings, providerConfigFromEnv, publicProviderSettings, runtimeProviderConfig } from '../worker/provider-config';
-import { fetchProviderModels } from '../worker/provider-models';
-import type { Env } from '../worker/env';
+import { defaultProviderSettings, mergeProviderSettings, providerConfigFromEnv, publicProviderSettings, runtimeProviderConfig } from '../worker/providers/config';
+import { fetchProviderModels } from '../worker/providers/models';
+import type { Env } from '../worker/http/env';
 
 const config: ProviderConfig = { provider: 'openai-chat', baseUrl: 'https://provider.example/v1', model: 'test-model', systemPrompt: '系统提示', maxOutputTokens: 128, apiKey: 'private-key' };
 const history = [{ role: 'user' as const, content: '历史问题' }, { role: 'assistant' as const, content: '历史回答' }, { role: 'user' as const, content: '新问题' }];

@@ -1,4 +1,4 @@
-import { openProviderStream, GenerationCancelled, ProviderError } from '../../worker/provider';
+import { openProviderStream, GenerationCancelled, ProviderError } from '../../worker/providers/stream';
 import { ProviderStream, StreamParseError } from '../../shared/streaming/provider-stream';
 import type { ProviderConfig, ChatInput } from '../../shared/providers/types';
 

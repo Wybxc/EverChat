@@ -2,14 +2,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import * as v from 'valibot';
-import { extractDocument } from '../worker/document-parser';
+import { extractDocument } from '../worker/attachments/parser';
 import { assertDocumentContext, documentPartSchema, documentPrompt, estimateDocumentTokens, type DocumentPart } from '../shared/attachments/documents';
 import { messageFiles, messagePartsSchema } from '../shared/conversation/content';
 import { assertContextFits, buildContext, contextHistory, contextSource } from '../shared/conversation/context-budget';
 import { DEFAULT_CONVERSATION_SETTINGS } from '../shared/conversation/settings';
 import { resolveModelMetadata } from '../shared/models/metadata';
 import { summaryContext, summaryGeneration } from '../shared/conversation/summaries';
-import { openProviderStream } from '../worker/provider';
+import { openProviderStream } from '../worker/providers/stream';
 import type { Message } from '../shared/conversation/types';
 import type { ProviderConfig, ProviderKind } from '../shared/providers/types';
 

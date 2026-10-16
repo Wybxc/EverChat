@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { GenerationBuffer } from '../worker/generation-buffer';
-import { GenerationCancelled, ProviderError } from '../worker/generation-errors';
+import { GenerationBuffer } from '../worker/generation/buffer';
+import { GenerationCancelled, ProviderError } from '../worker/generation/errors';
 import { validateBatch, MAX_BATCH_BYTES, MAX_COMMIT_BYTES, MAX_STREAM_BYTES, payloadBytes, validateCommit } from '../shared/streaming/batches';
 import type { StreamBatch } from '../shared/streaming/protocol';
 const encode = (value: string) => new TextEncoder().encode(value);

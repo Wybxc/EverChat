@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ToolStreamRelay } from '../worker/tool-stream-relay';
+import { ToolStreamRelay } from '../worker/web-tools/stream-relay';
 import { ProviderStream } from '../shared/streaming/provider-stream';
 import { fragmentedToolBody, toolFinalStream, toolStream } from './fixtures/tool-streams';
-import { collectProviderToolTurn } from '../worker/provider-tools';
+import { collectProviderToolTurn } from '../worker/providers/tool-turn';
 import { resolveModelMetadata } from '../shared/models/metadata';
 import { addGenerationUsage } from '../shared/streaming/generation';
 import { backupMessage } from '../shared/backup/backup';

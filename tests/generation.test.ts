@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as v from 'valibot';
 import { generationSchema } from '../shared/streaming/generation';
 import { ProviderStream } from '../shared/streaming/provider-stream';
-import { FirstTokenProbe, generationTiming } from '../worker/generation-timing';
+import { FirstTokenProbe, generationTiming } from '../worker/generation/timing';
 import { providerStreams } from './fixtures/provider-streams';
 import type { ProviderKind } from '../shared/providers/types';
 

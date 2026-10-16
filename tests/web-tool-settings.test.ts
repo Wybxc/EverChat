@@ -1,8 +1,8 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { WebToolSettings } from '../worker/web-tool-settings';
-import type { SqlQuery } from '../worker/generation-metrics';
+import { WebToolSettings } from '../worker/web-tools/settings';
+import type { SqlQuery } from '../worker/generation/metrics';
 
 function setup(t: TestContext) {
   const db = new DatabaseSync(':memory:'); t.after(() => db.close()); let now = Date.UTC(2026, 9, 15, 23, 59);

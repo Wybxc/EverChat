@@ -1,5 +1,5 @@
 import type { WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
-import { WebToolWorkflow as ProductionWorkflow, type ToolWorkflowParams } from '../../worker/tool-workflow';
+import { WebToolWorkflow as ProductionWorkflow, type ToolWorkflowParams } from '../../worker/web-tools/workflow';
 
 // Instrument the real Workflow, including callback retries. Results contain only
 // names and byte counts; production entrypoints do not import this subclass.

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { SearchIndex, SearchChanged, searchableMarkdown, MAX_SEARCH_DATABASE_BYTES } from '../worker/search-index';
+import { SearchIndex, SearchChanged, searchableMarkdown, MAX_SEARCH_DATABASE_BYTES } from '../worker/search/index';
 import type { SearchDocument } from '../shared/search/query';
 
 function fixture() {

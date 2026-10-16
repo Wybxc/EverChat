@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { probeModelCapability, PROBE_RESPONSE_BYTES, PROBE_TIMEOUT_MS } from '../worker/model-probe';
-import { probeImage } from '../worker/probe-image';
+import { probeModelCapability, PROBE_RESPONSE_BYTES, PROBE_TIMEOUT_MS } from '../worker/providers/probe';
+import { probeImage } from '../worker/providers/probe-image';
 import { imageDimensions } from '../shared/attachments/images';
 import type { ProviderConfig, ProviderKind } from '../shared/providers/types';
 import type { ProbeCapability } from '../shared/models/probe';

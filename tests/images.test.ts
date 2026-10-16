@@ -7,7 +7,7 @@ import { messageImages, messagePartsSchema } from '../shared/conversation/conten
 import { assertContextFits, buildContext, contextHistory, contextSource } from '../shared/conversation/context-budget';
 import { DEFAULT_CONVERSATION_SETTINGS } from '../shared/conversation/settings';
 import { resolveModelMetadata } from '../shared/models/metadata';
-import { openProviderStream } from '../worker/provider';
+import { openProviderStream } from '../worker/providers/stream';
 import { summaryContext, summaryGeneration } from '../shared/conversation/summaries';
 import type { Message } from '../shared/conversation/types';
 import type { ProviderConfig, ProviderKind } from '../shared/providers/types';

@@ -10,7 +10,7 @@ import { buildContext, contextEstimateSchema } from '../shared/conversation/cont
 import { DEFAULT_CONVERSATION_SETTINGS } from '../shared/conversation/settings';
 import type { ProviderModel } from '../shared/models/types';
 import type { ProviderSettingsInput } from '../shared/providers/types';
-import { providerCallOptions } from '../worker/provider-sdk';
+import { providerCallOptions } from '../worker/providers/sdk';
 
 const model: ProviderModel = { id: 'catalog-fixture', name: 'My model', enabled: true };
 const raw = { openai: { models: { 'catalog-fixture': { tool_call: true, reasoning: true, structured_output: false,

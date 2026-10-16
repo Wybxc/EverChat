@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { resolveModelMetadata } from '../shared/models/metadata';
 import { assertWebToolSupport, publicWebUrl, validateWebToolCall, validateWebToolOutcome, type WebToolOutcome } from '../shared/web-tools/tasks';
 import type { ProviderConfig, ProviderKind } from '../shared/providers/types';
-import { collectProviderToolTurn, MAX_TOOL_TURN_WIRE_BYTES, providerToolPrompt, type ProviderToolExchange } from '../worker/provider-tools';
-import { openProviderStream } from '../worker/provider';
+import { collectProviderToolTurn, MAX_TOOL_TURN_WIRE_BYTES, providerToolPrompt, type ProviderToolExchange } from '../worker/providers/tool-turn';
+import { openProviderStream } from '../worker/providers/stream';
 import { fragmentedToolBody, toolQuery, toolStream } from './fixtures/tool-streams';
 
 const kinds: ProviderKind[] = ['openai-chat', 'openai-responses', 'anthropic', 'gemini'];

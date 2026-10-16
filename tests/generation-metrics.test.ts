@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { GenerationMeter, measuredQuery } from '../worker/generation-metrics';
+import { GenerationMeter, measuredQuery } from '../worker/generation/metrics';
 
 test('generation measurements count UTF-8 payloads, fanout and raw checkpoint bytes', () => {
   let time = 100;

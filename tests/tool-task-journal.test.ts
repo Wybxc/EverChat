@@ -4,9 +4,9 @@ import { DatabaseSync } from 'node:sqlite';
 import { resolveModelMetadata } from '../shared/models/metadata';
 import type { ProviderConfig, ProviderKind } from '../shared/providers/types';
 import type { WebToolCall, WebToolOutcome } from '../shared/web-tools/tasks';
-import type { SqlQuery } from '../worker/generation-metrics';
-import { collectProviderToolTurn, providerToolIdentity, type ProviderToolTurn } from '../worker/provider-tools';
-import { MAX_TOOL_TASKS, TOOL_DEFINITION_TOKENS, TOOL_TASK_TIMEOUT_MS, ToolTaskJournal, type StartToolTask } from '../worker/tool-task-journal';
+import type { SqlQuery } from '../worker/generation/metrics';
+import { collectProviderToolTurn, providerToolIdentity, type ProviderToolTurn } from '../worker/providers/tool-turn';
+import { MAX_TOOL_TASKS, TOOL_DEFINITION_TOKENS, TOOL_TASK_TIMEOUT_MS, ToolTaskJournal, type StartToolTask } from '../worker/web-tools/task-journal';
 import { fragmentedToolBody, toolStream } from './fixtures/tool-streams';
 
 const enabled = ['web_search', 'read_webpage'] as const;

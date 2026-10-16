@@ -2,13 +2,13 @@ import { messageParts, messageText } from '../shared/conversation/content';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { initializeConversation } from '../worker/conversation-schema';
-import { StreamJournal } from '../worker/stream-journal';
+import { initializeConversation } from '../worker/conversation/schema';
+import { StreamJournal } from '../worker/streaming/journal';
 import { MAX_BATCH_BYTES, STREAM_VERSION, streamBatches, validateBatch } from '../shared/streaming/batches';
 import { ProviderStream, encodeBytes } from '../shared/streaming/provider-stream';
 import { applyChange } from '../shared/streaming/apply-change';
 import { type Message } from '../shared/conversation/types';
-import type { SqlQuery } from '../worker/generation-metrics';
+import type { SqlQuery } from '../worker/generation/metrics';
 
 const message: Message = { id: 'assistant', role: 'assistant', parts: [], status: 'running', createdAt: 1,
   runId: 'run', parentId: 'user', revisionOf: null, error: null, streamVersion: STREAM_VERSION, durableOffset: 0,

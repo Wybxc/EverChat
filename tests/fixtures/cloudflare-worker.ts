@@ -1,8 +1,8 @@
 // Isolated platform validation entry point. Never route a model call to a real supplier.
 import fixture, { Conversation as FixtureConversation, Library as ProductionLibrary } from './worker';
-import { authenticated } from '../../worker/auth';
-import type { Env } from '../../worker/env';
-export { WebToolWorkflow } from '../../worker/tool-workflow';
+import { authenticated } from '../../worker/http/auth';
+import type { Env } from '../../worker/http/env';
+export { WebToolWorkflow } from '../../worker/web-tools/workflow';
 export class Conversation extends FixtureConversation {
   validationStorageBytes() { return this.ctx.storage.sql.databaseSize; }
 }

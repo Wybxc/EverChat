@@ -5,8 +5,8 @@ import { applyChange } from '../shared/streaming/apply-change';
 import { branchPath } from '../shared/conversation/branch-path';
 import { type Message } from '../shared/conversation/types';
 import { generate } from './fixtures/generate';
-import { providerConfigFromEnv } from '../worker/provider-config';
-import type { Env } from '../worker/env';
+import { providerConfigFromEnv } from '../worker/providers/config';
+import type { Env } from '../worker/http/env';
 
 const message: Message = { id: 'one', role: 'assistant', parts: messageParts('hello'), status: 'running', createdAt: 1, runId: 'run', parentId: 'parent', revisionOf: null, error: null };
 test('replayed events are idempotent and sequence gaps trigger resync', () => {

@@ -1,19 +1,19 @@
 // Test entry point: production API and runtime, mock upstream plus isolated fault-injection RPCs.
 import production, { Conversation as ProductionConversation, Library as ProductionLibrary } from '../../worker/index';
-import { authenticated } from '../../worker/auth';
-import type { Env } from '../../worker/env';
-import type { openProviderStream } from '../../worker/provider';
+import { authenticated } from '../../worker/http/auth';
+import type { Env } from '../../worker/http/env';
+import type { openProviderStream } from '../../worker/providers/stream';
 import type { StreamBatch } from '../../shared/streaming/protocol';
 import { providerStreams } from './provider-streams';
 import type { ProviderKind } from '../../shared/providers/types';
-import { MAX_CONVERSATIONS, MAX_DATABASE_BYTES } from '../../worker/resource-limits';
+import { MAX_CONVERSATIONS, MAX_DATABASE_BYTES } from '../../worker/platform/resource-limits';
 import { SUMMARY_SYSTEM_PROMPT } from '../../shared/conversation/summaries';
-import { AttachmentStore } from '../../worker/attachments';
-import { HttpError } from '../../worker/http';
+import { AttachmentStore } from '../../worker/attachments/store';
+import { HttpError } from '../../worker/http/response';
 import { ToolJournalFixture, type ToolJournalControl } from './tool-task-journal';
 import { toolFinalStream, toolStream } from './tool-streams';
 import type { WebToolCall, WebToolName, WebToolOutcome } from '../../shared/web-tools/tasks';
-import { toolWorkflowId, type ToolWorkflowParams } from '../../worker/tool-workflow';
+import { toolWorkflowId, type ToolWorkflowParams } from '../../worker/web-tools/workflow';
 import type { WebToolServiceConfig } from '../../shared/web-tools/service';
 import { createHash } from 'node:crypto';
 import { FixtureResourceMeter } from './resource-meter';

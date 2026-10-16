@@ -1,6 +1,6 @@
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import type { ToolJournalControl } from '../fixtures/tool-task-journal';
-import type { StartToolTask } from '../../worker/tool-task-journal';
+import type { StartToolTask } from '../../worker/web-tools/task-journal';
 
 const headers = { Origin: 'http://127.0.0.1:5174' };
 async function setup(request: APIRequestContext) {

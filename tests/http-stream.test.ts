@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { jsonWithStream } from '../worker/http';
+import { jsonWithStream } from '../worker/http/response';
 
 test('large native histories are composed as valid JSON without changing bytes or response privacy', async () => {
   const snapshot = { messages: ['资料🙂'.repeat(700000)] }, response = jsonWithStream({ id: 'copy' }, 'snapshot', Response.json(snapshot), 201);

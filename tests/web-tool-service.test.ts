@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { executeWebTool, WEB_TOOL_RESPONSE_BYTES, type WebToolFetch } from '../worker/web-tool-service';
+import { executeWebTool, WEB_TOOL_RESPONSE_BYTES, type WebToolFetch } from '../worker/web-tools/service';
 import type { WebToolServiceConfig } from '../shared/web-tools/service';
 import type { WebToolCall } from '../shared/web-tools/tasks';
 
