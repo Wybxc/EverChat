@@ -1,87 +1,38 @@
-import { useMediaQuery } from '../../platform/useMediaQuery';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Modal, ModalTitle } from '../../components/Modal';
-import { Input } from '@/components/ui/input';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Textarea } from '@/components/ui/textarea';
-import { Button } from '@/components/ui/button';
-import { Spinner } from '@/components/ui/spinner';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
 import { NativeSelect } from '@/components/ui/native-select';
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
-import { ArrowLeft, Eye, EyeOff, LogOut, Pencil, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { providerOptions } from '../../../shared/providers/endpoints';
-import type { DiscoveredModel, ProviderModel } from '../../../shared/models/types';
-import type { ProviderApiKind, ProviderProfile, ProviderSettings } from '../../../shared/providers/types';
-import { api } from '../../platform/api';
-import { SettingsAutosave } from './settings-autosave';
-import { PromptPresetsPanel } from '../presets/PromptPresets';
-import { ModelMetadataFields } from './ModelMetadataFields';
-import { WebToolSettingsPanel } from '../web-tools/WebToolSettings';
-import { Disclosure, DisclosureScope } from '../../components/Disclosure';
-import { enrichModelCatalog } from '../../../shared/models/catalog';
-import { loadModelCatalog } from './model-catalog';
-import { modelProbeResultSchema, probeCapabilities, type ModelProbeResult } from '../../../shared/models/probe';
+import { Spinner } from '@/components/ui/spinner';
+import { useQueryClient } from '@tanstack/react-query';
+import { ArrowLeft,Eye,EyeOff,Pencil,Plus,RefreshCw,Search,Trash2 } from 'lucide-react';
+import { useEffect,useRef,useState } from 'react';
 import * as v from 'valibot';
+import { enrichModelCatalog } from '../../../shared/models/catalog';
+import { modelProbeResultSchema,probeCapabilities,type ModelProbeResult } from '../../../shared/models/probe';
+import type { DiscoveredModel,ProviderModel } from '../../../shared/models/types';
+import { providerOptions } from '../../../shared/providers/endpoints';
+import type { ProviderApiKind,ProviderProfile,ProviderSettings } from '../../../shared/providers/types';
+import { Disclosure,DisclosureScope } from '../../components/Disclosure';
+import { Modal,ModalTitle } from '../../components/Modal';
+import { api } from '../../platform/api';
+import { loadModelCatalog } from './model-catalog';
+import { SettingsAutosave } from './settings-autosave';
 
-type PanelProps = { render: (content: ReactNode) => ReactNode; open: boolean; requestedTab?: SettingsTab; onSaved: (settings: ProviderSettings) => void; themeControl: ReactNode; onLogout: () => void };
-const tabs = [{ id: 'general', label: '通用' }, { id: 'providers', label: '供应商' }, { id: 'chat', label: '对话' }, { id: 'presets', label: '预设' }, { id: 'web-tools', label: '联网' }] as const;
-export type SettingsTab = (typeof tabs)[number]['id'];
 
-type ProbeControls = { onTest: () => void; testing: boolean; results: ModelProbeResult[]; testError: string };
+import { ModelOptions } from './ModelOptions';
+import { reconcile } from './selection';
+
 function probeIdentity(profile: ProviderProfile | null, model: ProviderModel | undefined, saved?: ProviderSettings) {
   const key = profile?.apiKey?.trim() || saved?.providers.find((item) => item.id === profile?.id)?.apiKey || '';
   return profile && model ? JSON.stringify([profile.id, profile.provider, profile.baseUrl.trim().replace(/\/+$/, ''), key, model.id.trim()]) : '';
 }
-function ModelOptions({ model, index, provider, globalPrompt, onChange, stateKey, ...probe }: {
-  model: ProviderModel; index: number; provider: ProviderApiKind; globalPrompt: string; onChange: (patch: Partial<ProviderModel>) => void; stateKey: string;
-} & ProbeControls) {
-  return <div className="space-y-3 pt-2">
-      <div className="grid min-w-0 gap-3 sm:grid-cols-2">
-        <label className="min-w-0 space-y-1"><span className="text-xs">ID</span><Input aria-label={`模型 ID ${index + 1}`} required maxLength={200} className="w-full border-input" value={model.id} onChange={(event) => onChange({ id: event.target.value })} /></label>
-        <label className="min-w-0 space-y-1"><span className="text-xs">显示名</span><Input aria-label={`模型显示名 ${index + 1}`} maxLength={200} className="w-full border-input" value={model.name} placeholder={model.id} onChange={(event) => onChange({ name: event.target.value })} /></label>
-      </div>
-      <label className="flex items-center gap-2 text-sm"><Checkbox aria-label={`继承统一提示词 ${index + 1}`} checked={model.useGlobalSystemPrompt !== false} onCheckedChange={(checked) => onChange({ useGlobalSystemPrompt: (checked === true), systemPrompt: model.systemPrompt ?? globalPrompt })} />使用统一系统提示词</label>
-      {model.useGlobalSystemPrompt === false && <label className="block space-y-2"><span className="text-sm">模型专属提示词</span><Textarea aria-label={`模型专属提示词 ${index + 1}`} rows={4} maxLength={20000} className="w-full border-input" value={model.systemPrompt ?? ''} onChange={(event) => onChange({ systemPrompt: event.target.value })} /></label>}
-      <ModelMetadataFields provider={provider} model={model} index={index} onChange={onChange} stateKey={stateKey} {...probe} />
-  </div>;
-}
 
-export function ProviderSettingsPanel(props: PanelProps) {
-  const query = useQuery({
-    queryKey: ['provider-settings'], queryFn: () => api<ProviderSettings>('/settings/providers'), enabled: props.open,
-    staleTime: Infinity, refetchOnWindowFocus: false, refetchOnReconnect: false,
-  });
-  if (!query.data && query.isError) return props.render(<div className="space-y-3 p-6"><p role="alert" className="text-sm">{query.error.message}</p><Button variant="secondary" onClick={() => void query.refetch()}>重新读取</Button></div>);
-  if (!query.data) return props.render(<div role="status" className="py-6 text-center"><Spinner aria-label="正在读取设置" /></div>);
-  return <ProviderManager initial={query.data} {...props} />;
-}
-
-function availableModels(settings: ProviderSettings) {
-  return settings.providers.flatMap((profile) => profile.hasApiKey || profile.apiKey?.trim()
-    ? profile.models.filter((model) => model.enabled && model.id.trim()).map((model) => ({ profile, model })) : []);
-}
-function reconcile(settings: ProviderSettings, chooseIfEmpty = false): ProviderSettings {
-  const models = availableModels(settings);
-  if (models.some(({ profile, model }) => profile.id === settings.activeProviderId && model.id === settings.activeModel)) return settings;
-  if (!settings.activeProviderId && !chooseIfEmpty) return settings;
-  return { ...settings, activeProviderId: models[0]?.profile.id ?? null, activeModel: models[0]?.model.id ?? '' };
-}
-
-function ProviderManager({ initial, open, render, requestedTab, onSaved, themeControl, onLogout }: PanelProps & { initial: ProviderSettings }) {
-  const verticalTabs = useMediaQuery('(min-width: 40rem)');
+export function ProviderEditor({ store, settings, open, active }: { store: SettingsAutosave; settings: ProviderSettings; open: boolean; active: boolean }) {
   const queryClient = useQueryClient();
-  const onSavedRef = useRef(onSaved); onSavedRef.current = onSaved;
-  const [store] = useState(() => new SettingsAutosave(initial,
-    (input) => api<ProviderSettings>('/settings/providers', 'PUT', input),
-    (result) => { queryClient.setQueryData(['provider-settings'], result); onSavedRef.current(result); },
-  ));
-  const { settings, status, error } = useSyncExternalStore(store.subscribe, store.getSnapshot);
-  const [tab, setTab] = useState<(typeof tabs)[number]['id']>('general');
   const catalogIdentity = JSON.stringify(settings.providers.map((profile) => [profile.id, profile.provider, profile.baseUrl, profile.models.map((model) => [model.id, model.directoryMetadata?.updatedAt ?? 0])]));
   useEffect(() => {
-    if (!open || tab !== 'providers') return;
+    if (!open || !active) return;
     let cancelled = false;
     void loadModelCatalog().then((catalog) => {
       if (cancelled || !catalog) return;
@@ -94,8 +45,8 @@ function ProviderManager({ initial, open, render, requestedTab, onSaved, themeCo
       if (changed) store.update({ ...current, providers });
     });
     return () => { cancelled = true; };
-  }, [open, tab, catalogIdentity, store]);
-  const [selectedId, setSelectedId] = useState(initial.activeProviderId ?? initial.providers[0]?.id ?? null);
+  }, [open, active, catalogIdentity, store]);
+  const [selectedId, setSelectedId] = useState(settings.activeProviderId ?? settings.providers[0]?.id ?? null);
   const [showKey, setShowKey] = useState(false);
   const [newModel, setNewModel] = useState('');
   const [newName, setNewName] = useState('');
@@ -116,26 +67,13 @@ function ProviderManager({ initial, open, render, requestedTab, onSaved, themeCo
   const focusDetails = () => requestAnimationFrame(() => {
     if (detailBack.current?.checkVisibility()) detailBack.current.focus({ preventScroll: true });
   });
-  const wasOpen = useRef(open);
-  useEffect(() => { if (open && requestedTab) setTab(requestedTab); }, [open, requestedTab]);
-  useEffect(() => () => store.dispose(), [store]);
-  useEffect(() => {
-    if (!open) { setShowKey(false); setEditingModel(null); setAddingModel(false); void store.flush().catch(() => {}); }
-    else if (!wasOpen.current) {
-      void store.refresh(() => api<ProviderSettings>('/settings/providers')).catch(() => {});
-    }
-    wasOpen.current = open;
-  }, [open, store]);
+  useEffect(() => { if (!open) { setShowKey(false); setEditingModel(null); setAddingModel(false); } }, [open]);
+  useEffect(() => { setShowKey(false); }, [active]);
   useEffect(() => {
     if (selectedId && !settings.providers.some((profile) => profile.id === selectedId)) {
       setSelectedId(settings.activeProviderId ?? settings.providers[0]?.id ?? null); setShowKey(false);
     }
   }, [selectedId, settings]);
-  useEffect(() => {
-    const retry = () => { void store.flush().catch(() => {}); };
-    window.addEventListener('online', retry);
-    return () => window.removeEventListener('online', retry);
-  }, [store]);
   const selected = settings.providers.find((profile) => profile.id === selectedId) ?? null;
   const savedSettings = () => queryClient.getQueryData<ProviderSettings>(['provider-settings']);
   const testingIdentity = probeIdentity(selected, editingModel === null ? undefined : selected?.models[editingModel], savedSettings());
@@ -241,7 +179,6 @@ function ProviderManager({ initial, open, render, requestedTab, onSaved, themeCo
     } catch (error) { if (!controller.signal.aborted && currentTarget()) setTestError(error instanceof Error ? error.message : '测试失败。'); }
     finally { if (probeController.current === controller) { probeController.current = null; setTesting(false); } }
   };
-  const enabled = availableModels(settings);
   const confirmRemoval = () => {
     if (!removal) return;
     if (removal.kind === 'provider') removeProvider(removal.providerId);
@@ -254,19 +191,7 @@ function ProviderManager({ initial, open, render, requestedTab, onSaved, themeCo
     requestAnimationFrame(() => (removal.kind === 'provider' ? addProviderButton.current : fetchModelsButton.current)?.focus({ preventScroll: true }));
   };
 
-  return render(<DisclosureScope key={`${open}:${selectedId}:${modelListRevision}`}><div className="settings-fields flex min-h-0 flex-1 flex-col">
-    <Tabs orientation={verticalTabs ? 'vertical' : 'horizontal'} value={tab} onValueChange={(value) => { setTab(value as SettingsTab); setShowKey(false); }} className="settings-tabs">
-    <TabsList aria-label="设置分类" className="settings-tab-list">
-      {tabs.map((item) => <TabsTrigger key={item.id} id={`settings-tab-${item.id}`} value={item.id} aria-controls={`settings-panel-${item.id}`} onFocus={(event) => event.currentTarget.scrollIntoView({ block: 'nearest', inline: 'nearest' })}>{item.label}</TabsTrigger>)}
-    </TabsList>
-    <div data-testid="settings-scroll" className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 sm:p-4" onBlur={(event) => {
-      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) void store.flush().catch(() => {});
-    }}>
-      <section id="settings-panel-general" role="tabpanel" aria-labelledby="settings-tab-general" hidden={tab !== 'general'} className="space-y-4">
-        <div>{themeControl}</div>
-        <Button variant="secondary" type="button" className="gap-2" onClick={() => { void store.flush().catch(() => {}).then(onLogout); }}><LogOut className="h-[0.9375rem] w-[0.9375rem]" />退出并清除本地记录</Button>
-      </section>
-      <section id="settings-panel-providers" role="tabpanel" aria-labelledby="settings-tab-providers" hidden={tab !== 'providers'}>
+  return <DisclosureScope key={`${open}:${selectedId}:${modelListRevision}`}><div>
         <fieldset className="gap-4" disabled={Boolean(fetchingId)}>
           <legend className="sr-only">AI 供应商</legend>
           <div className="grid gap-4 md:grid-cols-[minmax(11rem,0.3fr)_minmax(0,0.7fr)]">
@@ -330,28 +255,6 @@ function ProviderManager({ initial, open, render, requestedTab, onSaved, themeCo
           </div>
         </fieldset>
         {notice && <p role="status" className="mt-4 text-sm">{notice}</p>}
-      </section>
-      <section id="settings-panel-chat" role="tabpanel" aria-labelledby="settings-tab-chat" hidden={tab !== 'chat'} className="space-y-4">
-        <label className="flex items-center gap-3 text-sm"><Checkbox aria-label="显示思考内容" checked={settings.showReasoning} onCheckedChange={(checked) => update({ ...settings, showReasoning: (checked === true) })} />显示供应商返回的思考内容</label>
-        <div className="space-y-1"><label htmlFor="default-model" className="block text-sm font-medium">默认模型</label><NativeSelect id="default-model" className="w-full border-input" value={settings.activeProviderId ? JSON.stringify([settings.activeProviderId, settings.activeModel]) : ''} onChange={(event) => {
-          const [activeProviderId, activeModel] = event.target.value ? JSON.parse(event.target.value) as [string, string] : [null, ''];
-          update({ ...settings, activeProviderId, activeModel });
-        }}><option value="">未选择模型</option>{settings.providers.map((profile) => <optgroup key={profile.id} label={profile.name}>{enabled.filter((item) => item.profile.id === profile.id).map(({ model }) => <option key={model.id} value={JSON.stringify([profile.id, model.id])}>{model.name || model.id}</option>)}</optgroup>)}</NativeSelect></div>
-        <div className="space-y-1"><label htmlFor="provider-prompt" className="block text-sm font-medium">系统提示词</label><Textarea id="provider-prompt" rows={6} maxLength={20000} className="w-full border-input" value={settings.systemPrompt} onChange={(event) => update({ ...settings, systemPrompt: event.target.value })} /></div>
-        <div className="space-y-1"><label htmlFor="provider-tokens" className="block text-sm font-medium">输出上限（Tokens）</label><Input id="provider-tokens" type="number" min={1} max={100000} step={1} placeholder="不设置" className="w-full border-input sm:max-w-48" value={settings.maxOutputTokens ?? ''} onChange={(event) => update({ ...settings, maxOutputTokens: event.target.value === '' ? null : Number(event.target.value) })} /></div>
-      </section>
-      <section id="settings-panel-presets" role="tabpanel" aria-labelledby="settings-tab-presets" hidden={tab !== 'presets'}>
-        <PromptPresetsPanel open={open && tab === 'presets'} />
-      </section>
-      <section id="settings-panel-web-tools" role="tabpanel" aria-labelledby="settings-tab-web-tools" hidden={tab !== 'web-tools'}>
-        <WebToolSettingsPanel active={open && tab === 'web-tools'} />
-      </section>
-    </div>
-    </Tabs>
-    {tab !== 'presets' && tab !== 'web-tools' && <div className="flex shrink-0 items-center justify-between gap-3 border-t border-border px-3 py-2 text-xs sm:px-4 text-muted-foreground">
-      <p data-testid="settings-save-status" role={status === 'error' ? 'alert' : 'status'}>{status === 'error' ? `未保存 · ${error}` : status === 'saving' ? '保存中…' : status === 'waiting' ? '保存中…' : '已保存'}</p>
-      {status === 'error' && <Button variant="ghost" type="button" onClick={() => { void store.flush().catch(() => {}); }}>重试</Button>}
-    </div>}
     <Modal alert open={Boolean(removal)} onOpenChange={(next) => { if (!next) setRemoval(null); }} initialFocus={cancelDeletion} aria-labelledby="provider-removal-title">
       <div className="p-5 max-w-sm">
         <ModalTitle id="provider-removal-title" className="text-lg font-semibold">{removal?.kind === 'provider' ? '删除供应商' : '删除模型'}</ModalTitle>
@@ -359,5 +262,5 @@ function ProviderManager({ initial, open, render, requestedTab, onSaved, themeCo
         <div className="dialog-actions"><Button variant="secondary" ref={cancelDeletion} type="button" onClick={() => setRemoval(null)}>取消</Button><Button variant="destructive" type="button" onClick={confirmRemoval}>确认删除</Button></div>
       </div>
     </Modal>
-  </div></DisclosureScope>);
+  </div></DisclosureScope>;
 }

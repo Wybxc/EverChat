@@ -3,6 +3,7 @@ import type { WebToolServiceSettings } from '../../../shared/web-tools/service';
 import { api } from '../../platform/api';
 import { read, storageEpoch, write } from '../../platform/storage';
 
+
 export const WEB_TOOL_SETTINGS_KEY = ['web-tool-settings'] as const;
 export async function loadWebToolSettings(signal?: AbortSignal) {
   const epoch = storageEpoch();

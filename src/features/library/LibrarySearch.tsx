@@ -5,7 +5,7 @@ import { useInfiniteQuery } from '@tanstack/react-query';
 import { api } from '../../platform/api';
 import { conversationUrl } from '../../app/useConversationRoute';
 import type { LibrarySearch as SearchPage, SearchResult } from '../../../shared/search/query';
-import { deletedAt } from '../../platform/storage';
+import { deletedAt } from '../chat/cache';
 
 export function LibrarySearch({ query, archived, open }: { query: string; archived: boolean; open: (result: SearchResult, query: string) => void }) {
   const [debounced, setDebounced] = useState('');

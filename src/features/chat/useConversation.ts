@@ -5,7 +5,8 @@ import { isActive } from '../../../shared/conversation/message-state';
 import { type Snapshot, type SyncPacket } from '../../../shared/streaming/protocol';
 import { api,ApiError } from '../../platform/api';
 import { SnapshotWriter } from './snapshot-writer';
-import { cachedSnapshot,storageEpoch,write } from '../../platform/storage';
+import { storageEpoch } from '../../platform/storage';
+import { cachedSnapshot, writeChatCache as write } from './cache';
 
 type Connection = 'connected' | 'connecting' | 'offline' | 'unavailable';
 export function useConversation(id: string | null, enabled: boolean, onUnauthorized: () => void, awaitingAcceptance = false, onDeleted?: (id: string, deletedAt: number) => void, confirmedDeletion: number | null = null) {

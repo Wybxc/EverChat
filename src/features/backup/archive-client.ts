@@ -1,6 +1,7 @@
 import { api, ApiError } from '../../platform/api';
 import { read, storageEpoch, write } from '../../platform/storage';
 
+
 export type BackupProgress = { value: number; label: string };
 type RestorableArchive = { hash: string; manifest: Blob; files: { sourceId: string; original: Blob; text?: Blob }[] };
 function archiveWorker<T>(request: unknown, signal: AbortSignal, progress: (value: BackupProgress) => void) {

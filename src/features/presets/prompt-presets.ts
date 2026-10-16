@@ -3,6 +3,7 @@ import type { PromptPreset } from '../../../shared/presets/types';
 import { api } from '../../platform/api';
 import { read, storageEpoch, write } from '../../platform/storage';
 
+
 export const PRESET_QUERY = ['prompt-presets'] as const;
 export function usePromptPresets(enabled: boolean) {
   return useQuery({ queryKey: PRESET_QUERY, enabled,

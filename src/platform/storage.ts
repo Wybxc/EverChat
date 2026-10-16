@@ -1,17 +1,10 @@
-import type { DocumentPart } from '../../shared/attachments/documents';
-import type { ImagePart } from '../../shared/attachments/images';
-import { delMany, entries, set, setMany } from 'idb-keyval';
-import type { ConversationInfo, SubmitInput } from '../../shared/conversation/types';
-import type { Snapshot } from '../../shared/streaming/protocol';
-
-export interface Pending { conversation: ConversationInfo; input: SubmitInput; viewHeadId?: string | null; error?: string; images?: ImagePart[]; files?: DocumentPart[] }
+import { delMany,entries,set,setMany } from 'idb-keyval';
 
 const PREFIX = 'everchat:';
 const cache = new Map<string, unknown>();
 let epoch = 0;
 export const storageEpoch = () => epoch;
-// Snapshot payloads have a new DTO. Refetch authoritative data instead of converting old caches.
-const storageKey = (key: string) => `${PREFIX}${key.startsWith('snapshot:') ? `snapshot:parts-v1:${key.slice(9)}` : key}`;
+const storageKey = (key: string) => `${PREFIX}${key}`;
 
 export async function hydrateStorage() {
   try {
@@ -55,15 +48,14 @@ export function read<T>(key: string, fallback: T): T {
   return fallback;
 }
 
-function persist(key: string, value: unknown) {
+export function write(key: string, value: unknown, valid: () => boolean = () => true) {
+  if (!valid()) return;
   const fullKey = storageKey(key);
   cache.set(fullKey, value);
   const persistEpoch = epoch;
   const fallback = () => {
     if (epoch !== persistEpoch) return;
-    if (key.startsWith('snapshot:') && deletedAt(key.slice(9)) && !(value as Snapshot).deletedAt) return;
-    if (key.startsWith('draft:') && deletedAt(key.slice(6))) return;
-    if (key.startsWith('conversation-settings-draft:') && deletedAt(key.slice(28))) return;
+    if (!valid()) return;
     try { localStorage.setItem(fullKey, JSON.stringify(value)); } catch { /* Cloud remains authoritative. */ }
   };
   try { void set(fullKey, value).catch(fallback); }
@@ -75,26 +67,11 @@ function discard(keys: string[]) {
   try { void delMany(keys).catch(() => {}); } catch { /* IndexedDB can also fail synchronously. */ }
 }
 
-export const deletedAt = (id: string) => read<number | null>(`deleted:${id}`, null);
-export function write(key: string, value: unknown) {
-  if (key.startsWith('snapshot:') && deletedAt(key.slice(9)) && !(value as Snapshot).deletedAt) return;
-  if (key.startsWith('draft:') && deletedAt(key.slice(6))) return;
-  if (key.startsWith('conversation-settings-draft:') && deletedAt(key.slice(28))) return;
-  persist(key, value);
-}
-export function markConversationDeleted(id: string, time: number) {
-  persist(`deleted:${id}`, time);
-  persist(`snapshot:${id}`, { messages: [], seq: 0, deletedAt: time });
-  const keys = [storageKey(`draft:${id}`), storageKey(`conversation-settings-draft:${id}`)];
-  for (const key of keys) {
-    cache.delete(key);
-    try { localStorage.removeItem(key); } catch { /* The deletion marker also prevents recovering the draft. */ }
-  }
-  discard(keys);
-}
 
-export function writePending(items: Pending[]): boolean {
-  try { persist('pending', items); return true; } catch { return false; }
+export function remove(keys: string[]) {
+  const fullKeys = keys.map(storageKey);
+  for (const key of fullKeys) { cache.delete(key); try { localStorage.removeItem(key); } catch { /* Memory is already cleared. */ } }
+  discard(fullKeys);
 }
 
 export function clearLocal() {
@@ -106,8 +83,3 @@ export function clearLocal() {
     for (const key of Object.keys(localStorage)) if (key.startsWith(PREFIX)) localStorage.removeItem(key);
   } catch { /* The in-memory cache is already cleared. */ }
 }
-
-export const cachedSnapshot = (id: string) => {
-  const time = deletedAt(id);
-  return time ? { messages: [], seq: 0, deletedAt: time } : read<Snapshot>(`snapshot:${id}`, { messages: [], seq: 0 });
-};

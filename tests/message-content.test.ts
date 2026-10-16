@@ -4,7 +4,7 @@ import * as v from 'valibot';
 import { messageParts, messagePartsSchema, messageText } from '../shared/conversation/content';
 import type { Message } from '../shared/conversation/types';
 import { contextHistory } from '../shared/conversation/context-budget';
-import { cachedSnapshot, write } from '../src/platform/storage';
+import { cachedSnapshot, writeChatCache as write } from '../src/features/chat/cache';
 
 test('content parts preserve Markdown, Unicode and whitespace without duplicating either channel', () => {
   const answer = '\n**正文🙂**\n\u0000\\"', reasoning = '  **思考**\n';

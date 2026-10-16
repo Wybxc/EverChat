@@ -6,7 +6,7 @@ import { Tabs,TabsList,TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { useQuery,useQueryClient } from '@tanstack/react-query';
 import { ArrowDown,ArrowUp,BookOpen,CloudOff,FolderOpen,Globe,ImagePlus,Menu,MessageCircle,Paperclip,Pin,Plus,Search,Settings,SlidersHorizontal,Square,WifiOff,X } from 'lucide-react';
-import { Fragment,useCallback,useEffect,useMemo,useRef,useState,type ChangeEvent,type SubmitEvent } from 'react';
+import { Fragment,useCallback,useEffect,useMemo,useRef,useState,type SubmitEvent } from 'react';
 import * as v from 'valibot';
 import { documentMediaTypeSchema,MAX_DOCUMENT_BYTES,MAX_MESSAGE_DOCUMENTS,type DocumentPart } from '../../shared/attachments/documents';
 import { fileMediaType } from '../../shared/attachments/files';
@@ -14,15 +14,14 @@ import { MAX_MESSAGE_IMAGES,type ImagePart } from '../../shared/attachments/imag
 import type { PDFExtraction } from '../../shared/attachments/pdf';
 import { parentKey,summariesOnBranch } from '../../shared/conversation/branches';
 import { messageFiles,messageImages,messageText } from '../../shared/conversation/content';
-import { buildContext,contextSource } from '../../shared/conversation/context-budget';
+import { contextSource } from '../../shared/conversation/context-budget';
 import { isActive } from '../../shared/conversation/message-state';
 import { applyConversationSettings,conversationSettingsSchema,DEFAULT_CONVERSATION_SETTINGS } from '../../shared/conversation/settings';
-import { prepareChatContext,summaryContext,summaryGeneration,summaryPrefix } from '../../shared/conversation/summaries';
-import { type ConversationInfo,type ConversationSettings,type LibrarySnapshot,type Message,type Submission,type SubmitInput } from '../../shared/conversation/types';
+import { prepareChatContext,summaryGeneration } from '../../shared/conversation/summaries';
+import { type ConversationInfo,type ConversationSettings,type LibrarySnapshot,type Message,type SubmitInput } from '../../shared/conversation/types';
 import { canAttemptCapability } from '../../shared/models/metadata';
-import { chatModels,effortLabels,modelSelectionKey } from '../../shared/models/selection';
+import { effortLabels,modelSelectionKey } from '../../shared/models/selection';
 import { type ModelSelection,type ReasoningEffort } from '../../shared/models/types';
-import { type ProviderSettings,type SessionInfo } from '../../shared/providers/types';
 import type { SearchResult } from '../../shared/search/query';
 import { assertWebToolSupport } from '../../shared/web-tools/tasks';
 import { ActionMenu,ActionMenuItem } from '../components/ActionMenu';
@@ -34,10 +33,11 @@ import { prepareChatImage } from '../features/attachments/chat-image';
 import { DocumentPreviews } from '../features/attachments/DocumentPreviews';
 import { ImagePreviews } from '../features/attachments/ImagePreviews';
 import { preparePdf } from '../features/attachments/pdf-loader';
-import { createArchive,restoreArchive,type BackupProgress } from '../features/backup/archive-client';
 import { BackupProgressDialog } from '../features/backup/BackupProgressDialog';
-import { downloadFile,escapeHtml } from '../features/backup/download';
+import { exportChatFile } from '../features/backup/export-chat';
+import { useBackup } from '../features/backup/useBackup';
 import { type BranchNavigation } from '../features/chat/BranchSwitcher';
+import { deletedAt,markConversationDeleted,writeChatCache,writePending,type Pending } from '../features/chat/cache';
 import { ContextEstimateView } from '../features/chat/ContextEstimate';
 import { ConversationActions } from '../features/chat/ConversationActions';
 import { ConversationSearch } from '../features/chat/ConversationSearch';
@@ -47,45 +47,47 @@ import { MessageView } from '../features/chat/MessageView';
 import { SummaryDialog } from '../features/chat/SummaryDialog';
 import { SummaryView } from '../features/chat/SummaryView';
 import { useBranchScrollAnchor } from '../features/chat/useBranchScrollAnchor';
+import { useChatDraft } from '../features/chat/useChatDraft';
+import { useComposerSize } from '../features/chat/useComposerSize';
+import { useContextPreview } from '../features/chat/useContextPreview';
 import { useConversation } from '../features/chat/useConversation';
 import { useConversationBranches } from '../features/chat/useConversationBranches';
 import { useFollowScroll } from '../features/chat/useFollowScroll';
+import { useOutbox } from '../features/chat/useOutbox';
 import { conversationGroup } from '../features/library/group-conversations';
 import { LibrarySearch } from '../features/library/LibrarySearch';
 import { Sidebar } from '../features/library/Sidebar';
 import { ModelPicker } from '../features/providers/ModelPicker';
-import { ProviderSettingsPanel,type SettingsTab } from '../features/providers/ProviderSettings';
 import { loadWebToolSettings,useWebToolSettings,WEB_TOOL_SETTINGS_KEY } from '../features/web-tools/web-tool-settings';
 import { api,ApiError } from '../platform/api';
-import { clearLocal,deletedAt,markConversationDeleted,read,storageEpoch,write,writePending,type Pending } from '../platform/storage';
+import { clearLocal,read,storageEpoch,write } from '../platform/storage';
 import { Brand } from './Brand';
 import { Login } from './Login';
+import { SettingsPanel,type SettingsTab } from './SettingsPanel';
 import { ThemeControl } from './ThemeControl';
 import { conversationUrl,useConversationRoute } from './useConversationRoute';
+import { useSession } from './useSession';
 import { useSidebar } from './useSidebar';
 
-const EMPTY_SESSION: SessionInfo = { authenticated: false, configured: false, attachmentsConfigured: false, provider: '', model: '' };
 
 export function App() {
   const queryClient = useQueryClient();
-  const [session, setSession] = useState<SessionInfo | null>(null);
+  const { session, sessionRef, bootError, boot, loggedOut, providerSaved } = useSession();
   const webToolSettings = useWebToolSettings(Boolean(session?.authenticated));
-  const [bootError, setBootError] = useState('');
   const [localConversations, setLocalConversations] = useState<ConversationInfo[]>(() => read('library', []));
   const { id: selected, branch: routeBranch, invalid: invalidRoute, navigate } = useConversationRoute();
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
-  const [pending, setPending] = useState<Pending[]>(() => read<Pending[]>('pending', []).filter((item) => !deletedAt(item.conversation.id)));
-  const pendingRef = useRef(pending);
-  const deliveryLocks = useRef(new Set<string>());
-  const [draft, setDraft] = useState('');
-  const [draftFiles, setDraftFiles] = useState<DocumentPart[]>([]);
-  const fileInput = useRef<HTMLInputElement>(null);
-  const [draftImages, setDraftImages] = useState<ImagePart[]>([]);
-  const imageInput = useRef<HTMLInputElement>(null);
+  const { pending, pendingRef, setPending, followRequests, commitPending, deliver } = useOutbox({ authenticated: Boolean(session?.authenticated), sessionRef, selectedRef,
+    getView: () => ({ head: branches.head, version: branches.navigationVersion.current }),
+    onAccepted: (accepted) => { branches.choose(accepted.assistantId, { automatic: true }); scrollToBottom(); },
+    onUnauthorized: loggedOut, onDeleted: (id, time) => rememberDeletion(id, time), refreshLibrary: () => refreshLibrary(), setError: (error) => setError(error),
+  });
+  const { draft, setDraft, draftFiles, setDraftFiles, draftImages, setDraftImages, revisionOf, setRevisionOf, updateDraft, removeImage, removeDocument } = useChatDraft(selected);
+  const fileInput = useRef<HTMLInputElement>(null), imageInput = useRef<HTMLInputElement>(null);
   const imageUpload = useRef<{ origin: string | null; controller: AbortController } | null>(null);
   const [imageProgress, setImageProgress] = useState<{ name: string; percent: number; kind: 'image' | 'file' } | null>(null);
-  const [revisionOf, setRevisionOf] = useState<string | undefined>();
+  useEffect(() => { setError(''); }, [selected]);
   const [error, setError] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -97,9 +99,6 @@ export function App() {
   const [searchJump, setSearchJump] = useState<{ id: string; query: string; key: string; token: number } | null>(null);
   const searchTrigger = useRef<HTMLButtonElement>(null);
   const backupInput = useRef<HTMLInputElement>(null);
-  const backupOperation = useRef<AbortController | null>(null);
-  const [backupTask, setBackupTask] = useState<{ title: string; progress: BackupProgress; route: string | null; epoch: number } | null>(null);
-  useEffect(() => () => backupOperation.current?.abort(), []);
   const editor = useRef<HTMLTextAreaElement>(null);
   const [editorFocusTarget, setEditorFocusTarget] = useState<{ id: string | null } | null>(null);
   const mobileSidebarTrigger = useRef<HTMLButtonElement>(null);
@@ -115,7 +114,6 @@ export function App() {
   const returnToConversationSettings = useRef(false);
   const [modelChoice, setModelChoice] = useState<string>(() => read('chat-model', ''));
   const [branchAnnouncement, setBranchAnnouncement] = useState('');
-  const followRequests = useRef(new Map<string, { id: string; version: number }>());
   const [backgroundTask, setBackgroundTask] = useState<{ conversationId: string; messageId: string; targetId: string } | null>(null);
   const [messageMutation, setMessageMutation] = useState<{ id: string; mode: 'edit' | 'delete' } | null>(null);
   const [conversationSettingsOpen, setConversationSettingsOpen] = useState(false);
@@ -139,18 +137,6 @@ export function App() {
     settingsTrigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setSidebarOpen(false); setSettingsOpen(true);
   };
-  const providerSaved = useCallback((config: ProviderSettings) => {
-    const profile = config.providers.find((profile) => profile.id === config.activeProviderId);
-    const model = profile?.models.find((model) => model.id === config.activeModel && model.enabled);
-    setSession((current) => {
-      if (!current?.authenticated) return current;
-      const next = { ...current, provider: model ? profile!.provider : '', model: model?.id ?? '', modelName: model?.name || model?.id || '', activeProviderId: model ? profile!.id : null, models: chatModels(config), showReasoning: config.showReasoning, systemPrompt: config.systemPrompt, maxOutputTokens: config.maxOutputTokens };
-      write('session', next); return next;
-    });
-  }, []);
-  const sessionRef = useRef(session);
-  sessionRef.current = session;
-  const loggedOut = useCallback(() => { setSession((current) => ({ ...(current ?? EMPTY_SESSION), authenticated: false })); }, []);
   const rememberDeletion = useCallback((id: string, time: number) => {
     markConversationDeleted(id, time);
     const remaining = pendingRef.current.filter((item) => item.conversation.id !== id);
@@ -163,7 +149,6 @@ export function App() {
   const currentPending = pending.find((item) => item.conversation.id === selected);
   const { snapshot, snapshotFor, authoritative, durableSnapshot, hasUnconfirmed, connection, syncedAt, loading, syncError, reconnect } = useConversation(selected, Boolean(session?.authenticated), loggedOut, Boolean(currentPending && !currentPending.error), rememberDeletion, selected ? deletedAt(selected) : null);
   const branches = useConversationBranches({ id: selected, messages: snapshot.messages, ready: snapshotFor === selected, authoritative, routeHead: routeBranch, navigate });
-  const viewHeadRef = useRef(branches.head); viewHeadRef.current = branches.head;
   const branchSummaries = summariesOnBranch(snapshot.messages, branches.path);
   const active = snapshot.messages.find(isActive);
   const activeChat = snapshot.messages.find((message) => isActive(message) && !message.summary) ?? active;
@@ -221,109 +206,28 @@ export function App() {
   const resetNewTools = () => {
     const settings = { ...newConversationSettings, tools: [] };
     setNewConversationSettings(settings); write('conversation-settings:new', settings);
-    write('conversation-settings-draft:new', { settings, dirty: false });
+    writeChatCache('conversation-settings-draft:new', { settings, dirty: false });
   };
-  const previewSource = contextSource(snapshot.messages, { content: draft, revisionOf, parentId: branches.continuationParentId });
-  const previewHistory = useMemo(() => {
-    try { return summaryContext(snapshot.messages, previewSource.parentId, conversationSettings.useSummaries); } catch { return null; }
-  }, [snapshot.messages, previewSource.parentId, conversationSettings.useSummaries]);
-  const contextPreview = useMemo(() => {
-    if (!selectedModel || !previewHistory) return null;
-    const settings = v.safeParse(conversationSettingsSchema, conversationSettings);
-    if (!settings.success) return null;
-    let estimate;
-    try {
-      const config = applyConversationSettings({ ...selectedModel, systemPrompt: selectedModel.systemPrompt ?? session?.systemPrompt ?? '',
-        maxOutputTokens: session?.maxOutputTokens ?? null, modelMetadata: selectedModel.metadata, reasoningEnabled: selectedModel.reasoningSupported,
-        reasoningEffort: reasoningEffort || undefined, showReasoning: session?.showReasoning }, settings.output);
-      estimate = buildContext(previewHistory.history, draft.trim(), config, settings.output, previewHistory.summary ? summaryPrefix(previewHistory.summary) : undefined, draftImages, draftFiles).estimate;
-      const prepared = prepareChatContext(snapshot.messages, previewSource.parentId, draft.trim(), config, settings.output, draftImages, draftFiles);
-      if (prepared.automatic) {
-        const selection = settings.output.autoCompression.model;
-        const model = selection ? models.find((item) => modelSelectionKey(item) === modelSelectionKey(selection)) : selectedModel;
-        if (!model) throw new Error('自动压缩模型不可用，请启用所选模型或关闭自动压缩。');
-        summaryGeneration(snapshot.messages, prepared.automatic.throughId, { ...model, systemPrompt: '', maxOutputTokens: null, modelMetadata: model.metadata });
-      }
-      return { estimate: prepared.automatic?.demand ?? prepared.estimate, compressing: Boolean(prepared.automatic), error: '' };
-    } catch (error) { return { estimate, error: error instanceof Error ? error.message : '无法预览上下文。' }; }
-  }, [selectedModel, models, snapshot.messages, previewSource.parentId, previewHistory, conversationSettings, draft, draftImages, draftFiles, reasoningEffort, session?.systemPrompt, session?.maxOutputTokens, session?.showReasoning]);
+  const { previewHistory, contextPreview } = useContextPreview({ messages: snapshot.messages, parentId: branches.continuationParentId, draft, revisionOf, draftImages, draftFiles, conversationSettings, selectedModel, models, reasoningEffort, session });
   const visibleConversations = conversations.filter((item) => Boolean(item.archived) === archivedList && item.title.toLowerCase().includes(search.toLowerCase()));
 
-  const boot = useCallback(async () => {
-    setBootError('');
-    try {
-      const current = await api<SessionInfo>('/session'); setSession(current); write('session', current);
-    } catch {
-      const cached = read<SessionInfo | null>('session', null);
-      if (cached?.authenticated) setSession(cached);
-      else setBootError('暂时无法连接你的空间。请检查网络和服务是否已启动。');
-    }
-  }, []);
-  useEffect(() => {
-    void boot();
-    const refresh = () => { void boot(); };
-    window.addEventListener('online', refresh); window.addEventListener('focus', refresh);
-    return () => { window.removeEventListener('online', refresh); window.removeEventListener('focus', refresh); };
-  }, [boot]);
   useEffect(() => {
     if (libraryQuery.error instanceof ApiError && libraryQuery.error.status === 401) loggedOut();
     if (libraryQuery.data) { setLocalConversations(libraryQuery.data); write('library', libraryQuery.data); }
   }, [libraryQuery.data, libraryQuery.error, loggedOut]);
   const refreshLibrary = useCallback(() => { void queryClient.invalidateQueries({ queryKey: ['conversations'] }); void queryClient.invalidateQueries({ queryKey: ['body-search'] }); }, [queryClient]);
 
-  const commitPending = (items: Pending[]) => {
-    items = items.filter((item) => !deletedAt(item.conversation.id));
-    if (!writePending(items)) { setError('浏览器存储已满，无法可靠保存待发送消息。请释放空间后重试。'); return false; }
-    pendingRef.current = items; setPending(items); return true;
-  };
+  const { backupOperation, backupTask, exportBackup, importBackup, cancelBackup } = useBackup({ selected, selectedRef, setError, providerSaved, refreshLibrary, navigate: (id) => select(id) });
+
   const editPending = (item: Pending) => {
     if (!item.input.summaryThrough) {
       setDraft(item.input.content ?? ''); setRevisionOf(item.input.revisionOf); setDraftImages(item.images ?? []); setDraftFiles(item.files ?? []);
-      write(`draft:${item.conversation.id}`, { text: item.input.content ?? '', revisionOf: item.input.revisionOf, images: item.images ?? [], files: item.files ?? [] });
+      writeChatCache(`draft:${item.conversation.id}`, { text: item.input.content ?? '', revisionOf: item.input.revisionOf, images: item.images ?? [], files: item.files ?? [] });
     }
     followRequests.current.delete(item.input.requestId);
     commitPending(pendingRef.current.filter((next) => next.input.requestId !== item.input.requestId));
     editor.current?.focus({ preventScroll: true });
   };
-  const deliver = async (item: Pending) => {
-    if (deletedAt(item.conversation.id)) return;
-    const key = item.input.requestId;
-    if (deliveryLocks.current.has(key) || !navigator.onLine || !sessionRef.current?.authenticated) return;
-    if (!followRequests.current.has(key) && selectedRef.current === item.conversation.id && viewHeadRef.current === (item.viewHeadId ?? null)) {
-      followRequests.current.set(key, { id: item.conversation.id, version: branches.navigationVersion.current });
-    }
-    deliveryLocks.current.add(key);
-    try {
-      await api('/conversations', 'POST', { id: item.conversation.id, title: item.conversation.title });
-      const accepted = await api<Submission>(`/conversations/${item.conversation.id}/messages`, 'POST', item.input);
-      const follow = followRequests.current.get(key);
-      if (!item.input.summaryThrough && follow && selectedRef.current === follow.id && branches.navigationVersion.current === follow.version) {
-        branches.choose(accepted.assistantId, { automatic: true }); scrollToBottom();
-      }
-      followRequests.current.delete(key);
-      commitPending(pendingRef.current.filter((next) => next.input.requestId !== key));
-      refreshLibrary();
-    } catch (error) {
-      if (error instanceof ApiError && error.status === 401) loggedOut();
-      else if (error instanceof ApiError && error.status === 410) rememberDeletion(item.conversation.id, Date.now());
-      else if (error instanceof ApiError) commitPending(pendingRef.current.map((next) => next.input.requestId === key ? { ...next, error: error.message } : next));
-      // A network error has an unknown outcome: keep the same request ID for retry.
-    } finally { deliveryLocks.current.delete(key); }
-  };
-  const deliverRef = useRef(deliver);
-  deliverRef.current = deliver;
-  useEffect(() => {
-    const flush = () => { for (const item of pendingRef.current) if (!item.error) void deliverRef.current(item); };
-    flush();
-    const timer = setInterval(flush, 5000);
-    window.addEventListener('online', flush);
-    return () => { clearInterval(timer); window.removeEventListener('online', flush); };
-  }, [session?.authenticated, pending.length]);
-
-  useEffect(() => {
-    const saved: { text: string; revisionOf?: string; images?: ImagePart[]; files?: DocumentPart[] } = selected && deletedAt(selected) ? { text: '' } : read(`draft:${selected ?? 'new'}`, { text: '' });
-    setDraft(saved.text); setRevisionOf(saved.revisionOf); setDraftImages(saved.images ?? []); setDraftFiles(saved.files ?? []); setError('');
-  }, [selected]);
   useEffect(() => { setConversationSettingsOpen(false); setFocusWebTools(false); }, [selected]);
   useEffect(() => { setSummaryOpen(false); setSummaryTarget(null); }, [selected]);
   useEffect(() => {
@@ -331,37 +235,11 @@ export function App() {
     const saved = read<ReasoningEffort | ''>(`reasoning-effort:${modelSelectionKey(selectedModel)}`, '');
     setReasoningEffort(selectedModel.reasoningEfforts.includes(saved as ReasoningEffort) ? saved : '');
   }, [selectedModel]);
-  useEffect(() => {
-    const node = editor.current;
-    if (!node) return;
-    const resize = () => { node.style.height = 'auto'; node.style.height = `${node.scrollHeight}px`; };
-    resize();
-    // Font preferences and wrapping can change without changing the draft.
-    const metrics = () => { const style = getComputedStyle(node); return `${node.clientWidth}:${style.fontSize}:${style.lineHeight}:${style.paddingBlock}`; };
-    let previous = metrics();
-    let frame = 0;
-    const schedule = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(resize); };
-    const observer = new ResizeObserver(() => {
-      const next = metrics();
-      if (next !== previous) { previous = next; schedule(); }
-    });
-    observer.observe(node);
-    window.addEventListener('resize', schedule);
-    return () => { cancelAnimationFrame(frame); observer.disconnect(); window.removeEventListener('resize', schedule); };
-  }, [draft]);
-  const updateDraft = (text: string) => { setDraft(text); write(`draft:${selected ?? 'new'}`, { text, revisionOf, images: draftImages, files: draftFiles }); };
+  useComposerSize(editor, draft);
   useEffect(() => {
     if (imageUpload.current && (imageUpload.current.origin !== selected || !session?.authenticated)) imageUpload.current.controller.abort();
   }, [selected, session?.authenticated]);
   useEffect(() => () => imageUpload.current?.controller.abort(), []);
-  const removeImage = (id: string) => {
-    const images = draftImages.filter((image) => image.attachmentId !== id);
-    setDraftImages(images); write(`draft:${selected ?? 'new'}`, { text: draft, revisionOf, images, files: draftFiles });
-  };
-  const removeDocument = (id: string) => {
-    const files = draftFiles.filter((file) => file.attachmentId !== id);
-    setDraftFiles(files); write(`draft:${selected ?? 'new'}`, { text: draft, revisionOf, images: draftImages, files });
-  };
   const addUploads = async (inputFiles: File[], kind: 'image' | 'file') => {
     if (!inputFiles.length || busy || imageUpload.current) return;
     if (!navigator.onLine || !session?.attachmentsConfigured) { setError('附件上传需要联网并配置文件存储。'); return; }
@@ -405,8 +283,8 @@ export function App() {
       const savedDraft = read<{ text: string; revisionOf?: string }>(`draft:${origin ?? 'new'}`, { text: draft, revisionOf });
       const images = [...draftImages, ...uploadedImages], files = [...draftFiles, ...uploadedFiles];
       if (!origin) resetNewTools();
-      write(`draft:${conversation.id}`, { ...savedDraft, images, files }); setDraftImages(images); setDraftFiles(files);
-      if (!origin) { write('draft:new', { text: '' }); select(conversation.id); }
+      writeChatCache(`draft:${conversation.id}`, { ...savedDraft, images, files }); setDraftImages(images); setDraftFiles(files);
+      if (!origin) { writeChatCache('draft:new', { text: '' }); select(conversation.id); }
       refreshLibrary();
     } catch (error) {
       if (conversation) for (const id of registered) await api(`/conversations/${conversation.id}/attachments/${id}`, 'DELETE', undefined, AbortSignal.timeout(10_000)).catch(() => {});
@@ -516,7 +394,7 @@ export function App() {
     if (!conversations.some((item) => item.id === conversation.id)) {
       const items = [conversation, ...localConversations]; setLocalConversations(items); write('library', items);
     }
-    write(`draft:${selected ?? 'new'}`, { text: '' }); setDraft(''); setRevisionOf(undefined); setDraftImages([]); setDraftFiles([]);
+    writeChatCache(`draft:${selected ?? 'new'}`, { text: '' }); setDraft(''); setRevisionOf(undefined); setDraftImages([]); setDraftFiles([]);
     if (!selected) resetNewTools();
     if (!selected) navigate(conversation.id, true);
     followRequests.current.set(input.requestId, { id: conversation.id, version: navigationVersion });
@@ -560,7 +438,7 @@ export function App() {
   const edit = (message: Message) => {
     if (message.role === 'assistant') { setMessageMutation({ id: message.id, mode: 'edit' }); return; }
     setRevisionOf(message.id); setDraft(messageText(message)); setDraftImages(messageImages(message)); setDraftFiles(messageFiles(message));
-    write(`draft:${selected}`, { text: messageText(message), revisionOf: message.id, images: messageImages(message), files: messageFiles(message) }); editor.current?.focus();
+    writeChatCache(`draft:${selected}`, { text: messageText(message), revisionOf: message.id, images: messageImages(message), files: messageFiles(message) }); editor.current?.focus();
   };
   const confirmMessageMutation = async (content: string, requestId: string) => {
     if (!selected || !messageMutation) return;
@@ -571,7 +449,7 @@ export function App() {
       refreshLibrary();
     } else {
       await api(`/conversations/${selected}/messages/${messageMutation.id}`, 'DELETE');
-      if (revisionOf === messageMutation.id) { setRevisionOf(undefined); write(`draft:${selected}`, { text: draft, images: draftImages, files: draftFiles }); }
+      if (revisionOf === messageMutation.id) { setRevisionOf(undefined); writeChatCache(`draft:${selected}`, { text: draft, images: draftImages, files: draftFiles }); }
     }
   };
   const quote = (message: Message) => {
@@ -581,12 +459,12 @@ export function App() {
     const available = Math.max(0, 16_000 - prefix.length);
     const quoted = source.split(/\r?\n/u).map((line) => `> ${line}`).join('\n').slice(0, available);
     const next = `${prefix}${quoted}`;
-    setRevisionOf(undefined); setDraft(next); setError(''); write(`draft:${selected ?? 'new'}`, { text: next, images: draftImages, files: draftFiles });
+    setRevisionOf(undefined); setDraft(next); setError(''); writeChatCache(`draft:${selected ?? 'new'}`, { text: next, images: draftImages, files: draftFiles });
     requestAnimationFrame(() => { editor.current?.focus(); editor.current?.setSelectionRange(next.length, next.length); });
   };
   const logout = async () => {
     try {
-      backupOperation.current?.abort(); setBackupTask(null);
+      cancelBackup();
       await api('/logout', 'POST'); clearLocal(); pendingRef.current = []; setPending([]);
       setLocalConversations([]); queryClient.clear(); navigate(null, true); setDraft(''); setRevisionOf(undefined);
       setNewConversationSettings({ ...DEFAULT_CONVERSATION_SETTINGS }); setSettingsDraft(null); setConversationSettingsOpen(false);
@@ -599,45 +477,7 @@ export function App() {
     const title = currentConversation?.title ?? 'EverChat';
     const confirmed = new Map(durableSnapshot.messages.map((message) => [message.id, message]));
     const messages = branches.ids.flatMap((id) => { const message = confirmed.get(id); return message && !message.deletedAt && !message.summary ? [message] : []; });
-    const markdown = `# ${title}\n\n${messages.map((message) => {
-      const role = message.summary ? '历史摘要' : message.role === 'user' ? '你' : 'EverChat';
-      const model = message.role === 'assistant' && (message.modelName || message.model) ? `\n模型：${message.modelName || message.model}\n` : '';
-      const reasoning = messageText(message, 'reasoning') ? `\n### 思考过程\n\n${messageText(message, 'reasoning')}\n` : '';
-      const status = message.status === 'completed' ? '' : `\n状态：${message.status}${message.error ? `（${message.error}）` : ''}\n`;
-      return `## ${role}${message.revisionOf ? ' · 新版本' : ''}${model}\n\n${messageText(message)}${messageImages(message).map((image) => `\n[图片：${image.name}]`).join('')}${messageFiles(message).map((file) => `\n[文件：${file.name}]`).join('')}${reasoning}${status}\n`;
-    }).join('\n')}`;
-    if (format === 'md') downloadFile(`EverChat-${selected}.md`, markdown, 'text/markdown;charset=utf-8');
-    else if (format === 'txt') downloadFile(`EverChat-${selected}.txt`, markdown.replace(/^#{1,6} /gm, '').replace(/^\n### /gm, '\n'), 'text/plain;charset=utf-8');
-    else {
-      const body = messages.map((message) => `<article><h2>${escapeHtml(message.summary ? '历史摘要' : message.role === 'user' ? '你' : 'EverChat')}${message.revisionOf ? ' · 新版本' : ''}</h2>${message.role === 'assistant' && (message.modelName || message.model) ? `<p class="meta">模型：${escapeHtml(message.modelName || message.model || '')}</p>` : ''}<pre>${escapeHtml(messageText(message))}${messageImages(message).map((image) => `\n[图片：${escapeHtml(image.name)}]`).join('')}${messageFiles(message).map((file) => `\n[文件：${escapeHtml(file.name)}]`).join('')}</pre>${messageText(message, 'reasoning') ? `<details open><summary>思考过程</summary><pre>${escapeHtml(messageText(message, 'reasoning'))}</pre></details>` : ''}${message.status !== 'completed' ? `<p class="error">状态：${escapeHtml(message.status)}${message.error ? `（${escapeHtml(message.error)}）` : ''}</p>` : ''}</article>`).join('');
-      const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${escapeHtml(title)}</title><style>body{font:16px/1.7 system-ui,sans-serif;max-width:54rem;margin:2rem auto;padding:0 1rem;color:#1f2937}article{border-top:1px solid #d1d5db;padding:1.5rem 0}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}.meta{color:#6b7280;font-size:.875rem}.error{color:#b91c1c}summary{cursor:pointer}</style></head><body><h1>${escapeHtml(title)}</h1>${body}</body></html>`;
-      downloadFile(`EverChat-${selected}.html`, html, 'text/html;charset=utf-8');
-    }
-  };
-  const exportBackup = async () => {
-    if (!selected || backupOperation.current) return;
-    const controller = new AbortController(), id = selected, epoch = storageEpoch(); backupOperation.current = controller;
-    setBackupTask({ title: '下载备份', progress: { value: 0, label: '正在读取备份资料' }, route: id, epoch });
-    try {
-      const blob = await createArchive(id, controller.signal, (progress) => setBackupTask((task) => task ? { ...task, progress } : null));
-      if (!controller.signal.aborted && epoch === storageEpoch()) downloadFile(`EverChat-${id}.everchat.zip`, blob, 'application/zip');
-    } catch (cause) { if (!controller.signal.aborted && epoch === storageEpoch()) setError(cause instanceof Error ? cause.message : '备份失败，请稍后重试。'); }
-    finally { if (backupOperation.current === controller) { backupOperation.current = null; setBackupTask(null); } }
-  };
-  const importBackup = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]; event.target.value = '';
-    if (!file || backupOperation.current) return;
-    const controller = new AbortController(), sourceId = selectedRef.current, epoch = storageEpoch(); backupOperation.current = controller;
-    setError('');
-    setBackupTask({ title: '导入备份', progress: { value: 0, label: '正在检查备份' }, route: sourceId, epoch });
-    try {
-      const result = await restoreArchive(file, controller.signal, (progress) => setBackupTask((task) => task ? { ...task, progress } : null));
-      if (epoch !== storageEpoch() || controller.signal.aborted) return;
-      void queryClient.invalidateQueries({ queryKey: ['provider-settings'] });
-      void api<ProviderSettings>('/settings/providers').then((config) => { if (epoch === storageEpoch()) providerSaved(config); }).catch(() => {});
-      refreshLibrary(); if (selectedRef.current === sourceId) select(result.id);
-    } catch (cause) { if (!controller.signal.aborted && epoch === storageEpoch()) setError(cause instanceof Error ? cause.message : '恢复备份失败，请检查文件。'); }
-    finally { if (backupOperation.current === controller) { backupOperation.current = null; setBackupTask(null); } }
+    exportChatFile(selected, title, messages, format);
   };
   const updateConversation = async (patch: { title?: string; pinned?: boolean; archived?: boolean }) => {
     if (!selected) return;
@@ -762,7 +602,7 @@ export function App() {
             {!hiddenPending && backgroundMessage && !isActive(backgroundMessage) && <Button variant="ghost" size="icon" aria-label="关闭后台分支提示" onClick={() => setBackgroundTask(null)}><X className="size-4" /></Button>}
           </div>}
           {error && <p role="alert" className="mb-3 text-xs font-medium text-foreground">{error}</p>}
-          {revisionOf && <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground"><span>编辑消息</span>{!branches.ids.includes(revisionOf) && <Button variant="ghost" onClick={() => { pauseFollowing(); branches.choose(revisionOf); }}>返回原消息</Button>}<Button variant="ghost" onClick={() => { setRevisionOf(undefined); write(`draft:${selected}`, { text: draft, images: draftImages, files: draftFiles }); }}>取消</Button></div>}
+          {revisionOf && <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground"><span>编辑消息</span>{!branches.ids.includes(revisionOf) && <Button variant="ghost" onClick={() => { pauseFollowing(); branches.choose(revisionOf); }}>返回原消息</Button>}<Button variant="ghost" onClick={() => { setRevisionOf(undefined); writeChatCache(`draft:${selected}`, { text: draft, images: draftImages, files: draftFiles }); }}>取消</Button></div>}
           <form onSubmit={submit} data-testid="chat-composer" className="chat-composer">
             {selected && (draftFiles.length > 0 || draftImages.length > 0) && <div data-testid="draft-previews" className="draft-previews mb-2 max-h-[min(9rem,20dvh)] overflow-y-auto overscroll-contain p-1">
               <DocumentPreviews conversationId={selected} files={draftFiles} remove={imageProgress ? undefined : removeDocument} />
@@ -791,7 +631,7 @@ export function App() {
       </div>
       </div>
     </div>
-    <ProviderSettingsPanel open={settingsOpen} requestedTab={requestedSettingsTab} onSaved={providerSaved} themeControl={<ThemeControl />} onLogout={() => void logout()} render={(content) => (
+    <SettingsPanel open={settingsOpen} requestedTab={requestedSettingsTab} onSaved={providerSaved} themeControl={<ThemeControl />} onLogout={() => void logout()} render={(content) => (
 <Modal open={settingsOpen} onOpenChange={(next) => { if (!next) closeSettings(); }} onCloseAutoFocus={(event) => event.preventDefault()} aria-labelledby="space-settings-title">
       <div className="settings-dialog flex h-[min(48rem,92dvh)] max-h-[92dvh] max-w-[60rem] flex-col overflow-hidden p-0">
         <div className="flex shrink-0 items-center justify-between px-3 py-1.5 sm:px-4"><ModalTitle id="space-settings-title" className="text-lg font-semibold">设置</ModalTitle><Button type="button" onClick={closeSettings} variant="ghost" size="icon" aria-label="关闭设置"><X className="h-[1.125rem] w-[1.125rem]" /></Button></div>

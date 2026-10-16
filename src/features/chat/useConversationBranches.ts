@@ -3,6 +3,7 @@ import { branchChoices, branchIds, branchIndexer, continuationParent, descendBra
 import type { Message } from '../../../shared/conversation/types';
 import { read, write } from '../../platform/storage';
 
+
 interface ViewState { id: string | null; head: string | null; preferences: BranchPreferences; target?: string; notice: string }
 const load = (id: string | null): ViewState => ({ id, head: id ? read<string | null>(`branch-view:${id}`, null) : null,
   preferences: id ? read<BranchPreferences>(`branch-choices:${id}`, {}) : {}, notice: '' });

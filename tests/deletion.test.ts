@@ -2,7 +2,8 @@ import { messageParts } from '../shared/conversation/content';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { StreamSync } from '../shared/streaming/sync';
-import { cachedSnapshot, deletedAt, markConversationDeleted, read, write } from '../src/platform/storage';
+import { read } from '../src/platform/storage';
+import { cachedSnapshot, deletedAt, markConversationDeleted, writeChatCache as write } from '../src/features/chat/cache';
 
 test('a confirmed deletion removes saved and preview contents and rejects delayed snapshots', () => {
   const before = { messages: [{ id: 'message', role: 'assistant' as const, parts: messageParts('saved'), status: 'completed' as const, createdAt: 1, runId: null, parentId: null, revisionOf: null, error: null }], seq: 2 };
