@@ -29,6 +29,7 @@ export function useConversation(
   const [snapshotFor, setSnapshotFor] = useState<string | null>(null);
   const [authoritativeFor, setAuthoritativeFor] = useState<string | null>(null);
   const [syncError, setSyncError] = useState('');
+  const [connectionError, setConnectionError] = useState('');
   const [retryVersion, setRetryVersion] = useState(0);
   const unauthorized = useRef(onUnauthorized);
   unauthorized.current = onUnauthorized;
@@ -38,6 +39,7 @@ export function useConversation(
   useEffect(() => {
     let alive = true;
     let socket: ReconnectingWebSocket | undefined;
+    let request: AbortController | undefined;
     let heartbeat: ReturnType<typeof setInterval> | undefined;
     let retry: ReturnType<typeof setTimeout> | undefined;
     let attempt = 0;
@@ -58,6 +60,7 @@ export function useConversation(
     render();
     setSyncedAt(null);
     setSyncError('');
+    setConnectionError('');
     const receive = (packet: SyncPacket) => {
       if (sync.receive(packet)) {
         writer.schedule(
@@ -105,6 +108,8 @@ export function useConversation(
     const connect = async () => {
       if (!alive || !enabled) return;
       const token = ++generation;
+      request?.abort();
+      request = new AbortController();
       if (retry) clearTimeout(retry);
       stopHeartbeat();
       if (socket) {
@@ -129,9 +134,10 @@ export function useConversation(
       }
       setLoading(sync.durable.messages.length === 0);
       try {
-        const cloud = await api<Snapshot>(`/conversations/${id}`);
+        const cloud = await api<Snapshot>(`/conversations/${id}`, 'GET', undefined, request.signal);
         if (!alive || token !== generation) return;
         setAuthoritativeFor(id);
+        setConnectionError('');
         receive({ type: 'snapshot', snapshot: cloud });
         const socketUrl = () => {
           const url = new URL(`/api/conversations/${id}/sync`, location.href);
@@ -223,6 +229,7 @@ export function useConversation(
           setConnection('unavailable');
           return;
         }
+        setConnectionError(error instanceof Error ? error.message : '暂时无法更新对话。');
         setConnection(navigator.onLine ? 'connecting' : 'offline');
         if (navigator.onLine)
           retry = setTimeout(
@@ -240,6 +247,7 @@ export function useConversation(
     };
     const offline = () => {
       generation++;
+      request?.abort();
       if (retry) clearTimeout(retry);
       stopHeartbeat();
       if (socket) {
@@ -266,6 +274,7 @@ export function useConversation(
       writer.flush();
       alive = false;
       generation++;
+      request?.abort();
       if (retry) clearTimeout(retry);
       stopHeartbeat();
       socket?.close();
@@ -282,8 +291,18 @@ export function useConversation(
     hasUnconfirmed,
     connection,
     syncedAt,
-    loading,
+    loading:
+      loading ||
+      Boolean(
+        id &&
+        enabled &&
+        !syncError &&
+        connection === 'connecting' &&
+        !snapshot.messages.length &&
+        authoritativeFor !== id,
+      ),
     syncError,
+    connectionError,
     reconnect: () => setRetryVersion((value) => value + 1),
   };
 }

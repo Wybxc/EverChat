@@ -22,9 +22,13 @@ export async function conversationMenu(page: Page) {
 
 export async function providerDetails(page: Page) {
   const panel = page.locator('#settings-panel-providers');
+  await expect(panel.getByRole('group', { name: 'AI 供应商', exact: true })).toBeVisible();
   if (!(await panel.getByLabel('名称', { exact: true }).isVisible())) {
     const current = panel.locator('button[aria-current="true"]');
-    if (await current.count()) await current.click();
+    if (await current.count()) {
+      await current.click();
+      await expect(panel.getByLabel('名称', { exact: true })).toBeVisible();
+    }
   }
 }
 

@@ -8,6 +8,8 @@
 
 首轮界面优化与验收见[前端界面优化方案](docs/plans/frontend-refinement-plan.md)；进一步减少重复边框、收紧间距和按需折叠的设计见[紧凑布局优化方案](docs/plans/frontend-compact-layout-plan.md)。
 
+慢连接下保持导航、设置和已加载内容稳定的实现与验收记录见[界面加载优化方案](docs/plans/slow-connection-ui-plan.md)。
+
 项目目录与边界见[模块说明](docs/architecture/modules.md)，验证入口与测试合并记录见[测试说明](tests/README.md)。
 
 访问控制使用 Cloudflare Access；JWT 信任边界、本地联调与验证记录见[访问控制迁移方案](docs/plans/cloudflare-access-migration-plan.md)。

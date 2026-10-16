@@ -50,7 +50,15 @@ export function PromptPresetPicker({
           if (preset) apply(preset.systemPrompt);
         }}
       >
-        <option value="">{query.data?.length ? '选择并应用' : '暂无预设'}</option>
+        <option value="">
+          {query.data?.length
+            ? '选择并应用'
+            : query.isPending
+              ? '读取中…'
+              : query.isError
+                ? '读取失败'
+                : '暂无预设'}
+        </option>
         {query.data?.map((preset) => (
           <option key={preset.id} value={preset.id}>
             {preset.name}
@@ -123,7 +131,11 @@ export function PromptPresetsPanel({ open }: { open: boolean }) {
           disabled={!items.length}
           onChange={(event) => setSelection(event.currentTarget.value)}
         >
-          {!items.length && <option value="">暂无预设</option>}
+          {!items.length && (
+            <option value="">
+              {query.isPending ? '读取中…' : query.isError ? '读取失败' : '暂无预设'}
+            </option>
+          )}
           {items.map((preset) => (
             <option key={preset.id} value={preset.id}>
               {preset.name}
@@ -134,7 +146,7 @@ export function PromptPresetsPanel({ open }: { open: boolean }) {
           variant="secondary"
           ref={addButton}
           type="button"
-          disabled={items.length >= MAX_PROMPT_PRESETS}
+          disabled={items.length >= MAX_PROMPT_PRESETS || !query.data}
           onClick={add}
         >
           <Plus className="h-[0.9375rem] w-[0.9375rem]" />

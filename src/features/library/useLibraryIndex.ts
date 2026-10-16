@@ -23,12 +23,15 @@ export function useLibraryIndex({
   );
   const libraryQuery = useQuery({
     queryKey: ['conversations'],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const epoch = storageEpoch();
       let page: LibrarySnapshot;
       do {
         page = await api<LibrarySnapshot>(
           `/conversations?after=${read('library-deletion-cursor', 0)}`,
+          'GET',
+          undefined,
+          signal,
         );
         if (epoch !== storageEpoch()) throw new DOMException('Session changed', 'AbortError');
         for (const deletion of page.deletions) onDeleted(deletion.id, deletion.deletedAt);
@@ -37,7 +40,7 @@ export function useLibraryIndex({
       return page.conversations;
     },
     enabled: enabled,
-    initialData: () => read('library', []),
+    initialData: () => read<ConversationInfo[] | undefined>('library', undefined),
     refetchInterval: 10_000,
   });
   const conversations = useMemo(() => {
@@ -92,6 +95,8 @@ export function useLibraryIndex({
   };
   return {
     conversations,
+    libraryLoading: !conversations.length && libraryQuery.isLoading,
+    libraryError: libraryQuery.isError ? '无法更新对话列表' : '',
     setLocalConversations,
     rememberConversation,
     refreshLibrary,

@@ -34,9 +34,12 @@ export function LibrarySearch({
   const search = useInfiniteQuery({
     queryKey: ['body-search', debounced, archived],
     initialPageParam: null as string | null,
-    queryFn: ({ pageParam }) =>
+    queryFn: ({ pageParam, signal }) =>
       api<SearchPage>(
         `/search?${new URLSearchParams({ q: debounced, archived: String(archived), ...(pageParam ? { cursor: pageParam } : {}) })}`,
+        'GET',
+        undefined,
+        signal,
       ),
     getNextPageParam: (page) => page.cursor ?? undefined,
     enabled: Boolean(debounced && debounced === query.trim() && online),

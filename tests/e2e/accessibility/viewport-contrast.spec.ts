@@ -241,6 +241,8 @@ test('semantic theme text, selected navigation, placeholders and focus meet cont
         { selector: '[aria-label="会话参数"]', property: 'outlineColor', minimum: 3 },
       ]);
       await openSpaceSettings(page);
+      await page.getByRole('tab', { name: '供应商', exact: true }).click();
+      await expect(page.getByTestId('settings-save-status')).toBeVisible();
       await contrast(page, [
         { selector: '#space-settings-title' },
         { selector: '#settings-tab-providers' },

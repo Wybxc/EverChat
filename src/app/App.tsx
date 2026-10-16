@@ -16,12 +16,9 @@ import {
   Globe,
   ImagePlus,
   Menu,
-  MessageCircle,
   Paperclip,
   Pin,
-  Plus,
   Search,
-  Settings,
   SlidersHorizontal,
   Square,
   WifiOff,
@@ -61,7 +58,7 @@ import type { SearchResult } from '../../shared/search/query';
 import { assertWebToolSupport } from '../../shared/web-tools/tasks';
 import { ActionMenu, ActionMenuItem } from '../components/ActionMenu';
 import { Disclosure, DisclosureScope } from '../components/Disclosure';
-import { hasOpenModal, Modal, ModalTitle } from '../components/Modal';
+import { hasOpenModal } from '../components/Modal';
 import { AttachmentDialog } from '../features/attachments/AttachmentDialog';
 import { DocumentPreviews } from '../features/attachments/DocumentPreviews';
 import { ImagePreviews } from '../features/attachments/ImagePreviews';
@@ -105,7 +102,8 @@ import {
 } from '../features/web-tools/web-tool-settings';
 import { api, ApiError } from '../platform/api';
 import { clearLocal, read, storageEpoch, write } from '../platform/storage';
-import { Brand } from './Brand';
+import { AppFrame, LoadingContent, SidebarHeader, SpaceSettingsButton } from './AppFrame';
+import { SettingsDialog } from './SettingsDialog';
 import { AccessGate } from './AccessGate';
 import { identityKey } from '../../shared/auth/types';
 import { SettingsPanel, type SettingsTab } from './SettingsPanel';
@@ -114,7 +112,9 @@ import { conversationUrl, useConversationRoute } from './useConversationRoute';
 import { useSession } from './useSession';
 import { useSidebar } from './useSidebar';
 
-export function App() {
+export function App({
+  initialSettings,
+}: { initialSettings?: { open: boolean; tab?: SettingsTab } } = {}) {
   const queryClient = useQueryClient();
   const [logoutTarget, setLogoutTarget] = useState(
     () => pendingLogout() ?? '/cdn-cgi/access/logout',
@@ -209,8 +209,10 @@ export function App() {
       });
     else setSidebarOpen((value) => !value);
   };
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [requestedSettingsTab, setRequestedSettingsTab] = useState<SettingsTab | undefined>();
+  const [settingsOpen, setSettingsOpen] = useState(initialSettings?.open ?? false);
+  const [requestedSettingsTab, setRequestedSettingsTab] = useState<SettingsTab | undefined>(
+    initialSettings?.tab,
+  );
   const returnToConversationSettings = useRef(false);
   const [modelChoice, setModelChoice] = useState<string>(() => read('chat-model', ''));
   const [branchAnnouncement, setBranchAnnouncement] = useState('');
@@ -263,6 +265,8 @@ export function App() {
   };
   const {
     conversations,
+    libraryLoading,
+    libraryError,
     setLocalConversations,
     rememberConversation,
     refreshLibrary,
@@ -301,6 +305,7 @@ export function App() {
     syncedAt,
     loading,
     syncError,
+    connectionError,
     reconnect,
   } = useConversation(
     selected,
@@ -503,7 +508,7 @@ export function App() {
     currentConversation,
     session,
     selectedModel,
-    isBusy: () => busy,
+    isBusy: () => attachmentBlocked,
     chatDraft,
     conversationSettings,
     resetNewTools,
@@ -511,17 +516,31 @@ export function App() {
     refreshLibrary,
     setError,
   });
-  const busy = Boolean(
+  const historyPending = Boolean(
+    selected &&
+    (snapshotFor !== selected || loading || (!authoritative && connection !== 'offline')),
+  );
+  const messageBlocked = Boolean(
     active ||
     currentPending ||
     sending ||
-    imageProgress ||
     syncError ||
     branches.error ||
     branches.waiting ||
     invalidRoute ||
-    (selected && loading),
+    historyPending ||
+    snapshot.deletedAt,
   );
+  const attachmentBlocked = Boolean(
+    imageProgress ||
+    currentPending ||
+    sending ||
+    syncError ||
+    invalidRoute ||
+    snapshot.deletedAt ||
+    (selected && !currentConversation),
+  );
+  const generationBlocked = messageBlocked || Boolean(imageProgress);
   const select = (id: string | null) => {
     setSearchJump(null);
     setEditorFocusTarget({ id });
@@ -538,14 +557,16 @@ export function App() {
     // The deleted snapshot can keep the composer disabled until the route's empty snapshot is committed.
     if (snapshot.deletedAt) return;
     const target = editorFocusTarget.id;
+    const previousFocus = document.activeElement;
     const frame = requestAnimationFrame(() => {
       if (
         selectedRef.current === target &&
         editor.current &&
         !editor.current.disabled &&
-        !hasOpenModal()
+        !hasOpenModal() &&
+        (document.activeElement === previousFocus || document.activeElement === document.body)
       )
-        editor.current.focus();
+        editor.current.focus({ preventScroll: true });
       setEditorFocusTarget(null);
     });
     return () => cancelAnimationFrame(frame);
@@ -768,7 +789,11 @@ export function App() {
   };
   const submit = async (event?: SubmitEvent<HTMLFormElement>) => {
     event?.preventDefault();
-    if ((!draft.trim() && !draftImages.length && !draftFiles.length) || busy || !selectedModel)
+    if (
+      (!draft.trim() && !draftImages.length && !draftFiles.length) ||
+      generationBlocked ||
+      !selectedModel
+    )
       return;
     setError('');
     setSending(true);
@@ -785,7 +810,7 @@ export function App() {
     }
   };
   const queueSummary = async (input: SubmitInput) => {
-    if (!selected || !currentConversation || busy || !input.summaryThrough)
+    if (!selected || !currentConversation || generationBlocked || !input.summaryThrough)
       throw new Error('当前对话暂时无法压缩，请等待同步或生成完成。');
     const model = models.find(
       (model) =>
@@ -817,7 +842,7 @@ export function App() {
   };
   const retry = async (message: Message) => {
     if (message.summary) {
-      if (busy) return;
+      if (generationBlocked) return;
       setSummaryTarget({
         throughId: message.summary.throughId,
         ...(message.providerId && message.model
@@ -827,7 +852,9 @@ export function App() {
       setSummaryOpen(true);
       return;
     }
-    if (busy || !selectedModel) {
+    if (generationBlocked) return;
+    if (!selectedModel) {
+      setRequestedSettingsTab('providers');
       openSettings();
       return;
     }
@@ -1049,6 +1076,12 @@ export function App() {
         logoutUrl={logoutTarget}
         status={status}
         error={bootError}
+        settingsState={{
+          open: settingsOpen,
+          tab: requestedSettingsTab,
+          change: (open) => (open ? openSettings() : closeSettings()),
+          selectTab: setRequestedSettingsTab,
+        }}
         onRetry={() => void (status === 'signed-out' ? logout() : boot())}
       />
     );
@@ -1067,284 +1100,270 @@ export function App() {
     !syncError &&
     (!selected || (!snapshot.messages.length && !currentPending && !loading));
   return (
-    <div className="flex h-dvh min-h-0 overflow-hidden">
-      <Sidebar
-        desktop={desktop}
-        collapsed={sidebarCollapsed}
-        open={sidebarOpen}
-        onOpenChange={setSidebarOpen}
-        trigger={mobileSidebarTrigger}
-      >
-        <div className="flex items-center justify-between min-h-14 px-3 py-1.5">
-          <Brand small />
-          <Button variant="ghost" size="icon" aria-label="收起侧栏" onClick={toggleSidebar}>
-            <X className="h-[1.125rem] w-[1.125rem]" />
-          </Button>
-        </div>
-        <div className="px-3">
-          <Button
-            variant="secondary"
-            className="h-11 w-full justify-between bg-accent px-4 text-sm font-medium text-accent-foreground"
-            onClick={() => select(null)}
+    <>
+      <AppFrame
+        sidebar={
+          <Sidebar
+            desktop={desktop}
+            collapsed={sidebarCollapsed}
+            open={sidebarOpen}
+            onOpenChange={setSidebarOpen}
+            trigger={mobileSidebarTrigger}
           >
-            <span className="flex items-center gap-2.5">
-              <Plus className="h-[1.0625rem] w-[1.0625rem]" />
-              开启新对话
-            </span>
-            <span>
-              <MessageCircle className="h-[0.9375rem] w-[0.9375rem]" />
-            </span>
-          </Button>
-        </div>
-        <label className="field-control mx-3 mt-2 h-11 w-auto gap-2 border-input bg-background">
-          <Search className="h-[0.875rem] w-[0.875rem]" />
-          <input
-            className="text-xs placeholder:text-muted-foreground"
-            placeholder="搜索你的对话"
-            aria-label="搜索对话"
-            maxLength={200}
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
-        </label>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pt-2">
-          <Tabs
-            value={archivedList ? 'archived' : 'active'}
-            onValueChange={(value) => setArchivedList(value === 'archived')}
-          >
-            <TabsList className="mb-1 h-auto w-full bg-transparent p-0">
-              <TabsTrigger value="active">对话</TabsTrigger>
-              <TabsTrigger value="archived">归档</TabsTrigger>
-            </TabsList>
-          </Tabs>
-          <ul className="w-full space-y-0.5 p-0 text-sm">
-            {visibleConversations.map((item, index) => (
-              <li key={item.id}>
-                {(!index ||
-                  conversationGroup(item) !==
-                    conversationGroup(visibleConversations[index - 1])) && (
-                  <h2 className="px-3 pt-3 pb-1 text-xs font-normal text-muted-foreground">
-                    {conversationGroup(item)}
-                  </h2>
-                )}
-                <a
-                  href={conversationUrl(item.id)}
-                  onClick={(event) => {
-                    if (
-                      event.button !== 0 ||
-                      event.metaKey ||
-                      event.ctrlKey ||
-                      event.shiftKey ||
-                      event.altKey
-                    )
-                      return;
-                    event.preventDefault();
-                    select(item.id);
-                  }}
-                  aria-current={item.id === selected ? 'page' : undefined}
-                  aria-description={
-                    [
-                      item.pinned ? '已置顶' : '',
-                      pending.some((p) => p.conversation.id === item.id) ? '有待发送消息' : '',
-                    ]
-                      .filter(Boolean)
-                      .join('，') || undefined
-                  }
-                  className="sidebar-link min-w-0 font-normal"
-                >
-                  <span className="truncate">{item.title}</span>
-                  {item.pinned && (
-                    <Pin aria-hidden="true" className="shrink-0 h-[0.75rem] w-[0.75rem]" />
-                  )}
-                  {pending.some((p) => p.conversation.id === item.id) && (
-                    <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />
-                  )}
-                </a>
-              </li>
-            ))}
-          </ul>
-          {!visibleConversations.length && (
-            <p className="px-3 text-xs text-muted-foreground">
-              {search ? '没有找到相关对话' : archivedList ? '暂无归档' : '暂无对话'}
-            </p>
-          )}
-          {search.trim() && (
-            <LibrarySearch query={search} archived={archivedList} open={openSearchResult} />
-          )}
-        </div>
-        <Button
-          variant="ghost"
-          aria-label="空间设置"
-          className="mx-2 mb-2 flex min-h-11 items-center gap-2 rounded-lg px-3 py-1.5 text-left hover:bg-border"
-          onClick={openSettings}
-        >
-          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-background text-xs">
-            我
-          </span>
-          <span className="flex-1">
-            <span className="block text-xs font-medium">私人空间</span>
-          </span>
-          <Settings className="h-[1rem] w-[1rem]" />
-        </Button>
-      </Sidebar>
-
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="chat-header flex shrink-0 items-center gap-2">
-          <Button
-            variant="ghost"
-            size="icon"
-            ref={mobileSidebarTrigger}
-            className={`h-11 w-11 shrink-0 ${desktop && !sidebarCollapsed ? 'hidden' : ''}`}
-            onClick={toggleSidebar}
-            aria-label="打开对话列表"
-            aria-expanded={desktop ? !sidebarCollapsed : sidebarOpen}
-          >
-            <Menu className="h-[1.25rem] w-[1.25rem]" />
-          </Button>
-          <p
-            data-testid="conversation-title"
-            className="min-w-0 flex-1 truncate text-sm font-medium"
-            title={currentConversation?.title}
-          >
-            {invalidRoute
-              ? '页面不可用'
-              : (currentConversation?.title ?? (selected ? '对话' : '新对话'))}
-          </p>
-          <div className="flex shrink-0 items-center gap-0 sm:gap-1">
-            <span
-              aria-live="polite"
-              className="mr-3 hidden items-center gap-1.5 text-xs text-muted-foreground md:flex"
-              title={
-                syncedAt
-                  ? `已同步 · 上次同步 ${new Date(syncedAt).toLocaleTimeString('zh-CN')}`
-                  : undefined
-              }
-            >
-              {connection === 'offline' ? (
-                <CloudOff className="h-[0.875rem] w-[0.875rem]" />
+            <SidebarHeader toggle={toggleSidebar} create={() => select(null)} />
+            <label className="field-control mx-3 mt-2 h-11 w-auto gap-2 border-input bg-background">
+              <Search className="h-[0.875rem] w-[0.875rem]" />
+              <input
+                className="text-xs placeholder:text-muted-foreground"
+                placeholder="搜索你的对话"
+                aria-label="搜索对话"
+                maxLength={200}
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+            </label>
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pt-2">
+              <Tabs
+                value={archivedList ? 'archived' : 'active'}
+                onValueChange={(value) => setArchivedList(value === 'archived')}
+              >
+                <TabsList className="mb-1 h-auto w-full bg-transparent p-0">
+                  <TabsTrigger value="active">对话</TabsTrigger>
+                  <TabsTrigger value="archived">归档</TabsTrigger>
+                </TabsList>
+              </Tabs>
+              <ul className="w-full space-y-0.5 p-0 text-sm">
+                {visibleConversations.map((item, index) => (
+                  <li key={item.id}>
+                    {(!index ||
+                      conversationGroup(item) !==
+                        conversationGroup(visibleConversations[index - 1])) && (
+                      <h2 className="px-3 pt-3 pb-1 text-xs font-normal text-muted-foreground">
+                        {conversationGroup(item)}
+                      </h2>
+                    )}
+                    <a
+                      href={conversationUrl(item.id)}
+                      onClick={(event) => {
+                        if (
+                          event.button !== 0 ||
+                          event.metaKey ||
+                          event.ctrlKey ||
+                          event.shiftKey ||
+                          event.altKey
+                        )
+                          return;
+                        event.preventDefault();
+                        select(item.id);
+                      }}
+                      aria-current={item.id === selected ? 'page' : undefined}
+                      aria-description={
+                        [
+                          item.pinned ? '已置顶' : '',
+                          pending.some((p) => p.conversation.id === item.id) ? '有待发送消息' : '',
+                        ]
+                          .filter(Boolean)
+                          .join('，') || undefined
+                      }
+                      className="sidebar-link min-w-0 font-normal"
+                    >
+                      <span className="truncate">{item.title}</span>
+                      {item.pinned && (
+                        <Pin aria-hidden="true" className="shrink-0 h-[0.75rem] w-[0.75rem]" />
+                      )}
+                      {pending.some((p) => p.conversation.id === item.id) && (
+                        <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />
+                      )}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+              {!visibleConversations.length && libraryLoading ? (
+                <div className="px-3">
+                  <LoadingContent label="正在读取对话列表" />
+                </div>
               ) : (
-                <span
-                  className="status-dot"
-                  data-pending={connection !== 'connected' || hasUnconfirmed}
-                />
+                !visibleConversations.length &&
+                !libraryError && (
+                  <p className="px-3 text-xs text-muted-foreground">
+                    {search ? '没有找到相关对话' : archivedList ? '暂无归档' : '暂无对话'}
+                  </p>
+                )
               )}
-              <span
-                className={connection === 'connected' && !hasUnconfirmed ? 'sr-only' : undefined}
-              >
-                {statusText}
-              </span>
-            </span>
-            {canSearch && (
-              <Button
-                variant="ghost"
-                size="icon"
-                ref={searchTrigger}
-                type="button"
-                aria-label="搜索当前对话"
-                aria-expanded={searchOpen}
-                aria-controls={searchOpen ? 'conversation-search' : undefined}
-                title="搜索当前对话（Ctrl / ⌘ F）"
-                className="h-11 w-11"
-                onClick={() =>
-                  searchOpen ? closeConversationSearch() : setConversationSearchFor(selected)
-                }
-              >
-                <Search className="h-[1.125rem] w-[1.125rem]" />
-              </Button>
-            )}
+              {libraryError && (
+                <div className="flex items-center gap-2 px-3 text-xs">
+                  <span role="alert">{libraryError}</span>
+                  <Button variant="ghost" onClick={refreshLibrary}>
+                    重试
+                  </Button>
+                </div>
+              )}
+              {search.trim() && (
+                <LibrarySearch query={search} archived={archivedList} open={openSearchResult} />
+              )}
+            </div>
+            <SpaceSettingsButton open={openSettings} />
+          </Sidebar>
+        }
+        header={
+          <>
             <Button
               variant="ghost"
               size="icon"
-              type="button"
-              aria-label="会话参数"
-              title="会话参数"
-              className="h-11 w-11 hidden md:inline-flex"
-              disabled={Boolean(invalidRoute || syncError)}
-              onClick={() => setConversationSettingsOpen(true)}
+              ref={mobileSidebarTrigger}
+              className={`h-11 w-11 shrink-0 ${desktop && !sidebarCollapsed ? 'hidden' : ''}`}
+              onClick={toggleSidebar}
+              aria-label="打开对话列表"
+              aria-expanded={desktop ? !sidebarCollapsed : sidebarOpen}
             >
-              <SlidersHorizontal className="h-[1.125rem] w-[1.125rem]" />
+              <Menu className="h-[1.25rem] w-[1.25rem]" />
             </Button>
-            <ConversationActions
-              key={selected ?? 'new'}
-              conversation={currentConversation}
-              disabled={connection === 'offline'}
-              update={updateConversation}
-              remove={deleteConversation}
-              duplicate={duplicateConversation}
-              exports={
-                <>
-                  <ActionMenuItem
-                    disabled={!snapshot.messages.length}
-                    onSelect={() => exportChat('md')}
-                  >
-                    Markdown
-                  </ActionMenuItem>
-                  <ActionMenuItem
-                    disabled={!snapshot.messages.length}
-                    onSelect={() => exportChat('txt')}
-                  >
-                    纯文本
-                  </ActionMenuItem>
-                  <ActionMenuItem
-                    disabled={!snapshot.messages.length}
-                    onSelect={() => exportChat('html')}
-                  >
-                    HTML
-                  </ActionMenuItem>
-                  <ActionMenuItem
-                    disabled={!currentConversation}
-                    onSelect={() => void exportBackup()}
-                  >
-                    下载备份
-                  </ActionMenuItem>
-                  <ActionMenuItem onSelect={() => backupInput.current?.click()}>
-                    导入备份
-                  </ActionMenuItem>
-                </>
-              }
+            <p
+              data-testid="conversation-title"
+              className="min-w-0 flex-1 truncate text-sm font-medium"
+              title={currentConversation?.title}
             >
-              <ActionMenuItem
-                className="md:hidden"
-                disabled={Boolean(invalidRoute || syncError)}
-                onSelect={() => setConversationSettingsOpen(true)}
+              {invalidRoute
+                ? '页面不可用'
+                : (currentConversation?.title ?? (selected ? '对话' : '新对话'))}
+            </p>
+            <div className="flex shrink-0 items-center gap-0 sm:gap-1">
+              <span
+                aria-live="polite"
+                className="mr-3 hidden items-center gap-1.5 text-xs text-muted-foreground md:flex"
+                title={
+                  syncedAt
+                    ? `已同步 · 上次同步 ${new Date(syncedAt).toLocaleTimeString('zh-CN')}`
+                    : undefined
+                }
               >
-                <SlidersHorizontal className="h-[1rem] w-[1rem]" />
-                会话参数
-              </ActionMenuItem>
-              {session.attachmentsConfigured &&
-                selected &&
-                currentConversation &&
-                !snapshot.deletedAt && (
+                {connection === 'offline' ? (
+                  <CloudOff className="h-[0.875rem] w-[0.875rem]" />
+                ) : (
+                  <span
+                    className="status-dot"
+                    data-pending={connection !== 'connected' || hasUnconfirmed}
+                  />
+                )}
+                <span
+                  className={connection === 'connected' && !hasUnconfirmed ? 'sr-only' : undefined}
+                >
+                  {statusText}
+                </span>
+              </span>
+              {canSearch && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  ref={searchTrigger}
+                  type="button"
+                  aria-label="搜索当前对话"
+                  aria-expanded={searchOpen}
+                  aria-controls={searchOpen ? 'conversation-search' : undefined}
+                  title="搜索当前对话（Ctrl / ⌘ F）"
+                  className="h-11 w-11"
+                  onClick={() =>
+                    searchOpen ? closeConversationSearch() : setConversationSearchFor(selected)
+                  }
+                >
+                  <Search className="h-[1.125rem] w-[1.125rem]" />
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                type="button"
+                aria-label="会话参数"
+                title="会话参数"
+                className="h-11 w-11 hidden md:inline-flex"
+                disabled={Boolean(invalidRoute || syncError)}
+                onClick={() => setConversationSettingsOpen(true)}
+              >
+                <SlidersHorizontal className="h-[1.125rem] w-[1.125rem]" />
+              </Button>
+              <ConversationActions
+                key={selected ?? 'new'}
+                conversation={currentConversation}
+                disabled={connection === 'offline'}
+                update={updateConversation}
+                remove={deleteConversation}
+                duplicate={duplicateConversation}
+                exports={
+                  <>
+                    <ActionMenuItem
+                      disabled={!snapshot.messages.length}
+                      onSelect={() => exportChat('md')}
+                    >
+                      Markdown
+                    </ActionMenuItem>
+                    <ActionMenuItem
+                      disabled={!snapshot.messages.length}
+                      onSelect={() => exportChat('txt')}
+                    >
+                      纯文本
+                    </ActionMenuItem>
+                    <ActionMenuItem
+                      disabled={!snapshot.messages.length}
+                      onSelect={() => exportChat('html')}
+                    >
+                      HTML
+                    </ActionMenuItem>
+                    <ActionMenuItem
+                      disabled={!currentConversation}
+                      onSelect={() => void exportBackup()}
+                    >
+                      下载备份
+                    </ActionMenuItem>
+                    <ActionMenuItem onSelect={() => backupInput.current?.click()}>
+                      导入备份
+                    </ActionMenuItem>
+                  </>
+                }
+              >
+                <ActionMenuItem
+                  className="md:hidden"
+                  disabled={Boolean(invalidRoute || syncError)}
+                  onSelect={() => setConversationSettingsOpen(true)}
+                >
+                  <SlidersHorizontal className="h-[1rem] w-[1rem]" />
+                  会话参数
+                </ActionMenuItem>
+                {session.attachmentsConfigured &&
+                  selected &&
+                  currentConversation &&
+                  !snapshot.deletedAt && (
+                    <ActionMenuItem
+                      aria-label="管理对话文件"
+                      onSelect={() => setAttachmentsFor(selected)}
+                    >
+                      <FolderOpen className="h-[1rem] w-[1rem]" />
+                      对话文件
+                    </ActionMenuItem>
+                  )}
+                {selected && latestCompletedAssistant && (
                   <ActionMenuItem
-                    aria-label="管理对话文件"
-                    onSelect={() => setAttachmentsFor(selected)}
+                    disabled={generationBlocked || connection === 'offline' || loading}
+                    onSelect={() => {
+                      setSummaryTarget(null);
+                      setSummaryOpen(true);
+                    }}
                   >
-                    <FolderOpen className="h-[1rem] w-[1rem]" />
-                    对话文件
+                    <BookOpen className="h-[1rem] w-[1rem]" />
+                    压缩历史
                   </ActionMenuItem>
                 )}
-              {selected && latestCompletedAssistant && (
-                <ActionMenuItem
-                  disabled={busy || connection === 'offline' || loading}
-                  onSelect={() => {
-                    setSummaryTarget(null);
-                    setSummaryOpen(true);
-                  }}
-                >
-                  <BookOpen className="h-[1rem] w-[1rem]" />
-                  压缩历史
-                </ActionMenuItem>
-              )}
-            </ConversationActions>
-            <input
-              ref={backupInput}
-              type="file"
-              accept=".zip,.json,application/zip,application/json"
-              className="hidden"
-              onChange={(event) => void importBackup(event)}
-            />
-          </div>
-        </header>
+              </ConversationActions>
+              <input
+                ref={backupInput}
+                type="file"
+                accept=".zip,.json,application/zip,application/json"
+                className="hidden"
+                onChange={(event) => void importBackup(event)}
+              />
+            </div>
+          </>
+        }
+      >
         {searchOpen && (
           <ConversationSearch
             key={`${selected}:${searchJump?.token ?? ''}`}
@@ -1378,18 +1397,13 @@ export function App() {
                   aria-label="对话消息"
                   className="mx-auto w-full max-w-[49rem] space-y-6 px-4 py-4 sm:py-6"
                 >
-                  {loading && !snapshot.messages.length && (
-                    <div className="py-10 text-center text-xs text-muted-foreground">
-                      <Spinner />
-                      <p className="mt-3">正在找回我们的对话…</p>
-                    </div>
-                  )}
+                  {loading && !snapshot.messages.length && <LoadingContent label="正在读取对话" />}
                   {branches.path.map((message) => (
                     <Fragment key={message.id}>
                       <MessageView
                         conversationId={selected!}
                         message={message}
-                        busy={busy}
+                        busy={messageBlocked}
                         onRetry={() => void retry(message)}
                         onEdit={() => edit(message)}
                         onQuote={() => quote(message)}
@@ -1431,7 +1445,7 @@ export function App() {
                                   <SummaryView
                                     key={summary.id}
                                     message={summary}
-                                    busy={busy}
+                                    busy={generationBlocked}
                                     onRetry={() => void retry(summary)}
                                     onDelete={() =>
                                       setMessageMutation({ id: summary.id, mode: 'delete' })
@@ -1533,6 +1547,14 @@ export function App() {
                     重新同步
                   </Button>
                 </Alert>
+              )}
+              {connectionError && !syncError && connection !== 'offline' && (
+                <div className="mb-2 flex items-center gap-2 text-xs">
+                  <span role="alert">{connectionError}</span>
+                  <Button variant="ghost" onClick={reconnect}>
+                    重新同步
+                  </Button>
+                </div>
               )}
               <span className="sr-only" aria-live="polite">
                 {branchAnnouncement}
@@ -1717,7 +1739,7 @@ export function App() {
                       label="添加附件"
                       icon={<Paperclip className="h-[1.125rem] w-[1.125rem]" />}
                       placement="dropdown-top dropdown-start"
-                      disabled={busy || !navigator.onLine}
+                      disabled={attachmentBlocked || !navigator.onLine}
                     >
                       <ActionMenuItem
                         aria-label="添加文件"
@@ -1845,7 +1867,7 @@ export function App() {
                       aria-label="发送消息"
                       disabled={
                         (!draft.trim() && !draftImages.length && !draftFiles.length) ||
-                        busy ||
+                        generationBlocked ||
                         !selectedModel
                       }
                     >
@@ -1866,41 +1888,18 @@ export function App() {
             </div>
           </div>
         </div>
-      </div>
+      </AppFrame>
       <SettingsPanel
         open={settingsOpen}
         requestedTab={requestedSettingsTab}
+        onTabChange={setRequestedSettingsTab}
         onSaved={providerSaved}
         themeControl={<ThemeControl />}
         onLogout={() => void logout()}
         render={(content) => (
-          <Modal
-            open={settingsOpen}
-            onOpenChange={(next) => {
-              if (!next) closeSettings();
-            }}
-            onCloseAutoFocus={(event) => event.preventDefault()}
-            aria-labelledby="space-settings-title"
-          >
-            <div className="settings-dialog flex h-[min(48rem,92dvh)] max-h-[92dvh] max-w-[60rem] flex-col overflow-hidden p-0">
-              <div className="flex shrink-0 items-center justify-between px-3 py-1.5 sm:px-4">
-                <ModalTitle id="space-settings-title" className="text-lg font-semibold">
-                  设置
-                </ModalTitle>
-                <Button
-                  type="button"
-                  onClick={closeSettings}
-                  variant="ghost"
-                  size="icon"
-                  aria-label="关闭设置"
-                >
-                  <X className="h-[1.125rem] w-[1.125rem]" />
-                </Button>
-              </div>
-
-              {content}
-            </div>
-          </Modal>
+          <SettingsDialog open={settingsOpen} close={closeSettings} restoreFocus={false}>
+            {content}
+          </SettingsDialog>
         )}
       />
       {backupTask && (
@@ -1962,7 +1961,7 @@ export function App() {
           models={models}
           preferred={selectedModel}
           target={summaryTarget ?? undefined}
-          busy={busy}
+          busy={generationBlocked}
           submit={queueSummary}
           close={() => {
             setSummaryOpen(false);
@@ -1987,6 +1986,6 @@ export function App() {
           restoreCompletedFocus={closeMutationFocus}
         />
       )}
-    </div>
+    </>
   );
 }

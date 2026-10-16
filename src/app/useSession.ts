@@ -27,10 +27,14 @@ export function useSession() {
   const [bootError, setBootError] = useState('');
   const version = useRef(0);
   const stopped = useRef(false);
+  const inFlight = useRef<Promise<void> | null>(null);
+  const bootController = useRef<AbortController | null>(null);
   const sessionRef = useRef(session);
   sessionRef.current = session;
   const loggedOut = useCallback(() => {
     ++version.current;
+    bootController.current?.abort();
+    inFlight.current = null;
     authorizeNetwork(null);
     setSession(null);
     sessionRef.current = null;
@@ -44,52 +48,63 @@ export function useSession() {
     loggedOut();
     setStatus('signed-out');
   }, [loggedOut]);
-  const boot = useCallback(async () => {
-    if (stopped.current) return;
+  const boot = useCallback((): Promise<void> => {
+    if (stopped.current) return Promise.resolve();
+    if (inFlight.current) return inFlight.current;
     const request = ++version.current;
     const epoch = storageEpoch();
     setBootError('');
-    try {
-      const current = await api<SessionInfo>('/session');
-      if (request !== version.current || epoch !== storageEpoch() || stopped.current) return;
-      if (
-        !current.authenticated ||
-        !current.identity?.issuer ||
-        !current.identity.sub ||
-        !['/cdn-cgi/access/logout', '/__dev/access/logout'].includes(current.logoutUrl)
-      )
-        throw new Error('无效的会话响应。');
-      const cached = read<SessionInfo | null>('access-session', null);
-      if (cached?.identity && identityKey(cached.identity) !== identityKey(current.identity)) {
-        await clearLocal();
-        // Recreate app-owned caches and queues under the newly verified identity.
-        location.reload();
-        return;
+    if (!sessionRef.current) setStatus('loading');
+    const controller = new AbortController();
+    bootController.current = controller;
+    const operation = (async () => {
+      try {
+        const current = await api<SessionInfo>('/session', 'GET', undefined, controller.signal);
+        if (request !== version.current || epoch !== storageEpoch() || stopped.current) return;
+        if (
+          !current.authenticated ||
+          !current.identity?.issuer ||
+          !current.identity.sub ||
+          !['/cdn-cgi/access/logout', '/__dev/access/logout'].includes(current.logoutUrl)
+        )
+          throw new Error('无效的会话响应。');
+        const cached = read<SessionInfo | null>('access-session', null);
+        if (cached?.identity && identityKey(cached.identity) !== identityKey(current.identity)) {
+          await clearLocal();
+          // Recreate app-owned caches and queues under the newly verified identity.
+          location.reload();
+          return;
+        }
+        resumeStorageWrites();
+        authorizeNetwork(current.identity);
+        sessionRef.current = current;
+        setSession(current);
+        setStatus('authenticated');
+        write('access-session', current);
+      } catch (error) {
+        if (request !== version.current || epoch !== storageEpoch() || stopped.current) return;
+        if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+          sessionRef.current = null;
+          setSession(null);
+          setStatus(error.status === 403 ? 'denied' : 'reauth-required');
+          return;
+        }
+        const cached = read<SessionInfo | null>('access-session', null);
+        if (cached?.identity && !navigator.onLine) {
+          sessionRef.current = cached;
+          setSession(cached);
+          setStatus('offline');
+        } else {
+          setStatus('unavailable');
+          setBootError(error instanceof Error ? error.message : '暂时无法连接你的空间。');
+        }
       }
-      resumeStorageWrites();
-      authorizeNetwork(current.identity);
-      sessionRef.current = current;
-      setSession(current);
-      setStatus('authenticated');
-      write('access-session', current);
-    } catch (error) {
-      if (request !== version.current || epoch !== storageEpoch() || stopped.current) return;
-      if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
-        sessionRef.current = null;
-        setSession(null);
-        setStatus(error.status === 403 ? 'denied' : 'reauth-required');
-        return;
-      }
-      const cached = read<SessionInfo | null>('access-session', null);
-      if (cached?.identity && !navigator.onLine) {
-        sessionRef.current = cached;
-        setSession(cached);
-        setStatus('offline');
-      } else {
-        setStatus('unavailable');
-        setBootError(error instanceof Error ? error.message : '暂时无法连接你的空间。');
-      }
-    }
+    })();
+    inFlight.current = operation;
+    void operation.finally(() => {
+      if (inFlight.current === operation) inFlight.current = null;
+    });
+    return operation;
   }, []);
   const providerSaved = useCallback((config: ProviderSettings) => {
     const profile = config.providers.find((profile) => profile.id === config.activeProviderId);
@@ -125,6 +140,8 @@ export function useSession() {
     const offline = () => {
       authorizeNetwork(null);
       ++version.current;
+      bootController.current?.abort();
+      inFlight.current = null;
       if (sessionRef.current) setStatus('offline');
     };
     const required = (event: Event) => {
@@ -148,6 +165,8 @@ export function useSession() {
     window.addEventListener('everchat:auth-required', required);
     return () => {
       ++version.current;
+      bootController.current?.abort();
+      inFlight.current = null;
       channel?.close();
       window.removeEventListener('online', refresh);
       window.removeEventListener('focus', refresh);

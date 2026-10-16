@@ -27,7 +27,8 @@ export function AttachmentDialog({
   const key = ['attachments', id];
   const files = useQuery({
     queryKey: key,
-    queryFn: () => api<Attachment[]>(`/conversations/${id}/attachments`),
+    queryFn: ({ signal }) =>
+      api<Attachment[]>(`/conversations/${id}/attachments`, 'GET', undefined, signal),
     enabled: open,
     refetchInterval: open ? 3000 : false,
   });

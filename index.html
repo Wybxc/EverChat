@@ -9,9 +9,68 @@
     <link rel="apple-touch-icon" href="/icon-192.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <title>EverChat</title>
+    <style>
+      body {
+        margin: 0;
+      }
+      .startup {
+        display: flex;
+        height: 100dvh;
+        background: #fff;
+        color: #61666b;
+        font:
+          0.875rem system-ui,
+          sans-serif;
+      }
+      .startup-side {
+        display: none;
+        width: 16.25rem;
+        flex-shrink: 0;
+        background: #f9fafb;
+      }
+      .startup-main {
+        display: flex;
+        flex: 1;
+        min-width: 0;
+        flex-direction: column;
+      }
+      .startup-brand {
+        height: 3.5rem;
+        padding: 0 1rem;
+        display: flex;
+        align-items: center;
+        font-weight: 600;
+      }
+      .startup-content {
+        display: flex;
+        flex: 1;
+        align-items: center;
+        justify-content: center;
+      }
+      .dark .startup {
+        background: #151517;
+        color: #a3a7ae;
+      }
+      .dark .startup-side {
+        background: #1b1b1c;
+      }
+      @media (min-width: 64rem) {
+        .startup-side {
+          display: block;
+        }
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="startup" role="status" aria-label="正在启动 EverChat">
+        <div class="startup-side" aria-hidden="true"><div class="startup-brand">EverChat</div></div>
+        <div class="startup-main">
+          <div class="startup-brand">EverChat</div>
+          <div class="startup-content">正在启动…</div>
+        </div>
+      </div>
+    </div>
     <script>
       let t = 'system';
       try {
