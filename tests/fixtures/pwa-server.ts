@@ -16,7 +16,7 @@ const server = createServer(async (request, response) => {
   if (path === '/api/conversations') return json({ conversations: [{ id: conversationId, title, createdAt: 1, updatedAt: 1, pinned: false, archived: false }], deletions: [], deletionCursor: 0, hasMoreDeletions: false });
   if (path === `/api/conversations/${conversationId}`) return json({ seq: 1, messages: [
     { id: 'user', role: 'user', parts: messageParts(title), status: 'completed', createdAt: 1, runId: null, parentId: null, revisionOf: null, error: null },
-    { id: 'assistant', role: 'assistant', parts: messageParts('**已保存的正文**', '**已保存的思考**'), status: 'completed', createdAt: 2, runId: 'run', parentId: 'user', revisionOf: null, error: null },
+    { id: 'assistant', role: 'assistant', parts: messageParts('**已保存的正文**\n\n行内 $E=mc^2$。\n\n\\[\n\\frac{1}{2}\n\\]', '**已保存的思考** \\(a+b\\)'), status: 'completed', createdAt: 2, runId: 'run', parentId: 'user', revisionOf: null, error: null },
   ] });
   if (path.startsWith('/api/')) { response.writeHead(404); response.end(); return; }
   const file = resolve(root, `.${decodeURIComponent(path)}`);

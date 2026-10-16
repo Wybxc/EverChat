@@ -75,7 +75,9 @@ function loadMarkdownRenderer() {
 }
 const markdownPluginLoaders = {
   code: () => import('@streamdown/code').then(({ createCodePlugin }) => createCodePlugin({ themes: ['github-light', 'github-dark'] })),
-  math: () => import('@streamdown/math').then(({ createMathPlugin }) => createMathPlugin({ singleDollarTextMath: false })),
+  math: () => Promise.all([import('@streamdown/math'), import('../shared/markdown-math')]).then(([{ createMathPlugin }, { normalizeMathMarkdown }]) => ({
+    plugin: createMathPlugin({ singleDollarTextMath: false }), normalize: normalizeMathMarkdown,
+  })),
   mermaid: () => import('@streamdown/mermaid').then(({ createMermaidPlugin }) => createMermaidPlugin({ config: { securityLevel: 'strict', startOnLoad: false, suppressErrorRendering: true, theme: 'base' } })),
 };
 
@@ -104,8 +106,9 @@ function MarkdownFallback({ content, className }: { content: string; className: 
 function MarkdownContent({ content, streaming, searchId, className = 'markdown' }: { content: string; streaming: boolean; searchId?: string; className?: string }) {
   const [Renderer, setRenderer] = useState<MarkdownRenderer | null>(() => markdownRenderer);
   const [plugins, setPlugins] = useState<PluginConfig | null>(null);
+  const [normalizeMath, setNormalizeMath] = useState<((source: string) => string) | null>(null);
   const needsCode = /```(?!mermaid\b)/iu.test(content);
-  const needsMath = /\$\$|\\\(|\\\[/u.test(content);
+  const needsMath = /\$|\\\(|\\\[/u.test(content);
   const needsMermaid = /```mermaid(?:\s|$)/imu.test(content);
   useEffect(() => {
     let active = true;
@@ -123,16 +126,20 @@ function MarkdownContent({ content, streaming, searchId, className = 'markdown' 
       needsMath ? markdownPluginLoaders.math() : Promise.resolve(null),
       needsMermaid ? markdownPluginLoaders.mermaid() : Promise.resolve(null),
     ]).then(([code, math, mermaid]) => {
-      if (active) setPlugins({ ...(code ? { code } : {}), ...(math ? { math } : {}), ...(mermaid ? { mermaid } : {}) });
+      if (active) {
+        setPlugins({ ...(code ? { code } : {}), ...(math ? { math: math.plugin } : {}), ...(mermaid ? { mermaid } : {}) });
+        setNormalizeMath(() => math?.normalize ?? null);
+      }
     }).catch(() => { if (active) setPlugins(null); }); };
     load(); window.addEventListener('online', load);
     return () => { active = false; window.removeEventListener('online', load); };
   }, [needsCode, needsMath, needsMermaid]);
+  const renderedContent = useMemo(() => needsMath && plugins?.math && normalizeMath ? normalizeMath(content) : content, [content, needsMath, normalizeMath, plugins?.math]);
   return <div data-search-content={searchId}><MarkdownBoundary fallback={<MarkdownFallback content={content} className={className} />}>{Renderer ?
     <Renderer className={`${className} space-y-3`} mode={streaming ? 'streaming' : 'static'} isAnimating={streaming} components={{
       a: ({ children, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer">{children}</a>,
       img: ({ alt }) => <span className="text-muted-foreground">[图片：{alt ?? '附件'}]</span>,
-    }} plugins={plugins ?? undefined} controls={{ code: { copy: true, download: false }, mermaid: { fullscreen: true, download: false, copy: false, panZoom: true } }}>{content}</Renderer>
+    }} plugins={plugins ?? undefined} controls={{ code: { copy: true, download: false }, mermaid: { fullscreen: true, download: false, copy: false, panZoom: true } }}>{renderedContent}</Renderer>
     : <div className={`${className} whitespace-pre-wrap`}>{content}</div>}</MarkdownBoundary></div>;
 }
 

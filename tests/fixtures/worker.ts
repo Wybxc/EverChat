@@ -716,6 +716,21 @@ globalThis.fetch = async (input, init) => {
       cancel() { if (stop) request.signal.removeEventListener('abort', stop); },
     }), { headers: { 'Content-Type': 'text/event-stream' } });
   }
+  if (requestBody.model === 'benchmark-math') {
+    const content = ['行内：$', 'x^', '2', '$。', '\n\n块级：\n\n\\', '[\n\\frac{', '1}{', '2}', '\n\\', ']\n\n', ...Array<string>(8).fill('继续输出。')];
+    const reasoning = ['思考：\\', '(', '\\alpha', ' + \\beta', '\\', ')。'];
+    let index = 0;
+    return new Response(new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        const done = index >= content.length;
+        const delta = done ? {} : { content: content[index], ...(reasoning[index] ? { reasoning_content: reasoning[index] } : {}) };
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ index: 0, delta, finish_reason: done ? 'stop' : null }] })}\n\n`));
+        index++;
+        if (done) { controller.enqueue(encoder.encode('data: [DONE]\n\n')); controller.close(); }
+      },
+    }), { headers: { 'Content-Type': 'text/event-stream' } });
+  }
   const benchmark = /^benchmark-(text|reasoning|long|error)-(\d+)-(\d+)-(\d+)$/.exec(requestBody.model);
   if (benchmark) {
     const [, kind, count, delay, size] = benchmark;

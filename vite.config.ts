@@ -32,7 +32,7 @@ export default defineConfig({
     workbox: {
       navigateFallback: 'index.html',
       navigateFallbackDenylist: [/^\/api\//],
-      globPatterns: ['**/*.{js,css,html,svg,png,webmanifest}'],
+      globPatterns: ['**/*.{js,css,html,svg,png,webmanifest}', '**/KaTeX_*.woff2'],
     },
   }), cloudflare({
     persistState: process.env.EVERCHAT_TEST_STATE ? { path: process.env.EVERCHAT_TEST_STATE } : true,
