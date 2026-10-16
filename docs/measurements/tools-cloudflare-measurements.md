@@ -6,14 +6,14 @@
 
 使用[专用入口与同一执行器](tool-platform-validation.md)，关闭 `GENERATION_METRICS` 和 `LOCAL_RESOURCE_METRICS`。模型流、生产 SDK 续接和 Tavily 适配器运行在真实平台；只替换外部 HTTP 响应。未绑定 R2。每次接受都重复提交同一请求，核对不增加调用；生成期间不轮询 Library。在线先等待公开 WebSocket 终态，再每两秒读取只读清理状态；离线每五秒读取公开快照。
 
-| 场景 | 实际结果 | 证据 |
-|---|---|---|
-| 四协议正常往返 | 各两次模型／两次工具，正文与持久化状态一致 | [functional](tools-cloudflare-functional.json) |
-| 首个预览后断开唯一订阅，终态重连 | 页面离开后继续完成；回放等于最终快照，调用次数不增加 | 同上 |
-| 轮次上限／服务拒绝／模型中取消 | 分别为四模型六工具、一次模型一次 HTTP 401、一次模型零工具；保留前缀且停止后续步骤 | 同上 |
-| 两个任务共享剩余一次额度 | 合计只发出一次实际工具 HTTP，两任务在额度耗尽后失败 | 同上 |
-| Responses 大正文 | 完整 90,000 UTF-16 码元，18.8 秒，两模型／两工具 | [large](tools-cloudflare-large.json) |
-| Responses 长流 | 完整 24,000 码元、每段 500ms，83.0 秒，两模型／两工具 | [sustained](tools-cloudflare-sustained.json) |
+| 场景                             | 实际结果                                                                          | 证据                                           |
+| -------------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------- |
+| 四协议正常往返                   | 各两次模型／两次工具，正文与持久化状态一致                                        | [functional](tools-cloudflare-functional.json) |
+| 首个预览后断开唯一订阅，终态重连 | 页面离开后继续完成；回放等于最终快照，调用次数不增加                              | 同上                                           |
+| 轮次上限／服务拒绝／模型中取消   | 分别为四模型六工具、一次模型一次 HTTP 401、一次模型零工具；保留前缀且停止后续步骤 | 同上                                           |
+| 两个任务共享剩余一次额度         | 合计只发出一次实际工具 HTTP，两任务在额度耗尽后失败                               | 同上                                           |
+| Responses 大正文                 | 完整 90,000 UTF-16 码元，18.8 秒，两模型／两工具                                  | [large](tools-cloudflare-large.json)           |
+| Responses 长流                   | 完整 24,000 码元、每段 500ms，83.0 秒，两模型／两工具                             | [sustained](tools-cloudflare-sustained.json)   |
 
 11 项场景包含 12 个独立任务，共 22 次模型请求、22 次工具 HTTP。任务结果为 7 完成、4 按预期失败、1 取消；每项 Workflow 都正常结束，私有日志、续接和运行配置清空，通知／搜索 outbox 归零，Conversation 与 Library 无待触发 Alarm。控制面再次确认[12 个 Workflow 实例全部 complete](tools-cloudflare-precleanup.json)，没有运行、等待或 errored 实例。这里的预期任务失败与 Workflow 引擎失败分别记录。
 
@@ -25,17 +25,17 @@
 
 截至 `03:07:41Z` 退避后补读的样本如下，仍不能据此证明数据完整或账户账单：
 
-| 指标 | 当前样本 | 口径 |
-|---|---:|---|
-| Worker 请求／CPU | 168 次，0.490009 秒 | GraphQL 汇总，包含断流状态；错误计数为 0 |
-| Worker 最大 CPU | 16.074ms | GraphQL 原始微秒换算；不是每次都低于 10ms 的证明 |
-| Conversation CPU／活跃时长 | 2.527297 秒／156.390904 秒 | namespace periodic 样本 |
-| Library CPU／活跃时长 | 0.081695 秒／4.332331 秒 | 同上 |
-| 两个 DO 的 duration | 20.572574 GB-s | 平台字段，不能用墙钟时间替代 |
-| 两个 DO 的 SQL | 11,549 读行，2,885 写行 | 包含初始化、fixture 和观察；不是精确累计账单 |
-| DO 超限／内部错误 | CPU、内存超限及 fatal internal 均为 0 | invocation 仍有 `clientDisconnected`、`responseStreamDisconnected`，不写成全部错误为 0 |
-| 终态 SQLite 分配 | 4,915,200 字节（4.69 MiB） | 清理前 12 个 Conversation 与 Library 的分配合计，不是账单或生成中峰值 |
-| SQL 计费存储 | 无样本 | `available: false`，不写成 0 |
+| 指标                       |                              当前样本 | 口径                                                                                   |
+| -------------------------- | ------------------------------------: | -------------------------------------------------------------------------------------- |
+| Worker 请求／CPU           |                   168 次，0.490009 秒 | GraphQL 汇总，包含断流状态；错误计数为 0                                               |
+| Worker 最大 CPU            |                              16.074ms | GraphQL 原始微秒换算；不是每次都低于 10ms 的证明                                       |
+| Conversation CPU／活跃时长 |            2.527297 秒／156.390904 秒 | namespace periodic 样本                                                                |
+| Library CPU／活跃时长      |              0.081695 秒／4.332331 秒 | 同上                                                                                   |
+| 两个 DO 的 duration        |                        20.572574 GB-s | 平台字段，不能用墙钟时间替代                                                           |
+| 两个 DO 的 SQL             |               11,549 读行，2,885 写行 | 包含初始化、fixture 和观察；不是精确累计账单                                           |
+| DO 超限／内部错误          | CPU、内存超限及 fatal internal 均为 0 | invocation 仍有 `clientDisconnected`、`responseStreamDisconnected`，不写成全部错误为 0 |
+| 终态 SQLite 分配           |            4,915,200 字节（4.69 MiB） | 清理前 12 个 Conversation 与 Library 的分配合计，不是账单或生成中峰值                  |
+| SQL 计费存储               |                                无样本 | `available: false`，不写成 0                                                           |
 
 DO invocation 有自适应采样，报告保留 `sampleInterval`。同一固定窗口的 `02:59:41Z` 补读曾为 14,897 读行／3,708 写行、23.820838 GB-s；`03:07:41Z` 的值反而较低，原因尚未确定，不能只归因于迟到而视为单调累计。两份原始结果都保留，不挑较大的样本充当完整总量，也不根据差值声称优化幅度。当前支持已测负载和资源量级判断，不支持精确账单。终态分配仅是当时保留数据，其他应用、长期共享额度和账户总存储仍不由它证明。
 

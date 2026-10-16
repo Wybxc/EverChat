@@ -19,17 +19,39 @@ export function applyChange(snapshot: Snapshot, change: DurableChange): Snapshot
     if (index === -1) messages.push(message);
     else messages[index] = message;
   }
-  return { ...snapshot, messages, seq: change.seq, ...(change.settings ? { settings: change.settings } : {}) };
+  return {
+    ...snapshot,
+    messages,
+    seq: change.seq,
+    ...(change.settings ? { settings: change.settings } : {}),
+  };
 }
 
 export function appendMessage(message: Message, batch: StreamBatch): Message {
   const bytes = validateBatch(batch);
-  if (message.streamVersion !== batch.version || message.role !== 'assistant'
-    || message.id !== batch.messageId || message.runId !== batch.runId || !message.streamState) throw new Error('Stream identity mismatch');
+  if (
+    message.streamVersion !== batch.version ||
+    message.role !== 'assistant' ||
+    message.id !== batch.messageId ||
+    message.runId !== batch.runId ||
+    !message.streamState
+  )
+    throw new Error('Stream identity mismatch');
   if (message.status !== 'running') throw new Error('Streamed message is not running');
   if (batch.startOffset !== (message.durableOffset ?? 0)) throw new Error('Stream offset gap');
   const state = message.streamState;
-  const parser = new ProviderStream(state.protocol, state.showReasoning, state, messageText(message), messageText(message, 'reasoning'));
+  const parser = new ProviderStream(
+    state.protocol,
+    state.showReasoning,
+    state,
+    messageText(message),
+    messageText(message, 'reasoning'),
+  );
   parser.feed(bytes);
-  return { ...message, parts: messageParts(parser.content, parser.reasoning), streamState: parser.checkpoint(), durableOffset: batch.endOffset };
+  return {
+    ...message,
+    parts: messageParts(parser.content, parser.reasoning),
+    streamState: parser.checkpoint(),
+    durableOffset: batch.endOffset,
+  };
 }

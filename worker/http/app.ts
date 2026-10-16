@@ -9,7 +9,7 @@ import { registerProvidersRoutes } from '../providers/routes';
 import { registerSearchRoutes } from '../search/routes';
 import { registerWebToolsRoutes } from '../web-tools/routes';
 import type { Env } from './env';
-import { HttpError,json } from './response';
+import { HttpError, json } from './response';
 import { registerSessionRoutes } from './session-routes';
 
 type AppEnv = { Bindings: Env };
@@ -22,7 +22,8 @@ app.use('*', async (context, next) => {
   const url = new URL(request.url);
   const mutation = !['GET', 'HEAD'].includes(request.method);
   const upgrade = request.headers.get('Upgrade')?.toLowerCase() === 'websocket';
-  if ((mutation || upgrade) && request.headers.get('Origin') !== url.origin) throw new HttpError(403, '此请求来源不受信任。');
+  if ((mutation || upgrade) && request.headers.get('Origin') !== url.origin)
+    throw new HttpError(403, '此请求来源不受信任。');
   await next();
 });
 

@@ -9,13 +9,21 @@ export interface ToolValidationIdentity {
   workload: { chunks: number; size: number; interval: number };
 }
 export interface ToolValidationConversation {
-  databaseBytes: number; alarmAt: number | null;
-  pendingSearch: number; pendingNotifications: number;
-  privateStreams: number; privatePayloads: number; retainedContexts: number;
-  modelCalls: number; serviceRequests: number;
+  databaseBytes: number;
+  alarmAt: number | null;
+  pendingSearch: number;
+  pendingNotifications: number;
+  privateStreams: number;
+  privatePayloads: number;
+  retainedContexts: number;
+  modelCalls: number;
+  serviceRequests: number;
   task: { status: string; round: number; modelRequests: number; toolRequests: number } | null;
   workflowStatus: string | null;
 }
 export interface ToolValidationLibrary {
-  databaseBytes: number; alarmAt: number | null; pendingBackfills: number; usedToday: number;
+  databaseBytes: number;
+  alarmAt: number | null;
+  pendingBackfills: number;
+  usedToday: number;
 }

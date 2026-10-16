@@ -3,8 +3,12 @@ import type { ProviderSettings, ProviderSettingsInput } from '../../../shared/pr
 import { Autosave } from '../../platform/autosave';
 
 export class SettingsAutosave extends Autosave<ProviderSettings, ProviderSettingsInput> {
-  constructor(initial: ProviderSettings, persist: (settings: ProviderSettingsInput) => Promise<ProviderSettings>,
-    onSaved: (settings: ProviderSettings) => void, delay = 600) {
+  constructor(
+    initial: ProviderSettings,
+    persist: (settings: ProviderSettingsInput) => Promise<ProviderSettings>,
+    onSaved: (settings: ProviderSettings) => void,
+    delay = 600,
+  ) {
     super(initial, persist, onSaved, mergeProviderSettings, delay);
   }
 }

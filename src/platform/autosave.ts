@@ -1,4 +1,8 @@
-type SaveState<T> = { settings: T; status: 'saved' | 'waiting' | 'saving' | 'error'; error: string };
+type SaveState<T> = {
+  settings: T;
+  status: 'saved' | 'waiting' | 'saving' | 'error';
+  error: string;
+};
 
 // Serialize requests and keep edits made while a response is in flight.
 export class Autosave<T, Input = T> {
@@ -9,7 +13,8 @@ export class Autosave<T, Input = T> {
   private pending: Promise<T> | null = null;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private listeners = new Set<() => void>();
-  constructor(initial: T,
+  constructor(
+    initial: T,
     private persist: (settings: Input) => Promise<T>,
     private onSaved: (settings: T) => void,
     private normalize: (saved: T, draft: T) => Input,
@@ -19,19 +24,31 @@ export class Autosave<T, Input = T> {
     this.snapshot = { settings: initial, status: 'saved', error: '' };
   }
   getSnapshot = () => this.snapshot;
-  subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
-  private emit(snapshot: SaveState<T>) { this.snapshot = snapshot; this.listeners.forEach((listener) => listener()); }
+  subscribe = (listener: () => void) => {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  };
+  private emit(snapshot: SaveState<T>) {
+    this.snapshot = snapshot;
+    this.listeners.forEach((listener) => listener());
+  }
   update(settings: T) {
     this.revision++;
     this.emit({ settings, status: 'waiting', error: '' });
     clearTimeout(this.timer);
-    this.timer = setTimeout(() => { void this.flush().catch(() => {}); }, this.delay);
+    this.timer = setTimeout(() => {
+      void this.flush().catch(() => {});
+    }, this.delay);
   }
   flush = (): Promise<T> => {
     clearTimeout(this.timer);
     if (this.pending) return this.pending;
     if (this.savedRevision === this.revision) return Promise.resolve(this.saved);
-    this.pending = this.save().finally(() => { this.pending = null; });
+    this.pending = this.save().finally(() => {
+      this.pending = null;
+    });
     return this.pending;
   };
   private async save(): Promise<T> {
@@ -41,14 +58,22 @@ export class Autosave<T, Input = T> {
         const input = this.normalize(this.saved, this.snapshot.settings);
         this.emit({ ...this.snapshot, status: 'saving', error: '' });
         const result = await this.persist(input);
-        this.saved = result; this.savedRevision = revision;
-        this.emit({ settings: revision === this.revision ? result : this.snapshot.settings,
-          status: revision === this.revision ? 'saved' : 'waiting', error: '' });
+        this.saved = result;
+        this.savedRevision = revision;
+        this.emit({
+          settings: revision === this.revision ? result : this.snapshot.settings,
+          status: revision === this.revision ? 'saved' : 'waiting',
+          error: '',
+        });
         this.onSaved(result);
       }
       return this.saved;
     } catch (error) {
-      this.emit({ ...this.snapshot, status: 'error', error: error instanceof Error ? error.message : '保存失败，请重试。' });
+      this.emit({
+        ...this.snapshot,
+        status: 'error',
+        error: error instanceof Error ? error.message : '保存失败，请重试。',
+      });
       throw error;
     }
   }
@@ -66,5 +91,7 @@ export class Autosave<T, Input = T> {
     this.saved = settings;
     this.emit({ settings, status: 'saved', error: '' });
   }
-  dispose() { clearTimeout(this.timer); }
+  dispose() {
+    clearTimeout(this.timer);
+  }
 }

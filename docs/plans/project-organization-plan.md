@@ -22,26 +22,26 @@
 
 本轮检查了版本控制中的源码、静态及字面量动态导入、Worker URL 入口、配置、脚本、测试目录及主要大文件。以下记录调研时的基线，源码链接指向迁移后的对应入口。统计为 TS／TSX 源文件，行数约值，含空行。
 
-| 范围 | 文件数 | 行数 | 主要问题 |
-|---|---:|---:|---|
-| src | 72 | 5,409 | 业务组件、浏览器基础设施及应用装配平铺 |
-| worker | 32 | 4,409 | 两个 DO 和 HTTP 入口聚合大量业务职责 |
-| shared | 33 | 5,904 | 类型、算法、协议、生成数据、测量支持混放 |
-| scripts | 11 | 1,101 | 模型目录维护与多类测量脚本混放 |
-| tests | 94 | 12,565 | 单测、端到端、PWA、夹具与平台测量入口混合 |
+| 范围    | 文件数 |   行数 | 主要问题                                  |
+| ------- | -----: | -----: | ----------------------------------------- |
+| src     |     72 |  5,409 | 业务组件、浏览器基础设施及应用装配平铺    |
+| worker  |     32 |  4,409 | 两个 DO 和 HTTP 入口聚合大量业务职责      |
+| shared  |     33 |  5,904 | 类型、算法、协议、生成数据、测量支持混放  |
+| scripts |     11 |  1,101 | 模型目录维护与多类测量脚本混放            |
+| tests   |     94 | 12,565 | 单测、端到端、PWA、夹具与平台测量入口混合 |
 
 shared 中约 3,838 行来自自动生成的模型目录快照，不能把目录体积直接当作复杂度或无用代码。
 
 ### 2.1 需要拆分的入口
 
-| 当前文件 | 规模 | 混合的职责 |
-|---|---|---|
-| [src/app/App.tsx](../../src/app/App.tsx) | 约 1,011 行，57 个本地依赖 | 登录、会话与草稿、outbox 投递、附件准备、分支、搜索、备份、弹窗、Markdown、消息和输入区 |
+| 当前文件                                                                             | 规模                       | 混合的职责                                                                               |
+| ------------------------------------------------------------------------------------ | -------------------------- | ---------------------------------------------------------------------------------------- |
+| [src/app/App.tsx](../../src/app/App.tsx)                                             | 约 1,011 行，57 个本地依赖 | 登录、会话与草稿、outbox 投递、附件准备、分支、搜索、备份、弹窗、Markdown、消息和输入区  |
 | [worker/conversation/durable-object.ts](../../worker/conversation/durable-object.ts) | 约 1,103 行，32 个本地依赖 | 消息读写、提交／修订／删除、摘要依赖、模型执行、联网任务协调、WebSocket、搜索同步、Alarm |
-| [worker/library/durable-object.ts](../../worker/library/durable-object.ts) | 约 591 行 | 对话索引、供应商与通用设置、登录限流、搜索、附件、复制、导入与清理调度 |
-| [worker/index.ts](../../worker/index.ts) | 约 447 行 | API 装配、请求 schema、权限检查和各业务路由 |
-| [src/app/SettingsPanel.tsx](../../src/app/SettingsPanel.tsx) | 约 362 行 | 设置 Tab 容器、供应商管理、模型编辑、能力测试、自动保存与密钥显示 |
-| [tests/support/runtime/worker.ts](../../tests/support/runtime/worker.ts) | 约 802 行 | 测试 DO、数据构造、控制接口、故障注入、供应商与工具模拟 |
+| [worker/library/durable-object.ts](../../worker/library/durable-object.ts)           | 约 591 行                  | 对话索引、供应商与通用设置、登录限流、搜索、附件、复制、导入与清理调度                   |
+| [worker/index.ts](../../worker/index.ts)                                             | 约 447 行                  | API 装配、请求 schema、权限检查和各业务路由                                              |
+| [src/app/SettingsPanel.tsx](../../src/app/SettingsPanel.tsx)                         | 约 362 行                  | 设置 Tab 容器、供应商管理、模型编辑、能力测试、自动保存与密钥显示                        |
+| [tests/support/runtime/worker.ts](../../tests/support/runtime/worker.ts)             | 约 802 行                  | 测试 DO、数据构造、控制接口、故障注入、供应商与工具模拟                                  |
 
 ### 2.2 依赖边界
 
@@ -149,19 +149,19 @@ tsconfig、Vite、Playwright、Wrangler、components.json 等工具约定入口�
 
 ## 5. 主要实现的迁移与拆分
 
-| 当前实现 | 目标归属与拆分方式 | 必须维持的行为 |
-|---|---|---|
-| App 内 Markdown 加载、边界、降级；src/features/chat/rendering/math.ts | features/chat/rendering | 动态加载；原文降级；公式、代码、Mermaid；加载失败恢复 |
-| App 内 MessageView／SummaryView | features/chat 的消息与摘要呈现组件 | 隐藏分支不挂载正文、思考折叠、搜索定位及操作焦点 |
-| App 内输入区、发送、投递、附件准备 | chat 的输入区和草稿／outbox 控制；附件准备委托 attachments | requestId 固定；parentId 固定；离线只投递一次；切换后迟到响应不抢导航 |
-| App 内登录、导航、设置开关、备份编排 | app 装配；备份流程归 backup，侧栏数据归 library | 新对话聚焦、URL 前后退、退出后的异步回调隔离 |
-| ProviderSettings | app 的设置窗口 + providers 的列表、供应商编辑、模型编辑与能力测试 | 自动保存仍由一个控制器协调；改 API 类型／端点不清其他字段；空名称不保存 |
-| storage.ts | platform 保留 IndexedDB／localStorage 底座；chat 管理草稿、outbox、快照、删除语义 | 删除墓碑、storage epoch、可靠入队与退出清理保持一致，不能产生独立缓存 |
-| shared/types.ts | 按 conversation／providers／models／streaming 拆契约；branchPath 归 conversation；applyChange／appendMessage 归 streaming | 事件顺序、重复幂等、流身份及偏移校验不变 |
-| worker/index.ts | http 装配与公共策略；业务 schema／handler 随各领域 routes.ts 归位 | 各路由权限、Origin 与 404／410／507 语义不变 |
-| Conversation DO | 先提取消息投影、提交与摘要准备、订阅协议等职责明确的单元；流读取执行归 generation | DO 保持事务、Alarm、活动任务和最终写入的所有权；不拆成多个 DO 或跨网络服务 |
-| Library DO | 将供应商存储、索引操作、复制／导入协调和维护任务逐项归位；复用已有 Store／Journal | 附件发布、复制／导入完成、删除与清理之间的原子性和重试行为 |
-| provider-*、tool-* 平铺文件 | providers／web-tools／streaming，按协议适配、业务任务和通用日志区分 | 四类 API、DeepSeek 正文／思考、工具私有数据与公共呈现边界 |
+| 当前实现                                                              | 目标归属与拆分方式                                                                                                        | 必须维持的行为                                                             |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| App 内 Markdown 加载、边界、降级；src/features/chat/rendering/math.ts | features/chat/rendering                                                                                                   | 动态加载；原文降级；公式、代码、Mermaid；加载失败恢复                      |
+| App 内 MessageView／SummaryView                                       | features/chat 的消息与摘要呈现组件                                                                                        | 隐藏分支不挂载正文、思考折叠、搜索定位及操作焦点                           |
+| App 内输入区、发送、投递、附件准备                                    | chat 的输入区和草稿／outbox 控制；附件准备委托 attachments                                                                | requestId 固定；parentId 固定；离线只投递一次；切换后迟到响应不抢导航      |
+| App 内登录、导航、设置开关、备份编排                                  | app 装配；备份流程归 backup，侧栏数据归 library                                                                           | 新对话聚焦、URL 前后退、退出后的异步回调隔离                               |
+| ProviderSettings                                                      | app 的设置窗口 + providers 的列表、供应商编辑、模型编辑与能力测试                                                         | 自动保存仍由一个控制器协调；改 API 类型／端点不清其他字段；空名称不保存    |
+| storage.ts                                                            | platform 保留 IndexedDB／localStorage 底座；chat 管理草稿、outbox、快照、删除语义                                         | 删除墓碑、storage epoch、可靠入队与退出清理保持一致，不能产生独立缓存      |
+| shared/types.ts                                                       | 按 conversation／providers／models／streaming 拆契约；branchPath 归 conversation；applyChange／appendMessage 归 streaming | 事件顺序、重复幂等、流身份及偏移校验不变                                   |
+| worker/index.ts                                                       | http 装配与公共策略；业务 schema／handler 随各领域 routes.ts 归位                                                         | 各路由权限、Origin 与 404／410／507 语义不变                               |
+| Conversation DO                                                       | 先提取消息投影、提交与摘要准备、订阅协议等职责明确的单元；流读取执行归 generation                                         | DO 保持事务、Alarm、活动任务和最终写入的所有权；不拆成多个 DO 或跨网络服务 |
+| Library DO                                                            | 将供应商存储、索引操作、复制／导入协调和维护任务逐项归位；复用已有 Store／Journal                                         | 附件发布、复制／导入完成、删除与清理之间的原子性和重试行为                 |
+| provider-_、tool-_ 平铺文件                                           | providers／web-tools／streaming，按协议适配、业务任务和通用日志区分                                                       | 四类 API、DeepSeek 正文／思考、工具私有数据与公共呈现边界                  |
 
 DO 拆分时先识别事务单元，再决定函数边界。不能为减少类长度把同一个原子操作拆成多次异步写入；也不创建需要透传全部 private 字段的“辅助类”。必要时保留有明确职责的协调方法。
 
@@ -169,17 +169,17 @@ DO 拆分时先识别事务单元，再决定函数边界。不能为减少类�
 
 ## 6. 无用代码与导出的处理清单
 
-| 对象 | 证据与判断 | 实施动作 |
-|---|---|---|
-| src/components/ui/label.tsx | 无本地导入者，生产及测试／脚本入口均不可达 | 删除文件；不增加替代包装 |
-| worker/index.ts 的 messageAttachments 导入 | noUnusedLocals 报错，正文无引用 | 删除该导入 |
-| shared/backup/backup.ts 的 backupConversation | 全仓仅定义，无调用；backupMessage 等备份主流程仍在使用 | 删除此函数，清理随之失效的类型导入 |
-| buttonVariants、badgeVariants、CATALOG_VENDORS、validateArchiveData 等 | 有文件内部用途，无外部消费者 | 优先取消 export，保留实现 |
-| shadcn 的部分额外包装与导出 | 如 InputGroupButton／Text／Input／Textarea；扫描显示无外部引用 | 逐项核查内部调用、删掉无用包装及关联变体／导入，不批量删除整文件 |
-| Dialog／AlertDialog 的 Overlay、Portal 等 | 无外部消费者，但 Content 内部仍使用 | 仅收窄导出，不删除内部组成 |
-| 其余无外部引用的类型、常量、schema | 外部未引用不等于实现无用 | 逐项核对后取消导出；只删除没有内部用途的定义 |
-| shared 中两份工具测量／验证支持 | 被脚本、运行夹具、资源测试引用 | 移到 scripts/measurements/support，并更新相关入口 |
-| 模型快照、PDF Worker、归档 Worker、生产 PWA 资源 | 生成文件或动态入口，具有有效用途 | 保留并维护生成／加载路径 |
+| 对象                                                                   | 证据与判断                                                     | 实施动作                                                         |
+| ---------------------------------------------------------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------- |
+| src/components/ui/label.tsx                                            | 无本地导入者，生产及测试／脚本入口均不可达                     | 删除文件；不增加替代包装                                         |
+| worker/index.ts 的 messageAttachments 导入                             | noUnusedLocals 报错，正文无引用                                | 删除该导入                                                       |
+| shared/backup/backup.ts 的 backupConversation                          | 全仓仅定义，无调用；backupMessage 等备份主流程仍在使用         | 删除此函数，清理随之失效的类型导入                               |
+| buttonVariants、badgeVariants、CATALOG_VENDORS、validateArchiveData 等 | 有文件内部用途，无外部消费者                                   | 优先取消 export，保留实现                                        |
+| shadcn 的部分额外包装与导出                                            | 如 InputGroupButton／Text／Input／Textarea；扫描显示无外部引用 | 逐项核查内部调用、删掉无用包装及关联变体／导入，不批量删除整文件 |
+| Dialog／AlertDialog 的 Overlay、Portal 等                              | 无外部消费者，但 Content 内部仍使用                            | 仅收窄导出，不删除内部组成                                       |
+| 其余无外部引用的类型、常量、schema                                     | 外部未引用不等于实现无用                                       | 逐项核对后取消导出；只删除没有内部用途的定义                     |
+| shared 中两份工具测量／验证支持                                        | 被脚本、运行夹具、资源测试引用                                 | 移到 scripts/measurements/support，并更新相关入口                |
+| 模型快照、PDF Worker、归档 Worker、生产 PWA 资源                       | 生成文件或动态入口，具有有效用途                               | 保留并维护生成／加载路径                                         |
 
 依赖包未发现可以仅凭当前扫描直接删除的整包。shadcn 和 tw-animate-css 有 CSS 引用；不能因为没有 TS 导入就删除。未用导出不必然增加最终 bundle，收窄 API 的主要收益是维护清晰度；以实际构建结果评价体积变化。
 
@@ -189,32 +189,32 @@ UI 源码删减后保留 [来源说明和本地适配记录](../../src/component
 
 ### 7.1 先明确验证责任
 
-| 功能不变量 | 主要验证层 | 需要保留的跨层保障 |
-|---|---|---|
-| 分支拓扑、上下文、摘要覆盖、预算 | unit/conversation | 修改、重生成、切换后的发送、搜索、复制与导出 |
-| 四协议 SSE、Unicode、思考、结束与用量 | unit/streaming、providers 的适配契约 | DeepSeek 思考与正文流式可见，重连后的持久化结果一致 |
-| 幂等、取消、DO 重启、尾部写入失败 | integration/conversation、generation | 关闭页面后仍生成；中断保留已保存前缀且不自动重复调用 |
-| 自动保存、能力合并、端点与密钥规则 | unit/providers | 模型选择、多 Tab 草稿、空名称、密钥查看与退出后隔离 |
-| 文件校验、ZIP 校验、任务状态机 | unit/attachments、backup | R2 私有下载、复制／导入重试、失败清理和实际 PDF 提取 |
-| 工具任务、轮次与限额 | unit/web-tools、integration/web-tools | 真实本地 Workflow／DO 边界、断开客户端及结果公开范围 |
-| 焦点、滚动、响应式、对比度 | e2e/chat、settings、accessibility | 输入节点不重建、跟随暂停／恢复、分支锚点、键盘及文字放大 |
-| 离线导航、公式字体、PDF Worker 资源 | pwa | 使用生产构建和真实静态资源，不能由模拟 E2E 替代 |
+| 功能不变量                            | 主要验证层                            | 需要保留的跨层保障                                       |
+| ------------------------------------- | ------------------------------------- | -------------------------------------------------------- |
+| 分支拓扑、上下文、摘要覆盖、预算      | unit/conversation                     | 修改、重生成、切换后的发送、搜索、复制与导出             |
+| 四协议 SSE、Unicode、思考、结束与用量 | unit/streaming、providers 的适配契约  | DeepSeek 思考与正文流式可见，重连后的持久化结果一致      |
+| 幂等、取消、DO 重启、尾部写入失败     | integration/conversation、generation  | 关闭页面后仍生成；中断保留已保存前缀且不自动重复调用     |
+| 自动保存、能力合并、端点与密钥规则    | unit/providers                        | 模型选择、多 Tab 草稿、空名称、密钥查看与退出后隔离      |
+| 文件校验、ZIP 校验、任务状态机        | unit/attachments、backup              | R2 私有下载、复制／导入重试、失败清理和实际 PDF 提取     |
+| 工具任务、轮次与限额                  | unit/web-tools、integration/web-tools | 真实本地 Workflow／DO 边界、断开客户端及结果公开范围     |
+| 焦点、滚动、响应式、对比度            | e2e/chat、settings、accessibility     | 输入节点不重建、跟随暂停／恢复、分支锚点、键盘及文字放大 |
+| 离线导航、公式字体、PDF Worker 资源   | pwa                                   | 使用生产构建和真实静态资源，不能由模拟 E2E 替代          |
 
 已有工具任务日志单测与真实 DO 集成测试分别覆盖状态机和平台事务，均有价值；message-context 与 conversation-branches 分别覆盖发送上下文和显示拓扑，也不能按名称相似直接合并删除。
 
 ### 7.2 具体调整候选
 
-| 当前文件／做法 | 计划 |
-|---|---|
-| tests/unit/streaming/event-replay.test.ts | 将事件重放归 streaming、branchPath 归 conversation、供应商流消费归 providers；移除空壳 core 文件。UTF-8、未结束流不重试、敏感错误不外泄等独有断言必须保留 |
-| provider.test.ts 混合设置和流适配 | 按供应商配置与协议适配拆分，避免文件继续聚合所有 provider 行为 |
-| ui-migration、frontend-refinement、compact-layout、frontend-acceptance、settings-layout | 按 chat／settings／accessibility 等现有功能归位；取消以改版批次命名的套件 |
-| chat 与 UI 改版测试重复的新对话焦点、视口适配 | 对照输入条件、操作和断言合并；保留输入 DOM 身份、草稿、导航返回、文字放大、横屏和长名称等不同条件 |
-| alarm、resource-limits、tool-task-journal 等只使用 request 的场景 | 迁到 integration，继续使用 Playwright request + 本地 workerd，不为它们启动浏览器，也不新增另一套测试框架 |
-| 各 spec 重复登录、保存／恢复供应商、建会话、轮询快照 | 提取小型明确夹具，统一清理；鉴权 UI 本身仍由专门 E2E 实际操作 |
-| tests/support/browser/ui.ts | 归到 support/browser；与构造数据、HTTP API 夹具分开 |
-| fixtures/worker.ts | 拆成测试 DO、控制路由、数据构造、故障注入和模拟上游；入口只装配，不改变故障注入触发条件 |
-| fixtures/generate.ts | 当前仍由测试调用；它是消费生产流的测试适配器，不是遗留业务实现。评估是否可收敛到契约测试支持，不能只删适配器而丢掉独有断言 |
+| 当前文件／做法                                                                          | 计划                                                                                                                                                      |
+| --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| tests/unit/streaming/event-replay.test.ts                                               | 将事件重放归 streaming、branchPath 归 conversation、供应商流消费归 providers；移除空壳 core 文件。UTF-8、未结束流不重试、敏感错误不外泄等独有断言必须保留 |
+| provider.test.ts 混合设置和流适配                                                       | 按供应商配置与协议适配拆分，避免文件继续聚合所有 provider 行为                                                                                            |
+| ui-migration、frontend-refinement、compact-layout、frontend-acceptance、settings-layout | 按 chat／settings／accessibility 等现有功能归位；取消以改版批次命名的套件                                                                                 |
+| chat 与 UI 改版测试重复的新对话焦点、视口适配                                           | 对照输入条件、操作和断言合并；保留输入 DOM 身份、草稿、导航返回、文字放大、横屏和长名称等不同条件                                                         |
+| alarm、resource-limits、tool-task-journal 等只使用 request 的场景                       | 迁到 integration，继续使用 Playwright request + 本地 workerd，不为它们启动浏览器，也不新增另一套测试框架                                                  |
+| 各 spec 重复登录、保存／恢复供应商、建会话、轮询快照                                    | 提取小型明确夹具，统一清理；鉴权 UI 本身仍由专门 E2E 实际操作                                                                                             |
+| tests/support/browser/ui.ts                                                             | 归到 support/browser；与构造数据、HTTP API 夹具分开                                                                                                       |
+| fixtures/worker.ts                                                                      | 拆成测试 DO、控制路由、数据构造、故障注入和模拟上游；入口只装配，不改变故障注入触发条件                                                                   |
+| fixtures/generate.ts                                                                    | 当前仍由测试调用；它是消费生产流的测试适配器，不是遗留业务实现。评估是否可收敛到契约测试支持，不能只删适配器而丢掉独有断言                                |
 
 本轮没有确认任何整套测试完全无用。实施时为每个删除／合并项记录“原用例 → 保留位置 → 保留断言”；只有触发条件与不变量均等价，才删除重复用例。不以测试数量减少或执行时间下降代替覆盖判断，不删除有价值的跨层回归。
 
@@ -237,15 +237,15 @@ UI 源码删减后保留 [来源说明和本地适配记录](../../src/component
 
 ## 9. 实施顺序与提交边界
 
-| 阶段 | 工作 | 完成条件／验证 | 建议提交边界 |
-|---|---|---|---|
-| 0. 固定基线 | 完整检查、测试清单、功能到测试映射；记录构建产物和流式测量口径 | 明确现有失败；可重现；记录 316 单测、286 主套件、3 PWA 的去向 | 测试／检查基础设施单独提交 |
-| 1. 明确死代码清理 | 删除 label、未用导入和 backupConversation；核实并收窄无用导出／包装 | 类型检查、单测、构建；UI 相关定向回归；noUnused 检查无新增问题 | 只含可证明的清理 |
-| 2. 契约与底层归位 | 拆 shared/types；移动 shared 业务文件和测量支持；保留算法语义 | 全部导入更新；无兼容转发；单测与构建；流式和分支定向回归 | 按契约／协议小批次提交 |
-| 3. 前端归位与拆分 | 先按功能移动，再分别提取渲染、输入与投递、设置子模块、App 装配 | 焦点、滚动、离线草稿、分支与搜索；模型／自动保存；公式及 PWA | 纯移动与职责提取分开提交 |
+| 阶段                 | 工作                                                                    | 完成条件／验证                                                                      | 建议提交边界                         |
+| -------------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------ |
+| 0. 固定基线          | 完整检查、测试清单、功能到测试映射；记录构建产物和流式测量口径          | 明确现有失败；可重现；记录 316 单测、286 主套件、3 PWA 的去向                       | 测试／检查基础设施单独提交           |
+| 1. 明确死代码清理    | 删除 label、未用导入和 backupConversation；核实并收窄无用导出／包装     | 类型检查、单测、构建；UI 相关定向回归；noUnused 检查无新增问题                      | 只含可证明的清理                     |
+| 2. 契约与底层归位    | 拆 shared/types；移动 shared 业务文件和测量支持；保留算法语义           | 全部导入更新；无兼容转发；单测与构建；流式和分支定向回归                            | 按契约／协议小批次提交               |
+| 3. 前端归位与拆分    | 先按功能移动，再分别提取渲染、输入与投递、设置子模块、App 装配          | 焦点、滚动、离线草稿、分支与搜索；模型／自动保存；公式及 PWA                        | 纯移动与职责提取分开提交             |
 | 4. Worker 归位与拆分 | 先路由／provider／附件等边缘模块，再 Conversation 与 Library 的协调逻辑 | 鉴权、Alarm、重启／取消／尾部失败、事务、复制／导入、工具；响应转发及测量口径不退化 | HTTP、Conversation、Library 分开提交 |
-| 5. 测试按职责收敛 | 根据已稳定模块边界归位；提取夹具；合并被证实重复的断言 | 新发现规则覆盖 unit、integration、e2e、pwa；每个原场景有去向；完整检查通过 | 移动与删除重复测试分开提交 |
-| 6. 文档与收尾 | 文档分类、README 导航、源码链接与复现命令；再次扫描依赖和残留路径 | 无失效路径与入口；运行时依赖仍无环；清理清单及测试映射完整 | 文档与最终检查单独提交 |
+| 5. 测试按职责收敛    | 根据已稳定模块边界归位；提取夹具；合并被证实重复的断言                  | 新发现规则覆盖 unit、integration、e2e、pwa；每个原场景有去向；完整检查通过          | 移动与删除重复测试分开提交           |
+| 6. 文档与收尾        | 文档分类、README 导航、源码链接与复现命令；再次扫描依赖和残留路径       | 无失效路径与入口；运行时依赖仍无环；清理清单及测试映射完整                          | 文档与最终检查单独提交               |
 
 阶段 0 就修复测试发现与类型检查基础设施；阶段 5 才系统整理测试内容，避免在产品重构期间同时改变被测行为和验证规则。测试文件随被测模块更新导入，不必提前全量搬迁。
 
@@ -279,14 +279,14 @@ UI 源码删减后保留 [来源说明和本地适配记录](../../src/component
 - 测试按 unit／integration／e2e／pwa 分类，历史界面改版套件按功能拆分；测试 Worker 从 802 行混合实现改为入口、DO、控制路由和模拟上游。
 - 模型维护与本地／平台测量脚本各自归位，配置中的 Worker 入口、命令、生成输出路径和动态资源引用同步更新。文档分为 architecture／features／plans／measurements，README 提供导航。
 
-| 入口（含空行） | 基线 | 整理后 | 保留职责 |
-|---|---:|---:|---|
-| App | 1,011 | 561 | 当前页面、导航、分支与功能装配 |
-| Worker index | 447 | 12 | 部署导出与 fetch；http/app 为 47 行装配 |
-| Conversation DO | 1,103 | 961 | 原子操作、生命周期、Alarm、任务协调 |
-| Library DO | 591 | 389 | 索引、RPC、维护与既有功能实例协调 |
-| 设置窗口 | 362 | 100 | Tab／窗口与唯一自动保存实例；编辑器另归 providers |
-| 测试 Worker 入口 | 802 | 8 | 装配测试 DO、控制路由与模拟上游 |
+| 入口（含空行）   |  基线 | 整理后 | 保留职责                                          |
+| ---------------- | ----: | -----: | ------------------------------------------------- |
+| App              | 1,011 |    561 | 当前页面、导航、分支与功能装配                    |
+| Worker index     |   447 |     12 | 部署导出与 fetch；http/app 为 47 行装配           |
+| Conversation DO  | 1,103 |    961 | 原子操作、生命周期、Alarm、任务协调               |
+| Library DO       |   591 |    389 | 索引、RPC、维护与既有功能实例协调                 |
+| 设置窗口         |   362 |    100 | Tab／窗口与唯一自动保存实例；编辑器另归 providers |
+| 测试 Worker 入口 |   802 |      8 | 装配测试 DO、控制路由与模拟上游                   |
 
 文件行数只是定位参考，不是验收指标。Conversation 的提交／修订／完成／取消／工具轮次仍在同一事务内编排，避免为继续缩短类而破坏原子性。现有架构边界见 [模块说明](../architecture/modules.md)。
 
@@ -320,27 +320,27 @@ HTTP 修订／删除成功可能早于 WebSocket 更新。弹窗关闭时将焦�
 - 模型目录命令已用本地固定 JSON 在隔离源码副本中运行，输出是有效 TypeScript，包含正确的相对类型导入、快照导出和预期模型；未改写仓库快照，也未请求线上目录。
 - 同口径本地流式测量在整理前 `36e88f1` 与整理后 `e94a6fc` 分别运行：120 片、25ms 间隔、基础片长 200 字符，覆盖在线正文、在线思考、断开后的长回答。测量与增量同步／持久化一致性断言均通过，无真实模型调用。
 
-| 场景 | 检查点：前 → 后 | SQL 写入行：前 → 后 | 数据库字节：前 → 后 |
-|---|---:|---:|---:|
-| 在线正文 | 3 → 3 | 32 → 32 | 462,848 → 462,848 |
-| 在线思考 | 4 → 4 | 37 → 37 | 663,552 → 663,552 |
-| 断开后的长回答 | 7 → 7 | 52 → 52 | 1,015,808 → 1,015,808 |
+| 场景           | 检查点：前 → 后 | SQL 写入行：前 → 后 |   数据库字节：前 → 后 |
+| -------------- | --------------: | ------------------: | --------------------: |
+| 在线正文       |           3 → 3 |             32 → 32 |     462,848 → 462,848 |
+| 在线思考       |           4 → 4 |             37 → 37 |     663,552 → 663,552 |
+| 断开后的长回答 |           7 → 7 |             52 → 52 | 1,015,808 → 1,015,808 |
 
 SQL 语句、读取行、检查点字节与广播帧数均相同；思考场景的事件／广播有效载荷相差 4 字节，耗时波动不足 20ms，未发现明显序列化或写入开销变化。原始报告见 [对照数据](../measurements/project-organization-stream.json)。这只是本地 claim-to-terminal 测量，不是 Cloudflare 账单、平台 CPU 或完整请求计量；排除 bootstrap、接受请求、Library、RPC、Alarm 与诊断报告持久化。
 
 ### 11.5 提交边界
 
-| 提交 | 内容 |
-|---|---|
-| `36e88f1` | 类型化测试基础设施与递归单测入口 |
-| `fd5863d` | 已确认的无用代码与 UI 包装清理 |
-| `28e06c5` | shared 领域契约与纯逻辑拆分 |
-| `2b070a9` | 前端功能归位与渲染呈现提取 |
-| `d48e584` | Worker 领域路由与公共 HTTP 装配 |
-| `ca60961` | 前端状态所有权与供应商设置拆分 |
-| `f5be2eb` | DO 存储、订阅、生成和恢复职责提取 |
-| `d90afe9` | 原有异步消息更新焦点竞态修复 |
-| `b5f2bb7` | 附件准备与会话索引状态提取、格式收尾 |
-| `e94a6fc` | 测试／夹具／脚本按职责归位与重复断言收敛 |
-| `751b68d` | PDF 资源路径与解析取消测试同步修正 |
+| 提交      | 内容                                           |
+| --------- | ---------------------------------------------- |
+| `36e88f1` | 类型化测试基础设施与递归单测入口               |
+| `fd5863d` | 已确认的无用代码与 UI 包装清理                 |
+| `28e06c5` | shared 领域契约与纯逻辑拆分                    |
+| `2b070a9` | 前端功能归位与渲染呈现提取                     |
+| `d48e584` | Worker 领域路由与公共 HTTP 装配                |
+| `ca60961` | 前端状态所有权与供应商设置拆分                 |
+| `f5be2eb` | DO 存储、订阅、生成和恢复职责提取              |
+| `d90afe9` | 原有异步消息更新焦点竞态修复                   |
+| `b5f2bb7` | 附件准备与会话索引状态提取、格式收尾           |
+| `e94a6fc` | 测试／夹具／脚本按职责归位与重复断言收敛       |
+| `751b68d` | PDF 资源路径与解析取消测试同步修正             |
 | `33d7791` | 删除分页断言读取完整既有游标，消除测试排序依赖 |

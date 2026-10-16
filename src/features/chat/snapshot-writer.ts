@@ -4,7 +4,10 @@ import type { Snapshot } from '../../../shared/streaming/protocol';
 export class SnapshotWriter {
   private latest?: Snapshot;
   private timer?: ReturnType<typeof setTimeout>;
-  constructor(private readonly write: (snapshot: Snapshot) => void, private readonly interval = 2000) {}
+  constructor(
+    private readonly write: (snapshot: Snapshot) => void,
+    private readonly interval = 2000,
+  ) {}
   schedule(snapshot: Snapshot, immediate = false) {
     this.latest = snapshot;
     if (immediate) this.flush();

@@ -1,4 +1,4 @@
-import { delMany,entries,set,setMany } from 'idb-keyval';
+import { delMany, entries, set, setMany } from 'idb-keyval';
 
 const PREFIX = 'everchat:';
 const cache = new Map<string, unknown>();
@@ -56,21 +56,42 @@ export function write(key: string, value: unknown, valid: () => boolean = () => 
   const fallback = () => {
     if (epoch !== persistEpoch) return;
     if (!valid()) return;
-    try { localStorage.setItem(fullKey, JSON.stringify(value)); } catch { /* Cloud remains authoritative. */ }
+    try {
+      localStorage.setItem(fullKey, JSON.stringify(value));
+    } catch {
+      /* Cloud remains authoritative. */
+    }
   };
-  try { void set(fullKey, value).catch(fallback); }
-  catch { fallback(); }
+  try {
+    void set(fullKey, value).catch(fallback);
+  } catch {
+    fallback();
+  }
   // Keep a small synchronous fallback for browsers where IndexedDB is delayed or unavailable.
-  try { localStorage.setItem(fullKey, JSON.stringify(value)); } catch { /* IndexedDB remains authoritative. */ }
+  try {
+    localStorage.setItem(fullKey, JSON.stringify(value));
+  } catch {
+    /* IndexedDB remains authoritative. */
+  }
 }
 function discard(keys: string[]) {
-  try { void delMany(keys).catch(() => {}); } catch { /* IndexedDB can also fail synchronously. */ }
+  try {
+    void delMany(keys).catch(() => {});
+  } catch {
+    /* IndexedDB can also fail synchronously. */
+  }
 }
-
 
 export function remove(keys: string[]) {
   const fullKeys = keys.map(storageKey);
-  for (const key of fullKeys) { cache.delete(key); try { localStorage.removeItem(key); } catch { /* Memory is already cleared. */ } }
+  for (const key of fullKeys) {
+    cache.delete(key);
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      /* Memory is already cleared. */
+    }
+  }
   discard(fullKeys);
 }
 
@@ -80,6 +101,9 @@ export function clearLocal() {
   cache.clear();
   discard(keys);
   try {
-    for (const key of Object.keys(localStorage)) if (key.startsWith(PREFIX)) localStorage.removeItem(key);
-  } catch { /* The in-memory cache is already cleared. */ }
+    for (const key of Object.keys(localStorage))
+      if (key.startsWith(PREFIX)) localStorage.removeItem(key);
+  } catch {
+    /* The in-memory cache is already cleared. */
+  }
 }

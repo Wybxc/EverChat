@@ -12,15 +12,21 @@
     "SYSTEM_PROMPT": "",
     "GENERATION_METRICS": "0",
     "LOCAL_RESOURCE_METRICS": "0",
-    "LOCAL_TOOL_WORKLOAD": "{\"chunks\":120,\"size\":200,\"interval\":25}"
+    "LOCAL_TOOL_WORKLOAD": "{\"chunks\":120,\"size\":200,\"interval\":25}",
   },
   "durable_objects": {
     "bindings": [
       { "name": "CONVERSATIONS", "class_name": "Conversation" },
-      { "name": "LIBRARY", "class_name": "Library" }
-    ]
+      { "name": "LIBRARY", "class_name": "Library" },
+    ],
   },
-  "workflows": [{ "binding": "WEB_TOOLS", "name": "everchat-tools-validation-flow", "class_name": "WebToolWorkflow" }],
+  "workflows": [
+    {
+      "binding": "WEB_TOOLS",
+      "name": "everchat-tools-validation-flow",
+      "class_name": "WebToolWorkflow",
+    },
+  ],
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Conversation", "Library"] }],
-  "observability": { "enabled": true, "head_sampling_rate": 1 }
+  "observability": { "enabled": true, "head_sampling_rate": 1 },
 }

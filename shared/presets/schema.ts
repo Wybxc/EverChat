@@ -13,10 +13,19 @@ const promptPresetSchema = v.strictObject({
   ...promptPresetInputSchema.entries,
   updatedAt: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(Number.MAX_SAFE_INTEGER)),
 });
-export const promptPresetListSchema = v.pipe(v.array(promptPresetSchema), v.maxLength(MAX_PROMPT_PRESETS),
+export const promptPresetListSchema = v.pipe(
+  v.array(promptPresetSchema),
+  v.maxLength(MAX_PROMPT_PRESETS),
   v.check((presets) => new Set(presets.map((preset) => preset.id)).size === presets.length),
-  v.check((presets) => presets.reduce((size, preset) => size + presetTextBytes(preset), 0) <= MAX_PRESET_TEXT_BYTES));
+  v.check(
+    (presets) =>
+      presets.reduce((size, preset) => size + presetTextBytes(preset), 0) <= MAX_PRESET_TEXT_BYTES,
+  ),
+);
 
 export function presetTextBytes(preset: PromptPresetInput) {
-  return new TextEncoder().encode(preset.name).byteLength + new TextEncoder().encode(preset.systemPrompt).byteLength;
+  return (
+    new TextEncoder().encode(preset.name).byteLength +
+    new TextEncoder().encode(preset.systemPrompt).byteLength
+  );
 }

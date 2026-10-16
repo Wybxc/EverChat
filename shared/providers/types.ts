@@ -1,10 +1,32 @@
 import type { DocumentPart } from '../attachments/documents';
 import type { ImagePart } from '../attachments/images';
 import type { WebToolServiceConfig } from '../web-tools/service';
-import type { ChatModel, ProviderModel, ReasoningEffort, ResolvedModelMetadata } from '../models/types';
-export interface ChatInput { role: 'system' | 'user' | 'assistant'; content: string; images?: ImagePart[]; files?: DocumentPart[] }
+import type {
+  ChatModel,
+  ProviderModel,
+  ReasoningEffort,
+  ResolvedModelMetadata,
+} from '../models/types';
+export interface ChatInput {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+  images?: ImagePart[];
+  files?: DocumentPart[];
+}
 
-export interface SessionInfo { authenticated: boolean; provider: string; model: string; modelName?: string; activeProviderId?: string | null; models?: ChatModel[]; configured: boolean; attachmentsConfigured: boolean; showReasoning?: boolean; systemPrompt?: string; maxOutputTokens?: number | null }
+export interface SessionInfo {
+  authenticated: boolean;
+  provider: string;
+  model: string;
+  modelName?: string;
+  activeProviderId?: string | null;
+  models?: ChatModel[];
+  configured: boolean;
+  attachmentsConfigured: boolean;
+  showReasoning?: boolean;
+  systemPrompt?: string;
+  maxOutputTokens?: number | null;
+}
 
 export type ProviderKind = 'openai-chat' | 'anthropic' | 'openai-responses' | 'gemini';
 

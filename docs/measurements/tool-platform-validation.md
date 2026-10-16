@@ -22,11 +22,11 @@ pnpm measure:tools-platform-local --suite sustained --port 5192 --output /tmp/ev
 
 该命令生成随机本地 Secrets，使用临时配置和持久化目录启动自建 Wrangler 服务，复用将要部署的 API-only 入口，完成后只停止自己的进程并删除临时状态。不会连接正在开发的 5173 服务。输出按 suite 分为 `-functional.json`、`-large.json`、`-sustained.json`，明确标记 `runtime: local`。
 
-| 报告 | 实际验证 |
-|---|---|
+| 报告                                                     | 实际验证                                                                                                                                 |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | [functional：9 项](tools-platform-local-functional.json) | 四协议各两次模型／两次工具；首预览后断开唯一订阅及终态重连；四模型／六工具轮次上限；HTTP 401；初始模型期间取消；两对话共享仅剩一次的额度 |
-| [large：1 项](tools-platform-local-large.json) | Responses 完整 90,000 码元，约 10 秒，两次模型／两次工具 |
-| [sustained：1 项](tools-platform-local-sustained.json) | Responses 完整 24,000 码元，77.5 秒，两次模型／两次工具，期间没有 Library 诊断保活 |
+| [large：1 项](tools-platform-local-large.json)           | Responses 完整 90,000 码元，约 10 秒，两次模型／两次工具                                                                                 |
+| [sustained：1 项](tools-platform-local-sustained.json)   | Responses 完整 24,000 码元，77.5 秒，两次模型／两次工具，期间没有 Library 诊断保活                                                       |
 
 11 项全部通过。每项重复接受同一请求而不增加调用，完成后 Workflow 结束、私有日志／续接／运行配置清空、通知／索引 outbox 归零，两个 DO 无待触发 Alarm。并发额度场景只发出一次实际工具 HTTP，两个任务都在耗尽额度后停止；取消场景只调用一次模型、零次工具。在线结果及断线终态回放与数据库快照相同，公开状态没有密钥或签名。
 

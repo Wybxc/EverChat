@@ -3,7 +3,12 @@ import * as v from 'valibot';
 import type { Env } from './env';
 
 export class HttpError extends Error {
-  constructor(public status: number, message: string) { super(message); }
+  constructor(
+    public status: number,
+    message: string,
+  ) {
+    super(message);
+  }
 }
 export function json(body: unknown, status = 200, headers?: HeadersInit) {
   const result = new Headers(headers);
@@ -14,34 +19,75 @@ export function json(body: unknown, status = 200, headers?: HeadersInit) {
 }
 
 /** Wrap a native RPC response without decoding large histories in the Free Worker. */
-export function jsonWithStream(body: Record<string, unknown>, key: string, source: Response, status = 200) {
+export function jsonWithStream(
+  body: Record<string, unknown>,
+  key: string,
+  source: Response,
+  status = 200,
+) {
   if (!source.ok || !source.body) return source;
-  const reader = source.body.getReader(), encoder = new TextEncoder();
-  const prefix = JSON.stringify(body).slice(0, -1) + (Object.keys(body).length ? ',' : '') + JSON.stringify(key) + ':';
+  const reader = source.body.getReader(),
+    encoder = new TextEncoder();
+  const prefix =
+    JSON.stringify(body).slice(0, -1) +
+    (Object.keys(body).length ? ',' : '') +
+    JSON.stringify(key) +
+    ':';
   let started = false;
-  return new Response(new ReadableStream<Uint8Array>({
-    async pull(controller) {
-      if (!started) { started = true; controller.enqueue(encoder.encode(prefix)); return; }
-      try {
-        const { done, value } = await reader.read();
-        if (done) { reader.releaseLock(); controller.enqueue(encoder.encode('}')); controller.close(); }
-        else controller.enqueue(value);
-      } catch (error) { reader.releaseLock(); controller.error(error); }
-    },
-    async cancel(reason) { try { await reader.cancel(reason); } finally { reader.releaseLock(); } },
-  }), { status, headers: json(null).headers });
+  return new Response(
+    new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        if (!started) {
+          started = true;
+          controller.enqueue(encoder.encode(prefix));
+          return;
+        }
+        try {
+          const { done, value } = await reader.read();
+          if (done) {
+            reader.releaseLock();
+            controller.enqueue(encoder.encode('}'));
+            controller.close();
+          } else controller.enqueue(value);
+        } catch (error) {
+          reader.releaseLock();
+          controller.error(error);
+        }
+      },
+      async cancel(reason) {
+        try {
+          await reader.cancel(reason);
+        } finally {
+          reader.releaseLock();
+        }
+      },
+    }),
+    { status, headers: json(null).headers },
+  );
 }
 
 export type AppContext = Context<{ Bindings: Env }>;
 
 /** Decode bounded JSON in the owning DO; native streams do not count against object RPC payload limits. */
-export async function readJsonStream(body: ReadableStream<Uint8Array>, maxBytes: number, tooLarge: string): Promise<unknown> {
-  const reader = body.getReader(), decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false });
-  let text = '', size = 0, expired = false;
-  const timeout = setTimeout(() => { expired = true; void reader.cancel().catch(() => {}); }, 90_000);
+export async function readJsonStream(
+  body: ReadableStream<Uint8Array>,
+  maxBytes: number,
+  tooLarge: string,
+): Promise<unknown> {
+  const reader = body.getReader(),
+    decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false });
+  let text = '',
+    size = 0,
+    expired = false;
+  const timeout = setTimeout(() => {
+    expired = true;
+    void reader.cancel().catch(() => {});
+  }, 90_000);
   try {
     while (true) {
-      const next = await reader.read(); if (expired) throw new HttpError(408, '请求上传超时。'); if (next.done) break;
+      const next = await reader.read();
+      if (expired) throw new HttpError(408, '请求上传超时。');
+      if (next.done) break;
       size += next.value.byteLength;
       if (size > maxBytes) throw new HttpError(413, tooLarge);
       text += decoder.decode(next.value, { stream: true });
@@ -50,12 +96,20 @@ export async function readJsonStream(body: ReadableStream<Uint8Array>, maxBytes:
   } catch (error) {
     await reader.cancel().catch(() => {});
     throw error instanceof HttpError ? error : new HttpError(400, '请求内容不是有效的 JSON 对象。');
-  } finally { clearTimeout(timeout); reader.releaseLock(); }
+  } finally {
+    clearTimeout(timeout);
+    reader.releaseLock();
+  }
 }
 
-export async function parseBody<TSchema extends v.GenericSchema>(context: AppContext, schema: TSchema, options: { maxBytes?: number; tooLarge?: string } = {}): Promise<v.InferOutput<TSchema>> {
+export async function parseBody<TSchema extends v.GenericSchema>(
+  context: AppContext,
+  schema: TSchema,
+  options: { maxBytes?: number; tooLarge?: string } = {},
+): Promise<v.InferOutput<TSchema>> {
   const request = context.req.raw;
-  if (!request.headers.get('Content-Type')?.includes('application/json')) throw new HttpError(415, '请使用 JSON 请求。');
+  if (!request.headers.get('Content-Type')?.includes('application/json'))
+    throw new HttpError(415, '请使用 JSON 请求。');
   const reader = request.body?.getReader();
   if (!reader) throw new HttpError(400, '请求内容为空。');
   const decoder = new TextDecoder();
@@ -65,12 +119,17 @@ export async function parseBody<TSchema extends v.GenericSchema>(context: AppCon
     const { done, value } = await reader.read();
     if (done) break;
     size += value.byteLength;
-    if (size > (options.maxBytes ?? 64_000)) { await reader.cancel(); throw new HttpError(413, options.tooLarge ?? '消息太长，请控制在 16,000 字以内。'); }
+    if (size > (options.maxBytes ?? 64_000)) {
+      await reader.cancel();
+      throw new HttpError(413, options.tooLarge ?? '消息太长，请控制在 16,000 字以内。');
+    }
     text += decoder.decode(value, { stream: true });
   }
   try {
     const result = v.safeParse(schema, JSON.parse(text + decoder.decode()));
     if (!result.success) throw new Error();
     return result.output;
-  } catch { throw new HttpError(400, '请求内容不是有效的 JSON 对象。'); }
+  } catch {
+    throw new HttpError(400, '请求内容不是有效的 JSON 对象。');
+  }
 }

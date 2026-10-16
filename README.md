@@ -54,6 +54,17 @@ Markdown 模块加载失败时保留可搜索的原文和输入框。若内部�
 
 依赖锁文件为 `pnpm-lock.yaml`。本地聊天和供应商配置保存在 `.wrangler/`，重启开发服务器后仍保留。`.npmrc` 将 pnpm 的存储放在项目内，便于受限工作区运行。
 
+## 代码格式化
+
+使用 Prettier 统一格式：单引号、分号、两空格缩进和 LF 换行，行宽为 100。VS Code 安装工作区推荐的 Prettier 扩展后，保存文件时自动格式化。
+
+```sh
+pnpm format
+pnpm format:check
+```
+
+缓存、构建产物、密钥文件、依赖锁文件、生成的模型目录及测量 JSON 不参与格式化。
+
 ## 接入真实模型
 
 设置分为「通用」「供应商」「对话」「预设」「联网」五个 Tab，修改后自动保存。停止输入约 600ms、离开输入框或关闭窗口时保存；失败会保留当前编辑并提供重试。关闭按钮和 Tab 固定显示，内容区域独立滚动。
@@ -78,12 +89,12 @@ Markdown 模块加载失败时保留可搜索的原文和输入框。若内部�
 
 回答下方的「生成信息」显示供应商报告的输入、输出、缓存和思考 Token，以及云端排队、首 Token 和生成耗时。缺失字段不补成 0，中断前返回的用量标为部分报告；这些数值不代表最终账单。首 Token 从云端调用模型开始，计至收到首段可解析的正文或思考，包括未展示的思考；不包含排队或客户端同步等待。复制和备份恢复保留原回答的生成信息，手动修改出的回答不继承它。
 
-| 接口协议 | 默认 API 基础地址 | 流式接口 |
-|---|---|---|
-| OpenAI Chat Completions（含兼容供应商） | `https://api.openai.com/v1` | `/chat/completions` |
-| Anthropic Messages | `https://api.anthropic.com/v1` | `/messages` |
-| OpenAI Responses | `https://api.openai.com/v1` | `/responses` |
-| Gemini | `https://generativelanguage.googleapis.com/v1beta` | `/models/{model}:streamGenerateContent` |
+| 接口协议                                | 默认 API 基础地址                                  | 流式接口                                |
+| --------------------------------------- | -------------------------------------------------- | --------------------------------------- |
+| OpenAI Chat Completions（含兼容供应商） | `https://api.openai.com/v1`                        | `/chat/completions`                     |
+| Anthropic Messages                      | `https://api.anthropic.com/v1`                     | `/messages`                             |
+| OpenAI Responses                        | `https://api.openai.com/v1`                        | `/responses`                            |
+| Gemini                                  | `https://generativelanguage.googleapis.com/v1beta` | `/models/{model}:streamGenerateContent` |
 
 基础地址必须使用 HTTPS，保留供应商要求的版本路径，不含具体接口路径、查询参数或账号信息。获取模型列表由服务端使用该供应商的 API 密钥访问模型目录；响应包含模型 ID、显示名和可识别的原生元数据。四种生成协议使用 AI SDK 的对应适配器，保持流式保存和零自动重试；OpenAI 请求设置 `store: false`。DeepSeek 可选择 OpenAI Chat Completions，基础地址填写 `https://api.deepseek.com`，再获取模型列表。DeepSeek 的兼容接口单独映射 `thinking.type` 和 `reasoning_effort`，显示的是供应商实际返回的 `reasoning_content`；OpenAI Responses、Anthropic 与 Gemini 也仅展示供应商主动提供的思考摘要或思考内容。
 

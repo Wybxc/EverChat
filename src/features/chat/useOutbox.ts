@@ -1,41 +1,75 @@
-import { useEffect,useRef,useState,type RefObject } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 import type { Submission } from '../../../shared/conversation/types';
 import type { SessionInfo } from '../../../shared/providers/types';
-import { api,ApiError } from '../../platform/api';
+import { api, ApiError } from '../../platform/api';
 import { read } from '../../platform/storage';
 import { deletedAt, writePending, type Pending } from './cache';
 
 type OutboxOptions = {
- authenticated: boolean; sessionRef: RefObject<SessionInfo | null>; selectedRef: RefObject<string | null>;
- getView: () => { head: string | null; version: number }; onAccepted: (result: Submission) => void;
- onUnauthorized: () => void; onDeleted: (id: string, time: number) => void; refreshLibrary: () => void; setError: (error: string) => void;
+  authenticated: boolean;
+  sessionRef: RefObject<SessionInfo | null>;
+  selectedRef: RefObject<string | null>;
+  getView: () => { head: string | null; version: number };
+  onAccepted: (result: Submission) => void;
+  onUnauthorized: () => void;
+  onDeleted: (id: string, time: number) => void;
+  refreshLibrary: () => void;
+  setError: (error: string) => void;
 };
 
 export function useOutbox(options: OutboxOptions) {
- const latest = useRef(options); latest.current = options;
-  const [pending, setPending] = useState<Pending[]>(() => read<Pending[]>('pending', []).filter((item) => !deletedAt(item.conversation.id)));
+  const latest = useRef(options);
+  latest.current = options;
+  const [pending, setPending] = useState<Pending[]>(() =>
+    read<Pending[]>('pending', []).filter((item) => !deletedAt(item.conversation.id)),
+  );
   const pendingRef = useRef(pending);
   const deliveryLocks = useRef(new Set<string>());
   const followRequests = useRef(new Map<string, { id: string; version: number }>());
   const commitPending = (items: Pending[]) => {
     items = items.filter((item) => !deletedAt(item.conversation.id));
-    if (!writePending(items)) { latest.current.setError('浏览器存储已满，无法可靠保存待发送消息。请释放空间后重试。'); return false; }
-    pendingRef.current = items; setPending(items); return true;
+    if (!writePending(items)) {
+      latest.current.setError('浏览器存储已满，无法可靠保存待发送消息。请释放空间后重试。');
+      return false;
+    }
+    pendingRef.current = items;
+    setPending(items);
+    return true;
   };
   const { sessionRef, selectedRef } = options;
   const deliver = async (item: Pending) => {
     if (deletedAt(item.conversation.id)) return;
     const key = item.input.requestId;
-    if (deliveryLocks.current.has(key) || !navigator.onLine || !sessionRef.current?.authenticated) return;
-    if (!followRequests.current.has(key) && selectedRef.current === item.conversation.id && latest.current.getView().head === (item.viewHeadId ?? null)) {
-      followRequests.current.set(key, { id: item.conversation.id, version: latest.current.getView().version });
+    if (deliveryLocks.current.has(key) || !navigator.onLine || !sessionRef.current?.authenticated)
+      return;
+    if (
+      !followRequests.current.has(key) &&
+      selectedRef.current === item.conversation.id &&
+      latest.current.getView().head === (item.viewHeadId ?? null)
+    ) {
+      followRequests.current.set(key, {
+        id: item.conversation.id,
+        version: latest.current.getView().version,
+      });
     }
     deliveryLocks.current.add(key);
     try {
-      await api('/conversations', 'POST', { id: item.conversation.id, title: item.conversation.title });
-      const accepted = await api<Submission>(`/conversations/${item.conversation.id}/messages`, 'POST', item.input);
+      await api('/conversations', 'POST', {
+        id: item.conversation.id,
+        title: item.conversation.title,
+      });
+      const accepted = await api<Submission>(
+        `/conversations/${item.conversation.id}/messages`,
+        'POST',
+        item.input,
+      );
       const follow = followRequests.current.get(key);
-      if (!item.input.summaryThrough && follow && selectedRef.current === follow.id && latest.current.getView().version === follow.version) {
+      if (
+        !item.input.summaryThrough &&
+        follow &&
+        selectedRef.current === follow.id &&
+        latest.current.getView().version === follow.version
+      ) {
         latest.current.onAccepted(accepted);
       }
       followRequests.current.delete(key);
@@ -43,19 +77,32 @@ export function useOutbox(options: OutboxOptions) {
       latest.current.refreshLibrary();
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) latest.current.onUnauthorized();
-      else if (error instanceof ApiError && error.status === 410) latest.current.onDeleted(item.conversation.id, Date.now());
-      else if (error instanceof ApiError) commitPending(pendingRef.current.map((next) => next.input.requestId === key ? { ...next, error: error.message } : next));
+      else if (error instanceof ApiError && error.status === 410)
+        latest.current.onDeleted(item.conversation.id, Date.now());
+      else if (error instanceof ApiError)
+        commitPending(
+          pendingRef.current.map((next) =>
+            next.input.requestId === key ? { ...next, error: error.message } : next,
+          ),
+        );
       // A network error has an unknown outcome: keep the same request ID for retry.
-    } finally { deliveryLocks.current.delete(key); }
+    } finally {
+      deliveryLocks.current.delete(key);
+    }
   };
   const deliverRef = useRef(deliver);
   deliverRef.current = deliver;
   useEffect(() => {
-    const flush = () => { for (const item of pendingRef.current) if (!item.error) void deliverRef.current(item); };
+    const flush = () => {
+      for (const item of pendingRef.current) if (!item.error) void deliverRef.current(item);
+    };
     flush();
     const timer = setInterval(flush, 5000);
     window.addEventListener('online', flush);
-    return () => { clearInterval(timer); window.removeEventListener('online', flush); };
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('online', flush);
+    };
   }, [options.authenticated, pending.length]);
 
   return { pending, pendingRef, setPending, followRequests, commitPending, deliver };

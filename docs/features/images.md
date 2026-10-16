@@ -16,12 +16,12 @@
 
 执行时服务端重新从 R2 读取、核对校验和，通过 AI SDK 将字节编码进供应商请求，文件地址保持私有：
 
-| 协议 | 原生图片部分 |
-|---|---|
-| OpenAI Chat Completions／兼容接口 | `image_url` 的 data URL |
-| OpenAI Responses | `input_image` 的 data URL |
-| Anthropic | `image.source` 的 base64 和 MIME |
-| Gemini GenerateContent | `inlineData` 的 MIME 和 base64 |
+| 协议                              | 原生图片部分                     |
+| --------------------------------- | -------------------------------- |
+| OpenAI Chat Completions／兼容接口 | `image_url` 的 data URL          |
+| OpenAI Responses                  | `input_image` 的 data URL        |
+| Anthropic                         | `image.source` 的 base64 和 MIME |
+| Gemini GenerateContent            | `inlineData` 的 MIME 和 base64   |
 
 依据：[OpenAI 图片输入](https://developers.openai.com/api/docs/guides/images-vision)、[Anthropic 视觉输入](https://platform.claude.com/docs/en/build-with-claude/vision)、[Gemini GenerateContent](https://ai.google.dev/api/generate-content)。已接受任务不再依赖浏览器继续在线；图片读取失败时结束任务，保留用户提问，不自动重新调用供应商。
 

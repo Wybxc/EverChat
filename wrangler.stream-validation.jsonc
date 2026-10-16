@@ -10,14 +10,14 @@
     "AI_BASE_URL": "https://provider.test/v1",
     "AI_MODEL": "",
     "SYSTEM_PROMPT": "",
-    "GENERATION_METRICS": "0"
+    "GENERATION_METRICS": "0",
   },
   "durable_objects": {
     "bindings": [
       { "name": "CONVERSATIONS", "class_name": "Conversation" },
-      { "name": "LIBRARY", "class_name": "Library" }
-    ]
+      { "name": "LIBRARY", "class_name": "Library" },
+    ],
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Conversation", "Library"] }],
-  "observability": { "enabled": true, "head_sampling_rate": 1 }
+  "observability": { "enabled": true, "head_sampling_rate": 1 },
 }

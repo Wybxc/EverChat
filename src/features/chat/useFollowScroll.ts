@@ -20,7 +20,10 @@ export function useFollowScroll(resetKey?: string | null) {
     }
     setAtBottom(true);
   }, [viewport]);
-  const pauseFollowing = useCallback(() => { paused.current = true; following.current = false; }, []);
+  const pauseFollowing = useCallback(() => {
+    paused.current = true;
+    following.current = false;
+  }, []);
 
   useLayoutEffect(() => {
     if (!viewport || !content) return;
@@ -28,7 +31,9 @@ export function useFollowScroll(resetKey?: string | null) {
     const distance = () => viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
     let previousBottom = viewport.scrollHeight - viewport.clientHeight;
     // A chunk can grow the content between reaching the old bottom and delivery of its scroll event.
-    const reachedPreviousBottom = () => viewport.scrollTop > previousTop.current && Math.abs(viewport.scrollTop - previousBottom) <= BOTTOM_THRESHOLD;
+    const reachedPreviousBottom = () =>
+      viewport.scrollTop > previousTop.current &&
+      Math.abs(viewport.scrollTop - previousBottom) <= BOTTOM_THRESHOLD;
     const onScroll = () => {
       const bottom = distance() <= BOTTOM_THRESHOLD;
       if (!paused.current && (bottom || reachedPreviousBottom())) following.current = true;
@@ -40,22 +45,31 @@ export function useFollowScroll(resetKey?: string | null) {
       else setAtBottom(bottom);
     };
     const onResize = () => {
-      if (!paused.current && (distance() <= BOTTOM_THRESHOLD || reachedPreviousBottom())) following.current = true;
+      if (!paused.current && (distance() <= BOTTOM_THRESHOLD || reachedPreviousBottom()))
+        following.current = true;
       previousBottom = viewport.scrollHeight - viewport.clientHeight;
       if (following.current) scrollToBottom();
     };
     const observer = new ResizeObserver(onResize);
     const resumeIntent = (event: Event) => {
-      if (!(event instanceof KeyboardEvent) || ['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'End', 'Home', ' '].includes(event.key)) paused.current = false;
+      if (
+        !(event instanceof KeyboardEvent) ||
+        ['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'End', 'Home', ' '].includes(event.key)
+      )
+        paused.current = false;
     };
     observer.observe(content);
     observer.observe(viewport);
     viewport.addEventListener('scroll', onScroll, { passive: true });
     viewport.addEventListener(PAUSE_FOLLOW_EVENT, pauseFollowing);
-    for (const name of ['wheel', 'touchstart', 'pointerdown', 'keydown']) viewport.addEventListener(name, resumeIntent, { passive: true });
+    for (const name of ['wheel', 'touchstart', 'pointerdown', 'keydown'])
+      viewport.addEventListener(name, resumeIntent, { passive: true });
     return () => {
-      observer.disconnect(); viewport.removeEventListener('scroll', onScroll); viewport.removeEventListener(PAUSE_FOLLOW_EVENT, pauseFollowing);
-      for (const name of ['wheel', 'touchstart', 'pointerdown', 'keydown']) viewport.removeEventListener(name, resumeIntent);
+      observer.disconnect();
+      viewport.removeEventListener('scroll', onScroll);
+      viewport.removeEventListener(PAUSE_FOLLOW_EVENT, pauseFollowing);
+      for (const name of ['wheel', 'touchstart', 'pointerdown', 'keydown'])
+        viewport.removeEventListener(name, resumeIntent);
     };
   }, [viewport, content, resetKey, scrollToBottom, pauseFollowing]);
 

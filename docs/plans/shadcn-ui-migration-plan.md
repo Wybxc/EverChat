@@ -30,19 +30,19 @@
 
 本节尺寸和颜色来自渲染后 DOM 的 `getBoundingClientRect()` / `getComputedStyle()`，单位为 CSS px。它们是本次页面快照，不是对 DeepSeek 全部页面或内部设计系统的推断。网页可能随版本、屏幕和账号变化；后文标为“目标”的数值属于 EverChat 的设计决策。
 
-| 已观察区域 | 实测／可见特征 | EverChat 的取舍 |
-|---|---|---|
-| 桌面侧栏 | 外宽 261px，含 1px 右边界；历史行高 40px，圆角 12px；按时间分组 | 宽度约 16.25rem；行高保留至少 44px；使用淡背景表示当前对话 |
-| 桌面空对话 | 简短问候与输入框组成一个居中单元；输入框 776 × 124px，圆角 24px；外层宽 840px、水平内边距各 32px | 使用同样的视觉重心，不加说明卡片；保留 EverChat 名称和必要配置入口 |
-| 空对话问候 | 桌面 24px / 32px、字重 600；390px 窄屏 20px / 28px | 换算成 rem；文字按内容换行，避免固定高度 |
-| 手机空对话 | 390px 视口中输入框 326 × 106px，距左右各 32px | 空页面可保留较宽页边距；短屏优先可用高度 |
-| 进行中的对话 | 输入框移到底部；桌面正文宽 752px，比输入框内收各 12px；用户气泡右对齐，助手正文开放排版 | 统一居中内容列；保留单一消息滚动容器和稳定的输入组件 |
-| 手机对话输入 | 390px 视口中输入框宽 358px、左右各 16px，高 106px | 普通对话左右各 1rem；为 44px 操作区域预留略高的工具栏 |
-| 用户消息 | 浅色淡蓝、深色中性灰；圆角 22px；内边距上下 10px、左右 16px | 沿用相近气泡，长文本、附件和分支状态仍可辨认 |
-| 助手 Markdown | 正文 16px / 28px，H1 24px / 34px；表格 15px / 25px，以横线分行；代码块有轻背景和一排工具 | 保留 Streamdown，只调整排版和外壳，避免双层代码框 |
-| 思考区 | 可折叠标题、用时、浅灰正文、展开区左侧细线；测试回答完成后内容仍展开 | 保留流式 Markdown、默认展开和用户手动折叠状态；不在完成时自动收起 |
-| 工具按钮 | 输入框内部一排胶囊与图标，发送按钮圆形；实测部分按钮仅 34px 高 | 视觉可保持紧凑，但实际点击区域至少 44px，不能叠压相邻区域 |
-| 桌面设置 | 760 × 500px，圆角 24px；标题和关闭入口在顶部，左侧分类、右侧内容 | 借用分区方式；EverChat 的供应商表单更多，应使用更大的自适应窗口 |
+| 已观察区域    | 实测／可见特征                                                                                   | EverChat 的取舍                                                    |
+| ------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| 桌面侧栏      | 外宽 261px，含 1px 右边界；历史行高 40px，圆角 12px；按时间分组                                  | 宽度约 16.25rem；行高保留至少 44px；使用淡背景表示当前对话         |
+| 桌面空对话    | 简短问候与输入框组成一个居中单元；输入框 776 × 124px，圆角 24px；外层宽 840px、水平内边距各 32px | 使用同样的视觉重心，不加说明卡片；保留 EverChat 名称和必要配置入口 |
+| 空对话问候    | 桌面 24px / 32px、字重 600；390px 窄屏 20px / 28px                                               | 换算成 rem；文字按内容换行，避免固定高度                           |
+| 手机空对话    | 390px 视口中输入框 326 × 106px，距左右各 32px                                                    | 空页面可保留较宽页边距；短屏优先可用高度                           |
+| 进行中的对话  | 输入框移到底部；桌面正文宽 752px，比输入框内收各 12px；用户气泡右对齐，助手正文开放排版          | 统一居中内容列；保留单一消息滚动容器和稳定的输入组件               |
+| 手机对话输入  | 390px 视口中输入框宽 358px、左右各 16px，高 106px                                                | 普通对话左右各 1rem；为 44px 操作区域预留略高的工具栏              |
+| 用户消息      | 浅色淡蓝、深色中性灰；圆角 22px；内边距上下 10px、左右 16px                                      | 沿用相近气泡，长文本、附件和分支状态仍可辨认                       |
+| 助手 Markdown | 正文 16px / 28px，H1 24px / 34px；表格 15px / 25px，以横线分行；代码块有轻背景和一排工具         | 保留 Streamdown，只调整排版和外壳，避免双层代码框                  |
+| 思考区        | 可折叠标题、用时、浅灰正文、展开区左侧细线；测试回答完成后内容仍展开                             | 保留流式 Markdown、默认展开和用户手动折叠状态；不在完成时自动收起  |
+| 工具按钮      | 输入框内部一排胶囊与图标，发送按钮圆形；实测部分按钮仅 34px 高                                   | 视觉可保持紧凑，但实际点击区域至少 44px，不能叠压相邻区域          |
+| 桌面设置      | 760 × 500px，圆角 24px；标题和关闭入口在顶部，左侧分类、右侧内容                                 | 借用分区方式；EverChat 的供应商表单更多，应使用更大的自适应窗口    |
 
 深色用户气泡局部，仅含本次测试文字：
 
@@ -50,16 +50,16 @@
 
 ### 2.2 配色观察与可访问性差异
 
-| 用途 | 参考站浅色实测 | 参考站深色实测 |
-|---|---|---|
-| 页面背景（body） | `#ffffff` | `#151517` |
-| 侧栏表面 | `#f9fafb` | `#1b1b1c` |
-| 输入框表面 | `#ffffff` | `#2c2c2e` |
-| 输入／普通文字 | `#0f1115` | `#f9fafb` |
-| 输入框边界 | 黑色 10% | 白色 6% |
-| 输入占位文字 | `#adb2b8` | `#81858c` |
-| 思考标题文字 | `#61666b` | `#cfd3d6` |
-| 用户气泡表面 | `#edf3fe` | 深色截图中呈中性灰，未单独测色 |
+| 用途             | 参考站浅色实测 | 参考站深色实测                 |
+| ---------------- | -------------- | ------------------------------ |
+| 页面背景（body） | `#ffffff`      | `#151517`                      |
+| 侧栏表面         | `#f9fafb`      | `#1b1b1c`                      |
+| 输入框表面       | `#ffffff`      | `#2c2c2e`                      |
+| 输入／普通文字   | `#0f1115`      | `#f9fafb`                      |
+| 输入框边界       | 黑色 10%       | 白色 6%                        |
+| 输入占位文字     | `#adb2b8`      | `#81858c`                      |
+| 思考标题文字     | `#61666b`      | `#cfd3d6`                      |
+| 用户气泡表面     | `#edf3fe`      | 深色截图中呈中性灰，未单独测色 |
 
 实测浅色占位文字 `#adb2b8` 在白底上的对比度约 **2.13:1**，不足普通文字的 4.5:1 要求；不能原样复制。弱边界可以用于装饰分隔，但输入控件、焦点和必要图标必须另做合格的识别方式。普通文字、占位文字及悬停文字的判断依据见 [WCAG 1.4.3](https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html)；必要非文字识别信息见 [WCAG 1.4.11](https://www.w3.org/WAI/WCAG22/Understanding/non-text-contrast.html)。
 
@@ -73,26 +73,26 @@
 
 以下是目标色板，不是声称从 DeepSeek 提取出的完整 token。输入边界与占位文字已作可访问性调整。颜色只在主题文件中定义，调用处不散布十六进制颜色。
 
-| Token／用途 | 浅色目标 | 深色目标 |
-|---|---|---|
-| `background` | `#ffffff` | `#151517` |
-| `foreground` | `#0f1115` | `#f9fafb` |
-| `sidebar` | `#f9fafb` | `#1b1b1c` |
-| `sidebar-foreground` | 同 `foreground` | 同 `foreground` |
-| `card` / `popover` | `#ffffff` | `#2c2c2e` |
-| `card-foreground` / `popover-foreground` | 同 `foreground` | 同 `foreground` |
-| 自定义 `composer` | `#ffffff` | `#2c2c2e` |
-| `muted` / `secondary` | `#f3f4f6` | `#2c2c2e` |
-| `muted-foreground`（含占位文字） | `#61666b` | `#a3a7ae` |
-| `secondary-foreground` | 同 `foreground` | 同 `foreground` |
-| `primary` / `primary-foreground` | `#3964fe` / `#ffffff` | `#3964fe` / `#ffffff` |
-| `accent` / `sidebar-accent` | `#edf3fe` | `#313b62` |
-| `accent-foreground` / `sidebar-accent-foreground` | `#294dd5` | `#c5d2ff` |
-| `sidebar-primary` 配对 | 同 `primary` 配对 | 同 `primary` 配对 |
-| 自定义 `user-message` 配对 | `#edf3fe` / `#0f1115` | `#2c2c2e` / `#f9fafb` |
-| `border` / `sidebar-border`（装饰分隔） | `#e5e7eb` | `#3b3b3f` |
-| `input`（必要控件边界） | `#858b95` | `#858b95` |
-| `ring` / `sidebar-ring` | `#3964fe` | `#8fa8ff` |
+| Token／用途                                       | 浅色目标              | 深色目标              |
+| ------------------------------------------------- | --------------------- | --------------------- |
+| `background`                                      | `#ffffff`             | `#151517`             |
+| `foreground`                                      | `#0f1115`             | `#f9fafb`             |
+| `sidebar`                                         | `#f9fafb`             | `#1b1b1c`             |
+| `sidebar-foreground`                              | 同 `foreground`       | 同 `foreground`       |
+| `card` / `popover`                                | `#ffffff`             | `#2c2c2e`             |
+| `card-foreground` / `popover-foreground`          | 同 `foreground`       | 同 `foreground`       |
+| 自定义 `composer`                                 | `#ffffff`             | `#2c2c2e`             |
+| `muted` / `secondary`                             | `#f3f4f6`             | `#2c2c2e`             |
+| `muted-foreground`（含占位文字）                  | `#61666b`             | `#a3a7ae`             |
+| `secondary-foreground`                            | 同 `foreground`       | 同 `foreground`       |
+| `primary` / `primary-foreground`                  | `#3964fe` / `#ffffff` | `#3964fe` / `#ffffff` |
+| `accent` / `sidebar-accent`                       | `#edf3fe`             | `#313b62`             |
+| `accent-foreground` / `sidebar-accent-foreground` | `#294dd5`             | `#c5d2ff`             |
+| `sidebar-primary` 配对                            | 同 `primary` 配对     | 同 `primary` 配对     |
+| 自定义 `user-message` 配对                        | `#edf3fe` / `#0f1115` | `#2c2c2e` / `#f9fafb` |
+| `border` / `sidebar-border`（装饰分隔）           | `#e5e7eb`             | `#3b3b3f`             |
+| `input`（必要控件边界）                           | `#858b95`             | `#858b95`             |
+| `ring` / `sidebar-ring`                           | `#3964fe`             | `#8fa8ff`             |
 
 对不透明的目标色做 sRGB 计算：浅色正文约 18.90:1，浅色次级文字约 5.80:1，主要按钮白字约 4.74:1，深色正文约 17.45:1，深色占位文字在输入表面约 5.77:1；输入边框分别约 3.43:1 / 4.06:1，选中行文字分别约 6.05:1 / 7.26:1。数字仅验证这些配对，最终仍须测浏览器中包含透明度、悬停和状态覆盖的实际组合。
 
@@ -104,22 +104,22 @@
 
 继续遵守[尺寸单位决策](frontend-compact-layout-plan.md#33-尺寸单位选择)：`html` 字号为 `100%`；字体、间距、圆角和宽度上限使用 rem；行高使用无单位值；细线 1px、焦点线 2px；页面高度用 dvh，安全区域使用 `env()`；DOM 滚动与高度测量继续按 CSS px 运算。
 
-| 项目 | EverChat 目标（括号为默认字号下的尺寸） |
-|---|---|
-| 桌面侧栏 | 16.25rem（260px）左右；可收起，主内容在剩余空间内居中 |
-| 桌面聊天输入框 | 最大 48.5rem（776px）；可用空间不足时收缩 |
-| 桌面正文 | 最大 47rem（752px）；相对输入框两侧各内收约 0.75rem |
-| 页面左右留白 | 普通手机对话 1rem；空对话在空间足够时 2rem；桌面按内容列分配 |
-| 顶栏 | 最小 3.5rem（56px），按安全区域与字体增高；移除常驻粗分隔 |
-| 问候文字 | 桌面 1.5rem / 1.33，手机 1.25rem / 1.4，字重 600 |
-| 正文／输入文字 | 1rem（16px）；正文行高 1.75，输入行高 1.5 |
-| 思考正文 | 0.9375rem（15px），行高 1.8；由合格次级文字色区分 |
-| 菜单／表单／侧栏文字 | 通常 0.875rem（14px）；短辅助状态可用 0.75rem |
-| 气泡／输入／弹窗圆角 | 用户气泡 1.375rem、输入与大弹窗 1.5rem；普通菜单约 0.75rem |
-| 普通控件圆角 | 基准 `radius` 为 0.75rem；圆角胶囊单独用全圆角，避免所有组件都变成 24px |
-| 控件与折叠标题 | 至少 `max(2.75rem, 44px)` 操作区域；图标可为 1–1.125rem |
-| 消息之间 | 沿用手机 1.25rem、桌面 1.5rem；不复制参考站所有段落留白 |
-| 字段间距 | 同组 0.5–0.75rem，组间 1rem，标签到输入 0.25rem |
+| 项目                 | EverChat 目标（括号为默认字号下的尺寸）                                 |
+| -------------------- | ----------------------------------------------------------------------- |
+| 桌面侧栏             | 16.25rem（260px）左右；可收起，主内容在剩余空间内居中                   |
+| 桌面聊天输入框       | 最大 48.5rem（776px）；可用空间不足时收缩                               |
+| 桌面正文             | 最大 47rem（752px）；相对输入框两侧各内收约 0.75rem                     |
+| 页面左右留白         | 普通手机对话 1rem；空对话在空间足够时 2rem；桌面按内容列分配            |
+| 顶栏                 | 最小 3.5rem（56px），按安全区域与字体增高；移除常驻粗分隔               |
+| 问候文字             | 桌面 1.5rem / 1.33，手机 1.25rem / 1.4，字重 600                        |
+| 正文／输入文字       | 1rem（16px）；正文行高 1.75，输入行高 1.5                               |
+| 思考正文             | 0.9375rem（15px），行高 1.8；由合格次级文字色区分                       |
+| 菜单／表单／侧栏文字 | 通常 0.875rem（14px）；短辅助状态可用 0.75rem                           |
+| 气泡／输入／弹窗圆角 | 用户气泡 1.375rem、输入与大弹窗 1.5rem；普通菜单约 0.75rem              |
+| 普通控件圆角         | 基准 `radius` 为 0.75rem；圆角胶囊单独用全圆角，避免所有组件都变成 24px |
+| 控件与折叠标题       | 至少 `max(2.75rem, 44px)` 操作区域；图标可为 1–1.125rem                 |
+| 消息之间             | 沿用手机 1.25rem、桌面 1.5rem；不复制参考站所有段落留白                 |
+| 字段间距             | 同组 0.5–0.75rem，组间 1rem，标签到输入 0.25rem                         |
 
 正文从现有 15px 改到 16px、行高从 1.9 改到 1.75 是明确的视觉调整：接近参考站的阅读比例；通过减少容器与重复标题占位维持可视范围，不缩小操作区域。字体继续采用系统字体及中文回退，暂不增加外部字体请求；字形差异不算完全像素一致。
 
@@ -181,21 +181,21 @@
 
 shadcn/ui 将组件源代码加入项目，基础交互由选定的 primitives 提供。项目统一使用 Radix 版本，避免在同一个组件体系混用 Base UI 的 `render` 与 Radix 的组合 API。当前 shadcn 支持两种基础库；选择 Radix 是本项目减少交互选型变量的决定。[官方 CLI 说明](https://ui.shadcn.com/docs/changelog/2026-03-cli-v4)
 
-| 现有区域／实现 | 目标组件 | 涉及文件与注意事项 |
-|---|---|---|
-| `btn`、`loading`、`badge`、`alert` | Button、Spinner、Badge、Alert | 所有 UI 文件；统一尺寸和状态变体，错误不重复显示 |
-| `input`、`textarea`、`select` | Input、Textarea、Select／NativeSelect、Label | `ProviderSettings`、`ModelMetadataFields`、`ConversationSettings`、`PromptPresets`、`WebToolSettings`；保留受控草稿与校验 |
-| `checkbox`、`toggle` | Checkbox、Switch | 模型启用与布尔设置；处理 Radix 的 checked / indeterminate 类型 |
-| radio 充当 Tab | Tabs | `ProviderSettings`、侧栏分类；完整标签、panel 关联与键盘导航 |
-| 原生 popover 的 `ActionMenu` | DropdownMenu | `ActionMenu`、`MessageActions`、`ConversationActions`；改用组件菜单项，移除手写循环焦点与 anchor 定位 |
-| 上下文估算浮层 | Popover | `ContextEstimate`；保留紧凑摘要、明细与异常，不把关键错误放入 Tooltip |
-| 原生 dialog + `modal-*` | Dialog；确认删除用 AlertDialog | `App`、供应商删除、会话操作、消息操作、附件、图片、摘要、备份；一起检查焦点与嵌套浮层 |
-| 手写手机侧栏焦点陷阱 | Sheet | `App`、`useSidebar`；保留响应式与关闭意图，移除重复焦点陷阱 |
-| 聊天模型原生 select | Popover + Command | 聊天输入区；多供应商分组、搜索、空状态、稳定选择值 |
-| `Disclosure` 的 DaisyUI collapse 外观 | 保留原生 details/summary，使用新 token 与 Lucide 箭头 | `Disclosure`、`GenerationMetadata`；保留展开记忆、强制展开和搜索定位行为 |
-| 原生 progress + `progress` 类 | Progress 或有统一样式的原生 progress | 上传与备份；保留真实进度、取消和状态播报 |
-| Markdown、代码、公式、图表 | 保留 Streamdown 和现有插件 | `App`、`style.css`；只适配主题与边界，不替换渲染或通信协议 |
-| 主消息滚动容器 | 保留原生 overflow 容器 | `useFollowScroll`、搜索定位；不同时换成 ScrollArea 或新的 MessageScroller |
+| 现有区域／实现                        | 目标组件                                              | 涉及文件与注意事项                                                                                                        |
+| ------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `btn`、`loading`、`badge`、`alert`    | Button、Spinner、Badge、Alert                         | 所有 UI 文件；统一尺寸和状态变体，错误不重复显示                                                                          |
+| `input`、`textarea`、`select`         | Input、Textarea、Select／NativeSelect、Label          | `ProviderSettings`、`ModelMetadataFields`、`ConversationSettings`、`PromptPresets`、`WebToolSettings`；保留受控草稿与校验 |
+| `checkbox`、`toggle`                  | Checkbox、Switch                                      | 模型启用与布尔设置；处理 Radix 的 checked / indeterminate 类型                                                            |
+| radio 充当 Tab                        | Tabs                                                  | `ProviderSettings`、侧栏分类；完整标签、panel 关联与键盘导航                                                              |
+| 原生 popover 的 `ActionMenu`          | DropdownMenu                                          | `ActionMenu`、`MessageActions`、`ConversationActions`；改用组件菜单项，移除手写循环焦点与 anchor 定位                     |
+| 上下文估算浮层                        | Popover                                               | `ContextEstimate`；保留紧凑摘要、明细与异常，不把关键错误放入 Tooltip                                                     |
+| 原生 dialog + `modal-*`               | Dialog；确认删除用 AlertDialog                        | `App`、供应商删除、会话操作、消息操作、附件、图片、摘要、备份；一起检查焦点与嵌套浮层                                     |
+| 手写手机侧栏焦点陷阱                  | Sheet                                                 | `App`、`useSidebar`；保留响应式与关闭意图，移除重复焦点陷阱                                                               |
+| 聊天模型原生 select                   | Popover + Command                                     | 聊天输入区；多供应商分组、搜索、空状态、稳定选择值                                                                        |
+| `Disclosure` 的 DaisyUI collapse 外观 | 保留原生 details/summary，使用新 token 与 Lucide 箭头 | `Disclosure`、`GenerationMetadata`；保留展开记忆、强制展开和搜索定位行为                                                  |
+| 原生 progress + `progress` 类         | Progress 或有统一样式的原生 progress                  | 上传与备份；保留真实进度、取消和状态播报                                                                                  |
+| Markdown、代码、公式、图表            | 保留 Streamdown 和现有插件                            | `App`、`style.css`；只适配主题与边界，不替换渲染或通信协议                                                                |
+| 主消息滚动容器                        | 保留原生 overflow 容器                                | `useFollowScroll`、搜索定位；不同时换成 ScrollArea 或新的 MessageScroller                                                 |
 
 保留原生 details 是有意的范围选择：当前 `ConversationSearch.reveal()`、`ToolActivity.locate()` 直接展开 details，搜索文本也依赖折叠内容仍在 DOM 中。更换颜色和外观即可消除 DaisyUI 依赖；若以后改用 Collapsible，须同时迁移展开接口与搜索索引，单独验证隐藏内容检索，不能只替换标签。
 
@@ -234,20 +234,20 @@ pnpm dlx shadcn@latest add button input textarea label select native-select chec
 
 ## 6. 关键交互风险与处理
 
-| 风险 | 迁移要求 |
-|---|---|
-| 原生 dialog 的 top layer 与 Radix body portal 混用 | 同一阶段成组迁移所有弹窗及其内部浮层；跨阶段若临时共存，portal 必须在正确的宿主内，不能靠增大 z-index 解决 |
-| `dialog[open]` 检查迁移后失效 | `App` 与 `useSidebar` 中的快捷键、发送后聚焦判断改为统一的 React 模态状态；停止查询旧标签；避免模态存在时输入框抢焦点 |
-| 重复焦点管理 | Dialog／Sheet／DropdownMenu 接管各自范围，删除对应手写 focus trap、Escape 和循环方向键；只保留业务需要的初始焦点与关闭后目的地 |
-| 关闭后触发按钮已被卸载 | 删除对话、切换路由、手机侧栏转设置时指定后备焦点；菜单打开 Dialog 时协调两者的自动归还焦点 |
-| 删除与提交语义丢失 | AlertDialog 初始聚焦取消；迁移 `form method="dialog"`、`showModal()`、`.close()` 为受控状态；确认动作仍由业务处理，不将关闭等同保存 |
-| Select 不允许空字符串选项 | 为 UI 的“默认／继承／不设置”使用明确的内部标识，并在边界转回已有 `undefined`、`null` 或空值语义，不能把 UI 标识写进配置 |
-| Tabs 卸载引起草稿丢失 | 草稿和自动保存状态位于 Tab 内容之上，或采用必要的稳定挂载；切换 Tab、供应商、模型时逐项验证 |
-| 数值输入被立即解析 | 保留现有文本草稿和非法输入反馈，不因清空、半输入或格式化触发联动重置与错误保存 |
-| 输入框从居中切到底部 | 保持组件实例、ref、草稿与附件稳定；发送期间不因布局变化重复订阅流或重复提交 |
-| 自定义滚动组件改变真实 viewport | 主消息区保留原生滚动；跟随、搜索、图片加载和折叠变化统一观察原有容器 |
-| CLI 更新默认尺寸／颜色 | 基础组件集中调整产品尺寸；不使用全局 `.btn` 等旧规则修补；每次生成检查 diff，不无条件覆盖自定义样式 |
-| DaisyUI 与新主题的同名颜色／基础样式冲突 | 过渡阶段显式检查 `primary`、`border` 等生成规则的层级与覆盖；旧组件尚在时暂时同步 `.dark` 与 `data-theme`，清理阶段删除旧属性和 plugin，不将其设计成长期适配层 |
+| 风险                                               | 迁移要求                                                                                                                                                       |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 原生 dialog 的 top layer 与 Radix body portal 混用 | 同一阶段成组迁移所有弹窗及其内部浮层；跨阶段若临时共存，portal 必须在正确的宿主内，不能靠增大 z-index 解决                                                     |
+| `dialog[open]` 检查迁移后失效                      | `App` 与 `useSidebar` 中的快捷键、发送后聚焦判断改为统一的 React 模态状态；停止查询旧标签；避免模态存在时输入框抢焦点                                          |
+| 重复焦点管理                                       | Dialog／Sheet／DropdownMenu 接管各自范围，删除对应手写 focus trap、Escape 和循环方向键；只保留业务需要的初始焦点与关闭后目的地                                 |
+| 关闭后触发按钮已被卸载                             | 删除对话、切换路由、手机侧栏转设置时指定后备焦点；菜单打开 Dialog 时协调两者的自动归还焦点                                                                     |
+| 删除与提交语义丢失                                 | AlertDialog 初始聚焦取消；迁移 `form method="dialog"`、`showModal()`、`.close()` 为受控状态；确认动作仍由业务处理，不将关闭等同保存                            |
+| Select 不允许空字符串选项                          | 为 UI 的“默认／继承／不设置”使用明确的内部标识，并在边界转回已有 `undefined`、`null` 或空值语义，不能把 UI 标识写进配置                                        |
+| Tabs 卸载引起草稿丢失                              | 草稿和自动保存状态位于 Tab 内容之上，或采用必要的稳定挂载；切换 Tab、供应商、模型时逐项验证                                                                    |
+| 数值输入被立即解析                                 | 保留现有文本草稿和非法输入反馈，不因清空、半输入或格式化触发联动重置与错误保存                                                                                 |
+| 输入框从居中切到底部                               | 保持组件实例、ref、草稿与附件稳定；发送期间不因布局变化重复订阅流或重复提交                                                                                    |
+| 自定义滚动组件改变真实 viewport                    | 主消息区保留原生滚动；跟随、搜索、图片加载和折叠变化统一观察原有容器                                                                                           |
+| CLI 更新默认尺寸／颜色                             | 基础组件集中调整产品尺寸；不使用全局 `.btn` 等旧规则修补；每次生成检查 diff，不无条件覆盖自定义样式                                                            |
+| DaisyUI 与新主题的同名颜色／基础样式冲突           | 过渡阶段显式检查 `primary`、`border` 等生成规则的层级与覆盖；旧组件尚在时暂时同步 `.dark` 与 `data-theme`，清理阶段删除旧属性和 plugin，不将其设计成长期适配层 |
 
 文件选择器也需回归：菜单关闭、文件选择、取消返回后的焦点与上传流程不能被 Radix 的自动聚焦覆盖。API 密钥默认遮蔽、主动查看、切供应商后的遮蔽行为保持，不在测试截图或日志中记录真实密钥。
 
@@ -255,13 +255,13 @@ pnpm dlx shadcn@latest add button input textarea label select native-select chec
 
 每个阶段都形成可运行的完整改动。迁移期间短暂存在两套样式属于实施过程；最终删除旧系统，不保留长期适配。A–E 已实施，实际验证结果与未测项见第 10 节。
 
-| 阶段 | 工作内容 | 阶段通过条件 |
-|---|---|---|
-| A：基线与基础 | 使用当前全部工作区改动记录功能基线；核定依赖；配置 alias、组件目录、主题 token 和基础控件 | pnpm 类型检查／构建通过；浅深色和系统切换有效；生成过程未覆盖业务、Cloudflare 或 PWA 配置 |
-| B：交互基础成组迁移 | Dialog、AlertDialog、Sheet、DropdownMenu、Popover、Tabs；同步替换宿主、受控状态与模态判断 | 嵌套删除、菜单转弹窗、焦点返回、Escape、Tab 循环、设置长滚动均通过；无 top layer 与 portal 冲突 |
-| C：聊天主页面 | 侧栏／顶栏、空页面居中输入、单实例 Composer、模型选择、发送停止、消息和 Markdown | 桌面／手机形成主要视觉；新对话焦点、SPA、流式正文与思考、底部跟随和向上阅读均通过 |
-| D：完整设置与辅助界面 | 五类设置、供应商主从列表、模型编辑、附件／图片、备份、摘要、搜索与状态样式 | 设置自动保存与失败恢复、独立字段修改、全部模型与提示词能力、已有功能入口均保留 |
-| E：清理与验收 | 删除 DaisyUI 及旧规则；统一字体、边界、动画、PWA；完成视觉与可访问性回归 | 无残余依赖与运行时主题耦合；第 8 节检查通过，记录真实结果与未测项 |
+| 阶段                  | 工作内容                                                                                  | 阶段通过条件                                                                                    |
+| --------------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| A：基线与基础         | 使用当前全部工作区改动记录功能基线；核定依赖；配置 alias、组件目录、主题 token 和基础控件 | pnpm 类型检查／构建通过；浅深色和系统切换有效；生成过程未覆盖业务、Cloudflare 或 PWA 配置       |
+| B：交互基础成组迁移   | Dialog、AlertDialog、Sheet、DropdownMenu、Popover、Tabs；同步替换宿主、受控状态与模态判断 | 嵌套删除、菜单转弹窗、焦点返回、Escape、Tab 循环、设置长滚动均通过；无 top layer 与 portal 冲突 |
+| C：聊天主页面         | 侧栏／顶栏、空页面居中输入、单实例 Composer、模型选择、发送停止、消息和 Markdown          | 桌面／手机形成主要视觉；新对话焦点、SPA、流式正文与思考、底部跟随和向上阅读均通过               |
+| D：完整设置与辅助界面 | 五类设置、供应商主从列表、模型编辑、附件／图片、备份、摘要、搜索与状态样式                | 设置自动保存与失败恢复、独立字段修改、全部模型与提示词能力、已有功能入口均保留                  |
+| E：清理与验收         | 删除 DaisyUI 及旧规则；统一字体、边界、动画、PWA；完成视觉与可访问性回归                  | 无残余依赖与运行时主题耦合；第 8 节检查通过，记录真实结果与未测项                               |
 
 阶段 C 可从 `App.tsx` 提取 Sidebar、ChatHeader、Composer、MessageView 等展示组合组件；保留 API 调用、订阅与存储逻辑的归属，避免一边换 UI 一边重写生成链路。阶段 B 对弹窗和菜单做成组调整，优先解决交互基础，再进行大面积视觉应用。
 
@@ -293,14 +293,14 @@ pnpm dlx shadcn@latest add button input textarea label select native-select chec
 
 复用现有测试，按组件真实语义更新定位，不删除或放宽功能断言以迁就 UI：
 
-| 检查范围 | 优先覆盖的现有测试 |
-|---|---|
-| 页面布局、窄屏、焦点与对比度 | `frontend-acceptance`、`frontend-refinement`、`compact-layout`、`settings-layout` |
-| URL、新对话、历史与搜索 | `navigation`、`search`、`library-search`、`management` |
-| 流式响应、思考、滚动、停止 | `streaming`、`chat`，补足布局切换和异步内容增高路径 |
+| 检查范围                       | 优先覆盖的现有测试                                                                            |
+| ------------------------------ | --------------------------------------------------------------------------------------------- |
+| 页面布局、窄屏、焦点与对比度   | `frontend-acceptance`、`frontend-refinement`、`compact-layout`、`settings-layout`             |
+| URL、新对话、历史与搜索        | `navigation`、`search`、`library-search`、`management`                                        |
+| 流式响应、思考、滚动、停止     | `streaming`、`chat`，补足布局切换和异步内容增高路径                                           |
 | 供应商与模型、系统提示词、能力 | `provider`、`model-metadata`、`model-capabilities`、`conversation-settings`、`prompt-presets` |
-| 工具、分支、编辑、摘要 | `web-tool-ui`、`message-actions`、`message-mutations`、`conversation-branches`、`summaries` |
-| 附件、备份与离线 | `images`、`documents`、`pdf`、`attachments`、`backup` 及 PWA 测试 |
+| 工具、分支、编辑、摘要         | `web-tool-ui`、`message-actions`、`message-mutations`、`conversation-branches`、`summaries`   |
+| 附件、备份与离线               | `images`、`documents`、`pdf`、`attachments`、`backup` 及 PWA 测试                             |
 
 例如 `ul[popover]:popover-open`、`dialog[open]` 和 DaisyUI 类选择器需要替换为正确的 menu／dialog 角色或稳定测试标识；原生 details 保留的搜索与定位断言继续执行。新 primitive 自带的内部逻辑不再逐项重复单测，重点测试与 EverChat 的组合行为。
 
@@ -319,7 +319,6 @@ pnpm dlx shadcn@latest add button input textarea label select native-select chec
 - [x] 记录实现后的截图、功能测试、对比度、包体积与真机未测范围。
 
 最初规划阶段仅新增方案与参考图；后续实施已替换前端组件、样式、主题与交互基础。最终结果以第 10 节的检查记录为准。
-
 
 ## 10. 实施记录
 
@@ -359,13 +358,13 @@ pnpm dlx shadcn@latest add button input textarea label select native-select chec
 
 以下为同一工作区迁移前后的 Vite 构建输出；kB 为构建工具的十进制单位，预缓存总量为工具报告的 KiB。主入口不代表全部按需资源，PWA 总量包含既有 Markdown／图表／PDF 等资源。
 
-| 指标 | 迁移前 | 迁移后 | 变化 |
-|---|---:|---:|---:|
-| 主入口 CSS | 201.90 kB | 136.78 kB | −65.12 kB（−32.3%） |
-| 主入口 CSS gzip | 34.49 kB | 26.03 kB | −8.46 kB（−24.5%） |
-| 主入口 JavaScript | 565.20 kB | 742.70 kB | +177.50 kB（+31.4%） |
-| 主入口 JavaScript gzip | 160.02 kB | 216.11 kB | +56.09 kB（+35.1%） |
-| PWA 预缓存 | 425 项／15069.24 KiB | 425 项／15149.98 KiB | +80.74 KiB（+0.5%） |
+| 指标                   |               迁移前 |               迁移后 |                 变化 |
+| ---------------------- | -------------------: | -------------------: | -------------------: |
+| 主入口 CSS             |            201.90 kB |            136.78 kB |  −65.12 kB（−32.3%） |
+| 主入口 CSS gzip        |             34.49 kB |             26.03 kB |   −8.46 kB（−24.5%） |
+| 主入口 JavaScript      |            565.20 kB |            742.70 kB | +177.50 kB（+31.4%） |
+| 主入口 JavaScript gzip |            160.02 kB |            216.11 kB |  +56.09 kB（+35.1%） |
+| PWA 预缓存             | 425 项／15069.24 KiB | 425 项／15149.98 KiB |  +80.74 KiB（+0.5%） |
 
 本次减少了 CSS，但 Radix、Command 与新的交互组合增加了入口 JavaScript；不能将整体迁移描述为包体积优化。后续若进一步降低首屏传输，可单独评估设置界面的按需加载，并保留当前草稿和自动保存生命周期。
 

@@ -30,19 +30,54 @@ export interface Message {
   tools?: PublicToolTask;
 }
 
-export interface ConversationInfo { id: string; title: string; createdAt: number; updatedAt: number; pinned: boolean; archived: boolean }
+export interface ConversationInfo {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  pinned: boolean;
+  archived: boolean;
+}
 
-export interface LibrarySnapshot { conversations: ConversationInfo[]; deletions: { id: string; deletedAt: number }[]; deletionCursor: number; hasMoreDeletions: boolean }
+export interface LibrarySnapshot {
+  conversations: ConversationInfo[];
+  deletions: { id: string; deletedAt: number }[];
+  deletionCursor: number;
+  hasMoreDeletions: boolean;
+}
 
 export interface ConversationSettings {
-  systemPrompt: string | null; temperature: number | null; topP: number | null;
-  useGlobalMaxOutputTokens: boolean; maxOutputTokens: number | null;
-  recentMessages: number | null; contextBudget: number | null;
+  systemPrompt: string | null;
+  temperature: number | null;
+  topP: number | null;
+  useGlobalMaxOutputTokens: boolean;
+  maxOutputTokens: number | null;
+  recentMessages: number | null;
+  contextBudget: number | null;
   useSummaries: boolean;
   tools: WebToolName[];
   autoCompression: { enabled: boolean; threshold: number; model: ModelSelection | null };
 }
 
-export interface SubmitInput { requestId: string; content?: string; imageIds?: string[]; fileIds?: string[]; retryOf?: string; revisionOf?: string; parentId?: string | null; summaryThrough?: string; selection?: ModelSelection; showReasoning?: boolean; reasoningEffort?: ReasoningEffort; settings?: ConversationSettings; tools?: WebToolName[] }
+export interface SubmitInput {
+  requestId: string;
+  content?: string;
+  imageIds?: string[];
+  fileIds?: string[];
+  retryOf?: string;
+  revisionOf?: string;
+  parentId?: string | null;
+  summaryThrough?: string;
+  selection?: ModelSelection;
+  showReasoning?: boolean;
+  reasoningEffort?: ReasoningEffort;
+  settings?: ConversationSettings;
+  tools?: WebToolName[];
+}
 
-export interface Submission { runId: string; userId: string; assistantId: string; summaryId?: string }
+export interface Submission {
+  runId: string;
+  userId: string;
+  assistantId: string;
+  summaryId?: string;
+}

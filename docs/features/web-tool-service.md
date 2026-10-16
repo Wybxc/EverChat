@@ -20,11 +20,11 @@
 
 以下接口均位于 `/api` 下，需要登录，响应使用 `Cache-Control: no-store`。写入还要求同源 Origin。
 
-| 接口 | 行为 |
-|---|---|
-| `GET /settings/web-tools` | 返回 `provider`、`hasApiKey`、`dailyLimit` 和 `usedToday`，不含密钥 |
-| `GET /settings/web-tools/key` | 显式读取已配置的密钥 |
-| `PUT /settings/web-tools` | 保存服务密钥和每日请求上限，返回不含密钥的设置 |
+| 接口                          | 行为                                                                |
+| ----------------------------- | ------------------------------------------------------------------- |
+| `GET /settings/web-tools`     | 返回 `provider`、`hasApiKey`、`dailyLimit` 和 `usedToday`，不含密钥 |
+| `GET /settings/web-tools/key` | 显式读取已配置的密钥                                                |
+| `PUT /settings/web-tools`     | 保存服务密钥和每日请求上限，返回不含密钥的设置                      |
 
 写入示例，密钥仅为占位符：
 
@@ -46,15 +46,15 @@
 
 请求只发送到固定的 `https://api.tavily.com/search` 或 `https://api.tavily.com/extract`，使用 POST JSON 和 Bearer 鉴权。搜索固定为 general／basic，最多五条结果，关闭自动参数、生成答案、原始正文、图片和图标；读取一次只提交一个公开 HTTPS URL，使用 basic、纯文本及 10 秒服务端提取期限。接口依据：[Tavily Search](https://docs.tavily.com/documentation/api-reference/endpoint/search)、[Tavily Extract](https://docs.tavily.com/documentation/api-reference/endpoint/extract)。
 
-| 边界 | 实现 |
-|---|---|
-| 单次工具期限 | 15 秒取消期限，受根任务剩余期限约束；额度 RPC 返回后复验取消状态，再决定是否开始 HTTP 请求 |
-| 原始 JSON 响应 | 最多 512 KiB，同时检查声明长度和实际读取字节 |
-| 编码及格式 | JSON Content-Type、严格 UTF-8，拒绝损坏及异常结构 |
-| 返回来源 | 最多五个，正文总计 12,000 个 UTF-16 码元 |
-| 裁剪 | 添加截取标记，不切断代理对，移除不允许的控制字符 |
-| 单次持久化结果 | 最多 64 KiB，重新验证调用身份和来源对应关系 |
-| 整个任务 | 最多四次模型、六次工具认领，十分钟及既有上下文预算 |
+| 边界           | 实现                                                                                       |
+| -------------- | ------------------------------------------------------------------------------------------ |
+| 单次工具期限   | 15 秒取消期限，受根任务剩余期限约束；额度 RPC 返回后复验取消状态，再决定是否开始 HTTP 请求 |
+| 原始 JSON 响应 | 最多 512 KiB，同时检查声明长度和实际读取字节                                               |
+| 编码及格式     | JSON Content-Type、严格 UTF-8，拒绝损坏及异常结构                                          |
+| 返回来源       | 最多五个，正文总计 12,000 个 UTF-16 码元                                                   |
+| 裁剪           | 添加截取标记，不切断代理对，移除不允许的控制字符                                           |
+| 单次持久化结果 | 最多 64 KiB，重新验证调用身份和来源对应关系                                                |
+| 整个任务       | 最多四次模型、六次工具认领，十分钟及既有上下文预算                                         |
 
 读取接口即使返回 HTTP 200，也必须具有一个成功结果且没有 `failed_results`；没有正文明确失败。搜索无结果可以返回空来源列表。
 

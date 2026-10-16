@@ -3,9 +3,14 @@ import { useCallback, useEffect, useState } from 'react';
 const conversationPath = /^\/c\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
 const readRoute = () => {
   const id = conversationPath.exec(location.pathname)?.[1] ?? null;
-  return { id, branch: id ? new URLSearchParams(location.search).get('branch') : null, invalid: location.pathname !== '/' && !id };
+  return {
+    id,
+    branch: id ? new URLSearchParams(location.search).get('branch') : null,
+    invalid: location.pathname !== '/' && !id,
+  };
 };
-export const conversationUrl = (id: string | null, branch?: string | null) => id ? `/c/${encodeURIComponent(id)}${branch ? `?branch=${encodeURIComponent(branch)}` : ''}` : '/';
+export const conversationUrl = (id: string | null, branch?: string | null) =>
+  id ? `/c/${encodeURIComponent(id)}${branch ? `?branch=${encodeURIComponent(branch)}` : ''}` : '/';
 
 export function useConversationRoute() {
   const [route, setRoute] = useState(readRoute);

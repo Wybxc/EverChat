@@ -1,10 +1,7 @@
 {
   "extends": "./tsconfig.worker.json",
   "compilerOptions": {
-    "types": [
-      "node",
-      "@cloudflare/workers-types"
-    ]
+    "types": ["node", "@cloudflare/workers-types"]
   },
   "include": [
     "tests/unit/**/*.test.ts",

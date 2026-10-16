@@ -1,4 +1,4 @@
-import { expect,test,type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 async function login(page: Page) {
   await page.goto('/');
@@ -7,12 +7,16 @@ async function login(page: Page) {
   await expect(page.getByRole('textbox', { name: '消息', exact: true })).toBeVisible();
 }
 
-test('mobile sidebar contains keyboard focus and returns it without opening the keyboard', async ({ page }) => {
+test('mobile sidebar contains keyboard focus and returns it without opening the keyboard', async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await login(page);
-  const sidebar = page.getByRole('dialog', { name: '对话列表' }), trigger = page.getByRole('button', { name: '打开对话列表' });
+  const sidebar = page.getByRole('dialog', { name: '对话列表' }),
+    trigger = page.getByRole('button', { name: '打开对话列表' });
   await expect(sidebar).toHaveCount(0);
-  await trigger.focus(); await page.keyboard.press('Tab');
+  await trigger.focus();
+  await page.keyboard.press('Tab');
   await expect(trigger).not.toBeFocused();
   await trigger.click();
   await expect(page.getByRole('dialog', { name: '对话列表' })).toBeVisible();

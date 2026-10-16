@@ -9,7 +9,8 @@ export function branchPath(messages: Message[], headId: string): Message[] {
   while (current && !seen.has(current.id)) {
     path.push(current);
     seen.add(current.id);
-    if (current.parentId && !byId.has(current.parentId)) throw new Error('消息分支的父消息不存在。');
+    if (current.parentId && !byId.has(current.parentId))
+      throw new Error('消息分支的父消息不存在。');
     current = current.parentId ? byId.get(current.parentId) : undefined;
   }
   if (current) throw new Error('消息分支存在循环。');

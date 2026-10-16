@@ -7,24 +7,24 @@
   "assets": {
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*"]
+    "run_worker_first": ["/api/*"],
   },
   "vars": {
     "AI_PROVIDER": "",
     "AI_BASE_URL": "https://api.openai.com/v1",
     "AI_MODEL": "",
-    "SYSTEM_PROMPT": "你是一位清晰、友善的助手。请默认使用中文回答。"
+    "SYSTEM_PROMPT": "你是一位清晰、友善的助手。请默认使用中文回答。",
   },
   "durable_objects": {
     "bindings": [
       { "name": "CONVERSATIONS", "class_name": "Conversation" },
-      { "name": "LIBRARY", "class_name": "Library" }
-    ]
+      { "name": "LIBRARY", "class_name": "Library" },
+    ],
   },
   "r2_buckets": [{ "binding": "ATTACHMENTS", "bucket_name": "everchat-attachments" }],
-  "workflows": [{ "binding": "WEB_TOOLS", "name": "everchat-web-tools", "class_name": "WebToolWorkflow" }],
-  "migrations": [
-    { "tag": "v1", "new_sqlite_classes": ["Conversation", "Library"] }
+  "workflows": [
+    { "binding": "WEB_TOOLS", "name": "everchat-web-tools", "class_name": "WebToolWorkflow" },
   ],
-  "observability": { "enabled": true }
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Conversation", "Library"] }],
+  "observability": { "enabled": true },
 }

@@ -1,7 +1,10 @@
 import type { GenerationExecutor } from './protocol';
 import type { MessageStatus } from '../conversation/types';
 
-export interface StreamCounts { textDeltas: number; reasoningDeltas: number }
+export interface StreamCounts {
+  textDeltas: number;
+  reasoningDeltas: number;
+}
 
 // Application counters complement Cloudflare's CPU/duration metrics; they are not a bill.
 export interface GenerationMeasurements extends StreamCounts {
