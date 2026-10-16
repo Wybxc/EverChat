@@ -205,7 +205,8 @@ for (const fault of ['delete-failure', 'delete-reset']) test(`Library Alarm comp
 test('deletion synchronization pages markers without gaps or duplicates', async ({ request }) => {
   expect((await request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok()).toBe(true);
   const seed = (count: number) => request.post('/api/__test/library/deletion-history', { headers, data: { count } });
-  const before = await index(request);
+  let before = await index(request);
+  while (before.hasMoreDeletions) before = await request.get(`/api/conversations?after=${before.deletionCursor}`).then((response) => response.json()) as LibrarySnapshot;
   try {
     expect((await seed(300)).ok()).toBe(true);
     const first = await request.get(`/api/conversations?after=${before.deletionCursor}`).then((response) => response.json()) as LibrarySnapshot;
