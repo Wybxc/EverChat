@@ -46,7 +46,7 @@
 
 深色用户气泡局部，仅含本次测试文字：
 
-![DeepSeek 深色用户消息气泡局部](references/deepseek-test-bubble-2026-10-15.jpg)
+![DeepSeek 深色用户消息气泡局部](../references/deepseek-test-bubble-2026-10-15.jpg)
 
 ### 2.2 配色观察与可访问性差异
 
@@ -226,7 +226,7 @@ pnpm dlx shadcn@latest add button input textarea label select native-select chec
 
 ### 5.3 主题迁移
 
-- 将 `src/theme.ts` 的解析结果应用到根元素 `.dark`，继续保留 light / dark / system 的用户选择、系统偏好监听与跨标签页同步；设置 `color-scheme`，同步浏览器 `theme-color`。
+- 将 `src/platform/theme.ts` 的解析结果应用到根元素 `.dark`，继续保留 light / dark / system 的用户选择、系统偏好监听与跨标签页同步；设置 `color-scheme`，同步浏览器 `theme-color`。
 - 首屏加载前应用有效主题，避免浅色闪屏；增加受存储限制时的回退。现有主题存储值可以继续使用，不额外设计旧配色兼容层。
 - 将 `base-100/200/300`、`base-content`、`primary-content`、`rounded-box/field`、`--color-*` 等引用按用途迁移，不能全局字符串替换成单一色阶。
 - 同步 Streamdown 代码主题、Mermaid、滚动条、文本选中、搜索高亮、输入占位和 focus-visible；检查第三方内部控件，避免迁移后仍出现旧颜色。
@@ -337,7 +337,7 @@ pnpm dlx shadcn@latest add button input textarea label select native-select chec
 
 ### 10.2 依赖与生成过程
 
-实际 CLI 为 **shadcn 4.21.5**。官方 registry 初始化请求超时，改从 shadcn/ui 官方 GitHub 修订 `c2477f311c19982ef6e246085438e6cfec3e35ea` 取得 Radix 组件、Nova class map 与 MIT 许可，展开样式映射后纳入项目。组件来源和局部调整见 [UI source](../src/components/ui/README.md)。没有引入双框架兼容层。
+实际 CLI 为 **shadcn 4.21.5**。官方 registry 初始化请求超时，改从 shadcn/ui 官方 GitHub 修订 `c2477f311c19982ef6e246085438e6cfec3e35ea` 取得 Radix 组件、Nova class map 与 MIT 许可，展开样式映射后纳入项目。组件来源和局部调整见 [UI source](../../src/components/ui/README.md)。没有引入双框架兼容层。
 
 新增主要依赖：`radix-ui` 1.8.1、`cmdk` 1.1.1、`class-variance-authority` 0.7.1、`clsx` 2.1.1、`tailwind-merge` 3.7.0、`tw-animate-css` 1.4.0；实际解析版本以 `pnpm-lock.yaml` 为准。安装时现有 `latest` 约束同时将 Playwright 更新到 1.64.1、Workers types 更新到 5.20261014.1，React 没有随本次迁移升级。
 
@@ -373,10 +373,10 @@ pnpm dlx shadcn@latest add button input textarea label select native-select chec
 
 均来自本地浏览器的合成测试数据，使用虚构供应商与密钥。截图等待弹窗退出动画结束；没有使用真实账号的配置或历史。
 
-- [浅色新对话](references/everchat-new-chat-light-2026-10-16.png)
-- [深色新对话](references/everchat-new-chat-dark-2026-10-16.png)
-- [深色对话与底部输入](references/everchat-conversation-dark-2026-10-16.png)
-- [桌面供应商设置](references/everchat-settings-desktop-2026-10-16.png)
-- [320px 手机设置](references/everchat-settings-mobile-2026-10-16.png)
+- [浅色新对话](../references/everchat-new-chat-light-2026-10-16.png)
+- [深色新对话](../references/everchat-new-chat-dark-2026-10-16.png)
+- [深色对话与底部输入](../references/everchat-conversation-dark-2026-10-16.png)
+- [桌面供应商设置](../references/everchat-settings-desktop-2026-10-16.png)
+- [320px 手机设置](../references/everchat-settings-mobile-2026-10-16.png)
 
-![EverChat 浅色新对话](references/everchat-new-chat-light-2026-10-16.png)
+![EverChat 浅色新对话](../references/everchat-new-chat-light-2026-10-16.png)

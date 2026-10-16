@@ -47,6 +47,6 @@ pnpm exec wrangler r2 bucket create everchat-attachments --storage-class Standar
 
 ## 验证
 
-`tests/attachments.test.ts` 检查元数据和允许类型；`tests/e2e/attachments.spec.ts` 使用原生本地 R2、SQLite、DO Alarm 和浏览器，验证 5 MiB 上限文件的精确字节及 Unicode、校验失败、鉴权及跨域拒绝、跨设备读取、幂等上传、过期回收、配额并发、R2 写入后实例重置、清理与上传交错、删除失败后实例重置及定时重试、未配置存储、上传取消、进度、草稿／URL 保留、移动端长列表和焦点恢复。
+`tests/unit/attachments/attachments.test.ts` 检查元数据和允许类型；`tests/e2e/attachments/attachments.spec.ts` 使用原生本地 R2、SQLite、DO Alarm 和浏览器，验证 5 MiB 上限文件的精确字节及 Unicode、校验失败、鉴权及跨域拒绝、跨设备读取、幂等上传、过期回收、配额并发、R2 写入后实例重置、清理与上传交错、删除失败后实例重置及定时重试、未配置存储、上传取消、进度、草稿／URL 保留、移动端长列表和焦点恢复。
 
-完整检查点结果记录在 [功能路线图](serverless-feature-roadmap.md) 中。图片、文本与 PDF 检查点另已覆盖接受后的后台任务、私有预览和引用；独立复制与 ZIP 恢复纳入原文件、解析结果、引用和中断清理。
+完整检查点结果记录在 [功能路线图](../plans/serverless-feature-roadmap.md) 中。图片、文本与 PDF 检查点另已覆盖接受后的后台任务、私有预览和引用；独立复制与 ZIP 恢复纳入原文件、解析结果、引用和中断清理。

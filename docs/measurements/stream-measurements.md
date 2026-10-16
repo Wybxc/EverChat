@@ -6,7 +6,7 @@
 
 ## 当前代码的本地复核
 
-2026-10-15 在 `12d9cb0` 上再次运行 `pnpm measure:stream --output /tmp/everchat-final-stream.json`，使用默认 120 个增量、25ms 间隔及隔离模拟供应商，三场景均通过。最终报告见 [stream-final.json](measurements/stream-final.json)。
+2026-10-15 在 `12d9cb0` 上再次运行 `pnpm measure:stream --output /tmp/everchat-final-stream.json`，使用默认 120 个增量、25ms 间隔及隔离模拟供应商，三场景均通过。最终报告见 [stream-final.json](stream-final.json)。
 
 | 场景 | 最终正文／思考字符 | 检查点 | 实际 SQL 写入行 | 累计事件负载字节 |
 |---|---:|---:|---:|---:|
@@ -14,7 +14,7 @@
 | 在线正文与思考 | 24,000／24,000 | 4 | 37 | 307,159 |
 | 首个预览后关闭唯一订阅 | 90,000／0 | 7 | 52 | 549,039 |
 
-在线回放与最终持久化快照一致，离线场景完整保存。该报告反映加入后续消息和配置结构后的当前代码，历史版本计数不能直接当作本版结果。它仍只测普通聊天，未测工具任务，也不提供 CPU、Workflow 步骤或真实免费账单证据；剩余核对项见[实施与验收核对](implementation-audit.md)。
+在线回放与最终持久化快照一致，离线场景完整保存。该报告反映加入后续消息和配置结构后的当前代码，历史版本计数不能直接当作本版结果。它仍只测普通聊天，未测工具任务，也不提供 CPU、Workflow 步骤或真实免费账单证据；剩余核对项见[实施与验收核对](../architecture/implementation-audit.md)。
 
 ## 本地运行
 
@@ -25,7 +25,7 @@ pnpm measure:stream --chunks 120 --interval 100 --size 200 --output /tmp/evercha
 
 工具启动独立 Vite／Cloudflare 本地运行时，使用临时存储和 `provider.test` 模拟 HTTP 响应，不调用真实模型。三个场景分别为在线正文、在线正文加思考，以及收到首个实时预览后关闭唯一订阅。每个场景检查完整持久化结果、输出长度和实际供应商增量数；在线场景还检查客户端增量回放与数据库最终快照一致。最后停止服务器并清理本次临时数据。默认监听 5184；可用 `--port` 修改。默认本地密码为 `everchat-local`，环境变量 `EVERCHAT_TEST_PASSWORD` 可覆盖，不输出密码。
 
-报告默认写入系统临时目录中的 `everchat-stream-measurements.json`。首次报告位于 [stream-baseline.json](measurements/stream-baseline.json)，增量日志检查点报告位于 [stream-incremental.json](measurements/stream-incremental.json)，DO 执行迁移报告位于 [stream-do.json](measurements/stream-do.json)，分层保存报告位于 [stream-layered.json](measurements/stream-layered.json)。使用 `--output` 保存比较结果；相同负载下检查资源变化，时间调度会让检查点数略有浮动。
+报告默认写入系统临时目录中的 `everchat-stream-measurements.json`。首次报告位于 [stream-baseline.json](stream-baseline.json)，增量日志检查点报告位于 [stream-incremental.json](stream-incremental.json)，DO 执行迁移报告位于 [stream-do.json](stream-do.json)，分层保存报告位于 [stream-layered.json](stream-layered.json)。使用 `--output` 保存比较结果；相同负载下检查资源变化，时间调度会让检查点数略有浮动。
 
 ## 指标与边界
 
@@ -63,13 +63,13 @@ pnpm measure:stream --chunks 120 --interval 100 --size 200 --output /tmp/evercha
 
 客户端即时解析原始供应商字节，服务端高频路径只转发和保存；服务端在快照读取和最终整理时使用同一解析器。原始批次允许截断 UTF-8、SSE 和 JSON，快照携带未完成事件、字符与协议状态。最终校验完成原因和用量后原子整理消息并删除原始日志。每次读取新的上游片段前等待当前提交完成，避免持久化落后时无限接收。
 
-同负载的报告见 [stream-raw.json](measurements/stream-raw.json)。提交次数仍为 3、4、7，SQL 写入为 26、31、46 行；相比上一检查点每个场景多 2 行，用于供应商结果元数据。原始事件包含供应商协议字段，并以 base64 放入 JSON 同步帧，事件负载增至 162,485、306,386、548,297 字节，比语义增量版本增加约 27%、24%、20%。这一步转移高频语义解析，仍保留字节封装与编码开销，不据本地经过时间声称 CPU、请求计费或活跃时长下降。
+同负载的报告见 [stream-raw.json](stream-raw.json)。提交次数仍为 3、4、7，SQL 写入为 26、31、46 行；相比上一检查点每个场景多 2 行，用于供应商结果元数据。原始事件包含供应商协议字段，并以 base64 放入 JSON 同步帧，事件负载增至 162,485、306,386、548,297 字节，比语义增量版本增加约 27%、24%、20%。这一步转移高频语义解析，仍保留字节封装与编码开销，不据本地经过时间声称 CPU、请求计费或活跃时长下降。
 
 四种协议的浏览器回归均将半个 UTF-8 字符保存为检查点，再从 API 快照重连，验证正文、思考和供应商用量一致。上游提前结束、保存失败、停止、关闭页面与慢订阅仍保留已有语义。原始响应限 4 MiB；正文与思考各限 100,000 字，单个 SSE 数据事件限 256 Ki 字符。云端语义校验在读取／最终整理时进行，不能把客户端解析报错当作已终止上游的证明。
 
 ## Workers Free 隔离部署验证
 
-2026-10-13 在用户确认的 Workers Free 账户部署 `everchat-stream-validation`，关闭生成诊断计数，使用独立 SQLite namespaces 和随机登录 Secrets。该入口只提供 API，真实供应商网络访问被禁止，所有模型响应均由模拟供应商产生。没有修改正式 Worker 或用户配置。功能报告见 [cloudflare-functional.json](measurements/cloudflare-functional.json)，平台报告见 [cloudflare-metrics.json](measurements/cloudflare-metrics.json)，清理确认见 [cloudflare-cleanup.json](measurements/cloudflare-cleanup.json)。
+2026-10-13 在用户确认的 Workers Free 账户部署 `everchat-stream-validation`，关闭生成诊断计数，使用独立 SQLite namespaces 和随机登录 Secrets。该入口只提供 API，真实供应商网络访问被禁止，所有模型响应均由模拟供应商产生。没有修改正式 Worker 或用户配置。功能报告见 [cloudflare-functional.json](cloudflare-functional.json)，平台报告见 [cloudflare-metrics.json](cloudflare-metrics.json)，清理确认见 [cloudflare-cleanup.json](cloudflare-cleanup.json)。
 
 9 项功能场景全部通过：在线正文；正文加思考和第二订阅；首个预览后断开唯一订阅；四种协议保存半个 UTF-8 字符后读取快照并重连；慢订阅不确认而被断开、健康订阅完成及慢订阅恢复；取消并保存已接收前缀。每个场景重复提交同一请求 ID，终态重新订阅并比较数据库快照。长正文场景为 90,000 字符，慢订阅场景另含 90,000 字符思考。它验证实际平台上的 API／DO／WebSocket 链路，不包含网页渲染或真实供应商服务质量。
 
@@ -96,7 +96,7 @@ DO 调用统计有 3 个 `clientDisconnected`、9 个 `responseStreamDisconnecte
 
 ### 一分钟以上生成与重复重连
 
-同日重新部署隔离入口，版本 `cd6b50c0-2da2-4b03-a037-80e164e9237f`，生产代码仍基于 `58a1691`，未修改生产流处理。测试继续关闭诊断计数、禁止真实供应商调用。报告见 [长流结果](measurements/cloudflare-sustained.json)、[长流指标](measurements/cloudflare-sustained-metrics.json)、[重连结果](measurements/cloudflare-reconnect.json)、[重连指标](measurements/cloudflare-reconnect-metrics.json) 和 [CPU 调用摘要](measurements/cloudflare-cpu.json)。
+同日重新部署隔离入口，版本 `cd6b50c0-2da2-4b03-a037-80e164e9237f`，生产代码仍基于 `58a1691`，未修改生产流处理。测试继续关闭诊断计数、禁止真实供应商调用。报告见 [长流结果](cloudflare-sustained.json)、[长流指标](cloudflare-sustained-metrics.json)、[重连结果](cloudflare-reconnect.json)、[重连指标](cloudflare-reconnect-metrics.json) 和 [CPU 调用摘要](cloudflare-cpu.json)。
 
 三项生成均使用 16,000 字符输入，每次接收 140 个增量、间隔 500ms，生成持续约 72 秒：
 
@@ -125,7 +125,7 @@ Worker 错误计数和资源超限计数均为零；DO HTTP 的断线状态仍�
 
 若每天重复 100 次这组负载的平均生成，**按本次三个样本外推**，约消耗 916.26 GB-s（每日额度约 7.05%）、29,067 行写入（约 29.07%）和 78,700 行读取（约 1.57%）。这不是 100 次实际测试，且包含长输入、长输出、思考、多订阅和重连；响应时长、设备数及其他应用会改变预算。供应商费用另计。
 
-长流结束后的 Library 与三个 Conversation SQLite 分配合计 3,854,336 字节（约 3.68 MiB）。SQL 存储 GraphQL 仍无采样，不能将分配大小当作平台账单量或生成中峰值。隔离 Worker 及本轮两个 namespaces 已删除，随机 Secrets 已移除，见 [清理确认](measurements/cloudflare-sustained-cleanup.json)。
+长流结束后的 Library 与三个 Conversation SQLite 分配合计 3,854,336 字节（约 3.68 MiB）。SQL 存储 GraphQL 仍无采样，不能将分配大小当作平台账单量或生成中峰值。隔离 Worker 及本轮两个 namespaces 已删除，随机 Secrets 已移除，见 [清理确认](cloudflare-sustained-cleanup.json)。
 
 这一步发现快照接口把整个对话经 RPC 返回，再在 Worker 中序列化 JSON。随后验证和修复见下节；它与 `/sync` 的偶发高样本分别记录。
 
@@ -139,7 +139,7 @@ Worker 错误计数和资源超限计数均为零；DO HTTP 的断线状态仍�
 | 4／8 | 1,962,588 | 2,019,328 |
 | 16／32 | 7,850,302 | 7,925,760 |
 
-基线版本 `da50766f-2764-4c96-9816-931c9ee6134c` 的生产代码基于 `18eb774`；优化版本为 `38a521e2-cebe-4ba6-aab3-2d7bd042d8b8`。两轮使用同一组数据库，没有重新生成或清空数据。基线和优化后的 15 次 HTTP 读取、6 次 WebSocket 恢复全部通过。结果见 [优化前](measurements/cloudflare-history-before.json)、[优化后](measurements/cloudflare-history-after.json)，平台数据见 [优化前指标](measurements/cloudflare-history-before-metrics.json)、[优化后指标](measurements/cloudflare-history-after-metrics.json)，采样调用见 [CPU 摘要](measurements/cloudflare-history-cpu.json)。
+基线版本 `da50766f-2764-4c96-9816-931c9ee6134c` 的生产代码基于 `18eb774`；优化版本为 `38a521e2-cebe-4ba6-aab3-2d7bd042d8b8`。两轮使用同一组数据库，没有重新生成或清空数据。基线和优化后的 15 次 HTTP 读取、6 次 WebSocket 恢复全部通过。结果见 [优化前](cloudflare-history-before.json)、[优化后](cloudflare-history-after.json)，平台数据见 [优化前指标](cloudflare-history-before-metrics.json)、[优化后指标](cloudflare-history-after-metrics.json)，采样调用见 [CPU 摘要](cloudflare-history-cpu.json)。
 
 修复前，Worker 接收结构化历史并序列化整个 JSON，大响应多次超过标称 10ms CPU。修复后，`snapshotResponse()` 在 Conversation DO 内构造 JSON，RPC 自动传输 Response 字节流，Worker 只做鉴权、索引校验和响应转发。接口数据结构、响应头和 WebSocket 协议保持当前定义，没有维护旧 RPC 路径。[Cloudflare RPC 的 Response 流传输](https://developers.cloudflare.com/workers/runtime-apis/rpc/#readablestream-writablestream-request-and-response)。
 
@@ -156,7 +156,7 @@ Worker 错误计数和资源超限计数均为零；DO HTTP 的断线状态仍�
 
 清理资源后再次查询，两个 DO namespace 的调用与 periodic 数据已开始到达，收到的 CPU／内存超限及内部致命错误计数均为零。数据仍可能继续补齐，不能用两轮目前的 DO 小计计算 CPU 降幅；优化后 RPC 另有 `clientDisconnected` 状态，不能写成所有 DO 错误为零。SQL 存储仍无采样，以 `available: false` 标记，不能写成零消耗。三个历史与 Library 的终态 SQLite 分配合计 10,522,624 字节。仅按最大模拟对象外推 500 个类似对话，约为 3.96GB，占免费账户 5GB 的约 79%；真实任务还保存上下文、事件和元数据，其他应用也共享额度。因此 500 个对话和每条消息长度上限不能单独作为存储保证，后续需要明确总量边界与保留预算。
 
-本地 83 项单元测试、类型检查、构建，以及 9 项 API／流式专项回归通过，覆盖 8MB 恢复、四协议断字恢复、慢订阅和保存失败。测试 Worker、两个 namespaces 与临时 Secrets 均清理，见 [清理确认](measurements/cloudflare-history-cleanup.json)。随后补齐下述存储／大历史总量边界及超限状态；不为等待无数据的 GraphQL 存储采样保留公共测试资源。
+本地 83 项单元测试、类型检查、构建，以及 9 项 API／流式专项回归通过，覆盖 8MB 恢复、四协议断字恢复、慢订阅和保存失败。测试 Worker、两个 namespaces 与临时 Secrets 均清理，见 [清理确认](cloudflare-history-cleanup.json)。随后补齐下述存储／大历史总量边界及超限状态；不为等待无数据的 GraphQL 存储采样保留公共测试资源。
 
 ### 历史与存储保留预算
 

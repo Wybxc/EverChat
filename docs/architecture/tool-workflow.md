@@ -1,6 +1,6 @@
 # 有限工具任务的 DO／Workflow 执行与展示
 
-阶段 5 的执行基础。Conversation DO 已接入逐轮模型流、工具认领、公共过程同步和页面展示，Workflow 负责有限的“模型 → 工具 → 模型”编排。[联网服务](web-tool-service.md)提供 Tavily 搜索／网页读取、共享每日请求上限、网页配置及默认关闭的会话开关。完整执行与网页入口通过隔离本地运行时和模拟服务验证；功能范围见[路线图](serverless-feature-roadmap.md#阶段-5联网搜索与网页读取)。
+阶段 5 的执行基础。Conversation DO 已接入逐轮模型流、工具认领、公共过程同步和页面展示，Workflow 负责有限的“模型 → 工具 → 模型”编排。[联网服务](../features/web-tool-service.md)提供 Tavily 搜索／网页读取、共享每日请求上限、网页配置及默认关闭的会话开关。完整执行与网页入口通过隔离本地运行时和模拟服务验证；功能范围见[路线图](../plans/serverless-feature-roadmap.md#阶段-5联网搜索与网页读取)。
 
 ## 执行与持久化
 

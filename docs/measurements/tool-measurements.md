@@ -1,6 +1,6 @@
 # 有限工具任务资源测量
 
-2026-10-15，在 `e9a174c` 后的工具测量与终态清理检查点运行。默认七场景报告见 [tools-baseline.json](measurements/tools-baseline.json)。这是本地原生 Cloudflare 运行时的应用计数，平台 CPU、活跃时长和 Workflow 引擎存储仍需另测。
+2026-10-15，在 `e9a174c` 后的工具测量与终态清理检查点运行。默认七场景报告见 [tools-baseline.json](tools-baseline.json)。这是本地原生 Cloudflare 运行时的应用计数，平台 CPU、活跃时长和 Workflow 引擎存储仍需另测。
 
 ## 复现
 
@@ -57,8 +57,8 @@ SQL 写入均为原生游标行数，两对象分开。Workflow 步骤不包含�
 
 | Responses 负载 | Conversation／Library 写入行 | 私有／公开 wire 字节 | 报告 |
 |---|---:|---:|---|
-| 120 段 × 750 码元，90,000 码元 | 174／26 | 377,514／97,439 | [大正文](measurements/tools-large.json) |
-| 120 段 × 200 码元，500ms 间隔 | 446／26 | 113,514／31,439 | [一分钟以上](measurements/tools-sustained.json) |
+| 120 段 × 750 码元，90,000 码元 | 174／26 | 377,514／97,439 | [大正文](tools-large.json) |
+| 120 段 × 200 码元，500ms 间隔 | 446／26 | 113,514／31,439 | [一分钟以上](tools-sustained.json) |
 
 两种负载均检查完整正文、相同调用上限、私有清理及无待处理 Alarm。短窗口的默认报告和大正文报告在增加每秒 Library 观察前取得，未发生计数丢失；一分钟报告使用上述诊断观察，不能用于休眠结论。同样大小的短流与长流，其持久化次数会随 1.5 秒保存窗口变化，不能仅按输出字节估算写入压力。
 
@@ -66,7 +66,7 @@ SQL 写入均为原生游标行数，两对象分开。Workflow 步骤不包含�
 
 ## 下一次平台验证负载
 
-先准备独立 API-only 验证 Worker、两个新 SQLite namespace 和单独 Workflow 名称；使用随机本地验证 Secrets，保持外部供应商网络禁用。复用[平台隔离入口](../tests/fixtures/cloudflare-worker.ts)，不能把本脚本直接指向现有实例，也不操作真实聊天配置。模拟负载 `LOCAL_TOOL_WORKLOAD` 已与计数开关分离；平台 CPU 测量必须关闭 `LOCAL_RESOURCE_METRICS` 和 `GENERATION_METRICS`。
+先准备独立 API-only 验证 Worker、两个新 SQLite namespace 和单独 Workflow 名称；使用随机本地验证 Secrets，保持外部供应商网络禁用。复用[平台隔离入口](../../scripts/measurements/support/stream-worker.ts)，不能把本脚本直接指向现有实例，也不操作真实聊天配置。模拟负载 `LOCAL_TOOL_WORKLOAD` 已与计数开关分离；平台 CPU 测量必须关闭 `LOCAL_RESOURCE_METRICS` 和 `GENERATION_METRICS`。
 
 1. 四协议各一次默认往返，核对终态、调用数、私有清理和完整公开结果。
 2. Responses 的 90,000 码元负载，以及每段 500ms、持续一分钟以上的负载，分别检查原始流大小与长时间活跃开销。
@@ -76,4 +76,4 @@ SQL 写入均为原生游标行数，两对象分开。Workflow 步骤不包含�
 
 平台入口还需提供关闭计数时的只读终态核对，不能用会触发过期处理的 `tool-runtime` 观察接口替代自然清理。平台轮询频率须单列，避免把本地计量的诊断保活带入资源结论。
 
-上述隔离入口、只读观察接口和执行脚本现已完成，详见[平台验证说明](tool-platform-validation.md)。关闭计数的同一 API-only 入口在本地通过九项功能、90,000 码元和 77.5 秒长流；没有在生成期间轮询 Library。随后在 Workers Free 完成 11 项平台场景，保存真实 Worker／DO／Workflow 样本并清理全部临时资源，见[平台实测](tools-cloudflare-measurements.md)。本地报告仍不作为 CPU 证据；真实供应商质量、长期共享额度、CPU 高样本及 SQL 存储采样缺失继续单列。[实施核对](implementation-audit.md)据实际证据推进最终审查。
+上述隔离入口、只读观察接口和执行脚本现已完成，详见[平台验证说明](tool-platform-validation.md)。关闭计数的同一 API-only 入口在本地通过九项功能、90,000 码元和 77.5 秒长流；没有在生成期间轮询 Library。随后在 Workers Free 完成 11 项平台场景，保存真实 Worker／DO／Workflow 样本并清理全部临时资源，见[平台实测](tools-cloudflare-measurements.md)。本地报告仍不作为 CPU 证据；真实供应商质量、长期共享额度、CPU 高样本及 SQL 存储采样缺失继续单列。[实施核对](../architecture/implementation-audit.md)据实际证据推进最终审查。

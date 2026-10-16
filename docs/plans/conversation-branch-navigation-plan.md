@@ -10,11 +10,11 @@
 
 | 现有实现 | 当前行为 | 本次调整 |
 |---|---|---|
-| [`Message.parentId`、`revisionOf`、`branchPath`](../shared/types.ts) | 保存父链、版本来源，可读取从根到指定消息的路径 | 保留存储关系，增加统一的分支投影与同级版本索引 |
-| [`App.tsx`](../src/App.tsx) 的消息列表 | 直接遍历 `snapshot.messages`，按写入顺序显示全部消息 | 仅遍历所选路径；其他分支不挂载消息正文 |
-| [`MessageActions`](../src/MessageActions.tsx) | “继续此分支”只选择后续发送的完成回答，并显示“当前分支” | 用气泡下的版本导航切换显示；保留中途另起后续的能力 |
-| [`contextSource`](../shared/context-budget.ts)、[`Conversation.submit`](../worker/conversation.ts) | 未指定分支时，回退到全局最后一条完成消息 | 普通发送显式指定当前路径的父消息，取消全局回退 |
-| [`useConversationRoute`](../src/useConversationRoute.ts) | 每个对话一个 SPA URL | 增加分支位置参数，支持刷新、前进／后退和新标签打开 |
+| [`Message.parentId`、`revisionOf`、`branchPath`](../../shared/streaming/protocol.ts) | 保存父链、版本来源，可读取从根到指定消息的路径 | 保留存储关系，增加统一的分支投影与同级版本索引 |
+| [`App.tsx`](../../src/app/App.tsx) 的消息列表 | 直接遍历 `snapshot.messages`，按写入顺序显示全部消息 | 仅遍历所选路径；其他分支不挂载消息正文 |
+| [`MessageActions`](../../src/features/chat/MessageActions.tsx) | “继续此分支”只选择后续发送的完成回答，并显示“当前分支” | 用气泡下的版本导航切换显示；保留中途另起后续的能力 |
+| [`contextSource`](../../shared/conversation/context-budget.ts)、[`Conversation.submit`](../../worker/conversation/durable-object.ts) | 未指定分支时，回退到全局最后一条完成消息 | 普通发送显式指定当前路径的父消息，取消全局回退 |
+| [`useConversationRoute`](../../src/app/useConversationRoute.ts) | 每个对话一个 SPA URL | 增加分支位置参数，支持刷新、前进／后退和新标签打开 |
 | 搜索、文本导出、摘要展示 | 与完整消息集合或当前 DOM 耦合 | 明确当前路径与完整消息图各自的用途 |
 
 保持 shadcn/ui、现有 DeepSeek 风格、正文与思考的流式 Markdown，以及客户端解析／服务端低频持久化架构。原型阶段直接采用新状态与请求约定，不设计旧交互兼容层。
@@ -99,7 +99,7 @@ flowchart TD
 
 ### 3.2 分离显示位置、后续偏好与发送父消息
 
-建议新增纯函数模块 `shared/conversation-branches.ts`，以及前端状态钩子 `src/useConversationBranches.ts`，集中处理以下状态：
+建议新增纯函数模块 `shared/conversation/branches.ts`，以及前端状态钩子 `src/features/chat/useConversationBranches.ts`，集中处理以下状态：
 
 | 状态 | 含义与保存方式 |
 |---|---|
@@ -230,13 +230,13 @@ flowchart TD
 | 长回答与流式滚动 | 切换保持分叉阅读位置；底部继续生成可跟随；隐藏分支、搜索和上翻阅读不被拉到底部 |
 | 浅色／深色／窄屏／键盘 | 导航对比度、焦点、44px 操作区域和换行符合已有设计要求；屏幕阅读器可辨认版本与状态 |
 
-新增测试以 `tests/conversation-branches.test.ts` 和现有 `tests/e2e/conversation-branches.spec.ts` 为主；按受影响能力补充 navigation、message-mutations、search、streaming、summaries、copy 和 backup 回归。分支切换不新增第三方依赖、服务端写入或供应商调用；主要成本是客户端对图的索引和当前路径渲染，继续复用已有完整消息同步机制。
+新增测试以 `tests/unit/conversation/conversation-branches.test.ts` 和现有 `tests/e2e/chat/conversation-branches.spec.ts` 为主；按受影响能力补充 navigation、message-mutations、search、streaming、summaries、copy 和 backup 回归。分支切换不新增第三方依赖、服务端写入或供应商调用；主要成本是客户端对图的索引和当前路径渲染，继续复用已有完整消息同步机制。
 
 
 ## 8. 实施记录
 
-- `shared/conversation-branches.ts`：缓存结构索引、单路径投影、同级顺序、嵌套选择、墓碑与删除回退；正文流片段不重建结构索引。父链验证使用迭代，避免长历史递归栈溢出。
-- `src/useConversationBranches.ts`：URL／本机选择、权威快照等待、目标节点等待、失效恢复与导航版本。`BranchSwitcher` 复用消息操作行，保留焦点及滚动锚点。
+- `shared/conversation/branches.ts`：缓存结构索引、单路径投影、同级顺序、嵌套选择、墓碑与删除回退；正文流片段不重建结构索引。父链验证使用迭代，避免长历史递归栈溢出。
+- `src/features/chat/useConversationBranches.ts`：URL／本机选择、权威快照等待、目标节点等待、失效恢复与导航版本。`BranchSwitcher` 复用消息操作行，保留焦点及滚动锚点。
 - 普通提交必须携带 `parentId`，修订、重生成、摘要各自使用唯一上下文来源；离线入队即固定父节点。本人新回答通过返回 ID 定位，迟到响应与远端更新不改变已主动选择的路径。
 - 搜索、导出、摘要入口按显示路径投影；完整复制和备份保留消息图。复制结果和幂等记录保存映射后的显示末端。
 - 关闭编辑／删除弹窗后返回可见消息操作，取消返回原按钮；后台生成提供返回和停止入口，不自动抢占阅读。

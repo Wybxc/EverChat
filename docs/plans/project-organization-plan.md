@@ -1,6 +1,6 @@
 # EverChat 项目目录与模块整理计划
 
-日期：2026-10-16。调研基线：`0c7b8c9`。状态：实施中；进度与验证见第 11 节。
+日期：2026-10-16。调研基线：`0c7b8c9`。状态：已完成；实施与验证见第 11 节。
 
 ## 1. 结论与目标
 
@@ -20,7 +20,7 @@
 
 ## 2. 调研范围与现状
 
-本轮检查了版本控制中的源码、静态及字面量动态导入、Worker URL 入口、配置、脚本、测试目录及主要大文件。统计为 TS／TSX 源文件，行数约值，含空行。
+本轮检查了版本控制中的源码、静态及字面量动态导入、Worker URL 入口、配置、脚本、测试目录及主要大文件。以下记录调研时的基线，源码链接指向迁移后的对应入口。统计为 TS／TSX 源文件，行数约值，含空行。
 
 | 范围 | 文件数 | 行数 | 主要问题 |
 |---|---:|---:|---|
@@ -36,26 +36,26 @@ shared 中约 3,838 行来自自动生成的模型目录快照，不能把目录
 
 | 当前文件 | 规模 | 混合的职责 |
 |---|---|---|
-| [src/App.tsx](../src/App.tsx) | 约 1,011 行，57 个本地依赖 | 登录、会话与草稿、outbox 投递、附件准备、分支、搜索、备份、弹窗、Markdown、消息和输入区 |
-| [worker/conversation.ts](../worker/conversation.ts) | 约 1,103 行，32 个本地依赖 | 消息读写、提交／修订／删除、摘要依赖、模型执行、联网任务协调、WebSocket、搜索同步、Alarm |
-| [worker/library.ts](../worker/library.ts) | 约 591 行 | 对话索引、供应商与通用设置、登录限流、搜索、附件、复制、导入与清理调度 |
-| [worker/index.ts](../worker/index.ts) | 约 447 行 | API 装配、请求 schema、权限检查和各业务路由 |
-| [src/ProviderSettings.tsx](../src/ProviderSettings.tsx) | 约 362 行 | 设置 Tab 容器、供应商管理、模型编辑、能力测试、自动保存与密钥显示 |
-| [tests/fixtures/worker.ts](../tests/fixtures/worker.ts) | 约 802 行 | 测试 DO、数据构造、控制接口、故障注入、供应商与工具模拟 |
+| [src/app/App.tsx](../../src/app/App.tsx) | 约 1,011 行，57 个本地依赖 | 登录、会话与草稿、outbox 投递、附件准备、分支、搜索、备份、弹窗、Markdown、消息和输入区 |
+| [worker/conversation/durable-object.ts](../../worker/conversation/durable-object.ts) | 约 1,103 行，32 个本地依赖 | 消息读写、提交／修订／删除、摘要依赖、模型执行、联网任务协调、WebSocket、搜索同步、Alarm |
+| [worker/library/durable-object.ts](../../worker/library/durable-object.ts) | 约 591 行 | 对话索引、供应商与通用设置、登录限流、搜索、附件、复制、导入与清理调度 |
+| [worker/index.ts](../../worker/index.ts) | 约 447 行 | API 装配、请求 schema、权限检查和各业务路由 |
+| [src/app/SettingsPanel.tsx](../../src/app/SettingsPanel.tsx) | 约 362 行 | 设置 Tab 容器、供应商管理、模型编辑、能力测试、自动保存与密钥显示 |
+| [tests/support/runtime/worker.ts](../../tests/support/runtime/worker.ts) | 约 802 行 | 测试 DO、数据构造、控制接口、故障注入、供应商与工具模拟 |
 
 ### 2.2 依赖边界
 
 - 本地导入扫描未发现 src、worker、shared 之间违反运行环境方向的引用，也未发现排除类型引用后的静态运行时循环依赖。这些已有边界应保留。
-- [shared/types.ts](../shared/types.ts) 被 118 个模块引用，同时包含 Message、供应商与模型、会话、同步契约，以及 branchPath、applyChange、appendMessage。导入一个名称的入口同时承担了多个领域职责。
+- 原 `shared/types.ts` 被 118 个模块引用，同时包含 Message、供应商与模型、会话、同步契约，以及 branchPath、applyChange、appendMessage。导入一个名称的入口同时承担了多个领域职责。
 - 包含类型引用的依赖图出现较大的相互引用集合。不能把这些统称为运行时循环；应先拆开契约和执行逻辑，再缩小不必要的跨域引用。
-- [shared/markdown-math.ts](../shared/markdown-math.ts) 属于消息呈现逻辑，应与 Markdown 渲染归位。
-- shared/tool-measurements.ts、shared/tool-validation.ts 不在生产入口的可达图中，但被测量脚本及测试使用，应迁入工具支持模块，不能删除。
+- [src/features/chat/rendering/math.ts](../../src/features/chat/rendering/math.ts) 属于消息呈现逻辑，应与 Markdown 渲染归位。
+- scripts/measurements/support/resources.ts、scripts/measurements/support/validation.ts 不在生产入口的可达图中，但被测量脚本及测试使用，应迁入工具支持模块，不能删除。
 
 ### 2.3 测试与检查基线
 
 - 本轮 `pnpm test`：316 项通过，来自 42 个单测文件。
 - 本轮 `pnpm typecheck`：通过。
-- 端到端清单：286 项／37 个文件；PWA 清单：3 项／3 个文件。本轮仅枚举，未运行完整浏览器测试。
+- 端到端清单：286 项／37 个文件；PWA 清单：3 项／3 个文件。初次调研仅枚举；后续基线与完整验证见第 11 节。
 - 额外启用 noUnusedLocals／noUnusedParameters：客户端通过；Worker 发现 index.ts 中一个未使用的 messageAttachments 导入。
 - 当前三个 tsc 配置没有直接纳入 tests、Playwright 配置和测试 Worker 入口；执行测试时的 TS 转译不能替代类型检查。
 - `pnpm test` 使用 `tests/*.test.ts` 平铺匹配，移动到子目录后必须同步调整发现规则，防止测试悄然消失。
@@ -151,7 +151,7 @@ tsconfig、Vite、Playwright、Wrangler、components.json 等工具约定入口�
 
 | 当前实现 | 目标归属与拆分方式 | 必须维持的行为 |
 |---|---|---|
-| App 内 Markdown 加载、边界、降级；shared/markdown-math.ts | features/chat/rendering | 动态加载；原文降级；公式、代码、Mermaid；加载失败恢复 |
+| App 内 Markdown 加载、边界、降级；src/features/chat/rendering/math.ts | features/chat/rendering | 动态加载；原文降级；公式、代码、Mermaid；加载失败恢复 |
 | App 内 MessageView／SummaryView | features/chat 的消息与摘要呈现组件 | 隐藏分支不挂载正文、思考折叠、搜索定位及操作焦点 |
 | App 内输入区、发送、投递、附件准备 | chat 的输入区和草稿／outbox 控制；附件准备委托 attachments | requestId 固定；parentId 固定；离线只投递一次；切换后迟到响应不抢导航 |
 | App 内登录、导航、设置开关、备份编排 | app 装配；备份流程归 backup，侧栏数据归 library | 新对话聚焦、URL 前后退、退出后的异步回调隔离 |
@@ -173,7 +173,7 @@ DO 拆分时先识别事务单元，再决定函数边界。不能为减少类�
 |---|---|---|
 | src/components/ui/label.tsx | 无本地导入者，生产及测试／脚本入口均不可达 | 删除文件；不增加替代包装 |
 | worker/index.ts 的 messageAttachments 导入 | noUnusedLocals 报错，正文无引用 | 删除该导入 |
-| shared/backup.ts 的 backupConversation | 全仓仅定义，无调用；backupMessage 等备份主流程仍在使用 | 删除此函数，清理随之失效的类型导入 |
+| shared/backup/backup.ts 的 backupConversation | 全仓仅定义，无调用；backupMessage 等备份主流程仍在使用 | 删除此函数，清理随之失效的类型导入 |
 | buttonVariants、badgeVariants、CATALOG_VENDORS、validateArchiveData 等 | 有文件内部用途，无外部消费者 | 优先取消 export，保留实现 |
 | shadcn 的部分额外包装与导出 | 如 InputGroupButton／Text／Input／Textarea；扫描显示无外部引用 | 逐项核查内部调用、删掉无用包装及关联变体／导入，不批量删除整文件 |
 | Dialog／AlertDialog 的 Overlay、Portal 等 | 无外部消费者，但 Content 内部仍使用 | 仅收窄导出，不删除内部组成 |
@@ -183,7 +183,7 @@ DO 拆分时先识别事务单元，再决定函数边界。不能为减少类�
 
 依赖包未发现可以仅凭当前扫描直接删除的整包。shadcn 和 tw-animate-css 有 CSS 引用；不能因为没有 TS 导入就删除。未用导出不必然增加最终 bundle，收窄 API 的主要收益是维护清晰度；以实际构建结果评价体积变化。
 
-UI 源码删减后保留 [来源说明和本地适配记录](../src/components/ui/README.md)及 MIT 许可证。不把断流处理、资源边界、浏览器降级或历史测量证据当成“多余代码”。本计划也不因原型无需兼容，就顺带删改当前仍支持的备份格式等用户功能。
+UI 源码删减后保留 [来源说明和本地适配记录](../../src/components/ui/README.md)及 MIT 许可证。不把断流处理、资源边界、浏览器降级或历史测量证据当成“多余代码”。本计划也不因原型无需兼容，就顺带删改当前仍支持的备份格式等用户功能。
 
 ## 7. 测试归位、合并与删除规则
 
@@ -206,13 +206,13 @@ UI 源码删减后保留 [来源说明和本地适配记录](../src/components/u
 
 | 当前文件／做法 | 计划 |
 |---|---|
-| tests/core.test.ts | 将事件重放归 streaming、branchPath 归 conversation、供应商流消费归 providers；移除空壳 core 文件。UTF-8、未结束流不重试、敏感错误不外泄等独有断言必须保留 |
+| tests/unit/streaming/event-replay.test.ts | 将事件重放归 streaming、branchPath 归 conversation、供应商流消费归 providers；移除空壳 core 文件。UTF-8、未结束流不重试、敏感错误不外泄等独有断言必须保留 |
 | provider.test.ts 混合设置和流适配 | 按供应商配置与协议适配拆分，避免文件继续聚合所有 provider 行为 |
 | ui-migration、frontend-refinement、compact-layout、frontend-acceptance、settings-layout | 按 chat／settings／accessibility 等现有功能归位；取消以改版批次命名的套件 |
 | chat 与 UI 改版测试重复的新对话焦点、视口适配 | 对照输入条件、操作和断言合并；保留输入 DOM 身份、草稿、导航返回、文字放大、横屏和长名称等不同条件 |
 | alarm、resource-limits、tool-task-journal 等只使用 request 的场景 | 迁到 integration，继续使用 Playwright request + 本地 workerd，不为它们启动浏览器，也不新增另一套测试框架 |
 | 各 spec 重复登录、保存／恢复供应商、建会话、轮询快照 | 提取小型明确夹具，统一清理；鉴权 UI 本身仍由专门 E2E 实际操作 |
-| tests/ui.ts | 归到 support/browser；与构造数据、HTTP API 夹具分开 |
+| tests/support/browser/ui.ts | 归到 support/browser；与构造数据、HTTP API 夹具分开 |
 | fixtures/worker.ts | 拆成测试 DO、控制路由、数据构造、故障注入和模拟上游；入口只装配，不改变故障注入触发条件 |
 | fixtures/generate.ts | 当前仍由测试调用；它是消费生产流的测试适配器，不是遗留业务实现。评估是否可收敛到契约测试支持，不能只删适配器而丢掉独有断言 |
 
@@ -245,11 +245,11 @@ UI 源码删减后保留 [来源说明和本地适配记录](../src/components/u
 | 3. 前端归位与拆分 | 先按功能移动，再分别提取渲染、输入与投递、设置子模块、App 装配 | 焦点、滚动、离线草稿、分支与搜索；模型／自动保存；公式及 PWA | 纯移动与职责提取分开提交 |
 | 4. Worker 归位与拆分 | 先路由／provider／附件等边缘模块，再 Conversation 与 Library 的协调逻辑 | 鉴权、Alarm、重启／取消／尾部失败、事务、复制／导入、工具；响应转发及测量口径不退化 | HTTP、Conversation、Library 分开提交 |
 | 5. 测试按职责收敛 | 根据已稳定模块边界归位；提取夹具；合并被证实重复的断言 | 新发现规则覆盖 unit、integration、e2e、pwa；每个原场景有去向；完整检查通过 | 移动与删除重复测试分开提交 |
-| 6. 文档与收尾 | 文档分类、README 导航、源码链接与复现命令；再次扫描依赖和残留路径 | 无旧路径引用、无无效入口；运行时依赖仍无环；清理清单及测试映射完整 | 文档与最终检查单独提交 |
+| 6. 文档与收尾 | 文档分类、README 导航、源码链接与复现命令；再次扫描依赖和残留路径 | 无失效路径与入口；运行时依赖仍无环；清理清单及测试映射完整 | 文档与最终检查单独提交 |
 
 阶段 0 就修复测试发现与类型检查基础设施；阶段 5 才系统整理测试内容，避免在产品重构期间同时改变被测行为和验证规则。测试文件随被测模块更新导入，不必提前全量搬迁。
 
-各阶段先跑受影响检查，阶段完成再跑 `pnpm check`。纯文件移动不新增照抄实现的测试；只有发现覆盖缺口、抽取改变了可观察边界或出现回归时才补测试。不会把全量搬目录、DO 拆分和测试删除堆在一个提交中。
+各阶段先跑类型检查、单测、构建及受影响的集成／浏览器检查，最后统一跑 `pnpm check`。完整主套件约需 26 分钟，过程不按每次文件移动重复执行全量套件。纯文件移动不新增照抄实现的测试；只有发现覆盖缺口、抽取改变了可观察边界或出现回归时才补测试。不会把全量搬目录、DO 拆分和测试删除堆在一个提交中。
 
 目录移动本身无需再次部署 Cloudflare；涉及流处理、序列化、SQL 或 Alarm 实际行为时，先做本地同口径测量，结果不足以排除回归时再做隔离平台验证。沿用已有计数与报告，不在高频路径加额外日志。
 
@@ -260,17 +260,87 @@ UI 源码删减后保留 [来源说明和本地适配记录](../src/components/u
 - 不存在 shared 全局聚合出口、旧路径兼容壳、已确认无人使用的定义和无用 UI 包装；必要内部实现、许可证及生成来源保留。
 - 依赖继续符合运行环境边界，无新增运行时循环；对共享契约不再通过混杂入口引用执行逻辑。
 - 单测、集成、浏览器和 PWA 的发现规则与类型检查均覆盖新位置；所有删除项能追溯到保留的等价断言或明确失效的需求。
-- `pnpm check` 与 `git diff --check` 通过；重构期间观察到的失败要定位处理，不能用删除测试、放宽断言或延长等待掩盖。
+- 完成 `pnpm check` 覆盖的单测、类型检查、构建、主套件与 PWA 验证；失败修正后重跑受影响的完整文件，保留全量与复验记录。`git diff --check` 通过。不能用删除测试、放宽断言或延长等待掩盖失败。
 - 用户行为、URL、分支关系、API 权限、自动保存、离线队列、流式思考与正文、持久化以及资源边界保持既有约定。
 - 构建入口、动态资源和生产 PWA 正常；相关流式测量未出现额外的上游调用、高频写入或明显序列化开销。
 
-建议按第 9 节从检查基础设施和确认死代码开始推进，再处理契约与前后端大入口，最后收敛测试组织和文档。删除量由证据决定，不设行数或用例数配额。
+已按第 9 节完成检查基础设施、死代码清理、契约与前后端入口拆分、测试和文档收尾。删除量由证据决定，不设行数或用例数配额。
 
 ## 11. 实施记录
 
-### 检查基础设施
+### 11.1 已完成的边界整理
 
-- 增加客户端单测、Node／服务端单测、Cloudflare 测试运行入口、浏览器测试四份类型检查配置，以及只提供标准 Web Worker API 的 shared 独立检查，纳入 typecheck 和根项目引用。
-- 修复检查新发现的两处夹具类型缺口：模型配置显式设置 showReasoning；UTF-8 严格解码显式采用默认的 ignoreBOM=false。没有放宽断言或增加 any。
-- 单测改用递归发现并排序文件的入口，支持 --list，零匹配会失败，为后续测试迁移做准备。
-- 基线主套件／PWA 正在通过隔离本地服务器验证；沙箱默认禁止监听本机端口，已用获准的本地测试权限运行。
+- 删除未用 Label、backupConversation、Worker 导入及 41 个无消费者的 UI 包装；保留组件内部仍使用的实现与来源／许可证，收窄其余无用导出。
+- 拆开原 shared/types 的契约与执行逻辑，118 个消费者改为直接引用所属文件；Markdown 公式规则归客户端呈现，平台测量支持归 scripts。
+- 前端按功能归位。App 提取登录状态、Markdown／消息／摘要呈现、草稿、outbox、备份、上下文预览、输入尺寸、附件准备和会话索引；设置窗口与供应商／模型编辑器分开。
+- 浏览器存储保留唯一缓存底座；聊天模块拥有墓碑、快照键和延迟写入规则。供应商自动保存仍由设置窗口的一个实例协调。
+- HTTP 的 Origin、权限和错误策略集中装配，schema／handler 随所属领域归位。部署导出和资产入口名称保持原样。
+- Conversation 提取消息存储、订阅、流读取、附件上下文、提交规则和恢复计划；Library 提取供应商存储与归档恢复步骤。DO 保留事务、Alarm、任务所有权和 RPC 协调，不增加持久化或网络层。
+- 测试按 unit／integration／e2e／pwa 分类，历史界面改版套件按功能拆分；测试 Worker 从 802 行混合实现改为入口、DO、控制路由和模拟上游。
+- 模型维护与本地／平台测量脚本各自归位，配置中的 Worker 入口、命令、生成输出路径和动态资源引用同步更新。文档分为 architecture／features／plans／measurements，README 提供导航。
+
+| 入口（含空行） | 基线 | 整理后 | 保留职责 |
+|---|---:|---:|---|
+| App | 1,011 | 561 | 当前页面、导航、分支与功能装配 |
+| Worker index | 447 | 12 | 部署导出与 fetch；http/app 为 47 行装配 |
+| Conversation DO | 1,103 | 961 | 原子操作、生命周期、Alarm、任务协调 |
+| Library DO | 591 | 389 | 索引、RPC、维护与既有功能实例协调 |
+| 设置窗口 | 362 | 100 | Tab／窗口与唯一自动保存实例；编辑器另归 providers |
+| 测试 Worker 入口 | 802 | 8 | 装配测试 DO、控制路由与模拟上游 |
+
+文件行数只是定位参考，不是验收指标。Conversation 的提交／修订／完成／取消／工具轮次仍在同一事务内编排，避免为继续缩短类而破坏原子性。现有架构边界见 [模块说明](../architecture/modules.md)。
+
+### 11.2 检查与测试去向
+
+- 新增 shared 的标准 Web Worker 独立检查，以及客户端单测、Node 单测、Cloudflare 测试入口和浏览器测试四种检查环境；均纳入根引用和 typecheck。
+- 修复新增检查发现的两个夹具类型缺口：显式 showReasoning、UTF-8 默认 ignoreBOM=false；未放宽断言、引入 any 或混合全部运行环境。
+- 单测递归发现且排序，零匹配失败。主 Playwright 明确包含 integration 与 e2e，PWA 继续使用生产构建和独立服务器。
+- 场景清单由 **316／286／3** 变为 **314／285／3**。只合并两个已有四协议等价覆盖的单测和一个被更完整导航场景覆盖的焦点用例；错误隐私断言单独保留。具体“原场景 → 保留位置／断言”见 [测试说明](../../tests/README.md)。
+- 基线完整主套件 284 通过、2 失败；失败为一次本地 Miniflare 请求错误和消息修改后的焦点断言。原文件重跑 3／3 通过，基线 PWA 3／3 通过。
+- 分阶段定向回归覆盖渲染／导航 21 项、HTTP／鉴权 16 项、客户端状态／设置 22 项，以及 DO／流式／备份 32 项。最后一组揭示了原有焦点时序问题，见下一节。
+- 最终八个配置的类型检查、314 项单测和生产构建通过；主套件清单为 285 项／43 个文件，PWA 为 3 项／3 个文件。
+- 完整主套件运行 25.2 分钟，280 项通过、5 项失败；均已定位为下节的测试路径或前置条件问题。产品源码在该全量执行后未再变更。修正后完整重跑 documents、pdf、management 三个受影响文件，**32／32 通过**；其余已通过场景不受这些测试修正影响。没有遗留未解决的失败。
+- 生产 PWA **3／3 通过**，验证离线对话导航、无 HTTP 缓存下的真实公式字体，以及 PDF Worker、中文 CMaps／字体。类型／单测、全量主套件与修正复验、PWA 共同完成验收；不将首次 `pnpm check` 记录成一次连续全绿的运行。
+- `git diff --check` 通过，最终代码没有新增跨环境引用、缺失静态依赖或运行时循环。
+
+### 11.3 调试中发现的既有焦点竞态
+
+HTTP 修订／删除成功可能早于 WebSocket 更新。弹窗关闭时将焦点交给即将被分支更新替换的旧按钮，会导致焦点丢失。给现有场景增加 250ms WebSocket 延迟后，在整理前的 `36e88f1` 源码副本中也能复现，确认不是目录迁移引入。
+
+修复使用明确的焦点意图，等目标消息可见／删除确认且弹窗关闭后再恢复焦点；用户输入、导航或其他弹窗会取消恢复，避免抢走当前操作。修改／删除的既有回归保留全部断言并加入该延迟条件，连续 5 次通过。修复以 `d90afe9` 单独提交。
+
+完整回归还发现测试迁移遗漏：口令 PDF 的 URL 与两处冷加载拦截仍使用旧路径。资源已随夹具归位并更新引用，隔离副本的 PDF 全套 11 项通过。解析取消场景曾在 SPA 提交前立即放行响应；现先确认目标草稿和取消状态，再释放挂起请求，保留清理和跨会话隔离断言，连续 30 次通过。以上测试修正独立提交为 `751b68d`。
+
+测试按功能排序后，还暴露删除同步场景的隐含前提：获取基线只读取第一页，前序累计超过 256 条删除标记时，多余旧记录混入新增 300 条的断言。现先读取到末页取得真正的最新游标；保留 256／44、去重与最终空页断言。在预置 600 条无关旧记录的隔离运行时中连续 5 次通过，生产 API 无需修改。
+
+### 11.4 依赖、动态入口与资源验证
+
+- 静态运行时图：182 个 src／worker／shared 模块、555 条边；未发现跨运行环境引用、缺失静态依赖或运行时循环。类型引用不作为运行时边；动态入口另外由构建与 PWA 验证。
+- 客户端、Worker、工具的 noUnused 检查通过；29 份 README／Markdown 的相对链接复查无失效目标。两份隔离平台验证配置均通过 `wrangler deploy --dry-run` 本地打包，未部署到 Cloudflare。三处相对于 import.meta.url 的文件入口均有有效目标，冷加载拦截已按实际 URL 更新。
+- 模型目录命令已用本地固定 JSON 在隔离源码副本中运行，输出是有效 TypeScript，包含正确的相对类型导入、快照导出和预期模型；未改写仓库快照，也未请求线上目录。
+- 同口径本地流式测量在整理前 `36e88f1` 与整理后 `e94a6fc` 分别运行：120 片、25ms 间隔、基础片长 200 字符，覆盖在线正文、在线思考、断开后的长回答。测量与增量同步／持久化一致性断言均通过，无真实模型调用。
+
+| 场景 | 检查点：前 → 后 | SQL 写入行：前 → 后 | 数据库字节：前 → 后 |
+|---|---:|---:|---:|
+| 在线正文 | 3 → 3 | 32 → 32 | 462,848 → 462,848 |
+| 在线思考 | 4 → 4 | 37 → 37 | 663,552 → 663,552 |
+| 断开后的长回答 | 7 → 7 | 52 → 52 | 1,015,808 → 1,015,808 |
+
+SQL 语句、读取行、检查点字节与广播帧数均相同；思考场景的事件／广播有效载荷相差 4 字节，耗时波动不足 20ms，未发现明显序列化或写入开销变化。原始报告见 [对照数据](../measurements/project-organization-stream.json)。这只是本地 claim-to-terminal 测量，不是 Cloudflare 账单、平台 CPU 或完整请求计量；排除 bootstrap、接受请求、Library、RPC、Alarm 与诊断报告持久化。
+
+### 11.5 提交边界
+
+| 提交 | 内容 |
+|---|---|
+| `36e88f1` | 类型化测试基础设施与递归单测入口 |
+| `fd5863d` | 已确认的无用代码与 UI 包装清理 |
+| `28e06c5` | shared 领域契约与纯逻辑拆分 |
+| `2b070a9` | 前端功能归位与渲染呈现提取 |
+| `d48e584` | Worker 领域路由与公共 HTTP 装配 |
+| `ca60961` | 前端状态所有权与供应商设置拆分 |
+| `f5be2eb` | DO 存储、订阅、生成和恢复职责提取 |
+| `d90afe9` | 原有异步消息更新焦点竞态修复 |
+| `b5f2bb7` | 附件准备与会话索引状态提取、格式收尾 |
+| `e94a6fc` | 测试／夹具／脚本按职责归位与重复断言收敛 |
+| `751b68d` | PDF 资源路径与解析取消测试同步修正 |
+| `33d7791` | 删除分页断言读取完整既有游标，消除测试排序依赖 |

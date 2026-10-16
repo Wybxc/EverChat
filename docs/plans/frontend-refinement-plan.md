@@ -26,7 +26,7 @@ Impeccable 的本地 launcher 未安装，本次未运行其 context 或 detecto
 
 使用者是反复阅读、输入、检索和整理私人 AI 对话的个人用户，使用环境包括桌面浏览器、手机和 PWA。主任务是选择模型、发送消息、阅读回答并继续对话。
 
-当前风格来自 [主界面](../src/App.tsx)、[样式](../src/style.css)、[主题管理](../src/theme.ts)：中性色背景、DaisyUI 主题、系统中文字体、Lucide 线性图标、圆角输入框和用户消息、开放排版的助手回答。主色用于发送和当前选择。优化继续沿用这些特征。
+当前风格来自 [主界面](../../src/app/App.tsx)、[样式](../../src/style.css)、[主题管理](../../src/platform/theme.ts)：中性色背景、DaisyUI 主题、系统中文字体、Lucide 线性图标、圆角输入框和用户消息、开放排版的助手回答。主色用于发送和当前选择。优化继续沿用这些特征。
 
 已经具备且应保留的基础：
 
@@ -36,7 +36,7 @@ Impeccable 的本地 launcher 未安装，本次未运行其 context 或 detecto
 - 对话 URL、草稿隔离、前进后退、搜索定位、离线恢复、自动保存及私有附件已经可用。
 - 用户主动开启新对话后聚焦输入框；搜索、确认操作等具有各自的焦点规则。
 
-界面精简不改变这些数据和行为语义。已有功能清单和验收基线见 [实施与验收核对](implementation-audit.md)。原型阶段可以直接调整前端组件结构，无须保留旧布局或提供兼容层。
+界面精简不改变这些数据和行为语义。已有功能清单和验收基线见 [实施与验收核对](../architecture/implementation-audit.md)。原型阶段可以直接调整前端组件结构，无须保留旧布局或提供兼容层。
 
 ## 3. 现状检查与优先问题
 
@@ -228,10 +228,10 @@ Tab 不允许压缩成半个字；空间不足时横向滚动，当前分类和�
 
 | 检查点 | 交付 | 主要文件 | 完成条件 |
 |---|---|---|---|
-| A：视口与交互基础 | 统一容器收缩、焦点样式、安全区域、侧栏焦点；建立必要的空间与控件规范 | `src/App.tsx`、`src/style.css`、`src/theme.ts`、`index.html` | 屏外侧栏不可聚焦；输入可见焦点；已有底部跟随和设置关闭按钮行为保留 |
-| B：导航与输入框 | 合并会话菜单、统一设置入口、精简输入工具和上下文展示 | `src/App.tsx`、`src/ConversationActions.tsx`、`src/ContextEstimate.tsx`、附件预览组件 | 320px 基准尺寸达标；长标题、长模型名不挤坏布局；每项原功能均有可达入口 |
-| C：消息阅读与操作 | 精简消息操作、分支状态、生成信息、思考与工具容器 | `src/App.tsx`、`src/GenerationMetadata.tsx`、`src/ToolActivity.tsx` | 常用操作可直接使用，其余菜单可达；思考可见、可折叠、流式 Markdown 与搜索定位正常 |
-| D：设置与模型列表 | 小屏主从切换、紧凑模型行、按需编辑、统一保存反馈 | `src/ProviderSettings.tsx`、`src/ModelMetadataFields.tsx`、`src/ConversationSettings.tsx`、`src/PromptPresets.tsx`、`src/WebToolSettings.tsx` | 五个分类、200 项模型边界、自动保存、密钥查看、错误重试和来源返回均可用 |
+| A：视口与交互基础 | 统一容器收缩、焦点样式、安全区域、侧栏焦点；建立必要的空间与控件规范 | `src/app/App.tsx`、`src/style.css`、`src/platform/theme.ts`、`index.html` | 屏外侧栏不可聚焦；输入可见焦点；已有底部跟随和设置关闭按钮行为保留 |
+| B：导航与输入框 | 合并会话菜单、统一设置入口、精简输入工具和上下文展示 | `src/app/App.tsx`、`src/features/chat/ConversationActions.tsx`、`src/features/chat/ContextEstimate.tsx`、附件预览组件 | 320px 基准尺寸达标；长标题、长模型名不挤坏布局；每项原功能均有可达入口 |
+| C：消息阅读与操作 | 精简消息操作、分支状态、生成信息、思考与工具容器 | `src/app/App.tsx`、`src/features/chat/GenerationMetadata.tsx`、`src/features/web-tools/ToolActivity.tsx` | 常用操作可直接使用，其余菜单可达；思考可见、可折叠、流式 Markdown 与搜索定位正常 |
+| D：设置与模型列表 | 小屏主从切换、紧凑模型行、按需编辑、统一保存反馈 | `src/app/SettingsPanel.tsx`、`src/features/providers/ModelMetadataFields.tsx`、`src/features/chat/ConversationSettings.tsx`、`src/features/presets/PromptPresets.tsx`、`src/features/web-tools/WebToolSettings.tsx` | 五个分类、200 项模型边界、自动保存、密钥查看、错误重试和来源返回均可用 |
 | E：视觉与整体验收 | 统一文字与边框强度、精简空状态，补齐回归与证据 | `tests/e2e/`、`tests/pwa/`、相关界面及文档 | 下方验收矩阵完成；记录浏览器、尺寸、真机结果和剩余限制 |
 
 结构复杂处可将 App 中的界面拆为 Sidebar、ChatHeader、ChatComposer、MessageActions 等职责明确的组件。拆分以减少界面耦合为限；不重写状态管理、自动保存、流式协议或服务端接口。

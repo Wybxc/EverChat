@@ -206,10 +206,10 @@ Markdown 的重复边框必须先检查 Streamdown 实际 DOM，确认由哪一�
 
 | 阶段 | 工作与涉及文件 | 完成条件 |
 |---|---|---|
-| A：边界、间距与单位 | `src/style.css`、`src/App.tsx`、`src/ProviderSettings.tsx`；先记录同场景截图，按第 3.3 节统一尺寸单位与间距，清理列表／表单重复边框 | 默认字号下视觉尺寸相当，增大字号后正常伸缩；输入与焦点对比度不退步；没有双边框接缝 |
-| B：消息与输入 | `src/App.tsx`、`src/MessageActions.tsx`；头像并入标题、消息留白与气泡收紧、单行自增高输入、导航收紧 | 阅读宽度和基准高度达到目标；流式、IME、草稿、发送和焦点回归通过 |
-| C：过程与摘要 | `src/ToolActivity.tsx`、App 中的思考／摘要、`src/GenerationMetadata.tsx` | 默认展开策略正确；错误只展示一份；搜索、手动折叠和滚动锚点稳定 |
-| D：紧凑设置 | `src/ProviderSettings.tsx`、`src/ModelMetadataFields.tsx`、`src/ConversationSettings.tsx`，检查预设与联网面板的一致间距 | 模型添加／能力及会话任务组按需展开；全部字段与自动保存行为保留 |
+| A：边界、间距与单位 | `src/style.css`、`src/app/App.tsx`、`src/app/SettingsPanel.tsx`；先记录同场景截图，按第 3.3 节统一尺寸单位与间距，清理列表／表单重复边框 | 默认字号下视觉尺寸相当，增大字号后正常伸缩；输入与焦点对比度不退步；没有双边框接缝 |
+| B：消息与输入 | `src/app/App.tsx`、`src/features/chat/MessageActions.tsx`；头像并入标题、消息留白与气泡收紧、单行自增高输入、导航收紧 | 阅读宽度和基准高度达到目标；流式、IME、草稿、发送和焦点回归通过 |
+| C：过程与摘要 | `src/features/web-tools/ToolActivity.tsx`、App 中的思考／摘要、`src/features/chat/GenerationMetadata.tsx` | 默认展开策略正确；错误只展示一份；搜索、手动折叠和滚动锚点稳定 |
+| D：紧凑设置 | `src/app/SettingsPanel.tsx`、`src/features/providers/ModelMetadataFields.tsx`、`src/features/chat/ConversationSettings.tsx`，检查预设与联网面板的一致间距 | 模型添加／能力及会话任务组按需展开；全部字段与自动保存行为保留 |
 | E：集中验收 | 现有前端、流式、供应商、搜索、焦点及 PWA 回归 | 完成下述矩阵，记录实测值与未测平台；有明确收益再实施 P2 多附件折叠 |
 
 按区域逐步修改，必要时提取消息标题、轻量折叠组或设置字段组；不为统一样式创建通用表单引擎，不改服务端协议和持久化架构。原型阶段直接更新结构，无需旧布局兼容层。本计划不包含自动提交 Git。

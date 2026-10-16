@@ -1,10 +1,10 @@
 # 模型元数据
 
-更新日期：2026-10-15。模型能力识别与开箱即用的目标和验收见[改进计划](model-capability-improvement-plan.md)。
+更新日期：2026-10-15。模型能力识别与开箱即用的目标和验收见[改进计划](../plans/model-capability-improvement-plan.md)。
 
 ## 数据和优先级
 
-客户端与云端共用 `shared/model-metadata.ts`，逐字段按「手动覆盖 → 供应商模型报告 → 已确认测试 → 本地核对条目 → 精确公共目录 → 别名推断 → 未识别」解析。`reportedMetadata` 保存原生报告，`directoryMetadata` 保存公共目录匹配结果和时间，`testedCapabilities` 仅保存确认成功的图片／工具证据，`metadataOverrides` 保存手动设置；思考能力沿用 `reasoningSupport`。设置界面显示来源和自动值，留空或选择「自动」恢复继承。「恢复自动」只清除手动能力覆盖，不清除测试证据，也不改变提示词、名称或启用状态。
+客户端与云端共用 `shared/models/metadata.ts`，逐字段按「手动覆盖 → 供应商模型报告 → 已确认测试 → 本地核对条目 → 精确公共目录 → 别名推断 → 未识别」解析。`reportedMetadata` 保存原生报告，`directoryMetadata` 保存公共目录匹配结果和时间，`testedCapabilities` 仅保存确认成功的图片／工具证据，`metadataOverrides` 保存手动设置；思考能力沿用 `reasoningSupport`。设置界面显示来源和自动值，留空或选择「自动」恢复继承。「恢复自动」只清除手动能力覆盖，不清除测试证据，也不改变提示词、名称或启用状态。
 
 元数据包括上下文窗口、窗口范围、模型最大输出、图片输入、客户端工具调用、JSON Schema 结构化输出、思考能力及可选思维强度。图片和联网入口共用能力判断：未知或别名推断允许用户主动尝试，明确的 false 阻止使用。结构化输出标记不等同于已经提供结构化生成界面。供应商对模式和参数组合的限制仍由执行适配检查。
 

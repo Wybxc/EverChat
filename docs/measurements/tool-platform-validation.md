@@ -4,9 +4,9 @@
 
 ## 隔离与观察边界
 
-- [独立配置](../wrangler.tool-validation.jsonc)仅用于 `everchat-tools-validation`，提供两个独立 SQLite DO 和 `everchat-tools-validation-flow`。不绑定 R2，未配置附件时聊天／工具仍能工作。使用生产 Workflow、供应商请求构造、AI SDK 续接和 Tavily 适配器，模型与工具 HTTP 响应由 fixture 模拟；其余外部供应商网络被禁用。
+- [独立配置](../../wrangler.tool-validation.jsonc)仅用于 `everchat-tools-validation`，提供两个独立 SQLite DO 和 `everchat-tools-validation-flow`。不绑定 R2，未配置附件时聊天／工具仍能工作。使用生产 Workflow、供应商请求构造、AI SDK 续接和 Tavily 适配器，模型与工具 HTTP 响应由 fixture 模拟；其余外部供应商网络被禁用。
 - `LOCAL_RESOURCE_METRICS=0`、`GENERATION_METRICS=0`。不使用本地计数代理或测量版 Workflow，不在模型生成期间轮询 Library。mock 工作负载独立配置：默认 120 段 × 200 UTF-16 码元、每段 25ms；`large` 为 120 × 750；`sustained` 为 120 × 200、每段 500ms。协议控制事件和两次 1.5 秒工具响应照常保留。
-- [执行器](../scripts/tool-platform-runner.ts)在发送密码或写设置前核对 Worker 类型、版本、随机 `VALIDATION_RUN_ID`、模拟上游和关闭的计数开关。远程仅接受专用 `workers.dev` 地址；本地模式只接受显式的 `127.0.0.1`。拒绝跟随 HTTP 重定向。
+- [执行器](../../scripts/measurements/support/tool-platform-runner.ts)在发送密码或写设置前核对 Worker 类型、版本、随机 `VALIDATION_RUN_ID`、模拟上游和关闭的计数开关。远程仅接受专用 `workers.dev` 地址；本地模式只接受显式的 `127.0.0.1`。拒绝跟随 HTTP 重定向。
 - `/api/__test/*` 在该入口返回 404。专用准备接口要求登录、同源、UUID 和两个固定模式，且仅允许未开始工具任务的对话；没有通用故障注入接口。
 - 公开 WebSocket 报告终态后，才每两秒查询只读终态接口。该接口直接 SELECT，不调用会过期／恢复任务的 `toolTaskState()`，不人工触发 Alarm；只返回状态、计数与 SQLite 分配。断开唯一订阅时，每五秒读公开快照，完成后重新订阅并比较最终结果。
 - 查询会产生真实请求，也可能唤醒对象并执行正常构造逻辑。因此报告保存查询次数，**不将本次观察方式当作自然休眠证明**。平台时间窗包含配置、fixture 记账 SQL、验证查询和其他设置活动；不能把平台 SQL 总量直接当作去除 fixture 后的产品净开销。
@@ -24,9 +24,9 @@ pnpm measure:tools-platform-local --suite sustained --port 5192 --output /tmp/ev
 
 | 报告 | 实际验证 |
 |---|---|
-| [functional：9 项](measurements/tools-platform-local-functional.json) | 四协议各两次模型／两次工具；首预览后断开唯一订阅及终态重连；四模型／六工具轮次上限；HTTP 401；初始模型期间取消；两对话共享仅剩一次的额度 |
-| [large：1 项](measurements/tools-platform-local-large.json) | Responses 完整 90,000 码元，约 10 秒，两次模型／两次工具 |
-| [sustained：1 项](measurements/tools-platform-local-sustained.json) | Responses 完整 24,000 码元，77.5 秒，两次模型／两次工具，期间没有 Library 诊断保活 |
+| [functional：9 项](tools-platform-local-functional.json) | 四协议各两次模型／两次工具；首预览后断开唯一订阅及终态重连；四模型／六工具轮次上限；HTTP 401；初始模型期间取消；两对话共享仅剩一次的额度 |
+| [large：1 项](tools-platform-local-large.json) | Responses 完整 90,000 码元，约 10 秒，两次模型／两次工具 |
+| [sustained：1 项](tools-platform-local-sustained.json) | Responses 完整 24,000 码元，77.5 秒，两次模型／两次工具，期间没有 Library 诊断保活 |
 
 11 项全部通过。每项重复接受同一请求而不增加调用，完成后 Workflow 结束、私有日志／续接／运行配置清空、通知／索引 outbox 归零，两个 DO 无待触发 Alarm。并发额度场景只发出一次实际工具 HTTP，两个任务都在耗尽额度后停止；取消场景只调用一次模型、零次工具。在线结果及断线终态回放与数据库快照相同，公开状态没有密钥或签名。
 
