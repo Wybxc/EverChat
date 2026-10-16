@@ -291,6 +291,21 @@
 .composer-region {
   padding-inline: max(1rem, env(safe-area-inset-left)) max(1rem, env(safe-area-inset-right));
 }
+.sidebar-row[data-current='true'] {
+  background: var(--sidebar-accent);
+  color: var(--sidebar-accent-foreground);
+}
+@media (hover: hover) and (pointer: fine) {
+  .sidebar-row .conversation-row-menu {
+    opacity: 0;
+    pointer-events: none;
+  }
+  .sidebar-row:is(:hover, :focus-within, [data-current='true']) .conversation-row-menu,
+  .sidebar-row .conversation-row-menu[aria-expanded='true'] {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
 .chat-composer {
   border-radius: 1.5rem;
   background: var(--composer);

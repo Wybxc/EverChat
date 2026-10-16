@@ -95,6 +95,7 @@ export function useLibraryIndex({
   };
   return {
     conversations,
+    savedIds: new Set((libraryQuery.data ?? []).map((item) => item.id)),
     libraryLoading: !conversations.length && libraryQuery.isLoading,
     libraryError: libraryQuery.isError ? '无法更新对话列表' : '',
     setLocalConversations,

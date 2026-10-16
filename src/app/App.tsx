@@ -17,7 +17,6 @@ import {
   Keyboard,
   Menu,
   Paperclip,
-  Pin,
   Search,
   SlidersHorizontal,
   Square,
@@ -93,6 +92,10 @@ import { useBranchScrollAnchor } from '../features/chat/useBranchScrollAnchor';
 import { useChatDraft } from '../features/chat/useChatDraft';
 import { useComposerSize } from '../features/chat/useComposerSize';
 import { useComposerLayout } from '../features/chat/useComposerLayout';
+import {
+  ConversationActionDialogs,
+  useConversationActions,
+} from '../features/chat/useConversationActions';
 import { useContextPreview } from '../features/chat/useContextPreview';
 import { useConversation } from '../features/chat/useConversation';
 import { useConversationBranches } from '../features/chat/useConversationBranches';
@@ -101,6 +104,7 @@ import { useOutbox } from '../features/chat/useOutbox';
 import { conversationGroup } from '../features/library/group-conversations';
 import { GlobalSearch } from '../features/library/GlobalSearch';
 import { Sidebar } from '../features/library/Sidebar';
+import { ConversationListItem } from '../features/library/ConversationListItem';
 import { useLibraryIndex } from '../features/library/useLibraryIndex';
 import { ModelPicker } from '../features/providers/ModelPicker';
 import {
@@ -285,6 +289,7 @@ export function App({
   };
   const {
     conversations,
+    savedIds,
     libraryLoading,
     libraryError,
     setLocalConversations,
@@ -1041,33 +1046,41 @@ export function App({
     });
     exportChatFile(selected, title, messages, format);
   };
-  const updateConversation = async (patch: {
-    title?: string;
-    pinned?: boolean;
-    archived?: boolean;
-  }) => {
-    if (!selected) return;
-    const result = await api<ConversationInfo>(`/conversations/${selected}`, 'PATCH', patch);
+  const updateConversation = async (
+    id: string,
+    patch: {
+      title?: string;
+      pinned?: boolean;
+      archived?: boolean;
+    },
+  ) => {
+    const epoch = storageEpoch();
+    const result = await api<ConversationInfo>(`/conversations/${id}`, 'PATCH', patch);
+    if (epoch !== storageEpoch()) return;
     queryClient.setQueryData<ConversationInfo[]>(['conversations'], (items) =>
       items?.map((item) => (item.id === result.id ? result : item)),
     );
     refreshLibrary();
   };
-  const deleteConversation = async () => {
-    if (!selected) return;
-    const id = selected,
-      result = await api<{ deletedAt: number }>(`/conversations/${id}`, 'DELETE');
+  const deleteConversation = async (id: string) => {
+    const epoch = storageEpoch();
+    const result = await api<{ deletedAt: number }>(`/conversations/${id}`, 'DELETE');
+    if (epoch !== storageEpoch()) return;
     rememberDeletion(id, result.deletedAt);
     if (selectedRef.current === id) select(null);
     refreshLibrary();
   };
-  const duplicateConversation = async (messageId?: string) => {
-    if (!selected) return;
-    const sourceId = selected,
-      version = branches.navigationVersion.current;
+  const duplicateConversation = async (sourceId: string, messageId?: string) => {
+    const origin = selectedRef.current,
+      version = branches.navigationVersion.current,
+      head =
+        messageId ??
+        (sourceId === origin
+          ? branches.head
+          : read<string | null>(`branch-view:${sourceId}`, null));
     const path = messageId ? `/messages/${messageId}/duplicate` : '/duplicate';
     const epoch = storageEpoch(),
-      key = `copy:${sourceId}:${messageId ?? branches.head ?? 'all'}`,
+      key = `copy:${sourceId}:${head ?? 'all'}`,
       requestId = read<string | null>(key, null) ?? crypto.randomUUID();
     write(key, requestId);
     let result: { id: string; viewHeadId: string | null };
@@ -1077,7 +1090,7 @@ export function App({
         'POST',
         {
           requestId,
-          ...((messageId ?? branches.head) ? { viewHeadId: messageId ?? branches.head } : {}),
+          ...(head ? { viewHeadId: head } : {}),
         },
       );
     } catch (error) {
@@ -1092,12 +1105,30 @@ export function App({
     if (epoch !== storageEpoch()) return;
     write(key, null);
     refreshLibrary();
-    if (selectedRef.current === sourceId && branches.navigationVersion.current === version) {
+    if (selectedRef.current === origin && branches.navigationVersion.current === version) {
       branches.navigationVersion.current++;
       setEditorFocusTarget({ id: result.id });
       navigate(result.id, false, result.viewHeadId);
     }
   };
+
+  const conversationActions = useConversationActions({
+    enabled: Boolean(session?.authenticated),
+    update: updateConversation,
+    remove: deleteConversation,
+    duplicate: duplicateConversation,
+    copyLink: async (id) => {
+      const head = id === selected ? branches.head : read<string | null>(`branch-view:${id}`, null);
+      await navigator.clipboard.writeText(`${location.origin}${conversationUrl(id, head)}`);
+    },
+    beforeDialog: () => setSidebarOpen(false),
+    restoreFocus: () => {
+      const target = !desktop
+        ? mobileSidebarTrigger.current
+        : (document.querySelector<HTMLElement>('[data-conversation-row] a') ?? editor.current);
+      target?.focus({ preventScroll: true });
+    },
+  });
 
   const closeSettings = () => {
     setSettingsOpen(false);
@@ -1182,7 +1213,7 @@ export function App({
               </Tabs>
               <ul className="w-full space-y-0.5 p-0 text-sm">
                 {visibleConversations.map((item, index) => (
-                  <li key={item.id}>
+                  <li key={item.id} data-conversation-row={item.id}>
                     {(!index ||
                       conversationGroup(item) !==
                         conversationGroup(visibleConversations[index - 1])) && (
@@ -1190,39 +1221,15 @@ export function App({
                         {conversationGroup(item)}
                       </h2>
                     )}
-                    <a
-                      href={conversationUrl(item.id)}
-                      onClick={(event) => {
-                        if (
-                          event.button !== 0 ||
-                          event.metaKey ||
-                          event.ctrlKey ||
-                          event.shiftKey ||
-                          event.altKey
-                        )
-                          return;
-                        event.preventDefault();
-                        select(item.id);
-                      }}
-                      aria-current={item.id === selected ? 'page' : undefined}
-                      aria-description={
-                        [
-                          item.pinned ? '已置顶' : '',
-                          pending.some((p) => p.conversation.id === item.id) ? '有待发送消息' : '',
-                        ]
-                          .filter(Boolean)
-                          .join('，') || undefined
-                      }
-                      className="sidebar-link min-w-0 font-normal"
-                    >
-                      <span className="truncate">{item.title}</span>
-                      {item.pinned && (
-                        <Pin aria-hidden="true" className="shrink-0 h-[0.75rem] w-[0.75rem]" />
-                      )}
-                      {pending.some((p) => p.conversation.id === item.id) && (
-                        <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />
-                      )}
-                    </a>
+                    <ConversationListItem
+                      conversation={item}
+                      selected={item.id === selected}
+                      pending={pending.find((p) => p.conversation.id === item.id)}
+                      saved={savedIds.has(item.id)}
+                      disabled={!navigator.onLine || !session.authenticated}
+                      actions={conversationActions}
+                      select={() => select(item.id)}
+                    />
                   </li>
                 ))}
               </ul>
@@ -1330,10 +1337,8 @@ export function App({
               <ConversationActions
                 key={selected ?? 'new'}
                 conversation={currentConversation}
-                disabled={connection === 'offline'}
-                update={updateConversation}
-                remove={deleteConversation}
-                duplicate={duplicateConversation}
+                disabled={!navigator.onLine || !session.authenticated}
+                actions={conversationActions}
                 exports={
                   <>
                     <ActionMenuItem
@@ -1483,7 +1488,9 @@ export function App({
                         canFork={Boolean(
                           selected && connection !== 'offline' && !syncError && !loading,
                         )}
-                        onFork={() => duplicateConversation(message.id)}
+                        onFork={() =>
+                          selected ? duplicateConversation(selected, message.id) : Promise.resolve()
+                        }
                       />
                       {branchSummaries.some(
                         (summary) => summary.summary!.throughId === message.id,
@@ -1543,7 +1550,7 @@ export function App({
                       </p>
                       <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
                         <CloudOff className="h-[0.75rem] w-[0.75rem]" />
-                        {currentPending.error ? '发送失败' : '等待发送'}
+                        <span>{currentPending.error ? '发送失败' : '等待发送'}</span>
                         {currentPending.modelLabel && <span>{currentPending.modelLabel}</span>}
                       </div>
                       {currentPending.error && (
@@ -1940,6 +1947,10 @@ export function App({
           </div>
         </div>
       </AppFrame>
+      <ConversationActionDialogs
+        actions={conversationActions}
+        disabled={!navigator.onLine || !session.authenticated}
+      />
       {globalSearchOpen && (
         <GlobalSearch
           conversations={conversations}

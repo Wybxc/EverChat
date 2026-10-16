@@ -1,15 +1,10 @@
-import { Modal, ModalTitle } from '../../components/Modal';
-import { ActionMenuLabel, ActionMenuSeparator } from '../../components/ActionMenu';
-import { ActionMenuItem } from '../../components/ActionMenu';
-import { Input } from '@/components/ui/input';
-import { Alert } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
-import { Spinner } from '@/components/ui/spinner';
-import { useId, useRef, useState, type ReactNode, type SubmitEvent } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   Archive,
   ArchiveRestore,
+  Check,
   Copy,
+  Link,
   MoreHorizontal,
   Pencil,
   Pin,
@@ -17,183 +12,138 @@ import {
   Trash2,
 } from 'lucide-react';
 import type { ConversationInfo } from '../../../shared/conversation/types';
-import { ActionMenu } from '../../components/ActionMenu';
+import {
+  ActionMenu,
+  ActionMenuItem,
+  ActionMenuLabel,
+  ActionMenuSeparator,
+} from '../../components/ActionMenu';
+import type { ConversationActionController } from './useConversationActions';
 
 export function ConversationActions({
   conversation,
   disabled,
-  update,
-  remove,
-  duplicate,
+  actions,
   children,
   exports,
+  label = '更多会话操作',
+  className,
 }: {
   conversation?: ConversationInfo;
   disabled: boolean;
-  children: ReactNode;
-  exports: ReactNode;
-  update: (patch: { title?: string; pinned?: boolean; archived?: boolean }) => Promise<void>;
-  remove: () => Promise<void>;
-  duplicate: () => Promise<void>;
+  actions: ConversationActionController;
+  children?: ReactNode;
+  exports?: ReactNode;
+  label?: string;
+  className?: string;
 }) {
-  const menuId = useId();
-  const [menuOpen, setMenuOpen] = useState(false);
-  const titleInput = useRef<HTMLInputElement>(null),
-    cancelButton = useRef<HTMLButtonElement>(null);
-  const [mode, setMode] = useState<'rename' | 'delete' | null>(null);
-  const [title, setTitle] = useState(conversation?.title ?? ''),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState('');
-  const open = (next: 'rename' | 'delete') => {
-    setMenuOpen(false);
+  const [menuOpen, setMenuOpen] = useState(false),
+    [error, setError] = useState(''),
+    [copied, setCopied] = useState(false);
+  const busy = Boolean(conversation && actions.busy.has(conversation.id));
+  const perform = async (action: () => Promise<void>, cloud = true) => {
+    if (!conversation || (cloud && busy)) return;
     setError('');
-    setTitle(conversation?.title ?? '');
-    setMode(next);
-  };
-  const perform = async (action: () => Promise<void>) => {
-    if (busy) return;
-    setMenuOpen(false);
-    setError('');
-    setBusy(true);
     try {
-      await action();
-      setMode(null);
+      if (cloud) await actions.perform(conversation.id, action);
+      else await action();
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : '修改失败，请重试。');
-      if (!mode) setMenuOpen(true);
-    } finally {
-      setBusy(false);
+      setMenuOpen(true);
     }
   };
-  const submit = (event: SubmitEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (mode === 'rename' && title.trim()) void perform(() => update({ title: title.trim() }));
-    if (mode === 'delete') void perform(remove);
-  };
   return (
-    <>
-      <ActionMenu
-        label="更多会话操作"
-        icon={<MoreHorizontal className="h-[1.1875rem] w-[1.1875rem]" />}
-        open={menuOpen}
-        onOpenChange={setMenuOpen}
-      >
-        {children}
-        {conversation && (
-          <>
-            <ActionMenuLabel>整理</ActionMenuLabel>
-            <ActionMenuItem disabled={disabled || busy} onSelect={() => open('rename')}>
-              <Pencil className="h-[0.9375rem] w-[0.9375rem]" />
-              重命名
-            </ActionMenuItem>
-            <ActionMenuItem
-              disabled={disabled || busy}
-              onSelect={() => void perform(() => update({ pinned: !conversation.pinned }))}
-            >
-              {conversation.pinned ? (
-                <PinOff className="h-[0.9375rem] w-[0.9375rem]" />
-              ) : (
-                <Pin className="h-[0.9375rem] w-[0.9375rem]" />
-              )}
-              {conversation.pinned ? '取消置顶' : '置顶'}
-            </ActionMenuItem>
-            <ActionMenuLabel>复用</ActionMenuLabel>
-            <ActionMenuItem disabled={disabled || busy} onSelect={() => void perform(duplicate)}>
-              <Copy className="h-[0.9375rem] w-[0.9375rem]" />
-              复制对话
-            </ActionMenuItem>
-          </>
-        )}
-        <ActionMenuLabel>导出</ActionMenuLabel>
-        {exports}
-        {conversation && (
-          <>
-            <ActionMenuSeparator />
-            <ActionMenuItem
-              disabled={disabled || busy}
-              onSelect={() => void perform(() => update({ archived: !conversation.archived }))}
-            >
-              {conversation.archived ? (
-                <ArchiveRestore className="size-4" />
-              ) : (
-                <Archive className="size-4" />
-              )}
-              {conversation.archived ? '取消归档' : '归档'}
-            </ActionMenuItem>
-            <ActionMenuSeparator />
-            <ActionMenuItem disabled={disabled || busy} onSelect={() => open('delete')}>
-              <Trash2 className="h-[0.9375rem] w-[0.9375rem]" />
-              删除对话
-            </ActionMenuItem>
-          </>
-        )}
-        {error && !mode && (
-          <div>
-            <span role="alert" className="whitespace-normal text-xs">
-              {error}
-            </span>
-          </div>
-        )}
-      </ActionMenu>
-      <Modal
-        open={Boolean(mode)}
-        onOpenChange={(next) => {
-          if (!next) setMode(null);
-        }}
-        alert={mode === 'delete'}
-        busy={busy}
-        initialFocus={mode === 'rename' ? titleInput : cancelButton}
-        aria-labelledby={`${menuId}-title`}
-      >
-        <div className="w-full max-w-md p-5">
-          <ModalTitle id={`${menuId}-title`} className="text-lg font-semibold">
-            {mode === 'delete' ? '删除对话' : '重命名'}
-          </ModalTitle>
-          <form onSubmit={submit}>
-            {mode === 'rename' ? (
-              <label className="mt-5 block text-sm">
-                对话名称
-                <Input
-                  ref={titleInput}
-                  className="mt-2 w-full"
-                  required
-                  maxLength={80}
-                  value={title}
-                  onChange={(event) => setTitle(event.target.value)}
-                  disabled={busy}
-                />
-              </label>
+    <ActionMenu
+      label={label}
+      icon={<MoreHorizontal className="size-[1.1875rem]" />}
+      className={className}
+      open={menuOpen}
+      onOpenChange={(next) => {
+        setMenuOpen(next);
+        if (next) setCopied(false);
+      }}
+    >
+      {children}
+      {conversation && (
+        <>
+          <ActionMenuLabel>整理</ActionMenuLabel>
+          <ActionMenuItem
+            disabled={disabled || busy}
+            onSelect={() => actions.open('rename', conversation)}
+          >
+            <Pencil className="size-4" />
+            重命名
+          </ActionMenuItem>
+          <ActionMenuItem
+            disabled={disabled || busy}
+            onSelect={() =>
+              void perform(() => actions.update(conversation.id, { pinned: !conversation.pinned }))
+            }
+          >
+            {conversation.pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
+            {conversation.pinned ? '取消置顶' : '置顶'}
+          </ActionMenuItem>
+          <ActionMenuLabel>复用</ActionMenuLabel>
+          <ActionMenuItem
+            keepOpen
+            onSelect={() =>
+              void perform(async () => {
+                await actions.copyLink(conversation.id);
+                setCopied(true);
+              }, false)
+            }
+          >
+            {copied ? <Check className="size-4" /> : <Link className="size-4" />}
+            {copied ? '链接已复制' : '复制链接'}
+          </ActionMenuItem>
+          <ActionMenuItem
+            disabled={disabled || busy}
+            onSelect={() => void perform(() => actions.duplicate(conversation.id))}
+          >
+            <Copy className="size-4" />
+            复制对话
+          </ActionMenuItem>
+        </>
+      )}
+      {exports && (
+        <>
+          <ActionMenuLabel>导出</ActionMenuLabel>
+          {exports}
+        </>
+      )}
+      {conversation && (
+        <>
+          <ActionMenuSeparator />
+          <ActionMenuItem
+            disabled={disabled || busy}
+            onSelect={() =>
+              void perform(() =>
+                actions.update(conversation.id, { archived: !conversation.archived }),
+              )
+            }
+          >
+            {conversation.archived ? (
+              <ArchiveRestore className="size-4" />
             ) : (
-              <p className="mt-4 break-words text-sm leading-6">
-                删除“{conversation?.title}”后无法恢复，正在生成的回答也会停止。
-              </p>
+              <Archive className="size-4" />
             )}
-            {error && (
-              <Alert variant="destructive" role="alert" className="mt-4 text-sm">
-                {error}
-              </Alert>
-            )}
-            <div className="dialog-actions">
-              <Button
-                variant="secondary"
-                ref={cancelButton}
-                type="button"
-                onClick={() => setMode(null)}
-                disabled={busy}
-              >
-                取消
-              </Button>
-              <Button
-                variant={mode === 'delete' ? 'destructive' : 'default'}
-                type="submit"
-                disabled={disabled || busy || (mode === 'rename' && !title.trim())}
-              >
-                {busy ? <Spinner /> : mode === 'delete' ? '删除' : '保存'}
-              </Button>
-            </div>
-          </form>
+            {conversation.archived ? '取消归档' : '归档'}
+          </ActionMenuItem>
+          <ActionMenuSeparator />
+          <ActionMenuItem
+            disabled={disabled || busy}
+            onSelect={() => actions.open('delete', conversation)}
+          >
+            <Trash2 className="size-4" />
+            删除对话
+          </ActionMenuItem>
+        </>
+      )}
+      {error && (
+        <div role="alert" className="px-2 py-1 text-xs">
+          {error}
         </div>
-      </Modal>
-    </>
+      )}
+    </ActionMenu>
   );
 }
