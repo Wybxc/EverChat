@@ -79,7 +79,7 @@ test('malformed, textless, oversized-page and oversized-text PDFs preserve the d
     await login(page, fixture.id); const editor = page.getByRole('textbox', { name: '消息', exact: true }); await editor.fill('保留草稿');
     for (const [bytes, error] of [[textPdf(undefined, { malformed: true }), '无法读取'], [textPdf(undefined, { blank: true }), '没有可提取'],
       [textPdf(Array.from({ length: 51 }, () => ['page'])), '50 页'], [textPdf([['a'.repeat(65000)]], { fontSize: 0.01 }), '64,000'],
-      [readFileSync(new URL('../fixtures/password.pdf', import.meta.url)), '口令']] as const) {
+      [readFileSync(new URL('../../support/assets/password.pdf', import.meta.url)), '口令']] as const) {
       await page.getByLabel('选择聊天文件').setInputFiles({ name: 'rejected.pdf', mimeType: 'application/pdf', buffer: bytes });
       await expect(page.getByRole('alert')).toContainText(error); await expect(editor).toHaveValue('保留草稿');
       expect((await fixture.snapshot()).messages).toHaveLength(0); expect((await (await request.get(`/api/conversations/${fixture.id}/attachments`)).json())).toEqual([]);
@@ -107,7 +107,7 @@ for (const stage of ['module', 'worker'] as const) test(`stalled PDF ${stage} lo
   try {
     await login(page, fixture.id); await page.clock.install(); let waiting = false;
     const wait = new Promise<void>((resolve) => { release = resolve; });
-    await page.route(stage === 'module' ? '**/src/chat-pdf.ts*' : '**/pdf.worker.min.mjs*', async (route) => {
+    await page.route(stage === 'module' ? '**/src/features/attachments/chat-pdf.ts*' : '**/pdf.worker.min.mjs*', async (route) => {
       if (stage === 'worker' && new URL(route.request().url()).searchParams.has('url')) return route.continue();
       waiting = true; await wait; await route.continue().catch(() => {});
     });
@@ -137,7 +137,7 @@ test('cancelling a cold PDF module load releases the composer and keeps the dest
   try {
     await login(page, fixture.id); let waiting = false;
     const wait = new Promise<void>((resolve) => { release = resolve; });
-    await page.route('**/src/chat-pdf.ts*', async (route) => { waiting = true; await wait; await route.continue().catch(() => {}); });
+    await page.route('**/src/features/attachments/chat-pdf.ts*', async (route) => { waiting = true; await wait; await route.continue().catch(() => {}); });
     await page.getByRole('textbox', { name: '消息', exact: true }).fill('来源草稿');
     await page.getByLabel('选择聊天文件').setInputFiles({ name: 'cancel.pdf', mimeType: 'application/pdf', buffer: textPdf() });
     await expect.poll(() => waiting).toBe(true);

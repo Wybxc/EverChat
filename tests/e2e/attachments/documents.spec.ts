@@ -219,7 +219,9 @@ test('switching conversations cancels a pending parse and cleans its files witho
     await page.getByLabel('选择聊天文件').setInputFiles({ name: 'cancel.txt', mimeType: 'text/plain', buffer: Buffer.from(text) });
     await expect.poll(() => fileId).not.toBe('');
     await page.evaluate((id) => { history.pushState(null, '', `/c/${id}`); dispatchEvent(new PopStateEvent('popstate')); }, other.id);
-    release(); await expect(page.getByRole('textbox', { name: '消息', exact: true })).toHaveValue('');
+    await expect(page.getByRole('textbox', { name: '消息', exact: true })).toHaveValue('');
+    await expect(page.getByRole('button', { name: '取消上传', exact: true })).not.toBeVisible();
+    release();
     await expect(page.getByRole('button', { name: '预览 cancel.txt' })).not.toBeVisible();
     await expect.poll(async () => (await request.get(attachmentUrl(fixture.id, fileId))).status()).toBe(404);
     expect((await fixture.snapshot()).messages).toHaveLength(0); expect((await other.snapshot()).messages).toHaveLength(0);
