@@ -76,6 +76,41 @@ export function installMockUpstream() {
     };
     const encoder = new TextEncoder();
     const modelId = requestBody.model ?? /\/models\/([^/:]+):/.exec(url.pathname)?.[1];
+    if (modelId === 'diagnostic-http')
+      return Response.json(
+        {
+          error: {
+            code: 'invalid_api_key',
+            type: 'authentication_error',
+            message: 'Invalid integration-test-key. request: {"messages":["private question"]}',
+          },
+        },
+        {
+          status: 401,
+          headers: { 'x-request-id': 'req-diagnostic-http' },
+        },
+      );
+    if (modelId === 'diagnostic-stream') {
+      const protocol: ProviderKind = url.pathname.endsWith('/responses')
+        ? 'openai-responses'
+        : url.pathname.endsWith('/messages')
+          ? 'anthropic'
+          : url.pathname.includes(':streamGenerateContent')
+            ? 'gemini'
+            : 'openai-chat';
+      return new Response(
+        providerStreams[protocol].partial +
+          `data: ${JSON.stringify({
+            type: 'error',
+            error: {
+              code: 'overloaded_error',
+              message: 'Temporarily overloaded integration-test-key private question',
+            },
+          })}\n\n` +
+          providerStreams[protocol].finish,
+        { headers: { 'Content-Type': 'text/event-stream' } },
+      );
+    }
     if (modelId?.startsWith('probe-') && !(requestBody as { stream?: boolean }).stream) {
       const serialized = JSON.stringify(requestBody),
         challenge = /[A-F0-9]{6}/.exec(serialized)?.[0] ?? 'missing';

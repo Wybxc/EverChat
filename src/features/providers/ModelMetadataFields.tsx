@@ -25,6 +25,7 @@ import {
   probeReasonLabels,
   type ModelProbeResult,
 } from '../../../shared/models/probe';
+import { ProviderFailureView } from './ProviderFailureView';
 
 function TokenLimitInput({
   label,
@@ -167,9 +168,19 @@ export function ModelMetadataFields({
             className="space-y-1 text-xs"
           >
             {results.map((result) => (
-              <p key={result.capability}>
-                {probeCapabilityLabels[result.capability]}：{probeReasonLabels[result.reason]}
-              </p>
+              <div key={result.capability}>
+                <p>
+                  {probeCapabilityLabels[result.capability]}：{probeReasonLabels[result.reason]}
+                </p>
+                {result.failure && (
+                  <ProviderFailureView
+                    summary={`${probeCapabilityLabels[result.capability]}测试失败`}
+                    failure={result.failure}
+                    stateKey={`probe:${result.capability}:${result.testedAt}`}
+                    showSummary={false}
+                  />
+                )}
+              </div>
             ))}
           </div>
         )}

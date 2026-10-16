@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import { providerFailureSchema } from '../providers/failure';
 
 export const probeCapabilities = ['text', 'imageInput', 'toolCalls'] as const;
 export type ProbeCapability = (typeof probeCapabilities)[number];
@@ -16,6 +17,7 @@ export const modelProbeResultSchema = v.strictObject({
   status: v.picklist(['confirmed', 'unconfirmed']),
   reason: v.picklist(['matched', 'mismatch', 'request-failed', 'timeout', 'response-too-large']),
   testedAt: v.pipe(v.number(), v.integer(), v.minValue(1)),
+  failure: v.optional(providerFailureSchema),
 });
 export type ModelProbeResult = v.InferOutput<typeof modelProbeResultSchema>;
 export const probeReasonLabels: Record<ModelProbeResult['reason'], string> = {

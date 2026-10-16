@@ -23,7 +23,9 @@ import type {
 } from '../../../shared/providers/types';
 import { Disclosure, DisclosureScope } from '../../components/Disclosure';
 import { Modal, ModalTitle } from '../../components/Modal';
-import { api } from '../../platform/api';
+import { api, ApiError } from '../../platform/api';
+import type { ProviderFailure } from '../../../shared/providers/failure';
+import { ProviderFailureView } from './ProviderFailureView';
 import { loadModelCatalog } from './model-catalog';
 import { SettingsAutosave } from './settings-autosave';
 
@@ -55,11 +57,13 @@ export function ProviderEditor({
   settings,
   open,
   active,
+  requestedProviderId,
 }: {
   store: SettingsAutosave;
   settings: ProviderSettings;
   open: boolean;
   active: boolean;
+  requestedProviderId?: string;
 }) {
   const queryClient = useQueryClient();
   const catalogIdentity = JSON.stringify(
@@ -107,7 +111,23 @@ export function ProviderEditor({
     providerNameInput = useRef<HTMLInputElement>(null);
   const [fetchingId, setFetchingId] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
+  const [noticeFailure, setNoticeFailure] = useState<{
+    providerId: string;
+    summary: string;
+    failure: ProviderFailure;
+  } | null>(null);
   const [mobileDetail, setMobileDetail] = useState(false);
+  useEffect(() => {
+    if (
+      open &&
+      active &&
+      requestedProviderId &&
+      settings.providers.some((profile) => profile.id === requestedProviderId)
+    ) {
+      setSelectedId(requestedProviderId);
+      setMobileDetail(true);
+    }
+  }, [open, active, requestedProviderId]);
   const [editingModel, setEditingModel] = useState<number | null>(null);
   const [testing, setTesting] = useState(false),
     [testResults, setTestResults] = useState<ModelProbeResult[]>([]),
@@ -284,6 +304,7 @@ export function ProviderEditor({
     if (!selected) return;
     const target = selected;
     setNotice('');
+    setNoticeFailure(null);
     setFetchingId(target.id);
     try {
       await store.flush();
@@ -315,7 +336,9 @@ export function ProviderEditor({
       await store.flush();
       setNotice(`已获取 ${result.models.length} 个模型`);
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : '获取失败');
+      if (error instanceof ApiError && error.failure)
+        setNoticeFailure({ providerId: target.id, summary: error.message, failure: error.failure });
+      else setNotice(error instanceof Error ? error.message : '获取失败');
     } finally {
       setFetchingId(null);
     }
@@ -838,6 +861,13 @@ export function ProviderEditor({
           <p role="status" className="mt-4 text-sm">
             {notice}
           </p>
+        )}
+        {noticeFailure?.providerId === selectedId && (
+          <ProviderFailureView
+            summary={noticeFailure.summary}
+            failure={noticeFailure.failure}
+            stateKey={`discovery:${selectedId}`}
+          />
         )}
         <Modal
           alert

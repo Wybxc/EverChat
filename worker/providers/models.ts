@@ -2,11 +2,23 @@ import type { DiscoveredModel, ModelMetadata } from '../../shared/models/types';
 import type { ProviderModelConfig } from '../../shared/providers/types';
 import { normalizeBaseUrl } from './config';
 import { MAX_MODEL_TOKENS, reasoningEfforts } from '../../shared/models/metadata';
+import { httpProviderError, providerFailure } from './failure';
+import type { ProviderFailure } from '../../shared/providers/failure';
+
+const diagnosticConfig = (profile: ProviderModelConfig) => ({
+  ...profile,
+  providerId: profile.id,
+  providerName: profile.name,
+  model: '',
+  systemPrompt: '',
+  maxOutputTokens: null,
+});
 
 export class ProviderModelError extends Error {
   constructor(
     message: string,
     public status = 400,
+    readonly details?: ProviderFailure,
   ) {
     super(message);
   }
@@ -35,13 +47,16 @@ async function fetchPage(profile: ProviderModelConfig, url: URL): Promise<Record
       signal: AbortSignal.timeout(20_000),
     });
   } catch {
-    throw new ProviderModelError('无法连接供应商，请检查 API 地址和网络。', 502);
-  }
-  if (!response.ok)
     throw new ProviderModelError(
-      `供应商返回 HTTP ${response.status}，请检查密钥和权限。`,
-      response.status >= 500 ? 502 : response.status,
+      '无法连接供应商，请检查 API 地址和网络。',
+      502,
+      providerFailure(diagnosticConfig(profile), 'connect'),
     );
+  }
+  if (!response.ok) {
+    const error = await httpProviderError(response, diagnosticConfig(profile));
+    throw new ProviderModelError(error.message, 502, error.details);
+  }
   try {
     const data: unknown = await response.json();
     if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error();

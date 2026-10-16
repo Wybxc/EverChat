@@ -88,6 +88,8 @@ import { planSubmissionParent } from './submission-plan';
 import { createHash } from 'node:crypto';
 import { ImageContextError, type ImagePart } from '../../shared/attachments/images';
 import { addGenerationUsage } from '../../shared/streaming/generation';
+import type { ProviderFailure } from '../../shared/providers/failure';
+import { providerFailure } from '../providers/failure';
 import type { WebToolServiceConfig } from '../../shared/web-tools/service';
 import {
   assertWebToolSupport,
@@ -1562,6 +1564,19 @@ export class Conversation extends DurableObject<Env> {
             : failure instanceof ProviderError || failure instanceof StreamParseError
               ? failure.message
               : '生成中断或无法保存尾部。已保留最近检查点，请主动重新生成。',
+        undefined,
+        cancelled
+          ? undefined
+          : failure instanceof ProviderError && failure.details
+            ? failure.details
+            : providerFailure(
+                claim.config,
+                failure instanceof StreamParseError ? 'protocol' : 'stream',
+                failure instanceof ProviderError || failure instanceof StreamParseError
+                  ? failure.message
+                  : undefined,
+                { secrets: claim.context.map((message) => message.content) },
+              ),
       );
     } finally {
       if (active.timer) clearInterval(active.timer);
@@ -1644,6 +1659,7 @@ export class Conversation extends DurableObject<Env> {
     status: 'completed' | 'failed' | 'cancelled',
     error: string | null = null,
     toolTurn?: ProviderToolTurn,
+    failureDetails?: ProviderFailure,
   ) {
     if (this.deletedAt) return;
     const run = this.run(runId);
@@ -1773,6 +1789,14 @@ export class Conversation extends DurableObject<Env> {
         );
       if (message.streamVersion === STREAM_VERSION) this.journal.compact(message);
       if (toolRequest) this.privateToolStreams.purge(runId);
+      if (finalStatus === 'failed') {
+        message.generation!.failure =
+          failureDetails ??
+          providerFailure(
+            run.config ? (JSON.parse(run.config) as ProviderConfig) : undefined,
+            toolModel || toolRequest ? 'tool' : 'protocol',
+          );
+      }
       this.query(
         'INSERT INTO message_generations (messageId, payload) VALUES (?, ?) ON CONFLICT(messageId) DO UPDATE SET payload = excluded.payload',
         message.id,

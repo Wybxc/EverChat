@@ -10,6 +10,8 @@
 
 慢连接下保持导航、设置和已加载内容稳定的实现与验收记录见[界面加载优化方案](docs/plans/slow-connection-ui-plan.md)。
 
+后续 PWA、错误诊断、菜单与回答操作、全屏搜索、快捷键、单行输入工具栏、重新生成模型和 AI 标题的设计与实施顺序见[对话体验改进计划](docs/plans/conversation-experience-improvement-plan.md)。侧边栏生成状态、对话菜单和低频活动索引详见[侧边栏对话操作方案](docs/plans/sidebar-conversation-actions-plan.md)。
+
 项目目录与边界见[模块说明](docs/architecture/modules.md)，验证入口与测试合并记录见[测试说明](tests/README.md)。
 
 访问控制使用 Cloudflare Access；JWT 信任边界、本地联调与验证记录见[访问控制迁移方案](docs/plans/cloudflare-access-migration-plan.md)。

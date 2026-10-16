@@ -214,6 +214,7 @@ export function App({
     initialSettings?.tab,
   );
   const returnToConversationSettings = useRef(false);
+  const [requestedProviderId, setRequestedProviderId] = useState<string | undefined>();
   const [modelChoice, setModelChoice] = useState<string>(() => read('chat-model', ''));
   const [branchAnnouncement, setBranchAnnouncement] = useState('');
   const [backgroundTask, setBackgroundTask] = useState<{
@@ -763,6 +764,7 @@ export function App({
       conversation,
       input,
       viewHeadId: requestView,
+      modelLabel: generationModel?.name || input.selection?.model,
       images: input.retryOf ? undefined : draftImages,
       files: input.retryOf ? undefined : draftFiles,
     };
@@ -770,11 +772,13 @@ export function App({
     if (!conversations.some((item) => item.id === conversation.id)) {
       rememberConversation(conversation);
     }
-    writeChatCache(`draft:${selected ?? 'new'}`, { text: '' });
-    setDraft('');
-    setRevisionOf(undefined);
-    setDraftImages([]);
-    setDraftFiles([]);
+    if (!input.retryOf) {
+      writeChatCache(`draft:${selected ?? 'new'}`, { text: '' });
+      setDraft('');
+      setRevisionOf(undefined);
+      setDraftImages([]);
+      setDraftFiles([]);
+    }
     if (!selected) resetNewTools();
     if (!selected) navigate(conversation.id, true);
     followRequests.current.set(input.requestId, {
@@ -863,9 +867,7 @@ export function App({
       await queue({
         requestId: crypto.randomUUID(),
         retryOf: message.id,
-        ...(message.providerId && message.model
-          ? { selection: { providerId: message.providerId, model: message.model } }
-          : {}),
+        selection: { providerId: selectedModel.providerId, model: selectedModel.model },
       });
     } finally {
       setSending(false);
@@ -1056,6 +1058,7 @@ export function App({
   const closeSettings = () => {
     setSettingsOpen(false);
     setRequestedSettingsTab(undefined);
+    setRequestedProviderId(undefined);
     if (!returnToConversationSettings.current)
       requestAnimationFrame(() => {
         const target = settingsTrigger.current;
@@ -1405,6 +1408,11 @@ export function App({
                         message={message}
                         busy={messageBlocked}
                         onRetry={() => void retry(message)}
+                        onProviderSettings={() => {
+                          setRequestedProviderId(message.providerId ?? undefined);
+                          setRequestedSettingsTab('providers');
+                          openSettings();
+                        }}
                         onEdit={() => edit(message)}
                         onQuote={() => quote(message)}
                         onDelete={() => setMessageMutation({ id: message.id, mode: 'delete' })}
@@ -1460,7 +1468,10 @@ export function App({
                     </Fragment>
                   ))}
                   {currentPending && pendingVisible && (
-                    <article className="ml-auto max-w-[90%] rounded-2xl border border-dashed border-input bg-muted px-5 py-4">
+                    <article
+                      data-testid="pending-message"
+                      className="ml-auto max-w-[90%] rounded-2xl border border-dashed border-input bg-muted px-5 py-4"
+                    >
                       <DocumentPreviews
                         conversationId={currentPending.conversation.id}
                         files={currentPending.files ?? []}
@@ -1477,6 +1488,7 @@ export function App({
                       <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
                         <CloudOff className="h-[0.75rem] w-[0.75rem]" />
                         {currentPending.error ? '发送失败' : '等待发送'}
+                        {currentPending.modelLabel && <span>{currentPending.modelLabel}</span>}
                       </div>
                       {currentPending.error && (
                         <p className="mt-2 text-xs font-medium leading-5 text-foreground">
@@ -1892,6 +1904,7 @@ export function App({
       <SettingsPanel
         open={settingsOpen}
         requestedTab={requestedSettingsTab}
+        requestedProviderId={settingsOpen ? requestedProviderId : undefined}
         onTabChange={setRequestedSettingsTab}
         onSaved={providerSaved}
         themeControl={<ThemeControl />}

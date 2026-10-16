@@ -1,10 +1,13 @@
 import { authFailure, authSignal, networkIdentity, notifyAuthFailure } from './auth';
+import * as v from 'valibot';
+import { providerFailureSchema, type ProviderFailure } from '../../shared/providers/failure';
 export { authFailure };
 export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
     public code?: string,
+    public failure?: ProviderFailure,
   ) {
     super(message);
   }
@@ -31,7 +34,7 @@ export async function api<T>(
       ...(path !== '/session' ? [authSignal()] : []),
     ]),
   });
-  let result: { error?: string; code?: string };
+  let result: { error?: string; code?: string; failure?: unknown };
   try {
     result = await response.json();
   } catch {
@@ -41,10 +44,12 @@ export async function api<T>(
   }
   if (!response.ok) {
     notifyAuthFailure(response.status, result?.code);
+    const details = v.safeParse(providerFailureSchema, result?.failure);
     throw new ApiError(
       response.status,
       typeof result?.error === 'string' ? result.error : '请求失败，请稍后重试。',
       typeof result?.code === 'string' ? result.code : undefined,
+      details.success ? details.output : undefined,
     );
   }
   return result as T;

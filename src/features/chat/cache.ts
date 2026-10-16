@@ -12,6 +12,7 @@ export interface Pending {
   error?: string;
   images?: ImagePart[];
   files?: DocumentPart[];
+  modelLabel?: string;
 }
 
 export const deletedAt = (id: string) => read<number | null>(`deleted:${id}`, null);

@@ -40,6 +40,7 @@ export interface ProviderConfig {
   topP?: number;
   apiKey?: string;
   providerId?: string;
+  providerName?: string;
   reasoningEnabled?: boolean;
   reasoningEffort?: ReasoningEffort;
   modelMetadata?: ResolvedModelMetadata;

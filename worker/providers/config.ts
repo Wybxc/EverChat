@@ -97,6 +97,7 @@ export function runtimeProviderConfig(
     return {
       provider: selected.provider,
       providerId: selected.id,
+      providerName: selected.name,
       baseUrl: selected.baseUrl,
       model: model.id,
       modelName: model.name || model.id,

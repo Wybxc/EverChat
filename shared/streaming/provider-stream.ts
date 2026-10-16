@@ -50,6 +50,19 @@ export const decodeBytes = (base64: string): Uint8Array =>
 
 export class StreamParseError extends Error {}
 
+function unfinishedSseTail(text: string) {
+  let lineStart = 0,
+    boundary = 0;
+  const endings = /\r\n|\r|\n/g;
+  for (let match = endings.exec(text); match; match = endings.exec(text)) {
+    if (match[0] === '\r' && match.index === text.length - 1) break;
+    const end = match.index + match[0].length;
+    if (match.index === lineStart) boundary = end;
+    lineStart = end;
+  }
+  return text.slice(boundary);
+}
+
 // This checkpoint records only the incomplete SSE frame and protocol state, not the whole wire log.
 // Both browser previews and server snapshot/final replay use this exact decoder.
 export class ProviderStream {
@@ -138,7 +151,7 @@ export class ProviderStream {
       }
       this.parser.feed(text);
       if (this.state.failure) return;
-      this.state.tail = this.unfinishedTail(this.state.tail + text);
+      this.state.tail = unfinishedSseTail(this.state.tail + text);
       if (this.state.tail.length > MAX_EVENT_CHARACTERS) this.fail('供应商流事件超过原型限制。');
     } catch {
       this.fail('供应商流格式无效。已保存部分内容，请主动重新生成。');
@@ -168,20 +181,6 @@ export class ProviderStream {
         '与模型供应商的连接提前结束或未正常完成回答。已保存部分内容，请主动重新生成。',
       );
     if (!this.content) throw new StreamParseError('模型供应商未返回文字回答。');
-  }
-  private unfinishedTail(text: string) {
-    // Track the last blank-line boundary so the library's partial-line/event state can be restored.
-    // A trailing CR remains pending until the next character, matching eventsource-parser.
-    let lineStart = 0,
-      boundary = 0;
-    const endings = /\r\n|\r|\n/g;
-    for (let match = endings.exec(text); match; match = endings.exec(text)) {
-      if (match[0] === '\r' && match.index === text.length - 1) break;
-      const end = match.index + match[0].length;
-      if (match.index === lineStart) boundary = end;
-      lineStart = end;
-    }
-    return text.slice(boundary);
   }
   private fail(message: string) {
     this.state.failure ??= message;

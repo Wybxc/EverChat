@@ -12,12 +12,14 @@ import { BranchSwitcher, type BranchNavigation } from './BranchSwitcher';
 import { MessageActions } from './MessageActions';
 import { MarkdownContent } from './rendering/MarkdownContent';
 import { useFollowScroll } from './useFollowScroll';
+import { ProviderFailureView } from '../providers/ProviderFailureView';
 
 export function MessageView({
   conversationId,
   message,
   busy,
   onRetry,
+  onProviderSettings,
   onEdit,
   onQuote,
   onDelete,
@@ -33,6 +35,7 @@ export function MessageView({
   message: Message;
   busy: boolean;
   onRetry: () => void;
+  onProviderSettings?: () => void;
   onEdit: () => void;
   onQuote: () => void;
   onDelete: () => void;
@@ -197,13 +200,14 @@ export function MessageView({
           {message.waitingForSummary ? '压缩历史后开始回答…' : '准备中…'}
         </p>
       ) : null}
-      {message.status === 'failed' && !toolErrorVisible && (
-        <p
-          role="alert"
-          className="mt-4 rounded-lg bg-destructive/5 px-3 py-2 text-xs font-medium leading-6 text-foreground"
-        >
-          {message.error ?? '生成失败，已保存部分内容。'}
-        </p>
+      {message.status === 'failed' && (!toolErrorVisible || message.generation?.failure) && (
+        <ProviderFailureView
+          summary={message.error ?? '生成失败，已保存部分内容。'}
+          failure={message.generation?.failure}
+          showSummary={!toolErrorVisible}
+          stateKey={`failure:${message.id}`}
+          onSettings={onProviderSettings}
+        />
       )}
       {message.status === 'cancelled' && (
         <p className="mt-4 text-xs text-muted-foreground">已停止</p>

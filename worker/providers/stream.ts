@@ -17,6 +17,8 @@ import {
 import { providerCallOptions, providerModel } from './sdk';
 import { providerToolPrompt, webToolDefinitions, type ProviderToolRequest } from './tool-turn';
 import { assertWebToolSupport } from '../../shared/web-tools/tasks';
+import { httpProviderError, providerFailure } from './failure';
+import { safeProviderStream } from './stream-errors';
 
 export { GenerationCancelled, ProviderError } from '../generation/errors';
 
@@ -28,7 +30,9 @@ export async function openProviderStream(
   loadDocument?: (file: DocumentPart) => Promise<string>,
   toolRequest?: ProviderToolRequest,
 ): Promise<ReadableStream<Uint8Array>> {
-  if (!config.apiKey) throw new ProviderError('尚未配置供应商 API 密钥。');
+  if (!config.apiKey)
+    throw new ProviderError('尚未配置供应商 API 密钥。', providerFailure(config, 'connect'));
+  const secrets = context.map((message) => message.content);
   let prepared: { input: Parameters<typeof fetch>[0]; init?: RequestInit } | undefined;
   // Use the SDK to construct the request, without giving its parser the live supplier body.
   const capture: typeof fetch = async (input, init) => {
@@ -64,6 +68,7 @@ export async function openProviderStream(
         )
           throw new DocumentError('文件解析内容与已保存的引用不符。');
         documentData.set(file.attachmentId, documentPrompt(file, text));
+        secrets.push(text);
       }
     const imageData = new Map<string, Uint8Array>();
     for (const message of context)
@@ -124,22 +129,32 @@ export async function openProviderStream(
       redirect: 'manual',
     });
     if (!response.ok) {
-      await response.body?.cancel().catch(() => {});
-      throw new ProviderError(`模型供应商返回 HTTP ${response.status}，请检查密钥、模型和额度。`);
+      throw await httpProviderError(response, config, secrets);
     }
     if (
       !response.body ||
       !response.headers.get('Content-Type')?.toLowerCase().includes('text/event-stream')
     ) {
       await response.body?.cancel().catch(() => {});
-      throw new ProviderError('模型供应商未返回有效的流式响应。');
+      throw new ProviderError(
+        '模型供应商未返回有效的流式响应。',
+        providerFailure(config, 'protocol', undefined, {
+          status: response.status,
+          headers: response.headers,
+          secrets,
+        }),
+      );
     }
-    return response.body;
+    return safeProviderStream(response.body, config, secrets);
   } catch (error) {
     if (error instanceof ImageContextError || error instanceof DocumentError)
       throw new ProviderError(error.message);
     if (error instanceof ProviderError || error instanceof GenerationCancelled) throw error;
-    if (signal.aborted) throw new ProviderError('模型供应商连接已中断。');
-    throw new ProviderError('无法连接模型供应商，请检查服务地址和网络。');
+    if (signal.aborted)
+      throw new ProviderError('模型供应商连接已中断。', providerFailure(config, 'connect'));
+    throw new ProviderError(
+      '无法连接模型供应商，请检查服务地址和网络。',
+      providerFailure(config, 'connect'),
+    );
   }
 }

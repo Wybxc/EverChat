@@ -7,6 +7,8 @@ import type { ProviderConfig } from '../../shared/providers/types';
 import type { ModelProbeResult, ProbeCapability } from '../../shared/models/probe';
 import { providerCallOptions, providerModel } from './sdk';
 import { probeImage } from './probe-image';
+import { httpProviderError, providerFailure } from './failure';
+import { ProviderError } from '../generation/errors';
 
 export const PROBE_TIMEOUT_MS = 15_000,
   PROBE_RESPONSE_BYTES = 64 * 1024;
@@ -70,10 +72,8 @@ export async function probeModelCapability(
   const boundedFetch: typeof globalThis.fetch = async (input, init) => {
     abort.throwIfAborted();
     const response = await fetch(input, { ...init, signal: abort, redirect: 'manual' });
-    // Never expose supplier error bodies (which can echo credentials) or follow redirects.
     if (!response.ok) {
-      await response.body?.cancel();
-      throw new Error('Probe request failed');
+      throw await httpProviderError(response, config);
     }
     if (!response.body) throw new Error('Empty response');
     const reader = response.body.getReader(),
@@ -155,10 +155,14 @@ export async function probeModelCapability(
     } catch {
       return result('mismatch');
     }
-  } catch {
+  } catch (error) {
     if (signal.aborted) throw signal.reason;
-    return result(
-      timeout.aborted ? 'timeout' : oversized ? 'response-too-large' : 'request-failed',
-    );
+    return {
+      ...result(timeout.aborted ? 'timeout' : oversized ? 'response-too-large' : 'request-failed'),
+      failure:
+        error instanceof ProviderError && error.details
+          ? error.details
+          : providerFailure(config, 'connect'),
+    };
   }
 }

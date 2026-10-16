@@ -189,7 +189,7 @@ test('HTTP success, text pretending to be a tool, wrong challenge and wrong tool
     assert.equal(result.reason, 'mismatch');
   }
 });
-test('failed and redirected probes make one request, never expose raw diagnostics and leave capability unconfirmed', async () => {
+test('failed and redirected probes make one request, redact credentials in diagnostics and leave capability unconfirmed', async () => {
   for (const status of [302, 401, 429, 500]) {
     let calls = 0;
     const result = await probeModelCapability(config, 'text', signal(), async (_input, init) => {
@@ -203,7 +203,9 @@ test('failed and redirected probes make one request, never expose raw diagnostic
     assert.equal(calls, 1);
     assert.equal(result.status, 'unconfirmed');
     assert.equal(result.reason, 'request-failed');
-    assert.ok(!JSON.stringify(result).includes('private'));
+    assert.ok(!JSON.stringify(result).includes('private-test-key'));
+    assert.equal(result.failure?.status, status);
+    assert.match(result.failure?.message ?? '', /\[已隐藏\].*private diagnostic/);
   }
 });
 test('oversized response streams are cancelled before JSON parsing; timeout and caller cancellation stop requests', async (t) => {

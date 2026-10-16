@@ -31,7 +31,11 @@ export function registerProvidersRoutes(app: ApiRouter) {
     try {
       return json({ models: await fetchProviderModels(profile) });
     } catch (error) {
-      if (error instanceof ProviderModelError) throw new HttpError(error.status, error.message);
+      if (error instanceof ProviderModelError)
+        return json(
+          { error: error.message, code: 'PROVIDER_ERROR', failure: error.details },
+          error.status,
+        );
       throw new HttpError(502, '获取模型列表失败。');
     }
   });

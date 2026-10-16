@@ -22,6 +22,7 @@ type PanelProps = {
   render: (content: ReactNode) => ReactNode;
   open: boolean;
   requestedTab?: SettingsTab;
+  requestedProviderId?: string;
   onTabChange?: (tab: SettingsTab) => void;
   onSaved?: (settings: ProviderSettings) => void;
   authenticated?: boolean;
@@ -164,7 +165,12 @@ export function SettingsPanel(props: PanelProps) {
               <>
                 <div hidden={!providerTab}>
                   {store ? (
-                    <SettingsForm store={store} open={open} tab={tab} />
+                    <SettingsForm
+                      store={store}
+                      open={open}
+                      tab={tab}
+                      requestedProviderId={props.requestedProviderId}
+                    />
                   ) : (
                     <section
                       role="tabpanel"
@@ -215,10 +221,12 @@ function SettingsForm({
   store,
   open,
   tab,
+  requestedProviderId,
 }: {
   store: SettingsAutosave;
   open: boolean;
   tab: SettingsTab;
+  requestedProviderId?: string;
 }) {
   const { settings, status, error } = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const update = (next: ProviderSettings) => store.update(reconcile(next));
@@ -241,6 +249,7 @@ function SettingsForm({
           settings={settings}
           open={open}
           active={tab === 'providers'}
+          requestedProviderId={requestedProviderId}
         />
       </section>
       <section
