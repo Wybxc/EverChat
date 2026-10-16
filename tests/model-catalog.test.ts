@@ -90,7 +90,7 @@ test('evidence is strictly validated and connection edits invalidate automatic f
   for (const patch of [{ testedCapabilities: { imageInput: false, testedAt: 1 } }, { testedCapabilities: { toolCalls: true, testedAt: -1 } }, { directoryMetadata: { ...enriched.directoryMetadata, apiKey: 'secret' } }]) {
     assert.equal(v.safeParse(modelSchema, { ...enriched, ...patch }).success, false);
   }
-  const settings: ProviderSettingsInput = { providers: [{ id: crypto.randomUUID(), name: 'provider', provider: 'openai-chat', baseUrl: 'https://provider.test/v1', apiKey: 'private', models: [enriched] }], activeProviderId: null, activeModel: '', systemPrompt: '', maxOutputTokens: null };
+  const settings: ProviderSettingsInput = { providers: [{ id: crypto.randomUUID(), name: 'provider', provider: 'openai-chat', baseUrl: 'https://provider.test/v1', apiKey: 'private', models: [enriched] }], activeProviderId: null, activeModel: '', systemPrompt: '', maxOutputTokens: null, showReasoning: false };
   const edited = mergeProviderSettings(settings, { ...settings, providers: [{ ...settings.providers[0], baseUrl: 'https://provider.test/v2' }] });
   assert.equal(edited.providers[0].apiKey, 'private'); assert.deepEqual(edited.providers[0].models[0].metadataOverrides, { imageInput: false });
   assert.equal(edited.providers[0].models[0].directoryMetadata, undefined); assert.equal(edited.providers[0].models[0].testedCapabilities, undefined);

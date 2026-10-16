@@ -1,0 +1,20 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "types": [
+      "node",
+      "vite/client"
+    ]
+  },
+  "include": [
+    "tests/e2e/**/*.ts",
+    "tests/pwa/**/*.ts",
+    "tests/ui.ts",
+    "playwright*.config.ts",
+    "vite.config.ts"
+  ],
+  "exclude": [
+    "tests/e2e/resource-limits.spec.ts",
+    "tests/e2e/tool-task-journal.spec.ts"
+  ]
+}

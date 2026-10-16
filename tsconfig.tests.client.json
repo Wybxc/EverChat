@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "types": [
+      "node",
+      "vite/client"
+    ]
+  },
+  "include": [
+    "tests/api.test.ts",
+    "tests/conversation-search.test.ts",
+    "tests/deletion.test.ts",
+    "tests/markdown-math.test.ts",
+    "tests/snapshot-writer.test.ts",
+    "tests/conversation-settings.test.ts",
+    "tests/pdf.test.ts"
+  ]
+}

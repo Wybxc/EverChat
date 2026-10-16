@@ -9,9 +9,9 @@
     "build": "pnpm typecheck && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "deploy": "pnpm build && wrangler deploy",
-    "typecheck": "tsc -p tsconfig.app.json && tsc -p tsconfig.worker.json && tsc -p tsconfig.tools.json",
+    "typecheck": "tsc -p tsconfig.app.json && tsc -p tsconfig.worker.json && tsc -p tsconfig.tools.json && tsc -p tsconfig.shared.json && pnpm typecheck:tests",
     "update:model-catalog": "node --import tsx/esm scripts/update-model-catalog.ts",
-    "test": "node --import tsx/esm --test tests/*.test.ts",
+    "test": "node --import tsx/esm scripts/testing/run-unit.ts",
     "test:e2e": "playwright test",
     "test:pwa": "playwright test --config playwright.pwa.config.ts",
     "measure:cloudflare-metrics": "node --import tsx/esm scripts/cloudflare-metrics.ts",
@@ -22,7 +22,8 @@
     "measure:tools": "node --import tsx/esm scripts/tool-baseline.ts",
     "measure:cloudflare-tools": "node --import tsx/esm scripts/tools-cloudflare.ts",
     "measure:tools-platform-local": "node --import tsx/esm scripts/tool-platform-local.ts",
-    "check": "pnpm test && pnpm build && pnpm test:e2e && pnpm test:pwa"
+    "check": "pnpm test && pnpm build && pnpm test:e2e && pnpm test:pwa",
+    "typecheck:tests": "tsc -p tsconfig.tests.client.json && tsc -p tsconfig.tests.node.json && tsc -p tsconfig.tests.runtime.json && tsc -p tsconfig.tests.browser.json"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.78",

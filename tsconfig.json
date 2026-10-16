@@ -1,9 +1,36 @@
 {
   "files": [],
-  "compilerOptions": { "paths": { "@/*": ["./src/*"] } },
+  "compilerOptions": {
+    "paths": {
+      "@/*": [
+        "./src/*"
+      ]
+    }
+  },
   "references": [
-    { "path": "./tsconfig.app.json" },
-    { "path": "./tsconfig.worker.json" },
-    { "path": "./tsconfig.tools.json" }
+    {
+      "path": "./tsconfig.app.json"
+    },
+    {
+      "path": "./tsconfig.worker.json"
+    },
+    {
+      "path": "./tsconfig.tools.json"
+    },
+    {
+      "path": "./tsconfig.tests.client.json"
+    },
+    {
+      "path": "./tsconfig.tests.node.json"
+    },
+    {
+      "path": "./tsconfig.tests.runtime.json"
+    },
+    {
+      "path": "./tsconfig.tests.browser.json"
+    },
+    {
+      "path": "./tsconfig.shared.json"
+    }
   ]
 }

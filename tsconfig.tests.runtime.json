@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.worker.json",
+  "compilerOptions": {
+    "types": [
+      "@cloudflare/workers-types",
+      "node"
+    ]
+  },
+  "include": [
+    "tests/fixtures/**/*.ts"
+  ],
+  "exclude": [
+    "tests/fixtures/pwa-server.ts"
+  ]
+}
