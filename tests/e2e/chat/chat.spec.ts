@@ -240,7 +240,7 @@ test('system theme follows the operating-system color preference', async ({ page
   await expect(page.locator('html')).not.toHaveClass(/dark/);
 });
 
-test('the composer uses the selected model and shows opt-in provider thoughts', async ({
+test('the composer uses the selected model and always shows returned provider thoughts', async ({
   page,
   context,
 }) => {
@@ -256,7 +256,6 @@ test('the composer uses the selected model and shows opt-in provider thoughts', 
     enabled: true,
     reasoningSupport: 'supported',
   });
-  settings.showReasoning = true;
   expect(
     (
       await context.request.put('/api/settings/providers', {
@@ -353,7 +352,6 @@ test('DeepSeek-compatible Responses streams Markdown thoughts, persists them and
   settings.providers[0].provider = 'openai-responses';
   settings.providers[0].models = [{ id: 'deepseek-flash', name: 'DeepSeek Flash', enabled: true }];
   settings.activeModel = 'deepseek-flash';
-  settings.showReasoning = true;
   expect(
     (
       await context.request.put('/api/settings/providers', {
@@ -410,7 +408,6 @@ test('streaming answers and thoughts follow the bottom, pause when scrolled up a
     .then((response) => response.json());
   settings.providers[0].models = [{ id: 'scroll-test', name: '滚动测试', enabled: true }];
   settings.activeModel = 'scroll-test';
-  settings.showReasoning = true;
   expect(
     (
       await context.request.put('/api/settings/providers', {

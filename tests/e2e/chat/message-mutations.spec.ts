@@ -44,7 +44,6 @@ async function setup(request: APIRequestContext) {
           activeModel: 'benchmark-reasoning-2-10-32',
           systemPrompt: '',
           maxOutputTokens: null,
-          showReasoning: true,
         },
       })
     ).ok(),
@@ -72,7 +71,7 @@ async function setup(request: APIRequestContext) {
           )?.id ?? null;
     const response = await request.post(`/api/conversations/${id}/messages`, {
       headers,
-      data: { requestId: crypto.randomUUID(), content, parentId, showReasoning: true, settings },
+      data: { requestId: crypto.randomUUID(), content, parentId, settings },
     });
     expect(response.status()).toBe(202);
     return (await response.json()) as Submission;

@@ -116,7 +116,6 @@ async function generationSource(request: APIRequestContext, model = 'metadata-co
           activeModel: model,
           systemPrompt: 'Global prompt',
           maxOutputTokens: null,
-          showReasoning: true,
         },
       })
     ).ok(),
@@ -159,7 +158,6 @@ async function generationSource(request: APIRequestContext, model = 'metadata-co
       data: {
         requestId: crypto.randomUUID(),
         content,
-        showReasoning: true,
         ...(!extra.revisionOf ? { parentId } : {}),
         ...extra,
       },

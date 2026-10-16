@@ -179,7 +179,6 @@ test('manual compression covers all prepared input or rejects without losing ori
   assert.equal(first.estimate.omittedMessages, 0);
   assert.equal(first.config.systemPrompt, SUMMARY_SYSTEM_PROMPT);
   assert.equal(first.config.maxOutputTokens, 2048);
-  assert.equal(first.config.showReasoning, false);
   assert.equal(first.context[0].content, messageText(path[0]));
   const saved = summary(path.slice(0, 2));
   const incremental = summaryGeneration([...path, saved], path[3].id, {
@@ -243,7 +242,6 @@ test('summary coverage and backups reject dangling, reordered, duplicate or priv
       activeModel: '',
       systemPrompt: '',
       maxOutputTokens: null,
-      showReasoning: false,
       promptPresets: [],
     },
   };

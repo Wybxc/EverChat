@@ -21,7 +21,6 @@ export interface SessionSettings {
   activeProviderId?: string | null;
   models?: ChatModel[];
   attachmentsConfigured: boolean;
-  showReasoning?: boolean;
   systemPrompt?: string;
   maxOutputTokens?: number | null;
 }
@@ -43,7 +42,6 @@ export interface ProviderConfig {
   providerId?: string;
   reasoningEnabled?: boolean;
   reasoningEffort?: ReasoningEffort;
-  showReasoning?: boolean;
   modelMetadata?: ResolvedModelMetadata;
   webTools?: WebToolServiceConfig;
 }
@@ -68,7 +66,6 @@ export interface ProviderSettings {
   activeModel: string;
   systemPrompt: string;
   maxOutputTokens: number | null;
-  showReasoning: boolean;
 }
 
 export interface ProviderSettingsInput {
@@ -77,7 +74,6 @@ export interface ProviderSettingsInput {
   activeModel: string;
   systemPrompt: string;
   maxOutputTokens: number | null;
-  showReasoning: boolean;
 }
 
 export interface ProviderModelConfig extends Omit<ProviderProfile, 'hasApiKey'> {

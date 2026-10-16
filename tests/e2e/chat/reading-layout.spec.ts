@@ -20,7 +20,6 @@ async function fixture(page: Page) {
           activeModel: 'test-model',
           systemPrompt: '',
           maxOutputTokens: null,
-          showReasoning: true,
           providers: [
             {
               id: provider,

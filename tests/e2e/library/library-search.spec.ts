@@ -196,7 +196,6 @@ test('durable search outbox survives an RPC failure and object reset without ano
         ],
         activeProviderId: providerId,
         activeModel: 'alarm-stall',
-        showReasoning: true,
         systemPrompt: '',
         maxOutputTokens: null,
       },
@@ -209,7 +208,6 @@ test('durable search outbox survives an RPC failure and object reset without ano
         parentId: null,
         requestId: crypto.randomUUID(),
         content: '索引提问TOKEN',
-        showReasoning: true,
       },
     });
     expect(response.status()).toBe(202);

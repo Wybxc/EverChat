@@ -29,7 +29,6 @@ async function setup(request: APIRequestContext) {
           activeModel: 'benchmark-text-2-10-32',
           systemPrompt: '',
           maxOutputTokens: null,
-          showReasoning: false,
         },
       })
     ).ok(),

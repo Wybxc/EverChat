@@ -44,7 +44,6 @@ async function setup(request: APIRequestContext) {
           activeModel: 'alarm-test',
           systemPrompt: '',
           maxOutputTokens: null,
-          showReasoning: true,
         },
       })
     ).ok(),
@@ -126,7 +125,6 @@ test('capacity reached during generation terminates without retrying, retains th
       parentId: null,
       requestId: crypto.randomUUID(),
       content: '开始后模拟空间不足',
-      showReasoning: true,
     };
     const response = await request.post(`/api/conversations/${fixture.id}/messages`, {
       headers,

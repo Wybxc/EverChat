@@ -60,7 +60,6 @@ async function setup(
           activeModel: model,
           systemPrompt: '',
           maxOutputTokens: null,
-          showReasoning: true,
         },
       })
     ).ok(),
@@ -94,7 +93,6 @@ async function setup(
       requestId: crypto.randomUUID(),
       content: '查询 Cloudflare 官方资料',
       tools: ['web_search', 'read_webpage'],
-      showReasoning: true,
     };
     const state = () =>
       request

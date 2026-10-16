@@ -96,7 +96,6 @@ export function ConversationSettingsDialog({
   model,
   models,
   effort,
-  showReasoning,
   open,
   close,
   onDraft,
@@ -109,7 +108,6 @@ export function ConversationSettingsDialog({
   model?: ChatModel;
   models: ChatModel[];
   effort: ReasoningEffort | '';
-  showReasoning: boolean;
   open: boolean;
   close: () => void;
   onDraft: (settings: ConversationSettings) => void;
@@ -195,7 +193,6 @@ export function ConversationSettingsDialog({
         ...model,
         reasoningEnabled: model.reasoningSupported,
         reasoningEffort: effort || undefined,
-        showReasoning,
       })
     : null;
   const limitMode = settings.useGlobalMaxOutputTokens

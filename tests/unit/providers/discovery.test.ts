@@ -19,7 +19,6 @@ const settings = {
   activeModel: 'test-model',
   systemPrompt: 'system',
   maxOutputTokens: 128,
-  showReasoning: false,
 };
 
 for (const provider of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'] as const) {

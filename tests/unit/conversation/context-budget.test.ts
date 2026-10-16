@@ -287,7 +287,6 @@ test('public chat models expose effective overrides for local estimation without
     activeModel: 'global',
     systemPrompt: 'global prompt',
     maxOutputTokens: null,
-    showReasoning: false,
   };
   const models = chatModels(settings);
   assert.equal(models[0].systemPrompt, undefined);

@@ -199,7 +199,6 @@ try {
       activeProviderId: providerId,
       activeModel: models[0].id,
       systemPrompt: '',
-      showReasoning: true,
       maxOutputTokens: null,
     },
     'PUT',
@@ -219,7 +218,6 @@ try {
       requestId: crypto.randomUUID(),
       content: 'Deterministic stream workload',
       selection: { providerId, model: models[index].id },
-      showReasoning: true,
     });
     const deadline = Date.now() + chunks * interval + 30_000;
     let report: GenerationMeasurements | null;

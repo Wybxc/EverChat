@@ -32,7 +32,6 @@ async function setup(request: APIRequestContext, model = 'alarm-test') {
           activeModel: model,
           systemPrompt: '',
           maxOutputTokens: null,
-          showReasoning: true,
         },
       })
     ).ok(),
@@ -46,7 +45,6 @@ async function setup(request: APIRequestContext, model = 'alarm-test') {
     parentId: null,
     requestId: crypto.randomUUID(),
     content: '仅执行一次',
-    showReasoning: true,
   };
   const responses = await Promise.all(
     [0, 1].map(() => request.post(`/api/conversations/${id}/messages`, { headers, data: input })),

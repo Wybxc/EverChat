@@ -86,8 +86,7 @@ export function providerCallOptions(
                 : {}),
             },
           }
-        : config.provider === 'anthropic' &&
-            (toolMode || (config.reasoningEnabled && config.showReasoning))
+        : config.provider === 'anthropic' && (toolMode || config.reasoningEnabled)
           ? {
               anthropic: {
                 ...(controlReasoning

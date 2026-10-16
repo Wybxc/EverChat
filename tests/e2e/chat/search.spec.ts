@@ -26,7 +26,6 @@ async function setup(request: APIRequestContext, streaming = false) {
             ],
             activeProviderId: providerId,
             activeModel: 'scroll-test',
-            showReasoning: true,
             systemPrompt: '',
             maxOutputTokens: null,
           },
@@ -314,7 +313,6 @@ test('streaming search updates its count while retaining the active occurrence a
         parentId: fixture.last,
         requestId: crypto.randomUUID(),
         content: '持续输出以验证搜索',
-        showReasoning: true,
       },
     });
     expect(response.status()).toBe(202);

@@ -162,7 +162,6 @@ test('previews precede commits and reconnecting subscribers recover the same dur
             activeModel: 'benchmark-reasoning-40-100-200',
             systemPrompt: '',
             maxOutputTokens: null,
-            showReasoning: true,
           },
         })
       ).ok(),
@@ -185,7 +184,6 @@ test('previews precede commits and reconnecting subscribers recover the same dur
           parentId: null,
           requestId: crypto.randomUUID(),
           content: '保存正文和思考',
-          showReasoning: true,
         },
       })
       .then((response) => response.json());
@@ -268,7 +266,6 @@ test('premature upstream EOF saves buffered text and thoughts, marks failure and
             activeModel: 'benchmark-error-8-25-200',
             systemPrompt: '',
             maxOutputTokens: null,
-            showReasoning: true,
           },
         })
       ).ok(),
@@ -284,7 +281,6 @@ test('premature upstream EOF saves buffered text and thoughts, marks failure and
       parentId: null,
       requestId: crypto.randomUUID(),
       content: '保留未完成回答',
-      showReasoning: true,
     };
     const accepted = await request
       .post(`/api/conversations/${id}/messages`, { headers, data: input })
@@ -357,7 +353,6 @@ test('an unacknowledged slow subscriber is bounded while other clients and persi
             activeModel: 'benchmark-reasoning-120-10-750',
             systemPrompt: '',
             maxOutputTokens: null,
-            showReasoning: true,
           },
         })
       ).ok(),
@@ -381,7 +376,6 @@ test('an unacknowledged slow subscriber is bounded while other clients and persi
             parentId: null,
             requestId: crypto.randomUUID(),
             content: '有界订阅',
-            showReasoning: true,
           },
         })
       ).status(),
@@ -457,7 +451,6 @@ test('browser rendering streams ahead of saving, while export and throttled cach
             activeModel: 'benchmark-reasoning-40-100-200',
             systemPrompt: '',
             maxOutputTokens: null,
-            showReasoning: true,
           },
         })
       ).ok(),
@@ -553,7 +546,6 @@ test('failed persistence drops the preview tail without publishing a durable con
             activeModel: 'alarm-cancel-tail-failure',
             systemPrompt: '',
             maxOutputTokens: null,
-            showReasoning: true,
           },
         })
       ).ok(),
@@ -622,7 +614,6 @@ test('logging out clears cached messages even when a delayed durable snapshot wr
             activeModel: 'benchmark-text-30-200-200',
             systemPrompt: '',
             maxOutputTokens: null,
-            showReasoning: false,
           },
         })
       ).ok(),
@@ -727,7 +718,6 @@ for (const protocol of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
               activeModel: model,
               systemPrompt: '',
               maxOutputTokens: null,
-              showReasoning: true,
             },
           })
         ).ok(),
@@ -750,7 +740,6 @@ for (const protocol of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
               parentId: null,
               requestId: crypto.randomUUID(),
               content: '恢复事件',
-              showReasoning: true,
             },
           })
         ).status(),

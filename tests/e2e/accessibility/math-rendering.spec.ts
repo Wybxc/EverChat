@@ -168,7 +168,6 @@ test('split streamed delimiters render in both thoughts and answers before compl
             ],
             activeProviderId: providerId,
             activeModel: 'benchmark-math',
-            showReasoning: true,
             systemPrompt: '',
             maxOutputTokens: null,
           },

@@ -32,7 +32,7 @@ for (const [kind, fixture] of Object.entries(providerStreams)) {
   });
 }
 
-test('first output includes hidden thoughts, ignores empty events, and resolves a trailing CR at EOF', () => {
+test('first output includes thoughts, ignores empty events, and resolves a trailing CR at EOF', () => {
   const observed: number[] = [],
     probe = new FirstTokenProbe('openai-chat', (at) => observed.push(at));
   probe.feed(frame({ choices: [{ delta: { content: null, reasoning_content: '' } }] }), 10);

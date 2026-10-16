@@ -39,7 +39,6 @@ async function setup(request: APIRequestContext) {
           activeModel: 'alarm-stall',
           systemPrompt: 'GLOBAL',
           maxOutputTokens: null,
-          showReasoning: false,
         },
       })
     ).status(),

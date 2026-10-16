@@ -20,7 +20,6 @@ const settings: ProviderConfig = {
   model: 'journal-fixture',
   systemPrompt: 'private-journal-fixture-prompt',
   maxOutputTokens: null,
-  showReasoning: false,
   modelMetadata: resolveModelMetadata('anthropic', {
     id: 'journal-fixture',
     name: 'Fixture',

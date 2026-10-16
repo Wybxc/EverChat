@@ -30,7 +30,7 @@ export class ProviderSettingsStore {
     )`);
     storage.sql.exec(`CREATE TABLE IF NOT EXISTS provider_preferences (
       id INTEGER PRIMARY KEY CHECK (id = 1), activeProviderId TEXT, activeModel TEXT NOT NULL,
-      systemPrompt TEXT NOT NULL, maxOutputTokens INTEGER NOT NULL, showReasoning INTEGER NOT NULL DEFAULT 0
+      systemPrompt TEXT NOT NULL, maxOutputTokens INTEGER NOT NULL
     )`);
   }
   providerSettingsData(): ProviderSettingsInput {
@@ -41,10 +41,9 @@ export class ProviderSettingsStore {
           activeModel: string;
           systemPrompt: string;
           maxOutputTokens: number;
-          showReasoning: number;
         } & Record<string, SqlStorageValue>
       >(
-        'SELECT activeProviderId, activeModel, systemPrompt, maxOutputTokens, showReasoning FROM provider_preferences WHERE id = 1',
+        'SELECT activeProviderId, activeModel, systemPrompt, maxOutputTokens FROM provider_preferences WHERE id = 1',
       )
       .toArray()[0];
     const profiles = this.storage.sql
@@ -74,7 +73,6 @@ export class ProviderSettingsStore {
         activeModel: preferences?.activeModel ?? '',
         systemPrompt: preferences?.systemPrompt ?? defaults.systemPrompt,
         maxOutputTokens: Number(preferences?.maxOutputTokens ?? defaults.maxOutputTokens) || null,
-        showReasoning: Boolean(preferences?.showReasoning ?? defaults.showReasoning),
       };
     }
     return defaultProviderSettings(this.env);
@@ -117,7 +115,6 @@ export class ProviderSettingsStore {
       modelName: config?.modelName ?? '',
       activeProviderId: config?.providerId ?? null,
       models: chatModels(settings),
-      showReasoning: settings.showReasoning,
       systemPrompt: settings.systemPrompt,
       maxOutputTokens: settings.maxOutputTokens,
     };
@@ -137,7 +134,6 @@ export class ProviderSettingsStore {
       activeModel: settings.activeModel,
       systemPrompt: settings.systemPrompt,
       maxOutputTokens: settings.maxOutputTokens,
-      showReasoning: settings.showReasoning,
       promptPresets: this.presets.list(),
     };
   }
@@ -177,15 +173,14 @@ export class ProviderSettingsStore {
         );
       }
       this.storage.sql.exec(
-        `INSERT INTO provider_preferences (id, activeProviderId, activeModel, systemPrompt, maxOutputTokens, showReasoning)
-        VALUES (1, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET activeProviderId = excluded.activeProviderId,
-        activeModel = excluded.activeModel, systemPrompt = excluded.systemPrompt, maxOutputTokens = excluded.maxOutputTokens, showReasoning = excluded.showReasoning`,
+        `INSERT INTO provider_preferences (id, activeProviderId, activeModel, systemPrompt, maxOutputTokens)
+        VALUES (1, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET activeProviderId = excluded.activeProviderId,
+        activeModel = excluded.activeModel, systemPrompt = excluded.systemPrompt, maxOutputTokens = excluded.maxOutputTokens`,
         // Store an unset limit as 0 in SQLite; expose it as null through the API.
         settings.activeProviderId,
         settings.activeModel,
         settings.systemPrompt,
         settings.maxOutputTokens ?? 0,
-        Number(settings.showReasoning),
       );
     });
     return { settings: publicProviderSettings(settings) };

@@ -74,7 +74,6 @@ export class ConversationMessages {
     const descriptor = JSON.parse(config) as ProviderConfig;
     return this.journal.materialize(message, {
       protocol: message.tools ? 'openai-chat' : descriptor.provider,
-      showReasoning: descriptor.showReasoning === true,
     });
   }
 

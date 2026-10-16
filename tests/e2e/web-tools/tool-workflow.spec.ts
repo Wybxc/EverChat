@@ -52,7 +52,6 @@ async function setup(
           activeModel: model,
           systemPrompt: '',
           maxOutputTokens: null,
-          showReasoning: true,
         },
       })
     ).ok(),
@@ -69,7 +68,6 @@ async function setup(
     parentId: null,
     requestId: options.requestId ?? crypto.randomUUID(),
     content: '查询 Cloudflare 文档',
-    showReasoning: true,
     tools: ['web_search', 'read_webpage'],
     ...(options.contextBudget
       ? { settings: { ...DEFAULT_CONVERSATION_SETTINGS, contextBudget: options.contextBudget } }

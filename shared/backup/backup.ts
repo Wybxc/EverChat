@@ -34,7 +34,6 @@ export interface BackupSettings {
   activeModel: string;
   systemPrompt: string;
   maxOutputTokens: number | null;
-  showReasoning: boolean;
   promptPresets: PromptPreset[];
 }
 export interface BackupMessage {
@@ -268,8 +267,7 @@ export function validateBackup(value: unknown): EverChatBackup {
       (Number.isSafeInteger(settings.maxOutputTokens) &&
         Number(settings.maxOutputTokens) > 0 &&
         Number(settings.maxOutputTokens) <= 100_000)
-    ) ||
-    typeof settings.showReasoning !== 'boolean'
+    )
   )
     throw new Error('备份中的配置无效。');
   const providers = settings.providers.map((raw) => {
@@ -318,7 +316,6 @@ export function validateBackup(value: unknown): EverChatBackup {
       activeModel: settings.activeModel,
       systemPrompt: settings.systemPrompt,
       maxOutputTokens: settings.maxOutputTokens as number | null,
-      showReasoning: settings.showReasoning,
       promptPresets: promptPresets.output,
     },
   };

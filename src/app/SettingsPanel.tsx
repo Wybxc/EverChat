@@ -1,6 +1,5 @@
 import { storageEpoch } from '../platform/storage';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Spinner } from '@/components/ui/spinner';
@@ -201,16 +200,6 @@ function SettingsForm({
               hidden={tab !== 'chat'}
               className="space-y-4"
             >
-              <label className="flex items-center gap-3 text-sm">
-                <Checkbox
-                  aria-label="显示思考内容"
-                  checked={settings.showReasoning}
-                  onCheckedChange={(checked) =>
-                    update({ ...settings, showReasoning: checked === true })
-                  }
-                />
-                显示供应商返回的思考内容
-              </label>
               <div className="space-y-1">
                 <label htmlFor="default-model" className="block text-sm font-medium">
                   默认模型

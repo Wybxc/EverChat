@@ -43,7 +43,6 @@ async function setup(request: APIRequestContext, window: number | null = 4096) {
     activeModel: 'alarm-stall',
     systemPrompt: 'GLOBAL',
     maxOutputTokens: null,
-    showReasoning: false,
   };
   expect(
     (await request.put('/api/settings/providers', { headers, data: configuration })).status(),

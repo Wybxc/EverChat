@@ -74,7 +74,6 @@ export const providerSettingsSchema = v.object({
     v.nullable(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(100_000))),
     null,
   ),
-  showReasoning: v.optional(v.boolean()),
 });
 
 export function normalizeBaseUrl(value: string): string {
@@ -155,7 +154,6 @@ export function mergeProviderSettings(
   });
   const settings = {
     ...parsed.output,
-    showReasoning: parsed.output.showReasoning ?? false,
     providers,
   };
   if (settings.activeProviderId) {

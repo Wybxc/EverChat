@@ -37,7 +37,6 @@ const configuration = (provider: ProviderKind): ProviderConfig => ({
   maxOutputTokens: null,
   modelMetadata: metadata,
   reasoningEnabled: true,
-  showReasoning: false,
 });
 const outcome = (id: string): WebToolOutcome => ({
   id,

@@ -22,7 +22,6 @@ for (const provider of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
       model: 'fixture',
       systemPrompt: '',
       maxOutputTokens: null,
-      showReasoning: true,
       modelMetadata: resolveModelMetadata(provider, {
         id: 'fixture',
         name: 'Fixture',
@@ -30,50 +29,48 @@ for (const provider of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
         metadataOverrides: { toolCalls: true },
       }),
     };
-    for (const showReasoning of [true, false]) {
-      const wire = toolStream(provider, { redacted: true, count: 2 }),
-        source: Uint8Array[] = [],
-        output: Uint8Array[] = [];
-      const display = new ProviderStream('openai-chat', showReasoning);
-      const relay = new ToolStreamRelay(
-        { ...config, showReasoning },
-        (bytes) => source.push(bytes),
-        (bytes) => {
-          output.push(bytes);
-          display.feed(bytes);
-          assert.doesNotMatch(
-            JSON.stringify(display.checkpoint()),
-            /encrypted-fixture|redacted-fixture|fixture-signature|providerOptions|call_0/,
-          );
-        },
-      );
-      const encoded = new TextEncoder().encode(wire);
-      for (let offset = 0; offset < encoded.length; offset += 7)
-        relay.add(encoded.subarray(offset, offset + 7));
-      relay.end();
-      display.assertEnded();
-      const original = Buffer.concat(source).toString('utf8');
-      assert.equal(original, wire);
-      assert.equal(display.reasoning, showReasoning && provider !== 'gemini' ? '检索资料🙂' : '');
-      assert.doesNotMatch(
-        Buffer.concat(output).toString('utf8'),
-        /encrypted-fixture|redacted-fixture|signature|"tool_calls":\[|functionCall|call_0/,
-      );
-      const turn = await collectProviderToolTurn(
-        config,
-        ['web_search', 'read_webpage'],
-        fragmentedToolBody(original),
-        new AbortController().signal,
-      );
-      assert.equal(turn.calls.length, 2);
-    }
+    const wire = toolStream(provider, { redacted: true, count: 2 }),
+      source: Uint8Array[] = [],
+      output: Uint8Array[] = [];
+    const display = new ProviderStream('openai-chat', true);
+    const relay = new ToolStreamRelay(
+      config,
+      (bytes) => source.push(bytes),
+      (bytes) => {
+        output.push(bytes);
+        display.feed(bytes);
+        assert.doesNotMatch(
+          JSON.stringify(display.checkpoint()),
+          /encrypted-fixture|redacted-fixture|fixture-signature|providerOptions|call_0/,
+        );
+      },
+    );
+    const encoded = new TextEncoder().encode(wire);
+    for (let offset = 0; offset < encoded.length; offset += 7)
+      relay.add(encoded.subarray(offset, offset + 7));
+    relay.end();
+    display.assertEnded();
+    const original = Buffer.concat(source).toString('utf8');
+    assert.equal(original, wire);
+    assert.equal(display.reasoning, provider !== 'gemini' ? '检索资料🙂' : '');
+    assert.doesNotMatch(
+      Buffer.concat(output).toString('utf8'),
+      /encrypted-fixture|redacted-fixture|signature|"tool_calls":\[|functionCall|call_0/,
+    );
+    const turn = await collectProviderToolTurn(
+      config,
+      ['web_search', 'read_webpage'],
+      fragmentedToolBody(original),
+      new AbortController().signal,
+    );
+    assert.equal(turn.calls.length, 2);
   });
 
 for (const provider of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'] as const)
   test(`${provider} final tool display streams retain UTF-8, final usage and a completed answer`, () => {
     const display = new ProviderStream('openai-chat', true),
       relay = new ToolStreamRelay(
-        { provider, showReasoning: true },
+        { provider },
         () => {},
         (bytes) => display.feed(bytes),
       );
@@ -90,7 +87,7 @@ test('large split signatures never enter public pending-event state, and oversiz
   const display = new ProviderStream('openai-chat', true),
     output: Uint8Array[] = [];
   const relay = new ToolStreamRelay(
-    { provider: 'anthropic', showReasoning: true },
+    { provider: 'anthropic' },
     () => {},
     (bytes) => {
       output.push(bytes);

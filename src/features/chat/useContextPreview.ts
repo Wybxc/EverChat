@@ -66,7 +66,6 @@ export function useContextPreview({
           modelMetadata: selectedModel.metadata,
           reasoningEnabled: selectedModel.reasoningSupported,
           reasoningEffort: reasoningEffort || undefined,
-          showReasoning: session?.showReasoning,
         },
         settings.output,
       );
@@ -122,7 +121,6 @@ export function useContextPreview({
     reasoningEffort,
     session?.systemPrompt,
     session?.maxOutputTokens,
-    session?.showReasoning,
   ]);
   return { previewHistory, contextPreview };
 }

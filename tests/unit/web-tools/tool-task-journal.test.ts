@@ -29,7 +29,6 @@ const configuration = (
   model: 'tool-fixture',
   systemPrompt: 'private-system-prompt',
   maxOutputTokens: null,
-  showReasoning: false,
   modelMetadata: resolveModelMetadata(provider, {
     id: 'tool-fixture',
     name: 'Fixture',

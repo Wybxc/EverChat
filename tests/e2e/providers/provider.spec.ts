@@ -372,7 +372,7 @@ test('tabbed settings autosave model names and enabled choices; the close button
     await expect(page.getByLabel('模型显示名 2')).toHaveValue('快速模型');
     await tab(page, '对话');
     const profileId = (await getSettings()).providers[0].id;
-    await page.getByLabel('显示思考内容', { exact: true }).check();
+    await expect(page.getByLabel('显示思考内容', { exact: true })).toHaveCount(0);
     await page.getByLabel('默认模型').selectOption(JSON.stringify([profileId, 'test-model']));
     await page.getByLabel('系统提示词', { exact: true }).fill('自动保存的提示词');
     await page.getByLabel('输出上限（Tokens）').fill('256');

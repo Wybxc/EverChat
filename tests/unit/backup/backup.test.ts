@@ -105,7 +105,6 @@ test('validateBackup accepts version 1 backups and rejects malformed messages', 
       activeModel: '',
       systemPrompt: '',
       maxOutputTokens: null,
-      showReasoning: true,
       promptPresets: [],
     },
   });
@@ -293,7 +292,6 @@ test('tool process backups retain safe outcomes, stop unfinished work and reject
       activeModel: '',
       systemPrompt: '',
       maxOutputTokens: null,
-      showReasoning: true,
       promptPresets: [],
     },
   };

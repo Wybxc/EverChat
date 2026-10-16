@@ -59,7 +59,6 @@ test('unknown model metadata is visible, editable, automatically saved across de
             activeModel: 'custom-model',
             systemPrompt: '',
             maxOutputTokens: null,
-            showReasoning: true,
           },
         })
       ).status(),
@@ -359,7 +358,6 @@ test('server validates effective output and effort limits before accepting a run
     activeModel: 'alarm-stall',
     systemPrompt: '',
     maxOutputTokens: null,
-    showReasoning: false,
   };
   const submit = async (patch: object = {}) => {
     const snapshot = (await request

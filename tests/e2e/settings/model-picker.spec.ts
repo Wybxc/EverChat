@@ -14,7 +14,6 @@ async function fixture(page: Page) {
     headers,
     data: {
       ...original,
-      showReasoning: true,
       activeProviderId: providerId,
       activeModel: 'test-model',
       providers: [

@@ -58,10 +58,7 @@ export class StreamJournal {
     );
     return true;
   }
-  materialize(
-    message: Message,
-    descriptor: Pick<StreamState, 'protocol' | 'showReasoning'>,
-  ): Message {
+  materialize(message: Message, descriptor: Pick<StreamState, 'protocol'>): Message {
     if (message.streamVersion !== STREAM_VERSION || !message.runId) return message;
     const rows = this.query<CommitRow>(
       `SELECT * FROM ${this.table} WHERE runId = ? ORDER BY chunkSeq`,
@@ -69,7 +66,7 @@ export class StreamJournal {
     ).toArray();
     const parser = new ProviderStream(
       descriptor.protocol,
-      descriptor.showReasoning,
+      true,
       undefined,
       messageText(message),
       messageText(message, 'reasoning'),

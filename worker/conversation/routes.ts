@@ -34,7 +34,6 @@ const submitSchema = v.object({
       model: v.pipe(v.string(), v.minLength(1), v.maxLength(200)),
     }),
   ),
-  showReasoning: v.optional(v.boolean()),
   reasoningEffort: v.optional(
     v.picklist(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']),
   ),
@@ -112,7 +111,6 @@ export function registerConversationRoutes(app: ApiRouter) {
         input.parentId !== undefined ||
         input.settings ||
         input.reasoningEffort ||
-        input.showReasoning !== undefined ||
         input.imageIds !== undefined ||
         input.fileIds !== undefined ||
         input.tools !== undefined)
@@ -147,7 +145,6 @@ export function registerConversationRoutes(app: ApiRouter) {
       : baseConfig;
     if (!config) throw new HttpError(400, '所选模型不支持此思维强度。');
     if (input.tools) config.webTools = await library.webToolConfig();
-    if (config) config.showReasoning = input.showReasoning ?? false;
     const result = await context.env.CONVERSATIONS.getByName(id).submit(id, input, config);
     if ('error' in result) return json({ error: result.error }, result.status);
     await library.touch(id);

@@ -23,7 +23,6 @@ async function configure(request: APIRequestContext, model = 'benchmark-text-2-1
     activeModel: model,
     systemPrompt: '',
     maxOutputTokens: 128,
-    showReasoning: false,
   };
   expect((await request.put('/api/settings/providers', { headers, data: settings })).status()).toBe(
     200,

@@ -206,7 +206,6 @@ export function summaryGeneration(messages: Message[], throughId: string, config
     topP: undefined,
     reasoningEnabled: metadata.reasoning && metadata.reasoningEfforts.includes('none'),
     reasoningEffort: metadata.reasoningEfforts.includes('none') ? 'none' : undefined,
-    showReasoning: false,
   };
   const built = buildContext(
     prepared.history,

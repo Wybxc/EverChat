@@ -40,7 +40,6 @@ async function setup(request: APIRequestContext, id = 'probe-good', modelPatch =
     activeModel: id,
     systemPrompt: 'Keep global prompt',
     maxOutputTokens: null,
-    showReasoning: true,
   };
   expect(
     (await request.put('/api/settings/providers', { headers, data: configuration })).status(),

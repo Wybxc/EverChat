@@ -639,8 +639,6 @@ export function App() {
       branches.choose(requestView);
     }
     const navigationVersion = branches.navigationVersion.current;
-    if (input.showReasoning === undefined)
-      input = { ...input, showReasoning: session?.showReasoning ?? false };
     const generationModel = input.selection
       ? models.find(
           (model) =>
@@ -692,7 +690,6 @@ export function App() {
             ...generationModel,
             reasoningEnabled: generationModel.reasoningSupported,
             reasoningEffort: input.reasoningEffort,
-            showReasoning: input.showReasoning,
             systemPrompt: generationModel.systemPrompt ?? session?.systemPrompt ?? '',
             maxOutputTokens: session?.maxOutputTokens ?? null,
             modelMetadata: generationModel.metadata,
@@ -1928,7 +1925,6 @@ export function App() {
           model={selectedModel}
           models={models}
           effort={reasoningEffort}
-          showReasoning={session.showReasoning ?? false}
           open={conversationSettingsOpen}
           focusTools={focusWebTools}
           close={() => {

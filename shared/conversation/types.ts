@@ -69,7 +69,6 @@ export interface SubmitInput {
   parentId?: string | null;
   summaryThrough?: string;
   selection?: ModelSelection;
-  showReasoning?: boolean;
   reasoningEffort?: ReasoningEffort;
   settings?: ConversationSettings;
   tools?: WebToolName[];

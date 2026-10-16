@@ -253,7 +253,6 @@ try {
       activeProviderId: providers[0].id,
       activeModel: providers[0].models[0].id,
       systemPrompt: '',
-      showReasoning: true,
       maxOutputTokens: null,
     },
     'PUT',
@@ -293,7 +292,6 @@ try {
         providerId: provider.id,
         model: `tools-${scenario.mode === 'loop' ? 'loop' : 'service'}-${scenario.protocol}`,
       },
-      showReasoning: true,
       tools: ['web_search', 'read_webpage'],
     };
     const submission = await api<Submission>(`/conversations/${id}/messages`, input);

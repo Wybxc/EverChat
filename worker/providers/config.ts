@@ -49,7 +49,6 @@ export function defaultProviderSettings(env: Env): ProviderSettingsInput {
       activeModel: '',
       systemPrompt: env.SYSTEM_PROMPT ?? '你是一位清晰、友善的助手。请默认使用中文回答。',
       maxOutputTokens: Number.isInteger(limit) && limit > 0 ? limit : null,
-      showReasoning: false,
     };
   }
   const option = providerOptions.find((item) => item.value === config.provider)!;
@@ -67,7 +66,6 @@ export function defaultProviderSettings(env: Env): ProviderSettingsInput {
     activeModel: config.model && config.apiKey ? config.model : '',
     systemPrompt: config.systemPrompt,
     maxOutputTokens: config.maxOutputTokens,
-    showReasoning: false,
   };
 }
 
@@ -108,7 +106,6 @@ export function runtimeProviderConfig(
       modelMetadata: metadata,
       reasoningEffort: effort,
       maxOutputTokens: settings.maxOutputTokens,
-      showReasoning: settings.showReasoning,
       apiKey: selected.apiKey,
     };
   }

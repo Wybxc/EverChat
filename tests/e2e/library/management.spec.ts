@@ -39,7 +39,6 @@ async function setup(request: APIRequestContext, model = 'benchmark-text-2-10-32
           activeModel: model,
           systemPrompt: '',
           maxOutputTokens: null,
-          showReasoning: true,
         },
       })
     ).ok(),
@@ -173,7 +172,6 @@ test('deleting a running conversation notifies subscribers, aborts generation, r
     parentId: null,
     requestId: crypto.randomUUID(),
     content: '生成时删除',
-    showReasoning: true,
   };
   const response = await page.request.post(`/api/conversations/${fixture.id}/messages`, {
     headers,

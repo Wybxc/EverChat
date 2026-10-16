@@ -7,12 +7,7 @@ import type { Snapshot } from '../../../shared/streaming/protocol';
 import { messageMenu } from '../../support/browser/ui';
 
 const headers = { Origin: 'http://127.0.0.1:5174' };
-async function setup(
-  request: APIRequestContext,
-  protocol: ProviderKind,
-  model: string,
-  showReasoning = false,
-) {
+async function setup(request: APIRequestContext, protocol: ProviderKind, model: string) {
   await request.post('/__dev/access/login', { headers });
   const original = (await request
     .get('/api/settings/providers')
@@ -38,7 +33,6 @@ async function setup(
           activeModel: model,
           systemPrompt: '',
           maxOutputTokens: null,
-          showReasoning,
         },
       })
     ).status(),
@@ -162,16 +156,16 @@ for (const protocol of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
   });
 }
 
-test('hidden thoughts determine first output before the visible answer, while role and heartbeat frames do not', async ({
+test('returned thoughts are shown and determine first output before the answer, while role and heartbeat frames do not', async ({
   page,
 }) => {
-  const fixture = await setup(page.request, 'openai-chat', 'metadata-hidden');
+  const fixture = await setup(page.request, 'openai-chat', 'metadata-reasoning');
   try {
     await page.goto(`/c/${fixture.id}`);
     await fixture.send();
     await expect.poll(async () => (await fixture.snapshot()).messages[1]?.status).toBe('completed');
     const message = (await fixture.snapshot()).messages[1];
-    expect(messageText(message, 'reasoning')).toBe('');
+    expect(messageText(message, 'reasoning')).not.toBe('');
     expect(messageText(message)).toBe('正文后到');
     expect(message.generation?.usage).toMatchObject({
       inputTokens: 10,
@@ -186,7 +180,9 @@ test('hidden thoughts determine first output before the visible answer, while ro
     await messageMenu(page.getByTestId('assistant-message'));
     await page.getByRole('menuitem', { name: '生成信息', exact: true }).click();
     await expect(page.getByTestId('generation-reasoningTokens')).toHaveText('2');
-    await expect(page.getByTestId('message-reasoning')).toHaveCount(0);
+    await expect(page.getByTestId('message-reasoning')).toContainText(
+      messageText(message, 'reasoning'),
+    );
   } finally {
     await fixture.cleanup();
   }

@@ -97,7 +97,6 @@ test('reasoning and model sampling gates match current supplier and SDK restrict
       provider: 'anthropic',
       model: 'claude-opus-4-6',
       reasoningEnabled: true,
-      showReasoning: true,
     }).temperatureMax,
     null,
   );

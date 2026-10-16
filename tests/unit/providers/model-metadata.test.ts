@@ -34,7 +34,6 @@ const settings: ProviderSettingsInput = {
   activeModel: '',
   systemPrompt: '',
   maxOutputTokens: null,
-  showReasoning: true,
 };
 settings.activeProviderId = settings.providers[0].id;
 settings.activeModel = model.id;

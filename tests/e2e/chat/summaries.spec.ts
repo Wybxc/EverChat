@@ -103,7 +103,6 @@ async function setup(
     activeModel: 'alarm-stall',
     systemPrompt: 'CHAT SYSTEM',
     maxOutputTokens: null,
-    showReasoning: false,
   };
   const configure = (input = configuration) =>
     request.put('/api/settings/providers', { headers, data: input });
@@ -763,7 +762,6 @@ test('manual summaries pin complete input, are idempotent after model changes, a
       systemPrompt: SUMMARY_SYSTEM_PROMPT,
       model: 'benchmark-summary-ok',
       maxOutputTokens: 2048,
-      showReasoning: false,
     });
     expect(pinned.config.apiKey).toBeUndefined();
     expect(pinned.context).toHaveLength(3);
@@ -834,7 +832,7 @@ test('invalid and too-large summaries do not write or call a supplier; cancellat
       { content: '' },
       { retryOf: fixture.seeded.messages[1].id },
       { settings: defaults },
-      { showReasoning: false },
+      { reasoningEffort: 'high' as const },
       { parentId: fixture.seeded.messages[1].id },
     ])
       expect((await fixture.summarize('benchmark-summary-ok', patch)).status()).toBe(400);

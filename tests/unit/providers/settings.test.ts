@@ -27,7 +27,6 @@ const settings = {
   activeModel: 'test-model',
   systemPrompt: 'system',
   maxOutputTokens: 128,
-  showReasoning: false,
 };
 
 test('output limits default to unset while explicit configured limits remain available', () => {
@@ -249,7 +248,6 @@ test('provider profiles reject insecure endpoints, duplicate models and invalid 
 test('model overrides pin their prompt and validate provider reasoning support', () => {
   const custom = {
     ...settings,
-    showReasoning: true,
     systemPrompt: '统一',
     providers: [
       {
@@ -271,7 +269,6 @@ test('model overrides pin their prompt and validate provider reasoning support',
   assert.equal(runtimeProviderConfig(custom)?.reasoningEffort, undefined);
   assert.equal(runtimeProviderConfig(custom, undefined, 'high')?.reasoningEffort, 'high');
   assert.equal(runtimeProviderConfig(custom, undefined, 'max'), null);
-  assert.equal(runtimeProviderConfig(custom)?.showReasoning, true);
   const unknownField = {
     ...custom,
     providers: [

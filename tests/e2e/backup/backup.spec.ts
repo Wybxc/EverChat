@@ -29,7 +29,6 @@ async function setup(request: APIRequestContext) {
     activeModel: 'backup-test',
     systemPrompt: '测试系统提示词',
     maxOutputTokens: null,
-    showReasoning: true,
   };
   expect((await request.put('/api/settings/providers', { headers, data: settings })).ok()).toBe(
     true,
@@ -72,7 +71,7 @@ test('versioned backups exclude API keys and restore messages with model metadat
     }
     expect(backup.settings.providers[0]).not.toHaveProperty('apiKey');
     expect(JSON.stringify(backup)).not.toContain('backup-test-secret');
-    expect(backup.settings.showReasoning).toBe(true);
+    expect(backup.settings).not.toHaveProperty('showReasoning');
 
     const restoredResponse = await request.post('/api/backup/restore', { headers, data: backup });
     expect(restoredResponse.status()).toBe(201);

@@ -10,11 +10,11 @@ export class ToolStreamRelay {
   private readonly encoder = new TextEncoder();
   private received = 0;
   constructor(
-    config: Pick<ProviderConfig, 'provider' | 'showReasoning'>,
+    config: Pick<ProviderConfig, 'provider'>,
     private readonly privateBytes: (bytes: Uint8Array) => void,
     private readonly displayBytes: (bytes: Uint8Array) => void,
   ) {
-    this.parser = new ProviderStream(config.provider, config.showReasoning === true);
+    this.parser = new ProviderStream(config.provider, true);
   }
   private event(value: unknown) {
     this.displayBytes(this.encoder.encode(`data: ${JSON.stringify(value)}\n\n`));

@@ -577,7 +577,6 @@ export class Conversation extends DurableObject<Env> {
         input.parentId ?? null,
         input.selection?.providerId ?? null,
         input.selection?.model ?? null,
-        input.showReasoning ?? null,
         input.reasoningEffort ?? null,
         input.settings ?? null,
         input.summaryThrough ?? null,
@@ -605,7 +604,6 @@ export class Conversation extends DurableObject<Env> {
           input.parentId !== undefined ||
           input.settings ||
           input.reasoningEffort ||
-          input.showReasoning !== undefined ||
           input.imageIds !== undefined ||
           input.fileIds !== undefined ||
           input.tools !== undefined)

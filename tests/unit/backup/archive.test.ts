@@ -64,7 +64,6 @@ async function fixture() {
         activeModel: '',
         systemPrompt: '',
         maxOutputTokens: null,
-        showReasoning: false,
         promptPresets: [],
       },
     },

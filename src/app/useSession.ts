@@ -103,7 +103,6 @@ export function useSession() {
         modelName: model?.name || model?.id || '',
         activeProviderId: model ? profile!.id : null,
         models: chatModels(config),
-        showReasoning: config.showReasoning,
         systemPrompt: config.systemPrompt,
         maxOutputTokens: config.maxOutputTokens,
       };

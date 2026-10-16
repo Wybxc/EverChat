@@ -257,7 +257,6 @@ export async function runToolValidation(options: ToolValidationOptions) {
       requestId: taskId,
       content: 'Deterministic isolated web tool validation',
       selection: { providerId: providers.find((p) => p.provider === protocol)!.id, model },
-      showReasoning: true,
       tools: ['web_search', 'read_webpage'],
     };
     return { id, taskId, begin, live, input };
@@ -371,7 +370,6 @@ export async function runToolValidation(options: ToolValidationOptions) {
         activeProviderId: providers[0].id,
         activeModel: providers[0].models[0].id,
         systemPrompt: '',
-        showReasoning: true,
         maxOutputTokens: null,
       },
       'PUT',

@@ -127,7 +127,6 @@ test('new directory models are usable offline and have explicit sources; aliases
         baseUrl,
         modelMetadata,
         reasoningEnabled: true,
-        showReasoning: true,
         systemPrompt: '',
         maxOutputTokens: null,
       },
@@ -248,7 +247,6 @@ test('evidence is strictly validated and connection edits invalidate automatic f
     activeModel: '',
     systemPrompt: '',
     maxOutputTokens: null,
-    showReasoning: false,
   };
   const edited = mergeProviderSettings(settings, {
     ...settings,

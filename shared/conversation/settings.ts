@@ -56,7 +56,7 @@ export const conversationSettingsSchema = v.pipe(
 export function samplingSupport(
   config: Pick<
     ProviderConfig,
-    'provider' | 'baseUrl' | 'model' | 'reasoningEnabled' | 'reasoningEffort' | 'showReasoning'
+    'provider' | 'baseUrl' | 'model' | 'reasoningEnabled' | 'reasoningEffort'
   >,
 ) {
   const id = config.model.toLowerCase();
@@ -80,8 +80,7 @@ export function samplingSupport(
         (Number(version[1]) >= 5 || (Number(version[1]) === 4 && Number(version[2] ?? 0) >= 7)),
       );
     // The installed Anthropic SDK omits both sampling controls when thinking is enabled.
-    const thinking =
-      config.reasoningEnabled && (config.showReasoning || Boolean(config.reasoningEffort && !none));
+    const thinking = config.reasoningEnabled;
     return {
       temperatureMax: removed || thinking ? null : 1,
       topPMin: removed || thinking ? null : 0,

@@ -30,7 +30,7 @@ const message: Message = {
   streamState: new ProviderStream('openai-chat', true).checkpoint(),
 };
 
-const descriptor = { protocol: 'openai-chat' as const, showReasoning: true };
+const descriptor = { protocol: 'openai-chat' as const };
 const wire = (content: string, reasoning: string) =>
   new TextEncoder().encode(
     `data: ${JSON.stringify({ choices: [{ delta: { content, reasoning_content: reasoning } }] })}\n\n`,

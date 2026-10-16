@@ -10,7 +10,6 @@ const initial: ProviderSettings = {
   activeModel: '',
   systemPrompt: '',
   maxOutputTokens: 128,
-  showReasoning: false,
 };
 
 test('autosave serializes requests and preserves edits made before an older response returns', async () => {

@@ -134,7 +134,6 @@ test('DeepSeek reasoning uses its OpenAI-compatible fields and stays separate fr
       baseUrl: 'https://api.deepseek.com',
       reasoningEnabled: true,
       reasoningEffort: 'high',
-      showReasoning: true,
     },
     history,
     async (delta) => {
@@ -246,7 +245,6 @@ test('DeepSeek Responses streams reasoning_text before the answer without repeat
       baseUrl: 'https://api.deepseek.com',
       reasoningEnabled: true,
       reasoningEffort: 'low',
-      showReasoning: true,
     },
     history,
     async (delta) => {

@@ -235,7 +235,6 @@ try {
         activeProviderId: profiles[0].id,
         activeModel: profiles[0].models[0].id,
         systemPrompt: '',
-        showReasoning: true,
         maxOutputTokens: null,
       },
       'PUT',
@@ -340,7 +339,6 @@ try {
         requestId: crypto.randomUUID(),
         content: sustained ? '长输入。'.repeat(4000) : 'Platform stream validation',
         selection,
-        showReasoning: true,
       };
       const accepted = await api<Submission>(`/conversations/${id}/messages`, input);
       assert.deepEqual(await api(`/conversations/${id}/messages`, input), accepted);

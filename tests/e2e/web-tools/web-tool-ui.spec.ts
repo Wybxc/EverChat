@@ -53,7 +53,6 @@ async function setup(request: APIRequestContext, provider: ProviderKind = 'opena
     activeModel: model,
     systemPrompt: '',
     maxOutputTokens: null,
-    showReasoning: true,
   };
   expect((await request.put('/api/settings/providers', { headers, data: config })).ok()).toBe(true);
   const saveService = async (apiKey = key, limit = service.usedToday + 40) => {
