@@ -270,6 +270,8 @@ export function useConversation(
     window.addEventListener('everchat:network-ready', online);
     window.addEventListener('offline', offline);
     document.addEventListener('visibilitychange', visible);
+    const prepareReload = () => writer.flush();
+    window.addEventListener('everchat:prepare-reload', prepareReload);
     return () => {
       writer.flush();
       alive = false;
@@ -281,6 +283,7 @@ export function useConversation(
       window.removeEventListener('everchat:network-ready', online);
       window.removeEventListener('offline', offline);
       document.removeEventListener('visibilitychange', visible);
+      window.removeEventListener('everchat:prepare-reload', prepareReload);
     };
   }, [id, enabled, retryVersion, awaitingAcceptance, confirmedDeletion]);
   return {

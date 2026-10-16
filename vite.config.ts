@@ -9,6 +9,13 @@ import { localAccess } from './scripts/dev/access';
 export default defineConfig(async ({ command, mode }) => {
   const local = command === 'serve' && mode !== 'access' ? await localAccess() : null;
   return {
+    define: {
+      'import.meta.env.VITE_APP_VERSION': JSON.stringify(
+        command === 'build'
+          ? (process.env.EVERCHAT_BUILD_ID ?? new Date().toISOString())
+          : 'development',
+      ),
+    },
     cacheDir: process.env.EVERCHAT_TEST_STATE
       ? `${process.env.EVERCHAT_TEST_STATE}/vite-cache`
       : 'node_modules/.vite',
@@ -20,7 +27,10 @@ export default defineConfig(async ({ command, mode }) => {
       tailwindcss(),
       VitePWA({
         injectRegister: false,
-        registerType: 'autoUpdate',
+        registerType: 'prompt',
+        strategies: 'injectManifest',
+        srcDir: 'src',
+        filename: 'sw.ts',
         includeAssets: ['icon.svg', 'icon-192.png', 'icon-512.png'],
         manifest: {
           id: '/',
@@ -38,9 +48,7 @@ export default defineConfig(async ({ command, mode }) => {
             { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
           ],
         },
-        workbox: {
-          navigateFallback: 'index.html',
-          navigateFallbackDenylist: [/^\/api\//, /^\/auth\//, /^\/cdn-cgi\/access\//],
+        injectManifest: {
           globPatterns: ['**/*.{js,css,html,svg,png,webmanifest}', '**/KaTeX_*.woff2'],
         },
       }),

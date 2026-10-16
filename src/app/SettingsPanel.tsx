@@ -17,6 +17,7 @@ import { SettingsAutosave } from '../features/providers/settings-autosave';
 import { WebToolSettingsPanel } from '../features/web-tools/WebToolSettings';
 import { api } from '../platform/api';
 import { useMediaQuery } from '../platform/useMediaQuery';
+import { PwaSettings } from '../platform/pwa/PwaControls';
 
 type PanelProps = {
   render: (content: ReactNode) => ReactNode;
@@ -132,6 +133,7 @@ export function SettingsPanel(props: PanelProps) {
               className="space-y-4"
             >
               {props.themeControl}
+              <PwaSettings />
               {props.onLogout && (
                 <>
                   <Button

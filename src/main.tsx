@@ -5,6 +5,8 @@ import { App } from './app/App';
 import { AccessGate } from './app/AccessGate';
 import type { SettingsTab } from './app/SettingsPanel';
 import { hydrateStorage } from './platform/storage';
+import { startPwa } from './platform/pwa/controller';
+import { PwaNotice } from './platform/pwa/PwaControls';
 
 import './style.css';
 
@@ -50,18 +52,11 @@ function start() {
     <React.StrictMode>
       <QueryClientProvider client={queryClient}>
         <Bootstrap />
+        <PwaNotice />
       </QueryClientProvider>
     </React.StrictMode>,
   );
-  if ('serviceWorker' in navigator && import.meta.env.PROD) {
-    const register = () => {
-      void navigator.serviceWorker.register('/sw.js').catch(() => {
-        console.warn('EverChat service worker could not be registered');
-      });
-    };
-    if (document.readyState === 'complete') register();
-    else window.addEventListener('load', register, { once: true });
-  }
+  startPwa();
 }
 
 void start();

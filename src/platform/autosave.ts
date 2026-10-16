@@ -1,3 +1,5 @@
+import { setReloadBlocker } from './pwa/reload-guard';
+
 type SaveState<T> = {
   settings: T;
   status: 'saved' | 'waiting' | 'saving' | 'error';
@@ -13,6 +15,7 @@ export class Autosave<T, Input = T> {
   private pending: Promise<T> | null = null;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private listeners = new Set<() => void>();
+  private disposed = false;
   constructor(
     initial: T,
     private persist: (settings: Input) => Promise<T>,
@@ -32,9 +35,15 @@ export class Autosave<T, Input = T> {
   };
   private emit(snapshot: SaveState<T>) {
     this.snapshot = snapshot;
+    if (!this.disposed)
+      setReloadBlocker(
+        this,
+        snapshot.status === 'saved' ? null : '设置尚未保存，请保存或放弃修改后再更新',
+      );
     this.listeners.forEach((listener) => listener());
   }
   update(settings: T) {
+    this.disposed = false;
     this.revision++;
     this.emit({ settings, status: 'waiting', error: '' });
     clearTimeout(this.timer);
@@ -93,5 +102,7 @@ export class Autosave<T, Input = T> {
   }
   dispose() {
     clearTimeout(this.timer);
+    this.disposed = true;
+    setReloadBlocker(this, null);
   }
 }

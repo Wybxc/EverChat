@@ -12,7 +12,7 @@
     "deploy": "pnpm build && wrangler deploy",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "typecheck": "tsc -p tsconfig.app.json && tsc -p tsconfig.worker.json && tsc -p tsconfig.tools.json && tsc -p tsconfig.shared.json && pnpm typecheck:tests",
+    "typecheck": "tsc -p tsconfig.app.json && tsc -p tsconfig.worker.json && tsc -p tsconfig.tools.json && tsc -p tsconfig.shared.json && tsc -p tsconfig.sw.json && pnpm typecheck:tests",
     "update:model-catalog": "node --import tsx/esm scripts/models/update-catalog.ts",
     "test": "node --import tsx/esm scripts/testing/run-unit.ts",
     "test:e2e": "playwright test",
@@ -81,6 +81,9 @@
     "typescript": "^6.0.0",
     "vite": "^8.3.4",
     "vite-plugin-pwa": "^2.0.0",
+    "workbox-core": "7.4.1",
+    "workbox-precaching": "7.4.1",
+    "workbox-routing": "7.4.1",
     "wrangler": "^4.149.0",
     "ws": "^8.22.0"
   }

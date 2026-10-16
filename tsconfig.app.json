@@ -12,5 +12,6 @@
     "types": ["vite/client"],
     "paths": { "@/*": ["./src/*"] }
   },
-  "include": ["src", "shared"]
+  "include": ["src", "shared"],
+  "exclude": ["src/sw.ts"]
 }

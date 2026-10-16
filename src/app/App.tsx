@@ -106,6 +106,7 @@ import { GlobalSearch } from '../features/library/GlobalSearch';
 import { Sidebar } from '../features/library/Sidebar';
 import { ConversationListItem } from '../features/library/ConversationListItem';
 import { useLibraryIndex } from '../features/library/useLibraryIndex';
+import { useReloadBlocker } from '../platform/pwa/useReloadBlocker';
 import { ModelPicker } from '../features/providers/ModelPicker';
 import {
   loadWebToolSettings,
@@ -568,6 +569,17 @@ export function App({
     (selected && !currentConversation),
   );
   const generationBlocked = messageBlocked || Boolean(imageProgress);
+  useReloadBlocker(
+    imageProgress
+      ? '附件尚在上传或解析'
+      : sending
+        ? '消息正在提交'
+        : backupTask
+          ? '备份操作尚未结束'
+          : messageMutation
+            ? '请先保存或关闭消息编辑'
+            : null,
+  );
   const select = (id: string | null) => {
     setSearchJump(null);
     setEditorFocusTarget({ id });

@@ -4,6 +4,9 @@ const PREFIX = 'everchat:';
 const cache = new Map<string, unknown>();
 let epoch = 0;
 let writesAllowed = true;
+const pendingWrites = new Set<Promise<void>>();
+const failedWrites = new Set<string>();
+const latestWrites = new Map<string, object>();
 export function lockStorageWrites() {
   writesAllowed = false;
   epoch++;
@@ -61,25 +64,31 @@ export function write(key: string, value: unknown, valid: () => boolean = () => 
   const fullKey = storageKey(key);
   cache.set(fullKey, value);
   const persistEpoch = epoch;
+  const operation = {};
+  latestWrites.set(fullKey, operation);
+  failedWrites.delete(fullKey);
   const fallback = () => {
-    if (epoch !== persistEpoch) return;
-    if (!valid()) return;
+    if (epoch !== persistEpoch || latestWrites.get(fullKey) !== operation || !valid()) return true;
     try {
       localStorage.setItem(fullKey, JSON.stringify(value));
+      return true;
     } catch {
-      /* Cloud remains authoritative. */
+      return false;
     }
   };
+  if (!fallback()) failedWrites.add(fullKey);
+  const confirmed = () => {
+    if (epoch === persistEpoch && latestWrites.get(fullKey) === operation)
+      failedWrites.delete(fullKey);
+  };
   try {
-    void set(fullKey, value).catch(fallback);
+    const pending = set(fullKey, value).then(confirmed, () => {
+      if (fallback()) confirmed();
+    });
+    pendingWrites.add(pending);
+    void pending.finally(() => pendingWrites.delete(pending));
   } catch {
-    fallback();
-  }
-  // Keep a small synchronous fallback for browsers where IndexedDB is delayed or unavailable.
-  try {
-    localStorage.setItem(fullKey, JSON.stringify(value));
-  } catch {
-    /* IndexedDB remains authoritative. */
+    if (fallback()) confirmed();
   }
 }
 function discard(keys: string[]) {
@@ -94,6 +103,8 @@ export function remove(keys: string[]) {
   const fullKeys = keys.map(storageKey);
   for (const key of fullKeys) {
     cache.delete(key);
+    failedWrites.delete(key);
+    latestWrites.delete(key);
     try {
       localStorage.removeItem(key);
     } catch {
@@ -107,6 +118,8 @@ export async function clearLocal() {
   lockStorageWrites();
   const keys = new Set(cache.keys());
   cache.clear();
+  failedWrites.clear();
+  latestWrites.clear();
   let failure: unknown;
   try {
     for (const key of Object.keys(localStorage))
@@ -125,4 +138,14 @@ export async function clearLocal() {
     failure ??= error;
   }
   if (failure) throw new Error('本地记录未能完全清除，请重试。');
+}
+
+/** Explicit update barrier: pending cache writers run first; both storage backends may fail. */
+export async function flushStorage() {
+  const currentEpoch = epoch;
+  // Await this tab's writes; rewriting its whole cache could overwrite another tab's newer drafts.
+  for (let round = 0; pendingWrites.size && round < 4; round++)
+    await Promise.all([...pendingWrites]);
+  if (pendingWrites.size || failedWrites.size) throw new Error('Local records are not durable');
+  if (currentEpoch !== epoch) throw new Error('Session changed');
 }

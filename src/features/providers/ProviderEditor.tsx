@@ -7,6 +7,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Eye, EyeOff, Pencil, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { useReloadBlocker } from '../../platform/pwa/useReloadBlocker';
 import * as v from 'valibot';
 import { enrichModelCatalog } from '../../../shared/models/catalog';
 import {
@@ -107,6 +108,7 @@ export function ProviderEditor({
   const [newModel, setNewModel] = useState('');
   const [newName, setNewName] = useState('');
   const [addingModel, setAddingModel] = useState(false);
+  useReloadBlocker(addingModel && (newModel || newName) ? '请先添加或取消编辑中的模型' : null);
   const newModelInput = useRef<HTMLInputElement>(null),
     providerNameInput = useRef<HTMLInputElement>(null);
   const [fetchingId, setFetchingId] = useState<string | null>(null);

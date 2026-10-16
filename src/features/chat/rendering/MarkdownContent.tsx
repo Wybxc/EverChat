@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { Component, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { PluginConfig } from 'streamdown';
+import { recoverApplicationResources } from '../../../platform/pwa/controller';
 
 import 'katex/dist/katex.min.css';
 import 'streamdown/styles.css';
@@ -83,7 +84,7 @@ function MarkdownFallback({ content, className }: { content: string; className: 
         type="button"
         className="mt-2"
         disabled={!online}
-        onClick={() => location.reload()}
+        onClick={() => void recoverApplicationResources()}
       >
         重新加载
       </Button>
