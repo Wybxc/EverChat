@@ -39,7 +39,8 @@ async function upload(request: APIRequestContext, cid: string, name = 'budget.tx
   return file;
 }
 async function send(request: APIRequestContext, id: string, input: object = {}) {
-  const response = await request.post(`/api/conversations/${id}/messages`, { headers, data: { requestId: crypto.randomUUID(), content: '资料', ...input } });
+  const parentId = [...(await snapshot(request, id)).messages].reverse().find((message) => message.status === 'completed' && !message.deletedAt && !message.summary)?.id ?? null;
+  const response = await request.post(`/api/conversations/${id}/messages`, { headers, data: { parentId, requestId: crypto.randomUUID(), content: '资料', ...input } });
   expect(response.status()).toBe(202); const submission = await response.json() as Submission;
   await expect.poll(async () => (await snapshot(request, id)).messages.find((message) => message.id === submission.assistantId)?.status).toBe('completed');
   return submission;
@@ -113,7 +114,7 @@ test('the real browser ZIP survives source deletion and restores private preview
     await device.request.post('/api/login', { headers, data: { password: 'everchat-local' } });
     const other = await device.newPage(); await other.goto('/'); await expect(other.getByRole('button', { name: '更多会话操作' })).toBeVisible();
     await other.getByRole('banner').locator('input[type="file"]').setInputFiles({ name: 'saved.everchat.zip', mimeType: 'application/zip', buffer: bytes });
-    await expect(other).toHaveURL(/\/c\/[0-9a-f-]{36}$/); imported = new URL(other.url()).pathname.split('/').at(-1)!; fixture.restored.push(imported);
+    await expect(other).toHaveURL(/\/c\/[0-9a-f-]{36}(?:\?branch=[^#]+)?$/); imported = new URL(other.url()).pathname.split('/').at(-1)!; fixture.restored.push(imported);
     await expect(other.getByTestId('assistant-message')).toHaveCount(1);
     await other.getByRole('button', { name: '预览 budget.pdf' }).click(); await expect(other.getByRole('dialog').locator('pre')).toContainText('PDF budget: 42');
     await other.getByRole('button', { name: '关闭文件预览' }).click(); await expect(other.getByRole('button', { name: '预览 budget.pdf' })).toBeFocused();
@@ -159,7 +160,7 @@ test('claimed finalization completes after the initiating page closes and a lost
     const reopened = await page.context().newPage(); await reopened.goto('/'); await expect(reopened.getByRole('textbox', { name: '消息' })).toBeVisible();
     await reopened.getByRole('textbox', { name: '消息' }).fill('保留草稿');
     await reopened.getByRole('banner').locator('input[type="file"]').setInputFiles({ name: 'saved.zip', mimeType: 'application/zip', buffer: bytes });
-    await expect(reopened).toHaveURL(`/c/${id}`); expect((await control(request)).dailyCount).toBe(writes);
+    await expect(reopened).toHaveURL((url) => url.pathname === `/c/${id}`); expect((await control(request)).dailyCount).toBe(writes);
     await reopened.getByRole('button', { name: '开启新对话', exact: true }).click(); await expect(reopened.getByRole('textbox', { name: '消息' })).toHaveValue('保留草稿');
   } finally { await fixture.cleanup(); }
 });
@@ -304,7 +305,7 @@ test('the browser rejects a damaged archive locally and replaces an identifier a
     await expect(page.getByRole('alert')).toContainText('备份存档大小无效'); expect(attempted).toHaveLength(0);
     const file = { name: 'fileless.json', mimeType: 'application/json', buffer: Buffer.from('\ufeff \n' + JSON.stringify(saved.backup)) };
     await input.setInputFiles(file); await expect(page.getByRole('alert')).toContainText('目标对话 ID 已被使用'); expect(attempted).toHaveLength(1);
-    await input.setInputFiles(file); await expect.poll(() => attempted.length).toBe(2); await expect(page).toHaveURL(`/c/${attempted.at(-1)}`);
+    await input.setInputFiles(file); await expect.poll(() => attempted.length).toBe(2); await expect(page).toHaveURL((url) => url.pathname === `/c/${attempted.at(-1)}`);
     expect(attempted).toHaveLength(2); expect(attempted[1]).not.toBe(attempted[0]);
   } finally { await fixture.cleanup(); }
 });
@@ -322,7 +323,7 @@ test('an otherwise empty conversation can back up and restore saved files that h
     expect(Buffer.from(decoded.entries[originalPath(file.id)])).toEqual(Buffer.from('saved before chat'));
     await request.delete(`/api/conversations/${fixture.id}`, { headers }); await page.goto('/');
     await page.getByRole('banner').locator('input[type="file"]').setInputFiles({ name: 'unused.zip', mimeType: 'application/zip', buffer: bytes });
-    await expect(page).toHaveURL(/\/c\/[0-9a-f-]{36}$/); const id = new URL(page.url()).pathname.split('/').at(-1)!; fixture.restored.push(id);
+    await expect(page).toHaveURL(/\/c\/[0-9a-f-]{36}(?:\?branch=[^#]+)?$/); const id = new URL(page.url()).pathname.split('/').at(-1)!; fixture.restored.push(id);
     const files = await request.get(`/api/conversations/${id}/attachments`).then((response) => response.json()); expect(files).toHaveLength(1);
     expect(await (await request.get(attachmentUrl(id, files[0].id))).body()).toEqual(Buffer.from('saved before chat'));
     expect((await snapshot(request, id)).messages).toEqual([]);

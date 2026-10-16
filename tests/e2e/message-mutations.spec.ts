@@ -18,8 +18,9 @@ async function setup(request: APIRequestContext) {
   } })).ok()).toBe(true);
   expect((await request.post('/api/conversations', { headers, data: { id, title: '消息修订验证' } })).status()).toBe(201);
   const snapshot = () => request.get(`/api/conversations/${id}`).then((response) => response.json()) as Promise<Snapshot>;
-  const send = async (content: string, branchHead?: string, settings?: ConversationSettings) => {
-    const response = await request.post(`/api/conversations/${id}/messages`, { headers, data: { requestId: crypto.randomUUID(), content, branchHead, showReasoning: true, settings } });
+  const send = async (content: string, parentId?: string | null, settings?: ConversationSettings) => {
+    if (parentId === undefined) parentId = [...(await snapshot()).messages].reverse().find((message) => message.status === 'completed' && !message.deletedAt && !message.summary)?.id ?? null;
+    const response = await request.post(`/api/conversations/${id}/messages`, { headers, data: { requestId: crypto.randomUUID(), content, parentId, showReasoning: true, settings } });
     expect(response.status()).toBe(202);
     return await response.json() as Submission;
   };
@@ -88,7 +89,7 @@ test('assistant revisions are idempotent and message deletion redacts context, r
     expect(tombstones.messages[2].deletedAt).toBeGreaterThan(0);
     expect(messageText(tombstones.messages[0])).toBe('');
     expect((await request.post(`/api/conversations/${fixture.id}/messages`, { headers, data: { requestId: crypto.randomUUID(), retryOf: original.id } })).status()).toBe(404);
-    expect((await request.post(`/api/conversations/${fixture.id}/messages`, { headers, data: { requestId: crypto.randomUUID(), content: 'invalid head', branchHead: revised.messageId } })).status()).toBe(404);
+    expect((await request.post(`/api/conversations/${fixture.id}/messages`, { headers, data: { requestId: crypto.randomUUID(), content: 'invalid head', parentId: revised.messageId } })).status()).toBe(404);
     const next = await fixture.send('删除后继续', continued.assistantId);
     const nextContext = await request.post(`/api/__test/conversations/${fixture.id}/context`, { headers, data: { runId: next.runId } }).then((response) => response.json());
     expect(nextContext.context.map(({ role }: { role: string }) => role)).toEqual(['user', 'assistant', 'user']);
@@ -127,7 +128,7 @@ test('message mutations require authentication and reject generation races or in
   } finally { await fixture.cleanup(); }
 });
 
-test('editing and deleting an answer preserves drafts, syncs another device and restores focus', async ({ page, browser }) => {
+test('editing and deleting an answer preserves drafts and focus while another device keeps its own reading position', async ({ page, browser }) => {
   const fixture = await setup(page.request);
   const second = await browser.newContext();
   try {
@@ -155,9 +156,13 @@ test('editing and deleting an answer preserves drafts, syncs another device and 
     await page.unroute('**/api/conversations/*/messages/*');
     await editor.getByRole('button', { name: '保存新版本' }).click();
     await expect(editor).not.toBeVisible();
-    await expect(composer).toHaveValue('保留草稿'); await expect(composer).toBeFocused();
+    await expect(composer).toHaveValue('保留草稿');
     await expect(page.getByTestId('assistant-message').last()).toContainText('手动修改后的回答');
-    await expect(other.getByTestId('assistant-message').last()).toContainText('手动修改后的回答');
+    await expect(page.getByTestId('assistant-message').getByRole('button', { name: '更多消息操作', exact: true })).toBeFocused();
+    await expect(other.getByTestId('assistant-message').getByRole('button', { name: '下一个回答版本', exact: true })).toBeEnabled();
+    await expect(other.getByTestId('assistant-message')).not.toContainText('手动修改后的回答');
+    await other.getByRole('button', { name: '下一个回答版本', exact: true }).click();
+    await expect(other.getByTestId('assistant-message')).toContainText('手动修改后的回答');
     const revised = page.getByTestId('assistant-message').last();
     await messageMenu(revised);
     await page.getByRole('menuitem', { name: '删除消息', exact: true }).click();
@@ -168,9 +173,10 @@ test('editing and deleting an answer preserves drafts, syncs another device and 
     await messageMenu(revised);
     await page.getByRole('menuitem', { name: '删除消息', exact: true }).click();
     await deletion.getByRole('button', { name: '确认删除', exact: true }).click();
-    await expect(revised).toHaveText('消息已删除');
-    await expect(other.getByTestId('assistant-message').last()).toHaveText('消息已删除');
-    await expect(composer).toHaveValue('保留草稿'); await expect(composer).toBeFocused();
-    await page.reload(); await expect(page.getByTestId('assistant-message').last()).toHaveText('消息已删除');
+    await expect(revised).not.toContainText('手动修改后的回答');
+    await expect(other.getByTestId('assistant-message')).not.toContainText('手动修改后的回答');
+    await expect(composer).toHaveValue('保留草稿');
+    await expect(page.getByTestId('assistant-message').getByRole('button', { name: '更多消息操作', exact: true })).toBeFocused();
+    await page.reload(); await expect(page.getByTestId('assistant-message')).not.toContainText('手动修改后的回答');
   } finally { await second.close(); await fixture.cleanup(); }
 });

@@ -15,3 +15,17 @@ export const SEARCH_QUERY_LIMIT = 200;
 export const normalizeSearch = (text: string) => text.toLowerCase().replace(/\s+/gu, ' ').trim();
 // GLOB has no ESCAPE clause. Bracket expressions quote its three metacharacters.
 export const literalGlob = (text: string) => `*${text.replace(/[\[*?]/gu, (character) => `[${character}]`)}*`;
+
+// DO SQLite limits LIKE/GLOB patterns to 50 UTF-8 bytes, including escaping and the outer stars.
+// https://developers.cloudflare.com/durable-objects/platform/limits/
+export function searchCandidateGlob(text: string) {
+  const encoder = new TextEncoder();
+  let prefix = '', bytes = 2;
+  for (const character of text) {
+    const escaped = /[\[*?]/u.test(character) ? `[${character}]` : character;
+    const size = encoder.encode(escaped).byteLength;
+    if (bytes + size > 50) break;
+    prefix += escaped; bytes += size;
+  }
+  return `*${prefix}*`;
+}

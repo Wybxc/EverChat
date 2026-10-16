@@ -125,7 +125,7 @@ test('a failed tool has one visible error while collapsed and can reveal and foc
   try {
     expect((await context.request.post('/api/conversations', { headers, data: { id, title: '失败调用定位' } })).status()).toBe(201);
     expect((await context.request.post(`/api/__test/conversations/${id}/tool-runtime`, { headers, data: { taskId, fault: 'service-401' } })).ok()).toBe(true);
-    expect((await context.request.post(`/api/conversations/${id}/messages`, { headers, data: { requestId: taskId, content: '检查失败调用', tools: ['web_search'] } })).status()).toBe(202);
+    expect((await context.request.post(`/api/conversations/${id}/messages`, { headers, data: { parentId: null, requestId: taskId, content: '检查失败调用', tools: ['web_search'] } })).status()).toBe(202);
     await page.goto(`/c/${id}`);
     const answer = page.getByTestId('assistant-message'), activity = page.getByTestId('tool-activity');
     await expect(answer).toHaveAttribute('data-status', 'failed');
@@ -170,7 +170,7 @@ test('offline queue pins enabled tools and delivers the same request once after 
     await page.goto('/'); await enable(page, ['read_webpage']); await context.setOffline(true);
     await page.getByLabel('消息', { exact: true }).fill('离线排队后读取网页');
     await page.getByRole('button', { name: '发送消息', exact: true }).click();
-    await expect(page).toHaveURL(/\/c\/[^/]+$/); const id = page.url().split('/').at(-1)!; f.ids.push(id);
+    await expect(page).toHaveURL(/\/c\/[^/]+(?:\?branch=[^#]+)?$/); const id = new URL(page.url()).pathname.split('/').at(-1)!; f.ids.push(id);
     const pending = await page.evaluate(() => JSON.parse(localStorage.getItem('everchat:pending') ?? '[]'));
     expect(pending).toHaveLength(1); expect(pending[0].input.tools).toEqual(['read_webpage']); expect(pending[0].input.settings.tools).toEqual(['read_webpage']);
     const taskId = pending[0].input.requestId;
@@ -244,7 +244,7 @@ test('creating a conversation for an attachment preserves its enabled tools and 
   try {
     await page.goto('/'); await enable(page, ['web_search']);
     await page.getByLabel('选择聊天文件', { exact: true }).setInputFiles({ name: 'context.txt', mimeType: 'text/plain', buffer: Buffer.from('附加文字资料') });
-    await expect(page).toHaveURL(/\/c\/[^/]+$/); const id = page.url().split('/').at(-1)!; f.ids.push(id);
+    await expect(page).toHaveURL(/\/c\/[^/]+(?:\?branch=[^#]+)?$/); const id = new URL(page.url()).pathname.split('/').at(-1)!; f.ids.push(id);
     await expect.poll(async () => (await f.snapshot(id)).settings!.tools).toEqual(['web_search']);
     const sent = await send(page); expect(sent.id).toBe(id); expect(sent.input.tools).toEqual(['web_search']);
     await expect(page.getByTestId('assistant-message')).toHaveAttribute('data-status', 'completed');

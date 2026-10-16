@@ -178,7 +178,7 @@ test('answers use the available narrow width and rich content retains one frame 
     await expect.poll(() => isOpen(thought)).toBe(true);
     await thought.locator('summary').click(); await expect.poll(() => isOpen(thought)).toBe(false);
     await answer.getByRole('button', { name: '更多消息操作', exact: true }).click();
-    await page.getByRole('menuitem', { name: '继续此分支', exact: true }).click();
+    await page.getByRole('menuitem', { name: '从这里继续', exact: true }).click();
     await expect.poll(() => isOpen(thought)).toBe(false);
     await context.setOffline(true); await expect(page.getByRole('banner')).toContainText('离线');
     await context.setOffline(false); await expect(page.getByRole('banner')).toContainText('已同步');

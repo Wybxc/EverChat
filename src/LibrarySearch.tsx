@@ -30,7 +30,7 @@ export function LibrarySearch({ query, archived, open }: { query: string; archiv
     {!online ? <p role="status" className="px-3 text-xs text-muted-foreground">联网后搜索正文</p>
       : !ready || search.isPending ? <p role="status" className="px-3 text-xs"><Spinner aria-hidden="true" /> 搜索中</p>
       : null}
-    {pages && <ul className="w-full space-y-1 p-0 text-sm">{pages.flatMap((page) => page.results).filter((result) => !deletedAt(result.conversationId)).map((result) => <li key={`${result.conversationId}:${result.messageId}:${result.field}`}><a href={conversationUrl(result.conversationId)} className="block min-w-0 rounded-lg px-3 py-2" onClick={(event) => {
+    {pages && <ul className="w-full space-y-1 p-0 text-sm">{pages.flatMap((page) => page.results).filter((result) => !deletedAt(result.conversationId)).map((result) => <li key={`${result.conversationId}:${result.messageId}:${result.field}`}><a href={conversationUrl(result.conversationId, result.messageId)} className="block min-w-0 rounded-lg px-3 py-2" onClick={(event) => {
       if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       event.preventDefault(); open(result, debounced);
     }}><span className="block truncate text-xs font-medium">{result.title} · {result.field === 'reasoning' ? '思考' : '正文'}</span><span className="mt-1 block line-clamp-3 break-words text-xs text-muted-foreground">{result.excerpt}</span></a></li>)}</ul>}

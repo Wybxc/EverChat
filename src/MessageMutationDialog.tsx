@@ -7,22 +7,24 @@ import { useId, useRef, useState, type SubmitEvent } from 'react';
 import { X } from 'lucide-react';
 import type { Message } from '../shared/types';
 
-export function MessageMutationDialog({ message, mode, affectsSummaries = false, confirm, close }: {
-  message: Message; mode: 'edit' | 'delete'; affectsSummaries?: boolean; confirm: (content: string, requestId: string) => Promise<void>; close: () => void;
+export function MessageMutationDialog({ message, mode, affectsSummaries = false, confirm, close, completedFocus }: {
+  message: Message; mode: 'edit' | 'delete'; affectsSummaries?: boolean; confirm: (content: string, requestId: string) => Promise<void>; close: () => void; completedFocus?: () => HTMLElement | null;
 }) {
   const titleId = useId(), input = useRef<HTMLTextAreaElement>(null), cancel = useRef<HTMLButtonElement>(null);
   const [content, setContent] = useState(messageText(message)), [busy, setBusy] = useState(false), [error, setError] = useState('');
   const request = useRef({ id: crypto.randomUUID(), content: messageText(message).trim() });
+  const confirmed = useRef(false);
   const submit = async (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (busy || (mode === 'edit' && !content.trim())) return;
     if (request.current.content !== content.trim()) request.current = { id: crypto.randomUUID(), content: content.trim() };
     setError(''); setBusy(true);
-    try { await confirm(content, request.current.id); close(); }
+    try { await confirm(content, request.current.id); confirmed.current = true; close(); }
     catch (cause) { setError(cause instanceof Error ? cause.message : '操作失败，请重试。'); }
     finally { setBusy(false); }
   };
-  return <Modal open onOpenChange={(next) => { if (!next) close(); }} alert={mode === 'delete'} busy={busy} initialFocus={mode === 'edit' ? input : cancel} aria-labelledby={titleId}>
+  return <Modal open onOpenChange={(next) => { if (!next) close(); }} alert={mode === 'delete'} busy={busy} initialFocus={mode === 'edit' ? input : cancel} aria-labelledby={titleId}
+    onCloseAutoFocus={(event) => { const target = confirmed.current ? completedFocus?.() : null; if (target) { event.preventDefault(); target.focus({ preventScroll: true }); } }}>
     <div className="p-5 flex max-h-[85dvh] max-w-2xl flex-col overflow-hidden">
       <div className="mb-4 flex shrink-0 items-center justify-between gap-3">
         <ModalTitle id={titleId} className="text-lg font-semibold">{mode === 'edit' ? '编辑回答' : message.summary ? '删除摘要' : '删除消息'}</ModalTitle>

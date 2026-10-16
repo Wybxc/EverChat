@@ -36,7 +36,9 @@ async function parse(request: APIRequestContext, id: string, fileId: string) {
   const response = await request.post(documentUrl(id, fileId), { headers }); expect(response.status()).toBe(200); return response.json() as Promise<DocumentPart>;
 }
 async function submit(fixture: Awaited<ReturnType<typeof setup>>, data: object) {
-  const response = await fixture.submit({ requestId: crypto.randomUUID(), selection: fixture.selection, ...data }); expect(response.status()).toBe(202); return response.json() as Promise<Submission>;
+  const parentId = [...(await fixture.snapshot()).messages].reverse().find((message) => message.status === 'completed' && !message.deletedAt && !message.summary)?.id ?? null;
+  const ordinary = !('retryOf' in data) && !('revisionOf' in data) && !('summaryThrough' in data);
+  const response = await fixture.submit({ ...(ordinary ? { parentId } : {}), requestId: crypto.randomUUID(), selection: fixture.selection, ...data }); expect(response.status()).toBe(202); return response.json() as Promise<Submission>;
 }
 async function finish(fixture: Awaited<ReturnType<typeof setup>>, submission: Submission) {
   await expect.poll(async () => (await fixture.snapshot()).messages.find((message) => message.id === submission.assistantId)?.status).toBe('completed');
@@ -51,7 +53,7 @@ for (const provider of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
       expect(again).toEqual(file); expect(after.dailyCount).toBe(before.dailyCount); expect(after.objects).toEqual(before.objects);
       await first.request.post('/api/login', { headers, data: { password: 'everchat-local' } });
       const page = await first.newPage(); await page.goto(`/c/${fixture.id}`);
-      const input = { requestId: crypto.randomUUID(), content: '', fileIds: [file.attachmentId], selection: fixture.selection };
+      const input = { parentId: null, requestId: crypto.randomUUID(), content: '', fileIds: [file.attachmentId], selection: fixture.selection };
       const response = await fixture.submit(input); expect(response.status()).toBe(202); const result = await response.json() as Submission;
       expect(messageFiles((await fixture.snapshot()).messages.find((message) => message.id === result.userId)!)).toEqual([file]);
       expect(JSON.stringify(await fixture.snapshot())).not.toContain(text);
@@ -80,7 +82,7 @@ test('invalid, incomplete, foreign, unparsed and over-budget documents fail befo
     const pending = { id: crypto.randomUUID(), name: 'pending.txt', size: 10, sha256: 'a'.repeat(64), mediaType: 'text/plain' };
     await request.post(`/api/conversations/${fixture.id}/attachments`, { headers, data: pending });
     for (const ids of [[unparsed.id], [foreign.id], [pending.id], [good.id, good.id], Array(5).fill(good.id)]) {
-      expect((await fixture.submit({ requestId: crypto.randomUUID(), content: '', selection: fixture.selection, fileIds: ids })).status()).toBeGreaterThanOrEqual(400);
+      expect((await fixture.submit({ parentId: null, requestId: crypto.randomUUID(), content: '', selection: fixture.selection, fileIds: ids })).status()).toBeGreaterThanOrEqual(400);
     }
     for (const [bytes, name, mediaType, status] of [
       [Buffer.concat([Buffer.from('valid prefix text '), Buffer.from([0xff])]), 'bad.txt', 'text/plain', 415],
@@ -93,10 +95,10 @@ test('invalid, incomplete, foreign, unparsed and over-budget documents fail befo
       const endpoint = documentUrl(fixture.id, bad.id);
       expect((await request.post(endpoint, { headers })).status()).toBe(status);
       expect((await request.post(endpoint, { headers })).status()).toBe(status);
-      expect((await fixture.submit({ requestId: crypto.randomUUID(), content: '', selection: fixture.selection, fileIds: [bad.id] })).status()).toBeGreaterThanOrEqual(400);
+      expect((await fixture.submit({ parentId: null, requestId: crypto.randomUUID(), content: '', selection: fixture.selection, fileIds: [bad.id] })).status()).toBeGreaterThanOrEqual(400);
     }
     expect((await request.post(documentUrl(fixture.id, foreign.id), { headers })).status()).toBe(404);
-    expect((await fixture.submit({ requestId: crypto.randomUUID(), content: '', selection: fixture.selection, fileIds: [good.id], settings: { ...((await fixture.snapshot()).settings!), contextBudget: 100 } })).status()).toBe(400);
+    expect((await fixture.submit({ parentId: null, requestId: crypto.randomUUID(), content: '', selection: fixture.selection, fileIds: [good.id], settings: { ...((await fixture.snapshot()).settings!), contextBudget: 100 } })).status()).toBe(400);
     expect((await fixture.snapshot()).messages).toHaveLength(0);
     const state = await control(request); expect(state.documents.some((row: { id: string; status: string }) => row.id === good.id && row.status === 'ready')).toBe(true);
   } finally { await fixture.cleanup(); await other.cleanup(); }
@@ -137,7 +139,7 @@ test('unknown parsed R2 write is cleaned after reset before explicit reparsing, 
     expect([500, 503]).toContain((await request.post(documentUrl(fixture.id, original.id), { headers })).status());
     const state = await control(request); expect(state.documents.find((row: { id: string }) => row.id === original.id)?.status).toBe('parsing');
     expect(state.objects.filter((object: { key: string }) => object.key.includes(`/${original.id}/`))).toHaveLength(2);
-    expect((await fixture.submit({ requestId: crypto.randomUUID(), content: '', selection: fixture.selection, fileIds: [original.id] })).status()).toBe(409);
+    expect((await fixture.submit({ parentId: null, requestId: crypto.randomUUID(), content: '', selection: fixture.selection, fileIds: [original.id] })).status()).toBe(409);
     await control(request, { id: original.id, expire: true });
     await expect.poll(async () => (await control(request)).documents.some((row: { id: string }) => row.id === original.id)).toBe(false);
     expect((await request.get(attachmentUrl(fixture.id, original.id))).status()).toBe(200);
@@ -157,7 +159,7 @@ test('deletion interleaved with parsing or acceptance never leaves an orphan or 
     await expect.poll(async () => (await control(request)).objects.some((object: { key: string }) => object.key.includes(`/${original.id}/`))).toBe(false);
     const next = await upload(request, fixture.id); await parse(request, fixture.id, next.id);
     await control(request, { holdTextRead: next.id });
-    const accepting = fixture.submit({ requestId: crypto.randomUUID(), content: '', selection: fixture.selection, fileIds: [next.id] });
+    const accepting = fixture.submit({ parentId: null, requestId: crypto.randomUUID(), content: '', selection: fixture.selection, fileIds: [next.id] });
     await expect.poll(async () => (await control(request)).textWaiting).toBe(true);
     expect((await request.delete(`/api/conversations/${fixture.id}/attachments/${next.id}`, { headers })).status()).toBe(200);
     await control(request, { releaseText: true }); expect((await accepting).status()).toBeGreaterThanOrEqual(400);
@@ -172,7 +174,7 @@ test('new-conversation upload preserves text, focus and private metadata drafts;
     await expectChatModel(page, JSON.stringify([providerId, fixture.selection.model]));
     const editor = page.getByRole('textbox', { name: '消息', exact: true }); await editor.fill('保留我的草稿 expect-files:1');
     await page.getByLabel('选择聊天文件').setInputFiles({ name: 'draft.ts', mimeType: 'text/plain', buffer: Buffer.from(text) });
-    await expect(page).toHaveURL(/\/c\/[a-f0-9-]+$/); const id = page.url().split('/').at(-1)!;
+    await expect(page).toHaveURL(/\/c\/[a-f0-9-]+(?:\?branch=[^#]+)?$/); const id = new URL(page.url()).pathname.split('/').at(-1)!;
     try {
       await expect(page.getByRole('button', { name: '预览 draft.ts' })).toBeVisible(); await expect(editor).toHaveValue('保留我的草稿 expect-files:1'); await expect(editor).toBeFocused();
       await page.reload(); await expect(page.getByRole('button', { name: '预览 draft.ts' })).toBeVisible(); await expect(editor).toHaveValue('保留我的草稿 expect-files:1');

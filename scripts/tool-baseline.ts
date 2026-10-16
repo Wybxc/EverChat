@@ -104,7 +104,7 @@ try {
     assert.ok(libraryStart.report && conversationStart.report, 'Measurement windows must be armed');
     const live = await subscriber(id, scenario.disconnect);
     const provider = providers.find((item) => item.provider === scenario.protocol)!;
-    const input = { requestId, content: 'Deterministic bounded web tool workload', selection: { providerId: provider.id,
+    const input = { parentId: null, requestId, content: 'Deterministic bounded web tool workload', selection: { providerId: provider.id,
       model: `tools-${scenario.mode === 'loop' ? 'loop' : 'service'}-${scenario.protocol}` }, showReasoning: true, tools: ['web_search', 'read_webpage'] };
     const submission = await api<Submission>(`/conversations/${id}/messages`, input);
     assert.deepEqual(await api(`/conversations/${id}/messages`, input), submission, 'Duplicate acceptance must return the same run');

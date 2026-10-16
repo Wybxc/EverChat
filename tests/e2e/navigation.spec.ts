@@ -16,7 +16,7 @@ async function setup(request: APIRequestContext) {
 async function conversation(request: APIRequestContext, label: string) {
   const id = crypto.randomUUID(), title = `${label} ${id.slice(0, 8)}`;
   expect((await request.post('/api/conversations', { headers, data: { id, title } })).status()).toBe(201);
-  expect((await request.post(`/api/conversations/${id}/messages`, { headers, data: { requestId: crypto.randomUUID(), content: title } })).status()).toBe(202);
+  expect((await request.post(`/api/conversations/${id}/messages`, { headers, data: { parentId: null, requestId: crypto.randomUUID(), content: title } })).status()).toBe(202);
   await expect.poll(async () => (await request.get(`/api/conversations/${id}`).then((response) => response.json()) as Snapshot).messages[1].status).toBe('completed');
   return { id, title, path: `/c/${id}` };
 }
@@ -30,16 +30,16 @@ test('SPA navigation, history and refresh restore the correct conversation and i
     await editor.fill('新对话草稿');
     await page.evaluate(() => { (window as unknown as { spaMarker: string }).spaMarker = 'same-document'; });
     await page.getByRole('link', { name: first.title, exact: true }).click();
-    await expect(page).toHaveURL(first.path);
+    await expect(page).toHaveURL((url) => url.pathname === first.path);
     await expect(page.getByTestId('user-message')).toContainText(first.title);
     await expect(page.getByRole('link', { name: first.title, exact: true })).toHaveAttribute('aria-current', 'page');
     await editor.fill('第一个对话的草稿');
     await page.getByRole('link', { name: second.title, exact: true }).click();
-    await expect(page).toHaveURL(second.path);
+    await expect(page).toHaveURL((url) => url.pathname === second.path);
     await expect(page.getByTestId('user-message')).toContainText(second.title);
     await editor.fill('第二个对话的草稿');
     await page.goBack();
-    await expect(page).toHaveURL(first.path);
+    await expect(page).toHaveURL((url) => url.pathname === first.path);
     await expect(page.getByTestId('user-message')).toContainText(first.title);
     await expect(editor).toHaveValue('第一个对话的草稿');
     await page.goBack();
@@ -47,11 +47,11 @@ test('SPA navigation, history and refresh restore the correct conversation and i
     await expect(editor).toHaveValue('新对话草稿');
     await expect(page.getByTestId('user-message')).toHaveCount(0);
     await page.goForward(); await page.goForward();
-    await expect(page).toHaveURL(second.path);
+    await expect(page).toHaveURL((url) => url.pathname === second.path);
     await expect(editor).toHaveValue('第二个对话的草稿');
     expect(await page.evaluate(() => (window as unknown as { spaMarker: string }).spaMarker)).toBe('same-document');
     await page.reload();
-    await expect(page).toHaveURL(second.path);
+    await expect(page).toHaveURL((url) => url.pathname === second.path);
     await expect(page.getByTestId('user-message')).toContainText(second.title);
     await expect(editor).toHaveValue('第二个对话的草稿');
     await page.goto('/');
@@ -68,7 +68,7 @@ test('a direct conversation URL survives login without an existing local selecti
     await page.goto(existing.path);
     await page.getByLabel('访问密码').fill('everchat-local');
     await page.getByRole('button', { name: '进入我的空间', exact: true }).click();
-    await expect(page).toHaveURL(existing.path);
+    await expect(page).toHaveURL((url) => url.pathname === existing.path);
     await expect(page.getByTestId('user-message')).toContainText(existing.title);
     await expect(page.getByTestId('assistant-message')).toHaveAttribute('data-status', 'completed');
   } finally { await fixture.restore(); }
@@ -84,7 +84,7 @@ test('conversation links open in a new tab through native browser navigation', a
     const opened = context.waitForEvent('page');
     await link.click({ button: 'middle' });
     const other = await opened;
-    await expect(other).toHaveURL(existing.path);
+    await expect(other).toHaveURL((url) => url.pathname === existing.path);
     await expect(other.getByTestId('user-message')).toContainText(existing.title);
     await expect(page).toHaveURL('/');
     await other.close();
@@ -116,18 +116,18 @@ test('an offline submission receives a URL and survives navigation, acceptance a
     await context.setOffline(true);
     await editor.fill('离线对话 URL');
     await page.getByRole('button', { name: '发送消息', exact: true }).click();
-    await expect(page).toHaveURL(/\/c\/[0-9a-f-]{36}$/);
+    await expect(page).toHaveURL(/\/c\/[0-9a-f-]{36}(?:\?branch=[^#]+)?$/);
     const path = new URL(page.url()).pathname;
     await expect(page.getByText('等待发送', { exact: true })).toBeVisible();
     await page.locator('aside').getByRole('button', { name: '开启新对话', exact: true }).click();
     await expect(page).toHaveURL('/');
     await page.getByRole('link', { name: '离线对话 URL', exact: true }).click();
-    await expect(page).toHaveURL(path);
+    await expect(page).toHaveURL((url) => url.pathname === path);
     await expect(page.getByText('等待发送', { exact: true })).toBeVisible();
     await context.setOffline(false);
     await expect(page.getByTestId('assistant-message')).toHaveAttribute('data-status', 'completed');
     await page.reload();
-    await expect(page).toHaveURL(path);
+    await expect(page).toHaveURL((url) => url.pathname === path);
     await expect(page.getByTestId('user-message')).toHaveCount(1);
     await expect(page.getByTestId('user-message')).toContainText('离线对话 URL');
     await expect(page.getByTestId('assistant-message')).toHaveCount(1);

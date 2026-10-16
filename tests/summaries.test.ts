@@ -34,7 +34,7 @@ test('summaries use exact parent paths, prefer the furthest coverage and then it
   assert.equal(summaryForPath(messages, path.slice(0, 2))?.id, early.id);
   assert.equal(summaryForPath(messages, branch)?.id, other.id);
   assert.equal(summaryForPath(messages, path.slice(0, 2), true), undefined);
-  assert.equal(contextSource(messages.filter((message) => !branch.includes(message)), { content: 'next' }).parentId, path.at(-1)!.id);
+  assert.equal(contextSource(messages.filter((message) => !branch.includes(message)), { content: 'next', parentId: path.at(-1)!.id }).parentId, path.at(-1)!.id);
 });
 
 test('queued, partial, failed, cancelled, deleted, empty and truncated summaries never replace original history', () => {

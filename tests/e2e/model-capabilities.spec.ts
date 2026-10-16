@@ -118,7 +118,7 @@ test('unknown image capability can send actual native image bytes; confirmed fal
     await expect(page.getByRole('button', { name: '移除 test.webp' })).toBeVisible();
     await page.getByLabel('消息', { exact: true }).fill('用户选择尝试未知图片能力');
     await page.getByRole('button', { name: '发送消息', exact: true }).click();
-    await expect(page).toHaveURL(/\/c\//); const id = page.url().split('/').at(-1)!; ids.push(id);
+    await expect(page).toHaveURL(/\/c\//); const id = new URL(page.url()).pathname.split('/').at(-1)!; ids.push(id);
     await expect(page.getByTestId('assistant-message')).toHaveAttribute('data-status', 'completed');
     const snapshot = await context.request.get(`/api/conversations/${id}`).then((r) => r.json()) as Snapshot;
     expect(snapshot.messages[0].parts?.some((part) => part.type === 'image')).toBe(true);
@@ -146,7 +146,7 @@ test('unknown tools remain opt-in; native API accepts a chosen tool while reject
     const response = page.waitForResponse((r) => /\/api\/conversations\/[^/]+\/messages$/.test(r.url()) && r.request().method() === 'POST');
     await page.getByRole('button', { name: '发送消息', exact: true }).click();
     const accepted = await response; expect(accepted.status()).toBe(202); const taskId = accepted.request().postDataJSON().requestId;
-    await expect(page).toHaveURL(/\/c\//); const id = page.url().split('/').at(-1)!; ids.push(id);
+    await expect(page).toHaveURL(/\/c\//); const id = new URL(page.url()).pathname.split('/').at(-1)!; ids.push(id);
     await expect(page.getByTestId('assistant-message')).toHaveAttribute('data-status', 'completed');
     const runtime = await context.request.post(`/api/__test/conversations/${id}/tool-runtime`, { headers, data: { taskId } });
     expect(runtime.ok()).toBe(true); const state = await runtime.json(); expect(state.modelCalls).toBe(2); expect(state.serviceRequests).toHaveLength(1);

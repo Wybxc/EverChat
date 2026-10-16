@@ -86,8 +86,8 @@ test('preview sources match normal continuation, user-ending copies, revision an
   const user: Message = { id: 'u', role: 'user', parts: messageParts('root'), status: 'completed', createdAt: 1, runId: null, parentId: null, revisionOf: null, error: null };
   const answer: Message = { ...user, id: 'a', role: 'assistant', parentId: 'u', parts: messageParts('answer') };
   const tail: Message = { ...user, id: 'tail', parentId: 'a', parts: messageParts('trailing question') };
-  assert.deepEqual(contextSource([user, answer, tail], { content: 'next' }), { content: 'next', parentId: 'tail' });
-  assert.deepEqual(contextSource([user, answer, tail], { content: ' next ', branchHead: 'a' }), { content: 'next', parentId: 'a' });
+  assert.deepEqual(contextSource([user, answer, tail], { content: 'next', parentId: 'tail' }), { content: 'next', parentId: 'tail' });
+  assert.deepEqual(contextSource([user, answer, tail], { content: ' next ', parentId: 'a' }), { content: 'next', parentId: 'a' });
   assert.deepEqual(contextSource([user, answer, tail], { content: 'edit', revisionOf: 'u' }), { content: 'edit', parentId: null });
   assert.deepEqual(contextSource([user, answer, tail], { retryOf: 'a' }), { content: 'root', parentId: null });
 });

@@ -32,7 +32,7 @@ async function setup(request: APIRequestContext, provider: ProviderKind = 'opena
   const create = async (fault = 'service') => {
     const id = crypto.randomUUID(); ids.push(id);
     expect((await request.post('/api/conversations', { headers, data: { id, title: 'Real adapter fixture' } })).status()).toBe(201);
-    const input = { requestId: crypto.randomUUID(), content: '查询 Cloudflare 官方资料', tools: ['web_search', 'read_webpage'], showReasoning: true };
+    const input = { parentId: null, requestId: crypto.randomUUID(), content: '查询 Cloudflare 官方资料', tools: ['web_search', 'read_webpage'], showReasoning: true };
     const state = () => request.post(`/api/__test/conversations/${id}/tool-runtime`, { headers, data: { taskId: input.requestId } }).then((r) => r.json()) as Promise<Runtime>;
     expect((await request.post(`/api/__test/conversations/${id}/tool-runtime`, { headers, data: { taskId: input.requestId, fault } })).ok()).toBe(true);
     const submit = () => request.post(`/api/conversations/${id}/messages`, { headers, data: input });

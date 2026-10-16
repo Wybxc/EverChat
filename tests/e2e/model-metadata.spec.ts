@@ -148,7 +148,11 @@ test('server validates effective output and effort limits before accepting a run
   const configuration = { providers: [{ id: providerId, name: 'Pinned metadata', provider: 'openai-chat', baseUrl: 'https://provider.test/v1', apiKey: 'integration-test-key',
     models: [{ id: 'alarm-stall', name: 'Pinned Model', enabled: true, reasoningSupport: 'supported', reportedMetadata: { contextWindow: 2048, maxOutputTokens: 512, reasoning: true }, metadataOverrides: { contextWindow: 1024, maxOutputTokens: 256, imageInput: false, reasoningEfforts: ['low'] } }],
   }], activeProviderId: providerId, activeModel: 'alarm-stall', systemPrompt: '', maxOutputTokens: null, showReasoning: false };
-  const submit = (patch: object = {}) => request.post(`/api/conversations/${id}/messages`, { headers, data: { requestId: crypto.randomUUID(), content: 'Pin metadata', ...patch } });
+  const submit = async (patch: object = {}) => {
+    const snapshot = await request.get(`/api/conversations/${id}`).then((response) => response.json()) as Snapshot;
+    const parentId = [...snapshot.messages].reverse().find((message) => message.status === 'completed' && !message.deletedAt && !message.summary)?.id ?? null;
+    return request.post(`/api/conversations/${id}/messages`, { headers, data: { parentId, requestId: crypto.randomUUID(), content: 'Pin metadata', ...patch } });
+  };
   const snapshot = () => request.get(`/api/conversations/${id}`).then((response) => response.json()) as Promise<Snapshot>;
   const run = (runId: string) => request.post(`/api/__test/conversations/${id}/context`, { headers, data: { runId } }).then((response) => response.json());
   try {

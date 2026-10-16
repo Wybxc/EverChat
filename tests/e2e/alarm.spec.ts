@@ -14,7 +14,7 @@ async function setup(request: APIRequestContext, model = 'alarm-test') {
     activeProviderId: providerId, activeModel: model, systemPrompt: '', maxOutputTokens: null, showReasoning: true,
   } })).ok()).toBe(true);
   expect((await request.post('/api/conversations', { headers, data: { id, title: 'Alarm execution' } })).status()).toBe(201);
-  const input = { requestId: crypto.randomUUID(), content: '仅执行一次', showReasoning: true };
+  const input = { parentId: null, requestId: crypto.randomUUID(), content: '仅执行一次', showReasoning: true };
   const responses = await Promise.all([0, 1].map(() => request.post(`/api/conversations/${id}/messages`, { headers, data: input })));
   for (const response of responses) expect(response.status()).toBe(202);
   const [response, duplicate] = responses;
@@ -96,7 +96,7 @@ test('stopping a silent upstream aborts promptly and leaves the next task schedu
     expect(Date.now() - started).toBeLessThan(3000);
     expect((await fixture.snapshot()).messages[1]).toMatchObject({ status: 'cancelled', parts: messageParts('等待上游的正文', '等待上游的思考') });
     expect(await fixture.state()).toMatchObject({ calls: 1, cancelRequested: 1 });
-    const next = await request.post(`/api/conversations/${fixture.id}/messages`, { headers, data: { requestId: crypto.randomUUID(), content: '停止后继续' } });
+    const next = await request.post(`/api/conversations/${fixture.id}/messages`, { headers, data: { parentId: fixture.submission.userId, requestId: crypto.randomUUID(), content: '停止后继续' } });
     expect(next.status()).toBe(202);
     const submitted = await next.json() as Submission;
     await expect.poll(async () => messageText((await fixture.snapshot()).messages[3]), { timeout: 5000 }).toBe('等待上游的正文');

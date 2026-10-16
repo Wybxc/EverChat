@@ -15,7 +15,7 @@ async function setup(request: APIRequestContext, provider: ProviderKind = 'opena
     activeProviderId: providerId, activeModel: model, systemPrompt: '', maxOutputTokens: null, showReasoning: true,
   } })).ok()).toBe(true);
   expect((await request.post('/api/conversations', { headers, data: { id, title: 'Native tool workflow' } })).status()).toBe(201);
-  const input = { requestId: options.requestId ?? crypto.randomUUID(), content: '查询 Cloudflare 文档', showReasoning: true, tools: ['web_search', 'read_webpage'],
+  const input = { parentId: null, requestId: options.requestId ?? crypto.randomUUID(), content: '查询 Cloudflare 文档', showReasoning: true, tools: ['web_search', 'read_webpage'],
     ...(options.contextBudget ? { settings: { ...DEFAULT_CONVERSATION_SETTINGS, contextBudget: options.contextBudget } } : {}) };
   if (options.fault) expect((await request.post(`/api/__test/conversations/${id}/tool-runtime`, { headers, data: { taskId: input.requestId, fault: options.fault } })).ok()).toBe(true);
   const response = await request.post(`/api/conversations/${id}/messages`, { headers, data: input });
@@ -53,7 +53,7 @@ for (const provider of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
     const configured = await request.get('/api/settings/providers').then((response) => response.json()) as ProviderSettings;
     for (const profile of configured.providers) for (const model of profile.models) model.metadataOverrides = { ...model.metadataOverrides, toolCalls: false };
     expect((await request.put('/api/settings/providers', { headers, data: configured })).ok()).toBe(true);
-    const rejected = await request.post(`/api/conversations/${f.id}/messages`, { headers, data: { ...f.input, requestId: crypto.randomUUID() } });
+    const rejected = await request.post(`/api/conversations/${f.id}/messages`, { headers, data: { ...f.input, parentId: snapshot.messages.at(-1)!.id, requestId: crypto.randomUUID() } });
     expect(rejected.status()).toBe(400); expect(await rejected.json()).toEqual({ error: '当前模型不支持工具调用。' });
     expect(await f.snapshot()).toEqual(snapshot); expect((await f.state()).modelCalls).toBe(2);
   } finally { await f.cleanup(); }

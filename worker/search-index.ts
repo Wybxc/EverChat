@@ -1,7 +1,7 @@
 import { fromMarkdown } from 'mdast-util-from-markdown';
 import { gfmFromMarkdown } from 'mdast-util-gfm';
 import { gfm } from 'micromark-extension-gfm';
-import { literalGlob, normalizeSearch, SEARCH_PAGE_SIZE, type LibrarySearch, type SearchDocument } from '../shared/search';
+import { searchCandidateGlob, normalizeSearch, SEARCH_PAGE_SIZE, type LibrarySearch, type SearchDocument } from '../shared/search';
 
 type Node = { type: string; value?: string; alt?: string | null; children?: Node[] };
 const blocks = new Set(['paragraph', 'heading', 'listItem', 'code', 'blockquote', 'tableCell']);
@@ -87,9 +87,9 @@ export class SearchIndex {
     const rows = normalized ? sql.exec<FieldRow & { title: string }>(`SELECT fields.*, conversations.title FROM search_fts
       JOIN search_fields AS fields ON fields.id = search_fts.rowid JOIN conversations ON conversations.id = fields.conversationId
       LEFT JOIN conversation_metadata AS metadata ON metadata.id = conversations.id
-      WHERE search_fts.normalized GLOB ? AND fields.id < ? AND COALESCE(metadata.archived, 0) = ?
+      WHERE search_fts.normalized GLOB ? AND instr(fields.normalized, ?) > 0 AND fields.id < ? AND COALESCE(metadata.archived, 0) = ?
       AND NOT EXISTS (SELECT 1 FROM conversation_deletions WHERE conversation_deletions.id = fields.conversationId)
-      ORDER BY fields.id DESC LIMIT ?`, literalGlob(normalized), before, Number(archived), SEARCH_PAGE_SIZE + 1).toArray() : [];
+      ORDER BY fields.id DESC LIMIT ?`, searchCandidateGlob(normalized), normalized, before, Number(archived), SEARCH_PAGE_SIZE + 1).toArray() : [];
     const page = rows.slice(0, SEARCH_PAGE_SIZE);
     const pattern = new RegExp(normalized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'iu');
     return { results: page.map((row) => {

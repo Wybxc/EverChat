@@ -27,7 +27,7 @@ test('centered new chat keeps its composer, draft and focus when sending and nav
       await page.screenshot({ path: info.outputPath(`new-chat-${mode === '浅色' ? 'light' : 'dark'}.png`) });
     }
     await input.fill('界面迁移验证'); await page.getByRole('button', { name: '发送消息', exact: true }).click();
-    await expect(page).toHaveURL(/\/c\/[a-f0-9-]+$/); id = new URL(page.url()).pathname.split('/').at(-1)!;
+    await expect(page).toHaveURL(/\/c\/[a-f0-9-]+(?:\?branch=[^#]+)?$/); id = new URL(page.url()).pathname.split('/').at(-1)!;
     await expect(page.getByTestId('assistant-message')).toHaveAttribute('data-status', 'completed');
     expect(await input.evaluate((element) => element === (window as unknown as { migrationEditor: Element }).migrationEditor)).toBe(true);
     await expect(input).toBeFocused(); expect((await composer.boundingBox())!.y).toBeGreaterThan(650);

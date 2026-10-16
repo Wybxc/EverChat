@@ -15,7 +15,7 @@ import { DocumentPreviews } from './DocumentPreviews';
 import { preparePdf } from './pdf-loader';
 import type { PDFExtraction } from '../shared/pdf';
 import { messageFiles, messageImages, messageText } from '../shared/message-content';
-import { Component, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode, type SubmitEvent } from 'react';
+import { Fragment, Component, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode, type SubmitEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowDown, ArrowRight, ArrowUp, BookOpen, CloudOff, FolderOpen, Globe, ImagePlus, Infinity as InfinityIcon, LockKeyhole, Menu, MessageCircle, Monitor, Moon, MoreHorizontal, Paperclip, Pin, Plus, RefreshCw, Search, Settings, SlidersHorizontal, Square, Sun, Trash2, WifiOff, X } from 'lucide-react';
 import 'streamdown/styles.css';
@@ -25,6 +25,10 @@ import { isActive, type ConversationInfo, type ConversationSettings, type Librar
 import { api, ApiError } from './api';
 import { clearLocal, deletedAt, markConversationDeleted, read, storageEpoch, write, writePending, type Pending } from './storage';
 import { useConversation } from './useConversation';
+import { useConversationBranches } from './useConversationBranches';
+import { BranchSwitcher, type BranchNavigation } from './BranchSwitcher';
+import { useBranchScrollAnchor } from './useBranchScrollAnchor';
+import { parentKey, summariesOnBranch } from '../shared/conversation-branches';
 import { ProviderSettingsPanel, type SettingsTab } from './ProviderSettings';
 import { GenerationMetadata } from './GenerationMetadata';
 import { ToolActivity } from './ToolActivity';
@@ -213,7 +217,7 @@ function SummaryView({ message, busy, onRetry, onDelete, selected }: { message: 
   </article>;
 }
 
-function MessageView({ conversationId, message, busy, onRetry, onEdit, onQuote, onDelete, canRetry, branchSelected, onSelectBranch, canFork, onFork, summarySelected }: { conversationId: string; message: Message; busy: boolean; onRetry: () => void; onEdit: () => void; onQuote: () => void; onDelete: () => void; canRetry: boolean; branchSelected: boolean; onSelectBranch: () => void; canFork: boolean; onFork: () => Promise<void>; summarySelected?: boolean }) {
+function MessageView({ conversationId, message, busy, onRetry, onEdit, onQuote, onDelete, canRetry, branch, hasFollowing, onSelectBranch, onShowFollowing, canFork, onFork }: { conversationId: string; message: Message; busy: boolean; onRetry: () => void; onEdit: () => void; onQuote: () => void; onDelete: () => void; canRetry: boolean; branch: BranchNavigation; hasFollowing: boolean; onSelectBranch: () => void; onShowFollowing: () => void; canFork: boolean; onFork: () => Promise<void>; }) {
   const [copied, setCopied] = useState(false);
   const [forking, setForking] = useState(false), [forkError, setForkError] = useState('');
   const forkLock = useRef(false);
@@ -228,21 +232,19 @@ function MessageView({ conversationId, message, busy, onRetry, onEdit, onQuote, 
     catch (failure) { setForkError(failure instanceof Error ? failure.message : '复制失败，请重试。'); }
     finally { forkLock.current = false; setForking(false); }
   };
-  if (message.summary) return <SummaryView message={message} busy={busy} onRetry={onRetry} onDelete={onDelete} selected={Boolean(summarySelected)} />;
-  if (message.deletedAt) return <article data-testid={`${message.role}-message`} data-message-id={message.id} data-deleted="true" className={`py-2 text-xs text-muted-foreground ${message.role === 'user' ? 'text-right' : ''}`}>消息已删除</article>;
-  const actions = <MessageActions message={message} busy={busy} copied={copied} forking={forking} canFork={canFork} canRetry={canRetry} branchSelected={branchSelected}
+  if (message.deletedAt) return <article data-testid={`${message.role}-message`} data-message-id={message.id} data-deleted="true" className={`py-2 text-xs text-muted-foreground ${message.role === 'user' ? 'text-right' : ''}`}><p>消息已删除</p><div className={`flex ${message.role === 'user' ? 'justify-end' : ''}`}><BranchSwitcher {...branch} /></div></article>;
+  const actions = <MessageActions message={message} busy={busy} copied={copied} forking={forking} canFork={canFork} canRetry={canRetry} branch={branch} hasFollowing={hasFollowing} showFollowing={onShowFollowing}
     copy={() => void copy()} quote={onQuote} edit={onEdit} remove={onDelete} fork={() => void fork()} retry={onRetry} selectBranch={onSelectBranch} />;
   if (message.role === 'user') return <article data-testid="user-message" data-message-id={message.id} className="group ml-auto w-fit max-w-[90%] sm:max-w-[82%]">
     <DocumentPreviews conversationId={conversationId} files={messageFiles(message)} />
     <ImagePreviews conversationId={conversationId} images={messageImages(message)} />
     {messageText(message) && <div data-search-content={`${message.id}:content`} className="rounded-[1.375rem] bg-user-message text-user-message-foreground px-4 py-2.5 text-base leading-7 whitespace-pre-wrap break-words sm:px-4 sm:py-2.5">{messageText(message)}</div>}
     {actions}
-    {message.revisionOf && <p className="mt-1 text-right text-xs text-muted-foreground">新版本</p>}
     {forkError && <p role="alert" className="mt-1 text-xs">{forkError}</p>}
   </article>;
   const toolErrorVisible = Boolean(message.error && message.tools?.calls.some(({ result }) => result?.status === 'failed' && result.error === message.error));
   return <article data-testid="assistant-message" data-message-id={message.id} data-status={message.status} data-durable-offset={message.durableOffset ?? 0} data-live-offset={message.liveOffset ?? message.durableOffset ?? 0} className="group min-w-0">
-      <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs"><InfinityIcon className="h-4 w-4 shrink-0" aria-hidden="true" strokeWidth={1.7} /><span className="min-w-0 break-words font-semibold">{message.modelName || message.model || 'EverChat'}</span>{message.revisionOf && <span className="text-muted-foreground">新版本</span>}{isActive(message) && <span className="flex items-center gap-1.5 text-muted-foreground"><Spinner />{message.waitingForSummary ? '等待历史摘要' : message.status === 'queued' ? '排队中' : '生成中'}</span>}{message.status === 'failed' && toolErrorVisible && <span>生成失败</span>}</div>
+      <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs"><InfinityIcon className="h-4 w-4 shrink-0" aria-hidden="true" strokeWidth={1.7} /><span className="min-w-0 break-words font-semibold">{message.modelName || message.model || 'EverChat'}</span>{isActive(message) && <span className="flex items-center gap-1.5 text-muted-foreground"><Spinner />{message.waitingForSummary ? '等待历史摘要' : message.status === 'queued' ? '排队中' : '生成中'}</span>}{message.status === 'failed' && toolErrorVisible && <span>生成失败</span>}</div>
       {messageText(message, 'reasoning') && <Disclosure stateKey={`reasoning:${message.id}`} defaultOpen title="思考过程" className="mb-2" testId="message-reasoning">
         <div ref={reasoningScroll.viewportRef} className="reasoning-content max-h-[min(22rem,40dvh)] overflow-y-auto overscroll-contain break-words"><div ref={reasoningScroll.contentRef}><MarkdownContent content={messageText(message, 'reasoning')} searchId={`${message.id}:reasoning`} streaming={isActive(message)} /></div></div>
       </Disclosure>}
@@ -261,7 +263,7 @@ export function App() {
   const webToolSettings = useWebToolSettings(Boolean(session?.authenticated));
   const [bootError, setBootError] = useState('');
   const [localConversations, setLocalConversations] = useState<ConversationInfo[]>(() => read('library', []));
-  const { id: selected, invalid: invalidRoute, navigate } = useConversationRoute();
+  const { id: selected, branch: routeBranch, invalid: invalidRoute, navigate } = useConversationRoute();
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
   const [pending, setPending] = useState<Pending[]>(() => read<Pending[]>('pending', []).filter((item) => !deletedAt(item.conversation.id)));
@@ -280,7 +282,8 @@ export function App() {
   const [search, setSearch] = useState('');
   const [archivedList, setArchivedList] = useState(false);
   const [sending, setSending] = useState(false);
-  const { viewportRef, contentRef, viewport, content, atBottom, scrollToBottom } = useFollowScroll(selected);
+  const { viewportRef, contentRef, viewport, content, atBottom, scrollToBottom, pauseFollowing } = useFollowScroll(selected);
+  const anchorBranch = useBranchScrollAnchor(viewport, content, selected);
   const [conversationSearchFor, setConversationSearchFor] = useState<string | null>(null);
   const [searchJump, setSearchJump] = useState<{ id: string; query: string; key: string; token: number } | null>(null);
   const searchTrigger = useRef<HTMLButtonElement>(null);
@@ -302,7 +305,9 @@ export function App() {
   const [requestedSettingsTab, setRequestedSettingsTab] = useState<SettingsTab | undefined>();
   const returnToConversationSettings = useRef(false);
   const [modelChoice, setModelChoice] = useState<string>(() => read('chat-model', ''));
-  const [branchHead, setBranchHead] = useState<string | null>(null);
+  const [branchAnnouncement, setBranchAnnouncement] = useState('');
+  const followRequests = useRef(new Map<string, { id: string; version: number }>());
+  const [backgroundTask, setBackgroundTask] = useState<{ conversationId: string; messageId: string; targetId: string } | null>(null);
   const [messageMutation, setMessageMutation] = useState<{ id: string; mode: 'edit' | 'delete' } | null>(null);
   const [conversationSettingsOpen, setConversationSettingsOpen] = useState(false);
   const [focusWebTools, setFocusWebTools] = useState(false);
@@ -347,8 +352,21 @@ export function App() {
     if (selectedRef.current === id) { setDraft(''); setRevisionOf(undefined); setDraftImages([]); setDraftFiles([]); }
   }, [queryClient]);
   const currentPending = pending.find((item) => item.conversation.id === selected);
-  const { snapshot, durableSnapshot, hasUnconfirmed, connection, syncedAt, loading, syncError, reconnect } = useConversation(selected, Boolean(session?.authenticated), loggedOut, Boolean(currentPending && !currentPending.error), rememberDeletion, selected ? deletedAt(selected) : null);
+  const { snapshot, snapshotFor, authoritative, durableSnapshot, hasUnconfirmed, connection, syncedAt, loading, syncError, reconnect } = useConversation(selected, Boolean(session?.authenticated), loggedOut, Boolean(currentPending && !currentPending.error), rememberDeletion, selected ? deletedAt(selected) : null);
+  const branches = useConversationBranches({ id: selected, messages: snapshot.messages, ready: snapshotFor === selected, authoritative, routeHead: routeBranch, navigate });
+  const viewHeadRef = useRef(branches.head); viewHeadRef.current = branches.head;
+  const branchSummaries = summariesOnBranch(snapshot.messages, branches.path);
   const active = snapshot.messages.find(isActive);
+  const activeChat = snapshot.messages.find((message) => isActive(message) && !message.summary) ?? active;
+  const activeTarget = activeChat ? activeChat.summary?.throughId ?? activeChat.id : null;
+  useEffect(() => {
+    if (selected && activeChat && activeTarget && !branches.ids.includes(activeTarget) && branches.index.browsable.has(activeTarget)) {
+      setBackgroundTask((previous) => previous?.messageId === activeChat.id && previous.conversationId === selected ? previous : { conversationId: selected, messageId: activeChat.id, targetId: activeTarget });
+    } else setBackgroundTask((previous) => previous && (previous.conversationId !== selected || branches.ids.includes(previous.targetId)) ? null : previous);
+  }, [selected, activeChat?.id, activeTarget, branches.index, branches.head]);
+  const pendingVisible = currentPending && (currentPending.viewHeadId ?? null) === branches.head;
+  const hiddenPending = currentPending && !pendingVisible;
+  const backgroundMessage = backgroundTask?.conversationId === selected ? snapshot.messages.find((message) => message.id === backgroundTask.messageId) : undefined;
   const liveUserIds = useMemo(() => new Set(snapshot.messages.filter((message) => message.role === 'user' && !message.deletedAt).map((message) => message.id)), [snapshot.messages]);
   const mutationMessage = messageMutation ? snapshot.messages.find((message) => message.id === messageMutation.id) : undefined;
   const canSearch = Boolean(selected && snapshot.messages.length && !snapshot.deletedAt && session?.authenticated);
@@ -387,19 +405,16 @@ export function App() {
     const local = localConversations.filter((item) => !cloudIds.has(item.id) && !queued.some((next) => next.id === item.id));
     return [...queued, ...local, ...cloud].filter((item) => !deletedAt(item.id)).sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
   }, [libraryQuery.data, localConversations, pending]);
-  const busy = Boolean(active || currentPending || sending || imageProgress || syncError || invalidRoute || (selected && loading));
+  const busy = Boolean(active || currentPending || sending || imageProgress || syncError || branches.error || branches.waiting || invalidRoute || (selected && loading));
   const currentConversation = conversations.find((item) => item.id === selected);
   const latestCompletedAssistant = useMemo(() => [...snapshot.messages].reverse().find((message) => message.role === 'assistant' && message.status === 'completed' && !message.deletedAt && !message.summary), [snapshot.messages]);
-  const currentBranchHead = branchHead && snapshot.messages.some((message) => message.id === branchHead && message.role === 'assistant' && message.status === 'completed' && !message.deletedAt && !message.summary)
-    ? branchHead : latestCompletedAssistant?.id;
-  const validBranchHead = branchHead && snapshot.messages.some((message) => message.id === branchHead && message.role === 'assistant' && message.status === 'completed' && !message.deletedAt && !message.summary) ? branchHead : undefined;
   const conversationSettings = settingsDraft?.id === selected ? settingsDraft.settings : selected ? snapshot.settings ?? DEFAULT_CONVERSATION_SETTINGS : newConversationSettings;
   const resetNewTools = () => {
     const settings = { ...newConversationSettings, tools: [] };
     setNewConversationSettings(settings); write('conversation-settings:new', settings);
     write('conversation-settings-draft:new', { settings, dirty: false });
   };
-  const previewSource = contextSource(snapshot.messages, { content: draft, revisionOf, branchHead: validBranchHead });
+  const previewSource = contextSource(snapshot.messages, { content: draft, revisionOf, parentId: branches.continuationParentId });
   const previewHistory = useMemo(() => {
     try { return summaryContext(snapshot.messages, previewSource.parentId, conversationSettings.useSummaries); } catch { return null; }
   }, [snapshot.messages, previewSource.parentId, conversationSettings.useSummaries]);
@@ -452,14 +467,31 @@ export function App() {
     if (!writePending(items)) { setError('浏览器存储已满，无法可靠保存待发送消息。请释放空间后重试。'); return false; }
     pendingRef.current = items; setPending(items); return true;
   };
+  const editPending = (item: Pending) => {
+    if (!item.input.summaryThrough) {
+      setDraft(item.input.content ?? ''); setRevisionOf(item.input.revisionOf); setDraftImages(item.images ?? []); setDraftFiles(item.files ?? []);
+      write(`draft:${item.conversation.id}`, { text: item.input.content ?? '', revisionOf: item.input.revisionOf, images: item.images ?? [], files: item.files ?? [] });
+    }
+    followRequests.current.delete(item.input.requestId);
+    commitPending(pendingRef.current.filter((next) => next.input.requestId !== item.input.requestId));
+    editor.current?.focus({ preventScroll: true });
+  };
   const deliver = async (item: Pending) => {
     if (deletedAt(item.conversation.id)) return;
     const key = item.input.requestId;
     if (deliveryLocks.current.has(key) || !navigator.onLine || !sessionRef.current?.authenticated) return;
+    if (!followRequests.current.has(key) && selectedRef.current === item.conversation.id && viewHeadRef.current === (item.viewHeadId ?? null)) {
+      followRequests.current.set(key, { id: item.conversation.id, version: branches.navigationVersion.current });
+    }
     deliveryLocks.current.add(key);
     try {
       await api('/conversations', 'POST', { id: item.conversation.id, title: item.conversation.title });
-      await api<Submission>(`/conversations/${item.conversation.id}/messages`, 'POST', item.input);
+      const accepted = await api<Submission>(`/conversations/${item.conversation.id}/messages`, 'POST', item.input);
+      const follow = followRequests.current.get(key);
+      if (!item.input.summaryThrough && follow && selectedRef.current === follow.id && branches.navigationVersion.current === follow.version) {
+        branches.choose(accepted.assistantId, { automatic: true }); scrollToBottom();
+      }
+      followRequests.current.delete(key);
       commitPending(pendingRef.current.filter((next) => next.input.requestId !== key));
       refreshLibrary();
     } catch (error) {
@@ -483,7 +515,6 @@ export function App() {
     const saved: { text: string; revisionOf?: string; images?: ImagePart[]; files?: DocumentPart[] } = selected && deletedAt(selected) ? { text: '' } : read(`draft:${selected ?? 'new'}`, { text: '' });
     setDraft(saved.text); setRevisionOf(saved.revisionOf); setDraftImages(saved.images ?? []); setDraftFiles(saved.files ?? []); setError('');
   }, [selected]);
-  useEffect(() => { setBranchHead(selected ? read<string | null>(`branch-head:${selected}`, null) : null); }, [selected]);
   useEffect(() => { setConversationSettingsOpen(false); setFocusWebTools(false); }, [selected]);
   useEffect(() => { setSummaryOpen(false); setSummaryTarget(null); }, [selected]);
   useEffect(() => {
@@ -580,7 +611,7 @@ export function App() {
   const select = (id: string | null) => {
     setSearchJump(null);
     setEditorFocusTarget({ id });
-    navigate(id); setSidebarOpen(false);
+    branches.navigationVersion.current++; navigate(id); setSidebarOpen(false);
   };
   useEffect(() => {
     if (!editorFocusTarget) return;
@@ -596,11 +627,31 @@ export function App() {
   }, [editorFocusTarget, selected, snapshot.deletedAt]);
   const selectBranch = (message: Message) => {
     if (!selected || message.role !== 'assistant' || message.status !== 'completed' || message.deletedAt || message.summary) return;
-    setBranchHead(message.id); write(`branch-head:${selected}`, message.id); setError('');
-    requestAnimationFrame(() => editor.current?.focus());
+    pauseFollowing(); branches.choose(message.id); setError('');
+    requestAnimationFrame(() => editor.current?.focus({ preventScroll: true }));
+  };
+  useEffect(() => {
+    window.addEventListener('popstate', pauseFollowing);
+    return () => window.removeEventListener('popstate', pauseFollowing);
+  }, [pauseFollowing]);
+  const switchVersion = (message: Message, direction: -1 | 1) => {
+    const choices = branches.choices(message.id), position = branches.index.positions.get(message.id) ?? 0, target = choices[position + direction];
+    if (!target || !viewport) return;
+    const key = parentKey(message.parentId), selector = `[data-branch-switcher="${CSS.escape(key)}"]`;
+    const previous = content?.querySelector<HTMLElement>(selector), top = previous?.getBoundingClientRect().top;
+    if (top !== undefined) anchorBranch(selector, top, direction);
+    pauseFollowing(); branches.choose(target, { descend: true });
+    const role = branches.index.roles.get(message.parentId), label = role === 'assistant' ? '回答版本' : role === 'user' ? '提问版本' : '分支';
+    setBranchAnnouncement(`${label} ${position + direction + 1}，共 ${choices.length} 个`);
+  };
+  const branchNavigation = (message: Message): BranchNavigation => {
+    const choices = branches.choices(message.id), role = branches.index.roles.get(message.parentId);
+    return { count: choices.length, position: branches.index.positions.get(message.id) ?? 0, parent: parentKey(message.parentId),
+      label: role === 'user' ? '提问版本' : role === 'assistant' ? '回答版本' : '分支', change: (direction) => switchVersion(message, direction) };
   };
   const openSearchResult = (result: SearchResult, query: string) => {
-    navigate(result.conversationId); setSidebarOpen(false);
+    branches.navigationVersion.current++; pauseFollowing();
+    navigate(result.conversationId, false, result.messageId); setSidebarOpen(false);
     setSearchJump({ id: result.conversationId, query, key: `${result.messageId}:${result.field}`, token: Date.now() });
   };
 
@@ -610,8 +661,13 @@ export function App() {
     if (!settings.success) { setError('请先修正会话参数。'); return; }
     input = { ...input, settings: settings.output, ...(settings.output.tools.length ? { tools: settings.output.tools } : {}) };
     if (!input.selection && selectedModel) input = { ...input, selection: { providerId: selectedModel.providerId, model: selectedModel.model } };
-    const selectedBranch = validBranchHead;
-    if (input.content !== undefined && input.revisionOf === undefined && selectedBranch && input.branchHead === undefined) input = { ...input, branchHead: selectedBranch };
+    if (input.content !== undefined && !input.revisionOf && input.parentId === undefined) {
+      if (branches.index.order.length && !branches.continuationParentId) { setError('请选择可继续的版本，或新建对话。'); return; }
+      input = { ...input, parentId: branches.continuationParentId };
+    }
+    const requestView = input.revisionOf ?? input.retryOf ?? branches.head;
+    if (requestView && requestView !== branches.head) { pauseFollowing(); branches.choose(requestView); }
+    const navigationVersion = branches.navigationVersion.current;
     if (input.showReasoning === undefined) input = { ...input, showReasoning: session?.showReasoning ?? false };
     const generationModel = input.selection ? models.find((model) => model.providerId === input.selection!.providerId && model.model === input.selection!.model) : selectedModel;
     const generationEffort = generationModel && generationModel === selectedModel
@@ -646,16 +702,16 @@ export function App() {
     const conversation: ConversationInfo = currentConversation ?? {
       id: selected ?? crypto.randomUUID(), title: (input.content?.trim() || draftImages[0]?.name || draftFiles[0]?.name || '新对话').slice(0, 26), createdAt: Date.now(), updatedAt: Date.now(), pinned: false, archived: false,
     };
-    const item: Pending = { conversation, input, images: input.retryOf ? undefined : draftImages, files: input.retryOf ? undefined : draftFiles };
+    const item: Pending = { conversation, input, viewHeadId: requestView, images: input.retryOf ? undefined : draftImages, files: input.retryOf ? undefined : draftFiles };
     if (!commitPending([...pendingRef.current, item])) return;
     if (!conversations.some((item) => item.id === conversation.id)) {
       const items = [conversation, ...localConversations]; setLocalConversations(items); write('library', items);
     }
     write(`draft:${selected ?? 'new'}`, { text: '' }); setDraft(''); setRevisionOf(undefined); setDraftImages([]); setDraftFiles([]);
     if (!selected) resetNewTools();
-    select(conversation.id);
-    setBranchHead(null); write(`branch-head:${conversation.id}`, null);
-    scrollToBottom();
+    if (!selected) navigate(conversation.id, true);
+    followRequests.current.set(input.requestId, { id: conversation.id, version: navigationVersion });
+    if (branches.navigationVersion.current === navigationVersion) { scrollToBottom(); editor.current?.focus({ preventScroll: true }); }
     await deliver(item);
   };
   const submit = async (event?: SubmitEvent<HTMLFormElement>) => {
@@ -670,7 +726,7 @@ export function App() {
     const model = models.find((model) => model.providerId === input.selection?.providerId && model.model === input.selection?.model);
     if (!model) throw new Error('所选摘要模型不可用。');
     summaryGeneration(snapshot.messages, input.summaryThrough, { ...model, systemPrompt: '', maxOutputTokens: null, modelMetadata: model.metadata });
-    const item = { conversation: currentConversation, input };
+    const item: Pending = { conversation: currentConversation, input, viewHeadId: branches.head };
     if (!commitPending([...pendingRef.current, item])) throw new Error('无法保存待发送请求。');
     await deliver(item);
   };
@@ -688,7 +744,6 @@ export function App() {
     if (busy || !selectedModel) { openSettings(); return; }
     setSending(true);
     try { await queue({ requestId: crypto.randomUUID(), retryOf: message.id,
-      ...(message.status === 'completed' ? { branchHead: message.id } : {}),
       ...(message.providerId && message.model ? { selection: { providerId: message.providerId, model: message.model } } : {}),
     }); }
     finally { setSending(false); }
@@ -701,14 +756,14 @@ export function App() {
   const confirmMessageMutation = async (content: string, requestId: string) => {
     if (!selected || !messageMutation) return;
     if (messageMutation.mode === 'edit') {
-      await api(`/conversations/${selected}/messages/${messageMutation.id}`, 'PATCH', { requestId, content });
-      setBranchHead(null); write(`branch-head:${selected}`, null); refreshLibrary(); scrollToBottom();
+      const version = branches.navigationVersion.current;
+      const result = await api<{ messageId: string }>(`/conversations/${selected}/messages/${messageMutation.id}`, 'PATCH', { requestId, content });
+      if (selectedRef.current === selected && version === branches.navigationVersion.current) { branches.choose(result.messageId, { automatic: true }); scrollToBottom(); }
+      refreshLibrary();
     } else {
       await api(`/conversations/${selected}/messages/${messageMutation.id}`, 'DELETE');
-      if (branchHead === messageMutation.id) { setBranchHead(null); write(`branch-head:${selected}`, null); }
       if (revisionOf === messageMutation.id) { setRevisionOf(undefined); write(`draft:${selected}`, { text: draft, images: draftImages, files: draftFiles }); }
     }
-    requestAnimationFrame(() => editor.current?.focus());
   };
   const quote = (message: Message) => {
     const source = messageText(message).trim();
@@ -733,7 +788,8 @@ export function App() {
   const exportChat = (format: 'md' | 'txt' | 'html') => {
     if (!selected) return;
     const title = currentConversation?.title ?? 'EverChat';
-    const messages = durableSnapshot.messages.filter((message) => !message.deletedAt);
+    const confirmed = new Map(durableSnapshot.messages.map((message) => [message.id, message]));
+    const messages = branches.ids.flatMap((id) => { const message = confirmed.get(id); return message && !message.deletedAt && !message.summary ? [message] : []; });
     const markdown = `# ${title}\n\n${messages.map((message) => {
       const role = message.summary ? '历史摘要' : message.role === 'user' ? '你' : 'EverChat';
       const model = message.role === 'assistant' && (message.modelName || message.model) ? `\n模型：${message.modelName || message.model}\n` : '';
@@ -789,12 +845,12 @@ export function App() {
   };
   const duplicateConversation = async (messageId?: string) => {
     if (!selected) return;
-    const sourceId = selected;
+    const sourceId = selected, version = branches.navigationVersion.current;
     const path = messageId ? `/messages/${messageId}/duplicate` : '/duplicate';
-    const epoch = storageEpoch(), key = `copy:${sourceId}:${messageId ?? 'all'}`, requestId = read<string | null>(key, null) ?? crypto.randomUUID();
+    const epoch = storageEpoch(), key = `copy:${sourceId}:${messageId ?? branches.head ?? 'all'}`, requestId = read<string | null>(key, null) ?? crypto.randomUUID();
     write(key, requestId);
-    let result: { id: string };
-    try { result = await api<{ id: string }>(`/conversations/${sourceId}${path}`, 'POST', { requestId }); }
+    let result: { id: string; viewHeadId: string | null };
+    try { result = await api<{ id: string; viewHeadId: string | null }>(`/conversations/${sourceId}${path}`, 'POST', { requestId, ...(messageId ?? branches.head ? { viewHeadId: messageId ?? branches.head } : {}) }); }
     catch (error) {
       if (epoch === storageEpoch() && error instanceof ApiError && (error.code === 'copy-stopped' || error.status >= 400 && error.status < 500)) write(key, null);
       throw error instanceof ApiError ? error : new Error('复制结果未确认，请重试查看结果。');
@@ -802,7 +858,7 @@ export function App() {
     if (epoch !== storageEpoch()) return;
     write(key, null);
     refreshLibrary();
-    if (selectedRef.current === sourceId) select(result.id);
+    if (selectedRef.current === sourceId && branches.navigationVersion.current === version) { branches.navigationVersion.current++; setEditorFocusTarget({ id: result.id }); navigate(result.id, false, result.viewHeadId); }
   };
 
   const closeSettings = () => {
@@ -869,8 +925,13 @@ export function App() {
       <div ref={viewportRef} data-testid="message-viewport" className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain"><DisclosureScope key={selected ?? 'new'}>
         {welcome ? <div ref={contentRef} /> : <section ref={contentRef} aria-label="对话消息" className="mx-auto w-full max-w-[49rem] space-y-6 px-4 py-4 sm:py-6">
           {loading && !snapshot.messages.length && <div className="py-10 text-center text-xs text-muted-foreground"><Spinner /><p className="mt-3">正在找回我们的对话…</p></div>}
-          {snapshot.messages.map((message) => <MessageView conversationId={selected!} key={message.id} message={message} busy={busy} onRetry={() => void retry(message)} onEdit={() => edit(message)} onQuote={() => quote(message)} onDelete={() => setMessageMutation({ id: message.id, mode: 'delete' })} canRetry={liveUserIds.has(message.parentId ?? '')} branchSelected={message.role === 'assistant' && message.status === 'completed' && message.id === currentBranchHead} onSelectBranch={() => selectBranch(message)} canFork={Boolean(selected && connection !== 'offline' && !syncError && !loading)} onFork={() => duplicateConversation(message.id)} summarySelected={previewHistory?.summary?.id === message.id} />)}
-          {currentPending && <article className="ml-auto max-w-[90%] rounded-2xl border border-dashed border-input bg-muted px-5 py-4"><DocumentPreviews conversationId={currentPending.conversation.id} files={currentPending.files ?? []} /><ImagePreviews conversationId={currentPending.conversation.id} images={currentPending.images ?? []} /><p className="text-sm leading-7 whitespace-pre-wrap">{currentPending.input.summaryThrough ? '历史摘要请求' : currentPending.input.content ?? '新版本'}</p><div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground"><CloudOff className="h-[0.75rem] w-[0.75rem]" />{currentPending.error ? '发送失败' : '等待发送'}</div>{currentPending.error && <p className="mt-2 text-xs font-medium leading-5 text-foreground">{currentPending.error}</p>}<div className="mt-2 flex gap-1"><Button variant="ghost" onClick={() => { const clean = { ...currentPending, error: undefined }; commitPending(pendingRef.current.map((item) => item.input.requestId === clean.input.requestId ? clean : item)); void deliver(clean); }}>重试</Button>{(!currentPending.input.summaryThrough || currentPending.error) && <Button variant="ghost" onClick={() => { setDraft(currentPending.input.content ?? ''); setRevisionOf(currentPending.input.revisionOf); setDraftImages(currentPending.images ?? []); setDraftFiles(currentPending.files ?? []); write(`draft:${selected}`, { text: currentPending.input.content ?? '', revisionOf: currentPending.input.revisionOf, images: currentPending.images ?? [], files: currentPending.files ?? [] }); commitPending(pendingRef.current.filter((item) => item.input.requestId !== currentPending.input.requestId)); }}>{currentPending.input.summaryThrough ? '取消请求' : '编辑'}</Button>}</div></article>}
+          {branches.path.map((message) => <Fragment key={message.id}>
+            <MessageView conversationId={selected!} message={message} busy={busy} onRetry={() => void retry(message)} onEdit={() => edit(message)} onQuote={() => quote(message)} onDelete={() => setMessageMutation({ id: message.id, mode: 'delete' })} canRetry={liveUserIds.has(message.parentId ?? '')} branch={branchNavigation(message)} hasFollowing={message.id === branches.head && (branches.index.children.get(message.id) ?? []).some((id) => branches.index.browsable.has(id))} onSelectBranch={() => selectBranch(message)} onShowFollowing={() => { pauseFollowing(); branches.choose(message.id, { descend: true }); }} canFork={Boolean(selected && connection !== 'offline' && !syncError && !loading)} onFork={() => duplicateConversation(message.id)} />
+            {branchSummaries.some((summary) => summary.summary!.throughId === message.id) && <div data-testid="branch-summaries"><Disclosure stateKey={`summaries:${message.id}`} forceOpen={branchSummaries.some((summary) => summary.summary!.throughId === message.id && isActive(summary))} title={`历史摘要 · ${branchSummaries.filter((summary) => summary.summary!.throughId === message.id).length}`}>
+              <div className="space-y-3">{branchSummaries.filter((summary) => summary.summary!.throughId === message.id).map((summary) => <SummaryView key={summary.id} message={summary} busy={busy} onRetry={() => void retry(summary)} onDelete={() => setMessageMutation({ id: summary.id, mode: 'delete' })} selected={previewHistory?.summary?.id === summary.id} />)}</div>
+            </Disclosure></div>}
+          </Fragment>)}
+          {currentPending && pendingVisible && <article className="ml-auto max-w-[90%] rounded-2xl border border-dashed border-input bg-muted px-5 py-4"><DocumentPreviews conversationId={currentPending.conversation.id} files={currentPending.files ?? []} /><ImagePreviews conversationId={currentPending.conversation.id} images={currentPending.images ?? []} /><p className="text-sm leading-7 whitespace-pre-wrap">{currentPending.input.summaryThrough ? '历史摘要请求' : currentPending.input.content ?? '新版本'}</p><div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground"><CloudOff className="h-[0.75rem] w-[0.75rem]" />{currentPending.error ? '发送失败' : '等待发送'}</div>{currentPending.error && <p className="mt-2 text-xs font-medium leading-5 text-foreground">{currentPending.error}</p>}<div className="mt-2 flex gap-1"><Button variant="ghost" onClick={() => { const clean = { ...currentPending, error: undefined }; commitPending(pendingRef.current.map((item) => item.input.requestId === clean.input.requestId ? clean : item)); void deliver(clean); }}>重试</Button>{(!currentPending.input.summaryThrough || currentPending.error) && <Button variant="ghost" onClick={() => editPending(currentPending)}>{currentPending.input.summaryThrough ? '取消请求' : '编辑'}</Button>}</div></article>}
         </section>}</DisclosureScope>
       </div>
 
@@ -880,8 +941,19 @@ export function App() {
           {welcome && <h1 className="mb-6 text-center text-xl font-semibold leading-snug sm:text-2xl">今天想聊些什么？</h1>}
           {invalidRoute && <Alert variant="destructive" role="alert" className="mb-3 text-xs"><span>找不到这个页面。</span><Button variant="secondary" type="button" onClick={() => select(null)}>开启新对话</Button></Alert>}
           {syncError && <Alert variant="destructive" role="alert" className="mb-3 text-xs"><span>{syncError}</span><Button variant="secondary" type="button" onClick={reconnect}>重新同步</Button></Alert>}
+          <span className="sr-only" aria-live="polite">{branchAnnouncement}</span>
+          {branches.error && <Alert variant="destructive" role="alert" className="mb-2 text-xs">{branches.error}</Alert>}
+          {branches.notice && <div role="status" className="mb-2 flex items-center gap-2 text-xs"><span>{branches.notice}</span><Button variant="ghost" size="icon" aria-label="关闭分支提示" onClick={branches.dismissNotice}><X className="size-4" /></Button></div>}
+          {(backgroundMessage || hiddenPending) && <div role="status" className="mb-2 flex items-center gap-2 text-xs">
+            <span>{hiddenPending ? currentPending.error ? `发送失败：${currentPending.error}` : currentPending.viewHeadId == null ? '发送结果待确认' : '另一分支等待发送' : backgroundMessage && isActive(backgroundMessage) ? '另一分支生成中' : '另一分支已结束'}</span>
+            {hiddenPending && currentPending.error && !branches.index.browsable.has(currentPending.viewHeadId ?? '')
+              ? <Button variant="ghost" aria-label="编辑待发送消息" onClick={() => editPending(currentPending)}>编辑</Button>
+              : hiddenPending && currentPending.viewHeadId == null ? <Button variant="ghost" onClick={() => void deliver(currentPending)}>重试</Button>
+              : <Button variant="ghost" onClick={() => { const target = hiddenPending ? currentPending.viewHeadId : backgroundTask?.targetId; if (target) { pauseFollowing(); branches.choose(target); } }}>{backgroundMessage && !isActive(backgroundMessage) ? '查看' : '返回'}</Button>}
+            {!hiddenPending && backgroundMessage && !isActive(backgroundMessage) && <Button variant="ghost" size="icon" aria-label="关闭后台分支提示" onClick={() => setBackgroundTask(null)}><X className="size-4" /></Button>}
+          </div>}
           {error && <p role="alert" className="mb-3 text-xs font-medium text-foreground">{error}</p>}
-          {revisionOf && <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground"><span>编辑消息</span><Button variant="ghost" onClick={() => { setRevisionOf(undefined); write(`draft:${selected}`, { text: draft, images: draftImages, files: draftFiles }); }}>取消</Button></div>}
+          {revisionOf && <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground"><span>编辑消息</span>{!branches.ids.includes(revisionOf) && <Button variant="ghost" onClick={() => { pauseFollowing(); branches.choose(revisionOf); }}>返回原消息</Button>}<Button variant="ghost" onClick={() => { setRevisionOf(undefined); write(`draft:${selected}`, { text: draft, images: draftImages, files: draftFiles }); }}>取消</Button></div>}
           <form onSubmit={submit} data-testid="chat-composer" className="chat-composer">
             {selected && (draftFiles.length > 0 || draftImages.length > 0) && <div data-testid="draft-previews" className="draft-previews mb-2 max-h-[min(9rem,20dvh)] overflow-y-auto overscroll-contain p-1">
               <DocumentPreviews conversationId={selected} files={draftFiles} remove={imageProgress ? undefined : removeDocument} />
@@ -922,7 +994,11 @@ export function App() {
     {backupTask && <BackupProgressDialog title={backupTask.title} progress={backupTask.progress} cancel={() => backupOperation.current?.abort()} canRestoreFocus={() => selectedRef.current === backupTask.route && storageEpoch() === backupTask.epoch} />}
     {session?.authenticated && <ConversationSettingsDialog key={selected ?? 'new'} id={selected} initial={selected ? snapshot.settings ?? DEFAULT_CONVERSATION_SETTINGS : newConversationSettings} model={selectedModel} models={models} effort={reasoningEffort} showReasoning={session.showReasoning ?? false} open={conversationSettingsOpen} focusTools={focusWebTools} close={() => { setConversationSettingsOpen(false); setFocusWebTools(false); }} onDraft={settingsDraftChanged} managePresets={() => { returnToConversationSettings.current = true; setRequestedSettingsTab('presets'); openSettings(); }} manageWebTools={() => { returnToConversationSettings.current = true; setRequestedSettingsTab('web-tools'); openSettings(); }} />}
     {session.attachmentsConfigured && selected && currentConversation && !snapshot.deletedAt && <AttachmentDialog key={`attachments:${selected}`} id={selected} open={attachmentsFor === selected} close={() => setAttachmentsFor(null)} />}
-    {summaryOpen && selected && <SummaryDialog messages={snapshot.messages} headId={summaryTarget?.throughId ?? contextSource(snapshot.messages, { branchHead: validBranchHead }).parentId} models={models} preferred={selectedModel} target={summaryTarget ?? undefined} busy={busy} submit={queueSummary} close={() => { setSummaryOpen(false); setSummaryTarget(null); }} focusComposer={() => { if (selectedRef.current === selected) editor.current?.focus({ preventScroll: true }); }} />}
-    {messageMutation && mutationMessage && <MessageMutationDialog key={`${selected}:${messageMutation.id}:${messageMutation.mode}`} message={mutationMessage} mode={messageMutation.mode} affectsSummaries={snapshot.messages.some((message) => !message.deletedAt && message.summary?.sourceIds.includes(mutationMessage.id))} confirm={confirmMessageMutation} close={() => setMessageMutation(null)} />}
+    {summaryOpen && selected && <SummaryDialog messages={snapshot.messages} headId={summaryTarget?.throughId ?? contextSource(snapshot.messages, { parentId: branches.continuationParentId }).parentId} models={models} preferred={selectedModel} target={summaryTarget ?? undefined} busy={busy} submit={queueSummary} close={() => { setSummaryOpen(false); setSummaryTarget(null); }} focusComposer={() => { if (selectedRef.current === selected) editor.current?.focus({ preventScroll: true }); }} />}
+    {messageMutation && mutationMessage && <MessageMutationDialog key={`${selected}:${messageMutation.id}:${messageMutation.mode}`} message={mutationMessage} mode={messageMutation.mode} affectsSummaries={snapshot.messages.some((message) => !message.deletedAt && message.summary?.sourceIds.includes(mutationMessage.id))} confirm={confirmMessageMutation} close={() => setMessageMutation(null)} completedFocus={() => {
+      if (selectedRef.current !== selected) return null;
+      return document.querySelector<HTMLElement>(`[data-message-id="${mutationMessage.id}"] button[aria-label="更多消息操作"]`)
+        ?? [...document.querySelectorAll<HTMLElement>('[data-message-id] button[aria-label="更多消息操作"]')].at(-1) ?? editor.current;
+    }} />}
   </div>;
 }

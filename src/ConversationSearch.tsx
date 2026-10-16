@@ -99,7 +99,7 @@ export function ConversationSearch({ content, viewport, close, initial }: { cont
 
   return <div id="conversation-search" role="search" aria-label="当前对话搜索" className="shrink-0 border-b border-border bg-muted px-3 py-2 sm:px-8" onKeyDown={(event) => { if (event.key === 'Escape' && !event.nativeEvent.isComposing) { event.preventDefault(); close(); } }}>
     <div className="mx-auto flex w-full max-w-3xl items-center gap-1 sm:gap-2">
-      <label className="field-control h-11 min-w-0 flex-1 border-input bg-background"><Search className="h-[0.875rem] w-[0.875rem]" /><input ref={input} aria-label="查找当前对话" placeholder="查找当前对话" maxLength={200} value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => {
+      <label className="field-control h-11 min-w-0 flex-1 border-input bg-background"><Search className="h-[0.875rem] w-[0.875rem]" /><input ref={input} aria-label="查找当前对话" placeholder="查找当前分支" maxLength={200} value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => {
         if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); move.current(event.shiftKey ? -1 : 1); }
       }} /></label>
       <span role="status" className="min-w-14 shrink-0 text-center text-xs text-foreground"><span aria-hidden="true">{query.trim() ? status.count ? `${status.index + 1} / ${status.count}` : '无结果' : ''}</span><span className="sr-only">{query.trim() ? status.count ? `第 ${status.index + 1} 个匹配，共 ${status.count} 个。${status.reasoning ? '思考内容' : '正文'}：${status.excerpt}` : '没有匹配结果' : '输入关键词查找'}</span></span>

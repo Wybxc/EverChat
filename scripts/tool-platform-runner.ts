@@ -87,7 +87,7 @@ export async function runToolValidation(options: ToolValidationOptions) {
     await api('/conversations', { id, title: name });
     await api(`/__validation/conversations/${id}/prepare`, { mode });
     const live = await subscriber(id, disconnect);
-    const input = { requestId: taskId, content: 'Deterministic isolated web tool validation', selection: { providerId: providers.find((p) => p.provider === protocol)!.id, model }, showReasoning: true, tools: ['web_search', 'read_webpage'] };
+    const input = { parentId: null, requestId: taskId, content: 'Deterministic isolated web tool validation', selection: { providerId: providers.find((p) => p.provider === protocol)!.id, model }, showReasoning: true, tools: ['web_search', 'read_webpage'] };
     return { id, taskId, begin, live, input };
   }
   async function submit(item: Awaited<ReturnType<typeof prepare>>) {

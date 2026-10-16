@@ -23,7 +23,7 @@ test('history capacity rejects generation before writing messages or calling the
   try {
     expect((await action(request, fixture.id, 'history', { pairs: 16 })).ok()).toBe(true);
     const before = await request.get(`/api/conversations/${fixture.id}`).then((response) => response.json()) as Snapshot;
-    const response = await request.post(`/api/conversations/${fixture.id}/messages`, { headers, data: { requestId: crypto.randomUUID(), content: '不能接受的输入' } });
+    const response = await request.post(`/api/conversations/${fixture.id}/messages`, { headers, data: { parentId: before.messages.at(-1)!.id, requestId: crypto.randomUUID(), content: '不能接受的输入' } });
     expect(response.status()).toBe(507); expect((await response.json()).error).toContain('历史容量');
     expect(await action(request, fixture.id, 'resources').then((response) => response.json())).toMatchObject({ messages: 32, runs: 0, calls: 0 });
     expect(await request.get(`/api/conversations/${fixture.id}`).then((response) => response.json())).toEqual(before);
@@ -34,7 +34,7 @@ test('database allocation reserves space for generation and blocks before accept
   const fixture = await setup(request);
   try {
     expect((await action(request, fixture.id, 'fill', { target: MAX_DATABASE_START_BYTES + 4096 })).ok()).toBe(true);
-    const response = await request.post(`/api/conversations/${fixture.id}/messages`, { headers, data: { requestId: crypto.randomUUID(), content: '容量不足' } });
+    const response = await request.post(`/api/conversations/${fixture.id}/messages`, { headers, data: { parentId: null, requestId: crypto.randomUUID(), content: '容量不足' } });
     expect(response.status()).toBe(507); expect((await response.json()).error).toContain('存储容量');
     expect(await action(request, fixture.id, 'resources').then((response) => response.json())).toMatchObject({ messages: 0, runs: 0, calls: 0 });
   } finally { await fixture.restore(); }
@@ -43,7 +43,7 @@ test('database allocation reserves space for generation and blocks before accept
 test('capacity reached during generation terminates without retrying, retains the durable prefix and releases stored context', async ({ request }) => {
   const fixture = await setup(request);
   try {
-    const input = { requestId: crypto.randomUUID(), content: '开始后模拟空间不足', showReasoning: true };
+    const input = { parentId: null, requestId: crypto.randomUUID(), content: '开始后模拟空间不足', showReasoning: true };
     const response = await request.post(`/api/conversations/${fixture.id}/messages`, { headers, data: input });
     expect(response.status()).toBe(202); const accepted = await response.json();
     const snapshot = () => request.get(`/api/conversations/${fixture.id}`).then((result) => result.json()) as Promise<Snapshot>;

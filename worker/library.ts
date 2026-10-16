@@ -9,7 +9,7 @@ import { SearchIndex, SearchChanged, SEARCH_CAPACITY_MESSAGE, searchRetryDelay }
 import type { SearchDocument } from '../shared/search';
 import { MAX_BACKUP_BYTES, type BackupSettings } from '../shared/backup';
 import type { BackupMessage } from '../shared/backup';
-import type { ConversationSettings } from '../shared/types';
+import type { Snapshot, ConversationSettings } from '../shared/types';
 import { PromptPresets, PromptPresetError } from './prompt-presets';
 import { AttachmentStore } from './attachments';
 import type { AttachmentInput } from '../shared/attachments';
@@ -220,14 +220,14 @@ export class Library extends DurableObject<Env> {
       if (Number.isFinite(next)) await this.ctx.storage.setAlarm(next); else await this.ctx.storage.deleteAlarm();
     });
   }
-  async duplicate(sourceId: string, id: string, messageId?: string): Promise<CopyResult> {
+  async duplicate(sourceId: string, id: string, messageId?: string, viewHeadId?: string): Promise<CopyResult> {
     try {
       const existing = this.copies.get(id);
       if (existing) {
-        if (existing.sourceId !== sourceId || existing.messageId !== (messageId ?? null)) throw new HttpError(409, '此复制请求已用于其他来源。');
+        if (existing.sourceId !== sourceId || existing.messageId !== (messageId ?? null) || existing.viewHeadId !== (viewHeadId ?? null)) throw new HttpError(409, '此复制请求已用于其他来源。');
         if (existing.status === 'completed') {
           if (!this.get(id)) throw new HttpError(410, '这个副本已删除。');
-          return { id };
+          return { id, viewHeadId: existing.copiedHeadId };
         }
         if (existing.status === 'failed') throw new HttpError(existing.errorStatus ?? 409, existing.error ?? '复制已停止，请重新尝试。');
         const active = this.copies.active.get(id);
@@ -241,17 +241,17 @@ export class Library extends DurableObject<Env> {
       if (this.internalConversation(id) || this.deletedAt(id)) throw new HttpError(409, '目标对话 ID 已被使用。');
       if (this.ctx.storage.sql.exec<{ count: number }>('SELECT COUNT(*) AS count FROM conversations').one().count >= MAX_CONVERSATIONS) throw new HttpError(507, `空间最多保存 ${MAX_CONVERSATIONS} 个对话，请整理已有对话后再创建。`);
       this.ctx.storage.transactionSync(() => {
-        this.copies.begin(id, sourceId, messageId);
+        this.copies.begin(id, sourceId, messageId, viewHeadId);
         const now = Date.now();
         this.ctx.storage.sql.exec('INSERT INTO conversations VALUES (?, ?, ?, ?)', id, `${source.title} 副本`.slice(0, 80), now, now);
       });
-      const promise = this.performCopy(source, id, messageId).finally(async () => { this.copies.active.delete(id); await this.scheduleMaintenance(); });
+      const promise = this.performCopy(source, id, messageId, viewHeadId).finally(async () => { this.copies.active.delete(id); await this.scheduleMaintenance(); });
       this.copies.active.set(id, promise);
       this.ctx.waitUntil(promise);
       return await promise;
     } catch (error) { return { error: error instanceof HttpError ? error.message : '复制暂时无法完成，请重新尝试。', status: error instanceof HttpError ? error.status : 503 }; }
   }
-  private async performCopy(source: ConversationInfo, id: string, messageId?: string): Promise<CopyResult> {
+  private async performCopy(source: ConversationInfo, id: string, messageId?: string, viewHeadId?: string): Promise<CopyResult> {
     const check = () => {
       this.copies.requireActive(id);
       if (!this.get(source.id) || !this.internalConversation(id)) throw new HttpError(410, '复制来源或目标对话已删除。');
@@ -261,6 +261,9 @@ export class Library extends DurableObject<Env> {
       const response = await this.env.CONVERSATIONS.getByName(source.id).copySourceResponse(messageId); check();
       if (!response.ok) { const failure = await response.json() as { error: string }; throw new HttpError(response.status, failure.error); }
       const saved = await response.json() as { messages: BackupMessage[]; settings: ConversationSettings }; check();
+      const requestedHead = messageId ?? viewHeadId;
+      const headPosition = requestedHead ? saved.messages.findIndex((message) => message.id === requestedHead && !message.summary) : -1;
+      if (requestedHead && headPosition < 0) throw new HttpError(404, '找不到待复制的显示分支。');
       const images = saved.messages.flatMap(messageImages), files = saved.messages.flatMap(messageFiles);
       if (images.length || files.length) { await this.attachments.pinAttachments(source.id, images, files); check(); }
       const required = new Set(saved.messages.flatMap(messageAttachments).map((file) => file.attachmentId));
@@ -281,12 +284,13 @@ export class Library extends DurableObject<Env> {
       if (new TextEncoder().encode(payload).byteLength > MAX_BACKUP_BYTES) throw new HttpError(413, '复制资料超过 12 MiB，请选择较短的分支。');
       const restored = await this.env.CONVERSATIONS.getByName(id).restoreResponse(id, new Response(payload).body!); check();
       if (!restored.ok) { const failure = await restored.json() as { error: string }; throw new HttpError(restored.status, failure.error); }
-      await restored.body?.cancel();
+      const copiedSnapshot = await restored.json() as Snapshot;
+      const copiedHeadId = headPosition >= 0 ? copiedSnapshot.messages[headPosition]?.id ?? null : null;
       this.ctx.storage.transactionSync(() => {
-        check(); this.copies.complete(id); this.touch(id);
+        check(); this.copies.complete(id, copiedHeadId); this.touch(id);
         this.ctx.storage.sql.exec('INSERT OR IGNORE INTO search_backfill(conversationId) VALUES (?)', id);
       });
-      await this.ctx.storage.sync(); return { id };
+      await this.ctx.storage.sync(); return { id, viewHeadId: copiedHeadId };
     } catch (error) {
       const stopped = this.copies.get(id);
       const failure = stopped?.status === 'failed' ? new HttpError(stopped.errorStatus ?? 409, stopped.error ?? '复制已停止。')

@@ -16,7 +16,7 @@ async function setup(request: APIRequestContext, protocol: ProviderKind, model: 
   } })).status()).toBe(200);
   await request.post('/api/conversations', { headers, data: { id, title: '生成信息测试' } });
   const snapshot = () => request.get(`/api/conversations/${id}`).then((response) => response.json()) as Promise<Snapshot>;
-  return { id, snapshot, send: () => request.post(`/api/conversations/${id}/messages`, { headers, data: { requestId: crypto.randomUUID(), content: '验证元数据' } }).then((response) => response.json()) as Promise<Submission>,
+  return { id, snapshot, send: () => request.post(`/api/conversations/${id}/messages`, { headers, data: { parentId: null, requestId: crypto.randomUUID(), content: '验证元数据' } }).then((response) => response.json()) as Promise<Submission>,
     cleanup: async (extra: string[] = []) => {
       for (const conversationId of [id, ...extra]) await request.delete(`/api/conversations/${conversationId}`, { headers });
       expect((await request.put('/api/settings/providers', { headers, data: original })).status()).toBe(200);

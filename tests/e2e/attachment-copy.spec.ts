@@ -34,7 +34,8 @@ async function upload(request: APIRequestContext, id: string, name = 'budget.txt
   return { ...input, bytes };
 }
 async function send(request: APIRequestContext, id: string, input: object = {}) {
-  const response = await request.post(`/api/conversations/${id}/messages`, { headers, data: { requestId: crypto.randomUUID(), content: '附件资料', ...input } });
+  const parentId = [...(await snapshot(request, id)).messages].reverse().find((message) => message.status === 'completed' && !message.deletedAt && !message.summary)?.id ?? null;
+  const response = await request.post(`/api/conversations/${id}/messages`, { headers, data: { parentId, requestId: crypto.randomUUID(), content: '附件资料', ...input } });
   expect(response.status()).toBe(202); const submission = await response.json() as Submission;
   await expect.poll(async () => (await snapshot(request, id)).messages.find((message) => message.id === submission.assistantId)?.status).toBe('completed');
   return submission;
@@ -107,7 +108,7 @@ test('closing the initiating page does not stop a claimed copy; retry after reop
     const reopened = await context.newPage(); await reopened.goto(`/c/${fixture.id}`);
     await expect(reopened.getByRole('textbox', { name: '消息', exact: true })).toHaveValue('来源草稿');
     await reopened.getByRole('button', { name: '更多会话操作', exact: true }).click(); await reopened.getByRole('menuitem', { name: '复制对话', exact: true }).click();
-    await expect(reopened).toHaveURL(`/c/${copyId}`); expect((await control(request)).dailyCount).toBe(writes);
+    await expect(reopened).toHaveURL((url) => url.pathname === `/c/${copyId}`); expect((await control(request)).dailyCount).toBe(writes);
   } finally { await fixture.cleanup(); }
 });
 

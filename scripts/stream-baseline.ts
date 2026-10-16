@@ -105,7 +105,7 @@ try {
     await api('/conversations', { id, title: scenario.name });
     const live = await subscriber(id, scenario.disconnect);
     const { socket, observed } = live;
-    const submission = await api<{ runId: string }>(`/conversations/${id}/messages`, { requestId: crypto.randomUUID(),
+    const submission = await api<{ runId: string }>(`/conversations/${id}/messages`, { parentId: null, requestId: crypto.randomUUID(),
       content: 'Deterministic stream workload', selection: { providerId, model: models[index].id }, showReasoning: true });
     const deadline = Date.now() + chunks * interval + 30_000;
     let report: GenerationMeasurements | null;

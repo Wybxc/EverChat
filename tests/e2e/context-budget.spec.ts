@@ -26,7 +26,7 @@ async function setup(request: APIRequestContext, window: number | null = 4096) {
   const { id, snapshot: seeded } = await restored.json() as { id: string; snapshot: Snapshot }; ids.push(id);
   expect((await request.put('/api/settings/providers', { headers, data: configuration })).status()).toBe(200);
   const snapshot = () => request.get(`/api/conversations/${id}`).then((response) => response.json()) as Promise<Snapshot>;
-  const submit = (patch: object = {}) => request.post(`/api/conversations/${id}/messages`, { headers, data: { requestId: crypto.randomUUID(), content: 'next', ...patch } });
+  const submit = (patch: object = {}) => request.post(`/api/conversations/${id}/messages`, { headers, data: { requestId: crypto.randomUUID(), content: 'next', ...(!('retryOf' in patch) && !('revisionOf' in patch) ? { parentId: seeded.messages.at(-1)!.id } : {}), ...patch } });
   const run = (runId: string) => request.post(`/api/__test/conversations/${id}/context`, { headers, data: { runId } }).then((response) => response.json());
   const stop = (runId: string) => request.post(`/api/conversations/${id}/cancel`, { headers, data: { runId } });
   const save = (settings: ConversationSettings) => request.put(`/api/conversations/${id}/settings`, { headers, data: settings });
@@ -70,7 +70,7 @@ test('cloud budgeting rejects oversized fixed input, keeps a complete branch suf
     expect(restoredCopy.snapshot.messages.at(-1).generation.context).toEqual(estimate);
     expect(restoredCopy.snapshot.settings).toMatchObject({ contextBudget: 1, recentMessages: 1 });
     expect((await request.put('/api/settings/providers', { headers, data: fixture.configuration })).status()).toBe(200);
-    const older = await fixture.submit({ settings, branchHead: fixture.seeded.messages[1].id }); expect(older.status()).toBe(202);
+    const older = await fixture.submit({ settings, parentId: fixture.seeded.messages[1].id }); expect(older.status()).toBe(202);
     const olderTask = await older.json() as Submission;
     expect((await fixture.run(olderTask.runId)).context.map((message: { content: string }) => message.content)).toEqual(['旧问题'.repeat(20), '旧回答'.repeat(20), 'next']);
     await fixture.stop(olderTask.runId);
@@ -110,7 +110,7 @@ test('composer estimates reflect model prompts and autosaved budgets across devi
     await expect(estimate).toContainText('/ 350'); await expect(page.getByTestId('context-omission')).toContainText('将省略 4 条');
     await expect(composer).toHaveValue('next');
     await messageMenu(page.getByTestId('assistant-message').first());
-    await page.getByRole('menuitem', { name: '继续此分支', exact: true }).first().click();
+    await page.getByRole('menuitem', { name: '从这里继续', exact: true }).first().click();
     await expect(page.getByTestId('context-omission')).toContainText('将省略 2 条');
     await openParameters(page);
     await context.setOffline(true); await modal.getByLabel('上下文 Token 预算', { exact: true }).fill('400');

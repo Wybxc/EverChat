@@ -37,7 +37,7 @@ for (const provider of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
     try {
       await first.request.post('/api/login', { headers, data: { password: 'everchat-local' } });
       const page = await first.newPage(); await page.goto(`/c/${fixture.id}`);
-      const input = { requestId: crypto.randomUUID(), imageIds: [image.id], content: '', selection: fixture.selection };
+      const input = { parentId: null, requestId: crypto.randomUUID(), imageIds: [image.id], content: '', selection: fixture.selection };
       const submitted = await fixture.submit(input); expect(submitted.status()).toBe(202); const result = await submitted.json() as Submission;
       const accepted = (await fixture.snapshot()).messages.find((message) => message.id === result.userId)!;
       expect(messageImages(accepted)).toEqual([{ type: 'image', attachmentId: image.id, name: image.name, sha256: image.sha256, size: image.size, mediaType: image.mediaType }]);
@@ -66,7 +66,7 @@ test('server rejects unsupported, foreign, incomplete, oversized and invalid ima
   await request.post(`/api/conversations/${fixture.id}/attachments`, { headers, data: incomplete });
   try {
     for (const patch of [{ selection: { providerId, model: 'text-only' }, imageIds: [image.id] }, { imageIds: [foreign.id] }, { imageIds: [broken.id] }, { imageIds: [oversized.id] }, { imageIds: [incomplete.id] }, { imageIds: [image.id, image.id] }]) {
-      const response = await fixture.submit({ requestId: crypto.randomUUID(), content: '', selection: fixture.selection, ...patch });
+      const response = await fixture.submit({ parentId: null, requestId: crypto.randomUUID(), content: '', selection: fixture.selection, ...patch });
       expect(response.status()).toBeGreaterThanOrEqual(400); expect((await fixture.snapshot()).messages).toHaveLength(0);
     }
   } finally { await fixture.cleanup(); await other.cleanup(); }
@@ -74,7 +74,7 @@ test('server rejects unsupported, foreign, incomplete, oversized and invalid ima
 test('image references survive retries and revisions, stay on their branch and protect deletion until every source is removed', async ({ request }) => {
   const fixture = await setup(request), image = await upload(request, fixture.id);
   try {
-    const first = await (await fixture.submit({ requestId: crypto.randomUUID(), content: 'expect-images:1', imageIds: [image.id], selection: fixture.selection })).json() as Submission;
+    const first = await (await fixture.submit({ parentId: null, requestId: crypto.randomUUID(), content: 'expect-images:1', imageIds: [image.id], selection: fixture.selection })).json() as Submission;
     await finish(fixture, first);
     const retried = await (await fixture.submit({ requestId: crypto.randomUUID(), retryOf: first.assistantId, selection: fixture.selection })).json() as Submission;
     await finish(fixture, retried);
@@ -108,7 +108,7 @@ test('new conversation picker scales, previews, persists drafts and sends an ima
   try {
     await page.getByLabel('消息', { exact: true }).fill('图片草稿');
     await page.getByLabel('选择聊天图片').setInputFiles({ name: 'large.png', mimeType: 'image/png', buffer: Buffer.from(source, 'base64') });
-    await expect(page).toHaveURL(/\/c\/[0-9a-f-]+$/); id = page.url().split('/').at(-1)!;
+    await expect(page).toHaveURL(/\/c\/[0-9a-f-]+(?:\?branch=[^#]+)?$/); id = new URL(page.url()).pathname.split('/').at(-1)!;
     await expect(page.getByLabel('待发送图片')).toBeVisible();
     await expect(page.getByLabel('消息', { exact: true })).toBeFocused();
     const stored = await (await request.get(`/api/conversations/${id}/attachments`)).json(); expect(stored[0].size).toBeLessThanOrEqual(1048576);
@@ -150,7 +150,7 @@ test('concurrent file deletion and task acceptance never leave an accepted image
   for (let attempt = 0; attempt < 6; attempt++) {
     const fixture = await setup(request), image = await upload(request, fixture.id);
     try {
-      const submission = fixture.submit({ requestId: crypto.randomUUID(), content: '', imageIds: [image.id], selection: fixture.selection });
+      const submission = fixture.submit({ parentId: null, requestId: crypto.randomUUID(), content: '', imageIds: [image.id], selection: fixture.selection });
       if (attempt % 2) await new Promise((resolve) => setTimeout(resolve, 20));
       const deletion = request.delete(`/api/conversations/${fixture.id}/attachments/${image.id}`, { headers });
       const [accepted, removed] = await Promise.all([submission, deletion]);

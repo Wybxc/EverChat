@@ -324,7 +324,7 @@ test('tabbed settings autosave model names and enabled choices; the close button
     expect(await context.request.get('/api/session').then((response) => response.json())).toMatchObject({ provider: '', model: '' });
     const conversationId = crypto.randomUUID();
     expect((await context.request.post('/api/conversations', { headers, data: { id: conversationId, title: 'No model' } })).status()).toBe(201);
-    expect((await context.request.post(`/api/conversations/${conversationId}/messages`, { headers, data: { requestId: crypto.randomUUID(), content: '禁用模型不可生成' } })).status()).toBe(400);
+    expect((await context.request.post(`/api/conversations/${conversationId}/messages`, { headers, data: { parentId: null, requestId: crypto.randomUUID(), content: '禁用模型不可生成' } })).status()).toBe(400);
     expect(await context.request.get(`/api/conversations/${conversationId}`).then((response) => response.json())).toMatchObject({ messages: [] });
     await page.getByLabel('名称', { exact: true }).fill('关闭窗口时保存');
     await page.getByRole('button', { name: '关闭设置', exact: true }).click();

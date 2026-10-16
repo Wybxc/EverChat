@@ -384,7 +384,7 @@ export class Conversation extends DurableObject<Env> {
     if (this.deletedAt || await this.env.LIBRARY.getByName('personal').deletedAt(conversationId)) return { error: '这个对话已删除。', status: 410 };
     const accepted = await this.ctx.storage.transaction<Submission | Failure | { result: Submission; change: Change }>(async () => {
       if (this.deletedAt) return { error: '这个对话已删除。', status: 410 };
-      const fingerprint = JSON.stringify([input.content ?? null, input.retryOf ?? null, input.revisionOf ?? null, input.branchHead ?? null,
+      const fingerprint = JSON.stringify([input.content ?? null, input.retryOf ?? null, input.revisionOf ?? null, input.parentId ?? null,
         input.selection?.providerId ?? null, input.selection?.model ?? null, input.showReasoning ?? null, input.reasoningEffort ?? null, input.settings ?? null, input.summaryThrough ?? null, input.imageIds ?? null, input.fileIds ?? null, input.tools ?? null]);
       const duplicate = () => {
         const existing = this.query<{ fingerprint: string; result: string }>('SELECT * FROM submissions WHERE id = ?', input.requestId).toArray()[0];
@@ -393,7 +393,7 @@ export class Conversation extends DurableObject<Env> {
       };
       const existing = duplicate();
       if (existing) return existing;
-      if (input.summaryThrough && (input.content !== undefined || input.retryOf || input.revisionOf || input.branchHead || input.settings || input.reasoningEffort || input.showReasoning !== undefined || input.imageIds !== undefined || input.fileIds !== undefined || input.tools !== undefined)) return { error: '摘要请求不能同时指定聊天内容或会话参数。', status: 400 };
+      if (input.summaryThrough && (input.content !== undefined || input.retryOf || input.revisionOf || input.parentId !== undefined || input.settings || input.reasoningEffort || input.showReasoning !== undefined || input.imageIds !== undefined || input.fileIds !== undefined || input.tools !== undefined)) return { error: '摘要请求不能同时指定聊天内容或会话参数。', status: 400 };
       if (!config) return { error: '所选模型不可用，请配置供应商并启用模型。', status: 400 };
       if (input.tools) {
         try { assertWebToolSupport(config.modelMetadata, input.tools); }
@@ -436,8 +436,12 @@ export class Conversation extends DurableObject<Env> {
         await this.ctx.storage.setAlarm(Date.now() + 1000);
         return { result, change };
       }
-      const requestedHead = input.branchHead ? messages.find((message) => message.id === input.branchHead && message.role === 'assistant' && message.status === 'completed' && !message.deletedAt && !message.summary) : undefined;
-      if (input.branchHead && !requestedHead) return { error: '找不到可继续的分支。', status: 404 };
+      const ordinary = !input.retryOf && !input.revisionOf;
+      if (input.parentId !== undefined && !ordinary) return { error: '修订或重新生成不能同时指定父消息。', status: 400 };
+      if (ordinary && input.parentId === undefined) return { error: '发送消息必须指定父消息。', status: 400 };
+      const requestedParent = input.parentId ? messages.find((message) => message.id === input.parentId && message.status === 'completed' && !message.deletedAt && !message.summary) : undefined;
+      if (input.parentId && !requestedParent) return { error: '找不到可继续的父消息。', status: 404 };
+      if (ordinary && input.parentId === null && messages.some((message) => !message.summary)) return { error: '请指定当前分支的父消息，或新建对话。', status: 409 };
       let parent: Message | undefined;
       let previous: Message | undefined;
       if (input.retryOf) {
@@ -462,8 +466,7 @@ export class Conversation extends DurableObject<Env> {
       try { generationConfig = applyConversationSettings(config, settings); }
       catch (error) { return { error: error instanceof Error ? error.message : '会话参数无效。', status: 400 }; }
       const runId = crypto.randomUUID();
-      const latestCompleted = [...messages].reverse().find((message) => message.status === 'completed' && !message.deletedAt && !message.summary);
-      const userParentId = original ? original.parentId : requestedHead?.id ?? latestCompleted?.id ?? null;
+      const userParentId = original ? original.parentId : requestedParent?.id ?? null;
       let context: ChatInput[];
       let contextEstimate;
       let automatic: ReturnType<typeof summaryGeneration> | undefined;

@@ -89,8 +89,8 @@ test('the client can download text formats and import a backup into a new conver
     expect(backupFile.suggestedFilename()).toMatch(/\.everchat\.zip$/);
     const archive = await readFile((await backupFile.path())!);
     await page.getByRole('banner').locator('input[type="file"]').setInputFiles({ name: 'backup.zip', mimeType: 'application/zip', buffer: archive });
-    await expect(page).not.toHaveURL(`/c/${source.id}`);
-    await expect(page).toHaveURL(/\/c\/[0-9a-f-]{36}$/);
+    await expect(page).not.toHaveURL((url) => url.pathname === `/c/${source.id}`);
+    await expect(page).toHaveURL(/\/c\/[0-9a-f-]{36}(?:\?branch=[^#]+)?$/);
     restoredId = new URL(page.url()).pathname.split('/').at(-1)!;
     expect(restoredId).not.toBe(source.id);
     await expect(page.getByTestId('assistant-message')).toHaveCount(2);

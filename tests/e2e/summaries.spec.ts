@@ -54,7 +54,7 @@ async function setup(request: APIRequestContext, branch = false, longTail = fals
   const { id, snapshot: seeded } = await restored.json() as { id: string; snapshot: Snapshot }; ids.push(id);
   expect((await configure()).status()).toBe(200);
   const snapshot = () => request.get(`/api/conversations/${id}`).then((response) => response.json()) as Promise<Snapshot>;
-  const submit = (input: Partial<SubmitInput>) => request.post(`/api/conversations/${id}/messages`, { headers, data: { requestId: crypto.randomUUID(), ...input } });
+  const submit = (input: Partial<SubmitInput>) => request.post(`/api/conversations/${id}/messages`, { headers, data: { requestId: crypto.randomUUID(), ...(!input.summaryThrough && !input.retryOf && !input.revisionOf ? { parentId: seeded.messages.at(-1)!.id } : {}), ...input } });
   const summarize = (model = 'benchmark-summary-ok', patch: Partial<SubmitInput> = {}) => submit({ summaryThrough: seeded.messages[1].id, selection: { providerId, model }, ...patch });
   const run = (runId: string) => request.post(`/api/__test/conversations/${id}/context`, { headers, data: { runId } }).then((response) => response.json()) as Promise<{ context: ChatInput[]; config: Record<string, unknown> }>;
   const stop = (runId: string) => request.post(`/api/conversations/${id}/cancel`, { headers, data: { runId } });
@@ -73,7 +73,7 @@ async function setup(request: APIRequestContext, branch = false, longTail = fals
 }
 
 function automaticInput(fixture: Awaited<ReturnType<typeof setup>>, summaryModel = 'benchmark-summary-ok', budget = 400): SubmitInput {
-  return { requestId: crypto.randomUUID(), content: '还记得早先的预算吗？', selection: { providerId: fixture.providerId, model: 'benchmark-answer-fact' },
+  return { parentId: fixture.seeded.messages.at(-1)!.id, requestId: crypto.randomUUID(), content: '还记得早先的预算吗？', selection: { providerId: fixture.providerId, model: 'benchmark-answer-fact' },
     settings: { ...defaults, contextBudget: budget, autoCompression: { enabled: true, threshold: 80, model: { providerId: fixture.providerId, model: summaryModel } } } };
 }
 const action = (request: APIRequestContext, id: string, name: string, runId: string) => request.post(`/api/__test/conversations/${id}/${name}`, { headers, data: { runId } });
@@ -304,7 +304,7 @@ test('manual summaries pin complete input, are idempotent after model changes, a
     expect((await fixture.resources()).calls).toBe(1);
     expect((await fixture.snapshot()).messages.slice(0, 6)).toEqual(fixture.seeded.messages);
     expect((await fixture.configure()).status()).toBe(200);
-    const response = await fixture.submit({ content: '预算是多少？', branchHead: fixture.seeded.messages[5].id }); expect(response.status()).toBe(202);
+    const response = await fixture.submit({ content: '预算是多少？', parentId: fixture.seeded.messages[5].id }); expect(response.status()).toBe(202);
     const answer = await response.json() as Submission, context = await fixture.run(answer.runId);
     expect(context.config.maxOutputTokens).toBeNull(); expect(context.config.systemPrompt).toBe('CHAT SYSTEM');
     expect(context.context[0]).toMatchObject({ role: 'user' }); expect(context.context[0].content).toContain(fact);
@@ -318,7 +318,7 @@ test('manual summaries pin complete input, are idempotent after model changes, a
 test('invalid and too-large summaries do not write or call a supplier; cancellation and failed output keep original history', async ({ request }) => {
   const fixture = await setup(request);
   try {
-    for (const patch of [{ content: '' }, { retryOf: fixture.seeded.messages[1].id }, { settings: defaults }, { showReasoning: false }, { branchHead: fixture.seeded.messages[1].id }]) expect((await fixture.summarize('benchmark-summary-ok', patch)).status()).toBe(400);
+    for (const patch of [{ content: '' }, { retryOf: fixture.seeded.messages[1].id }, { settings: defaults }, { showReasoning: false }, { parentId: fixture.seeded.messages[1].id }]) expect((await fixture.summarize('benchmark-summary-ok', patch)).status()).toBe(400);
     expect((await fixture.summarize('benchmark-summary-small')).status()).toBe(400);
     expect((await fixture.summarize('benchmark-summary-ok', { summaryThrough: fixture.seeded.messages[0].id })).status()).toBe(400);
     expect((await fixture.snapshot()).messages).toEqual(fixture.seeded.messages); expect((await fixture.resources()).calls).toBe(0);
@@ -328,7 +328,7 @@ test('invalid and too-large summaries do not write or call a supplier; cancellat
       const failed = await fixture.startSummary(model); const message = await fixture.terminal(failed, 'failed'); expect(message.error).toBeTruthy();
     }
     expect((await fixture.resources()).calls).toBe(3);
-    const chat = await fixture.submit({ content: 'next', branchHead: fixture.seeded.messages[5].id }); expect(chat.status()).toBe(202);
+    const chat = await fixture.submit({ content: 'next', parentId: fixture.seeded.messages[5].id }); expect(chat.status()).toBe(202);
     const task = await chat.json() as Submission;
     const context = await fixture.run(task.runId); expect(JSON.stringify(context.context)).not.toContain('conversation_summary');
     expect((await fixture.snapshot()).messages.at(-1)!.generation!.context).toMatchObject({ omittedMessages: 2 });
@@ -347,7 +347,7 @@ test('summary boundaries are branch-specific, incremental compression reuses onl
     expect(wider.summary!.sourceIds).toEqual(fixture.seeded.messages.slice(0, 4).map(({ id }) => id));
     expect(wider.generation!.context!.summaryId).toBe(early.id);
     for (const [head, enabled, expected] of [[fixture.seeded.messages[5].id, true, wider.id], [fixture.seeded.messages[7].id, true, undefined], [fixture.seeded.messages[5].id, false, undefined]] as const) {
-      const response = await fixture.submit({ content: 'next', branchHead: head, settings: { ...defaults, contextBudget: 400, useSummaries: enabled } }); expect(response.status()).toBe(202);
+      const response = await fixture.submit({ content: 'next', parentId: head, settings: { ...defaults, contextBudget: 400, useSummaries: enabled } }); expect(response.status()).toBe(202);
       const task = await response.json() as Submission, context = await fixture.run(task.runId);
       expect((await fixture.snapshot()).messages.at(-1)!.generation!.context!.summaryId).toBe(expected);
       if (expected) expect(context.context[0].content).toContain(fact);
@@ -370,7 +370,7 @@ test('copies and backups remap coverage and generation references; deleting a so
     await request.post('/api/__test/library/search', { headers, data: { id: fixture.id, rebuild: true } });
     await expect.poll(async () => (await request.post('/api/__test/library/search', { headers, data: { id: fixture.id } }).then((response) => response.json())).progress?.done).toBe(1);
     expect(await indexed()).toEqual([fixture.seeded.messages[0].id]);
-    const answerResponse = await fixture.submit({ content: 'next', branchHead: fixture.seeded.messages[5].id }); expect(answerResponse.status()).toBe(202);
+    const answerResponse = await fixture.submit({ content: 'next', parentId: fixture.seeded.messages[5].id }); expect(answerResponse.status()).toBe(202);
     const answer = await answerResponse.json() as Submission; await fixture.stop(answer.runId);
     const checkCopy = (snapshot: Snapshot) => {
       const copiedSummary = snapshot.messages.find((message) => message.summary)!;
@@ -396,7 +396,7 @@ test('copies and backups remap coverage and generation references; deleting a so
     await expect.poll(indexed).toEqual([]);
     const redacted = await request.get(`/api/conversations/${fixture.id}/backup`).then((response) => response.text()); expect(redacted).not.toContain(fact);
     const packets = await replay(request, fixture.id); expect(packets[0].type).toBe('snapshot'); expect(JSON.stringify(packets)).not.toContain(fact);
-    const fresh = await fixture.submit({ content: 'next', branchHead: fixture.seeded.messages[5].id }); expect(fresh.status()).toBe(202);
+    const fresh = await fixture.submit({ content: 'next', parentId: fixture.seeded.messages[5].id }); expect(fresh.status()).toBe(202);
     const next = await fresh.json() as Submission; expect(JSON.stringify((await fixture.run(next.runId)).context)).not.toContain(fact); await fixture.stop(next.runId);
     expect(before.messages.find(({ id }) => id === summary.id)!.parts.length).toBeGreaterThan(0);
   } finally { await fixture.cleanup(); }
@@ -411,12 +411,14 @@ test('summary controls stream Markdown, preserve the draft and URL, sync another
     await modal.getByLabel('摘要模型', { exact: true }).selectOption(modelSelectionKey({ providerId: fixture.providerId, model: 'benchmark-summary-slow' }));
     await modal.getByLabel('摘要覆盖边界', { exact: true }).selectOption(fixture.seeded.messages[1].id);
     await modal.getByRole('button', { name: '生成摘要', exact: true }).click(); await expect(modal).toHaveCount(0);
-    await expect(composer).toHaveValue('保留的聊天草稿'); await expect(composer).toBeFocused(); await expect(page).toHaveURL(`${origin}/c/${fixture.id}`);
+    await expect(composer).toHaveValue('保留的聊天草稿'); await expect(composer).toBeFocused(); await expect(page).toHaveURL((url) => url.pathname === `/c/${fixture.id}`);
     const card = page.getByTestId('summary-message'); await expect(card).toHaveAttribute('data-status', 'running');
     await expect(card.locator('h1')).toHaveText('历史摘要'); await expect(card).not.toContainText('继续处理后续问题。');
     const second = await other.newPage(); await second.goto(`/c/${fixture.id}`);
     await page.close(); await expect(second.getByTestId('summary-message')).toHaveAttribute('data-status', 'completed');
     const persisted = second.getByTestId('summary-message');
+    const group = second.getByTestId('branch-summaries').locator('details').first();
+    if (!await group.evaluate((element: HTMLDetailsElement) => element.open)) await group.locator('summary').first().click();
     if (!await persisted.locator('details').first().evaluate((element: HTMLDetailsElement) => element.open)) await persisted.locator('summary').first().click();
     await expect(persisted.locator('[data-streamdown="strong"]').filter({ hasText: /^42 元$/ })).toHaveText('42 元');
     await second.getByRole('button', { name: '查看上下文估算' }).click();
@@ -456,6 +458,7 @@ test('summary regeneration and deletion controls keep originals and drafts, and 
     const task = await fixture.startSummary(); await fixture.terminal(task);
     await page.goto(`/c/${fixture.id}`); const composer = page.getByLabel('消息', { exact: true }); await composer.fill('保留草稿');
     const first = page.getByTestId('summary-message').first(); await expect(first).toHaveAttribute('data-status', 'completed');
+    await page.getByTestId('branch-summaries').locator('summary').first().click();
     await first.getByRole('button', { name: '更多摘要操作', exact: true }).click();
     await page.getByRole('menuitem', { name: '重新生成摘要', exact: true }).click();
     const modal = page.getByRole('dialog', { name: '重新生成摘要', exact: true });
@@ -487,7 +490,7 @@ test('a reset interrupts partial summary work without re-calling the supplier or
     await request.post(`/api/__test/conversations/${fixture.id}/abort`, { headers, data: { runId: task.runId } });
     const interrupted = await fixture.terminal(task, 'failed'); expect(messageText(interrupted).length).toBeGreaterThan(0); expect(interrupted.error).toContain('中断');
     await request.post(`/api/__test/conversations/${fixture.id}/alarm`, { headers, data: { runId: task.runId } }); expect((await fixture.resources()).calls).toBe(1);
-    const answer = await fixture.submit({ content: 'next', branchHead: fixture.seeded.messages[5].id }); expect(answer.status()).toBe(202);
+    const answer = await fixture.submit({ content: 'next', parentId: fixture.seeded.messages[5].id }); expect(answer.status()).toBe(202);
     const next = await answer.json() as Submission; expect(JSON.stringify((await fixture.run(next.runId)).context)).not.toContain('conversation_summary'); await fixture.stop(next.runId);
     expect((await fixture.snapshot()).messages.slice(0, 6)).toEqual(fixture.seeded.messages);
   } finally { await fixture.cleanup(); }

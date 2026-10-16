@@ -22,16 +22,15 @@ export const contextEstimateSchema = v.strictObject({
 export type ContextEstimate = v.InferOutput<typeof contextEstimateSchema>;
 export class ContextBudgetError extends Error {}
 
-export function contextSource(messages: Message[], input: Pick<SubmitInput, 'content' | 'retryOf' | 'revisionOf' | 'branchHead'>) {
+export function contextSource(messages: Message[], input: Pick<SubmitInput, 'content' | 'retryOf' | 'revisionOf' | 'parentId'>) {
   const previous = input.retryOf ? messages.find((message) => message.id === input.retryOf) : undefined;
   const parent = previous ? messages.find((message) => message.id === previous.parentId) : undefined;
   const original = input.revisionOf ? messages.find((message) => message.id === input.revisionOf) : undefined;
-  const latest = [...messages].reverse().find((message) => message.status === 'completed' && !message.deletedAt && !message.summary);
   const files = messageFiles(parent ?? original);
   const images = parent ? messageImages(parent) : original ? messageImages(original) : [];
   return { content: parent ? messageText(parent) : input.content?.trim() ?? '',
     ...(images.length ? { images } : {}), ...(files.length ? { files } : {}),
-    parentId: parent ? parent.parentId : original ? original.parentId : input.branchHead ?? latest?.id ?? null };
+    parentId: parent ? parent.parentId : original ? original.parentId : input.parentId ?? null };
 }
 
 export function contextHistory(messages: Message[], parentId: string | null): ChatInput[] {

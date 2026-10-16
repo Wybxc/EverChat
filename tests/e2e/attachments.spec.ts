@@ -135,7 +135,7 @@ test('the file manager uploads with progress, preserves the composer and URL, sy
     const second = await other.newPage(); await second.goto(`/c/${fixture.id}`); await conversationMenu(second); await second.getByRole('menuitem', { name: '管理对话文件', exact: true }).click();
     await expect(second.getByRole('dialog', { name: '对话文件', exact: true })).toContainText('预算.md');
     await dialog.getByRole('button', { name: '关闭对话文件' }).click(); await expect(page.getByRole('button', { name: '更多会话操作', exact: true })).toBeFocused();
-    await expect(composer).toHaveValue('保留草稿'); await expect(page).toHaveURL(`/c/${fixture.id}`);
+    await expect(composer).toHaveValue('保留草稿'); await expect(page).toHaveURL((url) => url.pathname === `/c/${fixture.id}`);
     await page.reload(); await conversationMenu(page); await page.getByRole('menuitem', { name: '管理对话文件', exact: true }).click(); await expect(dialog).toContainText('预算.md');
     await dialog.getByRole('button', { name: '删除文件 预算.md', exact: true }).click(); await expect(dialog).toContainText('暂无文件');
     await expect(second.getByRole('dialog', { name: '对话文件', exact: true })).toContainText('暂无文件');

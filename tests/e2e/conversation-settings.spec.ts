@@ -53,7 +53,7 @@ test('conversation settings validate, inherit and pin task configuration, and su
     const seq = (await fixture.snapshot()).seq;
     expect((await fixture.save(settings)).status()).toBe(200); expect((await fixture.snapshot()).seq).toBe(seq);
     // The combined prompt and message exceed 64 KB while remaining within their individual limits.
-    const input = { requestId: crypto.randomUUID(), content: '固定任务配置'.repeat(2000), settings };
+    const input = { parentId: null, requestId: crypto.randomUUID(), content: '固定任务配置'.repeat(2000), settings };
     expect(new TextEncoder().encode(JSON.stringify(input)).byteLength).toBeGreaterThan(64 * 1024);
     const sent = await request.post(`/api/conversations/${fixture.id}/messages`, { headers, data: input }); expect(sent.status()).toBe(202);
     const submission = await sent.json() as Submission;
@@ -66,17 +66,17 @@ test('conversation settings validate, inherit and pin task configuration, and su
     expect(await request.post(`/api/conversations/${fixture.id}/messages`, { headers, data: input }).then((response) => response.json())).toEqual(submission);
     await fixture.stop(submission.runId);
     expect((await fixture.save(defaults)).status()).toBe(200);
-    const inherited = await request.post(`/api/conversations/${fixture.id}/messages`, { headers, data: { requestId: crypto.randomUUID(), content: '继承模型提示' } }).then((response) => response.json()) as Submission;
+    const inherited = await request.post(`/api/conversations/${fixture.id}/messages`, { headers, data: { parentId: submission.userId, requestId: crypto.randomUUID(), content: '继承模型提示' } }).then((response) => response.json()) as Submission;
     expect((await fixture.run(inherited.runId)).config).toMatchObject({ systemPrompt: 'MODEL', maxOutputTokens: 128 });
     await fixture.stop(inherited.runId);
     expect((await request.put('/api/settings/providers', { headers, data: { ...fixture.config,
       providers: fixture.config.providers.map((provider) => ({ ...provider, models: provider.models.map((model) => ({ ...model, useGlobalSystemPrompt: true })) })),
     } })).status()).toBe(200);
-    const global = await request.post(`/api/conversations/${fixture.id}/messages`, { headers, data: { requestId: crypto.randomUUID(), content: '继承全局提示' } }).then((response) => response.json()) as Submission;
+    const global = await request.post(`/api/conversations/${fixture.id}/messages`, { headers, data: { parentId: inherited.userId, requestId: crypto.randomUUID(), content: '继承全局提示' } }).then((response) => response.json()) as Submission;
     expect((await fixture.run(global.runId)).config).toMatchObject({ systemPrompt: 'GLOBAL', maxOutputTokens: 128 });
     await fixture.stop(global.runId);
     const empty = { ...defaults, systemPrompt: '', useGlobalMaxOutputTokens: false };
-    const explicit = await request.post(`/api/conversations/${fixture.id}/messages`, { headers, data: { requestId: crypto.randomUUID(), content: '取消提示和上限', settings: empty } }).then((response) => response.json()) as Submission;
+    const explicit = await request.post(`/api/conversations/${fixture.id}/messages`, { headers, data: { parentId: global.userId, requestId: crypto.randomUUID(), content: '取消提示和上限', settings: empty } }).then((response) => response.json()) as Submission;
     expect((await fixture.run(explicit.runId)).config).toMatchObject({ systemPrompt: '', maxOutputTokens: null });
     expect((await fixture.snapshot()).settings).toEqual(defaults);
     await fixture.stop(explicit.runId);
@@ -85,7 +85,7 @@ test('conversation settings validate, inherit and pin task configuration, and su
     expect((await request.post('/api/conversations', { headers, data: { id: fresh, title: '已配置继承参数' } })).status()).toBe(201);
     expect((await request.put(`/api/conversations/${fresh}/settings`, { headers, data: defaults })).status()).toBe(200);
     expect(await request.get(`/api/conversations/${fresh}`).then((response) => response.json())).toMatchObject({ seq: 0, settings: defaults });
-    const queued = await request.post(`/api/conversations/${fresh}/messages`, { headers, data: { requestId: crypto.randomUUID(), content: '离线参数快照', settings: empty } });
+    const queued = await request.post(`/api/conversations/${fresh}/messages`, { headers, data: { parentId: null, requestId: crypto.randomUUID(), content: '离线参数快照', settings: empty } });
     expect(queued.status()).toBe(202);
     const queuedRun = (await queued.json() as Submission).runId;
     const pinned = await request.post(`/api/__test/conversations/${fresh}/context`, { headers, data: { runId: queuedRun } }).then((response) => response.json());
@@ -196,7 +196,7 @@ test('an offline new conversation pins its parameters without overwriting anothe
     await expect(modal.getByRole('status')).toHaveText('已保存到本机'); await modal.getByRole('button', { name: '关闭会话参数' }).click();
     await context.setOffline(true);
     await page.getByRole('textbox', { name: '消息', exact: true }).fill('离线发送会话参数'); await page.getByRole('button', { name: '发送消息', exact: true }).click();
-    await expect(page).toHaveURL(/\/c\/[0-9a-f-]{36}$/); id = new URL(page.url()).pathname.split('/').at(-1)!;
+    await expect(page).toHaveURL(/\/c\/[0-9a-f-]{36}(?:\?branch=[^#]+)?$/); id = new URL(page.url()).pathname.split('/').at(-1)!;
     const queued = await page.evaluate(() => JSON.parse(localStorage.getItem('everchat:pending')!)[0].input);
     expect(queued.settings).toEqual({ ...defaults, systemPrompt: 'OFFLINE', temperature: 0.3, useGlobalMaxOutputTokens: false });
     await other.request.post('/api/conversations', { headers, data: { id, title: '另一设备的对话参数' } });

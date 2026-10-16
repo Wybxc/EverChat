@@ -31,7 +31,7 @@ test('cross-conversation search uses paginated literal text and jumps to the mat
     await expect(results.getByRole('link')).toHaveCount(20);
     await results.getByRole('button', { name: '加载更多结果' }).click(); await expect(results.getByRole('link')).toHaveCount(40);
     await results.getByRole('button', { name: '加载更多结果' }).click(); await expect(results.getByRole('link')).toHaveCount(47);
-    await results.getByRole('link').first().click(); await expect(page).toHaveURL(`/c/${id}`);
+    await results.getByRole('link').first().click(); await expect(page).toHaveURL((url) => url.pathname === `/c/${id}`);
     await expect(page.locator('[data-search-current]')).toHaveAttribute('data-message-id', ids[0]);
     // Markdown can replace text nodes after the target article has been found.
     await expect.poll(() => page.evaluate(() => String(CSS.highlights.get('everchat-search')?.values().next().value ?? ''))).toBe('全文TOKEN');
@@ -68,7 +68,7 @@ test('mobile search closes the sidebar for navigation, shows offline status and 
     await input.pressSequentially('全文TOKEN', { delay: 15 });
     const results = page.getByRole('region', { name: '正文搜索结果' });
     await expect(results.getByRole('link')).toHaveCount(1); expect(calls).toBe(1);
-    await results.getByRole('link').click(); await expect(page).toHaveURL(`/c/${id}`);
+    await results.getByRole('link').click(); await expect(page).toHaveURL((url) => url.pathname === `/c/${id}`);
     await expect(page.getByRole('textbox', { name: '查找当前对话', exact: true })).toBeFocused();
     await expect(page.getByRole('button', { name: '关闭对话列表', exact: true })).toHaveCount(0);
     await page.getByRole('button', { name: '打开对话列表' }).click();
@@ -87,7 +87,7 @@ test('durable search outbox survives an RPC failure and object reset without ano
     await request.put('/api/settings/providers', { headers, data: { providers: [{ id: providerId, name: 'Index fixture', provider: 'openai-chat', baseUrl: 'https://provider.test/v1', apiKey: 'integration-test-key', models: [{ id: 'alarm-stall', name: 'Index fixture', enabled: true }] }], activeProviderId: providerId, activeModel: 'alarm-stall', showReasoning: true, systemPrompt: '', maxOutputTokens: null } });
     await request.post('/api/conversations', { headers, data: { id, title: '索引重试' } });
     await control(request, { fail: true });
-    const response = await request.post(`/api/conversations/${id}/messages`, { headers, data: { requestId: crypto.randomUUID(), content: '索引提问TOKEN', showReasoning: true } });
+    const response = await request.post(`/api/conversations/${id}/messages`, { headers, data: { parentId: null, requestId: crypto.randomUUID(), content: '索引提问TOKEN', showReasoning: true } });
     expect(response.status()).toBe(202); const submission = await response.json() as Submission;
     await expect.poll(async () => messageText((await request.get(`/api/conversations/${id}`).then((r) => r.json()) as Snapshot).messages.at(-1))).toContain('等待上游的正文');
     await request.post(`/api/conversations/${id}/cancel`, { headers, data: { runId: submission.runId } });

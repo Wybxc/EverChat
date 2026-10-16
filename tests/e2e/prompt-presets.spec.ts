@@ -44,7 +44,7 @@ test('preset APIs authorize writes, pin copied task prompts, and merge backups w
     expect(await request.put(path, { headers, data: { name: '写作助手', systemPrompt: 'ROLE' } }).then((response) => response.json())).toEqual(preset);
     const empty = crypto.randomUUID(); expect((await request.put(`/api/settings/presets/${empty}`, { headers, data: { name: '空提示词', systemPrompt: '' } })).status()).toBe(200);
     expect((await request.put(`/api/conversations/${fixture.id}/settings`, { headers, data: { ...defaults, systemPrompt: preset.systemPrompt } })).status()).toBe(200);
-    const accepted = await request.post(`/api/conversations/${fixture.id}/messages`, { headers, data: { requestId: crypto.randomUUID(), content: '使用预设' } }).then((response) => response.json()) as Submission;
+    const accepted = await request.post(`/api/conversations/${fixture.id}/messages`, { headers, data: { parentId: null, requestId: crypto.randomUUID(), content: '使用预设' } }).then((response) => response.json()) as Submission;
     const run = () => request.post(`/api/__test/conversations/${fixture.id}/context`, { headers, data: { runId: accepted.runId } }).then((response) => response.json());
     expect((await run()).config.systemPrompt).toBe('ROLE');
     const backup = await request.get(`/api/conversations/${fixture.id}/backup`).then((response) => response.json()) as EverChatBackup;
@@ -129,7 +129,7 @@ test('cached presets apply offline and queued tasks retain their text after the 
     await parameters.getByLabel('提示词预设', { exact: true }).selectOption(id); await expect(parameters.getByLabel('会话系统提示词', { exact: true })).toHaveValue('OFFLINE ROLE');
     await parameters.getByRole('button', { name: '关闭会话参数' }).click();
     await page.getByRole('textbox', { name: '消息', exact: true }).fill('离线应用预设'); await page.getByRole('button', { name: '发送消息', exact: true }).click();
-    await expect(page).toHaveURL(/\/c\/[0-9a-f-]{36}$/); newId = new URL(page.url()).pathname.split('/')[2];
+    await expect(page).toHaveURL(/\/c\/[0-9a-f-]{36}(?:\?branch=[^#]+)?$/); newId = new URL(page.url()).pathname.split('/')[2];
     await second.request.delete(`/api/settings/presets/${id}`, { headers }); await context.setOffline(false);
     await expect.poll(async () => (await second.request.get(`/api/conversations/${newId}`).then((response) => response.json())).messages?.length).toBe(2);
     const snapshot = await second.request.get(`/api/conversations/${newId}`).then((response) => response.json()) as Snapshot;

@@ -14,6 +14,8 @@ export function useConversation(id: string | null, enabled: boolean, onUnauthori
   const [connection, setConnection] = useState<Connection>(navigator.onLine ? 'connecting' : 'offline');
   const [syncedAt, setSyncedAt] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
+  const [snapshotFor, setSnapshotFor] = useState<string | null>(null);
+  const [authoritativeFor, setAuthoritativeFor] = useState<string | null>(null);
   const [syncError, setSyncError] = useState('');
   const [retryVersion, setRetryVersion] = useState(0);
   const unauthorized = useRef(onUnauthorized);
@@ -30,9 +32,10 @@ export function useConversation(id: string | null, enabled: boolean, onUnauthori
     let generation = 0;
     let lastHeartbeat = Date.now();
     const sync = new StreamSync(id && enabled ? cachedSnapshot(id) : { messages: [], seq: 0 });
+    setAuthoritativeFor(null);
     const epoch = storageEpoch();
     const writer = new SnapshotWriter((next) => { if (id && enabled && epoch === storageEpoch()) write(`snapshot:${id}`, next); });
-    const render = () => { setSnapshot(sync.view); setDurableSnapshot(sync.durable); setHasUnconfirmed(sync.hasPreview); };
+    const render = () => { setSnapshotFor(id); setSnapshot(sync.view); setDurableSnapshot(sync.durable); setHasUnconfirmed(sync.hasPreview); };
     render();
     setSyncedAt(null);
     setSyncError('');
@@ -84,6 +87,7 @@ export function useConversation(id: string | null, enabled: boolean, onUnauthori
       try {
         const cloud = await api<Snapshot>(`/conversations/${id}`);
         if (!alive || token !== generation) return;
+        setAuthoritativeFor(id);
         receive({ type: 'snapshot', snapshot: cloud });
         const socketUrl = () => {
           const url = new URL(`/api/conversations/${id}/sync`, location.href);
@@ -155,5 +159,5 @@ export function useConversation(id: string | null, enabled: boolean, onUnauthori
       document.removeEventListener('visibilitychange', visible);
     };
   }, [id, enabled, retryVersion, awaitingAcceptance, confirmedDeletion]);
-  return { snapshot, durableSnapshot, hasUnconfirmed, connection, syncedAt, loading, syncError, reconnect: () => setRetryVersion((value) => value + 1) };
+  return { snapshot, snapshotFor, authoritative: authoritativeFor === id, durableSnapshot, hasUnconfirmed, connection, syncedAt, loading, syncError, reconnect: () => setRetryVersion((value) => value + 1) };
 }

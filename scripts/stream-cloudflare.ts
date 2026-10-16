@@ -120,7 +120,7 @@ try {
       const shadow = item.name.includes('reasoning') ? await subscriber(id) : undefined;
       const slow = item.mode === 'slow' ? await subscriber(id, undefined, false) : undefined;
       const selection: ModelSelection = { providerId: profiles.find((profile) => profile.provider === item.protocol)!.id, model: item.model };
-      const input = { requestId: crypto.randomUUID(), content: sustained ? '长输入。'.repeat(4000) : 'Platform stream validation', selection, showReasoning: true };
+      const input = { parentId: null, requestId: crypto.randomUUID(), content: sustained ? '长输入。'.repeat(4000) : 'Platform stream validation', selection, showReasoning: true };
       const accepted = await api<Submission>(`/conversations/${id}/messages`, input);
       assert.deepEqual(await api(`/conversations/${id}/messages`, input), accepted);
       const acceptedAt = Date.now();

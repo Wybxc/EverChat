@@ -32,8 +32,8 @@ test('unavailable Markdown runtimes preserve messages and drafts, then recover o
   const fixture = await setup(page.request);
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  const runtime = '**/node_modules/.vite/deps/streamdown.js*';
-  const plugins = '**/node_modules/.vite/deps/@streamdown_*.js*';
+  const runtime = '**/deps/streamdown.js*';
+  const plugins = '**/deps/@streamdown_*.js*';
   await page.route(runtime, (route) => route.abort());
   await page.route(plugins, (route) => route.abort());
   try {
@@ -59,7 +59,7 @@ test('unavailable Markdown runtimes preserve messages and drafts, then recover o
 for (const chunk of ['mermaid', 'highlighted-body']) test(`a failed internal ${chunk} chunk preserves the page, search and draft until rendering is reloaded`, async ({ page, context }) => {
   const fixture = await setup(page.request), errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  const runtime = `**/node_modules/.vite/deps/${chunk}-*.js*`;
+  const runtime = `**/deps/${chunk}-*.js*`;
   await page.route(runtime, (route) => route.abort());
   try {
     await page.goto(`/c/${fixture.id}`);
@@ -157,7 +157,7 @@ test('cached search works offline on mobile, resets on navigation and clears whe
     await page.getByRole('dialog', { name: '对话列表' }).getByRole('button', { name: '开启新对话' }).click();
     await expect(page).toHaveURL('/'); expect(await highlighted(page)).toBe('');
     await page.goBack();
-    await expect(page).toHaveURL(`/c/${fixture.id}`); await expect(toolbar(page)).toHaveCount(0);
+    await expect(page).toHaveURL((url) => url.pathname === `/c/${fixture.id}`); await expect(toolbar(page)).toHaveCount(0);
     await page.getByRole('button', { name: '搜索当前对话', exact: true }).click(); await expect(input(page)).toHaveValue('');
     await context.setOffline(false);
     await input(page).fill('target'); await expect(status(page)).toContainText('1 / 5');
@@ -175,9 +175,10 @@ test('streaming search updates its count while retaining the active occurrence a
     await page.getByRole('button', { name: '搜索当前对话', exact: true }).click();
     await input(page).fill('target'); await expect(status(page)).toContainText('1 / 5');
     const reading = await metrics(page);
-    const response = await page.request.post(`/api/conversations/${fixture.id}/messages`, { headers, data: { requestId: crypto.randomUUID(), content: '持续输出以验证搜索', showReasoning: true } });
+    const response = await page.request.post(`/api/conversations/${fixture.id}/messages`, { headers, data: { parentId: fixture.last, requestId: crypto.randomUUID(), content: '持续输出以验证搜索', showReasoning: true } });
     expect(response.status()).toBe(202);
     const { runId } = await response.json();
+    await page.getByRole('button', { name: '返回', exact: true }).click();
     await expect.poll(async () => (await metrics(page)).height).toBeGreaterThan(reading.height + 100);
     expect((await metrics(page)).top).toBeCloseTo(reading.top, 0);
     await expect(status(page)).toContainText('1 / 5'); expect(await highlighted(page)).toBe('TARGET');

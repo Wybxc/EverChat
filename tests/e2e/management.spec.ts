@@ -58,7 +58,7 @@ test('management API validates changes, requires authentication and same origin,
 
 test('deleting a running conversation notifies subscribers, aborts generation, releases storage and rejects late submissions', async ({ page, browser }) => {
   const fixture = await setup(page.request, 'alarm-stall');
-  const input = { requestId: crypto.randomUUID(), content: '生成时删除', showReasoning: true };
+  const input = { parentId: null, requestId: crypto.randomUUID(), content: '生成时删除', showReasoning: true };
   const response = await page.request.post(`/api/conversations/${fixture.id}/messages`, { headers, data: input });
   expect(response.status()).toBe(202);
   const other = await browser.newContext();
@@ -156,7 +156,7 @@ test('a device reconnects with a late outbox, clears an unselected deleted conve
   const fixture = await setup(page.request, 'alarm-test');
   const second = await browser.newContext();
   try {
-    expect((await page.request.post(`/api/conversations/${fixture.id}/messages`, { headers, data: { requestId: crypto.randomUUID(), content: '缓存后删除' } })).status()).toBe(202);
+    expect((await page.request.post(`/api/conversations/${fixture.id}/messages`, { headers, data: { parentId: null, requestId: crypto.randomUUID(), content: '缓存后删除' } })).status()).toBe(202);
     await expect.poll(async () => (await page.request.get(`/api/conversations/${fixture.id}`).then((response) => response.json()) as Snapshot).messages[1].status).toBe('completed');
     await page.goto(`/c/${fixture.id}`);
     await expect(page.getByTestId('assistant-message')).toHaveAttribute('data-status', 'completed');
@@ -184,7 +184,7 @@ for (const fault of ['delete-failure', 'delete-reset']) test(`Library Alarm comp
   const fixture = await setup(request, 'alarm-test');
   try {
     expect((await action(request, fixture.id, fault)).ok()).toBe(true);
-    expect((await request.post(`/api/conversations/${fixture.id}/messages`, { headers, data: { requestId: crypto.randomUUID(), content: '排队后删除' } })).status()).toBe(202);
+    expect((await request.post(`/api/conversations/${fixture.id}/messages`, { headers, data: { parentId: null, requestId: crypto.randomUUID(), content: '排队后删除' } })).status()).toBe(202);
     expect((await request.delete(`/api/conversations/${fixture.id}`, { headers })).status()).toBe(500);
     await expect.poll(async () => {
       const response = await action(request, fixture.id, 'deletion-state');

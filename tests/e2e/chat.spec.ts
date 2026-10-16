@@ -67,14 +67,15 @@ test('generation survives offline, tab closure and a second device; retries are 
   const firstText = (await page.getByTestId('assistant-message').innerText()).replace(/\s+/g, '');
   await expect.poll(async () => (await otherPage.getByTestId('assistant-message').innerText()).replace(/\s+/g, '')).toBe(firstText);
 
-  const input = { requestId: randomUUID(), content: '关闭页面也继续生成' };
+  const input = { parentId: initial.messages[1].id, requestId: randomUUID(), content: '关闭页面也继续生成' };
   const first = await context.request.post(`/api/conversations/${id}/messages`, { headers: { Origin: origin }, data: input });
   const duplicate = await context.request.post(`/api/conversations/${id}/messages`, { headers: { Origin: origin }, data: input });
   expect(first.status()).toBe(202); expect(duplicate.status()).toBe(202);
   expect(await duplicate.json()).toEqual(await first.json());
-  const competing = await context.request.post(`/api/conversations/${id}/messages`, { headers: { Origin: origin }, data: { requestId: randomUUID(), content: '不应并发' } });
+  const competing = await context.request.post(`/api/conversations/${id}/messages`, { headers: { Origin: origin }, data: { parentId: null, requestId: randomUUID(), content: '不应并发' } });
   expect(competing.status()).toBe(409);
   await page.close();
+  await otherPage.getByRole('status').filter({ hasText: '另一分支已结束' }).getByRole('button', { name: '查看', exact: true }).click();
   await expect(otherPage.getByTestId('assistant-message').last()).toHaveAttribute('data-status', 'completed', { timeout: 30_000 });
   const final = await second.request.get(`/api/conversations/${id}`).then((response) => response.json());
   expect(final.messages).toHaveLength(4);
@@ -106,8 +107,9 @@ test('offline outbox is persisted, delivered once, and cancellation preserves pr
   await expect(page.getByTestId('assistant-message')).toHaveAttribute('data-status', 'cancelled');
   expect(await page.getByTestId('assistant-message').innerText()).toContain('集成测试回答');
   await page.getByRole('button', { name: '重新生成' }).click();
-  await expect(page.getByTestId('assistant-message')).toHaveCount(2);
+  await expect(page.getByTestId('assistant-message')).toHaveCount(1);
   await expect(page.getByTestId('assistant-message').last()).toHaveAttribute('data-status', 'completed', { timeout: 30_000 });
+  await page.getByRole('button', { name: '上一个回答版本', exact: true }).click();
   await expect(page.getByTestId('assistant-message').first()).toHaveAttribute('data-status', 'cancelled');
 });
 
@@ -166,7 +168,7 @@ test('the composer uses the selected model and shows opt-in provider thoughts', 
   expect((await context.request.put('/api/settings/providers', { headers: { Origin: origin }, data: settings })).status()).toBe(200);
   const invalidConversationId = randomUUID();
   expect((await context.request.post('/api/conversations', { headers: { Origin: origin }, data: { id: invalidConversationId, title: 'Invalid effort' } })).status()).toBe(201);
-  const unsupported = await context.request.post(`/api/conversations/${invalidConversationId}/messages`, { headers: { Origin: origin }, data: {
+  const unsupported = await context.request.post(`/api/conversations/${invalidConversationId}/messages`, { headers: { Origin: origin }, data: { parentId: null,
     requestId: randomUUID(), content: '不应开始', selection: { providerId: settings.providers[0].id, model: 'test-model-2' }, reasoningEffort: 'max',
   } });
   expect(unsupported.status()).toBe(400);

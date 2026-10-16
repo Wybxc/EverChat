@@ -36,7 +36,7 @@ const submitSchema = v.object({
   imageIds: v.optional(v.pipe(v.array(uuidSchema), v.maxLength(MAX_MESSAGE_IMAGES), v.check((ids) => new Set(ids).size === ids.length))),
   retryOf: v.optional(uuidSchema),
   revisionOf: v.optional(uuidSchema),
-  branchHead: v.optional(uuidSchema),
+  parentId: v.optional(v.nullable(uuidSchema)),
   summaryThrough: v.optional(uuidSchema),
   selection: v.optional(v.object({ providerId: uuidSchema, model: v.pipe(v.string(), v.minLength(1), v.maxLength(200)) })),
   showReasoning: v.optional(v.boolean()),
@@ -269,11 +269,11 @@ async function duplicateConversation(context: AppContext, messageId?: string) {
   await requireAuth(context);
   const id = conversationId(context);
   if (messageId !== undefined && !v.safeParse(uuidSchema, messageId).success) throw new HttpError(404, '找不到这条消息。');
-  const { requestId } = await parseBody(context, v.strictObject({ requestId: uuidSchema }));
+  const { requestId, viewHeadId } = await parseBody(context, v.strictObject({ requestId: uuidSchema, viewHeadId: v.optional(uuidSchema) }));
   const library = context.env.LIBRARY.getByName('personal');
-  const result = await library.duplicate(id, requestId, messageId);
+  const result = await library.duplicate(id, requestId, messageId, viewHeadId);
   if ('error' in result) return json({ error: result.error, ...(await library.copyStopped(requestId) ? { code: 'copy-stopped' } : {}) }, result.status);
-  return jsonWithStream({ id: result.id, conversation: await library.get(result.id) }, 'snapshot', await context.env.CONVERSATIONS.getByName(result.id).snapshotResponse(), 201);
+  return jsonWithStream({ id: result.id, viewHeadId: result.viewHeadId, conversation: await library.get(result.id) }, 'snapshot', await context.env.CONVERSATIONS.getByName(result.id).snapshotResponse(), 201);
 }
 app.post('/conversations/:id/duplicate', (context) => duplicateConversation(context));
 app.post('/conversations/:id/messages/:messageId/duplicate', (context) => duplicateConversation(context, context.req.param('messageId')));
@@ -352,10 +352,10 @@ app.post('/conversations/:id/messages', async (context) => {
   const id = conversationId(context);
   const library = await requireConversation(context, id);
   const input = await parseBody(context, submitSchema, { maxBytes: 240_000, tooLarge: '消息或会话参数太长。' }) as SubmitInput;
-  if (input.summaryThrough && (input.content !== undefined || input.retryOf || input.revisionOf || input.branchHead || input.settings || input.reasoningEffort || input.showReasoning !== undefined || input.imageIds !== undefined || input.fileIds !== undefined || input.tools !== undefined)) throw new HttpError(400, '摘要请求不能同时指定聊天内容或会话参数。');
+  if (input.summaryThrough && (input.content !== undefined || input.retryOf || input.revisionOf || input.parentId !== undefined || input.settings || input.reasoningEffort || input.showReasoning !== undefined || input.imageIds !== undefined || input.fileIds !== undefined || input.tools !== undefined)) throw new HttpError(400, '摘要请求不能同时指定聊天内容或会话参数。');
   if (input.retryOf && (input.content !== undefined || input.revisionOf !== undefined || input.imageIds !== undefined || input.fileIds !== undefined)) throw new HttpError(400, '消息参数无效。');
-  if (input.branchHead && input.revisionOf) throw new HttpError(400, '编辑消息不能同时指定分支。');
-  if (input.branchHead && input.retryOf && input.branchHead !== input.retryOf) throw new HttpError(400, '重新生成的分支必须对应原回答。');
+  if (input.parentId !== undefined && (input.revisionOf || input.retryOf)) throw new HttpError(400, '修订或重新生成不能同时指定父消息。');
+  if (!input.summaryThrough && !input.revisionOf && !input.retryOf && input.parentId === undefined) throw new HttpError(400, '发送消息必须指定父消息。');
   const baseConfig = await library.providerConfig(input.selection);
   if (!baseConfig) {
     const result = await context.env.CONVERSATIONS.getByName(id).submit(id, input, null);

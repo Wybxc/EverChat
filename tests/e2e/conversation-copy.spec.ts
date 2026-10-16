@@ -32,8 +32,8 @@ test('copying a conversation creates a new URL with the same messages and indepe
     await page.goto(`/c/${source.id}`);
     await page.getByRole('button', { name: '更多会话操作', exact: true }).click();
     await page.getByRole('menuitem', { name: '复制对话', exact: true }).click();
-    await expect(page).not.toHaveURL(`/c/${source.id}`);
-    await expect(page).toHaveURL(/\/c\/[0-9a-f-]{36}$/);
+    await expect(page).not.toHaveURL((url) => url.pathname === `/c/${source.id}`);
+    await expect(page).toHaveURL(/\/c\/[0-9a-f-]{36}(?:\?branch=[^#]+)?$/);
     const uiCopyId = new URL(page.url()).pathname.split('/').at(-1)!;
     copyIds.push(uiCopyId);
     expect(uiCopyId).not.toBe(source.id);
@@ -56,8 +56,9 @@ async function generationSource(request: APIRequestContext, model = 'metadata-co
   const settings: ConversationSettings = { systemPrompt: 'Conversation prompt', temperature: 0.6, topP: 0.8, useGlobalMaxOutputTokens: false, maxOutputTokens: 42, recentMessages: null, contextBudget: null, useSummaries: true, tools: [], autoCompression: { enabled: false, threshold: 80, model: null } };
   expect((await request.put(`/api/conversations/${id}/settings`, { headers, data: settings })).ok()).toBe(true);
   const snapshot = () => request.get(`/api/conversations/${id}`).then((response) => response.json()) as Promise<Snapshot>;
-  const send = async (content: string, extra: { branchHead?: string; revisionOf?: string } = {}) => {
-    const response = await request.post(`/api/conversations/${id}/messages`, { headers, data: { requestId: crypto.randomUUID(), content, showReasoning: true, ...extra } });
+  const send = async (content: string, extra: { parentId?: string | null; revisionOf?: string } = {}) => {
+    const parentId = [...(await snapshot()).messages].reverse().find((message) => message.status === 'completed' && !message.deletedAt && !message.summary)?.id ?? null;
+    const response = await request.post(`/api/conversations/${id}/messages`, { headers, data: { requestId: crypto.randomUUID(), content, showReasoning: true, ...(!extra.revisionOf ? { parentId } : {}), ...extra } });
     expect(response.status()).toBe(202);
     return await response.json() as Submission;
   };
@@ -97,7 +98,7 @@ test('copying an older answer copies only its parent path, retains settings and 
     const first = await fixture.send('原始问题'); await fixture.done();
     const revision = await request.patch(`/api/conversations/${fixture.id}/messages/${first.assistantId}`, { headers, data: { requestId: crypto.randomUUID(), content: '备用回答' } });
     expect(revision.status()).toBe(201); const revised = await revision.json() as { messageId: string };
-    const second = await fixture.send('沿原回答的后续问题', { branchHead: first.assistantId }); await fixture.done();
+    const second = await fixture.send('沿原回答的后续问题', { parentId: first.assistantId }); await fixture.done();
     await fixture.send('修改后的根问题', { revisionOf: first.userId }); await fixture.done();
     const original = await fixture.snapshot();
     expect(original.messages).toHaveLength(7);
@@ -117,7 +118,7 @@ test('copying an older answer copies only its parent path, retains settings and 
     expect(rootRevision.snapshot.messages).toHaveLength(2);
     expect(rootRevision.snapshot.messages[0].revisionOf).toBeNull();
 
-    const next = await request.post(`/api/conversations/${copy.id}/messages`, { headers, data: {
+    const next = await request.post(`/api/conversations/${copy.id}/messages`, { headers, data: { parentId: copy.snapshot.messages.at(-1)!.id,
       requestId: crypto.randomUUID(), content: '在副本中继续', selection: { providerId: fixture.providerId, model: 'benchmark-text-2-10-32' },
     } });
     expect(next.status()).toBe(202); const accepted = await next.json() as Submission;
@@ -140,8 +141,8 @@ test('user and assistant copy actions open independent URLs, preserve the source
     const composer = page.getByRole('textbox', { name: '消息', exact: true }); await composer.fill('原对话草稿');
     await messageMenu(page.locator(`[data-message-id="${second.userId}"]`));
     await page.getByRole('menuitem', { name: '复制到新对话', exact: true }).click();
-    await expect(page).not.toHaveURL(`/c/${fixture.id}`); const copyId = new URL(page.url()).pathname.split('/').at(-1)!; copies.push(copyId);
-    await expect(page).toHaveURL(`/c/${copyId}`); await expect(composer).toHaveValue(''); await expect(composer).toBeFocused();
+    await expect(page).not.toHaveURL((url) => url.pathname === `/c/${fixture.id}`); const copyId = new URL(page.url()).pathname.split('/').at(-1)!; copies.push(copyId);
+    await expect(page).toHaveURL((url) => url.pathname === `/c/${copyId}`); await expect(composer).toHaveValue(''); await expect(composer).toBeFocused();
     const copied = await page.request.get(`/api/conversations/${copyId}`).then((response) => response.json()) as Snapshot;
     expectPathCopy(copied, branchPath(original.messages, second.userId), fixture.settings); expect(copied.messages).toHaveLength(3);
     await expect(page.getByTestId('assistant-message')).toHaveCount(1);
@@ -159,7 +160,7 @@ test('user and assistant copy actions open independent URLs, preserve the source
     await page.goto(`/c/${fixture.id}`); await expect(composer).toHaveValue('原对话草稿');
     await messageMenu(page.locator(`[data-message-id="${first.assistantId}"]`));
     await page.getByRole('menuitem', { name: '复制到新对话', exact: true }).click();
-    await expect(page).not.toHaveURL(`/c/${fixture.id}`); const answerCopyId = new URL(page.url()).pathname.split('/').at(-1)!; copies.push(answerCopyId);
+    await expect(page).not.toHaveURL((url) => url.pathname === `/c/${fixture.id}`); const answerCopyId = new URL(page.url()).pathname.split('/').at(-1)!; copies.push(answerCopyId);
     await expect(page.getByTestId('user-message')).toHaveCount(1); await expect(page.getByTestId('assistant-message')).toHaveCount(1);
     await expect(composer).toBeFocused();
     expect(await fixture.snapshot()).toEqual(original);
@@ -206,7 +207,7 @@ test('copying a streaming answer takes only its durable prefix without stopping 
     await expect.poll(async () => (await fixture.snapshot()).messages[1]?.durableOffset ?? 0).toBeGreaterThan(0);
     const before = await fixture.snapshot(); expect(isActive(before.messages[1])).toBe(true);
     const action = page.getByRole('menuitem', { name: '复制到新对话', exact: true });
-    await messageMenu(page.locator(`[data-message-id="${accepted.assistantId}"]`)); await action.click(); await expect(page).not.toHaveURL(`/c/${fixture.id}`);
+    await messageMenu(page.locator(`[data-message-id="${accepted.assistantId}"]`)); await action.click(); await expect(page).not.toHaveURL((url) => url.pathname === `/c/${fixture.id}`);
     const copyId = new URL(page.url()).pathname.split('/').at(-1)!; copies.push(copyId);
     const copy = await page.request.get(`/api/conversations/${copyId}`).then((response) => response.json()) as Snapshot;
     expect(copy.messages).toHaveLength(2); expect(copy.messages[1].parts).toEqual(before.messages[1].parts);
@@ -220,7 +221,7 @@ test('copying a streaming answer takes only its durable prefix without stopping 
     expect(copyState.runs).toBe(0); expect(copyState.submissions).toBe(0);
     const userCopy = await copyAt(page.request, fixture.id, accepted.userId!, copies);
     expect(userCopy.snapshot.messages).toHaveLength(1); expect(userCopy.snapshot.messages[0].parts).toEqual(before.messages[0].parts);
-    const next = await page.request.post(`/api/conversations/${copyId}/messages`, { headers, data: {
+    const next = await page.request.post(`/api/conversations/${copyId}/messages`, { headers, data: { parentId: copy.messages[0].id,
       requestId: crypto.randomUUID(), content: '继续未回答的提问', selection: { providerId: fixture.providerId, model: 'benchmark-text-2-10-32' },
     } });
     expect(next.status()).toBe(202); const continued = await next.json() as Submission;
@@ -260,7 +261,7 @@ test('copy actions handle offline and errors, block double clicks, and respect n
     const endpoint = `**/api/conversations/${source.id}/messages/*/duplicate`;
     await page.route(endpoint, (route) => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '暂时无法复制，请重试。' }) }), { times: 1 });
     await action.click(); await expect(message.getByRole('alert')).toHaveText('暂时无法复制，请重试。');
-    await expect(page).toHaveURL(`/c/${source.id}`); await expect(composer).toHaveValue('保留草稿');
+    await expect(page).toHaveURL((url) => url.pathname === `/c/${source.id}`); await expect(composer).toHaveValue('保留草稿');
     let requests = 0;
     const gate = new Promise<void>((resolve) => { release = resolve; });
     await page.route(endpoint, async (route) => {

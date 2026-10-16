@@ -74,7 +74,7 @@ test('previews precede commits and reconnecting subscribers recover the same dur
     expect((await request.post('/api/conversations', { headers, data: { id, title: 'Incremental replay' } })).status()).toBe(201);
     const first = await subscribe(request, id), second = await subscribe(request, id);
     sockets.push(first.socket, second.socket);
-    const submission = await request.post(`/api/conversations/${id}/messages`, { headers, data: {
+    const submission = await request.post(`/api/conversations/${id}/messages`, { headers, data: { parentId: null,
       requestId: crypto.randomUUID(), content: '保存正文和思考', showReasoning: true,
     } }).then((response) => response.json());
     const answer = (snapshot: Snapshot) => snapshot.messages.find((message) => message.runId === submission.runId && message.role === 'assistant');
@@ -117,7 +117,7 @@ test('premature upstream EOF saves buffered text and thoughts, marks failure and
     } })).ok()).toBe(true);
     expect((await request.post('/api/conversations', { headers, data: { id, title: 'Early EOF' } })).status()).toBe(201);
     const live = await subscribe(request, id); socket = live.socket;
-    const input = { requestId: crypto.randomUUID(), content: '保留未完成回答', showReasoning: true };
+    const input = { parentId: null, requestId: crypto.randomUUID(), content: '保留未完成回答', showReasoning: true };
     const accepted = await request.post(`/api/conversations/${id}/messages`, { headers, data: input }).then((response) => response.json());
     await expect.poll(() => live.snapshot().messages.find((message) => message.runId === accepted.runId)?.status).toBe('failed');
     const stored = await request.get(`/api/conversations/${id}`).then((response) => response.json()) as Snapshot;
@@ -148,7 +148,7 @@ test('an unacknowledged slow subscriber is bounded while other clients and persi
     expect((await request.post('/api/conversations', { headers, data: { id, title: 'Slow subscriber' } })).status()).toBe(201);
     const slow = await subscribe(request, id, { messages: [], seq: 0 }, false), live = await subscribe(request, id);
     sockets.push(slow.socket, live.socket);
-    expect((await request.post(`/api/conversations/${id}/messages`, { headers, data: { requestId: crypto.randomUUID(), content: '有界订阅', showReasoning: true } })).status()).toBe(202);
+    expect((await request.post(`/api/conversations/${id}/messages`, { headers, data: { parentId: null, requestId: crypto.randomUUID(), content: '有界订阅', showReasoning: true } })).status()).toBe(202);
     await expect.poll(() => slow.closeCode()).toBe(4002);
     await expect.poll(() => live.snapshot().messages[1]?.status).toBe('completed');
     const stored = await request.get(`/api/conversations/${id}`).then((response) => response.json()) as Snapshot;
@@ -229,7 +229,7 @@ test('failed persistence drops the preview tail without publishing a durable con
     } })).ok()).toBe(true);
     expect((await request.post('/api/conversations', { headers, data: { id, title: 'Failed save' } })).status()).toBe(201);
     const live = await subscribe(request, id); socket = live.socket;
-    expect((await request.post(`/api/conversations/${id}/messages`, { headers, data: { requestId: crypto.randomUUID(), content: '不误报保存' } })).status()).toBe(202);
+    expect((await request.post(`/api/conversations/${id}/messages`, { headers, data: { parentId: null, requestId: crypto.randomUUID(), content: '不误报保存' } })).status()).toBe(202);
     await expect.poll(() => live.snapshot().messages[1]?.status).toBe('failed');
     expect(live.packets.some((packet) => packet.type === 'preview')).toBe(true);
     const acknowledgements = live.packets.filter((packet) => packet.type === 'commit-ack');
@@ -309,7 +309,7 @@ for (const protocol of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
       } })).ok()).toBe(true);
       expect((await request.post('/api/conversations', { headers, data: { id, title: 'Raw SSE recovery' } })).status()).toBe(201);
       const live = await subscribe(request, id); sockets.push(live.socket);
-      expect((await request.post(`/api/conversations/${id}/messages`, { headers, data: { requestId: crypto.randomUUID(), content: '恢复事件', showReasoning: true } })).status()).toBe(202);
+      expect((await request.post(`/api/conversations/${id}/messages`, { headers, data: { parentId: null, requestId: crypto.randomUUID(), content: '恢复事件', showReasoning: true } })).status()).toBe(202);
       await expect.poll(() => live.snapshot().messages[1]?.durableOffset ?? 0, { intervals: [50] }).toBeGreaterThan(0);
       const prefix = live.snapshot();
       expect(messageText(prefix.messages[1])).toBe('');
