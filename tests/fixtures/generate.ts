@@ -1,6 +1,6 @@
 import { openProviderStream, GenerationCancelled, ProviderError } from '../../worker/provider';
-import { ProviderStream, StreamParseError } from '../../shared/provider-stream';
-import type { ProviderConfig, ChatInput } from '../../shared/types';
+import { ProviderStream, StreamParseError } from '../../shared/streaming/provider-stream';
+import type { ProviderConfig, ChatInput } from '../../shared/providers/types';
 
 // Unit-test consumer exercises request construction and the shared decoder together.
 export async function generate(config: ProviderConfig, context: ChatInput[], onDelta: (delta: string) => Promise<void>, signal: AbortSignal, onReasoning: (delta: string) => Promise<void> = async () => {}) {

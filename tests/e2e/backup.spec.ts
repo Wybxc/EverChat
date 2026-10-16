@@ -1,6 +1,7 @@
 import { test, expect, type APIRequestContext } from '@playwright/test';
-import type { ProviderSettings, Snapshot } from '../../shared/types';
-import type { EverChatBackup } from '../../shared/backup';
+import type { ProviderSettings } from '../../shared/providers/types';
+import type { Snapshot } from '../../shared/streaming/protocol';
+import type { EverChatBackup } from '../../shared/backup/backup';
 import { readFile } from 'node:fs/promises';
 
 const headers = { Origin: 'http://127.0.0.1:5174' };

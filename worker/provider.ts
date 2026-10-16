@@ -1,11 +1,11 @@
-import { assertDocumentContext, DocumentError, documentPrompt, estimateDocumentTokens, type DocumentPart } from '../shared/documents';
+import { assertDocumentContext, DocumentError, documentPrompt, estimateDocumentTokens, type DocumentPart } from '../shared/attachments/documents';
 import type { LanguageModelV4Prompt } from '@ai-sdk/provider';
-import type { ChatInput, ProviderConfig } from '../shared/types';
+import type { ChatInput, ProviderConfig } from '../shared/providers/types';
 import { GenerationCancelled, ProviderError } from './generation-errors';
-import { assertChatImage, assertImageContext, ImageContextError, type ImagePart } from '../shared/images';
+import { assertChatImage, assertImageContext, ImageContextError, type ImagePart } from '../shared/attachments/images';
 import { providerCallOptions, providerModel } from './provider-sdk';
 import { providerToolPrompt, webToolDefinitions, type ProviderToolRequest } from './provider-tools';
-import { assertWebToolSupport } from '../shared/web-tools';
+import { assertWebToolSupport } from '../shared/web-tools/tasks';
 
 export { GenerationCancelled, ProviderError } from './generation-errors';
 

@@ -1,6 +1,8 @@
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import WebSocket from 'ws';
-import type { LibrarySnapshot, ProviderSettings, Snapshot, SyncPacket } from '../../shared/types';
+import type { LibrarySnapshot } from '../../shared/conversation/types';
+import type { ProviderSettings } from '../../shared/providers/types';
+import type { Snapshot, SyncPacket } from '../../shared/streaming/protocol';
 
 const origin = 'http://127.0.0.1:5174', headers = { Origin: origin };
 const action = (request: APIRequestContext, id: string, name: string, data: unknown = {}) => request.post(`/api/__test/conversations/${id}/${name}`, { headers, data });

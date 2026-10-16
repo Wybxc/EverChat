@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runToolValidation } from '../scripts/tool-platform-runner';
-import { TOOL_VALIDATION_WORKER } from '../shared/tool-validation';
+import { TOOL_VALIDATION_WORKER } from '../scripts/measurements/support/validation';
 
 test('tool platform validation refuses a different runtime or enabled counters before sending credentials', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'everchat-validation-guard-')), original = globalThis.fetch;

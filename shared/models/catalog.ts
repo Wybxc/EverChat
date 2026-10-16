@@ -1,5 +1,6 @@
-import { MODEL_CATALOG_SNAPSHOT } from './model-catalog-snapshot';
-import type { ModelMetadata,ProviderApiKind,ProviderModel } from './types';
+import { MODEL_CATALOG_SNAPSHOT } from './generated/catalog';
+import type { ModelMetadata, ProviderModel } from './types';
+import type { ProviderApiKind } from '../providers/types';
 
 export type ModelCatalog = Record<string, Record<string, Partial<ModelMetadata>>>;
 const CATALOG_VENDORS = ['openai', 'anthropic', 'google', 'deepseek', 'moonshotai', 'alibaba', 'mistral', 'xai', 'zhipuai', 'minimax', 'cohere', 'meta', 'nvidia'] as const;

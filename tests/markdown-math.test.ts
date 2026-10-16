@@ -4,7 +4,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Streamdown } from 'streamdown';
 import { math } from '@streamdown/math';
-import { normalizeMathMarkdown } from '../shared/markdown-math';
+import { normalizeMathMarkdown } from '../src/features/chat/rendering/math';
 
 const render = (text: string) => renderToStaticMarkup(createElement(Streamdown, { mode: 'static', plugins: { math } }, normalizeMathMarkdown(text)));
 

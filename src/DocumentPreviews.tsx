@@ -2,8 +2,8 @@ import { Modal, ModalTitle } from './Modal';
 import { Button } from '@/components/ui/button';
 import { useEffect, useId, useState } from 'react';
 import { Download, FileText, X } from 'lucide-react';
-import type { DocumentPart } from '../shared/documents';
-import { attachmentUrl } from '../shared/attachments';
+import type { DocumentPart } from '../shared/attachments/documents';
+import { attachmentUrl } from '../shared/attachments/files';
 import { api } from './api';
 
 export function DocumentPreviews({ conversationId, files, remove }: { conversationId: string; files: DocumentPart[]; remove?: (id: string) => void }) {

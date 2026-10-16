@@ -1,6 +1,6 @@
-import { ProviderStream } from '../shared/provider-stream';
-import type { GenerationTiming } from '../shared/generation';
-import type { ProviderKind } from '../shared/types';
+import { ProviderStream } from '../shared/streaming/provider-stream';
+import type { GenerationTiming } from '../shared/streaming/generation';
+import type { ProviderKind } from '../shared/providers/types';
 
 // Inspect only the prefix needed to observe a first output. Later bytes stay on the raw forwarding path.
 export class FirstTokenProbe {

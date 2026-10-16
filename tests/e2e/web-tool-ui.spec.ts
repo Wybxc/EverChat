@@ -1,10 +1,12 @@
 import { chooseChatModel } from '../ui';
 import { openSpaceSettings } from '../ui';
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
-import type { ConversationSettings, ProviderKind, ProviderSettings, Snapshot } from '../../shared/types';
-import type { WebToolName } from '../../shared/web-tools';
-import type { WebToolServiceSettings } from '../../shared/web-tool-service';
-import type { EverChatBackup } from '../../shared/backup';
+import type { ConversationSettings } from '../../shared/conversation/types';
+import type { ProviderKind, ProviderSettings } from '../../shared/providers/types';
+import type { Snapshot } from '../../shared/streaming/protocol';
+import type { WebToolName } from '../../shared/web-tools/tasks';
+import type { WebToolServiceSettings } from '../../shared/web-tools/service';
+import type { EverChatBackup } from '../../shared/backup/backup';
 
 const origin = 'http://127.0.0.1:5174', headers = { Origin: origin }, key = 'tvly-browser-private-service-key';
 async function setup(request: APIRequestContext, provider: ProviderKind = 'openai-chat') {

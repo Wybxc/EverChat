@@ -1,5 +1,5 @@
-import { mergeProviderSettings } from '../shared/provider-settings';
-import type { ProviderSettings, ProviderSettingsInput } from '../shared/types';
+import { mergeProviderSettings } from '../shared/providers/settings';
+import type { ProviderSettings, ProviderSettingsInput } from '../shared/providers/types';
 import { Autosave } from './autosave';
 
 export class SettingsAutosave extends Autosave<ProviderSettings, ProviderSettingsInput> {

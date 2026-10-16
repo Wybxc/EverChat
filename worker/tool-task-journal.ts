@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
 import * as v from 'valibot';
-import { estimateTextTokens } from '../shared/token-estimate';
-import type { ProviderConfig } from '../shared/types';
-import { assertWebToolSupport,MAX_TOOL_EXCHANGES,validateWebToolOutcome,type PublicToolTask,type WebToolCall,type WebToolName,type WebToolOutcome } from '../shared/web-tools';
+import { estimateTextTokens } from '../shared/conversation/token-estimate';
+import type { ProviderConfig } from '../shared/providers/types';
+import { assertWebToolSupport,MAX_TOOL_EXCHANGES,validateWebToolOutcome,type PublicToolTask,type WebToolCall,type WebToolName,type WebToolOutcome } from '../shared/web-tools/tasks';
 import type { SqlQuery } from './generation-metrics';
 import { providerToolIdentity,providerToolPrompt,validateProviderToolTurn,type ProviderToolExchange,type ProviderToolTurn } from './provider-tools';
 

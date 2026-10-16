@@ -1,8 +1,8 @@
-import * as v from 'valibot';
 import { imageSize } from 'image-size';
-import { attachmentInputSchema, attachmentSignatureMatches } from './attachments';
-import type { ChatInput, ProviderConfig } from './types';
-import { canAttemptCapability } from './model-metadata';
+import * as v from 'valibot';
+import { attachmentInputSchema,attachmentSignatureMatches } from './files';
+import { canAttemptCapability } from '../models/metadata';
+import type { ChatInput, ProviderConfig } from '../providers/types';
 
 export const MAX_MESSAGE_IMAGES = 4, MAX_CONTEXT_IMAGES = 8;
 export const MAX_CHAT_IMAGE_BYTES = 1024 * 1024, MAX_CHAT_IMAGE_EDGE = 1536;

@@ -1,5 +1,5 @@
-import { MAX_BATCH_BYTES,MAX_COMMIT_BYTES,MAX_STREAM_BYTES,payloadBytes,streamBatches } from '../shared/stream-batches';
-import type { StreamBatch } from '../shared/types';
+import { MAX_BATCH_BYTES,MAX_COMMIT_BYTES,MAX_STREAM_BYTES,payloadBytes,streamBatches } from '../shared/streaming/batches';
+import type { StreamBatch } from '../shared/streaming/protocol';
 import { GenerationCancelled,ProviderError } from './generation-errors';
 
 const PREVIEW_INTERVAL_MS = 100;

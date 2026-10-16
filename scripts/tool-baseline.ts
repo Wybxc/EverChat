@@ -6,10 +6,12 @@ import { dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { setTimeout as pause } from 'node:timers/promises';
 import WebSocket from 'ws';
-import { messageText } from '../shared/message-content';
-import { StreamSync } from '../shared/stream-sync';
-import type { ProviderKind, Snapshot, Submission, SyncPacket } from '../shared/types';
-import type { ToolResourceWindow, ToolWorkflowMeasurements } from '../shared/tool-measurements';
+import { messageText } from '../shared/conversation/content';
+import { StreamSync } from '../shared/streaming/sync';
+import type { ProviderKind } from '../shared/providers/types';
+import type { Snapshot, SyncPacket } from '../shared/streaming/protocol';
+import type { Submission } from '../shared/conversation/types';
+import type { ToolResourceWindow, ToolWorkflowMeasurements } from './measurements/support/resources';
 
 const { values } = parseArgs({ options: { chunks: { type: 'string', default: '120' }, interval: { type: 'string', default: '25' },
   size: { type: 'string', default: '200' }, port: { type: 'string', default: '5185' }, scenario: { type: 'string', default: 'all' },

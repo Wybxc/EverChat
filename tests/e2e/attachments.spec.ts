@@ -1,7 +1,7 @@
 import { conversationMenu } from '../ui';
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import { createHash } from 'node:crypto';
-import { attachmentUrl, MAX_ATTACHMENT_BYTES, MAX_CONVERSATION_ATTACHMENTS, type Attachment, type AttachmentInput } from '../../shared/attachments';
+import { attachmentUrl, MAX_ATTACHMENT_BYTES, MAX_CONVERSATION_ATTACHMENTS, type Attachment, type AttachmentInput } from '../../shared/attachments/files';
 const headers = { Origin: 'http://127.0.0.1:5174' };
 async function setup(request: APIRequestContext) {
   expect((await request.post('/api/login', { headers, data: { password: 'everchat-local' } })).ok()).toBe(true);

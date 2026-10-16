@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Eye, EyeOff, RefreshCw } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import * as v from 'valibot';
-import { webToolServiceInputSchema, type WebToolServiceInput, type WebToolServiceSettings } from '../shared/web-tool-service';
+import { webToolServiceInputSchema, type WebToolServiceInput, type WebToolServiceSettings } from '../shared/web-tools/service';
 import { Autosave } from './autosave';
 import { api } from './api';
 import { storageEpoch, write } from './storage';

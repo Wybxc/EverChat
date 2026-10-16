@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { executeWebTool, WEB_TOOL_RESPONSE_BYTES, type WebToolFetch } from '../worker/web-tool-service';
-import type { WebToolServiceConfig } from '../shared/web-tool-service';
-import type { WebToolCall } from '../shared/web-tools';
+import type { WebToolServiceConfig } from '../shared/web-tools/service';
+import type { WebToolCall } from '../shared/web-tools/tasks';
 
 const config: WebToolServiceConfig = { provider: 'tavily', apiKey: 'tvly-unit-private-key', dailyLimit: 20 };
 const search: WebToolCall = { id: 'search-0', name: 'web_search', input: { query: 'Cloudflare 资料🙂' } };

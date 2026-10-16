@@ -2,10 +2,12 @@ import { test, expect, type APIRequestContext, type Page } from '@playwright/tes
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { textPdf } from '../fixtures/pdf';
-import { attachmentUrl } from '../../shared/attachments';
-import { PDF_PARSER_VERSION, type PDFExtraction } from '../../shared/pdf';
-import { messageFiles, messageText } from '../../shared/message-content';
-import type { ProviderKind, Snapshot, Submission } from '../../shared/types';
+import { attachmentUrl } from '../../shared/attachments/files';
+import { PDF_PARSER_VERSION, type PDFExtraction } from '../../shared/attachments/pdf';
+import { messageFiles, messageText } from '../../shared/conversation/content';
+import type { ProviderKind } from '../../shared/providers/types';
+import type { Snapshot } from '../../shared/streaming/protocol';
+import type { Submission } from '../../shared/conversation/types';
 
 const headers = { Origin: 'http://127.0.0.1:5174' }, providerId = '00000000-0000-4000-8000-000000000090';
 const control = (request: APIRequestContext, data: object = {}) => request.post('/api/__test/library/attachments', { headers, data }).then((response) => response.json());

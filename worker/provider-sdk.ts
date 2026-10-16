@@ -3,7 +3,7 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
-import type { ProviderConfig } from '../shared/types';
+import type { ProviderConfig } from '../shared/providers/types';
 import { normalizeBaseUrl } from './provider-config';
 import { ProviderError } from './generation-errors';
 

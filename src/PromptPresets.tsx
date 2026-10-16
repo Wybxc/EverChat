@@ -7,8 +7,8 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 import { useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2 } from 'lucide-react';
 import * as v from 'valibot';
-import type { PromptPreset } from '../shared/types';
-import { MAX_PROMPT_PRESETS, promptPresetInputSchema } from '../shared/prompt-presets';
+import type { PromptPreset } from '../shared/presets/types';
+import { MAX_PROMPT_PRESETS, promptPresetInputSchema } from '../shared/presets/schema';
 import { Autosave } from './autosave';
 import { api } from './api';
 import { storageEpoch } from './storage';

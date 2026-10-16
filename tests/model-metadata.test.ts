@@ -1,13 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { FALLBACK_MODEL_METADATA, MAX_MODEL_TOKENS, resolveModelMetadata, validateOutputLimit } from '../shared/model-metadata';
-import { chatModels, modelReasoning } from '../shared/models';
-import { mergeProviderSettings } from '../shared/provider-settings';
+import { FALLBACK_MODEL_METADATA, MAX_MODEL_TOKENS, resolveModelMetadata, validateOutputLimit } from '../shared/models/metadata';
+import { chatModels, modelReasoning } from '../shared/models/selection';
+import { mergeProviderSettings } from '../shared/providers/settings';
 import { runtimeProviderConfig } from '../worker/provider-config';
-import { applyConversationSettings, DEFAULT_CONVERSATION_SETTINGS } from '../shared/conversation-settings';
+import { applyConversationSettings, DEFAULT_CONVERSATION_SETTINGS } from '../shared/conversation/settings';
 import { fetchProviderModels } from '../worker/provider-models';
-import { BACKUP_FORMAT, BACKUP_VERSION, validateBackup } from '../shared/backup';
-import type { ProviderModel, ProviderSettingsInput } from '../shared/types';
+import { BACKUP_FORMAT, BACKUP_VERSION, validateBackup } from '../shared/backup/backup';
+import type { ProviderModel } from '../shared/models/types';
+import type { ProviderSettingsInput } from '../shared/providers/types';
 
 const model: ProviderModel = { id: 'gpt-5.4', name: 'Custom name', enabled: true };
 const settings: ProviderSettingsInput = {

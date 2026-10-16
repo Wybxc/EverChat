@@ -3,7 +3,7 @@ import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { cloudflareQuery, cloudflareRead } from './cloudflare-api';
-import { TOOL_VALIDATION_WORKER, type ToolValidationIdentity } from '../shared/tool-validation';
+import { TOOL_VALIDATION_WORKER, type ToolValidationIdentity } from './measurements/support/validation';
 const { values } = parseArgs({ options: {
   account: { type: 'string' }, functional: { type: 'string', default: 'docs/measurements/cloudflare-functional.json' },
   output: { type: 'string', default: '/tmp/everchat-cloudflare-metrics.json' },

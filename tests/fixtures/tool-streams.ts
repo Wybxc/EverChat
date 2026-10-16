@@ -1,4 +1,4 @@
-import type { ProviderKind } from '../../shared/types';
+import type { ProviderKind } from '../../shared/providers/types';
 
 const frame = (event: unknown) => `data: ${JSON.stringify(event)}\n\n`;
 export const toolQuery = 'Cloudflare 文档🙂';

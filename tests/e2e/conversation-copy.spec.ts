@@ -1,8 +1,11 @@
 import { messageMenu } from '../ui';
 import { test, expect, type APIRequestContext } from '@playwright/test';
-import type { ConversationInfo, ConversationSettings, Message, ProviderSettings, Snapshot, Submission } from '../../shared/types';
-import { branchPath, isActive } from '../../shared/types';
-import { messageText } from '../../shared/message-content';
+import type { ConversationInfo, ConversationSettings, Message, Submission } from '../../shared/conversation/types';
+import type { ProviderSettings } from '../../shared/providers/types';
+import type { Snapshot } from '../../shared/streaming/protocol';
+import { branchPath } from '../../shared/conversation/branch-path';
+import { isActive } from '../../shared/conversation/message-state';
+import { messageText } from '../../shared/conversation/content';
 
 const headers = { Origin: 'http://127.0.0.1:5174' };
 async function setup(request: APIRequestContext) {

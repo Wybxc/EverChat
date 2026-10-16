@@ -4,13 +4,14 @@ import { Spinner } from '@/components/ui/spinner';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useEffect, useRef, useState } from 'react';
-import { MAX_MODEL_TOKENS, metadataSourceLabels, reasoningEfforts, resolveModelMetadata } from '../shared/model-metadata';
-import { effortLabels } from '../shared/models';
-import type { ModelMetadata, ModelMetadataOverrides, ProviderApiKind, ProviderModel } from '../shared/types';
+import { MAX_MODEL_TOKENS, metadataSourceLabels, reasoningEfforts, resolveModelMetadata } from '../shared/models/metadata';
+import { effortLabels } from '../shared/models/selection';
+import type { ModelMetadata, ModelMetadataOverrides, ProviderModel } from '../shared/models/types';
+import type { ProviderApiKind } from '../shared/providers/types';
 import * as v from 'valibot';
-import { modelSchema } from '../shared/provider-settings';
+import { modelSchema } from '../shared/providers/settings';
 import { Disclosure } from './Disclosure';
-import { probeCapabilityLabels, probeReasonLabels, type ModelProbeResult } from '../shared/model-probe';
+import { probeCapabilityLabels, probeReasonLabels, type ModelProbeResult } from '../shared/models/probe';
 
 function TokenLimitInput({ label, value, automatic, change }: { label: string; value?: number; automatic: number; change: (value: number | undefined) => void }) {
   const input = useRef<HTMLInputElement>(null);

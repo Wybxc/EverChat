@@ -1,13 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ToolStreamRelay } from '../worker/tool-stream-relay';
-import { ProviderStream } from '../shared/provider-stream';
+import { ProviderStream } from '../shared/streaming/provider-stream';
 import { fragmentedToolBody, toolFinalStream, toolStream } from './fixtures/tool-streams';
 import { collectProviderToolTurn } from '../worker/provider-tools';
-import { resolveModelMetadata } from '../shared/model-metadata';
-import { addGenerationUsage } from '../shared/generation';
-import { backupMessage } from '../shared/backup';
-import type { Message, ProviderConfig } from '../shared/types';
+import { resolveModelMetadata } from '../shared/models/metadata';
+import { addGenerationUsage } from '../shared/streaming/generation';
+import { backupMessage } from '../shared/backup/backup';
+import type { Message } from '../shared/conversation/types';
+import type { ProviderConfig } from '../shared/providers/types';
 
 for (const provider of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'] as const) test(`${provider} tool relay preserves private wire bytes and never puts continuation metadata in display frames or partial checkpoints`, async () => {
   const config: ProviderConfig = { provider, baseUrl: 'https://provider.example/v1', model: 'fixture', systemPrompt: '', maxOutputTokens: null,

@@ -1,6 +1,6 @@
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from 'cloudflare:workers';
 import type { Env } from './env';
-import { MAX_TOOL_EXCHANGES } from '../shared/web-tools';
+import { MAX_TOOL_EXCHANGES } from '../shared/web-tools/tasks';
 import type { ToolTaskState } from './tool-task-journal';
 
 export interface ToolWorkflowParams { conversationId: string; taskId: string }

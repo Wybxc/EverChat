@@ -1,4 +1,5 @@
-import type { GenerationExecutor, MessageStatus } from './types';
+import type { GenerationExecutor } from './protocol';
+import type { MessageStatus } from '../conversation/types';
 
 export interface StreamCounts { textDeltas: number; reasoningDeltas: number }
 

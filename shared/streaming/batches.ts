@@ -1,4 +1,4 @@
-import type { Commit, CommitAck, StreamBatch, StreamCommit } from './types';
+import type { Commit, CommitAck, StreamBatch, StreamCommit } from './protocol';
 
 import { decodeBytes, encodeBytes } from './provider-stream';
 

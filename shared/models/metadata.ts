@@ -1,5 +1,6 @@
-import type { MetadataSource, ModelMetadata, ProviderApiKind, ProviderModel, ResolvedModelMetadata } from './types';
-import { matchModelCatalog } from './model-catalog';
+import type { MetadataSource, ModelMetadata, ProviderModel, ResolvedModelMetadata } from './types';
+import type { ProviderApiKind } from '../providers/types';
+import { matchModelCatalog } from './catalog';
 
 export const MAX_MODEL_TOKENS = 10_000_000;
 export const reasoningEfforts = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;

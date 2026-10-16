@@ -1,14 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as v from 'valibot';
-import { enrichModelCatalog, matchModelCatalog, parseModelCatalog, type ModelCatalog } from '../shared/model-catalog';
-import { canAttemptCapability, resolveModelMetadata } from '../shared/model-metadata';
-import { modelSchema, mergeProviderSettings } from '../shared/provider-settings';
-import { assertImageContext, type ImagePart } from '../shared/images';
-import { assertWebToolSupport } from '../shared/web-tools';
-import { buildContext, contextEstimateSchema } from '../shared/context-budget';
-import { DEFAULT_CONVERSATION_SETTINGS } from '../shared/conversation-settings';
-import type { ProviderModel, ProviderSettingsInput } from '../shared/types';
+import { enrichModelCatalog, matchModelCatalog, parseModelCatalog, type ModelCatalog } from '../shared/models/catalog';
+import { canAttemptCapability, resolveModelMetadata } from '../shared/models/metadata';
+import { modelSchema, mergeProviderSettings } from '../shared/providers/settings';
+import { assertImageContext, type ImagePart } from '../shared/attachments/images';
+import { assertWebToolSupport } from '../shared/web-tools/tasks';
+import { buildContext, contextEstimateSchema } from '../shared/conversation/context-budget';
+import { DEFAULT_CONVERSATION_SETTINGS } from '../shared/conversation/settings';
+import type { ProviderModel } from '../shared/models/types';
+import type { ProviderSettingsInput } from '../shared/providers/types';
 import { providerCallOptions } from '../worker/provider-sdk';
 
 const model: ProviderModel = { id: 'catalog-fixture', name: 'My model', enabled: true };

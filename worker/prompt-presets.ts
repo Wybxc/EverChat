@@ -1,6 +1,6 @@
 import * as v from 'valibot';
-import type { PromptPreset, PromptPresetInput } from '../shared/types';
-import { MAX_PRESET_TEXT_BYTES, MAX_PROMPT_PRESETS, PRESET_CAPACITY_MESSAGE, presetTextBytes, promptPresetInputSchema, promptPresetListSchema } from '../shared/prompt-presets';
+import type { PromptPreset, PromptPresetInput } from '../shared/presets/types';
+import { MAX_PRESET_TEXT_BYTES, MAX_PROMPT_PRESETS, PRESET_CAPACITY_MESSAGE, presetTextBytes, promptPresetInputSchema, promptPresetListSchema } from '../shared/presets/schema';
 
 type Row = PromptPreset & { deletedAt: number | null } & Record<string, SqlStorageValue>;
 export class PromptPresetError extends Error {

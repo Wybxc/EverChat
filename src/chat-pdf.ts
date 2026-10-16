@@ -1,6 +1,6 @@
-import { MAX_ATTACHMENT_BYTES } from '../shared/attachments';
-import { MAX_DOCUMENT_BYTES, MAX_DOCUMENT_CHARACTERS } from '../shared/documents';
-import { MAX_PDF_PAGES, PDF_PARSER_VERSION, PDF_PARSE_TIMEOUT, type PDFExtraction } from '../shared/pdf';
+import { MAX_ATTACHMENT_BYTES } from '../shared/attachments/files';
+import { MAX_DOCUMENT_BYTES, MAX_DOCUMENT_CHARACTERS } from '../shared/attachments/documents';
+import { MAX_PDF_PAGES, PDF_PARSER_VERSION, PDF_PARSE_TIMEOUT, type PDFExtraction } from '../shared/attachments/pdf';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import type { PDFDocumentLoadingTask, PDFWorker } from 'pdfjs-dist';
 import type { TextContent } from 'pdfjs-dist/types/src/display/api';

@@ -1,5 +1,6 @@
-import type { GenerationMeasurements,StreamCounts } from '../shared/generation-metrics';
-import type { GenerationExecutor,MessageStatus } from '../shared/types';
+import type { GenerationMeasurements,StreamCounts } from '../shared/streaming/metrics';
+import type { GenerationExecutor } from '../shared/streaming/protocol';
+import type { MessageStatus } from '../shared/conversation/types';
 
 export class GenerationMeter {
   private readonly startedAt: number;

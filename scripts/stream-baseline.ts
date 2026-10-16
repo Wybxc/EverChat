@@ -1,4 +1,4 @@
-import { messageText } from '../shared/message-content';
+import { messageText } from '../shared/conversation/content';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
@@ -7,9 +7,9 @@ import { dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { setTimeout as pause } from 'node:timers/promises';
 import WebSocket from 'ws';
-import type { GenerationMeasurements } from '../shared/generation-metrics';
-import { type Snapshot, type SyncPacket } from '../shared/types';
-import { StreamSync } from '../shared/stream-sync';
+import type { GenerationMeasurements } from '../shared/streaming/metrics';
+import { type Snapshot, type SyncPacket } from '../shared/streaming/protocol';
+import { StreamSync } from '../shared/streaming/sync';
 
 const { values } = parseArgs({ options: {
   chunks: { type: 'string', default: '120' }, interval: { type: 'string', default: '25' },

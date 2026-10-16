@@ -1,7 +1,9 @@
-import { messageParts, messageText } from '../shared/message-content';
+import { messageParts, messageText } from '../shared/conversation/content';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyChange, branchPath, type Message } from '../shared/types';
+import { applyChange } from '../shared/streaming/apply-change';
+import { branchPath } from '../shared/conversation/branch-path';
+import { type Message } from '../shared/conversation/types';
 import { generate } from './fixtures/generate';
 import { providerConfigFromEnv } from '../worker/provider-config';
 import type { Env } from '../worker/env';

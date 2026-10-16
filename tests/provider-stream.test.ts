@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { MAX_EVENT_CHARACTERS, ProviderStream } from '../shared/provider-stream';
+import { MAX_EVENT_CHARACTERS, ProviderStream } from '../shared/streaming/provider-stream';
 import { providerStreams } from './fixtures/provider-streams';
-import type { ProviderKind } from '../shared/types';
+import type { ProviderKind } from '../shared/providers/types';
 const encoder = new TextEncoder();
 
 test('Responses bounds thought identities while retaining an already decoded prefix', () => {

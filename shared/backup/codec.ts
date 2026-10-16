@@ -1,8 +1,8 @@
 import { unzipSync,zipSync,type Zippable } from 'fflate';
 import { ARCHIVE_FORMAT,ARCHIVE_MANIFEST,ARCHIVE_VERSION,archiveEntries,extractedPath,MAX_ARCHIVE_BYTES,MAX_ARCHIVE_ENTRIES,originalPath,sha256,validateArchiveManifest,type ArchiveManifest } from './archive';
-import { MAX_ATTACHMENT_BYTES } from './attachments';
+import { MAX_ATTACHMENT_BYTES } from '../attachments/files';
 import { MAX_BACKUP_BYTES,validateBackup } from './backup';
-import { MAX_DOCUMENT_BYTES } from './documents';
+import { MAX_DOCUMENT_BYTES } from '../attachments/documents';
 
 const allowed = /^(manifest\.json|files\/[0-9a-f-]{36}|documents\/[0-9a-f-]{36}\.txt)$/;
 type ArchiveData = { manifest: ArchiveManifest; entries: Record<string, Uint8Array> };

@@ -1,12 +1,13 @@
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { attachmentUrl } from '../../shared/attachments';
-import { decodeArchive } from '../../shared/archive-codec';
-import { extractedPath, originalPath, type ArchiveManifest } from '../../shared/archive';
-import { messageAttachments } from '../../shared/message-content';
-import { PDF_PARSER_VERSION } from '../../shared/pdf';
-import type { Snapshot, Submission } from '../../shared/types';
+import { attachmentUrl } from '../../shared/attachments/files';
+import { decodeArchive } from '../../shared/backup/codec';
+import { extractedPath, originalPath, type ArchiveManifest } from '../../shared/backup/archive';
+import { messageAttachments } from '../../shared/conversation/content';
+import { PDF_PARSER_VERSION } from '../../shared/attachments/pdf';
+import type { Snapshot } from '../../shared/streaming/protocol';
+import type { Submission } from '../../shared/conversation/types';
 import { textPdf } from '../fixtures/pdf';
 
 const headers = { Origin: 'http://127.0.0.1:5174' }, origin = headers.Origin;

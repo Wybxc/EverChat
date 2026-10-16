@@ -1,11 +1,13 @@
 import { expectChatModel } from '../ui';
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import { createHash } from 'node:crypto';
-import { attachmentUrl } from '../../shared/attachments';
-import type { DocumentPart } from '../../shared/documents';
-import { messageFiles, messageText } from '../../shared/message-content';
-import type { ProviderKind, Snapshot, Submission } from '../../shared/types';
-import { DEFAULT_CONVERSATION_SETTINGS } from '../../shared/conversation-settings';
+import { attachmentUrl } from '../../shared/attachments/files';
+import type { DocumentPart } from '../../shared/attachments/documents';
+import { messageFiles, messageText } from '../../shared/conversation/content';
+import type { ProviderKind } from '../../shared/providers/types';
+import type { Snapshot } from '../../shared/streaming/protocol';
+import type { Submission } from '../../shared/conversation/types';
+import { DEFAULT_CONVERSATION_SETTINGS } from '../../shared/conversation/settings';
 
 const headers = { Origin: 'http://127.0.0.1:5174' }, providerId = '00000000-0000-4000-8000-000000000089';
 const text = '预算：42 元。\n<script>window.documentExecuted = true</script>\n';

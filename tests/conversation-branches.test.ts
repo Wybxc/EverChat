@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { branchChoices, branchIds, branchIndexer, continuationParent, descendBranch, indexBranches, recoverBranch, rememberBranch, summariesOnBranch } from '../shared/conversation-branches';
-import { messageParts } from '../shared/message-content';
-import type { Message } from '../shared/types';
+import { branchChoices, branchIds, branchIndexer, continuationParent, descendBranch, indexBranches, recoverBranch, rememberBranch, summariesOnBranch } from '../shared/conversation/branches';
+import { messageParts } from '../shared/conversation/content';
+import type { Message } from '../shared/conversation/types';
 
 const msg = (id: string, parentId: string | null, role: Message['role'] = 'assistant', extra: Partial<Message> = {}): Message => ({
   id, parentId, role, parts: messageParts(id), revisionOf: null, status: 'completed', createdAt: 1, runId: null, error: null, ...extra,

@@ -2,10 +2,10 @@ import { Modal, ModalTitle } from './Modal';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Spinner } from '@/components/ui/spinner';
-import { messageText } from '../shared/message-content';
+import { messageText } from '../shared/conversation/content';
 import { useId, useRef, useState, type SubmitEvent } from 'react';
 import { X } from 'lucide-react';
-import type { Message } from '../shared/types';
+import type { Message } from '../shared/conversation/types';
 
 export function MessageMutationDialog({ message, mode, affectsSummaries = false, confirm, close, completedFocus }: {
   message: Message; mode: 'edit' | 'delete'; affectsSummaries?: boolean; confirm: (content: string, requestId: string) => Promise<void>; close: () => void; completedFocus?: () => HTMLElement | null;

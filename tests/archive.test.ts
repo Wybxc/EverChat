@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { zipSync } from 'fflate';
-import { encodeArchive, decodeArchive, decodeBackup } from '../shared/archive-codec';
-import { ARCHIVE_FORMAT, ARCHIVE_VERSION, ARCHIVE_MANIFEST, extractedPath, originalPath, sha256, validateArchiveManifest, type ArchiveManifest } from '../shared/archive';
-import { BACKUP_FORMAT, BACKUP_VERSION } from '../shared/backup';
+import { encodeArchive, decodeArchive, decodeBackup } from '../shared/backup/codec';
+import { ARCHIVE_FORMAT, ARCHIVE_VERSION, ARCHIVE_MANIFEST, extractedPath, originalPath, sha256, validateArchiveManifest, type ArchiveManifest } from '../shared/backup/archive';
+import { BACKUP_FORMAT, BACKUP_VERSION } from '../shared/backup/backup';
 
 async function fixture() {
   const id = crypto.randomUUID(), text = new TextEncoder().encode('资料🙂\n安全文本'), hash = await sha256(text);

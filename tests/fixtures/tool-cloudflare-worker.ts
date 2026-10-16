@@ -4,7 +4,7 @@ import { authenticated } from '../../worker/auth';
 import { json } from '../../worker/http';
 import type { Env } from '../../worker/env';
 import { toolWorkflowId } from '../../worker/tool-workflow';
-import { TOOL_VALIDATION_WORKER, type ToolValidationConversation, type ToolValidationIdentity, type ToolValidationLibrary } from '../../shared/tool-validation';
+import { TOOL_VALIDATION_WORKER, type ToolValidationConversation, type ToolValidationIdentity, type ToolValidationLibrary } from '../../scripts/measurements/support/validation';
 export { WebToolWorkflow } from '../../worker/tool-workflow';
 type ValidationEnv = Env & { VALIDATION_RUN_ID?: string; LOCAL_RESOURCE_METRICS?: string; LOCAL_TOOL_WORKLOAD?: string };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

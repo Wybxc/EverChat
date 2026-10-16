@@ -1,6 +1,6 @@
 import * as v from 'valibot';
-import { canAttemptCapability } from './model-metadata';
-import type { ResolvedModelMetadata } from './types';
+import { canAttemptCapability } from '../models/metadata';
+import type { ResolvedModelMetadata } from '../models/types';
 
 export const WEB_TOOL_NAMES = ['web_search', 'read_webpage'] as const;
 export type WebToolName = typeof WEB_TOOL_NAMES[number];

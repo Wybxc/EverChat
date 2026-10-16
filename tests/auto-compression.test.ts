@@ -1,12 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as v from 'valibot';
-import { DEFAULT_CONVERSATION_SETTINGS as defaults, conversationSettingsSchema } from '../shared/conversation-settings';
-import { historyCountWithinLimit, measureContextDemand } from '../shared/context-budget';
-import { prepareChatContext, summaryGeneration } from '../shared/summaries';
-import { resolveModelMetadata } from '../shared/model-metadata';
-import { messageParts } from '../shared/message-content';
-import type { Message, ProviderConfig } from '../shared/types';
+import { DEFAULT_CONVERSATION_SETTINGS as defaults, conversationSettingsSchema } from '../shared/conversation/settings';
+import { historyCountWithinLimit, measureContextDemand } from '../shared/conversation/context-budget';
+import { prepareChatContext, summaryGeneration } from '../shared/conversation/summaries';
+import { resolveModelMetadata } from '../shared/models/metadata';
+import { messageParts } from '../shared/conversation/content';
+import type { Message } from '../shared/conversation/types';
+import type { ProviderConfig } from '../shared/providers/types';
 
 const config: ProviderConfig = { provider: 'openai-chat', baseUrl: 'https://provider.test/v1', apiKey: 'unused', model: 'fixture',
   systemPrompt: '', maxOutputTokens: null, modelMetadata: resolveModelMetadata('openai-chat', { id: 'fixture', name: '', enabled: true,

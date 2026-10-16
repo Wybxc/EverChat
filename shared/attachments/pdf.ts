@@ -1,5 +1,5 @@
 import * as v from 'valibot';
-import { attachmentInputSchema } from './attachments';
+import { attachmentInputSchema } from './files';
 
 export const PDF_PARSER_VERSION = '6.4.299';
 export const MAX_PDF_PAGES = 50, PDF_PARSE_TIMEOUT = 30_000;

@@ -1,4 +1,4 @@
-import { PDF_PARSE_TIMEOUT, type PDFExtraction } from '../shared/pdf';
+import { PDF_PARSE_TIMEOUT, type PDFExtraction } from '../shared/attachments/pdf';
 import { abortable } from './abort';
 
 export async function preparePdf(file: File, sourceSha256: string, signal: AbortSignal, progress: (page: number, pages: number) => void): Promise<PDFExtraction> {

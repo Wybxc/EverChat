@@ -1,5 +1,5 @@
-import type { WebToolServiceConfig } from '../shared/web-tool-service';
-import { MAX_TOOL_SOURCE_CHARACTERS,MAX_TOOL_SOURCES,publicWebUrl,validateWebToolCall,validateWebToolOutcome,WEB_TOOL_NAMES,type WebToolCall,type WebToolOutcome } from '../shared/web-tools';
+import type { WebToolServiceConfig } from '../shared/web-tools/service';
+import { MAX_TOOL_SOURCE_CHARACTERS,MAX_TOOL_SOURCES,publicWebUrl,validateWebToolCall,validateWebToolOutcome,WEB_TOOL_NAMES,type WebToolCall,type WebToolOutcome } from '../shared/web-tools/tasks';
 
 export const WEB_TOOL_RESPONSE_BYTES = 512 * 1024;
 const WEB_TOOL_TIMEOUT_MS = 15_000;

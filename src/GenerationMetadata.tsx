@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { Modal, ModalTitle } from './Modal';
 import { ActionMenuItem } from './ActionMenu';
 
-import type { GenerationResult } from '../shared/generation';
-import type { StreamUsage } from '../shared/provider-stream';
+import type { GenerationResult } from '../shared/streaming/generation';
+import type { StreamUsage } from '../shared/streaming/provider-stream';
 
 const usageFields: [keyof StreamUsage, string][] = [
   ['inputTokens', '输入 Tokens'], ['cachedInputTokens', '其中缓存读取'], ['cacheWriteInputTokens', '其中缓存写入'],

@@ -1,8 +1,8 @@
 import { test, expect } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import { textPdf } from '../fixtures/pdf';
-import { estimateDocumentTokens, type DocumentPart } from '../../shared/documents';
-import { PDF_PARSER_VERSION, type PDFExtraction } from '../../shared/pdf';
+import { estimateDocumentTokens, type DocumentPart } from '../../shared/attachments/documents';
+import { PDF_PARSER_VERSION, type PDFExtraction } from '../../shared/attachments/pdf';
 
 test('production assets load the real PDF worker and bundled Chinese CMaps and fonts without a public document URL', async ({ page }) => {
   const id = '00000000-0000-4000-8000-000000000101', bytes = textPdf([['生产构建预算：42 元。']], { unicode: true });

@@ -1,7 +1,8 @@
 import { useEffect,useRef,useState } from 'react';
 import ReconnectingWebSocket from 'reconnecting-websocket';
-import { StreamSync } from '../shared/stream-sync';
-import { isActive,type Snapshot,type SyncPacket } from '../shared/types';
+import { StreamSync } from '../shared/streaming/sync';
+import { isActive } from '../shared/conversation/message-state';
+import { type Snapshot, type SyncPacket } from '../shared/streaming/protocol';
 import { api,ApiError } from './api';
 import { SnapshotWriter } from './snapshot-writer';
 import { cachedSnapshot,storageEpoch,write } from './storage';

@@ -1,5 +1,7 @@
 import { test, expect, type APIRequestContext } from '@playwright/test';
-import type { LibrarySnapshot, ProviderSettings, Snapshot } from '../../shared/types';
+import type { LibrarySnapshot } from '../../shared/conversation/types';
+import type { ProviderSettings } from '../../shared/providers/types';
+import type { Snapshot } from '../../shared/streaming/protocol';
 
 const headers = { Origin: 'http://127.0.0.1:5174' };
 async function setup(request: APIRequestContext) {

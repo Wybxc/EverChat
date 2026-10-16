@@ -1,13 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as v from 'valibot';
-import { summaryContext, summaryCoverageSchema, summaryForPath, summaryGeneration, summaryPrefix, MAX_SUMMARIES, MAX_SUMMARY_CHARACTERS, SUMMARY_SYSTEM_PROMPT } from '../shared/summaries';
-import { assertContextFits, buildContext, contextSource } from '../shared/context-budget';
-import { branchPath, type Message, type ProviderConfig } from '../shared/types';
-import { messageParts, messageText } from '../shared/message-content';
-import { DEFAULT_CONVERSATION_SETTINGS as defaults } from '../shared/conversation-settings';
-import { resolveModelMetadata } from '../shared/model-metadata';
-import { BACKUP_FORMAT, BACKUP_VERSION, backupMessage, validateBackup } from '../shared/backup';
+import { summaryContext, summaryCoverageSchema, summaryForPath, summaryGeneration, summaryPrefix, MAX_SUMMARIES, MAX_SUMMARY_CHARACTERS, SUMMARY_SYSTEM_PROMPT } from '../shared/conversation/summaries';
+import { assertContextFits, buildContext, contextSource } from '../shared/conversation/context-budget';
+import { branchPath } from '../shared/conversation/branch-path';
+import { type Message } from '../shared/conversation/types';
+import { type ProviderConfig } from '../shared/providers/types';
+import { messageParts, messageText } from '../shared/conversation/content';
+import { DEFAULT_CONVERSATION_SETTINGS as defaults } from '../shared/conversation/settings';
+import { resolveModelMetadata } from '../shared/models/metadata';
+import { BACKUP_FORMAT, BACKUP_VERSION, backupMessage, validateBackup } from '../shared/backup/backup';
 
 function history() {
   let parentId: string | null = null;

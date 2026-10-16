@@ -1,7 +1,7 @@
 import * as v from 'valibot';
-import { MAX_MODEL_TOKENS,reasoningEfforts } from './model-metadata';
-import { providerOptions } from './providers';
-import type { ProviderApiKind,ProviderSettingsInput } from './types';
+import { MAX_MODEL_TOKENS,reasoningEfforts } from '../models/metadata';
+import { providerOptions } from './endpoints';
+import type { ProviderApiKind, ProviderSettingsInput } from './types';
 
 export const providerTypes = providerOptions.map((option) => option.value) as [ProviderApiKind, ...ProviderApiKind[]];
 // SQLite limits a whole row to 2 MB; leave room for record headers and column encoding.

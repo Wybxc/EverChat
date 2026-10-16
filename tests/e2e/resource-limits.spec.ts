@@ -1,6 +1,7 @@
-import { messageText } from '../../shared/message-content';
+import { messageText } from '../../shared/conversation/content';
 import { test, expect, type APIRequestContext } from '@playwright/test';
-import type { ProviderSettings, Snapshot } from '../../shared/types';
+import type { ProviderSettings } from '../../shared/providers/types';
+import type { Snapshot } from '../../shared/streaming/protocol';
 import { MAX_CONVERSATIONS, MAX_DATABASE_BYTES, MAX_DATABASE_START_BYTES, MAX_DATABASE_WRITE_BYTES, STORAGE_QUOTA_MESSAGE } from '../../worker/resource-limits';
 const headers = { Origin: 'http://127.0.0.1:5174' };
 const action = (request: APIRequestContext, id: string, name: string, data: unknown = {}) => request.post(`/api/__test/conversations/${id}/${name}`, { headers, data });

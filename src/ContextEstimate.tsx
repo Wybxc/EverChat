@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
-import type { ContextEstimate } from '../shared/context-budget';
-import { metadataSourceLabels } from '../shared/model-metadata';
+import type { ContextEstimate } from '../shared/conversation/context-budget';
+import { metadataSourceLabels } from '../shared/models/metadata';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 const number = new Intl.NumberFormat('zh-CN');

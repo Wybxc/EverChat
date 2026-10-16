@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { branchChoices, branchIds, branchIndexer, continuationParent, descendBranch, recoverBranch, rememberBranch, type BranchPreferences } from '../shared/conversation-branches';
-import type { Message } from '../shared/types';
+import { branchChoices, branchIds, branchIndexer, continuationParent, descendBranch, recoverBranch, rememberBranch, type BranchPreferences } from '../shared/conversation/branches';
+import type { Message } from '../shared/conversation/types';
 import { read, write } from './storage';
 
 interface ViewState { id: string | null; head: string | null; preferences: BranchPreferences; target?: string; notice: string }

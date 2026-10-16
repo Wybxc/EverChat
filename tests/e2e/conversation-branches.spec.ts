@@ -85,7 +85,7 @@ async function branchingFixture(request: APIRequestContext, rich = false) {
   const restored = await request.post('/api/backup/restore', { headers, data: backup });
   expect(restored.status()).toBe(201);
   const { id, snapshot } = await restored.json();
-  const messages = snapshot.messages as import('../../shared/types').Message[];
+  const messages = snapshot.messages as import('../../shared/conversation/types').Message[];
   return { id, empty, messages, cleanup: async () => {
     await request.delete(`/api/conversations/${id}`, { headers }); await request.delete(`/api/conversations/${empty}`, { headers });
     expect((await request.put('/api/settings/providers', { headers, data: initial })).ok()).toBe(true);

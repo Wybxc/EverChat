@@ -1,5 +1,5 @@
-import { resolveModelMetadata } from '../../shared/model-metadata';
-import type { ProviderConfig } from '../../shared/types';
+import { resolveModelMetadata } from '../../shared/models/metadata';
+import type { ProviderConfig } from '../../shared/providers/types';
 import type { SqlQuery } from '../../worker/generation-metrics';
 import { collectProviderToolTurn } from '../../worker/provider-tools';
 import { ToolTaskJournal, type StartToolTask } from '../../worker/tool-task-journal';

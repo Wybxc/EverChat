@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import type { WebToolServiceSettings } from '../shared/web-tool-service';
+import type { WebToolServiceSettings } from '../shared/web-tools/service';
 import { api } from './api';
 import { read, storageEpoch, write } from './storage';
 

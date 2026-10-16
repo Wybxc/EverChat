@@ -2,12 +2,12 @@ import type {
 LanguageModelV4FunctionTool,LanguageModelV4Prompt,LanguageModelV4ReasoningPart,LanguageModelV4TextPart,
 LanguageModelV4ToolCallPart,SharedV4ProviderMetadata,SharedV4ProviderOptions
 } from '@ai-sdk/provider';
-import { ProviderStream,type StreamUsage } from '../shared/provider-stream';
-import type { ProviderConfig } from '../shared/types';
+import { ProviderStream,type StreamUsage } from '../shared/streaming/provider-stream';
+import type { ProviderConfig } from '../shared/providers/types';
 import {
 assertWebToolSupport,MAX_TOOL_CALLS_PER_TURN,MAX_TOOL_EXCHANGES,MAX_TOOL_INPUT_BYTES,
 validateWebToolCall,validateWebToolIdentity,validateWebToolOutcome,type WebToolCall,type WebToolName,type WebToolOutcome
-} from '../shared/web-tools';
+} from '../shared/web-tools/tasks';
 import { ProviderError } from './generation-errors';
 import { providerCallOptions,providerModel } from './provider-sdk';
 

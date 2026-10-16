@@ -2,9 +2,11 @@ import { chooseChatModel } from '../ui';
 import { openSpaceSettings, openParameters } from '../ui';
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import WebSocket from 'ws';
-import type { ConversationSettings, ProviderSettings, Snapshot, Submission, SyncPacket } from '../../shared/types';
-import { DEFAULT_CONVERSATION_SETTINGS as defaults } from '../../shared/conversation-settings';
-import { modelSelectionKey } from '../../shared/models';
+import type { ConversationSettings, Submission } from '../../shared/conversation/types';
+import type { ProviderSettings } from '../../shared/providers/types';
+import type { Snapshot, SyncPacket } from '../../shared/streaming/protocol';
+import { DEFAULT_CONVERSATION_SETTINGS as defaults } from '../../shared/conversation/settings';
+import { modelSelectionKey } from '../../shared/models/selection';
 
 const origin = 'http://127.0.0.1:5174', headers = { Origin: origin };
 async function setup(request: APIRequestContext, model = 'alarm-stall') {

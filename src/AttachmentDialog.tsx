@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { useEffect, useId, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { File, Trash2, X } from 'lucide-react';
-import { attachmentUrl, bytesLabel, type Attachment } from '../shared/attachments';
+import { attachmentUrl, bytesLabel, type Attachment } from '../shared/attachments/files';
 import { api } from './api';
 import { prepareAttachment, uploadAttachment } from './attachment-upload';
 

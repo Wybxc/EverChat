@@ -1,8 +1,11 @@
 import { openSpaceSettings, openParameters } from '../ui';
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
-import type { PromptPreset, ProviderSettings, Snapshot, Submission } from '../../shared/types';
-import { DEFAULT_CONVERSATION_SETTINGS as defaults } from '../../shared/conversation-settings';
-import type { EverChatBackup } from '../../shared/backup';
+import type { PromptPreset } from '../../shared/presets/types';
+import type { ProviderSettings } from '../../shared/providers/types';
+import type { Snapshot } from '../../shared/streaming/protocol';
+import type { Submission } from '../../shared/conversation/types';
+import { DEFAULT_CONVERSATION_SETTINGS as defaults } from '../../shared/conversation/settings';
+import type { EverChatBackup } from '../../shared/backup/backup';
 
 const headers = { Origin: 'http://127.0.0.1:5174' };
 const list = (request: APIRequestContext) => request.get('/api/settings/presets').then((response) => response.json()) as Promise<PromptPreset[]>;

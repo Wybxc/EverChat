@@ -1,4 +1,4 @@
-import { messageParts } from '../../shared/message-content';
+import { messageParts } from '../../shared/conversation/content';
 // Serve the production shell with read-only synthetic API data; DO behavior is covered by the main E2E suite.
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';

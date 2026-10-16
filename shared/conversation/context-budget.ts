@@ -1,9 +1,11 @@
-import { assertDocumentContext, documentTokens, type DocumentPart } from './documents';
+import { assertDocumentContext, documentTokens, type DocumentPart } from '../attachments/documents';
 import * as v from 'valibot';
-import { branchPath, type ChatInput, type ConversationSettings, type Message, type ProviderConfig, type SubmitInput } from './types';
-import { messageFiles, messageImages, messageText } from './message-content';
-import { assertImageContext, imageTokens, type ImagePart } from './images';
-import { FALLBACK_MODEL_METADATA } from './model-metadata';
+import { branchPath } from './branch-path';
+import { type ChatInput, type ProviderConfig } from '../providers/types';
+import { type ConversationSettings, type Message, type SubmitInput } from './types';
+import { messageFiles, messageImages, messageText } from './content';
+import { assertImageContext, imageTokens, type ImagePart } from '../attachments/images';
+import { FALLBACK_MODEL_METADATA } from '../models/metadata';
 
 import { estimateTextTokens } from './token-estimate';
 export { estimateTextTokens, TOKEN_SAMPLE_UNITS } from './token-estimate';

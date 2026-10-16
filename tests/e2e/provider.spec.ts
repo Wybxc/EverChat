@@ -1,6 +1,6 @@
 import { openSpaceSettings, providerDetails, editModel, openModelAdder } from '../ui';
 import { test, expect, type Page } from '@playwright/test';
-import type { ProviderSettings } from '../../shared/types';
+import type { ProviderSettings } from '../../shared/providers/types';
 
 const origin = 'http://127.0.0.1:5174';
 const headers = { Origin: origin };

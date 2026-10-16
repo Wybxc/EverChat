@@ -1,15 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as v from 'valibot';
-import { assertContextFits, buildContext, contextEstimateSchema, contextSource, estimateTextTokens, TOKEN_SAMPLE_UNITS } from '../shared/context-budget';
-import { conversationSettingsSchema, DEFAULT_CONVERSATION_SETTINGS as defaults } from '../shared/conversation-settings';
-import { resolveModelMetadata } from '../shared/model-metadata';
-import { generationSchema } from '../shared/generation';
-import { messageParts } from '../shared/message-content';
-import { backupMessage } from '../shared/backup';
-import { chatModels } from '../shared/models';
-import { ProviderStream } from '../shared/provider-stream';
-import type { ChatInput, Message, ModelMetadataOverrides, ProviderSettingsInput } from '../shared/types';
+import { assertContextFits, buildContext, contextEstimateSchema, contextSource, estimateTextTokens, TOKEN_SAMPLE_UNITS } from '../shared/conversation/context-budget';
+import { conversationSettingsSchema, DEFAULT_CONVERSATION_SETTINGS as defaults } from '../shared/conversation/settings';
+import { resolveModelMetadata } from '../shared/models/metadata';
+import { generationSchema } from '../shared/streaming/generation';
+import { messageParts } from '../shared/conversation/content';
+import { backupMessage } from '../shared/backup/backup';
+import { chatModels } from '../shared/models/selection';
+import { ProviderStream } from '../shared/streaming/provider-stream';
+import type { ChatInput, ProviderSettingsInput } from '../shared/providers/types';
+import type { Message } from '../shared/conversation/types';
+import type { ModelMetadataOverrides } from '../shared/models/types';
 
 const config = { systemPrompt: '', maxOutputTokens: null };
 const metadata = (overrides: ModelMetadataOverrides) => resolveModelMetadata('openai-chat', { id: 'unknown', name: '', enabled: true, metadataOverrides: overrides });

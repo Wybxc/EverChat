@@ -1,7 +1,8 @@
-import type { DocumentPart } from '../shared/documents';
-import type { ImagePart } from '../shared/images';
+import type { DocumentPart } from '../shared/attachments/documents';
+import type { ImagePart } from '../shared/attachments/images';
 import { delMany, entries, set, setMany } from 'idb-keyval';
-import type { ConversationInfo, Snapshot, SubmitInput } from '../shared/types';
+import type { ConversationInfo, SubmitInput } from '../shared/conversation/types';
+import type { Snapshot } from '../shared/streaming/protocol';
 
 export interface Pending { conversation: ConversationInfo; input: SubmitInput; viewHeadId?: string | null; error?: string; images?: ImagePart[]; files?: DocumentPart[] }
 

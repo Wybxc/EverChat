@@ -1,6 +1,7 @@
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import { editModel, openParameters, openSpaceSettings } from '../ui';
-import type { ProviderSettings, SessionInfo, Snapshot } from '../../shared/types';
+import type { ProviderSettings, SessionInfo } from '../../shared/providers/types';
+import type { Snapshot } from '../../shared/streaming/protocol';
 
 const headers = { Origin: 'http://127.0.0.1:5174' };
 const getSettings = (request: APIRequestContext) => request.get('/api/settings/providers').then((r) => r.json()) as Promise<ProviderSettings>;

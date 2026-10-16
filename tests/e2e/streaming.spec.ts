@@ -1,10 +1,11 @@
 import { openSpaceSettings } from '../ui';
-import { messageParts, messageText } from '../../shared/message-content';
+import { messageParts, messageText } from '../../shared/conversation/content';
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import WebSocket from 'ws';
 import { readFile } from 'node:fs/promises';
-import { type ProviderSettings, type Snapshot, type SyncPacket } from '../../shared/types';
-import { StreamSync } from '../../shared/stream-sync';
+import { type ProviderSettings } from '../../shared/providers/types';
+import { type Snapshot, type SyncPacket } from '../../shared/streaming/protocol';
+import { StreamSync } from '../../shared/streaming/sync';
 
 const origin = 'http://127.0.0.1:5174';
 const headers = { Origin: origin };

@@ -1,0 +1,26 @@
+import type { Message, ConversationSettings } from '../conversation/types';
+export interface Snapshot { messages: Message[]; seq: number; deletedAt?: number; settings?: ConversationSettings }
+
+export interface Change { type: 'change'; seq: number; messages: Message[]; settings?: ConversationSettings }
+
+export interface StreamBatch {
+  version: 'raw-sse-v1'; runId: string; messageId: string; chunkSeq: number;
+  startOffset: number; endOffset: number; data: string;
+}
+
+export interface StreamCommit { runId: string; messageId: string; batches: StreamBatch[] }
+
+export interface Commit extends StreamCommit { type: 'commit'; seq: number }
+
+export interface CommitAck {
+  type: 'commit-ack'; seq: number; runId: string; messageId: string;
+  firstChunkSeq: number; lastChunkSeq: number; startOffset: number; endOffset: number;
+}
+
+interface Preview { type: 'preview'; batch: StreamBatch }
+
+export type DurableChange = Change | Commit;
+
+export type SyncPacket = DurableChange | Preview | CommitAck | { type: 'snapshot'; snapshot: Snapshot } | { type: 'ready'; seq: number } | { type: 'deleted'; deletedAt: number };
+
+export type GenerationExecutor = 'do-v1';

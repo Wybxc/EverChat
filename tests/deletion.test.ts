@@ -1,7 +1,7 @@
-import { messageParts } from '../shared/message-content';
+import { messageParts } from '../shared/conversation/content';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { StreamSync } from '../shared/stream-sync';
+import { StreamSync } from '../shared/streaming/sync';
 import { cachedSnapshot, deletedAt, markConversationDeleted, read, write } from '../src/storage';
 
 test('a confirmed deletion removes saved and preview contents and rejects delayed snapshots', () => {

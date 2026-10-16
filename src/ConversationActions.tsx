@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { useId, useRef, useState, type ReactNode, type SubmitEvent } from 'react';
 import { Archive, ArchiveRestore, Copy, MoreHorizontal, Pencil, Pin, PinOff, Trash2 } from 'lucide-react';
-import type { ConversationInfo } from '../shared/types';
+import type { ConversationInfo } from '../shared/conversation/types';
 import { ActionMenu } from './ActionMenu';
 
 export function ConversationActions({ conversation, disabled, update, remove, duplicate, children, exports }: {

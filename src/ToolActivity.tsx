@@ -3,7 +3,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { Button } from '@/components/ui/button';
 import { Globe, Search } from 'lucide-react';
 import { useId } from 'react';
-import type { PublicToolTask } from '../shared/web-tools';
+import type { PublicToolTask } from '../shared/web-tools/tasks';
 import { Disclosure } from './Disclosure';
 
 const labels = { queued: '等待中', running: '执行中', completed: '已完成', failed: '失败', cancelled: '已停止' };

@@ -1,9 +1,11 @@
 import { messageMenu, openParameters } from '../ui';
 import { test, expect, type APIRequestContext } from '@playwright/test';
-import type { EverChatBackup } from '../../shared/backup';
-import type { ConversationSettings, ProviderSettings, ProviderSettingsInput, Snapshot, Submission } from '../../shared/types';
-import { messageParts } from '../../shared/message-content';
-import { DEFAULT_CONVERSATION_SETTINGS as defaults } from '../../shared/conversation-settings';
+import type { EverChatBackup } from '../../shared/backup/backup';
+import type { ConversationSettings, Submission } from '../../shared/conversation/types';
+import type { ProviderSettings, ProviderSettingsInput } from '../../shared/providers/types';
+import type { Snapshot } from '../../shared/streaming/protocol';
+import { messageParts } from '../../shared/conversation/content';
+import { DEFAULT_CONVERSATION_SETTINGS as defaults } from '../../shared/conversation/settings';
 
 const origin = 'http://127.0.0.1:5174', headers = { Origin: origin };
 async function setup(request: APIRequestContext, window: number | null = 4096) {

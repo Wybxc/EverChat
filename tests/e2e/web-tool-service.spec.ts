@@ -1,8 +1,10 @@
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import { createHash } from 'node:crypto';
-import type { ProviderKind, ProviderSettings, Snapshot, Submission } from '../../shared/types';
-import type { WebToolServiceSettings } from '../../shared/web-tool-service';
-import type { EverChatBackup } from '../../shared/backup';
+import type { ProviderKind, ProviderSettings } from '../../shared/providers/types';
+import type { Snapshot } from '../../shared/streaming/protocol';
+import type { Submission } from '../../shared/conversation/types';
+import type { WebToolServiceSettings } from '../../shared/web-tools/service';
+import type { EverChatBackup } from '../../shared/backup/backup';
 
 const headers = { Origin: 'http://127.0.0.1:5174' };
 const key = 'tvly-native-private-service-key';

@@ -4,10 +4,12 @@ import { dirname, resolve } from 'node:path';
 import { setTimeout as pause } from 'node:timers/promises';
 import { Agent } from 'node:https';
 import WebSocket from 'ws';
-import { messageText } from '../shared/message-content';
-import { StreamSync } from '../shared/stream-sync';
-import type { ProviderKind, Snapshot, Submission, SyncPacket } from '../shared/types';
-import { TOOL_VALIDATION_WORKER, type ToolValidationConversation, type ToolValidationIdentity, type ToolValidationLibrary } from '../shared/tool-validation';
+import { messageText } from '../shared/conversation/content';
+import { StreamSync } from '../shared/streaming/sync';
+import type { ProviderKind } from '../shared/providers/types';
+import type { Snapshot, SyncPacket } from '../shared/streaming/protocol';
+import type { Submission } from '../shared/conversation/types';
+import { TOOL_VALIDATION_WORKER, type ToolValidationConversation, type ToolValidationIdentity, type ToolValidationLibrary } from './measurements/support/validation';
 
 export type ToolValidationSuite = 'functional' | 'large' | 'sustained';
 export interface ToolValidationOptions {

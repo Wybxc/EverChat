@@ -1,8 +1,10 @@
 import { messageMenu } from '../ui';
-import { messageText } from '../../shared/message-content';
+import { messageText } from '../../shared/conversation/content';
 import { test, expect, type APIRequestContext } from '@playwright/test';
-import type { ProviderKind, ProviderSettings, Snapshot, Submission } from '../../shared/types';
-import type { EverChatBackup } from '../../shared/backup';
+import type { ProviderKind, ProviderSettings } from '../../shared/providers/types';
+import type { Snapshot } from '../../shared/streaming/protocol';
+import type { Submission } from '../../shared/conversation/types';
+import type { EverChatBackup } from '../../shared/backup/backup';
 
 const headers = { Origin: 'http://127.0.0.1:5174' };
 async function setup(request: APIRequestContext, protocol: ProviderKind, model: string, showReasoning = false) {

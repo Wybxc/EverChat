@@ -1,6 +1,6 @@
 import * as v from 'valibot';
 import type { StreamState, StreamUsage } from './provider-stream';
-import { contextEstimateSchema, type ContextEstimate } from './context-budget';
+import { contextEstimateSchema, type ContextEstimate } from '../conversation/context-budget';
 
 export interface GenerationTiming { queueMs?: number; firstTokenMs?: number; durationMs?: number }
 export interface GenerationResult {

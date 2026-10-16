@@ -1,4 +1,4 @@
-import type { ProviderKind } from '../../shared/types';
+import type { ProviderKind } from '../../shared/providers/types';
 const frame = (event: unknown) => `data: ${JSON.stringify(event)}\r\n\r\n`;
 export const providerStreams: Record<ProviderKind, { partial: string; finish: string }> = {
   'openai-chat': {

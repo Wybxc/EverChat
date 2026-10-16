@@ -1,8 +1,9 @@
-import { type Message, type StreamBatch, type StreamCommit } from '../shared/types';
-import { ProviderStream, type StreamState } from '../shared/provider-stream';
-import { STREAM_VERSION, validateBatch, validateCommit } from '../shared/stream-batches';
+import { type Message } from '../shared/conversation/types';
+import { type StreamBatch, type StreamCommit } from '../shared/streaming/protocol';
+import { ProviderStream, type StreamState } from '../shared/streaming/provider-stream';
+import { STREAM_VERSION, validateBatch, validateCommit } from '../shared/streaming/batches';
 import type { SqlQuery } from './generation-metrics';
-import { messageParts, messageText } from '../shared/message-content';
+import { messageParts, messageText } from '../shared/conversation/content';
 
 type CommitRow = { chunkSeq: number; endSeq: number; startOffset: number; endOffset: number; payload: string } & Record<string, SqlStorageValue>;
 

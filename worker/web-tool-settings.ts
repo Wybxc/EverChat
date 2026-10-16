@@ -1,5 +1,5 @@
 import * as v from 'valibot';
-import { DEFAULT_WEB_TOOL_DAILY_LIMIT, webToolServiceInputSchema, type WebToolServiceConfig, type WebToolServiceSettings } from '../shared/web-tool-service';
+import { DEFAULT_WEB_TOOL_DAILY_LIMIT, webToolServiceInputSchema, type WebToolServiceConfig, type WebToolServiceSettings } from '../shared/web-tools/service';
 import type { SqlQuery } from './generation-metrics';
 
 type Configuration = { apiKey: string; dailyLimit: number } & Record<string, SqlStorageValue>;

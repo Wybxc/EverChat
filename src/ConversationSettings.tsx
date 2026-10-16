@@ -8,17 +8,18 @@ import { Switch } from '@/components/ui/switch';
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
 import { X } from 'lucide-react';
 import * as v from 'valibot';
-import type { ChatModel, ConversationSettings, ReasoningEffort } from '../shared/types';
-import { conversationSettingsSchema, DEFAULT_CONVERSATION_SETTINGS, samplingSupport } from '../shared/conversation-settings';
+import type { ChatModel, ReasoningEffort } from '../shared/models/types';
+import type { ConversationSettings } from '../shared/conversation/types';
+import { conversationSettingsSchema, DEFAULT_CONVERSATION_SETTINGS, samplingSupport } from '../shared/conversation/settings';
 import { Autosave } from './autosave';
 import { api } from './api';
 import { read, storageEpoch, write } from './storage';
 import { PromptPresetPicker } from './PromptPresets';
-import { modelSelectionKey } from '../shared/models';
-import { WEB_TOOL_NAMES } from '../shared/web-tools';
+import { modelSelectionKey } from '../shared/models/selection';
+import { WEB_TOOL_NAMES } from '../shared/web-tools/tasks';
 import { useWebToolSettings } from './web-tool-settings';
 import { Disclosure } from './Disclosure';
-import { canAttemptCapability } from '../shared/model-metadata';
+import { canAttemptCapability } from '../shared/models/metadata';
 
 const withContextDefaults = (settings: ConversationSettings) => settings.recentMessages === undefined || settings.contextBudget === undefined || settings.useSummaries === undefined || settings.autoCompression === undefined || settings.tools === undefined
   ? { ...DEFAULT_CONVERSATION_SETTINGS, ...settings } : settings;

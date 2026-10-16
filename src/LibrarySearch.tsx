@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { api } from './api';
 import { conversationUrl } from './useConversationRoute';
-import type { LibrarySearch as SearchPage, SearchResult } from '../shared/search';
+import type { LibrarySearch as SearchPage, SearchResult } from '../shared/search/query';
 import { deletedAt } from './storage';
 
 export function LibrarySearch({ query, archived, open }: { query: string; archived: boolean; open: (result: SearchResult, query: string) => void }) {

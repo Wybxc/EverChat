@@ -9,35 +9,38 @@ import { ActionMenuItem } from './ActionMenu';
 import { Alert } from '@/components/ui/alert';
 import { Textarea } from '@/components/ui/textarea';
 import { NativeSelect } from '@/components/ui/native-select';
-import { documentMediaTypeSchema, MAX_DOCUMENT_BYTES, MAX_MESSAGE_DOCUMENTS, type DocumentPart } from '../shared/documents';
-import { fileMediaType } from '../shared/attachments';
+import { documentMediaTypeSchema, MAX_DOCUMENT_BYTES, MAX_MESSAGE_DOCUMENTS, type DocumentPart } from '../shared/attachments/documents';
+import { fileMediaType } from '../shared/attachments/files';
 import { DocumentPreviews } from './DocumentPreviews';
 import { preparePdf } from './pdf-loader';
-import type { PDFExtraction } from '../shared/pdf';
-import { messageFiles, messageImages, messageText } from '../shared/message-content';
+import type { PDFExtraction } from '../shared/attachments/pdf';
+import { messageFiles, messageImages, messageText } from '../shared/conversation/content';
 import { Fragment, Component, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode, type SubmitEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowDown, ArrowRight, ArrowUp, BookOpen, CloudOff, FolderOpen, Globe, ImagePlus, Infinity as InfinityIcon, LockKeyhole, Menu, MessageCircle, Monitor, Moon, MoreHorizontal, Paperclip, Pin, Plus, RefreshCw, Search, Settings, SlidersHorizontal, Square, Sun, Trash2, WifiOff, X } from 'lucide-react';
 import 'streamdown/styles.css';
 import 'katex/dist/katex.min.css';
 import type { PluginConfig } from 'streamdown';
-import { isActive, type ConversationInfo, type ConversationSettings, type LibrarySnapshot, type Message, type ModelSelection, type ProviderSettings, type ReasoningEffort, type SessionInfo, type Submission, type SubmitInput } from '../shared/types';
+import { isActive } from '../shared/conversation/message-state';
+import { type ConversationInfo, type ConversationSettings, type LibrarySnapshot, type Message, type Submission, type SubmitInput } from '../shared/conversation/types';
+import { type ModelSelection, type ReasoningEffort } from '../shared/models/types';
+import { type ProviderSettings, type SessionInfo } from '../shared/providers/types';
 import { api, ApiError } from './api';
 import { clearLocal, deletedAt, markConversationDeleted, read, storageEpoch, write, writePending, type Pending } from './storage';
 import { useConversation } from './useConversation';
 import { useConversationBranches } from './useConversationBranches';
 import { BranchSwitcher, type BranchNavigation } from './BranchSwitcher';
 import { useBranchScrollAnchor } from './useBranchScrollAnchor';
-import { parentKey, summariesOnBranch } from '../shared/conversation-branches';
+import { parentKey, summariesOnBranch } from '../shared/conversation/branches';
 import { ProviderSettingsPanel, type SettingsTab } from './ProviderSettings';
 import { GenerationMetadata } from './GenerationMetadata';
 import { ToolActivity } from './ToolActivity';
-import { assertWebToolSupport } from '../shared/web-tools';
+import { assertWebToolSupport } from '../shared/web-tools/tasks';
 import { loadWebToolSettings, useWebToolSettings, WEB_TOOL_SETTINGS_KEY } from './web-tool-settings';
 import { ContextEstimateView } from './ContextEstimate';
-import { buildContext, contextSource } from '../shared/context-budget';
-import { chatModels, effortLabels, modelSelectionKey } from '../shared/models';
-import { canAttemptCapability } from '../shared/model-metadata';
+import { buildContext, contextSource } from '../shared/conversation/context-budget';
+import { chatModels, effortLabels, modelSelectionKey } from '../shared/models/selection';
+import { canAttemptCapability } from '../shared/models/metadata';
 import { useThemeMode } from './theme';
 import { useFollowScroll } from './useFollowScroll';
 import { useSidebar } from './useSidebar';
@@ -48,7 +51,7 @@ import { MessageActions } from './MessageActions';
 import { Disclosure, DisclosureScope } from './Disclosure';
 import { ConversationSearch } from './ConversationSearch';
 import { LibrarySearch } from './LibrarySearch';
-import type { SearchResult } from '../shared/search';
+import type { SearchResult } from '../shared/search/query';
 import { createArchive, restoreArchive, type BackupProgress } from './archive-client';
 import { BackupProgressDialog } from './BackupProgressDialog';
 import { MessageMutationDialog } from './MessageMutationDialog';
@@ -58,9 +61,9 @@ import { AttachmentDialog } from './AttachmentDialog';
 import { ImagePreviews } from './ImagePreviews';
 import { prepareChatImage } from './chat-image';
 import { prepareAttachment, uploadAttachment } from './attachment-upload';
-import { MAX_MESSAGE_IMAGES, type ImagePart } from '../shared/images';
-import { prepareChatContext, summaryContext, summaryGeneration, summaryPrefix } from '../shared/summaries';
-import { applyConversationSettings, conversationSettingsSchema, DEFAULT_CONVERSATION_SETTINGS } from '../shared/conversation-settings';
+import { MAX_MESSAGE_IMAGES, type ImagePart } from '../shared/attachments/images';
+import { prepareChatContext, summaryContext, summaryGeneration, summaryPrefix } from '../shared/conversation/summaries';
+import { applyConversationSettings, conversationSettingsSchema, DEFAULT_CONVERSATION_SETTINGS } from '../shared/conversation/settings';
 import * as v from 'valibot';
 
 const EMPTY_SESSION: SessionInfo = { authenticated: false, configured: false, attachmentsConfigured: false, provider: '', model: '' };
@@ -75,7 +78,7 @@ function loadMarkdownRenderer() {
 }
 const markdownPluginLoaders = {
   code: () => import('@streamdown/code').then(({ createCodePlugin }) => createCodePlugin({ themes: ['github-light', 'github-dark'] })),
-  math: () => Promise.all([import('@streamdown/math'), import('../shared/markdown-math')]).then(([{ createMathPlugin }, { normalizeMathMarkdown }]) => ({
+  math: () => Promise.all([import('@streamdown/math'), import('./features/chat/rendering/math')]).then(([{ createMathPlugin }, { normalizeMathMarkdown }]) => ({
     plugin: createMathPlugin({ singleDollarTextMath: false }), normalize: normalizeMathMarkdown,
   })),
   mermaid: () => import('@streamdown/mermaid').then(({ createMermaidPlugin }) => createMermaidPlugin({ config: { securityLevel: 'strict', startOnLoad: false, suppressErrorRendering: true, theme: 'base' } })),

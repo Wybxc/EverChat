@@ -7,7 +7,7 @@ import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { setTimeout as pause } from 'node:timers/promises';
 import { runToolValidation, type ToolValidationSuite } from './tool-platform-runner';
-import type { ToolValidationIdentity } from '../shared/tool-validation';
+import type { ToolValidationIdentity } from './measurements/support/validation';
 const { values } = parseArgs({ options: { port: { type: 'string', default: '5191' }, suite: { type: 'string', default: 'all' },
   output: { type: 'string', default: '/tmp/everchat-tools-platform-local' } } });
 const port = Number(values.port);

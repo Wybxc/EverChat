@@ -1,9 +1,10 @@
-import { resolveModelMetadata } from '../shared/model-metadata';
-import { providerTypes } from '../shared/provider-settings';
-import { providerOptions } from '../shared/providers';
-import type { ModelSelection,ProviderApiKind,ProviderConfig,ProviderKind,ProviderProfileInput,ProviderSettings,ProviderSettingsInput } from '../shared/types';
+import { resolveModelMetadata } from '../shared/models/metadata';
+import { providerTypes } from '../shared/providers/settings';
+import { providerOptions } from '../shared/providers/endpoints';
+import type { ModelSelection } from '../shared/models/types';
+import type { ProviderApiKind, ProviderConfig, ProviderKind, ProviderProfileInput, ProviderSettings, ProviderSettingsInput } from '../shared/providers/types';
 import type { Env } from './env';
-export { mergeProviderSettings,normalizeBaseUrl,providerSettingsSchema } from '../shared/provider-settings';
+export { mergeProviderSettings,normalizeBaseUrl,providerSettingsSchema } from '../shared/providers/settings';
 
 function normalizeProvider(value: string | undefined): ProviderKind {
   if (providerTypes.includes(value as ProviderApiKind)) return value as ProviderKind;

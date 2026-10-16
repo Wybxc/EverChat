@@ -1,5 +1,5 @@
 import * as v from 'valibot';
-import { attachmentInputSchema, attachmentUrl, fileMediaType, ATTACHMENT_UPLOAD_TIMEOUT, MAX_ATTACHMENT_BYTES, type Attachment, type AttachmentInput } from '../shared/attachments';
+import { attachmentInputSchema, attachmentUrl, fileMediaType, ATTACHMENT_UPLOAD_TIMEOUT, MAX_ATTACHMENT_BYTES, type Attachment, type AttachmentInput } from '../shared/attachments/files';
 import { api, ApiError } from './api';
 
 export async function prepareAttachment(file: File, signal: AbortSignal): Promise<AttachmentInput> {

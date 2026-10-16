@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import { PromptPresets, PromptPresetError } from '../worker/prompt-presets';
-import { MAX_PROMPT_PRESETS, promptPresetInputSchema, promptPresetListSchema } from '../shared/prompt-presets';
+import { MAX_PROMPT_PRESETS, promptPresetInputSchema, promptPresetListSchema } from '../shared/presets/schema';
 
 function fixture() {
   const db = new DatabaseSync(':memory:');

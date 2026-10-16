@@ -1,9 +1,9 @@
 import * as v from 'valibot';
-import type { Attachment } from '../shared/attachments';
-import { ATTACHMENT_LEASE } from '../shared/attachments';
-import { DOCUMENT_VERSION, documentMediaTypeSchema, documentPartSchema, estimateDocumentTokens, MAX_DOCUMENT_BYTES, MAX_MESSAGE_DOCUMENTS, type DocumentPart } from '../shared/documents';
+import type { Attachment } from '../shared/attachments/files';
+import { ATTACHMENT_LEASE } from '../shared/attachments/files';
+import { DOCUMENT_VERSION, documentMediaTypeSchema, documentPartSchema, estimateDocumentTokens, MAX_DOCUMENT_BYTES, MAX_MESSAGE_DOCUMENTS, type DocumentPart } from '../shared/attachments/documents';
 import { extractDocument } from './document-parser';
-import { pdfExtractionSchema, type PDFExtraction, type PDFMetadata } from '../shared/pdf';
+import { pdfExtractionSchema, type PDFExtraction, type PDFMetadata } from '../shared/attachments/pdf';
 import { HttpError } from './http';
 
 type Source = Attachment & { key: string };

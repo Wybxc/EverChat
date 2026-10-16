@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import type { ProviderSettings } from '../../shared/types';
+import type { ProviderSettings } from '../../shared/providers/types';
 import { editModel, openSpaceSettings } from '../ui';
 
 const headers = { Origin: 'http://127.0.0.1:5174' };

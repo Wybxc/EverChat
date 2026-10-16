@@ -1,5 +1,5 @@
 import { createParser,type EventSourceParser } from 'eventsource-parser';
-import type { ProviderKind } from './types';
+import type { ProviderKind } from '../providers/types';
 
 export const MAX_EVENT_CHARACTERS = 256 * 1024;
 const LIMIT = 100_000;

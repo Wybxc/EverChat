@@ -1,5 +1,5 @@
-import type { ProviderConfig } from '../shared/types';
-import { ProviderStream } from '../shared/provider-stream';
+import type { ProviderConfig } from '../shared/providers/types';
+import { ProviderStream } from '../shared/streaming/provider-stream';
 import { MAX_TOOL_TURN_WIRE_BYTES } from './provider-tools';
 import { ProviderError } from './generation-errors';
 

@@ -1,6 +1,6 @@
 import { chooseChatModel, expectChatModel } from '../ui';
 import { openSpaceSettings } from '../ui';
-import { messageText } from '../../shared/message-content';
+import { messageText } from '../../shared/conversation/content';
 import { test, expect, type BrowserContext, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 

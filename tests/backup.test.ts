@@ -1,10 +1,10 @@
-import { messageParts, messageText } from '../shared/message-content';
+import { messageParts, messageText } from '../shared/conversation/content';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { BACKUP_FORMAT, BACKUP_VERSION, backupMessage, validateBackup } from '../shared/backup';
-import type { Message } from '../shared/types';
-import { DEFAULT_CONVERSATION_SETTINGS } from '../shared/conversation-settings';
-import { ProviderStream } from '../shared/provider-stream';
+import { BACKUP_FORMAT, BACKUP_VERSION, backupMessage, validateBackup } from '../shared/backup/backup';
+import type { Message } from '../shared/conversation/types';
+import { DEFAULT_CONVERSATION_SETTINGS } from '../shared/conversation/settings';
+import { ProviderStream } from '../shared/streaming/provider-stream';
 
 const assistant: Message = {
   id: crypto.randomUUID(), role: 'assistant', parts: messageParts('已保存的回答', '思考过程'), status: 'running', createdAt: 2,

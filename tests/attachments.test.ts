@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as v from 'valibot';
-import { attachmentInputSchema, attachmentSignatureMatches, MAX_ATTACHMENT_BYTES } from '../shared/attachments';
+import { attachmentInputSchema, attachmentSignatureMatches, MAX_ATTACHMENT_BYTES } from '../shared/attachments/files';
 
 const input = { id: crypto.randomUUID(), name: '预算.md', size: 12, mediaType: 'text/markdown', sha256: 'a'.repeat(64) };
 test('attachment metadata accepts bounded files and rejects unsafe paths, executable types, malformed checksums and sizes', () => {

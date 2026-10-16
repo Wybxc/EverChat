@@ -1,6 +1,6 @@
 import * as v from 'valibot';
-import { documentPartSchema, MAX_MESSAGE_DOCUMENTS, type DocumentPart } from './documents';
-import { imagePartSchema, MAX_MESSAGE_IMAGES, type ImagePart } from './images';
+import { documentPartSchema, MAX_MESSAGE_DOCUMENTS, type DocumentPart } from '../attachments/documents';
+import { imagePartSchema, MAX_MESSAGE_IMAGES, type ImagePart } from '../attachments/images';
 
 /** Current channels are aggregated independently; parts do not imply SSE event order. */
 export type MessagePart = { type: 'text'; text: string } | { type: 'reasoning'; text: string } | ImagePart | DocumentPart;

@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as v from 'valibot';
-import { messageParts, messagePartsSchema, messageText } from '../shared/message-content';
-import type { Message } from '../shared/types';
-import { contextHistory } from '../shared/context-budget';
+import { messageParts, messagePartsSchema, messageText } from '../shared/conversation/content';
+import type { Message } from '../shared/conversation/types';
+import { contextHistory } from '../shared/conversation/context-budget';
 import { cachedSnapshot, write } from '../src/storage';
 
 test('content parts preserve Markdown, Unicode and whitespace without duplicating either channel', () => {

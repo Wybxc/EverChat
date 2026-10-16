@@ -1,6 +1,6 @@
 import { test, expect, type Page, type Locator } from '@playwright/test';
-import type { ProviderSettings } from '../../shared/types';
-import { DEFAULT_CONVERSATION_SETTINGS } from '../../shared/conversation-settings';
+import type { ProviderSettings } from '../../shared/providers/types';
+import { DEFAULT_CONVERSATION_SETTINGS } from '../../shared/conversation/settings';
 import { openSpaceSettings, providerDetails, openModelAdder } from '../ui';
 
 const headers = { Origin: 'http://127.0.0.1:5174' };

@@ -1,9 +1,10 @@
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import { createHash } from 'node:crypto';
-import { attachmentUrl } from '../../shared/attachments';
-import { messageAttachments, messageFiles } from '../../shared/message-content';
-import { PDF_PARSER_VERSION } from '../../shared/pdf';
-import type { Snapshot, Submission } from '../../shared/types';
+import { attachmentUrl } from '../../shared/attachments/files';
+import { messageAttachments, messageFiles } from '../../shared/conversation/content';
+import { PDF_PARSER_VERSION } from '../../shared/attachments/pdf';
+import type { Snapshot } from '../../shared/streaming/protocol';
+import type { Submission } from '../../shared/conversation/types';
 import { textPdf } from '../fixtures/pdf';
 
 const headers = { Origin: 'http://127.0.0.1:5174' };

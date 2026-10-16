@@ -1,11 +1,12 @@
-import { messageParts, messageText } from '../shared/message-content';
+import { messageParts, messageText } from '../shared/conversation/content';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { StreamSync } from '../shared/stream-sync';
-import { commitAck, streamBatches } from '../shared/stream-batches';
-import { ProviderStream, encodeBytes } from '../shared/provider-stream';
-import type { Commit, Message } from '../shared/types';
-import { DEFAULT_CONVERSATION_SETTINGS } from '../shared/conversation-settings';
+import { StreamSync } from '../shared/streaming/sync';
+import { commitAck, streamBatches } from '../shared/streaming/batches';
+import { ProviderStream, encodeBytes } from '../shared/streaming/provider-stream';
+import type { Commit } from '../shared/streaming/protocol';
+import type { Message } from '../shared/conversation/types';
+import { DEFAULT_CONVERSATION_SETTINGS } from '../shared/conversation/settings';
 
 const message: Message = { id: 'answer', role: 'assistant', parts: [], status: 'running', createdAt: 1,
   runId: 'run', parentId: 'user', revisionOf: null, error: null, streamVersion: 'raw-sse-v1', durableOffset: 0,

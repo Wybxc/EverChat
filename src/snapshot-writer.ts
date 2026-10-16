@@ -1,4 +1,4 @@
-import type { Snapshot } from '../shared/types';
+import type { Snapshot } from '../shared/streaming/protocol';
 
 // The caller only supplies durable snapshots. Previews never enter browser storage.
 export class SnapshotWriter {

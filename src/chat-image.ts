@@ -1,5 +1,5 @@
-import { imageDimensions, MAX_CHAT_IMAGE_BYTES, MAX_CHAT_IMAGE_EDGE, MAX_SOURCE_IMAGE_PIXELS, imageMediaTypeSchema } from '../shared/images';
-import { fileMediaType, MAX_ATTACHMENT_BYTES } from '../shared/attachments';
+import { imageDimensions, MAX_CHAT_IMAGE_BYTES, MAX_CHAT_IMAGE_EDGE, MAX_SOURCE_IMAGE_PIXELS, imageMediaTypeSchema } from '../shared/attachments/images';
+import { fileMediaType, MAX_ATTACHMENT_BYTES } from '../shared/attachments/files';
 import * as v from 'valibot';
 
 export async function prepareChatImage(file: File, signal: AbortSignal): Promise<File> {

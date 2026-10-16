@@ -2,8 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import * as v from 'valibot';
-import { pdfExtractionSchema, PDF_PARSER_VERSION } from '../shared/pdf';
-import { documentPartSchema, documentPrompt, estimateDocumentTokens } from '../shared/documents';
+import { pdfExtractionSchema, PDF_PARSER_VERSION } from '../shared/attachments/pdf';
+import { documentPartSchema, documentPrompt, estimateDocumentTokens } from '../shared/attachments/documents';
 import { abortable } from '../src/abort';
 
 const text = '[第 1 页]\n文件预算：42 元。', hash = createHash('sha256').update(text).digest('hex');

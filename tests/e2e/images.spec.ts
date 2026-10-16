@@ -1,9 +1,11 @@
 import { chooseChatModel } from '../ui';
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import { createHash } from 'node:crypto';
-import { attachmentUrl } from '../../shared/attachments';
-import type { Snapshot, Submission, ProviderKind } from '../../shared/types';
-import { messageImages, messageText } from '../../shared/message-content';
+import { attachmentUrl } from '../../shared/attachments/files';
+import type { Snapshot } from '../../shared/streaming/protocol';
+import type { Submission } from '../../shared/conversation/types';
+import type { ProviderKind } from '../../shared/providers/types';
+import { messageImages, messageText } from '../../shared/conversation/content';
 const headers = { Origin: 'http://127.0.0.1:5174' }, providerId = '00000000-0000-4000-8000-000000000088';
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==', 'base64');
 async function setup(request: APIRequestContext, provider: ProviderKind = 'openai-chat') {

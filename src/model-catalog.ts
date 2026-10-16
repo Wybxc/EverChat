@@ -1,5 +1,5 @@
 import { get,set } from 'idb-keyval';
-import { parseModelCatalog,type ModelCatalog } from '../shared/model-catalog';
+import { parseModelCatalog,type ModelCatalog } from '../shared/models/catalog';
 
 const CACHE_KEY = 'public-model-catalog:v1', TTL = 7 * 24 * 60 * 60 * 1000;
 interface CatalogCache { data: ModelCatalog; updatedAt: number }

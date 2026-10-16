@@ -1,7 +1,8 @@
 import * as v from 'valibot';
-import type { ConversationSettings, ProviderConfig } from './types';
-import { validateOutputLimit } from './model-metadata';
-import { WEB_TOOL_NAMES } from './web-tools';
+import type { ConversationSettings } from './types';
+import type { ProviderConfig } from '../providers/types';
+import { validateOutputLimit } from '../models/metadata';
+import { WEB_TOOL_NAMES } from '../web-tools/tasks';
 
 export const DEFAULT_CONVERSATION_SETTINGS: ConversationSettings = {
   systemPrompt: null, temperature: null, topP: null, useGlobalMaxOutputTokens: true, maxOutputTokens: null,

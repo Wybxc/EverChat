@@ -4,10 +4,12 @@ import { NativeSelect } from '@/components/ui/native-select';
 import { Spinner } from '@/components/ui/spinner';
 import { useId, useRef, useState, type SubmitEvent } from 'react';
 import { X } from 'lucide-react';
-import { branchPath, type ChatModel, type Message, type ModelSelection, type SubmitInput } from '../shared/types';
-import { messageText } from '../shared/message-content';
-import { modelSelectionKey } from '../shared/models';
-import { summaryGeneration } from '../shared/summaries';
+import { branchPath } from '../shared/conversation/branch-path';
+import { type ChatModel, type ModelSelection } from '../shared/models/types';
+import { type Message, type SubmitInput } from '../shared/conversation/types';
+import { messageText } from '../shared/conversation/content';
+import { modelSelectionKey } from '../shared/models/selection';
+import { summaryGeneration } from '../shared/conversation/summaries';
 
 export function SummaryDialog({ messages, headId, models, preferred, target, busy, submit, close, focusComposer }: {
   messages: Message[]; headId: string | null; models: ChatModel[]; preferred?: ChatModel;

@@ -1,5 +1,5 @@
 import Papa from 'papaparse';
-import { MAX_CSV_COLUMNS, MAX_CSV_ROWS, MAX_DOCUMENT_BYTES, MAX_DOCUMENT_CHARACTERS, type DocumentPart } from '../shared/documents';
+import { MAX_CSV_COLUMNS, MAX_CSV_ROWS, MAX_DOCUMENT_BYTES, MAX_DOCUMENT_CHARACTERS, type DocumentPart } from '../shared/attachments/documents';
 import { HttpError } from './http';
 
 export function extractDocument(bytes: Uint8Array, mediaType: Exclude<DocumentPart['mediaType'], 'application/pdf'>) {

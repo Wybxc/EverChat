@@ -1,10 +1,11 @@
 import * as v from 'valibot';
-import { attachmentInputSchema, MAX_CONVERSATION_ATTACHMENTS, MAX_CONVERSATION_ATTACHMENT_BYTES } from './attachments';
+import { attachmentInputSchema, MAX_CONVERSATION_ATTACHMENTS, MAX_CONVERSATION_ATTACHMENT_BYTES } from '../attachments/files';
 import { MAX_BACKUP_BYTES, validateBackup, type EverChatBackup } from './backup';
-import { documentPartSchema, MAX_DOCUMENT_BYTES } from './documents';
-import { messageAttachments } from './message-content';
-import { branchPath, type Message } from './types';
-import { mergeProviderSettings } from './provider-settings';
+import { documentPartSchema, MAX_DOCUMENT_BYTES } from '../attachments/documents';
+import { messageAttachments } from '../conversation/content';
+import { branchPath } from '../conversation/branch-path';
+import { type Message } from '../conversation/types';
+import { mergeProviderSettings } from '../providers/settings';
 
 export const ARCHIVE_FORMAT = 'everchat-archive', ARCHIVE_VERSION = 1;
 export const MAX_ARCHIVE_BYTES = MAX_BACKUP_BYTES + MAX_CONVERSATION_ATTACHMENT_BYTES + MAX_CONVERSATION_ATTACHMENTS * MAX_DOCUMENT_BYTES + 128 * 1024;

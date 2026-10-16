@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { Check, ChevronDown } from 'lucide-react';
-import type { ChatModel } from '../shared/types';
-import { modelSelectionKey } from '../shared/models';
+import type { ChatModel } from '../shared/models/types';
+import { modelSelectionKey } from '../shared/models/selection';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';

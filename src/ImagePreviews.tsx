@@ -2,8 +2,8 @@ import { Modal, ModalTitle } from './Modal';
 import { Button } from '@/components/ui/button';
 import { useEffect, useId, useState } from 'react';
 import { X } from 'lucide-react';
-import { attachmentUrl } from '../shared/attachments';
-import type { ImagePart } from '../shared/images';
+import { attachmentUrl } from '../shared/attachments/files';
+import type { ImagePart } from '../shared/attachments/images';
 
 export function ImagePreviews({ conversationId, images, remove }: { conversationId: string; images: ImagePart[]; remove?: (id: string) => void }) {
   const [preview, setPreview] = useState<ImagePart | null>(null);

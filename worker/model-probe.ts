@@ -1,6 +1,6 @@
 import type { LanguageModelV4CallOptions, LanguageModelV4Content, LanguageModelV4Prompt } from '@ai-sdk/provider';
-import type { ProviderConfig } from '../shared/types';
-import type { ModelProbeResult, ProbeCapability } from '../shared/model-probe';
+import type { ProviderConfig } from '../shared/providers/types';
+import type { ModelProbeResult, ProbeCapability } from '../shared/models/probe';
 import { providerCallOptions, providerModel } from './provider-sdk';
 import { probeImage } from './probe-image';
 

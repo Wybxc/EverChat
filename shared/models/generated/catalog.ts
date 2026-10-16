@@ -1,4 +1,4 @@
-import type { ModelCatalog } from './model-catalog';
+import type { ModelCatalog } from '../catalog';
 // Generated from https://models.dev/api.json on 2026-10-15.
 // Public metadata only; update with pnpm update:model-catalog.
 export const MODEL_CATALOG_SNAPSHOT: ModelCatalog = {

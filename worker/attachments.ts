@@ -1,9 +1,9 @@
 import { DocumentStore } from './documents';
-import type { DocumentPart } from '../shared/documents';
+import type { DocumentPart } from '../shared/attachments/documents';
 import { ATTACHMENT_LEASE, ATTACHMENT_UPLOAD_TIMEOUT, attachmentSignatureMatches, MAX_DAILY_ATTACHMENT_UPLOADS, MAX_CONVERSATION_ATTACHMENTS, MAX_CONVERSATION_ATTACHMENT_BYTES,
-  MAX_SPACE_ATTACHMENTS, MAX_SPACE_ATTACHMENT_BYTES, type Attachment, type AttachmentInput } from '../shared/attachments';
+  MAX_SPACE_ATTACHMENTS, MAX_SPACE_ATTACHMENT_BYTES, type Attachment, type AttachmentInput } from '../shared/attachments/files';
 import { HttpError } from './http';
-import { assertChatImage, imageMediaTypeSchema, MAX_MESSAGE_IMAGES, type ImagePart } from '../shared/images';
+import { assertChatImage, imageMediaTypeSchema, MAX_MESSAGE_IMAGES, type ImagePart } from '../shared/attachments/images';
 import * as v from 'valibot';
 
 type Row = Attachment & { key: string; lease: number; token: string | null; removed: number } & Record<string, SqlStorageValue>;

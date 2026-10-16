@@ -1,10 +1,12 @@
 import * as v from 'valibot';
 import { assertContextFits,buildContext,ContextBudgetError,contextHistory,historyCountWithinLimit,measureContextDemand } from './context-budget';
-import type { DocumentPart } from './documents';
-import type { ImagePart } from './images';
-import { messageFiles,messageImages,messageText } from './message-content';
-import { FALLBACK_MODEL_METADATA } from './model-metadata';
-import { branchPath,type ConversationSettings,type Message,type ProviderConfig } from './types';
+import type { DocumentPart } from '../attachments/documents';
+import type { ImagePart } from '../attachments/images';
+import { messageFiles,messageImages,messageText } from './content';
+import { FALLBACK_MODEL_METADATA } from '../models/metadata';
+import { branchPath } from './branch-path';
+import { type ConversationSettings, type Message } from './types';
+import { type ProviderConfig } from '../providers/types';
 
 export const MAX_SUMMARIES = 20, MAX_SUMMARY_CHARACTERS = 20_000;
 export const summaryCoverageSchema = v.pipe(v.strictObject({

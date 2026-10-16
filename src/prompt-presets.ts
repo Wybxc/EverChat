@@ -1,5 +1,5 @@
 import { useQuery, type QueryClient } from '@tanstack/react-query';
-import type { PromptPreset } from '../shared/types';
+import type { PromptPreset } from '../shared/presets/types';
 import { api } from './api';
 import { read, storageEpoch, write } from './storage';
 

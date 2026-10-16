@@ -1,13 +1,16 @@
 import * as v from 'valibot';
-import { conversationSettingsSchema } from './conversation-settings';
-import { addGenerationUsage,generationSchema } from './generation';
-import { messagePartsSchema } from './message-content';
-import { promptPresetListSchema } from './prompt-presets';
-import { modelSchema } from './provider-settings';
-import { MAX_SUMMARIES,MAX_SUMMARY_CHARACTERS,summaryCoverageSchema } from './summaries';
-import type { ConversationSettings,Message,PromptPreset,ProviderApiKind,ProviderModel } from './types';
-import { branchPath } from './types';
-import { publicToolTaskSchema } from './web-tools';
+import { conversationSettingsSchema } from '../conversation/settings';
+import { addGenerationUsage,generationSchema } from '../streaming/generation';
+import { messagePartsSchema } from '../conversation/content';
+import { promptPresetListSchema } from '../presets/schema';
+import { modelSchema } from '../providers/settings';
+import { MAX_SUMMARIES,MAX_SUMMARY_CHARACTERS,summaryCoverageSchema } from '../conversation/summaries';
+import type { ConversationSettings, Message } from '../conversation/types';
+import type { PromptPreset } from '../presets/types';
+import type { ProviderApiKind } from '../providers/types';
+import type { ProviderModel } from '../models/types';
+import { branchPath } from '../conversation/branch-path';
+import { publicToolTaskSchema } from '../web-tools/tasks';
 
 export const BACKUP_FORMAT = 'everchat-backup';
 export const BACKUP_VERSION = 1 as const;

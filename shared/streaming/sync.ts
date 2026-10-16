@@ -1,5 +1,6 @@
-import { applyChange, appendMessage, type Commit, type CommitAck, type Snapshot, type StreamBatch, type SyncPacket } from './types';
-import { MAX_COMMIT_BYTES, validateBatch } from './stream-batches';
+import { applyChange, appendMessage } from './apply-change';
+import { type Commit, type CommitAck, type Snapshot, type StreamBatch, type SyncPacket } from './protocol';
+import { MAX_COMMIT_BYTES, validateBatch } from './batches';
 
 // Preview state is ephemeral. Only durable can be cached, exported or used to resume.
 export class StreamSync {

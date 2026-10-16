@@ -1,7 +1,9 @@
-import { messageText } from '../../shared/message-content';
+import { messageText } from '../../shared/conversation/content';
 import { test, expect, type APIRequestContext } from '@playwright/test';
-import type { LibrarySearch } from '../../shared/search';
-import type { ProviderSettings, Snapshot, Submission } from '../../shared/types';
+import type { LibrarySearch } from '../../shared/search/query';
+import type { ProviderSettings } from '../../shared/providers/types';
+import type { Snapshot } from '../../shared/streaming/protocol';
+import type { Submission } from '../../shared/conversation/types';
 const headers = { Origin: 'http://127.0.0.1:5174' };
 const control = (request: APIRequestContext, data: { id?: string; fail?: boolean; rebuild?: boolean }) => request.post('/api/__test/library/search', { headers, data });
 const search = async (request: APIRequestContext, query: string, archived = false, cursor?: string) => {

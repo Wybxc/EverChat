@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import type { ProviderSettings } from '../../shared/types';
+import type { ProviderSettings } from '../../shared/providers/types';
 import { openSpaceSettings, chooseChatModel } from '../ui';
 const headers = { Origin: 'http://127.0.0.1:5174' };
 async function fixture(page: Page) {

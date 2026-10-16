@@ -1,0 +1,65 @@
+import type { DocumentPart } from '../attachments/documents';
+import type { ImagePart } from '../attachments/images';
+import type { WebToolServiceConfig } from '../web-tools/service';
+import type { ChatModel, ProviderModel, ReasoningEffort, ResolvedModelMetadata } from '../models/types';
+export interface ChatInput { role: 'system' | 'user' | 'assistant'; content: string; images?: ImagePart[]; files?: DocumentPart[] }
+
+export interface SessionInfo { authenticated: boolean; provider: string; model: string; modelName?: string; activeProviderId?: string | null; models?: ChatModel[]; configured: boolean; attachmentsConfigured: boolean; showReasoning?: boolean; systemPrompt?: string; maxOutputTokens?: number | null }
+
+export type ProviderKind = 'openai-chat' | 'anthropic' | 'openai-responses' | 'gemini';
+
+export type ProviderApiKind = ProviderKind;
+
+export interface ProviderConfig {
+  provider: ProviderApiKind;
+  baseUrl: string;
+  model: string;
+  modelName?: string;
+  systemPrompt: string;
+  maxOutputTokens: number | null;
+  temperature?: number;
+  topP?: number;
+  apiKey?: string;
+  providerId?: string;
+  reasoningEnabled?: boolean;
+  reasoningEffort?: ReasoningEffort;
+  showReasoning?: boolean;
+  modelMetadata?: ResolvedModelMetadata;
+  webTools?: WebToolServiceConfig;
+}
+
+export interface ProviderProfile {
+  id: string;
+  name: string;
+  provider: ProviderApiKind;
+  baseUrl: string;
+  models: ProviderModel[];
+  hasApiKey: boolean;
+  apiKey?: string;
+}
+
+export interface ProviderProfileInput extends Omit<ProviderProfile, 'hasApiKey'> {
+  apiKey?: string;
+}
+
+export interface ProviderSettings {
+  providers: ProviderProfile[];
+  activeProviderId: string | null;
+  activeModel: string;
+  systemPrompt: string;
+  maxOutputTokens: number | null;
+  showReasoning: boolean;
+}
+
+export interface ProviderSettingsInput {
+  providers: ProviderProfileInput[];
+  activeProviderId: string | null;
+  activeModel: string;
+  systemPrompt: string;
+  maxOutputTokens: number | null;
+  showReasoning: boolean;
+}
+
+export interface ProviderModelConfig extends Omit<ProviderProfile, 'hasApiKey'> {
+  apiKey?: string;
+}

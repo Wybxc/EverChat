@@ -2,9 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { probeModelCapability, PROBE_RESPONSE_BYTES, PROBE_TIMEOUT_MS } from '../worker/model-probe';
 import { probeImage } from '../worker/probe-image';
-import { imageDimensions } from '../shared/images';
-import type { ProviderConfig, ProviderKind } from '../shared/types';
-import type { ProbeCapability } from '../shared/model-probe';
+import { imageDimensions } from '../shared/attachments/images';
+import type { ProviderConfig, ProviderKind } from '../shared/providers/types';
+import type { ProbeCapability } from '../shared/models/probe';
 
 const nonce = 'A1B2C3', uuid = 'a1b2c3d4-0000-4000-8000-000000000001';
 const config: ProviderConfig = { provider: 'openai-chat', model: 'probe-model', baseUrl: 'https://provider.test/v1', apiKey: 'private-test-key', systemPrompt: 'private conversation prompt', maxOutputTokens: null, reasoningEnabled: true, reasoningEffort: 'high' };

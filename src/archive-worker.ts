@@ -1,6 +1,6 @@
-import { decodeBackup, encodeArchive } from '../shared/archive-codec';
-import { extractedPath, MAX_ARCHIVE_BYTES, originalPath, sha256, validateArchiveManifest } from '../shared/archive';
-import { attachmentUrl } from '../shared/attachments';
+import { decodeBackup, encodeArchive } from '../shared/backup/codec';
+import { extractedPath, MAX_ARCHIVE_BYTES, originalPath, sha256, validateArchiveManifest } from '../shared/backup/archive';
+import { attachmentUrl } from '../shared/attachments/files';
 
 const progress = (value: number, label: string) => self.postMessage({ progress: { value, label } });
 async function privateGet(url: string) {

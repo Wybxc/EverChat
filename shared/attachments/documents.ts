@@ -1,8 +1,8 @@
 import * as v from 'valibot';
-import { attachmentInputSchema } from './attachments';
-import { estimateTextTokens } from './token-estimate';
+import { attachmentInputSchema } from './files';
 import { pdfMetadataSchema } from './pdf';
-import type { ChatInput } from './types';
+import { estimateTextTokens } from '../conversation/token-estimate';
+import type { ChatInput } from '../providers/types';
 
 export const MAX_MESSAGE_DOCUMENTS = 4, MAX_CONTEXT_DOCUMENTS = 8;
 export const MAX_DOCUMENT_BYTES = 128 * 1024, MAX_DOCUMENT_CHARACTERS = 64_000, MAX_CONTEXT_DOCUMENT_CHARACTERS = 128_000;

@@ -1,6 +1,7 @@
-import type { DiscoveredModel, ModelMetadata, ProviderModelConfig } from '../shared/types';
+import type { DiscoveredModel, ModelMetadata } from '../shared/models/types';
+import type { ProviderModelConfig } from '../shared/providers/types';
 import { normalizeBaseUrl } from './provider-config';
-import { MAX_MODEL_TOKENS, reasoningEfforts } from '../shared/model-metadata';
+import { MAX_MODEL_TOKENS, reasoningEfforts } from '../shared/models/metadata';
 
 export class ProviderModelError extends Error {
   constructor(message: string, public status = 400) { super(message); }

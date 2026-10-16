@@ -1,10 +1,11 @@
-import { messageParts } from '../shared/message-content';
+import { messageParts } from '../shared/conversation/content';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { branchPath, type Message } from '../shared/types';
-import { buildContext, contextHistory } from '../shared/context-budget';
-import { DEFAULT_CONVERSATION_SETTINGS } from '../shared/conversation-settings';
-import { resolveModelMetadata } from '../shared/model-metadata';
+import { branchPath } from '../shared/conversation/branch-path';
+import { type Message } from '../shared/conversation/types';
+import { buildContext, contextHistory } from '../shared/conversation/context-budget';
+import { DEFAULT_CONVERSATION_SETTINGS } from '../shared/conversation/settings';
+import { resolveModelMetadata } from '../shared/models/metadata';
 const config = { systemPrompt: '', maxOutputTokens: null };
 const messageContext = (messages: Message[], parentId: string | null, content: string) => buildContext(contextHistory(messages, parentId), content, config, DEFAULT_CONVERSATION_SETTINGS).messages;
 

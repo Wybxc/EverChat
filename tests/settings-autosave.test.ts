@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { SettingsAutosave } from '../src/settings-autosave';
 import { publicProviderSettings } from '../worker/provider-config';
-import type { ProviderSettings, ProviderSettingsInput } from '../shared/types';
+import type { ProviderSettings, ProviderSettingsInput } from '../shared/providers/types';
 
 const initial: ProviderSettings = { providers: [], activeProviderId: null, activeModel: '', systemPrompt: '', maxOutputTokens: 128, showReasoning: false };
 

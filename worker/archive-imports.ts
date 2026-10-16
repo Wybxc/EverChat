@@ -1,6 +1,6 @@
-import { sha256,validateArchiveManifest,type ArchiveFile,type ArchiveManifest } from '../shared/archive';
-import { MAX_DAILY_ATTACHMENT_UPLOADS } from '../shared/attachments';
-import { MAX_BACKUP_BYTES } from '../shared/backup';
+import { sha256,validateArchiveManifest,type ArchiveFile,type ArchiveManifest } from '../shared/backup/archive';
+import { MAX_DAILY_ATTACHMENT_UPLOADS } from '../shared/attachments/files';
+import { MAX_BACKUP_BYTES } from '../shared/backup/backup';
 import { HttpError,readJsonStream } from './http';
 
 const IMPORT_LEASE = 10 * 60_000;

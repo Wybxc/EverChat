@@ -1,13 +1,15 @@
 import { openParameters, conversationMenu } from '../ui';
 import { test, expect, type APIRequestContext } from '@playwright/test';
-import { validateBackup, type EverChatBackup } from '../../shared/backup';
-import type { ChatInput, ConversationSettings, ProviderSettings, ProviderSettingsInput, Snapshot, Submission, SubmitInput, SyncPacket } from '../../shared/types';
+import { validateBackup, type EverChatBackup } from '../../shared/backup/backup';
+import type { ChatInput, ProviderSettings, ProviderSettingsInput } from '../../shared/providers/types';
+import type { ConversationSettings, Submission, SubmitInput } from '../../shared/conversation/types';
+import type { Snapshot, SyncPacket } from '../../shared/streaming/protocol';
 import WebSocket from 'ws';
-import type { LibrarySearch } from '../../shared/search';
-import { messageParts, messageText } from '../../shared/message-content';
-import { DEFAULT_CONVERSATION_SETTINGS as defaults } from '../../shared/conversation-settings';
-import { SUMMARY_SYSTEM_PROMPT } from '../../shared/summaries';
-import { modelSelectionKey } from '../../shared/models';
+import type { LibrarySearch } from '../../shared/search/query';
+import { messageParts, messageText } from '../../shared/conversation/content';
+import { DEFAULT_CONVERSATION_SETTINGS as defaults } from '../../shared/conversation/settings';
+import { SUMMARY_SYSTEM_PROMPT } from '../../shared/conversation/summaries';
+import { modelSelectionKey } from '../../shared/models/selection';
 
 const origin = 'http://127.0.0.1:5174', headers = { Origin: origin }, fact = '__SUMMARY_FACT_42__';
 async function replay(request: APIRequestContext, id: string) {

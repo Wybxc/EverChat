@@ -1,7 +1,7 @@
 import { fromMarkdown } from 'mdast-util-from-markdown';
 import { gfmFromMarkdown } from 'mdast-util-gfm';
 import { gfm } from 'micromark-extension-gfm';
-import { searchCandidateGlob, normalizeSearch, SEARCH_PAGE_SIZE, type LibrarySearch, type SearchDocument } from '../shared/search';
+import { searchCandidateGlob, normalizeSearch, SEARCH_PAGE_SIZE, type LibrarySearch, type SearchDocument } from '../shared/search/query';
 
 type Node = { type: string; value?: string; alt?: string | null; children?: Node[] };
 const blocks = new Set(['paragraph', 'heading', 'listItem', 'code', 'blockquote', 'tableCell']);

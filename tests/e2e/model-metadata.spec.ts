@@ -1,7 +1,9 @@
 import { openSpaceSettings, editModel, openParameters } from '../ui';
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
-import type { ProviderSettings, SessionInfo, Snapshot, Submission } from '../../shared/types';
-import { DEFAULT_CONVERSATION_SETTINGS } from '../../shared/conversation-settings';
+import type { ProviderSettings, SessionInfo } from '../../shared/providers/types';
+import type { Snapshot } from '../../shared/streaming/protocol';
+import type { Submission } from '../../shared/conversation/types';
+import { DEFAULT_CONVERSATION_SETTINGS } from '../../shared/conversation/settings';
 
 const headers = { Origin: 'http://127.0.0.1:5174' };
 async function login(page: Page) {

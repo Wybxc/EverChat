@@ -1,6 +1,8 @@
-import { messageParts, messageText } from '../../shared/message-content';
+import { messageParts, messageText } from '../../shared/conversation/content';
 import { test, expect, type APIRequestContext } from '@playwright/test';
-import type { ProviderSettings, Snapshot, Submission } from '../../shared/types';
+import type { ProviderSettings } from '../../shared/providers/types';
+import type { Snapshot } from '../../shared/streaming/protocol';
+import type { Submission } from '../../shared/conversation/types';
 
 const headers = { Origin: 'http://127.0.0.1:5174' };
 

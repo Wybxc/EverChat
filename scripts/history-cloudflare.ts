@@ -1,4 +1,4 @@
-import { messageText } from '../shared/message-content';
+import { messageText } from '../shared/conversation/content';
 import assert from 'node:assert/strict';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
@@ -6,8 +6,8 @@ import { parseArgs } from 'node:util';
 import { setTimeout as pause } from 'node:timers/promises';
 import { Agent } from 'node:https';
 import WebSocket from 'ws';
-import type { Snapshot, SyncPacket } from '../shared/types';
-import { StreamSync } from '../shared/stream-sync';
+import type { Snapshot, SyncPacket } from '../shared/streaming/protocol';
+import { StreamSync } from '../shared/streaming/sync';
 
 const { values } = parseArgs({ options: {
   url: { type: 'string' }, credentials: { type: 'string' }, source: { type: 'string' },

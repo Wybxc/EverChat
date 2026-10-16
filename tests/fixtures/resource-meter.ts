@@ -1,6 +1,6 @@
 // Local fixture instrumentation only. It observes native cursor counters without
 // draining results early and never retains SQL, bindings, model text or secrets.
-import type { ToolResourceWindow } from '../../shared/tool-measurements';
+import type { ToolResourceWindow } from '../../scripts/measurements/support/resources';
 const emptySql = () => ({ statements: 0, rowsRead: 0, rowsWritten: 0 });
 const emptyStream = () => ({ commits: 0, wireBytes: 0, payloadBytes: 0 });
 const bucket = (statement: string) => /\btool_stream_commits\b/i.test(statement) ? 'privateStream'
