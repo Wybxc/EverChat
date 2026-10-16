@@ -1,6 +1,7 @@
 import type { DocumentPart } from '../attachments/documents';
 import type { ImagePart } from '../attachments/images';
 import type { WebToolServiceConfig } from '../web-tools/service';
+import type { TitleSettings } from '../conversation/titles';
 import type {
   ChatModel,
   ProviderModel,
@@ -15,6 +16,7 @@ export interface ChatInput {
 }
 
 export interface SessionSettings {
+  titleModelConfigured?: boolean;
   provider: string;
   model: string;
   modelName?: string;
@@ -62,6 +64,7 @@ export interface ProviderProfileInput extends Omit<ProviderProfile, 'hasApiKey'>
 }
 
 export interface ProviderSettings {
+  title?: TitleSettings;
   providers: ProviderProfile[];
   activeProviderId: string | null;
   activeModel: string;
@@ -70,6 +73,7 @@ export interface ProviderSettings {
 }
 
 export interface ProviderSettingsInput {
+  title?: TitleSettings;
   providers: ProviderProfileInput[];
   activeProviderId: string | null;
   activeModel: string;

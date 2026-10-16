@@ -12,6 +12,7 @@ import {
   Trash2,
   LocateFixed,
   Square,
+  Sparkles,
 } from 'lucide-react';
 import type { ConversationInfo } from '../../../shared/conversation/types';
 import type { ConversationActivity } from '../../../shared/conversation/activity';
@@ -83,6 +84,28 @@ export function ConversationActions({
             <Pencil className="size-4" />
             重命名
           </ActionMenuItem>
+          {actions.titleConfigured && actions.generateTitle && (
+            <ActionMenuItem
+              disabled={
+                disabled ||
+                busy ||
+                ['queued', 'running'].includes(conversation.titleTask?.status ?? '')
+              }
+              onSelect={() => void perform(() => actions.generateTitle!(conversation.id))}
+            >
+              <Sparkles className="size-4" />
+              {['queued', 'running'].includes(conversation.titleTask?.status ?? '')
+                ? '标题生成中'
+                : conversation.titleSource === 'ai'
+                  ? '重新生成标题'
+                  : '生成标题'}
+            </ActionMenuItem>
+          )}
+          {conversation.titleTask?.status === 'failed' && (
+            <div role="status" className="max-w-64 px-2 py-1 text-xs text-muted-foreground">
+              {conversation.titleTask.error}
+            </div>
+          )}
           <ActionMenuItem
             disabled={disabled || busy}
             onSelect={() =>

@@ -120,6 +120,17 @@ export function useSession() {
         models: chatModels(config),
         systemPrompt: config.systemPrompt,
         maxOutputTokens: config.maxOutputTokens,
+        titleModelConfigured: Boolean(
+          config.title?.model &&
+          config.providers.some(
+            (profile) =>
+              profile.id === config.title!.model!.providerId &&
+              (profile.hasApiKey || profile.apiKey) &&
+              profile.models.some(
+                (model) => model.enabled && model.id === config.title!.model!.model,
+              ),
+          ),
+        ),
       };
       write('access-session', next);
       return next;

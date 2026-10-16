@@ -2,6 +2,7 @@ import * as v from 'valibot';
 import { MAX_MODEL_TOKENS, reasoningEfforts } from '../models/metadata';
 import { providerOptions } from './endpoints';
 import type { ProviderApiKind, ProviderSettingsInput } from './types';
+import { titleSettingsSchema } from '../conversation/titles';
 
 export const providerTypes = providerOptions.map((option) => option.value) as [
   ProviderApiKind,
@@ -66,6 +67,7 @@ const profileSchema = v.object({
   apiKey: v.optional(v.pipe(v.string(), v.trim(), v.maxLength(4096))),
 });
 export const providerSettingsSchema = v.object({
+  title: v.optional(titleSettingsSchema),
   providers: v.pipe(v.array(profileSchema), v.maxLength(50)),
   activeProviderId: v.nullable(v.pipe(v.string(), v.uuid())),
   activeModel: v.pipe(v.string(), v.trim(), v.maxLength(200)),

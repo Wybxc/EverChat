@@ -163,7 +163,7 @@ export function createTestWorker(
         );
       }
       const match =
-        /^\/api\/__test\/conversations\/([0-9a-f-]{36})\/(state|context|parent|alarm|abort|abort-stop|history|search-history|indexed-history|search-state|search-reset|search-retry|fill|resources|storage-error|delete-failure|delete-reset|deletion-state|late-submit|tool-journal|tool-runtime|activity)$/.exec(
+        /^\/api\/__test\/conversations\/([0-9a-f-]{36})\/(state|context|parent|alarm|abort|abort-stop|history|search-history|indexed-history|search-state|search-reset|search-retry|fill|resources|storage-error|delete-failure|delete-reset|deletion-state|late-submit|tool-journal|tool-runtime|activity|titles|titles-reset)$/.exec(
           url.pathname,
         );
       if (!match) return production.fetch(request, env, ctx);
@@ -204,6 +204,15 @@ export function createTestWorker(
           expire?: boolean;
         };
       switch (match[2]) {
+        case 'titles':
+          return Response.json(await conversation.fixtureTitles());
+        case 'titles-reset':
+          try {
+            await conversation.fixtureTitles(true);
+          } catch {
+            return Response.json({ restarted: true }, { status: 503 });
+          }
+          break;
         case 'activity':
           return Response.json(await conversation.fixtureActivity(Boolean(expire)));
         case 'tool-runtime':

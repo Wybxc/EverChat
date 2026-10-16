@@ -285,8 +285,18 @@ test('the management menu preserves failed edits, syncs metadata to another devi
   browser,
 }) => {
   const fixture = await setup(page.request);
+  const neighbor = crypto.randomUUID();
   const other = await browser.newContext();
   try {
+    // A surviving sidebar row must not take focus from the new-chat composer on current deletion.
+    expect(
+      (
+        await page.request.post('/api/conversations', {
+          headers,
+          data: { id: neighbor, title: 'Surviving neighbor' },
+        })
+      ).status(),
+    ).toBe(201);
     await page.goto(`/c/${fixture.id}`);
     expect((await other.request.post('/__dev/access/login', { headers })).ok()).toBe(true);
     const second = await other.newPage();
@@ -374,6 +384,7 @@ test('the management menu preserves failed edits, syncs metadata to another devi
     ).toHaveCount(0);
   } finally {
     await other.close();
+    await page.request.delete(`/api/conversations/${neighbor}`, { headers });
     await page.request.delete(`/api/conversations/${fixture.id}`, { headers });
     await fixture.restore();
   }

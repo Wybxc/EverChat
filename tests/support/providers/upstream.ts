@@ -76,6 +76,46 @@ export function installMockUpstream() {
     };
     const encoder = new TextEncoder();
     const modelId = requestBody.model ?? /\/models\/([^/:]+):/.exec(url.pathname)?.[1];
+    if (modelId?.startsWith('title-fixture-')) {
+      const data = requestBody as typeof requestBody & {
+        max_tokens?: number;
+        max_completion_tokens?: number;
+      };
+      if (
+        (data.max_tokens ?? data.max_completion_tokens) !== 128 ||
+        !JSON.stringify(data).includes('只输出一行普通文本')
+      )
+        return Response.json(
+          { error: { message: 'Missing title budget or instructions' } },
+          { status: 400 },
+        );
+      if (modelId === 'title-fixture-error')
+        return Response.json({ error: { message: 'Fixture title failure' } }, { status: 503 });
+      const text = modelId === 'title-fixture-second' ? '第二个模型的标题' : '# “独立生成的标题”';
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          async start(controller) {
+            await new Promise((resolve) =>
+              setTimeout(
+                resolve,
+                modelId === 'title-fixture-parallel'
+                  ? 8000
+                  : modelId === 'title-fixture-slow'
+                    ? 4000
+                    : 100,
+              ),
+            );
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ choices: [{ delta: { content: text }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`,
+              ),
+            );
+            controller.close();
+          },
+        }),
+        { headers: { 'Content-Type': 'text/event-stream' } },
+      );
+    }
     if (modelId === 'diagnostic-http')
       return Response.json(
         {

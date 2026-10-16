@@ -3,7 +3,11 @@ import { conversationId, requireAuth, requireConversation, uuidSchema } from '..
 import type { ApiRouter } from '../http/app';
 import { HttpError, json, parseBody } from '../http/response';
 
-const conversationSchema = v.object({ id: uuidSchema, title: v.pipe(v.string(), v.maxLength(80)) });
+const conversationSchema = v.object({
+  id: uuidSchema,
+  title: v.pipe(v.string(), v.maxLength(80)),
+  titleSource: v.optional(v.literal('fallback')),
+});
 
 const conversationPatchSchema = v.object({
   title: v.optional(v.pipe(v.string(), v.maxLength(80))),
@@ -21,10 +25,10 @@ export function registerLibraryRoutes(app: ApiRouter) {
 
   app.post('/conversations', async (context) => {
     await requireAuth(context);
-    const { id, title } = await parseBody(context, conversationSchema);
+    const { id, title, titleSource } = await parseBody(context, conversationSchema);
     if (!title.trim()) throw new HttpError(400, '对话 ID 或标题无效。');
     const library = context.env.LIBRARY.getByName('personal');
-    const result = await library.create(id, title.trim());
+    const result = await library.create(id, title.trim(), titleSource);
     if ('error' in result) return json({ error: result.error }, result.status);
     return json(result, 201);
   });

@@ -85,6 +85,7 @@ import { ConversationMessages, type Row } from './messages';
 import { DELETION_SCHEMA, initializeConversation } from './schema';
 import { planSubmissionParent } from './submission-plan';
 import { ConversationActivityJournal } from './activity';
+import { ConversationTitles, TITLE_JOBS_SCHEMA } from './titles';
 
 import { createHash } from 'node:crypto';
 import { ImageContextError, type ImagePart } from '../../shared/attachments/images';
@@ -166,6 +167,7 @@ export class Conversation extends DurableObject<Env> {
   private searchFlush?: Promise<boolean>;
   private readonly activity?: ConversationActivityJournal;
   private activityFlush?: Promise<void>;
+  private readonly titles?: ConversationTitles;
   private activeAlarmAt?: number;
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -196,6 +198,9 @@ export class Conversation extends DurableObject<Env> {
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
     // A new instance cannot resume an old upstream socket. Recover before serving any snapshot.
     if (!this.deletedAt) {
+      ctx.storage.sql.exec(TITLE_JOBS_SCHEMA);
+      this.titles = new ConversationTitles(this.query.bind(this), () => !this.deletedAt);
+      ctx.storage.transactionSync(() => this.titles!.recover());
       this.tools = new ToolTaskJournal(this.query.bind(this));
       ctx.storage.transactionSync(() => this.tools.recover());
       for (const run of this.query<Run>(
@@ -221,7 +226,8 @@ export class Conversation extends DurableObject<Env> {
         ).toArray().length
       )
         ctx.waitUntil(this.scheduleAlarm());
-      if (this.activity?.nextAlarm() != null) ctx.waitUntil(this.scheduleAlarm());
+      if (this.activity?.nextAlarm() != null || this.titles?.nextAlarm() != null)
+        ctx.waitUntil(this.scheduleAlarm());
     }
   }
   private query<T extends Record<string, SqlStorageValue> = Record<string, SqlStorageValue>>(
@@ -598,6 +604,7 @@ export class Conversation extends DurableObject<Env> {
     conversationId: string,
     input: SubmitInput,
     config: ProviderConfig | null,
+    automaticTitle: ProviderConfig | null = null,
   ): Promise<Submission | Failure> {
     if (this.deletedAt || (await this.env.LIBRARY.getByName('personal').deletedAt(conversationId)))
       return { error: '这个对话已删除。', status: 410 };
@@ -857,7 +864,10 @@ export class Conversation extends DurableObject<Env> {
       const initializeSettings =
         messages.length === 0 &&
         !this.query('SELECT id FROM conversation_settings WHERE id = 1').toArray().length;
-      if (initializeSettings) this.messages.writeSettings(settings);
+      if (messages.length === 0) this.titles?.initialize(automaticTitle);
+      if (initializeSettings) {
+        this.messages.writeSettings(settings);
+      }
       if (!parent) this.messages.insert(user);
       const summary = automatic ? this.queueSummary(conversationId, automatic, true) : undefined;
       this.messages.insert(assistant);
@@ -1156,6 +1166,8 @@ export class Conversation extends DurableObject<Env> {
       if (workflow !== null) times.push(workflow);
       const tools = this.tools.nextAlarm();
       if (tools !== null) times.push(tools);
+      const title = this.titles?.nextAlarm();
+      if (title != null && !this.activeGeneration) times.push(Math.max(Date.now() + 1000, title));
       const activity = this.activity?.nextAlarm();
       if (activity != null) times.push(activity);
       if (this.query('SELECT messageId FROM search_outbox LIMIT 1').toArray().length)
@@ -1404,7 +1416,47 @@ export class Conversation extends DurableObject<Env> {
     await this.flushToolWorkflows();
     // Acceptance and cleanup both use transactions so cleanup cannot erase a new task's alarm.
     await this.flushActivity();
+    const titleWork = this.titles?.step(
+      this.env.LIBRARY.getByName('personal'),
+      () => this.ctx.storage.sync(),
+      (config, input, signal) => this.openModelStream(config, input, signal),
+      () =>
+        Boolean(
+          this.activeGeneration ||
+          this.query(
+            "SELECT id FROM messages WHERE status IN ('queued','running') LIMIT 1",
+          ).toArray().length,
+        ),
+    );
+    if (titleWork) this.ctx.waitUntil(titleWork.finally(() => this.scheduleAlarm()));
     await this.scheduleAlarm(searchSuccess);
+  }
+  async generateTitle(conversationId: string, requestId: string) {
+    if (this.deletedAt) return { error: '这个对话已删除。', status: 410 };
+    if (this.titles?.get(requestId)) return { id: requestId };
+    const target = await this.env.LIBRARY.getByName('personal').titleTarget(conversationId);
+    if (this.deletedAt || !target) return { error: '这个对话已删除。', status: 410 };
+    if (!target.config) return { error: '请在设置中选择可用的标题模型。', status: 400 };
+    const question = this.query<{ id: string }>(
+      "SELECT id FROM messages WHERE role='user' AND NOT EXISTS (SELECT 1 FROM message_deletions WHERE id=messages.id) ORDER BY rowid LIMIT 1",
+    ).toArray()[0];
+    const answer = this.query<{ id: string }>(
+      "SELECT id FROM messages WHERE role='assistant' AND status='completed' AND NOT EXISTS (SELECT 1 FROM message_summaries WHERE messageId=messages.id) AND NOT EXISTS (SELECT 1 FROM message_deletions WHERE id=messages.id) ORDER BY rowid LIMIT 1",
+    ).toArray()[0];
+    if (!question || !answer) return { error: '完成一条回答后再生成标题。', status: 409 };
+    const result = this.ctx.storage.transactionSync(() =>
+      this.titles!.enqueue(
+        conversationId,
+        requestId,
+        target.config!,
+        messageText(this.messages.message(question.id)!),
+        messageText(this.messages.message(answer.id)!),
+        false,
+        target.version,
+      ),
+    );
+    if (!('error' in result)) await this.scheduleAlarm();
+    return result;
   }
   private finishInterrupted(run: Run) {
     this.finish(
@@ -1875,6 +1927,17 @@ export class Conversation extends DurableObject<Env> {
         [this.messages.message(message.id)!, ...this.resolveDependentAnswers(runId, finalStatus)],
         run.conversationId,
       );
+      if (finalStatus === 'completed' && !message.summary) {
+        const first = this.query<{ id: string }>(
+          "SELECT id FROM messages WHERE role='user' ORDER BY rowid LIMIT 1",
+        ).toArray()[0];
+        if (first)
+          this.titles?.offerAutomatic(
+            run.conversationId,
+            messageText(this.messages.message(first.id)!),
+            messageText(message),
+          );
+      }
       if (this.ctx.storage.sql.databaseSize > MAX_DATABASE_BYTES)
         throw new ProviderError(DATABASE_LIMIT_MESSAGE);
       return { change: terminal, finalStatus };
@@ -2048,6 +2111,7 @@ export class Conversation extends DurableObject<Env> {
   }
   async deleteConversation(deletedAt: number) {
     this.deletedAt = deletedAt;
+    this.titles?.cancel();
     for (const tool of this.activeTools.values()) tool.abort.abort();
     const active = this.activeGeneration;
     if (active) {

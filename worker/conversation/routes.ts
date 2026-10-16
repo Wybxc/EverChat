@@ -56,6 +56,14 @@ const assistantEditSchema = v.object({
 });
 
 export function registerConversationRoutes(app: ApiRouter) {
+  app.post('/conversations/:id/title', async (context) => {
+    await requireAuth(context);
+    const id = conversationId(context);
+    await requireConversation(context, id);
+    const { requestId } = await parseBody(context, v.object({ requestId: uuidSchema }));
+    const result = await context.env.CONVERSATIONS.getByName(id).generateTitle(id, requestId);
+    return json(result, 'error' in result ? result.status : 202);
+  });
   app.put('/conversations/:id/settings', async (context) => {
     await requireAuth(context);
     const id = conversationId(context);
@@ -145,7 +153,12 @@ export function registerConversationRoutes(app: ApiRouter) {
       : baseConfig;
     if (!config) throw new HttpError(400, '所选模型不支持此思维强度。');
     if (input.tools) config.webTools = await library.webToolConfig();
-    const result = await context.env.CONVERSATIONS.getByName(id).submit(id, input, config);
+    const result = await context.env.CONVERSATIONS.getByName(id).submit(
+      id,
+      input,
+      config,
+      await library.titleConfig(true),
+    );
     if ('error' in result) return json({ error: result.error }, result.status);
     await library.touch(id);
     return json(result, 202);

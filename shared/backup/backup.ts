@@ -15,6 +15,7 @@ import type { ProviderApiKind } from '../providers/types';
 import type { ProviderModel } from '../models/types';
 import { branchPath } from '../conversation/branch-path';
 import { publicToolTaskSchema } from '../web-tools/tasks';
+import { titleSettingsSchema, type TitleSettings } from '../conversation/titles';
 
 export const BACKUP_FORMAT = 'everchat-backup';
 export const BACKUP_VERSION = 1 as const;
@@ -29,6 +30,7 @@ interface BackupProvider {
   models: ProviderModel[];
 }
 export interface BackupSettings {
+  title?: TitleSettings;
   providers: BackupProvider[];
   activeProviderId: string | null;
   activeModel: string;
@@ -252,6 +254,8 @@ export function validateBackup(value: unknown): EverChatBackup {
         throw new Error('备份中的已完成摘要无效。');
     }
   const settings = input.settings as Record<string, unknown>;
+  const titleSettings = v.safeParse(v.optional(titleSettingsSchema), settings?.title);
+  if (!titleSettings.success) throw new Error('备份中的标题模型配置无效。');
   const promptPresets = v.safeParse(promptPresetListSchema, settings?.promptPresets);
   if (!promptPresets.success) throw new Error('备份中的提示词预设无效。');
   if (
@@ -311,6 +315,7 @@ export function validateBackup(value: unknown): EverChatBackup {
       ...(conversationSettings?.success ? { settings: conversationSettings.output } : {}),
     },
     settings: {
+      ...(titleSettings.output ? { title: titleSettings.output } : {}),
       providers,
       activeProviderId: settings.activeProviderId as string | null,
       activeModel: settings.activeModel,

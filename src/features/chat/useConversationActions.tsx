@@ -29,6 +29,8 @@ export function useConversationActions({
   remove,
   duplicate,
   copyLink,
+  generateTitle,
+  titleConfigured = false,
   viewTask,
   stopTask,
   beforeDialog,
@@ -36,16 +38,18 @@ export function useConversationActions({
 }: {
   enabled: boolean;
   update: (id: string, patch: ConversationPatch) => Promise<void>;
-  remove: (id: string) => Promise<void>;
+  remove: (id: string) => Promise<void | 'composer'>;
   duplicate: (id: string) => Promise<void>;
   copyLink: (id: string) => Promise<void>;
+  generateTitle?: (id: string) => Promise<void>;
+  titleConfigured?: boolean;
   viewTask: (id: string, activity: Exclude<ConversationActivity, { status: 'idle' }>) => void;
   stopTask: (
     id: string,
     activity: Exclude<ConversationActivity, { status: 'idle' }>,
   ) => Promise<void>;
   beforeDialog: () => void;
-  restoreFocus: () => void;
+  restoreFocus: (preferComposer?: boolean) => void;
 }) {
   const locks = useRef(new Set<string>());
   const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
@@ -99,6 +103,8 @@ export function useConversationActions({
     remove,
     duplicate,
     copyLink,
+    generateTitle,
+    titleConfigured,
     viewTask,
     stopTask,
     restoreFocus,
@@ -126,7 +132,8 @@ function ConversationActionDialog({
   const [title, setTitle] = useState(conversation.title),
     [error, setError] = useState('');
   const titleInput = useRef<HTMLInputElement>(null),
-    cancelButton = useRef<HTMLButtonElement>(null);
+    cancelButton = useRef<HTMLButtonElement>(null),
+    deletedCurrent = useRef(false);
   const busy = actions.busy.has(conversation.id);
   const submit = async (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -134,11 +141,10 @@ function ConversationActionDialog({
     setError('');
     const epoch = storageEpoch();
     try {
-      await actions.perform(conversation.id, () =>
-        mode === 'rename'
-          ? actions.update(conversation.id, { title: title.trim() })
-          : actions.remove(conversation.id),
-      );
+      await actions.perform(conversation.id, async () => {
+        if (mode === 'rename') await actions.update(conversation.id, { title: title.trim() });
+        else deletedCurrent.current = (await actions.remove(conversation.id)) === 'composer';
+      });
       if (epoch === storageEpoch()) actions.close();
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : '修改失败，请重试。');
@@ -162,6 +168,11 @@ function ConversationActionDialog({
           !active.closest('[role="dialog"], [role="alertdialog"]')
         )
           return;
+        if (deletedCurrent.current) {
+          event.preventDefault();
+          actions.restoreFocus(true);
+          return;
+        }
         // Modal restores a surviving trigger; supply a useful fallback if its row left the list.
         if (
           returnTarget?.isConnected &&

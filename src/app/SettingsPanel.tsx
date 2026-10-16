@@ -9,7 +9,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { LogOut } from 'lucide-react';
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import type { ProviderSettings } from '../../shared/providers/types';
-import { DisclosureScope } from '../components/Disclosure';
+import { Switch } from '@/components/ui/switch';
+import { DEFAULT_TITLE_SETTINGS } from '../../shared/conversation/titles';
+import { Disclosure, DisclosureScope } from '../components/Disclosure';
 import { PromptPresetsPanel } from '../features/presets/PromptPresets';
 import { ProviderEditor } from '../features/providers/ProviderEditor';
 import { availableModels, reconcile } from '../features/providers/selection';
@@ -294,6 +296,75 @@ function SettingsForm({
             ))}
           </NativeSelect>
         </div>
+        <Disclosure title="自动标题" stateKey="title-settings">
+          <div className="space-y-3">
+            <label className="block space-y-1 text-sm">
+              <span>标题模型</span>
+              <NativeSelect
+                aria-label="标题模型"
+                className="w-full"
+                value={
+                  settings.title?.model
+                    ? JSON.stringify([settings.title.model.providerId, settings.title.model.model])
+                    : ''
+                }
+                onChange={(event) => {
+                  const model = event.target.value
+                    ? (JSON.parse(event.target.value) as [string, string])
+                    : null;
+                  update({
+                    ...settings,
+                    title: {
+                      ...(settings.title ?? DEFAULT_TITLE_SETTINGS),
+                      model: model ? { providerId: model[0], model: model[1] } : null,
+                    },
+                  });
+                }}
+              >
+                <option value="">未选择模型</option>
+                {settings.title?.model &&
+                  !enabled.some(
+                    ({ profile, model }) =>
+                      profile.id === settings.title!.model!.providerId &&
+                      model.id === settings.title!.model!.model,
+                  ) && (
+                    <option
+                      value={JSON.stringify([
+                        settings.title.model.providerId,
+                        settings.title.model.model,
+                      ])}
+                    >
+                      所选模型不可用，请重新选择
+                    </option>
+                  )}
+                {enabled.map(({ profile, model }) => (
+                  <option
+                    key={`${profile.id}:${model.id}`}
+                    value={JSON.stringify([profile.id, model.id])}
+                  >
+                    {profile.name} · {model.name || model.id}
+                  </option>
+                ))}
+              </NativeSelect>
+            </label>
+            <label className="flex min-h-11 items-center justify-between gap-3 text-sm">
+              首条回答完成后自动命名
+              <Switch
+                checked={settings.title?.automatic ?? false}
+                disabled={!settings.title?.model}
+                onCheckedChange={(automatic) =>
+                  update({
+                    ...settings,
+                    title: { ...(settings.title ?? DEFAULT_TITLE_SETTINGS), automatic },
+                  })
+                }
+              />
+            </label>
+            <p className="text-xs text-muted-foreground">
+              每次命名会单独调用所选模型。未配置时保留首条消息标题。
+            </p>
+          </div>
+        </Disclosure>
         <div className="space-y-1">
           <label htmlFor="provider-prompt" className="block text-sm font-medium">
             系统提示词

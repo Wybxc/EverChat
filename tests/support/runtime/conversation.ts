@@ -25,6 +25,27 @@ export class Conversation extends ProductionConversation {
     this.resourceMeter = resourceMeter;
     this.resourceStorage = resourceStorage;
   }
+  async fixtureTitles(restart = false) {
+    if (restart) this.ctx.abort('Intentional title task restart');
+    return {
+      calls: this.ctx.storage.sql
+        .exec("SELECT name FROM sqlite_master WHERE name='fixture_title_calls'")
+        .toArray().length
+        ? this.ctx.storage.sql
+            .exec<{ calls: number }>(
+              'SELECT COALESCE(SUM(calls),0) AS calls FROM fixture_title_calls',
+            )
+            .one().calls
+        : 0,
+      jobs: this.ctx.storage.sql
+        .exec(
+          'SELECT id,state,version,automatic,error,config IS NOT NULL AS retainsConfig FROM title_jobs ORDER BY rowid',
+        )
+        .toArray(),
+      automatic: this.ctx.storage.sql.exec('SELECT consumed FROM title_automatic').toArray(),
+      alarmAt: await this.ctx.storage.getAlarm(),
+    };
+  }
   async fixtureResourceControl(windowId?: string) {
     if (!this.resourceMeter) throw new Error('Local resource measurement is disabled');
     if (windowId) this.resourceMeter.begin(windowId);
@@ -369,6 +390,18 @@ export class Conversation extends ProductionConversation {
   }
   protected override async openModelStream(...args: Parameters<typeof openProviderStream>) {
     const fixtureSql = this.resourceStorage.sql;
+    if (args[0].model.startsWith('title-fixture-')) {
+      fixtureSql.exec(
+        'CREATE TABLE IF NOT EXISTS fixture_title_calls(id TEXT PRIMARY KEY,calls INTEGER NOT NULL)',
+      );
+      const job = fixtureSql
+        .exec<{ id: string }>("SELECT id FROM title_jobs WHERE state='running'")
+        .one();
+      fixtureSql.exec(
+        'INSERT INTO fixture_title_calls VALUES (?,1) ON CONFLICT(id) DO UPDATE SET calls=calls+1',
+        job.id,
+      );
+    }
     if (args[0].model === 'benchmark-summary-write-failure') this.failNextCommit = true;
     if (
       args[0].model.startsWith('alarm-') ||

@@ -151,11 +151,13 @@ for (const provider of [
       const other = await second.newPage();
       await other.goto(`/c/${fixture.id}`);
       await expect(other.getByRole('img', { name: image.name })).toBeVisible();
-      expect(
-        await other
-          .getByRole('img', { name: image.name })
-          .evaluate((image) => (image as HTMLImageElement).naturalWidth),
-      ).toBe(1);
+      await expect
+        .poll(() =>
+          other
+            .getByRole('img', { name: image.name })
+            .evaluate((image) => (image as HTMLImageElement).naturalWidth),
+        )
+        .toBe(1);
       await other.getByRole('button', { name: `预览 ${image.name}` }).click();
       await expect(other.getByRole('dialog')).toBeVisible();
       await other.getByRole('button', { name: '关闭图片预览' }).click();

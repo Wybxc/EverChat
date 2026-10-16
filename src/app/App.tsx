@@ -1102,8 +1102,10 @@ export function App({
     const result = await api<{ deletedAt: number }>(`/conversations/${id}`, 'DELETE');
     if (epoch !== storageEpoch()) return;
     rememberDeletion(id, result.deletedAt);
-    if (selectedRef.current === id) select(null);
+    const deletedCurrent = selectedRef.current === id;
+    if (deletedCurrent) select(null);
     refreshLibrary();
+    if (deletedCurrent) return 'composer' as const;
   };
   const duplicateConversation = async (sourceId: string, messageId?: string) => {
     const origin = selectedRef.current,
@@ -1152,6 +1154,11 @@ export function App({
     update: updateConversation,
     remove: deleteConversation,
     duplicate: duplicateConversation,
+    titleConfigured: session?.titleModelConfigured,
+    generateTitle: async (id) => {
+      await api(`/conversations/${id}/title`, 'POST', { requestId: crypto.randomUUID() });
+      refreshLibrary();
+    },
     copyLink: async (id) => {
       const head = id === selected ? branches.head : read<string | null>(`branch-view:${id}`, null);
       await navigator.clipboard.writeText(`${location.origin}${conversationUrl(id, head)}`);
@@ -1173,10 +1180,12 @@ export function App({
       refreshLibrary();
     },
     beforeDialog: () => setSidebarOpen(false),
-    restoreFocus: () => {
-      const target = !desktop
-        ? mobileSidebarTrigger.current
-        : (document.querySelector<HTMLElement>('[data-conversation-row] a') ?? editor.current);
+    restoreFocus: (preferComposer) => {
+      const target = preferComposer
+        ? editor.current
+        : !desktop
+          ? mobileSidebarTrigger.current
+          : (document.querySelector<HTMLElement>('[data-conversation-row] a') ?? editor.current);
       target?.focus({ preventScroll: true });
     },
   });

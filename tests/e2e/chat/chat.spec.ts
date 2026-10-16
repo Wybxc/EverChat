@@ -69,7 +69,7 @@ test('generation survives offline, tab closure and a second device; retries are 
     .then((response) => response.json());
   expect(initial.messages).toHaveLength(2);
   await context.setOffline(true);
-  await expect(page.getByRole('status')).toContainText('离线');
+  await expect(page.getByRole('status').filter({ hasText: '你现在离线' })).toContainText('离线');
 
   const second = await browser.newContext();
   const otherPage = await second.newPage();
@@ -334,11 +334,12 @@ test('the composer uses the selected model and always shows returned provider th
   await answer.getByRole('button', { name: '重新生成' }).click();
   const retry = page.getByTestId('assistant-message').last();
   await expect(retry).toHaveAttribute('data-status', 'completed', { timeout: 30_000 });
-  await expect(retry).toContainText('第二模型：');
+  await expect(retry).toContainText('集成测试回答。');
+  await expect(retry.getByText('test-model', { exact: true })).toBeVisible();
   const retried = await context.request
     .get(`/api/conversations/${id}`)
     .then((response) => response.json());
-  expect(retried.messages.at(-1)).toMatchObject({ model: 'test-model-2', modelName: '第二模型' });
+  expect(retried.messages.at(-1)).toMatchObject({ model: 'test-model', modelName: 'test-model' });
 });
 
 test('DeepSeek-compatible Responses streams Markdown thoughts, persists them and renders them after reload', async ({

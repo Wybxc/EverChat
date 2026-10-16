@@ -44,14 +44,17 @@ import {
 } from '../search/index';
 import { WebToolSettings } from '../web-tools/settings';
 import type { ConversationActivity } from '../../shared/conversation/activity';
+import { LibraryTitles, TITLE_INDEX_SCHEMA } from './titles';
+import type { TitleSource } from '../../shared/conversation/titles';
 import { LIBRARY_ACTIVITY_SCHEMA, LibraryActivityIndex } from './activity';
 
 type Deletion = { id: string; deletedAt: number; completed: number } & Record<
   string,
   SqlStorageValue
 >;
-const conversationSelect = `SELECT conversations.*, COALESCE(metadata.pinned, 0) AS pinned, COALESCE(metadata.archived, 0) AS archived
+const conversationSelect = `SELECT conversations.*, COALESCE(metadata.pinned, 0) AS pinned, COALESCE(metadata.archived, 0) AS archived, titleMeta.source AS titleSource, titleMeta.task AS titleTask
   FROM conversations LEFT JOIN conversation_metadata AS metadata ON metadata.id = conversations.id
+  LEFT JOIN conversation_titles AS titleMeta ON titleMeta.id=conversations.id
   WHERE NOT EXISTS (SELECT 1 FROM conversation_deletions WHERE conversation_deletions.id = conversations.id)
   AND NOT EXISTS (SELECT 1 FROM conversation_copies WHERE conversation_copies.id = conversations.id AND conversation_copies.status != 'completed')
   AND NOT EXISTS (SELECT 1 FROM archive_imports WHERE archive_imports.id = conversations.id AND archive_imports.status != 'completed')`;
@@ -60,6 +63,8 @@ const decorate = (row: Record<string, SqlStorageValue>) =>
     ...row,
     pinned: Boolean(row.pinned),
     archived: Boolean(row.archived),
+    titleSource: row.titleSource ?? 'manual',
+    titleTask: row.titleTask ? JSON.parse(String(row.titleTask)) : undefined,
   }) as unknown as ConversationInfo;
 
 export class Library extends DurableObject<Env> {
@@ -72,6 +77,7 @@ export class Library extends DurableObject<Env> {
   private readonly imports: ArchiveImports;
   private readonly webTools: WebToolSettings;
   private readonly activity: LibraryActivityIndex;
+  private readonly titles: LibraryTitles;
   private readonly interruptedImportFiles = new Set<string>();
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -94,6 +100,8 @@ export class Library extends DurableObject<Env> {
       'CREATE TABLE IF NOT EXISTS conversation_deletions (id TEXT PRIMARY KEY, deletedAt INTEGER NOT NULL, completed INTEGER NOT NULL DEFAULT 0)',
     );
     ctx.storage.sql.exec(LIBRARY_ACTIVITY_SCHEMA);
+    ctx.storage.sql.exec(TITLE_INDEX_SCHEMA);
+    this.titles = new LibraryTitles(ctx.storage.sql.exec.bind(ctx.storage.sql));
     this.activity = new LibraryActivityIndex(
       <T extends Record<string, SqlStorageValue>>(
         statement: string,
@@ -231,7 +239,7 @@ export class Library extends DurableObject<Env> {
         .toArray()[0]?.deletedAt ?? null
     );
   }
-  create(id: string, title: string) {
+  create(id: string, title: string, source: TitleSource = 'manual') {
     if (this.deletedAt(id)) return { error: '这个对话已删除。', status: 410 };
     if (this.copies.get(id)?.status !== undefined && this.copies.get(id)?.status !== 'completed')
       return { error: '此对话正在复制或已停止。', status: 409 };
@@ -257,6 +265,7 @@ export class Library extends DurableObject<Env> {
       now,
       now,
     );
+    this.titles.create(id, source);
     this.ctx.storage.sql.exec(
       'INSERT OR IGNORE INTO search_backfill(conversationId) VALUES (?)',
       id,
@@ -277,12 +286,14 @@ export class Library extends DurableObject<Env> {
     const current = this.get(id);
     if (!current) return { error: '找不到这个对话。', status: 404 };
     this.ctx.storage.transactionSync(() => {
-      if (patch.title !== undefined)
+      if (patch.title !== undefined) {
+        this.titles.manual(id);
         this.ctx.storage.sql.exec(
           'UPDATE conversations SET title = ? WHERE id = ?',
           patch.title,
           id,
         );
+      }
       if (patch.pinned !== undefined || patch.archived !== undefined) {
         this.ctx.storage.sql.exec(
           `INSERT INTO conversation_metadata VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET pinned = excluded.pinned, archived = excluded.archived`,
@@ -331,6 +342,8 @@ export class Library extends DurableObject<Env> {
       this.ctx.storage.sql.exec('DELETE FROM conversations WHERE id = ?', id);
       this.ctx.storage.sql.exec('DELETE FROM conversation_metadata WHERE id = ?', id);
       this.ctx.storage.sql.exec('DELETE FROM conversation_activity WHERE id = ?', id);
+      this.ctx.storage.sql.exec('DELETE FROM conversation_titles WHERE id = ?', id);
+      this.ctx.storage.sql.exec('DELETE FROM title_reservations WHERE conversationId = ?', id);
       this.ctx.storage.sql.exec('UPDATE conversation_deletions SET completed = 1 WHERE id = ?', id);
     });
   }
@@ -689,6 +702,34 @@ export class Library extends DurableObject<Env> {
   }
   async cancelImport(id: string) {
     return this.restorer.cancelImport(id);
+  }
+  titleTarget(id: string) {
+    if (!this.get(id)) return null;
+    const row = this.ctx.storage.sql
+      .exec<{ version: number }>('SELECT version FROM conversation_titles WHERE id=?', id)
+      .toArray()[0];
+    return { version: row?.version ?? 1, config: this.providers.titleConfig() };
+  }
+  titleConfig(automatic = false) {
+    return this.providers.titleConfig(automatic);
+  }
+  reserveTitle(id: string, taskId: string, automatic: boolean, expectedVersion = 0) {
+    if (!this.get(id)) return { rejected: '对话已删除' };
+    return this.ctx.storage.transactionSync(() =>
+      this.titles.reserve(id, taskId, automatic, expectedVersion),
+    );
+  }
+  startTitle(id: string, taskId: string, version: number) {
+    if (!this.get(id)) return false;
+    return this.ctx.storage.transactionSync(() => this.titles.running(id, taskId, version));
+  }
+  finishTitle(id: string, taskId: string, version: number, title: string | null, error?: string) {
+    if (!this.get(id)) return false;
+    return this.ctx.storage.transactionSync(() => {
+      const changed = this.titles.finish(id, taskId, version, title, error);
+      if (changed && title) this.searchIndex.changed();
+      return changed;
+    });
   }
   providerConfig(selection?: ModelSelection, effort?: ReasoningEffort): ProviderConfig | null {
     return this.providers.providerConfig(selection, effort);

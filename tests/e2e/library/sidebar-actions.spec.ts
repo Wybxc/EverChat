@@ -206,8 +206,9 @@ test('mobile row dialogs replace the sidebar focus trap and restore its trigger 
     await sidebar.click();
     const trigger = row(page, b).getByRole('button');
     const box = await trigger.boundingBox();
-    expect(box!.width).toBeGreaterThanOrEqual(44);
-    expect(box!.height).toBeGreaterThanOrEqual(44);
+    // Animated browser geometry may round 44 CSS px a few millionths down.
+    expect(box!.width).toBeGreaterThanOrEqual(43.99);
+    expect(box!.height).toBeGreaterThanOrEqual(43.99);
     await menu(page, b);
     await page.getByRole('menuitem', { name: '重命名', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: '重命名', exact: true });

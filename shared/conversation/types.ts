@@ -5,6 +5,7 @@ import type { SummaryCoverage } from './summaries';
 import type { PublicToolTask, WebToolName } from '../web-tools/tasks';
 import type { ModelSelection, ReasoningEffort } from '../models/types';
 import type { ActivityIndex, ConversationActivity } from './activity';
+import type { TitleSource, TitleTaskInfo } from './titles';
 export type MessageStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 
 export interface Message {
@@ -32,6 +33,8 @@ export interface Message {
 }
 
 export interface ConversationInfo {
+  titleSource?: TitleSource;
+  titleTask?: TitleTaskInfo;
   id: string;
   title: string;
   createdAt: number;

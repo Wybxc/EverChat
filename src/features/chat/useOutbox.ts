@@ -64,6 +64,7 @@ export function useOutbox(options: OutboxOptions) {
       await api('/conversations', 'POST', {
         id: item.conversation.id,
         title: item.conversation.title,
+        titleSource: 'fallback',
       });
       const accepted = await api<Submission>(
         `/conversations/${item.conversation.id}/messages`,
