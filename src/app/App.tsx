@@ -5,22 +5,19 @@ import { NativeSelect } from '@/components/ui/native-select';
 import { Spinner } from '@/components/ui/spinner';
 import { Tabs,TabsList,TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
-import { useQuery,useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { ArrowDown,ArrowUp,BookOpen,CloudOff,FolderOpen,Globe,ImagePlus,Menu,MessageCircle,Paperclip,Pin,Plus,Search,Settings,SlidersHorizontal,Square,WifiOff,X } from 'lucide-react';
 import { Fragment,useCallback,useEffect,useMemo,useRef,useState,type SubmitEvent } from 'react';
 import * as v from 'valibot';
-import { documentMediaTypeSchema,MAX_DOCUMENT_BYTES,MAX_MESSAGE_DOCUMENTS,type DocumentPart } from '../../shared/attachments/documents';
-import { fileMediaType } from '../../shared/attachments/files';
-import { MAX_MESSAGE_IMAGES,type ImagePart } from '../../shared/attachments/images';
-import type { PDFExtraction } from '../../shared/attachments/pdf';
+import { MAX_MESSAGE_DOCUMENTS } from '../../shared/attachments/documents';
+import { MAX_MESSAGE_IMAGES } from '../../shared/attachments/images';
 import { parentKey,summariesOnBranch } from '../../shared/conversation/branches';
 import { messageFiles,messageImages,messageText } from '../../shared/conversation/content';
 import { contextSource } from '../../shared/conversation/context-budget';
 import { isActive } from '../../shared/conversation/message-state';
 import { applyConversationSettings,conversationSettingsSchema,DEFAULT_CONVERSATION_SETTINGS } from '../../shared/conversation/settings';
 import { prepareChatContext,summaryGeneration } from '../../shared/conversation/summaries';
-import { type ConversationInfo,type ConversationSettings,type LibrarySnapshot,type Message,type SubmitInput } from '../../shared/conversation/types';
-import { canAttemptCapability } from '../../shared/models/metadata';
+import { type ConversationInfo,type ConversationSettings,type Message,type SubmitInput } from '../../shared/conversation/types';
 import { effortLabels,modelSelectionKey } from '../../shared/models/selection';
 import { type ModelSelection,type ReasoningEffort } from '../../shared/models/types';
 import type { SearchResult } from '../../shared/search/query';
@@ -28,12 +25,10 @@ import { assertWebToolSupport } from '../../shared/web-tools/tasks';
 import { ActionMenu,ActionMenuItem } from '../components/ActionMenu';
 import { Disclosure,DisclosureScope } from '../components/Disclosure';
 import { hasOpenModal,Modal,ModalTitle } from '../components/Modal';
-import { prepareAttachment,uploadAttachment } from '../features/attachments/attachment-upload';
 import { AttachmentDialog } from '../features/attachments/AttachmentDialog';
-import { prepareChatImage } from '../features/attachments/chat-image';
 import { DocumentPreviews } from '../features/attachments/DocumentPreviews';
 import { ImagePreviews } from '../features/attachments/ImagePreviews';
-import { preparePdf } from '../features/attachments/pdf-loader';
+import { useChatAttachments } from '../features/attachments/useChatAttachments';
 import { BackupProgressDialog } from '../features/backup/BackupProgressDialog';
 import { exportChatFile } from '../features/backup/export-chat';
 import { useBackup } from '../features/backup/useBackup';
@@ -58,6 +53,7 @@ import { useOutbox } from '../features/chat/useOutbox';
 import { conversationGroup } from '../features/library/group-conversations';
 import { LibrarySearch } from '../features/library/LibrarySearch';
 import { Sidebar } from '../features/library/Sidebar';
+import { useLibraryIndex } from '../features/library/useLibraryIndex';
 import { ModelPicker } from '../features/providers/ModelPicker';
 import { loadWebToolSettings,useWebToolSettings,WEB_TOOL_SETTINGS_KEY } from '../features/web-tools/web-tool-settings';
 import { api,ApiError } from '../platform/api';
@@ -75,7 +71,7 @@ export function App() {
   const queryClient = useQueryClient();
   const { session, sessionRef, bootError, boot, loggedOut, providerSaved } = useSession();
   const webToolSettings = useWebToolSettings(Boolean(session?.authenticated));
-  const [localConversations, setLocalConversations] = useState<ConversationInfo[]>(() => read('library', []));
+
   const { id: selected, branch: routeBranch, invalid: invalidRoute, navigate } = useConversationRoute();
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
@@ -84,10 +80,9 @@ export function App() {
     onAccepted: (accepted) => { branches.choose(accepted.assistantId, { automatic: true }); scrollToBottom(); },
     onUnauthorized: loggedOut, onDeleted: (id, time) => rememberDeletion(id, time), refreshLibrary: () => refreshLibrary(), setError: (error) => setError(error),
   });
-  const { draft, setDraft, draftFiles, setDraftFiles, draftImages, setDraftImages, revisionOf, setRevisionOf, updateDraft, removeImage, removeDocument } = useChatDraft(selected);
+  const chatDraft = useChatDraft(selected);
+  const { draft, setDraft, draftFiles, setDraftFiles, draftImages, setDraftImages, revisionOf, setRevisionOf, updateDraft, removeImage, removeDocument } = chatDraft;
   const fileInput = useRef<HTMLInputElement>(null), imageInput = useRef<HTMLInputElement>(null);
-  const imageUpload = useRef<{ origin: string | null; controller: AbortController } | null>(null);
-  const [imageProgress, setImageProgress] = useState<{ name: string; percent: number; kind: 'image' | 'file' } | null>(null);
   useEffect(() => { setError(''); }, [selected]);
   const [error, setError] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -138,15 +133,14 @@ export function App() {
     settingsTrigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setSidebarOpen(false); setSettingsOpen(true);
   };
+  const { conversations, setLocalConversations, rememberConversation, refreshLibrary, forgetConversation } = useLibraryIndex({ enabled: Boolean(session?.authenticated), pending, onDeleted: (id, time) => rememberDeletion(id, time), onUnauthorized: loggedOut });
   const rememberDeletion = useCallback((id: string, time: number) => {
     markConversationDeleted(id, time);
     const remaining = pendingRef.current.filter((item) => item.conversation.id !== id);
     writePending(remaining); pendingRef.current = remaining; setPending(remaining);
-    setLocalConversations((items) => items.filter((item) => item.id !== id));
-    queryClient.setQueryData<ConversationInfo[]>(['conversations'], (items) => items?.filter((item) => item.id !== id));
-    write('library', read<ConversationInfo[]>('library', []).filter((item) => item.id !== id));
+    forgetConversation(id);
     if (selectedRef.current === id) { setDraft(''); setRevisionOf(undefined); setDraftImages([]); setDraftFiles([]); }
-  }, [queryClient]);
+  }, [forgetConversation]);
   const currentPending = pending.find((item) => item.conversation.id === selected);
   const { snapshot, snapshotFor, authoritative, durableSnapshot, hasUnconfirmed, connection, syncedAt, loading, syncError, reconnect } = useConversation(selected, Boolean(session?.authenticated), loggedOut, Boolean(currentPending && !currentPending.error), rememberDeletion, selected ? deletedAt(selected) : null);
   const branches = useConversationBranches({ id: selected, messages: snapshot.messages, ready: snapshotFor === selected, authoritative, routeHead: routeBranch, navigate });
@@ -179,29 +173,6 @@ export function App() {
     window.addEventListener('keydown', find);
     return () => window.removeEventListener('keydown', find);
   }, [canSearch, selected]);
-  const libraryQuery = useQuery({
-    queryKey: ['conversations'],
-    queryFn: async () => {
-      let page: LibrarySnapshot;
-      do {
-        page = await api<LibrarySnapshot>(`/conversations?after=${read('library-deletion-cursor', 0)}`);
-        for (const deletion of page.deletions) rememberDeletion(deletion.id, deletion.deletedAt);
-        write('library-deletion-cursor', page.deletionCursor);
-      } while (page.hasMoreDeletions);
-      return page.conversations;
-    },
-    enabled: Boolean(session?.authenticated),
-    initialData: () => read('library', []),
-    refetchInterval: 10_000,
-  });
-  const conversations = useMemo(() => {
-    const cloud = libraryQuery.data ?? [];
-    const cloudIds = new Set(cloud.map((item) => item.id));
-    const queued = pending.map((item) => item.conversation).filter((item) => !cloudIds.has(item.id));
-    const local = localConversations.filter((item) => !cloudIds.has(item.id) && !queued.some((next) => next.id === item.id));
-    return [...queued, ...local, ...cloud].filter((item) => !deletedAt(item.id)).sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
-  }, [libraryQuery.data, localConversations, pending]);
-  const busy = Boolean(active || currentPending || sending || imageProgress || syncError || branches.error || branches.waiting || invalidRoute || (selected && loading));
   const currentConversation = conversations.find((item) => item.id === selected);
   const latestCompletedAssistant = useMemo(() => [...snapshot.messages].reverse().find((message) => message.role === 'assistant' && message.status === 'completed' && !message.deletedAt && !message.summary), [snapshot.messages]);
   const conversationSettings = settingsDraft?.id === selected ? settingsDraft.settings : selected ? snapshot.settings ?? DEFAULT_CONVERSATION_SETTINGS : newConversationSettings;
@@ -212,12 +183,6 @@ export function App() {
   };
   const { previewHistory, contextPreview } = useContextPreview({ messages: snapshot.messages, parentId: branches.continuationParentId, draft, revisionOf, draftImages, draftFiles, conversationSettings, selectedModel, models, reasoningEffort, session });
   const visibleConversations = conversations.filter((item) => Boolean(item.archived) === archivedList && item.title.toLowerCase().includes(search.toLowerCase()));
-
-  useEffect(() => {
-    if (libraryQuery.error instanceof ApiError && libraryQuery.error.status === 401) loggedOut();
-    if (libraryQuery.data) { setLocalConversations(libraryQuery.data); write('library', libraryQuery.data); }
-  }, [libraryQuery.data, libraryQuery.error, loggedOut]);
-  const refreshLibrary = useCallback(() => { void queryClient.invalidateQueries({ queryKey: ['conversations'] }); void queryClient.invalidateQueries({ queryKey: ['body-search'] }); }, [queryClient]);
 
   const { backupOperation, backupTask, exportBackup, importBackup, cancelBackup } = useBackup({ selected, selectedRef, setError, providerSaved, refreshLibrary, navigate: (id) => select(id) });
 
@@ -238,65 +203,8 @@ export function App() {
     setReasoningEffort(selectedModel.reasoningEfforts.includes(saved as ReasoningEffort) ? saved : '');
   }, [selectedModel]);
   useComposerSize(editor, draft);
-  useEffect(() => {
-    if (imageUpload.current && (imageUpload.current.origin !== selected || !session?.authenticated)) imageUpload.current.controller.abort();
-  }, [selected, session?.authenticated]);
-  useEffect(() => () => imageUpload.current?.controller.abort(), []);
-  const addUploads = async (inputFiles: File[], kind: 'image' | 'file') => {
-    if (!inputFiles.length || busy || imageUpload.current) return;
-    if (!navigator.onLine || !session?.attachmentsConfigured) { setError('附件上传需要联网并配置文件存储。'); return; }
-    if (selected && !currentConversation) { setError('请等待对话同步后再添加附件。'); return; }
-    if (kind === 'image' && !canAttemptCapability(selectedModel?.metadata, 'imageInput')) { setError('请先选择支持图片的视觉模型。'); return; }
-    if (inputFiles.length + (kind === 'image' ? draftImages.length : draftFiles.length) > (kind === 'image' ? MAX_MESSAGE_IMAGES : MAX_MESSAGE_DOCUMENTS)) { setError(kind === 'image' ? '每条消息最多添加 4 张图片。' : '每条消息最多添加 4 个文本文件。'); return; }
-    const origin = selected, controller = new AbortController(), operation = { origin, controller };
-    imageUpload.current = operation; setImageProgress({ name: inputFiles[0].name, percent: 0, kind }); setError('');
-    let conversation = currentConversation;
-    const uploadedImages: ImagePart[] = [], uploadedFiles: DocumentPart[] = [], registered: string[] = [];
-    try {
-      const preparedFiles: { file: File; input: Awaited<ReturnType<typeof prepareAttachment>>; pdf?: PDFExtraction }[] = [];
-      for (const file of inputFiles) {
-        setImageProgress({ name: file.name, percent: 0, kind });
-        const mediaType = fileMediaType(file.name);
-        if (kind === 'file' && (!v.safeParse(documentMediaTypeSchema, mediaType).success || !file.size || mediaType !== 'application/pdf' && file.size > MAX_DOCUMENT_BYTES)) throw new Error('请选择 PDF 或不超过 128 KiB 的 UTF-8 文本、代码、CSV 文件。');
-        const prepared = kind === 'image' ? await prepareChatImage(file, controller.signal) : file;
-        const input = await prepareAttachment(prepared, controller.signal);
-        const pdf = kind === 'file' && input.mediaType === 'application/pdf' ? await preparePdf(prepared, input.sha256, controller.signal,
-          (page, pages) => setImageProgress({ name: `正在提取 ${prepared.name} · ${page}/${pages}`, percent: Math.round(page / pages * 100), kind })) : undefined;
-        preparedFiles.push({ file: prepared, input, pdf });
-      }
-      if (!conversation) {
-        const parameters = v.safeParse(conversationSettingsSchema, conversationSettings);
-        if (!parameters.success) throw new Error('请先修正会话参数，再添加附件。');
-        conversation = { id: crypto.randomUUID(), title: (draft.trim() || inputFiles[0].name).slice(0, 26), createdAt: Date.now(), updatedAt: Date.now(), pinned: false, archived: false };
-        await api('/conversations', 'POST', { id: conversation.id, title: conversation.title }, controller.signal);
-        await api(`/conversations/${conversation.id}/settings`, 'PUT', parameters.output, controller.signal);
-      }
-      for (const { file: prepared, input, pdf } of preparedFiles) {
-        setImageProgress({ name: prepared.name, percent: 0, kind }); registered.push(input.id);
-        const saved = await uploadAttachment(conversation.id, input, prepared, controller.signal, (received) => setImageProgress({ name: prepared.name, percent: Math.round(received / input.size * 100), kind }));
-        if (kind === 'image') uploadedImages.push({ type: 'image', attachmentId: saved.id, name: saved.name, sha256: saved.sha256, size: saved.size, mediaType: prepared.type as ImagePart['mediaType'] });
-        else {
-          setImageProgress({ name: `正在解析 ${prepared.name}`, percent: 100, kind });
-          uploadedFiles.push(await api<DocumentPart>(`/conversations/${conversation.id}/attachments/${saved.id}/document`, 'POST', pdf, controller.signal));
-        }
-      }
-      controller.signal.throwIfAborted();
-      if (selectedRef.current !== origin) throw new DOMException('已切换对话', 'AbortError');
-      const savedDraft = read<{ text: string; revisionOf?: string }>(`draft:${origin ?? 'new'}`, { text: draft, revisionOf });
-      const images = [...draftImages, ...uploadedImages], files = [...draftFiles, ...uploadedFiles];
-      if (!origin) resetNewTools();
-      writeChatCache(`draft:${conversation.id}`, { ...savedDraft, images, files }); setDraftImages(images); setDraftFiles(files);
-      if (!origin) { writeChatCache('draft:new', { text: '' }); select(conversation.id); }
-      refreshLibrary();
-    } catch (error) {
-      if (conversation) for (const id of registered) await api(`/conversations/${conversation.id}/attachments/${id}`, 'DELETE', undefined, AbortSignal.timeout(10_000)).catch(() => {});
-      if (selectedRef.current === origin && !controller.signal.aborted) setError(error instanceof Error ? error.message : '附件上传失败。');
-    } finally {
-      if (imageUpload.current === operation) { imageUpload.current = null; setImageProgress(null); }
-    }
-  };
-  const addImages = (files: File[]) => addUploads(files, 'image');
-  const addDocuments = (files: File[]) => addUploads(files, 'file');
+  const { imageUpload, imageProgress, addImages, addDocuments } = useChatAttachments({ selected, selectedRef, currentConversation, session, selectedModel, isBusy: () => busy, chatDraft, conversationSettings, resetNewTools, select: (id) => select(id), refreshLibrary, setError });
+  const busy = Boolean(active || currentPending || sending || imageProgress || syncError || branches.error || branches.waiting || invalidRoute || (selected && loading));
   const select = (id: string | null) => {
     setSearchJump(null);
     setEditorFocusTarget({ id });
@@ -394,7 +302,7 @@ export function App() {
     const item: Pending = { conversation, input, viewHeadId: requestView, images: input.retryOf ? undefined : draftImages, files: input.retryOf ? undefined : draftFiles };
     if (!commitPending([...pendingRef.current, item])) return;
     if (!conversations.some((item) => item.id === conversation.id)) {
-      const items = [conversation, ...localConversations]; setLocalConversations(items); write('library', items);
+      rememberConversation(conversation);
     }
     writeChatCache(`draft:${selected ?? 'new'}`, { text: '' }); setDraft(''); setRevisionOf(undefined); setDraftImages([]); setDraftFiles([]);
     if (!selected) resetNewTools();

@@ -4,8 +4,8 @@ export type Attachment = { expires: number; blocked?: boolean; runId?: string; m
 const SUBSCRIBER_WINDOW_BYTES = 128 * 1024;
 
 export class ConversationSubscribers {
- constructor(private readonly ctx: DurableObjectState, private readonly measure: (packet: string, recipients: number) => void) {}
-send(packet: string, batch?: StreamBatch, target?: WebSocket) {
+  constructor(private readonly ctx: DurableObjectState, private readonly measure: (packet: string, recipients: number) => void) { }
+  send(packet: string, batch?: StreamBatch, target?: WebSocket) {
     let recipients = 0;
     for (const socket of target ? [target] : this.ctx.getWebSockets()) {
       const attachment = socket.deserializeAttachment() as Attachment;
@@ -28,7 +28,7 @@ send(packet: string, batch?: StreamBatch, target?: WebSocket) {
     }
     this.measure(packet, recipients);
   }
-acknowledge(socket: WebSocket, data: string | ArrayBuffer) {
+  acknowledge(socket: WebSocket, data: string | ArrayBuffer) {
     const attachment = socket.deserializeAttachment() as Attachment;
     if (attachment.expires <= Date.now() / 1000) { socket.close(4001, 'Session expired'); return; }
     if (data === 'session-check') return;

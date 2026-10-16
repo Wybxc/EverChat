@@ -1,8 +1,8 @@
-import { sha256,type ArchiveManifest } from '../../shared/backup/archive';
-import { messageAttachments,messageFiles,messageImages } from '../../shared/conversation/content';
+import { sha256, type ArchiveManifest } from '../../shared/backup/archive';
+import { messageAttachments, messageFiles, messageImages } from '../../shared/conversation/content';
 import { AttachmentStore } from '../attachments/store';
 import { CopyJobs } from '../backup/copies';
-import { ArchiveImports,readArchiveManifest,type ImportResult } from '../backup/imports';
+import { ArchiveImports, readArchiveManifest, type ImportResult } from '../backup/imports';
 import type { Env } from '../http/env';
 import { HttpError } from '../http/response';
 import type { Library } from '../library/durable-object';
@@ -11,18 +11,18 @@ import { ProviderSettingsStore } from '../providers/store';
 
 // The Library owns transaction boundaries, its alarm and all feature stores.
 export class ArchiveRestorer {
-constructor(private readonly ctx: DurableObjectState, private readonly env: Env, private readonly imports: ArchiveImports, private readonly attachments: AttachmentStore, private readonly copies: CopyJobs, private readonly providers: ProviderSettingsStore, private readonly library: Pick<Library, 'deletedAt' | 'beginDelete' | 'touch'>, private readonly exists: (id: string) => boolean, private readonly schedule: () => Promise<void>) {}
-private checkImport(id: string, status?: string) {
+  constructor(private readonly ctx: DurableObjectState, private readonly env: Env, private readonly imports: ArchiveImports, private readonly attachments: AttachmentStore, private readonly copies: CopyJobs, private readonly providers: ProviderSettingsStore, private readonly library: Pick<Library, 'deletedAt' | 'beginDelete' | 'touch'>, private readonly exists: (id: string) => boolean, private readonly schedule: () => Promise<void>) { }
+  private checkImport(id: string, status?: string) {
     const row = this.imports.require(id, status);
     if (!this.exists(id)) throw new HttpError(410, '恢复目标对话已删除。');
     return row;
   }
 
-private importFailure(error: unknown): { error: string; status: number } {
+  private importFailure(error: unknown): { error: string; status: number } {
     return { error: error instanceof HttpError ? error.message : '恢复暂时无法完成，请重试查看结果。', status: error instanceof HttpError ? error.status : 503 };
   }
 
-async beginImport(id: string, body: ReadableStream<Uint8Array>): Promise<ImportResult> {
+  async beginImport(id: string, body: ReadableStream<Uint8Array>): Promise<ImportResult> {
     try {
       const manifest = await readArchiveManifest(body), bytes = new TextEncoder().encode(JSON.stringify(manifest)), hash = await sha256(bytes);
       const existing = this.imports.get(id);
@@ -44,7 +44,7 @@ async beginImport(id: string, body: ReadableStream<Uint8Array>): Promise<ImportR
     } catch (error) { return this.importFailure(error); }
   }
 
-private async prepareImport(id: string, bytes: Uint8Array, manifest: ArchiveManifest): Promise<ImportResult> {
+  private async prepareImport(id: string, bytes: Uint8Array, manifest: ArchiveManifest): Promise<ImportResult> {
     try {
       await this.ctx.storage.sync(); await this.schedule(); this.checkImport(id, 'preparing');
       if (manifest.files.length) { await this.imports.save(id, bytes); this.checkImport(id, 'uploading'); return this.imports.result(id); }
@@ -52,21 +52,21 @@ private async prepareImport(id: string, bytes: Uint8Array, manifest: ArchiveMani
     } catch (error) { return this.stopImport(id, error); }
   }
 
-private async stopImport(id: string, error: unknown): Promise<ImportResult> {
+  private async stopImport(id: string, error: unknown): Promise<ImportResult> {
     if (this.imports.get(id)?.status === 'completed') return this.imports.result(id);
     const failure = this.importFailure(error);
     this.imports.fail(id, new HttpError(failure.status, failure.error));
     await this.library.beginDelete(id); await this.schedule(); return this.imports.result(id);
   }
 
-importStatus(id: string) {
+  importStatus(id: string) {
     if (this.library.deletedAt(id) && this.imports.get(id)?.status === 'completed') return { error: '此恢复副本已删除。', status: 410 };
     return this.imports.result(id);
   }
 
-importStopped(id: string) { return this.imports.get(id)?.status === 'failed'; }
+  importStopped(id: string) { return this.imports.get(id)?.status === 'failed'; }
 
-async uploadImportFile(id: string, sourceId: string, body: ReadableStream<Uint8Array>, extracted: boolean) {
+  async uploadImportFile(id: string, sourceId: string, body: ReadableStream<Uint8Array>, extracted: boolean) {
     try {
       this.checkImport(id, 'uploading');
       const mapped = this.imports.files(id).find((file) => file.sourceId === sourceId);
@@ -83,7 +83,7 @@ async uploadImportFile(id: string, sourceId: string, body: ReadableStream<Uint8A
       if (JSON.stringify({ ...result, attachmentId: sourceId }) !== JSON.stringify(reference)) throw new HttpError(409, '恢复后的解析资料与备份不符。');
       return { value: result };
     } catch (error) {
-      await body.cancel().catch(() => {});
+      await body.cancel().catch(() => { });
       const mapped = this.imports.files(id).find((file) => file.sourceId === sourceId);
       if (error instanceof HttpError && [429, 507, 410].includes(error.status) || mapped && (this.attachments.unconfirmed(mapped.id) || this.attachments.documents.unconfirmed(mapped.id))) {
         await this.stopImport(id, error);
@@ -94,20 +94,22 @@ async uploadImportFile(id: string, sourceId: string, body: ReadableStream<Uint8A
     finally { await this.schedule(); }
   }
 
-private async readImportText(body: ReadableStream<Uint8Array>, expected: number) {
+  private async readImportText(body: ReadableStream<Uint8Array>, expected: number) {
     const reader = body.getReader(), chunks: Uint8Array[] = []; let size = 0;
     let expired = false;
-    const timeout = setTimeout(() => { expired = true; void reader.cancel().catch(() => {}); }, 90_000);
+    const timeout = setTimeout(() => { expired = true; void reader.cancel().catch(() => { }); }, 90_000);
     try {
-      while (true) { const next = await reader.read(); if (expired) throw new HttpError(408, '提取文本上传超时。'); if (next.done) break; size += next.value.byteLength;
-        if (size > expected) throw new HttpError(413, '提取文本过长。'); chunks.push(next.value); }
+      while (true) {
+        const next = await reader.read(); if (expired) throw new HttpError(408, '提取文本上传超时。'); if (next.done) break; size += next.value.byteLength;
+        if (size > expected) throw new HttpError(413, '提取文本过长。'); chunks.push(next.value);
+      }
       if (size !== expected) throw new HttpError(400, '提取文本不完整。');
       const bytes = new Uint8Array(size); let at = 0;
       for (const chunk of chunks) { bytes.set(chunk, at); at += chunk.byteLength; } return bytes;
-    } catch (error) { await reader.cancel().catch(() => {}); throw error; } finally { clearTimeout(timeout); reader.releaseLock(); }
+    } catch (error) { await reader.cancel().catch(() => { }); throw error; } finally { clearTimeout(timeout); reader.releaseLock(); }
   }
 
-async finishImport(id: string): Promise<ImportResult> {
+  async finishImport(id: string): Promise<ImportResult> {
     try {
       const current = this.imports.get(id);
       if (!current || ['failed', 'completed'].includes(current.status)) return this.importStatus(id);
@@ -123,7 +125,7 @@ async finishImport(id: string): Promise<ImportResult> {
     } catch (error) { return this.importFailure(error); }
   }
 
-private async restoreImport(id: string, saved?: ArchiveManifest): Promise<ImportResult> {
+  private async restoreImport(id: string, saved?: ArchiveManifest): Promise<ImportResult> {
     try {
       await this.ctx.storage.sync(); await this.schedule(); this.checkImport(id, 'finalizing');
       const manifest = saved ?? await this.imports.manifest(id); this.checkImport(id, 'finalizing');
@@ -131,8 +133,10 @@ private async restoreImport(id: string, saved?: ArchiveManifest): Promise<Import
       const messages = manifest.backup.conversation.messages.map((message) => ({ ...message, parts: message.parts.map((part) => part.type === 'image' || part.type === 'file' ? { ...part, attachmentId: mapped.get(part.attachmentId)! } : part) }));
       for (const { id: fileId, file } of this.imports.files(id)) {
         const response = await this.attachments.response(id, fileId, true); await response.body?.cancel(); this.checkImport(id, 'finalizing');
-        if (file.parsed) { const text = await this.attachments.documents.read(id, fileId); this.checkImport(id, 'finalizing');
-          if (JSON.stringify({ ...text.file, attachmentId: file.id }) !== JSON.stringify(file.parsed.reference)) throw new HttpError(409, '恢复后的解析引用不符。'); }
+        if (file.parsed) {
+          const text = await this.attachments.documents.read(id, fileId); this.checkImport(id, 'finalizing');
+          if (JSON.stringify({ ...text.file, attachmentId: file.id }) !== JSON.stringify(file.parsed.reference)) throw new HttpError(409, '恢复后的解析引用不符。');
+        }
       }
       if (messages.some((message) => messageAttachments(message).length)) { await this.attachments.pinAttachments(id, messages.flatMap(messageImages), messages.flatMap(messageFiles)); this.checkImport(id, 'finalizing'); }
       const result = await this.env.CONVERSATIONS.getByName(id).restoreResponse(id, new Response(JSON.stringify({ ...manifest.backup.conversation, messages })).body!);
@@ -154,7 +158,7 @@ private async restoreImport(id: string, saved?: ArchiveManifest): Promise<Import
     } catch (error) { return this.stopImport(id, error); }
   }
 
-async cancelImport(id: string) {
+  async cancelImport(id: string) {
     const row = this.imports.get(id);
     if (!row) return { error: '找不到这项恢复。', status: 404 };
     if (row.status === 'completed') return { error: '恢复已完成。', status: 409 };
