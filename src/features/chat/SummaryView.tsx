@@ -2,23 +2,26 @@ import { MoreHorizontal, RefreshCw, Trash2 } from 'lucide-react';
 import { messageText } from '../../../shared/conversation/content';
 import { isActive } from '../../../shared/conversation/message-state';
 import { type Message } from '../../../shared/conversation/types';
-import { ActionMenu, ActionMenuItem } from '../../components/ActionMenu';
+import { ActionMenu, ActionMenuItem, ActionMenuSeparator } from '../../components/ActionMenu';
 import { Disclosure } from '../../components/Disclosure';
 import { GenerationMetadata } from './GenerationMetadata';
 import { MarkdownContent } from './rendering/MarkdownContent';
 import { useFollowScroll } from './useFollowScroll';
+import { ProviderFailureView } from '../providers/ProviderFailureView';
 
 export function SummaryView({
   message,
   busy,
   onRetry,
   onDelete,
+  onProviderSettings,
   selected,
 }: {
   message: Message;
   busy: boolean;
   onRetry: () => void;
   onDelete: () => void;
+  onProviderSettings: () => void;
   selected: boolean;
 }) {
   const scroll = useFollowScroll(message.id);
@@ -39,7 +42,7 @@ export function SummaryView({
       data-status={message.status}
       className="space-y-2"
     >
-      <div className="flex items-start gap-1">
+      <div className="flex flex-wrap items-start gap-1">
         <Disclosure
           stateKey={`summary:${message.id}`}
           defaultOpen={isActive(message)}
@@ -71,6 +74,11 @@ export function SummaryView({
             </div>
           </div>
         </Disclosure>
+        {!isActive(message) && message.generation && (
+          <div className="order-3 w-full sm:order-none sm:w-auto">
+            <GenerationMetadata generation={message.generation} />
+          </div>
+        )}
         <ActionMenu
           label="更多摘要操作"
           icon={<MoreHorizontal className="h-[1.0625rem] w-[1.0625rem]" />}
@@ -80,9 +88,7 @@ export function SummaryView({
             <RefreshCw className="h-[0.9375rem] w-[0.9375rem]" />
             重新生成摘要
           </ActionMenuItem>
-          {!isActive(message) && message.generation && (
-            <GenerationMetadata generation={message.generation} />
-          )}
+          <ActionMenuSeparator />
           <ActionMenuItem disabled={busy || !navigator.onLine} onSelect={onDelete}>
             <Trash2 className="h-[0.9375rem] w-[0.9375rem]" />
             删除摘要
@@ -90,9 +96,12 @@ export function SummaryView({
         </ActionMenu>
       </div>
       {message.error && (
-        <p role="alert" className="text-sm">
-          {message.error}
-        </p>
+        <ProviderFailureView
+          summary={message.error}
+          failure={message.generation?.failure}
+          stateKey={`summary-failure:${message.id}`}
+          onSettings={onProviderSettings}
+        />
       )}
       {message.status === 'cancelled' && <p className="text-sm">已停止，摘要未用于上下文。</p>}
     </article>

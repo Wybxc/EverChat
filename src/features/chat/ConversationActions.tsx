@@ -97,27 +97,29 @@ export function ConversationActions({
               )}
               {conversation.pinned ? '取消置顶' : '置顶'}
             </ActionMenuItem>
-            <ActionMenuItem
-              disabled={disabled || busy}
-              onSelect={() => void perform(() => update({ archived: !conversation.archived }))}
-            >
-              {conversation.archived ? (
-                <ArchiveRestore className="h-[0.9375rem] w-[0.9375rem]" />
-              ) : (
-                <Archive className="h-[0.9375rem] w-[0.9375rem]" />
-              )}
-              {conversation.archived ? '取消归档' : '归档'}
-            </ActionMenuItem>
+            <ActionMenuLabel>复用</ActionMenuLabel>
             <ActionMenuItem disabled={disabled || busy} onSelect={() => void perform(duplicate)}>
               <Copy className="h-[0.9375rem] w-[0.9375rem]" />
               复制对话
             </ActionMenuItem>
           </>
         )}
-        <ActionMenuLabel>导出与恢复</ActionMenuLabel>
+        <ActionMenuLabel>导出</ActionMenuLabel>
         {exports}
         {conversation && (
           <>
+            <ActionMenuSeparator />
+            <ActionMenuItem
+              disabled={disabled || busy}
+              onSelect={() => void perform(() => update({ archived: !conversation.archived }))}
+            >
+              {conversation.archived ? (
+                <ArchiveRestore className="size-4" />
+              ) : (
+                <Archive className="size-4" />
+              )}
+              {conversation.archived ? '取消归档' : '归档'}
+            </ActionMenuItem>
             <ActionMenuSeparator />
             <ActionMenuItem disabled={disabled || busy} onSelect={() => open('delete')}>
               <Trash2 className="h-[0.9375rem] w-[0.9375rem]" />

@@ -4,7 +4,6 @@ import { DEFAULT_CONVERSATION_SETTINGS } from '../../../shared/conversation/sett
 import type { Submission } from '../../../shared/conversation/types';
 import type { ProviderKind, ProviderSettings } from '../../../shared/providers/types';
 import type { Snapshot } from '../../../shared/streaming/protocol';
-import { messageMenu } from '../../support/browser/ui';
 
 const headers = { Origin: 'http://127.0.0.1:5174' };
 async function setup(
@@ -348,8 +347,10 @@ test('tool process sync survives page closure and a second device, with no priva
     );
     await other.getByTestId('tool-activity').locator(':scope > summary').click();
     await expect(other.getByTestId('tool-activity').getByRole('link')).toHaveCount(2);
-    await messageMenu(other.getByTestId('assistant-message'));
-    await other.getByRole('menuitem', { name: '生成信息', exact: true }).click();
+    await other
+      .getByTestId('assistant-message')
+      .getByRole('button', { name: '生成信息', exact: true })
+      .click();
     await expect(other.getByTestId('generation-toolTokens')).toBeVisible();
     await other
       .getByRole('dialog', { name: '生成信息', exact: true })

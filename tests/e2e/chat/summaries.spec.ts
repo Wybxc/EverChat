@@ -1166,6 +1166,11 @@ test('summary regeneration and deletion controls keep originals and drafts, and 
     const first = page.getByTestId('summary-message').first();
     await expect(first).toHaveAttribute('data-status', 'completed');
     await page.getByTestId('branch-summaries').locator('summary').first().click();
+    await first.getByRole('button', { name: '生成信息', exact: true }).click();
+    const information = page.getByRole('dialog', { name: '生成信息', exact: true });
+    await expect(information).toContainText('云端生成');
+    await information.getByRole('button', { name: '关闭', exact: true }).click();
+    await expect(first.getByRole('button', { name: '生成信息', exact: true })).toBeFocused();
     await first.getByRole('button', { name: '更多摘要操作', exact: true }).click();
     await page.getByRole('menuitem', { name: '重新生成摘要', exact: true }).click();
     const modal = page.getByRole('dialog', { name: '重新生成摘要', exact: true });

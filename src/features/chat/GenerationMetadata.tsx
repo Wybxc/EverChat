@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Modal, ModalTitle } from '../../components/Modal';
-import { ActionMenuItem } from '../../components/ActionMenu';
+import { Button } from '@/components/ui/button';
 
 import type { GenerationResult } from '../../../shared/streaming/generation';
 import type { StreamUsage } from '../../../shared/streaming/provider-stream';
@@ -22,6 +22,7 @@ const timings = [
   ['durationMs', '云端生成'],
 ] as const;
 const number = new Intl.NumberFormat('zh-CN');
+const compact = new Intl.NumberFormat('zh-CN', { notation: 'compact', maximumFractionDigits: 1 });
 const duration = (ms: number) =>
   ms < 1000 ? `${number.format(ms)} ms` : `${(ms / 1000).toFixed(2)} s`;
 
@@ -29,17 +30,37 @@ export function GenerationMetadata({ generation }: { generation?: GenerationResu
   const [open, setOpen] = useState(false);
   if (!generation) return null;
   const fields = usageFields.filter(([key]) => generation.usage[key] !== undefined);
+  const usage = generation.usage;
+  const tokens =
+    usage.totalTokens !== undefined
+      ? `${compact.format(usage.totalTokens)} Tokens`
+      : usage.outputTokens !== undefined
+        ? `输出 ${compact.format(usage.outputTokens)} Tokens`
+        : usage.inputTokens !== undefined
+          ? `输入 ${compact.format(usage.inputTokens)} Tokens`
+          : '';
+  const elapsed = generation.timing?.durationMs;
+  const summary = [
+    tokens && !generation.usageIsFinal ? '部分' : '',
+    tokens,
+    elapsed === undefined ? '' : `${(elapsed / 1000).toFixed(1)} s`,
+  ]
+    .filter(Boolean)
+    .join(' · ');
   return (
     <>
-      <ActionMenuItem
-        keepOpen
-        onSelect={(event) => {
-          event.preventDefault();
-          setOpen(true);
-        }}
+      <Button
+        variant="ghost"
+        type="button"
+        className="min-h-11 min-w-0 max-w-full px-2 text-xs text-muted-foreground"
+        aria-label="生成信息"
+        aria-description={summary || undefined}
+        data-testid="generation-summary"
+        title={summary || '生成信息'}
+        onClick={() => setOpen(true)}
       >
-        生成信息
-      </ActionMenuItem>
+        <span className="truncate">{summary || '生成信息'}</span>
+      </Button>
       <Modal showCloseButton open={open} onOpenChange={setOpen}>
         <div data-testid="message-generation" className="w-full max-w-md space-y-4 p-5 text-xs">
           <ModalTitle>生成信息</ModalTitle>

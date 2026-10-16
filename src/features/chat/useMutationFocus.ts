@@ -52,7 +52,7 @@ export function useMutationFocus({
         ) {
           const target =
             document.querySelector<HTMLElement>(
-              `[data-message-id="${intent.messageId}"] button[aria-label="更多消息操作"]`,
+              `[data-message-id="${intent.messageId}"] button[aria-label="${intent.state === 'visible' ? '编辑回答' : '更多消息操作'}"]`,
             ) ??
             [
               ...document.querySelectorAll<HTMLElement>(

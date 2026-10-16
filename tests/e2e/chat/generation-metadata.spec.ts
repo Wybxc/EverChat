@@ -4,7 +4,6 @@ import { messageText } from '../../../shared/conversation/content';
 import type { Submission } from '../../../shared/conversation/types';
 import type { ProviderKind, ProviderSettings } from '../../../shared/providers/types';
 import type { Snapshot } from '../../../shared/streaming/protocol';
-import { messageMenu } from '../../support/browser/ui';
 
 const headers = { Origin: 'http://127.0.0.1:5174' };
 async function setup(request: APIRequestContext, protocol: ProviderKind, model: string) {
@@ -101,17 +100,29 @@ for (const protocol of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
         state.timing.firstTokenAt - state.timing.providerStartedAt,
       );
       const info = page.getByTestId('message-generation');
-      await messageMenu(page.getByTestId('assistant-message'));
-      await page.getByRole('menuitem', { name: '生成信息', exact: true }).click();
+      await expect(page.getByTestId('generation-summary')).toBeVisible();
+      await expect(page.getByTestId('generation-summary')).toContainText('Tokens');
+      await expect(page.getByTestId('generation-summary')).not.toContainText('部分');
+      await page
+        .getByTestId('assistant-message')
+        .getByRole('button', { name: '生成信息', exact: true })
+        .click();
       await expect(info).toBeVisible();
       await expect(info.getByTestId('generation-inputTokens')).toHaveText(
         protocol === 'anthropic' ? '14' : '10',
       );
       await expect(info.getByTestId('generation-cachedInputTokens')).toHaveText('4');
       await expect(info.getByText('供应商报告', { exact: true })).toBeVisible();
+      await page
+        .getByRole('dialog', { name: '生成信息', exact: true })
+        .getByRole('button', { name: '关闭', exact: true })
+        .click();
+      await expect(page.getByTestId('generation-summary')).toBeFocused();
       await page.reload();
-      await messageMenu(page.getByTestId('assistant-message'));
-      await page.getByRole('menuitem', { name: '生成信息', exact: true }).click();
+      await page
+        .getByTestId('assistant-message')
+        .getByRole('button', { name: '生成信息', exact: true })
+        .click();
       await expect(page.getByTestId('message-generation')).toBeVisible();
       await second.request.post('/__dev/access/login', { headers });
       expect(
@@ -146,8 +157,10 @@ for (const protocol of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
       expect(restored.snapshot.messages[1].generation).toEqual(generation);
       expect(restored.snapshot.messages[1].runId).toBeNull();
       await page.goto(`/c/${restored.id}`);
-      await messageMenu(page.getByTestId('assistant-message'));
-      await page.getByRole('menuitem', { name: '生成信息', exact: true }).click();
+      await page
+        .getByTestId('assistant-message')
+        .getByRole('button', { name: '生成信息', exact: true })
+        .click();
       await expect(page.getByTestId('generation-firstTokenMs')).toHaveText(/s$/);
     } finally {
       await second.close();
@@ -177,8 +190,10 @@ test('returned thoughts are shown and determine first output before the answer, 
     expect(
       message.generation!.timing!.durationMs! - message.generation!.timing!.firstTokenMs!,
     ).toBeGreaterThan(1400);
-    await messageMenu(page.getByTestId('assistant-message'));
-    await page.getByRole('menuitem', { name: '生成信息', exact: true }).click();
+    await page
+      .getByTestId('assistant-message')
+      .getByRole('button', { name: '生成信息', exact: true })
+      .click();
     await expect(page.getByTestId('generation-reasoningTokens')).toHaveText('2');
     await expect(page.getByTestId('message-reasoning')).toContainText(
       messageText(message, 'reasoning'),
@@ -200,10 +215,13 @@ test('missing supplier usage stays unknown and output-free failures do not fabri
         .poll(async () => (await fixture.snapshot()).messages[1]?.status)
         .toBe(model === 'metadata-no-usage' ? 'completed' : 'failed');
       const generation = (await fixture.snapshot()).messages[1].generation!;
-      await messageMenu(page.getByTestId('assistant-message'));
-      await page.getByRole('menuitem', { name: '生成信息', exact: true }).click();
+      await page
+        .getByTestId('assistant-message')
+        .getByRole('button', { name: '生成信息', exact: true })
+        .click();
       if (model === 'metadata-no-usage') {
         expect(generation.usage).toEqual({});
+        await expect(page.getByTestId('generation-summary')).not.toContainText('Tokens');
         await expect(page.getByText('供应商未返回', { exact: true })).toBeVisible();
         await expect(page.getByTestId('generation-inputTokens')).toHaveCount(0);
         await expect(page.getByTestId('generation-outputTokens')).toHaveCount(0);
@@ -241,8 +259,11 @@ test('cancellation retains partial reported usage and model observations; manual
     });
     expect(saved.generation!.usage.outputTokens).toBeUndefined();
     expect(saved.generation!.timing!.firstTokenMs).toBeGreaterThanOrEqual(1500);
-    await messageMenu(page.getByTestId('assistant-message'));
-    await page.getByRole('menuitem', { name: '生成信息', exact: true }).click();
+    await expect(page.getByTestId('generation-summary')).toContainText('部分');
+    await page
+      .getByTestId('assistant-message')
+      .getByRole('button', { name: '生成信息', exact: true })
+      .click();
     await expect(page.getByText('部分报告', { exact: true })).toBeVisible();
     const revision = await page.request.patch(
       `/api/conversations/${fixture.id}/messages/${saved.id}`,

@@ -12,6 +12,7 @@ import {
   ArrowUp,
   BookOpen,
   CloudOff,
+  Download,
   FolderOpen,
   Globe,
   ImagePlus,
@@ -22,6 +23,7 @@ import {
   Search,
   SlidersHorizontal,
   Square,
+  Upload,
   WifiOff,
   X,
 } from 'lucide-react';
@@ -57,7 +59,12 @@ import { effortLabels, modelSelectionKey } from '../../shared/models/selection';
 import { type ModelSelection, type ReasoningEffort } from '../../shared/models/types';
 import type { SearchResult } from '../../shared/search/query';
 import { assertWebToolSupport } from '../../shared/web-tools/tasks';
-import { ActionMenu, ActionMenuItem } from '../components/ActionMenu';
+import {
+  ActionMenu,
+  ActionMenuItem,
+  ActionMenuLabel,
+  ActionMenuSeparator,
+} from '../components/ActionMenu';
 import { Disclosure, DisclosureScope } from '../components/Disclosure';
 import { hasOpenModal, Modal, ModalTitle } from '../components/Modal';
 import { AttachmentDialog } from '../features/attachments/AttachmentDialog';
@@ -1346,22 +1353,22 @@ export function App({
                     >
                       HTML
                     </ActionMenuItem>
+                    <ActionMenuSeparator />
+                    <ActionMenuLabel>备份与恢复</ActionMenuLabel>
                     <ActionMenuItem
                       disabled={!currentConversation}
                       onSelect={() => void exportBackup()}
                     >
+                      <Download className="size-4" />
                       下载备份
                     </ActionMenuItem>
                     <ActionMenuItem onSelect={() => backupInput.current?.click()}>
+                      <Upload className="size-4" />
                       导入备份
                     </ActionMenuItem>
                   </>
                 }
               >
-                <ActionMenuItem onSelect={() => setShortcutHelpOpen(true)}>
-                  <Keyboard className="size-4" />
-                  快捷键
-                </ActionMenuItem>
                 <ActionMenuItem
                   className="md:hidden"
                   disabled={Boolean(invalidRoute || syncError)}
@@ -1394,6 +1401,10 @@ export function App({
                     压缩历史
                   </ActionMenuItem>
                 )}
+                <ActionMenuItem onSelect={() => setShortcutHelpOpen(true)}>
+                  <Keyboard className="size-4" />
+                  快捷键
+                </ActionMenuItem>
               </ConversationActions>
               <input
                 ref={backupInput}
@@ -1494,6 +1505,11 @@ export function App({
                                     message={summary}
                                     busy={generationBlocked}
                                     onRetry={() => void retry(summary)}
+                                    onProviderSettings={() => {
+                                      setRequestedProviderId(summary.providerId ?? undefined);
+                                      setRequestedSettingsTab('providers');
+                                      openSettings();
+                                    }}
                                     onDelete={() =>
                                       setMessageMutation({ id: summary.id, mode: 'delete' })
                                     }

@@ -384,8 +384,10 @@ test('editing and deleting an answer preserves drafts and focus while another de
     await page.goto(`/c/${fixture.id}`);
     const composer = page.getByRole('textbox', { name: '消息', exact: true });
     await composer.fill('保留草稿');
-    await messageMenu(page.getByTestId('assistant-message'));
-    await page.getByRole('menuitem', { name: '编辑回答', exact: true }).click();
+    await page
+      .getByTestId('assistant-message')
+      .getByRole('button', { name: '编辑回答', exact: true })
+      .click();
     const editor = page.getByRole('dialog', { name: '编辑回答', exact: true });
     await expect(editor.getByLabel('回答内容')).toBeFocused();
     await expect(editor.getByRole('button', { name: '关闭消息操作' })).toBeInViewport();
@@ -408,10 +410,12 @@ test('editing and deleting an answer preserves drafts and focus while another de
     await expect(editor).not.toBeVisible();
     await expect(composer).toHaveValue('保留草稿');
     await expect(page.getByTestId('assistant-message').last()).toContainText('手动修改后的回答');
+    await expect(page.getByTestId('assistant-message').last()).toContainText('手动编辑');
     await expect(
-      page
-        .getByTestId('assistant-message')
-        .getByRole('button', { name: '更多消息操作', exact: true }),
+      page.getByTestId('assistant-message').last().getByTestId('generation-summary'),
+    ).toHaveCount(0);
+    await expect(
+      page.getByTestId('assistant-message').getByRole('button', { name: '编辑回答', exact: true }),
     ).toBeFocused();
     await expect(
       other

@@ -327,8 +327,7 @@ test('editing a past prompt or answer creates an independent version and keeps a
     m = f.messages;
   try {
     await page.goto(`/c/${f.id}?branch=${m[3].id}`);
-    await at(page, m[1].id).getByRole('button', { name: '更多消息操作', exact: true }).click();
-    await page.getByRole('menuitem', { name: '编辑回答', exact: true }).click();
+    await at(page, m[1].id).getByRole('button', { name: '编辑回答', exact: true }).click();
     await page.getByRole('textbox', { name: '回答内容', exact: true }).fill('手动修改后的回答');
     await page.getByRole('button', { name: '保存新版本', exact: true }).click();
     await expect(page.getByRole('dialog', { name: '编辑回答', exact: true })).toHaveCount(0);

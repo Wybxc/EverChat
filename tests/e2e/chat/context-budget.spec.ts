@@ -298,9 +298,12 @@ test('composer estimates reflect model prompts and autosaved budgets across devi
       omittedMessages: 2,
     });
     await page.getByRole('button', { name: '停止生成', exact: true }).click();
-    await messageMenu(page.getByTestId('assistant-message').last());
+    await page
+      .getByTestId('assistant-message')
+      .last()
+      .getByRole('button', { name: '生成信息', exact: true })
+      .click();
     const info = page.getByTestId('message-generation');
-    await page.getByRole('menuitem', { name: '生成信息', exact: true }).click();
     await expect(info.getByTestId('generation-contextMessages')).toHaveText('0 条 · 省略 2 条');
   } finally {
     await context.setOffline(false);

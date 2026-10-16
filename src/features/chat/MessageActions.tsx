@@ -1,7 +1,16 @@
 import { IconButton } from '../../components/IconButton';
-import { ActionMenuItem } from '../../components/ActionMenu';
+import { ActionMenuItem, ActionMenuSeparator } from '../../components/ActionMenu';
 import { Spinner } from '@/components/ui/spinner';
-import { Check, Copy, MoreHorizontal, Pencil, Quote, RefreshCw, Trash2 } from 'lucide-react';
+import {
+  Check,
+  Copy,
+  GitBranch,
+  MoreHorizontal,
+  Pencil,
+  Quote,
+  RefreshCw,
+  Trash2,
+} from 'lucide-react';
 import type { Message } from '../../../shared/conversation/types';
 import { isActive } from '../../../shared/conversation/message-state';
 import { ActionMenu } from '../../components/ActionMenu';
@@ -80,6 +89,16 @@ export function MessageActions({
           <RefreshCw className="h-[0.875rem] w-[0.875rem]" />
         </IconButton>
       )}
+      {!user && (
+        <IconButton
+          type="button"
+          onClick={edit}
+          label="编辑回答"
+          disabled={active || busy || !navigator.onLine}
+        >
+          <Pencil className="size-3.5" />
+        </IconButton>
+      )}
       <ActionMenu
         label="更多消息操作"
         icon={<MoreHorizontal className="h-[1.0625rem] w-[1.0625rem]" />}
@@ -95,17 +114,21 @@ export function MessageActions({
           {forking ? <Spinner /> : <Copy className="h-[0.9375rem] w-[0.9375rem]" />}复制到新对话
         </ActionMenuItem>
         {!user && message.status === 'completed' && (
-          <ActionMenuItem onSelect={selectBranch}>从这里继续</ActionMenuItem>
+          <>
+            <ActionMenuSeparator />
+            <ActionMenuItem onSelect={selectBranch}>
+              <GitBranch className="size-4" />
+              从这里继续
+            </ActionMenuItem>
+          </>
         )}
-        <ActionMenuItem
-          disabled={active || busy || (!user && !navigator.onLine)}
-          onSelect={edit}
-          aria-label={user ? '编辑为新版本' : '编辑回答'}
-        >
-          <Pencil className="h-[0.9375rem] w-[0.9375rem]" />
-          {user ? '编辑为新版本' : '编辑回答'}
-        </ActionMenuItem>
-        {!active && message.generation && <GenerationMetadata generation={message.generation} />}
+        {user && (
+          <ActionMenuItem disabled={active || busy} onSelect={edit} aria-label="编辑为新版本">
+            <Pencil className="h-[0.9375rem] w-[0.9375rem]" />
+            编辑为新版本
+          </ActionMenuItem>
+        )}
+        <ActionMenuSeparator />
         <ActionMenuItem
           disabled={active || busy || !navigator.onLine}
           onSelect={remove}
@@ -115,6 +138,10 @@ export function MessageActions({
           删除消息
         </ActionMenuItem>
       </ActionMenu>
+      {!user && !active && <GenerationMetadata generation={message.generation} />}
+      {!user && message.revisionOf && !message.generation && (
+        <span className="px-1 text-xs">手动编辑</span>
+      )}
     </div>
   );
 }
