@@ -1,5 +1,5 @@
-import type { GenerationMeasurements, StreamCounts } from '../shared/generation-metrics';
-import type { GenerationExecutor, MessageStatus } from '../shared/types';
+import type { GenerationMeasurements,StreamCounts } from '../shared/generation-metrics';
+import type { GenerationExecutor,MessageStatus } from '../shared/types';
 
 export class GenerationMeter {
   private readonly startedAt: number;
@@ -29,7 +29,7 @@ export class GenerationMeter {
   }
 }
 
-export type QueryResult<T extends Record<string, SqlStorageValue>> = Pick<SqlStorageCursor<T>, 'toArray' | 'one' | typeof Symbol.iterator>;
+type QueryResult<T extends Record<string, SqlStorageValue>> = Pick<SqlStorageCursor<T>, 'toArray' | 'one' | typeof Symbol.iterator>;
 export type SqlQuery = <T extends Record<string, SqlStorageValue> = Record<string, SqlStorageValue>>(statement: string, ...bindings: SqlStorageValue[]) => QueryResult<T>;
 
 export function measuredQuery<T extends Record<string, SqlStorageValue>>(

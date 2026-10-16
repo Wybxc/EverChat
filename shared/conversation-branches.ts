@@ -1,7 +1,7 @@
 import type { Message } from './types';
 
-export type BranchNode = Pick<Message, 'id' | 'parentId' | 'role' | 'deletedAt'>;
-export interface BranchIndex {
+type BranchNode = Pick<Message, 'id' | 'parentId' | 'role' | 'deletedAt'>;
+interface BranchIndex {
   nodes: Map<string, BranchNode>;
   children: Map<string | null, string[]>;
   choices: Map<string | null, string[]>;

@@ -1,12 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect,useRef,useState } from 'react';
 import ReconnectingWebSocket from 'reconnecting-websocket';
-import { isActive, type Snapshot, type SyncPacket } from '../shared/types';
 import { StreamSync } from '../shared/stream-sync';
+import { isActive,type Snapshot,type SyncPacket } from '../shared/types';
+import { api,ApiError } from './api';
 import { SnapshotWriter } from './snapshot-writer';
-import { api, ApiError } from './api';
-import { cachedSnapshot, storageEpoch, write } from './storage';
+import { cachedSnapshot,storageEpoch,write } from './storage';
 
-export type Connection = 'connected' | 'connecting' | 'offline' | 'unavailable';
+type Connection = 'connected' | 'connecting' | 'offline' | 'unavailable';
 export function useConversation(id: string | null, enabled: boolean, onUnauthorized: () => void, awaitingAcceptance = false, onDeleted?: (id: string, deletedAt: number) => void, confirmedDeletion: number | null = null) {
   const [snapshot, setSnapshot] = useState<Snapshot>({ messages: [], seq: 0 });
   const [durableSnapshot, setDurableSnapshot] = useState<Snapshot>({ messages: [], seq: 0 });

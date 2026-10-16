@@ -1,8 +1,8 @@
-import type { ModelMetadata, ProviderApiKind, ProviderModel } from './types';
 import { MODEL_CATALOG_SNAPSHOT } from './model-catalog-snapshot';
+import type { ModelMetadata,ProviderApiKind,ProviderModel } from './types';
 
 export type ModelCatalog = Record<string, Record<string, Partial<ModelMetadata>>>;
-export const CATALOG_VENDORS = ['openai', 'anthropic', 'google', 'deepseek', 'moonshotai', 'alibaba', 'mistral', 'xai', 'zhipuai', 'minimax', 'cohere', 'meta', 'nvidia'] as const;
+const CATALOG_VENDORS = ['openai', 'anthropic', 'google', 'deepseek', 'moonshotai', 'alibaba', 'mistral', 'xai', 'zhipuai', 'minimax', 'cohere', 'meta', 'nvidia'] as const;
 const object = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const positive = (value: unknown): value is number => Number.isSafeInteger(value) && Number(value) > 0 && Number(value) <= 10_000_000;
 const efforts = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;

@@ -1,14 +1,18 @@
-import type { LanguageModelV4FunctionTool, LanguageModelV4Prompt, LanguageModelV4ReasoningPart, LanguageModelV4TextPart,
-  LanguageModelV4ToolCallPart, SharedV4ProviderMetadata, SharedV4ProviderOptions } from '@ai-sdk/provider';
-import { ProviderStream, type StreamUsage } from '../shared/provider-stream';
+import type {
+LanguageModelV4FunctionTool,LanguageModelV4Prompt,LanguageModelV4ReasoningPart,LanguageModelV4TextPart,
+LanguageModelV4ToolCallPart,SharedV4ProviderMetadata,SharedV4ProviderOptions
+} from '@ai-sdk/provider';
+import { ProviderStream,type StreamUsage } from '../shared/provider-stream';
 import type { ProviderConfig } from '../shared/types';
-import { assertWebToolSupport, MAX_TOOL_CALLS_PER_TURN, MAX_TOOL_EXCHANGES, MAX_TOOL_INPUT_BYTES,
-  validateWebToolCall, validateWebToolIdentity, validateWebToolOutcome, type WebToolCall, type WebToolName, type WebToolOutcome } from '../shared/web-tools';
+import {
+assertWebToolSupport,MAX_TOOL_CALLS_PER_TURN,MAX_TOOL_EXCHANGES,MAX_TOOL_INPUT_BYTES,
+validateWebToolCall,validateWebToolIdentity,validateWebToolOutcome,type WebToolCall,type WebToolName,type WebToolOutcome
+} from '../shared/web-tools';
 import { ProviderError } from './generation-errors';
-import { providerCallOptions, providerModel } from './provider-sdk';
+import { providerCallOptions,providerModel } from './provider-sdk';
 
 export const MAX_TOOL_TURN_WIRE_BYTES = 2 * 1024 * 1024;
-export const MAX_TOOL_TURN_CONTEXT_BYTES = 1024 * 1024;
+const MAX_TOOL_TURN_CONTEXT_BYTES = 1024 * 1024;
 type AssistantPart = LanguageModelV4TextPart | LanguageModelV4ReasoningPart | LanguageModelV4ToolCallPart;
 // This private continuation never enters messages, snapshots, exports or client caches.
 export interface ProviderToolTurn {

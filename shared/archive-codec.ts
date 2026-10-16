@@ -1,12 +1,11 @@
-import { unzipSync, zipSync, type Zippable } from 'fflate';
-import { ARCHIVE_MANIFEST, archiveEntries, extractedPath, MAX_ARCHIVE_BYTES, MAX_ARCHIVE_ENTRIES, originalPath, sha256, validateArchiveManifest, type ArchiveManifest } from './archive';
+import { unzipSync,zipSync,type Zippable } from 'fflate';
+import { ARCHIVE_FORMAT,ARCHIVE_MANIFEST,ARCHIVE_VERSION,archiveEntries,extractedPath,MAX_ARCHIVE_BYTES,MAX_ARCHIVE_ENTRIES,originalPath,sha256,validateArchiveManifest,type ArchiveManifest } from './archive';
 import { MAX_ATTACHMENT_BYTES } from './attachments';
-import { MAX_BACKUP_BYTES, validateBackup } from './backup';
-import { ARCHIVE_FORMAT, ARCHIVE_VERSION } from './archive';
+import { MAX_BACKUP_BYTES,validateBackup } from './backup';
 import { MAX_DOCUMENT_BYTES } from './documents';
 
 const allowed = /^(manifest\.json|files\/[0-9a-f-]{36}|documents\/[0-9a-f-]{36}\.txt)$/;
-export type ArchiveData = { manifest: ArchiveManifest; entries: Record<string, Uint8Array> };
+type ArchiveData = { manifest: ArchiveManifest; entries: Record<string, Uint8Array> };
 
 function checkStoredZip(bytes: Uint8Array) {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), end = bytes.length - 22;
@@ -29,7 +28,7 @@ function checkStoredZip(bytes: Uint8Array) {
   if (at !== end || local !== start) invalid();
 }
 
-export async function validateArchiveData(manifest: ArchiveManifest, entries: Record<string, Uint8Array>) {
+async function validateArchiveData(manifest: ArchiveManifest, entries: Record<string, Uint8Array>) {
   const expected = new Set(archiveEntries(manifest));
   if (Object.keys(entries).length !== expected.size || Object.keys(entries).some((path) => !expected.has(path))) throw new Error('备份存档包含多余文件或缺少文件。');
   for (const file of manifest.files) {

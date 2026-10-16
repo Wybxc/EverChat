@@ -1,20 +1,20 @@
-import type { ConversationInfo, ConversationSettings, Message, PromptPreset, ProviderApiKind, ProviderModel } from './types';
 import * as v from 'valibot';
 import { conversationSettingsSchema } from './conversation-settings';
-import { promptPresetListSchema } from './prompt-presets';
-import { addGenerationUsage, generationSchema } from './generation';
+import { addGenerationUsage,generationSchema } from './generation';
 import { messagePartsSchema } from './message-content';
+import { promptPresetListSchema } from './prompt-presets';
 import { modelSchema } from './provider-settings';
-import { MAX_SUMMARIES, MAX_SUMMARY_CHARACTERS, summaryCoverageSchema } from './summaries';
+import { MAX_SUMMARIES,MAX_SUMMARY_CHARACTERS,summaryCoverageSchema } from './summaries';
+import type { ConversationSettings,Message,PromptPreset,ProviderApiKind,ProviderModel } from './types';
 import { branchPath } from './types';
 import { publicToolTaskSchema } from './web-tools';
 
 export const BACKUP_FORMAT = 'everchat-backup';
 export const BACKUP_VERSION = 1 as const;
 export const MAX_BACKUP_BYTES = 12 * 1024 * 1024;
-export const MAX_BACKUP_MESSAGES = 1000;
+const MAX_BACKUP_MESSAGES = 1000;
 
-export interface BackupProvider {
+interface BackupProvider {
   id: string; name: string; provider: ProviderApiKind; baseUrl: string; models: ProviderModel[];
 }
 export interface BackupSettings {
@@ -56,10 +56,6 @@ export function backupMessage(message: Message): BackupMessage {
       calls: message.tools.calls.map((item) => ['queued', 'running'].includes(item.state) ? { ...item, state: 'cancelled' as const } : item) } : message.tools } : {}),
     ...(message.deletedAt ? { deletedAt: message.deletedAt } : {}),
   };
-}
-
-export function backupConversation(info: ConversationInfo, messages: Message[], settings?: ConversationSettings): ConversationBackup {
-  return { id: info.id, title: info.title, createdAt: info.createdAt, updatedAt: info.updatedAt, messages: messages.map(backupMessage), ...(settings ? { settings } : {}) };
 }
 
 const isString = (value: unknown, max: number): value is string => typeof value === 'string' && value.length <= max;

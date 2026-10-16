@@ -1,4 +1,4 @@
-import { createParser, type EventSourceParser } from 'eventsource-parser';
+import { createParser,type EventSourceParser } from 'eventsource-parser';
 import type { ProviderKind } from './types';
 
 export const MAX_EVENT_CHARACTERS = 256 * 1024;
@@ -15,7 +15,7 @@ export interface StreamState {
   promptInputTokens?: number;
   thoughts: { id: string; raw: string; summary: string }[];
 }
-export type ParsedDelta = { kind: 'content' | 'reasoning'; text: string };
+type ParsedDelta = { kind: 'content' | 'reasoning'; text: string };
 const object = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const array = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
 const string = (value: unknown) => typeof value === 'string' ? value : '';

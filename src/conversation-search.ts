@@ -1,4 +1,4 @@
-export function literalPattern(query: string) {
+function literalPattern(query: string) {
   const words = query.trim().split(/\s+/u);
   return query.trim() ? new RegExp(words.map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s+'), 'giu') : null;
 }

@@ -1,13 +1,13 @@
 import * as v from 'valibot';
-import type { ResolvedModelMetadata } from './types';
 import { canAttemptCapability } from './model-metadata';
+import type { ResolvedModelMetadata } from './types';
 
 export const WEB_TOOL_NAMES = ['web_search', 'read_webpage'] as const;
 export type WebToolName = typeof WEB_TOOL_NAMES[number];
 export const MAX_TOOL_CALLS_PER_TURN = 2;
 export const MAX_TOOL_EXCHANGES = 3;
 export const MAX_TOOL_INPUT_BYTES = 8 * 1024;
-export const MAX_TOOL_RESULT_BYTES = 64 * 1024;
+const MAX_TOOL_RESULT_BYTES = 64 * 1024;
 export const MAX_TOOL_SOURCES = 5;
 export const MAX_TOOL_SOURCE_CHARACTERS = 12_000;
 
@@ -32,19 +32,19 @@ const url = v.pipe(v.string(), v.check(publicWebUrl, '只允许公开 HTTPS 网�
 export function validateWebToolIdentity(id: string, toolName: string, enabled: readonly WebToolName[]) {
   if (!v.is(callId, id) || !v.is(name, toolName) || !enabled.includes(toolName)) throw new Error('模型返回了未启用的工具或无效调用标识。');
 }
-export const webToolCallSchema = v.variant('name', [
+const webToolCallSchema = v.variant('name', [
   v.strictObject({ id: callId, name: v.literal('web_search'), input: v.strictObject({ query: safeText(500) }) }),
   v.strictObject({ id: callId, name: v.literal('read_webpage'), input: v.strictObject({ url }) }),
 ]);
 export type WebToolCall = v.InferOutput<typeof webToolCallSchema>;
 const sourceSchema = v.strictObject({ title: safeText(300), url, content: safeText(MAX_TOOL_SOURCE_CHARACTERS) });
-export const webToolOutcomeSchema = v.variant('status', [
+const webToolOutcomeSchema = v.variant('status', [
   v.strictObject({ id: callId, name, status: v.literal('completed'), sources: v.pipe(v.array(sourceSchema), v.maxLength(MAX_TOOL_SOURCES),
     v.check((sources) => sources.reduce((total, source) => total + source.content.length, 0) <= MAX_TOOL_SOURCE_CHARACTERS)) }),
   v.strictObject({ id: callId, name, status: v.literal('failed'), error: safeText(500) }),
 ]);
 export type WebToolOutcome = v.InferOutput<typeof webToolOutcomeSchema>;
-export interface PublicToolCall { round: number; call: WebToolCall; state: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'; result?: WebToolOutcome }
+interface PublicToolCall { round: number; call: WebToolCall; state: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'; result?: WebToolOutcome }
 export interface PublicToolTask { status: 'active' | 'completed' | 'failed' | 'cancelled'; round: number; calls: PublicToolCall[] }
 const round = v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(MAX_TOOL_EXCHANGES));
 export const publicToolTaskSchema = v.pipe(v.strictObject({

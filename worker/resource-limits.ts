@@ -1,6 +1,6 @@
 export const MAX_CONVERSATIONS = 128;
 export const MAX_MESSAGES = 1000;
-export const MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024;
+const MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024;
 // Reserve room for a new input, decoded output, incomplete SSE and protocol checkpoint.
 export const MAX_HISTORY_START_BYTES = MAX_SNAPSHOT_BYTES - 4 * 1024 * 1024;
 export const MAX_DATABASE_BYTES = 32 * 1024 * 1024;

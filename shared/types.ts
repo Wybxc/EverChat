@@ -1,12 +1,12 @@
 import type { DocumentPart } from './documents';
-import { ProviderStream, type StreamState } from './provider-stream';
 import type { GenerationResult } from './generation';
-import type { SummaryCoverage } from './summaries';
-import { validateBatch, validateCommit } from './stream-batches';
-import { messageParts, messageText, type MessagePart } from './message-content';
 import type { ImagePart } from './images';
-import type { PublicToolTask, WebToolName } from './web-tools';
+import { messageParts,messageText,type MessagePart } from './message-content';
+import { ProviderStream,type StreamState } from './provider-stream';
+import { validateBatch,validateCommit } from './stream-batches';
+import type { SummaryCoverage } from './summaries';
 import type { WebToolServiceConfig } from './web-tool-service';
+import type { PublicToolTask,WebToolName } from './web-tools';
 export type { MessagePart } from './message-content';
 
 export type MessageStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
@@ -57,7 +57,7 @@ export interface CommitAck {
   type: 'commit-ack'; seq: number; runId: string; messageId: string;
   firstChunkSeq: number; lastChunkSeq: number; startOffset: number; endOffset: number;
 }
-export interface Preview { type: 'preview'; batch: StreamBatch }
+interface Preview { type: 'preview'; batch: StreamBatch }
 export type DurableChange = Change | Commit;
 export type SyncPacket = DurableChange | Preview | CommitAck | { type: 'snapshot'; snapshot: Snapshot } | { type: 'ready'; seq: number } | { type: 'deleted'; deletedAt: number };
 export interface ModelSelection { providerId: string; model: string }

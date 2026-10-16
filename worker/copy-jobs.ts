@@ -1,6 +1,6 @@
 import { HttpError } from './http';
 
-export const COPY_LEASE = 10 * 60_000;
+const COPY_LEASE = 10 * 60_000;
 const COPY_RETENTION = 7 * 24 * 60 * 60_000, MAX_COPY_RECORDS = 1000, MAX_ACTIVE_COPIES = 2;
 export type CopyResult = { id: string; viewHeadId: string | null } | { error: string; status: number };
 type CopyJob = { id: string; sourceId: string; messageId: string | null; status: string; createdAt: number;

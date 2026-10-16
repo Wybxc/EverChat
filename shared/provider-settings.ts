@@ -1,11 +1,11 @@
 import * as v from 'valibot';
+import { MAX_MODEL_TOKENS,reasoningEfforts } from './model-metadata';
 import { providerOptions } from './providers';
-import type { ProviderApiKind, ProviderSettingsInput } from './types';
-import { MAX_MODEL_TOKENS, reasoningEfforts } from './model-metadata';
+import type { ProviderApiKind,ProviderSettingsInput } from './types';
 
 export const providerTypes = providerOptions.map((option) => option.value) as [ProviderApiKind, ...ProviderApiKind[]];
 // SQLite limits a whole row to 2 MB; leave room for record headers and column encoding.
-export const MAX_PROVIDER_PROFILE_BYTES = 2_000_000 - 1024;
+const MAX_PROVIDER_PROFILE_BYTES = 2_000_000 - 1024;
 const modelId = v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(200));
 const tokenLimit = v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(MAX_MODEL_TOKENS));
 const metadataFields = {

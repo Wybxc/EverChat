@@ -8,7 +8,7 @@ export const promptPresetInputSchema = v.strictObject({
   name: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(100)),
   systemPrompt: v.pipe(v.string(), v.maxLength(20_000)),
 });
-export const promptPresetSchema = v.strictObject({
+const promptPresetSchema = v.strictObject({
   id: v.pipe(v.string(), v.uuid()),
   ...promptPresetInputSchema.entries,
   updatedAt: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(Number.MAX_SAFE_INTEGER)),

@@ -1,10 +1,10 @@
-import { MAX_BATCH_BYTES, MAX_COMMIT_BYTES, MAX_STREAM_BYTES, payloadBytes, streamBatches } from '../shared/stream-batches';
+import { MAX_BATCH_BYTES,MAX_COMMIT_BYTES,MAX_STREAM_BYTES,payloadBytes,streamBatches } from '../shared/stream-batches';
 import type { StreamBatch } from '../shared/types';
-import { GenerationCancelled, ProviderError } from './generation-errors';
+import { GenerationCancelled,ProviderError } from './generation-errors';
 
-export const PREVIEW_INTERVAL_MS = 100;
-export const COMMIT_INTERVAL_MS = 1500;
-export const COMMIT_TARGET_BYTES = 32 * 1024;
+const PREVIEW_INTERVAL_MS = 100;
+const COMMIT_INTERVAL_MS = 1500;
+const COMMIT_TARGET_BYTES = 32 * 1024;
 
 // Only the bounded uncommitted tail lives in the running DO's memory.
 export class GenerationBuffer {

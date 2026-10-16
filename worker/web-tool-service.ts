@@ -1,8 +1,8 @@
 import type { WebToolServiceConfig } from '../shared/web-tool-service';
-import { MAX_TOOL_SOURCE_CHARACTERS, MAX_TOOL_SOURCES, publicWebUrl, validateWebToolCall, validateWebToolOutcome, WEB_TOOL_NAMES, type WebToolCall, type WebToolOutcome } from '../shared/web-tools';
+import { MAX_TOOL_SOURCE_CHARACTERS,MAX_TOOL_SOURCES,publicWebUrl,validateWebToolCall,validateWebToolOutcome,WEB_TOOL_NAMES,type WebToolCall,type WebToolOutcome } from '../shared/web-tools';
 
 export const WEB_TOOL_RESPONSE_BYTES = 512 * 1024;
-export const WEB_TOOL_TIMEOUT_MS = 15_000;
+const WEB_TOOL_TIMEOUT_MS = 15_000;
 export type WebToolFetch = (request: Request) => Promise<Response>;
 const credentialsError = '联网服务密钥无效或没有访问权限。';
 const quotaError = '联网服务的请求或用量额度已用尽。';

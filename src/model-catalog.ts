@@ -1,8 +1,8 @@
-import { get, set } from 'idb-keyval';
-import { parseModelCatalog, type ModelCatalog } from '../shared/model-catalog';
+import { get,set } from 'idb-keyval';
+import { parseModelCatalog,type ModelCatalog } from '../shared/model-catalog';
 
 const CACHE_KEY = 'public-model-catalog:v1', TTL = 7 * 24 * 60 * 60 * 1000;
-export interface CatalogCache { data: ModelCatalog; updatedAt: number }
+interface CatalogCache { data: ModelCatalog; updatedAt: number }
 let memory: CatalogCache | null = null, pending: Promise<CatalogCache | null> | null = null;
 let nextAttempt = 0;
 

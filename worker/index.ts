@@ -18,7 +18,6 @@ import { promptPresetInputSchema } from '../shared/prompt-presets';
 import { MAX_MESSAGE_DOCUMENTS } from '../shared/documents';
 import { pdfExtractionSchema } from '../shared/pdf';
 import { MAX_MESSAGE_IMAGES } from '../shared/images';
-import { messageAttachments } from '../shared/message-content';
 import { attachmentInputSchema } from '../shared/attachments';
 
 export { Conversation } from './conversation';

@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 
-export type ThemeMode = 'light' | 'dark' | 'system';
+type ThemeMode = 'light' | 'dark' | 'system';
 const validMode = (value: string | null): ThemeMode => value === 'light' || value === 'dark' ? value : 'system';
 let mode: ThemeMode = 'system';
 try { mode = validMode(localStorage.getItem('everchat:theme')); } catch { /* Use the system preference. */ }
