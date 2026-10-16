@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { countMatches, matchAt } from '../src/conversation-search';
+import { countMatches, matchAt } from '../src/features/chat/search';
 
 test('conversation search treats metacharacters as literal text and ignores case without changing UTF-16 offsets', () => {
   const text = '😀 中文 [a+b] and [A+B]';

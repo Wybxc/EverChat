@@ -1,8 +1,8 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { App } from './App';
-import { hydrateStorage } from './storage';
+import { App } from './app/App';
+import { hydrateStorage } from './platform/storage';
 import './style.css';
 
 async function start() {

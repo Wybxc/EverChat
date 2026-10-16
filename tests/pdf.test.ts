@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import * as v from 'valibot';
 import { pdfExtractionSchema, PDF_PARSER_VERSION } from '../shared/attachments/pdf';
 import { documentPartSchema, documentPrompt, estimateDocumentTokens } from '../shared/attachments/documents';
-import { abortable } from '../src/abort';
+import { abortable } from '../src/platform/abort';
 
 const text = '[第 1 页]\n文件预算：42 元。', hash = createHash('sha256').update(text).digest('hex');
 const metadata = { pages: 1, parserVersion: PDF_PARSER_VERSION };

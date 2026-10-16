@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as v from 'valibot';
 import { applyConversationSettings, conversationSettingsSchema, DEFAULT_CONVERSATION_SETTINGS as defaults, samplingSupport } from '../shared/conversation/settings';
 import type { ProviderConfig } from '../shared/providers/types';
-import { Autosave } from '../src/autosave';
+import { Autosave } from '../src/platform/autosave';
 
 const config: ProviderConfig = { provider: 'openai-chat', baseUrl: 'https://provider.example/v1', model: 'test-model', systemPrompt: 'model prompt', maxOutputTokens: 128 };
 

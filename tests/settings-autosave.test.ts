@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { SettingsAutosave } from '../src/settings-autosave';
+import { SettingsAutosave } from '../src/features/providers/settings-autosave';
 import { publicProviderSettings } from '../worker/provider-config';
 import type { ProviderSettings, ProviderSettingsInput } from '../shared/providers/types';
 

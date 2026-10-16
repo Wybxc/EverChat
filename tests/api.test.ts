@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { api, ApiError } from '../src/api';
+import { api, ApiError } from '../src/platform/api';
 
 test('non-JSON platform failures become a retryable API failure without exposing the raw page', async () => {
   const original = globalThis.fetch;

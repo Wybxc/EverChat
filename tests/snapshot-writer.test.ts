@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { SnapshotWriter } from '../src/snapshot-writer';
+import { SnapshotWriter } from '../src/features/chat/snapshot-writer';
 import type { Snapshot } from '../shared/streaming/protocol';
 
 test('continuous updates write the latest durable snapshot at a bounded frequency without starving the timer', (context) => {
