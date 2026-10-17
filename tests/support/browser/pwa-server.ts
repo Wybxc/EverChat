@@ -1,22 +1,29 @@
 import { messageParts } from '../../../shared/conversation/content';
 // Serve the production shell with read-only synthetic API data; DO behavior is covered by the main E2E suite.
-import { readFile } from 'node:fs/promises';
+import { readFile, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { startCloudflareAssets } from './cloudflare-assets';
 import { createServer } from 'node:http';
 import { extname, resolve, sep } from 'node:path';
 import { preparePwaBuilds } from './pwa-builds';
 
 const builds = await preparePwaBuilds();
+const temporary = await mkdtemp(resolve(tmpdir(), 'everchat-assets-'));
+const stopAssets = await startCloudflareAssets(builds.a, temporary);
 let root = builds.a;
 let failSettings = false,
   failAsset = false,
   failSw = false;
-let providerSettings = {
+let swMode: 'normal' | 'html' | 'redirect' = 'normal';
+let swDelay = 0;
+const defaultProviderSettings = () => ({
   providers: [],
   activeProviderId: null,
   activeModel: '',
   systemPrompt: '',
   maxOutputTokens: null,
-};
+});
+let providerSettings = defaultProviderSettings();
 const conversationId = '00000000-0000-4000-8000-000000000101';
 const title = '离线 URL 验证';
 const types: Record<string, string> = {
@@ -46,11 +53,17 @@ const server = createServer(async (request, response) => {
       failSettings?: boolean;
       failAsset?: boolean;
       failSw?: boolean;
+      swMode?: typeof swMode;
+      swDelay?: number;
+      resetSettings?: boolean;
     };
     if (input.version) root = builds[input.version];
     if (input.failSettings !== undefined) failSettings = input.failSettings;
     if (input.failAsset !== undefined) failAsset = input.failAsset;
     if (input.failSw !== undefined) failSw = input.failSw;
+    if (input.swMode !== undefined) swMode = input.swMode;
+    if (input.swDelay !== undefined) swDelay = input.swDelay;
+    if (input.resetSettings) providerSettings = defaultProviderSettings();
     return json({ ok: true });
   }
   if (path === '/api/settings/providers') {
@@ -88,9 +101,7 @@ const server = createServer(async (request, response) => {
   if (path === '/api/settings/presets') return json([]);
   if (path === '/api/conversations')
     return json({
-      conversations: [
-        { id: conversationId, title, createdAt: 1, updatedAt: 1, pinned: false, archived: false },
-      ],
+      conversations: [{ id: conversationId, title, createdAt: 1, updatedAt: 1, pinned: false }],
       deletions: [],
       activity: {},
       deletionCursor: 0,
@@ -132,9 +143,18 @@ const server = createServer(async (request, response) => {
     response.end();
     return;
   }
+  if (path === '/sw.js' && swDelay) await new Promise((resolve) => setTimeout(resolve, swDelay));
+  if (path === '/sw.js' && swMode !== 'normal') {
+    response.writeHead(swMode === 'html' ? 200 : 302, {
+      'Content-Type': 'text/html',
+      ...(swMode === 'redirect' ? { Location: '/cdn-cgi/access/login' } : {}),
+    });
+    response.end('<html>Authentication</html>');
+    return;
+  }
   if (
     (failSw && path === '/sw.js') ||
-    (failAsset && path.startsWith('/assets/') && path.endsWith('.js'))
+    (failAsset && path.startsWith('/assets/mermaid') && path.endsWith('.js'))
   ) {
     response.writeHead(503);
     response.end('Fixture static resource failure');
@@ -160,6 +180,13 @@ const server = createServer(async (request, response) => {
 });
 server.on('upgrade', (_request, socket) => socket.destroy());
 server.listen(5175, '127.0.0.1');
-const close = () => server.close(() => void builds.dispose().finally(() => process.exit(0)));
+const close = () =>
+  server.close(
+    () =>
+      void stopAssets()
+        .then(() => rm(temporary, { recursive: true, force: true }))
+        .then(() => builds.dispose())
+        .finally(() => process.exit(0)),
+  );
 process.on('SIGTERM', close);
 process.on('SIGINT', close);

@@ -818,9 +818,7 @@ test('a search URL for an uncached message waits for a fresh authoritative snaps
       data: { requestId: crypto.randomUUID(), content: `${text.slice(0, -1)}X` },
     });
     expect(shadow.status()).toBe(201);
-    const full = await page.request.get(
-      `/api/search?${new URLSearchParams({ q: text, archived: 'false' })}`,
-    );
+    const full = await page.request.get(`/api/search?${new URLSearchParams({ q: text })}`);
     expect(full.status()).toBe(200);
     expect(
       (await full.json()).results.map((item: { messageId: string }) => item.messageId),

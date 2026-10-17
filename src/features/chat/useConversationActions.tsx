@@ -8,7 +8,7 @@ import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 
-export type ConversationPatch = { title?: string; pinned?: boolean; archived?: boolean };
+export type ConversationPatch = { title?: string; pinned?: boolean };
 type DialogTarget = {
   mode: 'rename' | 'delete';
   conversation: ConversationInfo;

@@ -10,11 +10,9 @@ import { SearchResultItem } from './SearchResultItem';
 
 export function LibrarySearch({
   query,
-  archived,
   open,
 }: {
   query: string;
-  archived: boolean;
   open: (result: SearchResult, query: string) => void;
 }) {
   const [debounced, setDebounced] = useState('');
@@ -33,11 +31,11 @@ export function LibrarySearch({
     };
   }, []);
   const search = useInfiniteQuery({
-    queryKey: ['body-search', debounced, archived],
+    queryKey: ['body-search', debounced],
     initialPageParam: null as string | null,
     queryFn: ({ pageParam, signal }) =>
       api<SearchPage>(
-        `/search?${new URLSearchParams({ q: debounced, archived: String(archived), ...(pageParam ? { cursor: pageParam } : {}) })}`,
+        `/search?${new URLSearchParams({ q: debounced, ...(pageParam ? { cursor: pageParam } : {}) })}`,
         'GET',
         undefined,
         signal,

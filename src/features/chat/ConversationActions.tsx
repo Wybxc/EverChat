@@ -1,7 +1,5 @@
 import { useState, type ReactNode } from 'react';
 import {
-  Archive,
-  ArchiveRestore,
   Check,
   Copy,
   Link,
@@ -165,22 +163,6 @@ export function ConversationActions({
       )}
       {conversation && (
         <>
-          <ActionMenuSeparator />
-          <ActionMenuItem
-            disabled={disabled || busy}
-            onSelect={() =>
-              void perform(() =>
-                actions.update(conversation.id, { archived: !conversation.archived }),
-              )
-            }
-          >
-            {conversation.archived ? (
-              <ArchiveRestore className="size-4" />
-            ) : (
-              <Archive className="size-4" />
-            )}
-            {conversation.archived ? '取消归档' : '归档'}
-          </ActionMenuItem>
           <ActionMenuSeparator />
           <ActionMenuItem
             disabled={disabled || busy}

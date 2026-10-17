@@ -15,6 +15,7 @@ import {
 export function PwaSettings() {
   const state = useSyncExternalStore(subscribePwa, pwaSnapshot);
   const [repair, setRepair] = useState(false);
+  const [copyStatus, setCopyStatus] = useState('');
   return (
     <section aria-label="应用" className="space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -35,16 +36,22 @@ export function PwaSettings() {
             <Button
               variant="secondary"
               type="button"
-              disabled={state.checking || state.installing || state.preparing}
+              disabled={state.pending || state.installing || state.preparing || state.repairing}
               onClick={() => void checkPwaUpdate()}
             >
               {state.checking || state.installing ? <Spinner /> : <RefreshCw className="size-4" />}
-              {state.installing ? '准备更新资源' : state.checking ? '检查中' : '检查更新'}
+              {state.installing
+                ? '准备更新资源'
+                : state.checking
+                  ? '检查中'
+                  : state.pending
+                    ? '浏览器仍在检查'
+                    : '检查更新'}
             </Button>
             {state.available && (
               <Button
                 type="button"
-                disabled={state.preparing}
+                disabled={state.preparing || state.repairing}
                 onClick={() => void applyPwaChange('update')}
               >
                 更新应用
@@ -53,11 +60,11 @@ export function PwaSettings() {
             <Button
               variant="ghost"
               type="button"
-              disabled={state.preparing}
+              disabled={state.preparing || state.pending || state.repairing}
               onClick={() => setRepair(true)}
             >
               <Wrench className="size-4" />
-              修复应用缓存
+              {state.repairing ? '准备修复资源' : '修复应用缓存'}
             </Button>
           </>
         )}
@@ -80,6 +87,27 @@ export function PwaSettings() {
         <p role="alert" className="text-sm text-destructive">
           {state.error}
         </p>
+      )}
+      {state.diagnostic && (
+        <details className="text-xs text-muted-foreground">
+          <summary className="cursor-pointer">更新诊断</summary>
+          <pre className="my-2 max-h-48 overflow-auto whitespace-pre-wrap break-all select-text">
+            {JSON.stringify(state.diagnostic, null, 2)}
+          </pre>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              void navigator.clipboard.writeText(JSON.stringify(state.diagnostic, null, 2)).then(
+                () => setCopyStatus('已复制'),
+                () => setCopyStatus('复制失败，请重试'),
+              );
+            }}
+          >
+            复制诊断
+          </Button>
+          <span role="status">{copyStatus}</span>
+        </details>
       )}
       <Modal alert open={repair} onOpenChange={setRepair}>
         <div className="w-full max-w-sm space-y-4 p-5">
@@ -118,35 +146,44 @@ export function PwaNotice() {
         正在更新应用…
       </div>
     );
-  if (!state.error && (!state.available || dismissed)) return null;
+  const error = state.noticeError ? state.error : '';
+  if (!error && (!state.available || dismissed)) return null;
   return (
     <div
       className="fixed right-3 bottom-3 left-3 z-[90] mx-auto flex max-w-lg flex-wrap items-center gap-2 rounded-xl border border-border bg-popover p-3 text-sm text-popover-foreground shadow-lg"
-      role={state.error ? 'alert' : 'status'}
+      role={error ? 'alert' : 'status'}
       data-testid="pwa-notice"
     >
-      <span className="min-w-0 flex-1">{state.error || '新版本已就绪'}</span>
+      <span className="min-w-0 flex-1">{error || '新版本已就绪'}</span>
       {state.resourceError ? (
-        <Button size="sm" onClick={() => void applyPwaChange('repair')}>
+        <Button
+          size="sm"
+          disabled={state.repairing || state.pending}
+          onClick={() => void applyPwaChange('repair')}
+        >
           修复缓存
         </Button>
       ) : (
         state.available && (
-          <Button size="sm" onClick={() => void applyPwaChange('update')}>
+          <Button
+            size="sm"
+            disabled={state.repairing}
+            onClick={() => void applyPwaChange('update')}
+          >
             更新
           </Button>
         )
       )}
       <Button
         size="sm"
-        aria-label={state.error ? '关闭应用提示' : undefined}
+        aria-label={error ? '关闭应用提示' : undefined}
         variant="ghost"
         onClick={() => {
           setDismissed(true);
           dismissPwaError();
         }}
       >
-        {state.error ? <X className="size-4" aria-hidden="true" /> : '稍后'}
+        {error ? <X className="size-4" aria-hidden="true" /> : '稍后'}
       </Button>
     </div>
   );

@@ -1,4 +1,14 @@
 import { flushStorage } from '../storage';
+import { notifyAuthFailure } from '../auth';
+import {
+  diagnosePwaFailure,
+  pwaFailureMessage,
+  safePwaError,
+  type PwaDiagnostic,
+  type PwaFailure,
+  type PwaPhase,
+  type PwaSource,
+} from './diagnostics';
 import { reloadBlocked } from './reload-guard';
 import { freezeForReload } from './browser-lock';
 import { APP_VERSION, PWA_CHANNEL, type Preparation, type ReloadCommand } from './protocol';
@@ -11,6 +21,10 @@ type PwaState = {
   supported: boolean;
   ready: boolean;
   checking: boolean;
+  pending: boolean;
+  repairing: boolean;
+  noticeError: boolean;
+  diagnostic?: PwaDiagnostic;
   available: boolean;
   preparing: boolean;
   installing: boolean;
@@ -25,6 +39,9 @@ let state: PwaState = {
     typeof navigator !== 'undefined' && 'serviceWorker' in navigator && import.meta.env.PROD,
   ready: false,
   checking: false,
+  pending: false,
+  repairing: false,
+  noticeError: false,
   available: false,
   preparing: false,
   installing: false,
@@ -47,13 +64,45 @@ export const subscribePwa = (listener: () => void) => {
 };
 export const pwaSnapshot = () => state;
 let registration: ServiceWorkerRegistration | undefined;
-let registering: Promise<void> | undefined;
+let registering: Promise<ServiceWorkerRegistration> | undefined;
+let checking: Promise<void> | undefined;
+let checkId = 0;
+let failureCount = 0;
+const watched = new WeakSet<ServiceWorkerRegistration>();
+const sources = new WeakMap<ServiceWorkerRegistration, PwaSource>();
 let installPrompt: InstallPrompt | undefined;
 let preparedToken: string | undefined;
 let releaseTimer: ReturnType<typeof setTimeout> | undefined;
 let reloading = false;
+let changing = false;
+let controllerScript: string | undefined;
 let started = false;
 let lastCheck = 0;
+function diagnostic(source: PwaSource, phase: PwaPhase, failure?: PwaFailure, error?: unknown) {
+  publish({
+    diagnostic: {
+      at: new Date().toISOString(),
+      source,
+      phase,
+      pageVersion: APP_VERSION,
+      workerVersion: state.diagnostic?.workerVersion,
+      failure,
+      ...(error ? { summary: safePwaError(error) } : {}),
+    },
+  });
+}
+async function failed(source: PwaSource, phase: PwaPhase, error: unknown, id = checkId) {
+  const failure = !navigator.onLine
+    ? 'offline'
+    : source === 'manual'
+      ? await diagnosePwaFailure()
+      : 'unknown';
+  if (id !== checkId || state.available) return;
+  failureCount++;
+  diagnostic(source, phase, failure, error);
+  publish({ error: pwaFailureMessage(failure), noticeError: source === 'manual' });
+  if (failure === 'authentication') notifyAuthFailure(401);
+}
 
 function release(token?: string) {
   if (token && preparedToken !== token) return;
@@ -71,10 +120,10 @@ async function prepare(token: string): Promise<Preparation> {
   if (reason) return { ready: false, reason };
   preparedToken = token;
   freezeForReload(true);
-  publish({ preparing: true, error: '' });
+  publish({ preparing: true, error: '', noticeError: false });
   releaseTimer = setTimeout(() => {
     release(token);
-    publish({ error: '更新等待超时，请重试。' });
+    publish({ error: '更新等待超时，请重试。', noticeError: true });
   }, 20_000);
   try {
     window.dispatchEvent(new Event('everchat:prepare-reload'));
@@ -109,9 +158,13 @@ function request<T>(worker: ServiceWorker, type: string): Promise<T> {
 async function controllerChanged() {
   const worker = navigator.serviceWorker.controller;
   if (!worker) return;
+  const freshRepair =
+    worker.scriptURL !== controllerScript && new URL(worker.scriptURL).searchParams.has('repair');
+  controllerScript = worker.scriptURL;
   try {
     const { version } = await request<{ version: string }>(worker, 'version');
-    if (version === APP_VERSION) {
+    if (state.diagnostic) publish({ diagnostic: { ...state.diagnostic, workerVersion: version } });
+    if (version === APP_VERSION && !freshRepair) {
       release();
       publish({ ready: true });
       return;
@@ -127,43 +180,85 @@ async function controllerChanged() {
     publish({ error: '无法确认应用版本，请检查更新。' });
   }
 }
-function watch(next: ServiceWorkerRegistration) {
+function watch(next: ServiceWorkerRegistration, source: PwaSource) {
   registration = next;
-  publish({ ready: Boolean(next.active), available: Boolean(next.waiting), error: '' });
+  sources.set(next, source);
+  publish({ ready: Boolean(next.active), available: Boolean(next.waiting) });
+  if (watched.has(next)) return;
+  watched.add(next);
+  if (next.active) {
+    const active = next.active;
+    void request<{ version: string }>(active, 'version')
+      .then(({ version }) => {
+        if (registration === next && next.active === active && state.diagnostic)
+          publish({ diagnostic: { ...state.diagnostic, workerVersion: version } });
+      })
+      .catch(() => {
+        /* Diagnosis never blocks an update. */
+      });
+  }
   const observe = () => {
     const installing = next.installing;
     if (!installing) return;
+    const repairInstall = state.repairing;
+    diagnostic(sources.get(next) ?? 'background', 'install');
     publish({ installing: true });
-    installing.addEventListener('statechange', () => {
-      if (installing.state === 'installed')
+    const changed = () => {
+      if (registration !== next) return;
+      if (installing.state === 'installed' || installing.state === 'activated') {
+        failureCount = 0;
         publish({
           installing: false,
-          ready: Boolean(next.active),
+          ready: Boolean(next.active) || installing.state === 'activated',
           available: Boolean(next.waiting),
+          error: '',
+          noticeError: false,
         });
-      if (installing.state === 'activated') publish({ installing: false, ready: true });
-      if (installing.state === 'redundant')
-        publish({ installing: false, error: '离线资源未能准备，请检查更新或修复缓存。' });
-    });
+      }
+      if (installing.state === 'redundant') {
+        // Browsers remove an unsuccessful first install. Never retain that dead object.
+        if (!next.active && !next.waiting) registration = undefined;
+        const origin = sources.get(next) ?? 'background';
+        failureCount++;
+        diagnostic(origin, 'install', 'install');
+        publish({
+          installing: false,
+          error: repairInstall
+            ? '修复资源未能下载，当前版本继续可用。'
+            : pwaFailureMessage('install'),
+          noticeError: origin === 'manual',
+        });
+      }
+    };
+    installing.addEventListener('statechange', changed);
+    changed();
   };
   next.addEventListener('updatefound', observe);
   observe();
 }
-export async function registerPwa() {
-  if (!state.supported) return;
+async function currentRegistration(source: PwaSource) {
   if (registering) return registering;
   registering = (async () => {
-    try {
-      watch(
-        await navigator.serviceWorker.register('/sw.js', { scope: '/', updateViaCache: 'none' }),
-      );
-    } catch {
-      publish({ error: '离线服务注册失败，请重试。' });
-    }
+    const existing = await navigator.serviceWorker.getRegistration('/');
+    const next =
+      existing && (existing.active || existing.waiting || existing.installing)
+        ? existing
+        : await navigator.serviceWorker.register('/sw.js', { scope: '/', updateViaCache: 'none' });
+    watch(next, source);
+    return next;
   })().finally(() => {
     registering = undefined;
   });
   return registering;
+}
+export async function registerPwa() {
+  if (!state.supported || !navigator.onLine) return;
+  diagnostic('background', 'register');
+  try {
+    await currentRegistration('background');
+  } catch (error) {
+    await failed('background', 'register', error);
+  }
 }
 export function startPwa() {
   if (started || typeof window === 'undefined') return;
@@ -186,9 +281,14 @@ export function startPwa() {
     publish({ installed: true, canInstall: false });
   });
   window.addEventListener('vite:preloadError', () =>
-    publish({ resourceError: true, error: '界面资源未能加载，请修复缓存后重试。' }),
+    publish({
+      resourceError: true,
+      error: '界面资源未能加载，请修复缓存后重试。',
+      noticeError: true,
+    }),
   );
   if (!state.supported) return;
+  controllerScript = navigator.serviceWorker.controller?.scriptURL;
   navigator.serviceWorker.addEventListener('controllerchange', () => void controllerChanged());
   navigator.serviceWorker.addEventListener('message', (event) => {
     if (event.data?.channel !== PWA_CHANNEL) return;
@@ -201,27 +301,73 @@ export function startPwa() {
     }
   });
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && Date.now() - lastCheck > 300_000)
-      void checkPwaUpdate();
+    if (
+      document.visibilityState === 'visible' &&
+      Date.now() - lastCheck > Math.min(300_000 * 2 ** failureCount, 3_600_000)
+    )
+      void checkPwaUpdate('background');
   });
-  window.addEventListener('online', () => void checkPwaUpdate());
+  window.addEventListener('online', () => void checkPwaUpdate('background'));
+  window.addEventListener('everchat:network-ready', () => void checkPwaUpdate('background'));
   if (document.readyState === 'complete') void registerPwa();
   else window.addEventListener('load', () => void registerPwa(), { once: true });
 }
-export async function checkPwaUpdate() {
-  if (!state.supported || state.checking || state.preparing) return;
-  publish({ checking: true, error: '' });
-  lastCheck = Date.now();
-  try {
-    if (!registration) await registerPwa();
-    if (!registration) return;
-    await registration.update();
-    publish({ available: Boolean(registration.waiting), ready: Boolean(registration.active) });
-  } catch {
-    publish({ error: '更新检查失败，请恢复连接后重试。' });
-  } finally {
-    publish({ checking: false });
+export async function checkPwaUpdate(source: PwaSource = 'manual') {
+  if (!state.supported || state.preparing) return;
+  if (checking) return checking;
+  if (!navigator.onLine) {
+    if (source === 'manual') {
+      diagnostic(source, 'check', 'offline');
+      publish({ error: pwaFailureMessage('offline'), noticeError: true });
+    }
+    return;
   }
+  const id = ++checkId;
+  let timedOut = false;
+  publish({ checking: true, pending: true, error: '', noticeError: false });
+  lastCheck = Date.now();
+  diagnostic(source, 'check');
+  const timer = setTimeout(() => {
+    timedOut = true;
+    if (id !== checkId || state.available) return;
+    diagnostic(source, 'check', 'timeout');
+    publish({
+      checking: false,
+      error: pwaFailureMessage('timeout'),
+      noticeError: source === 'manual',
+    });
+  }, 15_000);
+  checking = (async () => {
+    let phase: PwaPhase = 'register';
+    try {
+      let next = await currentRegistration(source);
+      phase = 'check';
+      try {
+        await next.update();
+      } catch (error) {
+        if (!(error instanceof Error) || error.name !== 'InvalidStateError') throw error;
+        registration = undefined;
+        next = await currentRegistration(source);
+        await next.update(); // One recovery attempt; never loop on a broken installation.
+      }
+      if (id !== checkId) return;
+      failureCount = 0;
+      publish({
+        available: Boolean(next.waiting),
+        ready: Boolean(next.active),
+        ...(!state.installing && state.diagnostic?.failure !== 'install'
+          ? { error: '', noticeError: false }
+          : {}),
+      });
+    } catch (error) {
+      if (!timedOut) await failed(source, phase, error, id);
+    } finally {
+      clearTimeout(timer);
+      checking = undefined;
+      if (id === checkId) publish({ checking: false, pending: false });
+    }
+  })();
+  return checking;
 }
 export async function installPwa() {
   const prompt = installPrompt;
@@ -232,31 +378,77 @@ export async function installPwa() {
     await prompt.prompt();
     await prompt.userChoice;
   } catch {
-    publish({ error: '安装未能完成，可从浏览器菜单安装。' });
+    publish({ error: '安装未能完成，可从浏览器菜单安装。', noticeError: true });
   }
 }
-export async function applyPwaChange(command: ReloadCommand) {
-  if (state.preparing) return;
-  publish({ error: '' });
+export async function applyPwaChange(command: ReloadCommand): Promise<void> {
+  if (!state.supported) return recoverApplicationResources();
+  if (state.preparing || changing || (command === 'repair' && state.pending)) return;
+  changing = true;
+  publish({ error: '', noticeError: false });
   try {
-    const worker = command === 'update' ? registration?.waiting : registration?.active;
+    let worker = registration?.waiting;
+    if (command === 'repair') {
+      if (!navigator.onLine) {
+        publish({ error: pwaFailureMessage('offline'), noticeError: true });
+        return;
+      }
+      publish({ repairing: true });
+      // A changed script URL forces installation even when the release bytes are unchanged.
+      // A distinct cache generation leaves the active version intact until activation.
+      const next = await navigator.serviceWorker.register(`/sw.js?repair=${crypto.randomUUID()}`, {
+        scope: '/',
+        updateViaCache: 'none',
+      });
+      watch(next, 'manual');
+      worker = await installedWorker(next);
+    }
     if (!worker) {
-      publish({ error: '应用服务尚未就绪，请先检查更新。' });
+      publish({ error: '应用服务尚未就绪，请先检查更新。', noticeError: true });
       return;
     }
     const result = await request<Preparation>(worker, command);
-    if (!result.ready) publish({ error: result.reason ?? '更新暂时无法进行。' });
+    if (!result.ready) publish({ error: result.reason ?? '更新暂时无法进行。', noticeError: true });
   } catch (error) {
     release();
-    publish({ error: error instanceof Error ? error.message : '更新未能完成。' });
+    publish({
+      error: error instanceof Error ? error.message : '更新未能完成。',
+      noticeError: true,
+    });
+  } finally {
+    changing = false;
+    publish({ repairing: false });
   }
 }
+
+function installedWorker(next: ServiceWorkerRegistration): Promise<ServiceWorker> {
+  const worker = next.installing ?? next.waiting;
+  if (!worker) return Promise.reject(new Error('修复资源尚未就绪，请重试。'));
+  return new Promise((resolve, reject) => {
+    const finish = (error?: Error) => {
+      clearTimeout(timer);
+      worker.removeEventListener('statechange', changed);
+      if (error) reject(error);
+      else resolve(worker);
+    };
+    const changed = () => {
+      if (worker.state === 'installed' || worker.state === 'activated') finish();
+      if (worker.state === 'redundant') finish(new Error('修复资源未能下载，当前版本继续可用。'));
+    };
+    const timer = setTimeout(
+      () => finish(new Error('修复资源下载耗时较长，就绪后可更新。')),
+      120_000,
+    );
+    worker.addEventListener('statechange', changed);
+    changed();
+  });
+}
 export function dismissPwaError() {
-  publish({ error: '', resourceError: false });
+  publish({ error: '', noticeError: false, resourceError: false });
 }
 
 /** React.lazy can only retry a rejected chunk in a fresh page runtime. */
-export async function recoverApplicationResources() {
+export async function recoverApplicationResources(): Promise<void> {
   if (registration?.active) return applyPwaChange('repair');
   const result = await prepare(crypto.randomUUID());
   if (result.ready && !reloading) {

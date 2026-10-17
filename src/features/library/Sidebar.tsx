@@ -1,5 +1,6 @@
 import type { ReactNode, RefObject } from 'react';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
+import { useSidebarSwipe } from './useSidebarSwipe';
 export function Sidebar({
   desktop,
   collapsed,
@@ -7,6 +8,7 @@ export function Sidebar({
   onOpenChange,
   trigger,
   children,
+  onClosed,
 }: {
   desktop: boolean;
   collapsed: boolean;
@@ -14,7 +16,9 @@ export function Sidebar({
   onOpenChange: (open: boolean) => void;
   trigger: RefObject<HTMLButtonElement | null>;
   children: ReactNode;
+  onClosed?: () => boolean;
 }) {
+  const { preview, dragging } = useSidebarSwipe(desktop, open, onOpenChange);
   if (desktop)
     return (
       !collapsed && (
@@ -24,14 +28,28 @@ export function Sidebar({
       )
     );
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet open={open || preview} modal={!preview} onOpenChange={onOpenChange}>
+      {preview && (
+        <div
+          aria-hidden
+          className="sidebar-swipe-preview fixed inset-0 z-50 bg-black/40 pointer-events-none"
+        />
+      )}
       <SheetContent
         side="left"
         showCloseButton={false}
         aria-describedby={undefined}
-        className="sidebar-surface data-[side=left]:w-[min(20rem,calc(100dvw-1rem))] gap-0 border-0 p-0"
+        data-sidebar-panel=""
+        aria-hidden={preview || undefined}
+        inert={preview || undefined}
+        className="sidebar-surface sidebar-swipe-panel data-[side=left]:w-[min(20rem,calc(100dvw-1rem))] gap-0 border-0 p-0"
+        overlayProps={{ className: 'sidebar-swipe-overlay' }}
+        onOpenAutoFocus={(event) => {
+          if (preview || dragging) event.preventDefault();
+        }}
         onCloseAutoFocus={(event) => {
           event.preventDefault();
+          if (preview || dragging || onClosed?.()) return;
           // A new page or dialog can deliberately claim focus while the sheet closes.
           const active = document.activeElement;
           if (active === document.body || active?.closest('[data-slot="sheet-content"]'))

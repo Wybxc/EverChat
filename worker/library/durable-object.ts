@@ -1,4 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
+import { initializeConversationMetadata } from './metadata';
 import type { DocumentPart } from '../../shared/attachments/documents';
 import type { AttachmentInput } from '../../shared/attachments/files';
 import type { ImagePart } from '../../shared/attachments/images';
@@ -52,7 +53,7 @@ type Deletion = { id: string; deletedAt: number; completed: number } & Record<
   string,
   SqlStorageValue
 >;
-const conversationSelect = `SELECT conversations.*, COALESCE(metadata.pinned, 0) AS pinned, COALESCE(metadata.archived, 0) AS archived, titleMeta.source AS titleSource, titleMeta.task AS titleTask
+const conversationSelect = `SELECT conversations.*, COALESCE(metadata.pinned, 0) AS pinned, titleMeta.source AS titleSource, titleMeta.task AS titleTask
   FROM conversations LEFT JOIN conversation_metadata AS metadata ON metadata.id = conversations.id
   LEFT JOIN conversation_titles AS titleMeta ON titleMeta.id=conversations.id
   WHERE NOT EXISTS (SELECT 1 FROM conversation_deletions WHERE conversation_deletions.id = conversations.id)
@@ -62,7 +63,6 @@ const decorate = (row: Record<string, SqlStorageValue>) =>
   ({
     ...row,
     pinned: Boolean(row.pinned),
-    archived: Boolean(row.archived),
     titleSource: row.titleSource ?? 'manual',
     titleTask: row.titleTask ? JSON.parse(String(row.titleTask)) : undefined,
   }) as unknown as ConversationInfo;
@@ -93,9 +93,7 @@ export class Library extends DurableObject<Env> {
     ctx.storage.sql.exec(
       `CREATE TABLE IF NOT EXISTS conversations (id TEXT PRIMARY KEY, title TEXT NOT NULL, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL)`,
     );
-    ctx.storage.sql.exec(
-      'CREATE TABLE IF NOT EXISTS conversation_metadata (id TEXT PRIMARY KEY, pinned INTEGER NOT NULL, archived INTEGER NOT NULL)',
-    );
+    initializeConversationMetadata(ctx.storage);
     ctx.storage.sql.exec(
       'CREATE TABLE IF NOT EXISTS conversation_deletions (id TEXT PRIMARY KEY, deletedAt INTEGER NOT NULL, completed INTEGER NOT NULL DEFAULT 0)',
     );
@@ -185,9 +183,9 @@ export class Library extends DurableObject<Env> {
       throw error;
     }
   }
-  search(query: string, archived: boolean, cursor?: string) {
+  search(query: string, cursor?: string) {
     try {
-      return this.searchIndex.search(query, archived, cursor);
+      return this.searchIndex.search(query, cursor);
     } catch (error) {
       if (error instanceof SearchChanged) return { error: error.message, status: 409 };
       throw error;
@@ -281,7 +279,7 @@ export class Library extends DurableObject<Env> {
         id,
       );
   }
-  update(id: string, patch: { title?: string; pinned?: boolean; archived?: boolean }) {
+  update(id: string, patch: { title?: string; pinned?: boolean }) {
     if (this.deletedAt(id)) return { error: '这个对话已删除。', status: 410 };
     const current = this.get(id);
     if (!current) return { error: '找不到这个对话。', status: 404 };
@@ -294,12 +292,11 @@ export class Library extends DurableObject<Env> {
           id,
         );
       }
-      if (patch.pinned !== undefined || patch.archived !== undefined) {
+      if (patch.pinned !== undefined) {
         this.ctx.storage.sql.exec(
-          `INSERT INTO conversation_metadata VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET pinned = excluded.pinned, archived = excluded.archived`,
+          `INSERT INTO conversation_metadata (id, pinned) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET pinned = excluded.pinned`,
           id,
           Number(patch.pinned ?? current.pinned),
-          Number(patch.archived ?? current.archived),
         );
       }
       this.searchIndex.changed();

@@ -302,7 +302,7 @@ test('uncached history keeps an editable draft and does not steal focus when it 
   try {
     await page.goto(`/c/${id}`);
     await request.entered;
-    await expect(page.getByRole('status', { name: '正在读取对话' })).toBeVisible();
+    await expect(page.getByRole('status', { name: '正在读取对话', exact: true })).toBeVisible();
     await composer(page).fill('读取历史时继续写');
     await expect(page.getByRole('button', { name: '发送消息', exact: true })).toBeDisabled();
     const model = page.getByRole('combobox', { name: '聊天模型', exact: true });
@@ -354,7 +354,7 @@ test('cached history remains readable through a failed refresh and a late respon
       await page.reload();
       await request.entered;
       await expect(page.getByTestId('assistant-message').first()).toBeVisible();
-      await expect(page.getByRole('status', { name: '正在读取对话' })).toHaveCount(0);
+      await expect(page.getByRole('status', { name: '正在读取对话', exact: true })).toHaveCount(0);
       await expect(composer(page)).toHaveValue('A 的草稿');
       await expect(page.getByRole('button', { name: '复制消息' }).first()).toBeEnabled();
       request.release();
@@ -406,7 +406,6 @@ test('a changed verified identity clears old drafts and never delivers the old i
                 createdAt: 1,
                 updatedAt: 1,
                 pinned: false,
-                archived: false,
               },
               input: { requestId: crypto.randomUUID(), content: '不能发送的旧队列' },
             },

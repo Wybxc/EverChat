@@ -56,6 +56,9 @@ test('sidebar commands target B while A keeps its URL, branch and draft, includi
   try {
     const head = await rememberOldBranch(page, b);
     await row(page, a).getByRole('link').click();
+    await expect(page).toHaveURL(
+      (url) => url.pathname === `/c/${a}` && Boolean(url.searchParams.get('branch')),
+    );
     const composer = page.getByLabel('消息', { exact: true });
     await composer.fill('A 中未发送的草稿');
     const url = page.url();
@@ -102,15 +105,6 @@ test('sidebar commands target B while A keeps its URL, branch and draft, includi
     );
     await page.keyboard.press('Escape');
     await context.setOffline(false);
-    await menu(page, b);
-    await page.getByRole('menuitem', { name: '归档', exact: true }).click();
-    await expect(row(page, b)).toHaveCount(0);
-    await expect(page.locator('body')).not.toBeFocused();
-    await expect(page).toHaveURL(url);
-    await page.getByRole('tab', { name: '归档', exact: true }).click();
-    await menu(page, b);
-    await page.getByRole('menuitem', { name: '取消归档', exact: true }).click();
-    await page.getByRole('tab', { name: '对话', exact: true }).click();
     await menu(page, b);
     await page.getByRole('menuitem', { name: '删除对话', exact: true }).click();
     const confirmation = page.getByRole('alertdialog', { name: '删除对话', exact: true });

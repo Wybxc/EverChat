@@ -131,7 +131,7 @@ export class SearchIndex {
       this.changed();
     });
   }
-  search(query: string, archived: boolean, cursor?: string): LibrarySearch {
+  search(query: string, cursor?: string): LibrarySearch {
     const sql = this.storage.sql,
       normalized = normalizeSearch(query);
     const revision = sql
@@ -139,7 +139,7 @@ export class SearchIndex {
       .one().revision;
     let before = Number.MAX_SAFE_INTEGER;
     if (cursor) {
-      let parsed: { q: string; a: boolean; r: number; b: number };
+      let parsed: { q: string; r: number; b: number };
       try {
         parsed = JSON.parse(decodeURIComponent(atob(cursor)));
       } catch {
@@ -147,7 +147,6 @@ export class SearchIndex {
       }
       if (
         parsed.q !== normalized ||
-        parsed.a !== archived ||
         parsed.r !== revision ||
         !Number.isSafeInteger(parsed.b) ||
         parsed.b < 1
@@ -160,14 +159,12 @@ export class SearchIndex {
           .exec<FieldRow & { title: string }>(
             `SELECT fields.*, conversations.title FROM search_fts
       JOIN search_fields AS fields ON fields.id = search_fts.rowid JOIN conversations ON conversations.id = fields.conversationId
-      LEFT JOIN conversation_metadata AS metadata ON metadata.id = conversations.id
-      WHERE search_fts.normalized GLOB ? AND instr(fields.normalized, ?) > 0 AND fields.id < ? AND COALESCE(metadata.archived, 0) = ?
+      WHERE search_fts.normalized GLOB ? AND instr(fields.normalized, ?) > 0 AND fields.id < ?
       AND NOT EXISTS (SELECT 1 FROM conversation_deletions WHERE conversation_deletions.id = fields.conversationId)
       ORDER BY fields.id DESC LIMIT ?`,
             searchCandidateGlob(normalized),
             normalized,
             before,
-            Number(archived),
             SEARCH_PAGE_SIZE + 1,
           )
           .toArray()
@@ -193,7 +190,7 @@ export class SearchIndex {
         rows.length > SEARCH_PAGE_SIZE
           ? btoa(
               encodeURIComponent(
-                JSON.stringify({ q: normalized, a: archived, r: revision, b: page.at(-1)!.id }),
+                JSON.stringify({ q: normalized, r: revision, b: page.at(-1)!.id }),
               ),
             )
           : null,

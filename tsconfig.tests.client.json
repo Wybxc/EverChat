@@ -10,6 +10,7 @@
     "tests/unit/rendering/markdown-math.test.ts",
     "tests/unit/chat/snapshot-writer.test.ts",
     "tests/unit/conversation/conversation-settings.test.ts",
-    "tests/unit/attachments/pdf.test.ts"
+    "tests/unit/attachments/pdf.test.ts",
+    "tests/unit/platform/pwa-diagnostics.test.ts"
   ]
 }

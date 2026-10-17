@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-import { clientsClaim, setCacheNameDetails } from 'workbox-core';
+import { cacheNames, clientsClaim, setCacheNameDetails } from 'workbox-core';
 import { addPlugins, createHandlerBoundToURL, precacheAndRoute } from 'workbox-precaching';
 import { NavigationRoute, registerRoute } from 'workbox-routing';
 import {
@@ -7,13 +7,16 @@ import {
   PWA_CHANNEL,
   STATIC_CACHE_PREFIX,
   type Preparation,
-  type ReloadCommand,
 } from './platform/pwa/protocol';
 
 declare const self: ServiceWorkerGlobalScope & {
   __WB_MANIFEST: { url: string; revision: string | null }[];
 };
-setCacheNameDetails({ prefix: 'everchat-static' });
+const repairGeneration = new URL(self.location.href).searchParams.get('repair');
+setCacheNameDetails({
+  prefix: 'everchat-static',
+  ...(repairGeneration ? { suffix: repairGeneration } : {}),
+});
 addPlugins([
   {
     fetchDidSucceed: async ({ request, response }) => {
@@ -39,6 +42,15 @@ registerRoute(
   }),
 );
 clientsClaim();
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    (async () => {
+      for (const name of await caches.keys())
+        if (name.startsWith(STATIC_CACHE_PREFIX) && name !== cacheNames.precache)
+          await caches.delete(name);
+    })(),
+  );
+});
 
 const appClients = async () =>
   (await self.clients.matchAll({ type: 'window', includeUncontrolled: true })).filter(
@@ -63,7 +75,7 @@ const ask = (client: WindowClient, token: string) =>
     client.postMessage({ channel: PWA_CHANNEL, type: 'prepare', token }, [channel.port2]);
   });
 let operation: Promise<Preparation> | undefined;
-async function coordinate(command: ReloadCommand) {
+async function coordinate() {
   const token = crypto.randomUUID();
   const prepared = new Set<string>();
   const release = async () => {
@@ -84,13 +96,9 @@ async function coordinate(command: ReloadCommand) {
       fresh.forEach((client) => prepared.add(client.id));
       const current = await appClients();
       if (current.every((client) => prepared.has(client.id))) {
-        if (command === 'repair') {
-          for (const name of await caches.keys())
-            if (name.startsWith(STATIC_CACHE_PREFIX)) await caches.delete(name);
-          await self.registration.unregister();
-          for (const client of current)
-            client.postMessage({ channel: PWA_CHANNEL, type: 'reload', token });
-        } else await self.skipWaiting();
+        // Repair also comes from a fully installed waiting worker with a fresh cache generation.
+        // Do not unregister: WebKit can discard unrelated CacheStorage entries when we do.
+        await self.skipWaiting();
         return { ready: true };
       }
     }
@@ -111,7 +119,7 @@ self.addEventListener('message', (event) => {
   if (command !== 'update' && command !== 'repair') return;
   event.waitUntil(
     (async () => {
-      operation ??= coordinate(command).finally(() => {
+      operation ??= coordinate().finally(() => {
         operation = undefined;
       });
       event.ports[0]?.postMessage(await operation);

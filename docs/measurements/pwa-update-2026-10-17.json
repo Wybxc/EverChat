@@ -1,0 +1,80 @@
+{
+  "observedOn": "2026-10-17",
+  "timezone": "Asia/Shanghai",
+  "codeBaseline": "0aaf001",
+  "production": {
+    "environment": "Installed macOS EverChat Safari web app",
+    "osVersion": "macOS 27.0.1",
+    "safariVersion": "27.0.1",
+    "pageVersion": "2026-10-16T19:23:51.675Z",
+    "pageBundle": "/assets/index-CO3i1o9U.js",
+    "sessionResponseStatus": 200,
+    "serviceWorkerScriptResponseStatus": 200,
+    "registrationCount": 0,
+    "manualUpdateError": {
+      "name": "InvalidStateError",
+      "message": "newestWorker is null"
+    },
+    "indexProbe": {
+      "originalPath": "/index.html?__WB_REVISION__=diagnostic",
+      "redirectStatus": 307,
+      "location": "/?__WB_REVISION__=diagnostic",
+      "finalStatus": 200,
+      "sameOrigin": true,
+      "finalContentType": "text/html"
+    },
+    "collection": "Safari Web Inspector; native app settings check-update button. Temporary logging delegates to the original update method and rethrows the same exception. Page reloaded after collection."
+  },
+  "localControl": {
+    "runtime": "Wrangler local Cloudflare Static Assets, existing production build",
+    "browser": "Headless Chromium; fresh isolated context for each server",
+    "results": [
+      {
+        "port": 5176,
+        "htmlHandling": "auto-trailing-slash (production default)",
+        "index": {
+          "status": 200,
+          "url": "http://127.0.0.1:5176/?__WB_REVISION__=diagnostic",
+          "redirected": true
+        },
+        "state": {
+          "registered": 0,
+          "active": false,
+          "waiting": false,
+          "update": {
+            "name": "InvalidStateError",
+            "message": "Failed to update a ServiceWorker for scope ('http://127.0.0.1:5176/') with script ('Unknown'): The object is in an invalid state."
+          }
+        }
+      },
+      {
+        "port": 5177,
+        "htmlHandling": "none (control)",
+        "index": {
+          "status": 200,
+          "url": "http://127.0.0.1:5177/index.html?__WB_REVISION__=diagnostic",
+          "redirected": false
+        },
+        "state": {
+          "registered": 1,
+          "active": true,
+          "waiting": false,
+          "update": "success"
+        }
+      }
+    ]
+  },
+  "conclusion": [
+    "Default Cloudflare HTML canonicalization redirects precached index.html.",
+    "The current fetchDidSucceed guard rejects redirected responses, preventing first installation.",
+    "The controller retains a registration that the browser removed after unsuccessful installation.",
+    "Subsequent update throws InvalidStateError and is mislabeled as a connection failure."
+  ],
+  "verificationLimits": [
+    "No iOS remote inspector capture was collected.",
+    "The production index request was a same-path diagnostic fetch; the install rejection was isolated using the actual local Cloudflare runtime and unmodified service worker.",
+    "Changing html_handling to none was performed only in a temporary local control configuration, not deployed.",
+    "The local build is not claimed to have the same asset hash as the production build.",
+    "No application implementation or production access policy was changed."
+  ]
+}

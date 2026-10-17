@@ -12,7 +12,6 @@ const conversationSchema = v.object({
 const conversationPatchSchema = v.object({
   title: v.optional(v.pipe(v.string(), v.maxLength(80))),
   pinned: v.optional(v.boolean()),
-  archived: v.optional(v.boolean()),
 });
 
 export function registerLibraryRoutes(app: ApiRouter) {

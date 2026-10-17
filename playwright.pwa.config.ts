@@ -7,6 +7,14 @@ export default defineConfig({
   timeout: 60_000,
   expect: { timeout: 20_000 },
   use: { baseURL: 'http://127.0.0.1:5175', trace: 'retain-on-failure' },
+  projects: [
+    { name: 'chromium', use: { browserName: 'chromium' } },
+    {
+      name: 'webkit',
+      use: { browserName: 'webkit' },
+      testMatch: ['lifecycle.spec.ts', 'cloudflare-assets.spec.ts'],
+    },
+  ],
   webServer: {
     command: 'node --import tsx/esm tests/support/browser/pwa-server.ts',
     url: 'http://127.0.0.1:5175',

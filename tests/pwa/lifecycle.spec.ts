@@ -28,7 +28,26 @@ async function version(page: Page) {
 }
 
 test.beforeEach(async ({ request }) => {
-  await control(request, { version: 'a', failSettings: false, failAsset: false, failSw: false });
+  await control(request, {
+    version: 'a',
+    resetSettings: true,
+    failSettings: false,
+    failAsset: false,
+    failSw: false,
+    swMode: 'normal',
+    swDelay: 0,
+  });
+});
+test.afterEach(async ({ context, request }) => {
+  await context.setOffline(false);
+  await control(request, {
+    version: 'a',
+    failSettings: false,
+    failAsset: false,
+    failSw: false,
+    swMode: 'normal',
+    swDelay: 0,
+  });
 });
 
 test('two real production builds wait for unsaved settings in every tab and preserve both drafts when updated', async ({
@@ -92,7 +111,6 @@ test('repair only removes app static caches and keeps chat IndexedDB, drafts and
             createdAt: 1,
             updatedAt: 1,
             pinned: false,
-            archived: false,
           },
           input: { requestId: '00000000-0000-4000-8000-000000000103', content: '断网期间的消息' },
           error: '等待身份确认',
@@ -132,7 +150,10 @@ test('failed registration is visible and can be retried without losing a draft',
   await page.goto('/');
   await page.getByLabel('消息', { exact: true }).fill('注册失败时的草稿');
   const panel = await settings(page);
-  await expect(page.getByTestId('pwa-notice')).toContainText('注册失败');
+  await expect(panel.getByRole('alert')).toContainText('暂时无法检查更新');
+  await expect(page.getByTestId('pwa-notice')).toHaveCount(0);
+  await panel.getByRole('button', { name: '检查更新', exact: true }).click();
+  await expect(panel.getByRole('alert')).toContainText('更新服务暂不可用');
   await control(page.request, { failSw: false });
   await panel.getByRole('button', { name: '检查更新', exact: true }).click();
   await expect
@@ -141,6 +162,29 @@ test('failed registration is visible and can be retried without losing a draft',
   await expect(panel).toContainText('离线资源已就绪');
   await panel.getByRole('button', { name: '关闭设置', exact: true }).click();
   await expect(page.getByLabel('消息', { exact: true })).toHaveValue('注册失败时的草稿');
+});
+
+test('a failed first resource install reacquires registration on retry and preserves the draft', async ({
+  page,
+}) => {
+  // Fail a lazy chunk so the shell loads, but the real SW precache install fails.
+  await control(page.request, { failAsset: true });
+  await page.goto('/');
+  await page.getByLabel('消息', { exact: true }).fill('首次离线安装失败的草稿');
+  await expect
+    .poll(() =>
+      page.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).length),
+    )
+    .toBe(0);
+  await control(page.request, { failAsset: false });
+  const panel = await settings(page);
+  await panel.getByRole('button', { name: '检查更新', exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => navigator.serviceWorker.controller?.state))
+    .toBe('activated');
+  await expect(panel).toContainText('离线资源已就绪');
+  await panel.getByRole('button', { name: '关闭设置', exact: true }).click();
+  await expect(page.getByLabel('消息', { exact: true })).toHaveValue('首次离线安装失败的草稿');
 });
 
 test('an interrupted update keeps the old version and draft, then retries safely', async ({
@@ -162,4 +206,174 @@ test('an interrupted update keeps the old version and draft, then retries safely
   ]);
   await expect(page.getByLabel('消息', { exact: true })).toHaveValue('更新中断时的草稿');
   expect(await version(page)).toBe('pwa-test-b');
+});
+
+test('offline and malformed update scripts have distinct feedback without losing the active app', async ({
+  page,
+  context,
+}) => {
+  await controlled(page);
+  const panel = await settings(page);
+  await context.setOffline(true);
+  await panel.getByRole('button', { name: '检查更新', exact: true }).click();
+  await expect(panel.getByRole('alert')).toContainText('当前离线');
+  await context.setOffline(false);
+  await control(page.request, { swMode: 'html' });
+  await expect(panel.getByRole('button', { name: '检查更新', exact: true })).toBeEnabled();
+  await panel.getByRole('button', { name: '检查更新', exact: true }).click();
+  await expect(panel.getByRole('alert')).toContainText('更新文件异常');
+  await panel.getByText('更新诊断', { exact: true }).click();
+  await expect(panel.locator('pre')).toContainText('"failure": "script"');
+  expect(await version(page)).toBe('pwa-test-a');
+  await control(page.request, { swMode: 'normal' });
+  await panel.getByRole('button', { name: '检查更新', exact: true }).click();
+  await expect(panel.getByRole('alert')).toHaveCount(0);
+});
+
+test('slow checks end their UI wait, coalesce retries and cannot overwrite a late successful result', async ({
+  page,
+}) => {
+  await controlled(page);
+  const panel = await settings(page);
+  await control(page.request, { swDelay: 18000 });
+  await panel.getByRole('button', { name: '检查更新', exact: true }).click();
+  await expect(panel.getByRole('alert')).toContainText('浏览器仍在处理', { timeout: 17000 });
+  await expect(panel.getByRole('button', { name: '浏览器仍在检查', exact: true })).toBeDisabled();
+  await expect(panel.getByRole('alert')).toHaveCount(0, { timeout: 10000 });
+  await expect(panel.getByRole('button', { name: '检查更新', exact: true })).toBeEnabled();
+  expect(await version(page)).toBe('pwa-test-a');
+});
+
+test('mobile production search leaves a tappable close control and returns focus to the sidebar trigger', async ({
+  browser,
+}) => {
+  const context = await browser.newContext({
+    baseURL: 'http://127.0.0.1:5175',
+    viewport: { width: 390, height: 844 },
+    isMobile: true,
+    hasTouch: true,
+  });
+  const page = await context.newPage();
+  try {
+    await controlled(page);
+    const trigger = page.getByRole('button', { name: '打开对话列表' });
+    await trigger.tap();
+    await page.getByRole('button', { name: '全局搜索', exact: true }).tap();
+    const search = page.getByRole('dialog', { name: '全局搜索', exact: true });
+    await expect(search.getByRole('combobox')).toBeFocused();
+    await page.setViewportSize({ width: 390, height: 400 });
+    await search.getByRole('button', { name: '关闭全局搜索' }).tap();
+    await expect(search).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+  } finally {
+    await context.close();
+  }
+});
+
+test('a failed repair download retains the active cache and unrelated caches until a coordinated retry succeeds', async ({
+  page,
+}) => {
+  await controlled(page);
+  await page.getByLabel('消息', { exact: true }).fill('修复下载失败仍保留的草稿');
+  await page.evaluate(async () => {
+    await (await caches.open('another-app-cache')).put('/unrelated', new Response('keep'));
+  });
+  const oldCaches = await page.evaluate(async () =>
+    (await caches.keys()).filter((name) => name.startsWith('everchat-static-')),
+  );
+  const panel = await settings(page);
+  const repair = async () => {
+    await panel.getByRole('button', { name: '修复应用缓存', exact: true }).click();
+    await page
+      .getByRole('alertdialog', { name: '修复应用缓存', exact: true })
+      .getByRole('button', { name: '修复并重新加载', exact: true })
+      .click();
+  };
+  await control(page.request, { failAsset: true });
+  await repair();
+  await expect(panel.getByRole('alert')).toContainText('当前版本继续可用');
+  expect(await version(page)).toBe('pwa-test-a');
+  expect(await page.evaluate(async () => (await caches.match('/unrelated'))?.text())).toBe('keep');
+  const retained = await page.evaluate(() => caches.keys());
+  for (const name of oldCaches) expect(retained).toContain(name);
+  await control(page.request, { failAsset: false });
+  await Promise.all([
+    page.waitForEvent('framenavigated', (frame) => frame === page.mainFrame()),
+    repair(),
+  ]);
+  await expect(page.getByLabel('消息', { exact: true })).toHaveValue('修复下载失败仍保留的草稿');
+  expect(await page.evaluate(async () => (await caches.match('/unrelated'))?.text())).toBe('keep');
+});
+
+test('retired archive flags in an existing offline cache do not hide titles from the sidebar or search', async ({
+  page,
+  context,
+}) => {
+  await controlled(page);
+  const legacy = [
+    {
+      id: '00000000-0000-4000-8000-000000000105',
+      title: '原归档的本地对话',
+      createdAt: 1,
+      updatedAt: 2,
+      pinned: true,
+      archived: true,
+    },
+  ];
+  await page.evaluate(async (value) => {
+    localStorage.setItem('everchat:library', JSON.stringify(value));
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open('keyval-store');
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const db = request.result;
+        const tx = db.transaction('keyval', 'readwrite');
+        tx.objectStore('keyval').put(value, 'everchat:library');
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => {
+          db.close();
+          reject(tx.error);
+        };
+      };
+    });
+  }, legacy);
+  await context.setOffline(true);
+  try {
+    await page.reload();
+    await expect(
+      page.locator('aside').getByRole('link', { name: '原归档的本地对话', exact: true }),
+    ).toBeVisible();
+    await page.getByRole('button', { name: '全局搜索', exact: true }).click();
+    const search = page.getByRole('dialog', { name: '全局搜索', exact: true });
+    await search.getByRole('combobox').fill('原归档');
+    await expect(search.getByRole('link', { name: '原归档的本地对话', exact: true })).toBeVisible();
+    await expect(search.getByRole('tab')).toHaveCount(0);
+  } finally {
+    await context.setOffline(false);
+  }
+});
+
+test('repair supersedes an already waiting update and activates its fresh cache generation', async ({
+  page,
+}) => {
+  await controlled(page);
+  const panel = await settings(page);
+  await control(page.request, { version: 'b' });
+  await panel.getByRole('button', { name: '检查更新', exact: true }).click();
+  await expect(panel.getByRole('button', { name: '更新应用', exact: true })).toBeVisible();
+  await panel.getByRole('button', { name: '修复应用缓存', exact: true }).click();
+  const confirm = page.getByRole('alertdialog', { name: '修复应用缓存', exact: true });
+  await Promise.all([
+    page.waitForEvent('framenavigated', (frame) => frame === page.mainFrame()),
+    confirm.getByRole('button', { name: '修复并重新加载', exact: true }).click(),
+  ]);
+  await expect.poll(() => version(page)).toBe('pwa-test-b');
+  expect(
+    await page.evaluate(() =>
+      new URL(navigator.serviceWorker.controller!.scriptURL).searchParams.has('repair'),
+    ),
+  ).toBe(true);
 });

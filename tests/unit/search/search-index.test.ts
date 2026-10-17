@@ -81,11 +81,10 @@ test('search indexes visible Markdown text across inline formatting and ignores 
     index.replace('c', [
       document('m', '跨越 **格式** 搜索。\n\n[文字](https://hidden.test)', 1, '思考 **中文** 😀'),
     ]);
-    assert.equal(index.search('跨越 格式 搜索', false).results[0].messageId, 'm');
-    assert.equal(index.search('hidden.test', false).results.length, 0);
-    assert.equal(index.search('思考 中文', false).results[0].field, 'reasoning');
-    for (const query of ['中', '中文', '😀'])
-      assert.equal(index.search(query, false).results.length, 1);
+    assert.equal(index.search('跨越 格式 搜索').results[0].messageId, 'm');
+    assert.equal(index.search('hidden.test').results.length, 0);
+    assert.equal(index.search('思考 中文').results[0].field, 'reasoning');
+    for (const query of ['中', '中文', '😀']) assert.equal(index.search(query).results.length, 1);
   } finally {
     db.close();
   }
@@ -95,8 +94,8 @@ test('literal GLOB, punctuation, Unicode case and SQL syntax do not turn into op
   try {
     index.replace('c', [document('m', '[a+b] literal*mark question?mark percent%mark ÅBC 中文😀')]);
     for (const query of ['[a+b]', '*', '?', '%', 'åbc', '中文😀'])
-      assert.equal(index.search(query, false).results.length, 1, query);
-    assert.equal(index.search("' OR 1=1 --", false).results.length, 0);
+      assert.equal(index.search(query).results.length, 1, query);
+    assert.equal(index.search("' OR 1=1 --").results.length, 0);
   } finally {
     db.close();
   }
@@ -109,17 +108,17 @@ test('versions prevent duplicate writes and stale backfills; replacement and del
     const revision = sql.exec('SELECT revision FROM search_revision').one().revision;
     index.replace('c', [document('m', 'stale body', 2), document('m', 'new body', 3)]);
     assert.equal(sql.exec('SELECT revision FROM search_revision').one().revision, revision);
-    assert.equal(index.search('old', false).results.length, 0);
-    assert.equal(index.search('stale', false).results.length, 0);
-    assert.equal(index.search('new', false).results.length, 1);
+    assert.equal(index.search('old').results.length, 0);
+    assert.equal(index.search('stale').results.length, 0);
+    assert.equal(index.search('new').results.length, 1);
     index.remove('c');
-    assert.equal(index.search('new', false).results.length, 0);
+    assert.equal(index.search('new').results.length, 0);
     assert.equal(sql.exec('SELECT COUNT(*) AS count FROM search_messages').one().count, 0);
   } finally {
     db.close();
   }
 });
-test('keyset pagination covers all results, validates query/revision, and filters archived/deleted rows', () => {
+test('keyset pagination covers all results, validates query/revision, and excludes deleted rows', () => {
   const { db, sql, index } = fixture();
   try {
     index.replace(
@@ -129,22 +128,21 @@ test('keyset pagination covers all results, validates query/revision, and filter
     const ids: string[] = [];
     let cursor: string | undefined;
     do {
-      const page = index.search('分页 中文', false, cursor);
+      const page = index.search('分页 中文', cursor);
       assert.ok(page.results.length <= 20);
       ids.push(...page.results.map((item) => item.messageId));
       cursor = page.cursor ?? undefined;
     } while (cursor);
     assert.equal(ids.length, 47);
     assert.equal(new Set(ids).size, 47);
-    const first = index.search('query', false);
-    assert.throws(() => index.search('different', false, first.cursor!), SearchChanged);
+    const first = index.search('query');
+    assert.throws(() => index.search('different', first.cursor!), SearchChanged);
     index.replace('c', [document('extra', 'query')]);
-    assert.throws(() => index.search('query', false, first.cursor!), SearchChanged);
+    assert.throws(() => index.search('query', first.cursor!), SearchChanged);
     sql.exec("INSERT INTO conversation_metadata VALUES ('c', 1)");
-    assert.equal(index.search('query', false).results.length, 0);
-    assert.equal(index.search('query', true).results.length, 20);
+    assert.equal(index.search('query').results.length, 20);
     sql.exec("INSERT INTO conversation_deletions VALUES ('c')");
-    assert.equal(index.search('query', true).results.length, 0);
+    assert.equal(index.search('query').results.length, 0);
   } finally {
     db.close();
   }
@@ -155,8 +153,8 @@ test('index capacity failure rolls back fields, FTS and version together', () =>
     index.replace('c', [document('m', 'retained body')]);
     fill();
     assert.throws(() => index.replace('c', [document('m', 'lost body', 2)]), /容量/);
-    assert.equal(index.search('retained', false).results.length, 1);
-    assert.equal(index.search('lost', false).results.length, 0);
+    assert.equal(index.search('retained').results.length, 1);
+    assert.equal(index.search('lost').results.length, 0);
     assert.equal(sql.exec('SELECT version FROM search_messages').one().version, 1);
   } finally {
     db.close();

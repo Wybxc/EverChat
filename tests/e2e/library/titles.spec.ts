@@ -245,7 +245,7 @@ test('a failed title retains the fallback and unavailable title models never fal
   }
 });
 
-test('new chat generation starts while an auxiliary title runs, and archiving keeps its accepted result', async ({
+test('new chat generation starts while an auxiliary title runs, and pinning keeps its accepted result', async ({
   request,
 }) => {
   const s = await setup(request, false, 'title-fixture-parallel');
@@ -264,9 +264,9 @@ test('new chat generation starts while an auxiliary title runs, and archiving ke
       .get('/api/conversations')
       .then((r) => r.json())) as LibrarySnapshot;
     expect(index.activity[id]?.status).toBe('idle');
-    await request.patch(`/api/conversations/${id}`, { headers, data: { archived: true } });
+    await request.patch(`/api/conversations/${id}`, { headers, data: { pinned: true } });
     await expect.poll(async () => (await s.info(id))?.title).toBe('独立生成的标题');
-    expect((await s.info(id))?.archived).toBe(true);
+    expect((await s.info(id))?.pinned).toBe(true);
   } finally {
     await s.cleanup();
   }

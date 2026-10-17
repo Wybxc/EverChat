@@ -9,14 +9,9 @@ const control = (
   request: APIRequestContext,
   data: { id?: string; fail?: boolean; rebuild?: boolean },
 ) => request.post('/api/__test/library/search', { headers, data });
-const search = async (
-  request: APIRequestContext,
-  query: string,
-  archived = false,
-  cursor?: string,
-) => {
+const search = async (request: APIRequestContext, query: string, cursor?: string) => {
   const response = await request.get(
-    `/api/search?${new URLSearchParams({ q: query, archived: String(archived), ...(cursor ? { cursor } : {}) })}`,
+    `/api/search?${new URLSearchParams({ q: query, ...(cursor ? { cursor } : {}) })}`,
   );
   expect(response.status()).toBe(200);
   return response.json() as Promise<LibrarySearch>;
@@ -52,7 +47,7 @@ test('cross-conversation search uses paginated literal text and jumps to the mat
     const ids: string[] = [];
     let cursor: string | undefined;
     do {
-      const result = await search(page.request, '全文TOKEN', false, cursor);
+      const result = await search(page.request, '全文TOKEN', cursor);
       expect(result.results.length).toBeLessThanOrEqual(20);
       ids.push(...result.results.map((item) => item.messageId));
       cursor = result.cursor ?? undefined;
@@ -102,7 +97,7 @@ test('cross-conversation search uses paginated literal text and jumps to the mat
   }
 });
 
-test('search excludes archived and deleted conversations and invalidates an old cursor after updates', async ({
+test('search includes all conversations, excludes deleted ones and invalidates an old cursor after updates', async ({
   request,
 }) => {
   const id = await seed(request, 24);
@@ -113,12 +108,11 @@ test('search excludes archived and deleted conversations and invalidates an old 
       (
         await request.patch(`/api/conversations/${id}`, {
           headers,
-          data: { archived: true, title: '归档新标题' },
+          data: { title: '搜索新标题' },
         })
       ).ok(),
     ).toBe(true);
-    expect((await search(request, '全文TOKEN')).results).toHaveLength(0);
-    expect((await search(request, '全文TOKEN', true)).results[0].title).toBe('归档新标题');
+    expect((await search(request, '全文TOKEN')).results[0].title).toBe('搜索新标题');
     expect(
       (
         await request.get(
@@ -128,7 +122,6 @@ test('search excludes archived and deleted conversations and invalidates an old 
     ).toBe(409);
     await request.post(`/api/__test/conversations/${id}/delete-failure`, { headers, data: {} });
     expect((await request.delete(`/api/conversations/${id}`, { headers })).status()).toBe(500);
-    expect((await search(request, '全文TOKEN', true)).results).toHaveLength(0);
     await expect
       .poll(async () => (await control(request, { id }).then((r) => r.json())).versions.length)
       .toBe(0);

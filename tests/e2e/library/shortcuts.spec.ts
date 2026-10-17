@@ -33,7 +33,7 @@ test('Mod+J preserves the previous draft, creates no cloud conversation and focu
 });
 
 for (const width of [320, 1280])
-  test(`Mod+K opens a full-screen search at ${width}px without consuming drafts or navigating`, async ({
+  test(`Mod+K opens a bounded search popup at ${width}px without consuming drafts or navigating`, async ({
     page,
   }) => {
     await page.setViewportSize({ width, height: 740 });
@@ -51,7 +51,11 @@ for (const width of [320, 1280])
       const dialog = page.getByRole('dialog', { name: '全局搜索', exact: true });
       const input = dialog.getByRole('combobox', { name: '搜索对话', exact: true });
       await expect(input).toBeFocused();
-      await expect.poll(() => dialog.boundingBox()).toEqual({ x: 0, y: 0, width, height: 740 });
+      const box = await dialog.boundingBox();
+      expect(box!.x).toBeGreaterThanOrEqual(12);
+      expect(box!.y).toBeGreaterThanOrEqual(12);
+      expect(box!.width).toBeLessThanOrEqual(Math.min(768, width - 24));
+      expect(box!.y + box!.height).toBeLessThanOrEqual(728);
       await expect(page).toHaveURL(`/c/${id}`);
       await input.fill('Keyboard unique');
       await page.keyboard.press('ControlOrMeta+j');
@@ -136,16 +140,16 @@ test('keyboard selection and native links open the chosen title, while closing m
   }
 });
 
-test('global search retains loading and retry feedback, avoids empty remote queries and searches cached archived titles offline', async ({
+test('global search retains loading and retry feedback, avoids empty remote queries and searches all cached titles offline', async ({
   page,
   context,
 }) => {
   await page.request.post('/__dev/access/login', { headers });
   const id = crypto.randomUUID(),
-    archived = crypto.randomUUID();
+    secondId = crypto.randomUUID();
   for (const [key, title] of [
     [id, '本地标题'],
-    [archived, '归档标题'],
+    [secondId, '另一条本地标题'],
   ]) {
     expect(
       (
@@ -153,7 +157,6 @@ test('global search retains loading and retry feedback, avoids empty remote quer
       ).status(),
     ).toBe(201);
   }
-  await page.request.patch(`/api/conversations/${archived}`, { headers, data: { archived: true } });
   let release = () => {},
     failing = true,
     calls = 0;
@@ -189,15 +192,14 @@ test('global search retains loading and retry feedback, avoids empty remote quer
     await context.setOffline(true);
     await dialog.getByRole('combobox').fill('标题');
     await expect(dialog.getByRole('link', { name: '本地标题', exact: true })).toBeVisible();
-    await dialog.getByRole('tab', { name: '归档', exact: true }).click();
-    await expect(dialog.getByRole('link', { name: '归档标题', exact: true })).toBeVisible();
-    await expect(dialog.getByRole('link', { name: '本地标题', exact: true })).toHaveCount(0);
+    await expect(dialog.getByRole('link', { name: '另一条本地标题', exact: true })).toBeVisible();
+    await expect(dialog.getByRole('tab')).toHaveCount(0);
     await expect(dialog).toContainText('联网后搜索正文');
     expect(calls).toBe(0);
   } finally {
     release();
     await context.setOffline(false);
-    for (const key of [id, archived])
+    for (const key of [id, secondId])
       await page.request.delete(`/api/conversations/${key}`, { headers });
   }
 });

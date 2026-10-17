@@ -40,7 +40,6 @@ export interface ConversationInfo {
   createdAt: number;
   updatedAt: number;
   pinned: boolean;
-  archived: boolean;
 }
 
 export interface LibrarySnapshot {

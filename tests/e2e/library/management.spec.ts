@@ -135,22 +135,20 @@ test('management API validates changes, requires authentication and same origin,
       await request
         .patch(`/api/conversations/${fixture.id}`, { headers, data: { pinned: true } })
         .then((response) => response.json()),
-    ).toMatchObject({ pinned: true, archived: false });
+    ).toMatchObject({ pinned: true });
     const changed = await request.patch(`/api/conversations/${fixture.id}`, {
       headers,
-      data: { title: '  改名后  ', pinned: true, archived: true },
+      data: { title: '  改名后  ', pinned: true },
     });
     expect(changed.status()).toBe(200);
     expect(await changed.json()).toMatchObject({
       title: '改名后',
       pinned: true,
-      archived: true,
       updatedAt: fixture.created.updatedAt,
     });
     expect((await index(request)).conversations[0]).toMatchObject({
       id: fixture.id,
       pinned: true,
-      archived: true,
     });
     expect(
       (
@@ -334,32 +332,17 @@ test('the management menu preserves failed edits, syncs metadata to another devi
       )
       .toBe(true);
     await menu();
-    await page.getByRole('menuitem', { name: '归档', exact: true }).click();
-    await expect(
-      page.locator('aside').getByRole('link', { name: '重命名的对话', exact: true }),
-    ).toHaveCount(0);
-    await expect(second.getByRole('banner')).toContainText('重命名的对话');
-    await expect(
-      second.locator('aside').getByRole('link', { name: '重命名的对话', exact: true }),
-    ).toHaveCount(0);
-    await second.getByRole('tab', { name: '归档', exact: true }).click();
+    await expect(page.getByRole('menuitem', { name: '归档', exact: true })).toHaveCount(0);
+    await page.keyboard.press('Escape');
     await expect(
       second.locator('aside').getByRole('link', { name: '重命名的对话', exact: true }),
     ).toBeVisible();
     await second.getByRole('button', { name: '更多会话操作', exact: true }).click();
     await expect(second.getByRole('menuitem', { name: '取消置顶', exact: true })).toBeVisible();
-    await expect(second.getByRole('menuitem', { name: '取消归档', exact: true })).toBeVisible();
-    await page.getByRole('tab', { name: '归档', exact: true }).click();
-    await expect(
-      page.locator('aside').getByRole('link', { name: '重命名的对话', exact: true }),
-    ).toBeVisible();
+    await expect(second.getByRole('menuitem', { name: '取消归档', exact: true })).toHaveCount(0);
+    await second.keyboard.press('Escape');
     await page.reload();
     await expect(page.getByRole('banner')).toContainText('重命名的对话');
-    await menu();
-    await page.getByRole('menuitem', { name: '取消归档', exact: true }).click();
-    await expect(
-      page.locator('aside').getByRole('link', { name: '重命名的对话', exact: true }),
-    ).toBeVisible();
     await menu();
     await page.getByRole('menuitem', { name: '取消置顶', exact: true }).click();
     await expect

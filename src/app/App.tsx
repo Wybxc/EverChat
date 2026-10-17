@@ -3,7 +3,6 @@ import { useMutationFocus } from '../features/chat/useMutationFocus';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -200,7 +199,6 @@ export function App({
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
   const globalSearchReturn = useRef<HTMLElement | null>(null);
   const searchNavigated = useRef(false);
-  const [archivedList, setArchivedList] = useState(false);
   const [sending, setSending] = useState(false);
   const { viewportRef, contentRef, viewport, content, atBottom, scrollToBottom, pauseFollowing } =
     useFollowScroll(selected);
@@ -218,6 +216,7 @@ export function App({
   const { toolbarRef, compact: compactComposer } = useComposerLayout();
   const [editorFocusTarget, setEditorFocusTarget] = useState<{ id: string | null } | null>(null);
   const mobileSidebarTrigger = useRef<HTMLButtonElement>(null);
+  const pendingGlobalSearch = useRef(false);
   const closeSidebar = useCallback(() => {
     setSidebarOpen(false);
     requestAnimationFrame(() => {
@@ -476,9 +475,7 @@ export function App({
     reasoningEffort,
     session,
   });
-  const visibleConversations = conversations.filter(
-    (item) => Boolean(item.archived) === archivedList,
-  );
+  const visibleConversations = conversations;
 
   const { backupOperation, backupTask, exportBackup, importBackup, cancelBackup } = useBackup({
     selected,
@@ -592,6 +589,7 @@ export function App({
       document.querySelector<HTMLInputElement>('[data-testid="global-search"] input')?.focus();
       return;
     }
+    if (pendingGlobalSearch.current) return;
     globalSearchReturn.current =
       sidebarOpen && !desktop
         ? mobileSidebarTrigger.current
@@ -599,8 +597,10 @@ export function App({
           ? document.activeElement
           : null;
     searchNavigated.current = false;
-    setSidebarOpen(false);
-    setGlobalSearchOpen(true);
+    if (sidebarOpen && !desktop) {
+      pendingGlobalSearch.current = true;
+      setSidebarOpen(false);
+    } else setGlobalSearchOpen(true);
   };
   useAppCommands([
     {
@@ -841,7 +841,6 @@ export function App({
       createdAt: Date.now(),
       updatedAt: Date.now(),
       pinned: false,
-      archived: false,
     };
     const item: Pending = {
       owner: identityKey(sessionRef.current!.identity),
@@ -1086,7 +1085,6 @@ export function App({
     patch: {
       title?: string;
       pinned?: boolean;
-      archived?: boolean;
     },
   ) => {
     const epoch = storageEpoch();
@@ -1247,6 +1245,12 @@ export function App({
             open={sidebarOpen}
             onOpenChange={setSidebarOpen}
             trigger={mobileSidebarTrigger}
+            onClosed={() => {
+              if (!pendingGlobalSearch.current) return false;
+              pendingGlobalSearch.current = false;
+              setGlobalSearchOpen(true);
+              return true;
+            }}
           >
             <SidebarHeader toggle={toggleSidebar} create={() => select(null)} />
             <Button
@@ -1264,15 +1268,6 @@ export function App({
               </kbd>
             </Button>
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pt-2">
-              <Tabs
-                value={archivedList ? 'archived' : 'active'}
-                onValueChange={(value) => setArchivedList(value === 'archived')}
-              >
-                <TabsList className="mb-1 h-auto w-full bg-transparent p-0">
-                  <TabsTrigger value="active">对话</TabsTrigger>
-                  <TabsTrigger value="archived">归档</TabsTrigger>
-                </TabsList>
-              </Tabs>
               <ul className="w-full space-y-0.5 p-0 text-sm">
                 {visibleConversations.map((item, index) => (
                   <li key={item.id} data-conversation-row={item.id}>
@@ -1312,11 +1307,7 @@ export function App({
                 </div>
               ) : (
                 !visibleConversations.length &&
-                !libraryError && (
-                  <p className="px-3 text-xs text-muted-foreground">
-                    {archivedList ? '暂无归档' : '暂无对话'}
-                  </p>
-                )
+                !libraryError && <p className="px-3 text-xs text-muted-foreground">暂无对话</p>
               )}
               {libraryError && (
                 <div className="flex items-center gap-2 px-3 text-xs">

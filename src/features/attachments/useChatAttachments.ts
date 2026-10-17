@@ -137,7 +137,6 @@ export function useChatAttachments({
           createdAt: Date.now(),
           updatedAt: Date.now(),
           pinned: false,
-          archived: false,
         };
         await api(
           '/conversations',
