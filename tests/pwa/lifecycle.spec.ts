@@ -313,8 +313,13 @@ test('mobile production search leaves a tappable close control and returns focus
     await trigger.tap();
     await page.getByRole('button', { name: '全局搜索', exact: true }).tap();
     const search = page.getByRole('dialog', { name: '全局搜索', exact: true });
-    await expect(search.getByRole('combobox')).toBeFocused();
+    const input = search.getByRole('combobox');
+    await expect(input).toHaveCSS('font-size', '16px');
+    await expect(input).toBeFocused();
+    await page.setViewportSize({ width: 844, height: 390 });
+    await expect(input).toHaveCSS('font-size', '16px');
     await page.setViewportSize({ width: 390, height: 400 });
+    await expect(input).toHaveCSS('font-size', '16px');
     await search.getByRole('button', { name: '关闭全局搜索' }).tap();
     await expect(search).toHaveCount(0);
     await expect(trigger).toBeFocused();

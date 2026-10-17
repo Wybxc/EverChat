@@ -677,11 +677,14 @@
     scroll-behavior: auto !important;
   }
 }
-@media (pointer: coarse) {
+@media (any-pointer: coarse) {
   [data-slot='input'],
+  [data-slot='command-input'],
   [data-slot='native-select'],
-  [data-slot='textarea'] {
-    font-size: 1rem;
+  [data-slot='textarea'],
+  .field-control > input {
+    /* Keep touch focus readable without restricting the user's page zoom. */
+    font-size: max(1rem, 16px);
   }
 }
 

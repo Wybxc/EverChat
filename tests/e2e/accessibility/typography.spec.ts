@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { ProviderSettings } from '../../../shared/providers/types';
 import { openSpaceSettings, providerDetails } from '../../support/browser/ui';
 
@@ -140,4 +140,73 @@ test('font changes resize an existing draft and browser default font preferences
     await cdp.detach();
     await source.cleanup();
   }
+});
+
+test.describe('touch input typography', () => {
+  test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+
+  test('search, model filters and form controls retain a readable font before touch focus', async ({
+    page,
+  }) => {
+    const source = await fixture(page);
+    try {
+      expect(
+        (
+          await page.request.post(`/api/__test/conversations/${source.id}/search-history`, {
+            headers,
+            data: {},
+          })
+        ).ok(),
+      ).toBe(true);
+      await page.goto(`/c/${source.id}`);
+      const composer = page.getByLabel('消息', { exact: true });
+      await composer.fill('触屏字号检查保留草稿');
+      expect(await page.evaluate(() => matchMedia('(any-pointer: coarse)').matches)).toBe(true);
+      const readable = async (control: Locator, rootSize: number) => {
+        await expect(control).toHaveCSS('font-size', `${Math.max(rootSize, 16)}px`);
+        await control.tap();
+        await expect(control).toBeFocused();
+      };
+      for (const { width, height, rootSize } of [
+        { width: 390, height: 844, rootSize: 16 },
+        { width: 844, height: 390, rootSize: 16 },
+        { width: 390, height: 844, rootSize: 12 },
+        { width: 390, height: 844, rootSize: 20 },
+      ]) {
+        await page.setViewportSize({ width, height });
+        await page.evaluate((size) => {
+          document.documentElement.style.fontSize = `${size}px`;
+        }, rootSize);
+        await readable(composer, rootSize);
+        await page.keyboard.press('ControlOrMeta+k');
+        const search = page.getByRole('dialog', { name: '全局搜索', exact: true });
+        await readable(search.getByRole('combobox'), rootSize);
+        if (rootSize === 16)
+          await page.screenshot({ path: `/tmp/everchat-touch-search-${width}.png` });
+        await search.getByRole('button', { name: '关闭全局搜索', exact: true }).tap();
+        await expect(search).toHaveCount(0);
+        await page.getByRole('combobox', { name: '聊天模型', exact: true }).tap();
+        const modelSearch = page.getByRole('combobox', { name: '搜索模型', exact: true });
+        await readable(modelSearch, rootSize);
+        await modelSearch.press('Escape');
+        await expect(modelSearch).toHaveCount(0);
+        await page.getByRole('button', { name: '搜索当前对话', exact: true }).tap();
+        const conversationSearch = page.getByRole('textbox', { name: '查找当前对话', exact: true });
+        await readable(conversationSearch, rootSize);
+        await conversationSearch.press('Escape');
+        await expect(conversationSearch).toHaveCount(0);
+        await expect(composer).toHaveValue('触屏字号检查保留草稿');
+      }
+      await openSpaceSettings(page);
+      await settingsTab(page, '对话');
+      await readable(page.getByLabel('系统提示词', { exact: true }), 20);
+      await settingsTab(page, '供应商');
+      await providerDetails(page);
+      await readable(page.getByLabel('名称', { exact: true }), 20);
+      const viewport = await page.locator('meta[name="viewport"]').getAttribute('content');
+      expect(viewport).not.toMatch(/user-scalable\s*=\s*(?:no|0)|maximum-scale\s*=/i);
+    } finally {
+      await source.cleanup();
+    }
+  });
 });
