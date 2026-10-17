@@ -6,7 +6,6 @@ import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
 import { useQueryClient } from '@tanstack/react-query';
 import {
-  ArrowDown,
   ArrowUp,
   BookOpen,
   CloudOff,
@@ -99,6 +98,8 @@ import { useContextPreview } from '../features/chat/useContextPreview';
 import { useConversation } from '../features/chat/useConversation';
 import { useConversationBranches } from '../features/chat/useConversationBranches';
 import { useFollowScroll } from '../features/chat/useFollowScroll';
+import { useMessageNavigation } from '../features/chat/useMessageNavigation';
+import { ConversationNavigation } from '../features/chat/ConversationNavigation';
 import { useOutbox } from '../features/chat/useOutbox';
 import { conversationGroup } from '../features/library/group-conversations';
 import { GlobalSearch } from '../features/library/GlobalSearch';
@@ -200,7 +201,7 @@ export function App({
   const globalSearchReturn = useRef<HTMLElement | null>(null);
   const searchNavigated = useRef(false);
   const [sending, setSending] = useState(false);
-  const { viewportRef, contentRef, viewport, content, atBottom, scrollToBottom, pauseFollowing } =
+  const { viewportRef, contentRef, viewport, content, scrollToBottom, pauseFollowing } =
     useFollowScroll(selected);
   const anchorBranch = useBranchScrollAnchor(viewport, content, selected);
   const [conversationSearchFor, setConversationSearchFor] = useState<string | null>(null);
@@ -370,6 +371,15 @@ export function App({
     authoritative,
     routeHead: routeBranch,
     navigate,
+  });
+  const readingNavigation = useMessageNavigation({
+    conversationId: selected,
+    ids: branches.ids,
+    nodes: branches.index.nodes,
+    viewport,
+    content,
+    pauseFollowing,
+    scrollToBottom,
   });
   const { prepareMutationFocus, closeMutationFocus } = useMutationFocus({
     selected,
@@ -683,8 +693,8 @@ export function App({
       selector = `[data-branch-switcher="${CSS.escape(key)}"]`;
     const previous = content?.querySelector<HTMLElement>(selector),
       top = previous?.getBoundingClientRect().top;
-    if (top !== undefined) anchorBranch(selector, top, direction);
     pauseFollowing();
+    if (top !== undefined) anchorBranch(selector, top, direction);
     branches.choose(target, { descend: true });
     const role = branches.index.roles.get(message.parentId),
       label = role === 'assistant' ? '回答版本' : role === 'user' ? '提问版本' : '分支';
@@ -1508,164 +1518,168 @@ export function App({
         )}
         <div className="conversation-body" data-welcome={welcome}>
           <div
-            ref={viewportRef}
-            data-testid="message-viewport"
-            className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain"
+            className="conversation-viewport relative min-h-0 flex-1"
+            data-navigation={readingNavigation.visible || undefined}
           >
-            <DisclosureScope key={selected ?? 'new'}>
-              {welcome ? (
-                <div ref={contentRef} />
-              ) : (
-                <section
-                  ref={contentRef}
-                  aria-label="对话消息"
-                  className="mx-auto w-full max-w-[49rem] space-y-6 px-4 py-4 sm:py-6"
-                >
-                  {loading && !snapshot.messages.length && <LoadingContent label="正在读取对话" />}
-                  {branches.path.map((message) => (
-                    <Fragment key={message.id}>
-                      <MessageView
-                        conversationId={selected!}
-                        message={message}
-                        busy={messageBlocked}
-                        onRetry={() => void retry(message)}
-                        onProviderSettings={() => {
-                          setRequestedProviderId(message.providerId ?? undefined);
-                          setRequestedSettingsTab('providers');
-                          openSettings();
-                        }}
-                        onEdit={() => edit(message)}
-                        onQuote={() => quote(message)}
-                        onDelete={() => setMessageMutation({ id: message.id, mode: 'delete' })}
-                        canRetry={liveUserIds.has(message.parentId ?? '')}
-                        branch={branchNavigation(message)}
-                        hasFollowing={
-                          message.id === branches.head &&
-                          (branches.index.children.get(message.id) ?? []).some((id) =>
-                            branches.index.browsable.has(id),
-                          )
-                        }
-                        onSelectBranch={() => selectBranch(message)}
-                        onShowFollowing={() => {
-                          pauseFollowing();
-                          branches.choose(message.id, { descend: true });
-                        }}
-                        canFork={Boolean(
-                          selected && connection !== 'offline' && !syncError && !loading,
-                        )}
-                        onFork={() =>
-                          selected ? duplicateConversation(selected, message.id) : Promise.resolve()
-                        }
-                      />
-                      {branchSummaries.some(
-                        (summary) => summary.summary!.throughId === message.id,
-                      ) && (
-                        <div data-testid="branch-summaries">
-                          <Disclosure
-                            stateKey={`summaries:${message.id}`}
-                            forceOpen={branchSummaries.some(
-                              (summary) =>
-                                summary.summary!.throughId === message.id && isActive(summary),
-                            )}
-                            title={`历史摘要 · ${branchSummaries.filter((summary) => summary.summary!.throughId === message.id).length}`}
-                          >
-                            <div className="space-y-3">
-                              {branchSummaries
-                                .filter((summary) => summary.summary!.throughId === message.id)
-                                .map((summary) => (
-                                  <SummaryView
-                                    key={summary.id}
-                                    message={summary}
-                                    busy={generationBlocked}
-                                    onRetry={() => void retry(summary)}
-                                    onProviderSettings={() => {
-                                      setRequestedProviderId(summary.providerId ?? undefined);
-                                      setRequestedSettingsTab('providers');
-                                      openSettings();
-                                    }}
-                                    onDelete={() =>
-                                      setMessageMutation({ id: summary.id, mode: 'delete' })
-                                    }
-                                    selected={previewHistory?.summary?.id === summary.id}
-                                  />
-                                ))}
-                            </div>
-                          </Disclosure>
-                        </div>
-                      )}
-                    </Fragment>
-                  ))}
-                  {currentPending && pendingVisible && (
-                    <article
-                      data-testid="pending-message"
-                      className="ml-auto max-w-[90%] rounded-2xl border border-dashed border-input bg-muted px-5 py-4"
-                    >
-                      <DocumentPreviews
-                        conversationId={currentPending.conversation.id}
-                        files={currentPending.files ?? []}
-                      />
-                      <ImagePreviews
-                        conversationId={currentPending.conversation.id}
-                        images={currentPending.images ?? []}
-                      />
-                      <p className="text-sm leading-7 whitespace-pre-wrap">
-                        {currentPending.input.summaryThrough
-                          ? '历史摘要请求'
-                          : (currentPending.input.content ?? '新版本')}
-                      </p>
-                      <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-                        <CloudOff className="h-[0.75rem] w-[0.75rem]" />
-                        <span>{currentPending.error ? '发送失败' : '等待发送'}</span>
-                        {currentPending.modelLabel && <span>{currentPending.modelLabel}</span>}
-                      </div>
-                      {currentPending.error && (
-                        <p className="mt-2 text-xs font-medium leading-5 text-foreground">
-                          {currentPending.error}
-                        </p>
-                      )}
-                      <div className="mt-2 flex gap-1">
-                        <Button
-                          variant="ghost"
-                          onClick={() => {
-                            const clean = { ...currentPending, error: undefined };
-                            commitPending(
-                              pendingRef.current.map((item) =>
-                                item.input.requestId === clean.input.requestId ? clean : item,
-                              ),
-                            );
-                            void deliver(clean);
+            <div
+              ref={viewportRef}
+              data-testid="message-viewport"
+              className="relative h-full min-h-0 overflow-y-auto overscroll-contain"
+            >
+              <DisclosureScope key={selected ?? 'new'}>
+                {welcome ? (
+                  <div ref={contentRef} />
+                ) : (
+                  <section
+                    ref={contentRef}
+                    aria-label="对话消息"
+                    className="conversation-messages mx-auto w-full max-w-[49rem] space-y-6 px-4"
+                  >
+                    {loading && !snapshot.messages.length && (
+                      <LoadingContent label="正在读取对话" />
+                    )}
+                    {branches.path.map((message) => (
+                      <Fragment key={message.id}>
+                        <MessageView
+                          navigationRef={
+                            message.role === 'assistant' && !message.deletedAt
+                              ? readingNavigation.refFor(message.id)
+                              : undefined
+                          }
+                          conversationId={selected!}
+                          message={message}
+                          busy={messageBlocked}
+                          onRetry={() => void retry(message)}
+                          onProviderSettings={() => {
+                            setRequestedProviderId(message.providerId ?? undefined);
+                            setRequestedSettingsTab('providers');
+                            openSettings();
                           }}
-                        >
-                          重试
-                        </Button>
-                        {(!currentPending.input.summaryThrough || currentPending.error) && (
-                          <Button variant="ghost" onClick={() => editPending(currentPending)}>
-                            {currentPending.input.summaryThrough ? '取消请求' : '编辑'}
-                          </Button>
+                          onEdit={() => edit(message)}
+                          onQuote={() => quote(message)}
+                          onDelete={() => setMessageMutation({ id: message.id, mode: 'delete' })}
+                          canRetry={liveUserIds.has(message.parentId ?? '')}
+                          branch={branchNavigation(message)}
+                          hasFollowing={
+                            message.id === branches.head &&
+                            (branches.index.children.get(message.id) ?? []).some((id) =>
+                              branches.index.browsable.has(id),
+                            )
+                          }
+                          onSelectBranch={() => selectBranch(message)}
+                          onShowFollowing={() => {
+                            pauseFollowing();
+                            branches.choose(message.id, { descend: true });
+                          }}
+                          canFork={Boolean(
+                            selected && connection !== 'offline' && !syncError && !loading,
+                          )}
+                          onFork={() =>
+                            selected
+                              ? duplicateConversation(selected, message.id)
+                              : Promise.resolve()
+                          }
+                        />
+                        {branchSummaries.some(
+                          (summary) => summary.summary!.throughId === message.id,
+                        ) && (
+                          <div data-testid="branch-summaries">
+                            <Disclosure
+                              stateKey={`summaries:${message.id}`}
+                              forceOpen={branchSummaries.some(
+                                (summary) =>
+                                  summary.summary!.throughId === message.id && isActive(summary),
+                              )}
+                              title={`历史摘要 · ${branchSummaries.filter((summary) => summary.summary!.throughId === message.id).length}`}
+                            >
+                              <div className="space-y-3">
+                                {branchSummaries
+                                  .filter((summary) => summary.summary!.throughId === message.id)
+                                  .map((summary) => (
+                                    <SummaryView
+                                      key={summary.id}
+                                      message={summary}
+                                      busy={generationBlocked}
+                                      onRetry={() => void retry(summary)}
+                                      onProviderSettings={() => {
+                                        setRequestedProviderId(summary.providerId ?? undefined);
+                                        setRequestedSettingsTab('providers');
+                                        openSettings();
+                                      }}
+                                      onDelete={() =>
+                                        setMessageMutation({ id: summary.id, mode: 'delete' })
+                                      }
+                                      selected={previewHistory?.summary?.id === summary.id}
+                                    />
+                                  ))}
+                              </div>
+                            </Disclosure>
+                          </div>
                         )}
-                      </div>
-                    </article>
-                  )}
-                </section>
-              )}
-            </DisclosureScope>
+                      </Fragment>
+                    ))}
+                    {currentPending && pendingVisible && (
+                      <article
+                        data-testid="pending-message"
+                        className="ml-auto max-w-[90%] rounded-2xl border border-dashed border-input bg-muted px-5 py-4"
+                      >
+                        <DocumentPreviews
+                          conversationId={currentPending.conversation.id}
+                          files={currentPending.files ?? []}
+                        />
+                        <ImagePreviews
+                          conversationId={currentPending.conversation.id}
+                          images={currentPending.images ?? []}
+                        />
+                        <p className="text-sm leading-7 whitespace-pre-wrap">
+                          {currentPending.input.summaryThrough
+                            ? '历史摘要请求'
+                            : (currentPending.input.content ?? '新版本')}
+                        </p>
+                        <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                          <CloudOff className="h-[0.75rem] w-[0.75rem]" />
+                          <span>{currentPending.error ? '发送失败' : '等待发送'}</span>
+                          {currentPending.modelLabel && <span>{currentPending.modelLabel}</span>}
+                        </div>
+                        {currentPending.error && (
+                          <p className="mt-2 text-xs font-medium leading-5 text-foreground">
+                            {currentPending.error}
+                          </p>
+                        )}
+                        <div className="mt-2 flex gap-1">
+                          <Button
+                            variant="ghost"
+                            onClick={() => {
+                              const clean = { ...currentPending, error: undefined };
+                              commitPending(
+                                pendingRef.current.map((item) =>
+                                  item.input.requestId === clean.input.requestId ? clean : item,
+                                ),
+                              );
+                              void deliver(clean);
+                            }}
+                          >
+                            重试
+                          </Button>
+                          {(!currentPending.input.summaryThrough || currentPending.error) && (
+                            <Button variant="ghost" onClick={() => editPending(currentPending)}>
+                              {currentPending.input.summaryThrough ? '取消请求' : '编辑'}
+                            </Button>
+                          )}
+                        </div>
+                      </article>
+                    )}
+                  </section>
+                )}
+              </DisclosureScope>
+            </div>
+            <ConversationNavigation {...readingNavigation} />
           </div>
 
           <div
             className="composer-region relative shrink-0 pt-2 pb-3"
             style={{ paddingBottom: 'max(.75rem, env(safe-area-inset-bottom))' }}
           >
-            {!atBottom && (
-              <Button
-                variant="secondary"
-                size="icon"
-                className="absolute -top-12 left-1/2 z-10 border-input bg-background shadow-sm"
-                aria-label="滚动到最新消息"
-                onClick={scrollToBottom}
-              >
-                <ArrowDown className="h-[1rem] w-[1rem]" />
-              </Button>
-            )}
             <div className="mx-auto w-full max-w-[48.5rem]">
               {welcome && (
                 <h1 className="mb-6 text-center text-xl font-semibold leading-snug sm:text-2xl">

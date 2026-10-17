@@ -447,13 +447,13 @@ test('streaming answers and thoughts follow the bottom, pause when scrolled up a
   await conversation.evaluate((node) => {
     node.scrollTop -= 250;
   });
-  await expect(page.getByRole('button', { name: '滚动到最新消息' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '跳到底部' })).toBeVisible();
   const reading = await metrics(conversation);
   await expect
     .poll(async () => (await metrics(conversation)).height)
     .toBeGreaterThan(reading.height + 100);
   expect((await metrics(conversation)).top).toBeCloseTo(reading.top, 0);
-  await page.getByRole('button', { name: '滚动到最新消息' }).click();
+  await page.getByRole('button', { name: '跳到底部' }).click();
   const resumed = await metrics(conversation);
   await expect
     .poll(async () => (await metrics(conversation)).height)
@@ -483,9 +483,9 @@ test('streaming answers and thoughts follow the bottom, pause when scrolled up a
   await conversation.evaluate((node) => {
     node.scrollTop -= 250;
   });
-  await expect(page.getByRole('button', { name: '滚动到最新消息' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '跳到底部' })).toBeVisible();
   await page.getByRole('button', { name: '打开对话列表' }).click();
   await page.getByRole('button', { name: '开启新对话' }).click();
   await expect(page.getByRole('heading', { name: '今天想聊些什么？' })).toBeVisible();
-  await expect(page.getByRole('button', { name: '滚动到最新消息' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '跳到底部' })).toHaveCount(0);
 });

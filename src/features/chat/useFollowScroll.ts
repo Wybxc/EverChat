@@ -1,4 +1,5 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
+import { isScrollKey, SCROLL_INTENT_EVENT, SCROLL_LAYOUT_EVENT } from './scroll-intent';
 
 const BOTTOM_THRESHOLD = 24;
 export const PAUSE_FOLLOW_EVENT = 'everchat:pause-follow';
@@ -11,19 +12,24 @@ export function useFollowScroll(resetKey?: string | null) {
   const paused = useRef(false);
   const previousTop = useRef(0);
 
-  const scrollToBottom = useCallback(() => {
-    paused.current = false;
-    following.current = true;
+  const followBottom = useCallback(() => {
     if (viewport) {
       viewport.scrollTop = viewport.scrollHeight;
       previousTop.current = viewport.scrollTop;
     }
     setAtBottom(true);
   }, [viewport]);
+  const scrollToBottom = useCallback(() => {
+    viewport?.dispatchEvent(new Event(SCROLL_INTENT_EVENT));
+    paused.current = false;
+    following.current = true;
+    followBottom();
+  }, [viewport, followBottom]);
   const pauseFollowing = useCallback(() => {
+    viewport?.dispatchEvent(new Event(SCROLL_INTENT_EVENT));
     paused.current = true;
     following.current = false;
-  }, []);
+  }, [viewport]);
 
   useLayoutEffect(() => {
     if (!viewport || !content) return;
@@ -41,22 +47,19 @@ export function useFollowScroll(resetKey?: string | null) {
       else if (viewport.scrollTop < previousTop.current) following.current = false;
       previousTop.current = viewport.scrollTop;
       previousBottom = viewport.scrollHeight - viewport.clientHeight;
-      if (following.current && !bottom) scrollToBottom();
+      if (following.current && !bottom) followBottom();
       else setAtBottom(bottom);
     };
     const onResize = () => {
       if (!paused.current && (distance() <= BOTTOM_THRESHOLD || reachedPreviousBottom()))
         following.current = true;
       previousBottom = viewport.scrollHeight - viewport.clientHeight;
-      if (following.current) scrollToBottom();
+      if (following.current) followBottom();
+      viewport.dispatchEvent(new Event(SCROLL_LAYOUT_EVENT));
     };
     const observer = new ResizeObserver(onResize);
     const resumeIntent = (event: Event) => {
-      if (
-        !(event instanceof KeyboardEvent) ||
-        ['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'End', 'Home', ' '].includes(event.key)
-      )
-        paused.current = false;
+      if (isScrollKey(event)) paused.current = false;
     };
     observer.observe(content);
     observer.observe(viewport);
@@ -71,7 +74,7 @@ export function useFollowScroll(resetKey?: string | null) {
       for (const name of ['wheel', 'touchstart', 'pointerdown', 'keydown'])
         viewport.removeEventListener(name, resumeIntent);
     };
-  }, [viewport, content, resetKey, scrollToBottom, pauseFollowing]);
+  }, [viewport, content, resetKey, scrollToBottom, followBottom, pauseFollowing]);
 
   return { viewportRef, contentRef, viewport, content, atBottom, scrollToBottom, pauseFollowing };
 }

@@ -1,6 +1,6 @@
 import { Spinner } from '@/components/ui/spinner';
 import { Infinity as InfinityIcon } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useRef, useState, type Ref } from 'react';
 import { messageFiles, messageImages, messageText } from '../../../shared/conversation/content';
 import { isActive } from '../../../shared/conversation/message-state';
 import { type Message } from '../../../shared/conversation/types';
@@ -15,6 +15,7 @@ import { useFollowScroll } from './useFollowScroll';
 import { ProviderFailureView } from '../providers/ProviderFailureView';
 
 export function MessageView({
+  navigationRef,
   conversationId,
   message,
   busy,
@@ -31,6 +32,7 @@ export function MessageView({
   canFork,
   onFork,
 }: {
+  navigationRef?: Ref<HTMLElement>;
   conversationId: string;
   message: Message;
   busy: boolean;
@@ -142,6 +144,7 @@ export function MessageView({
   );
   return (
     <article
+      ref={navigationRef}
       data-testid="assistant-message"
       data-message-id={message.id}
       data-status={message.status}

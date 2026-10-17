@@ -1,0 +1,107 @@
+import { ArrowDownToLine, ArrowUpToLine, ChevronDown, ChevronUp } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Button } from '../../components/ui/button';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '../../components/ui/tooltip';
+import type { ReadingAction } from './useMessageNavigation';
+
+export function ConversationNavigation({
+  visible,
+  vertical,
+  atTop,
+  atBottom,
+  previous,
+  next,
+  announcement,
+  navigate,
+}: {
+  visible: boolean;
+  vertical: boolean;
+  atTop: boolean;
+  atBottom: boolean;
+  previous?: string;
+  next?: string;
+  announcement: string;
+  navigate: (action: ReadingAction) => void;
+}) {
+  const touch = useRef(false);
+  const [openTooltip, setOpenTooltip] = useState<ReadingAction | null>(null);
+  useEffect(() => {
+    if (!visible) {
+      touch.current = false;
+      setOpenTooltip(null);
+    }
+  }, [visible]);
+  if (!visible) return null;
+  const actions = [
+    { id: 'top', label: '跳到顶部', icon: ArrowUpToLine, unavailable: atTop },
+    { id: 'previous', label: '上一条回答', icon: ChevronUp, unavailable: !previous },
+    { id: 'next', label: '下一条回答', icon: ChevronDown, unavailable: !next },
+    { id: 'bottom', label: '跳到底部', icon: ArrowDownToLine, unavailable: atBottom },
+  ] satisfies { id: ReadingAction; label: string; icon: typeof ChevronUp; unavailable: boolean }[];
+  return (
+    <TooltipProvider delayDuration={400}>
+      <div
+        className="conversation-navigation"
+        role="group"
+        aria-label="对话阅读导航"
+        onPointerDownCapture={(event) => {
+          touch.current = event.pointerType === 'touch';
+          if (touch.current) setOpenTooltip(null);
+        }}
+        onPointerMoveCapture={(event) => {
+          if (event.pointerType === 'mouse') touch.current = false;
+        }}
+        onKeyDownCapture={() => {
+          touch.current = false;
+        }}
+        onFocusCapture={(event) => {
+          if (event.target.matches(':focus-visible')) touch.current = false;
+        }}
+      >
+        {actions.map(({ id, label, icon: Icon, unavailable }) => (
+          <Tooltip
+            key={id}
+            open={openTooltip === id}
+            onOpenChange={(open) => {
+              setOpenTooltip((current) =>
+                open ? (touch.current ? null : id) : current === id ? null : current,
+              );
+            }}
+          >
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="shrink-0"
+                aria-label={label}
+                aria-disabled={unavailable}
+                onClick={(event) => {
+                  // Safari does not focus a button on pointer activation by default.
+                  event.currentTarget.focus({ preventScroll: true });
+                  if (!unavailable) navigate(id);
+                }}
+              >
+                <Icon
+                  className={`size-[min(1rem,24px)] ${unavailable ? 'opacity-40' : ''}`}
+                  aria-hidden
+                />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side={vertical ? 'left' : 'top'} sideOffset={8}>
+              {label}
+            </TooltipContent>
+          </Tooltip>
+        ))}
+        <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+          {announcement}
+        </span>
+      </div>
+    </TooltipProvider>
+  );
+}
