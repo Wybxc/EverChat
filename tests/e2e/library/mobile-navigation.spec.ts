@@ -50,11 +50,96 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('a cold mobile page opens the sidebar with its first touch gesture', async ({ page }) => {
-  await swipe(page, [24, 280], [210, 280]);
+  await swipe(page, [80, 280], [210, 280]);
   await expect(page.getByRole('dialog', { name: '对话列表', exact: true })).toHaveAttribute(
     'data-state',
     'open',
   );
+});
+
+test('edge starts stay outside the app gesture and the interior strip accounts for the safe area', async ({
+  page,
+}) => {
+  const input = page.getByLabel('消息', { exact: true });
+  await input.fill('边缘返回不能改变草稿');
+  for (const x of [8, 24, 48]) {
+    await swipe(page, [x, 280], [210, 280]);
+    await expect(page.locator('[data-sidebar-panel]')).toHaveCount(0);
+    await expect(page).toHaveURL('/');
+  }
+  await page.evaluate(() => {
+    document.documentElement.style.setProperty('--sidebar-swipe-inset', '24px');
+  });
+  await swipe(page, [80, 280], [210, 280]);
+  await expect(page.locator('[data-sidebar-panel]')).toHaveCount(0);
+  await swipe(page, [104, 280], [250, 280]);
+  await expect(page.getByRole('dialog', { name: '对话列表', exact: true })).toHaveAttribute(
+    'data-state',
+    'open',
+  );
+  await page.getByRole('button', { name: '收起侧栏', exact: true }).tap();
+  await expect(input).toHaveValue('边缘返回不能改变草稿');
+});
+
+test('browser history traversal cancels both an active preview and its pending commit', async ({
+  page,
+}) => {
+  const id = crypto.randomUUID();
+  const cdp = await page.context().newCDPSession(page);
+  try {
+    const created = await page.request.post('/api/conversations', {
+      headers,
+      data: { id, title: '返回时取消拖动' },
+    });
+    expect(created.ok()).toBe(true);
+    for (const release of [false, true]) {
+      await page.getByRole('button', { name: '打开对话列表', exact: true }).tap();
+      await page.getByRole('link', { name: '返回时取消拖动', exact: true }).tap();
+      await expect(page).toHaveURL(`/c/${id}`);
+      await expect(page.locator('[data-sidebar-panel]')).toHaveCount(0);
+      await cdp.send('Input.dispatchTouchEvent', {
+        type: 'touchStart',
+        touchPoints: [{ x: 80, y: 280 }],
+      });
+      await cdp.send('Input.dispatchTouchEvent', {
+        type: 'touchMove',
+        touchPoints: [{ x: 210, y: 280 }],
+      });
+      await expect(page.locator('html')).toHaveAttribute('data-sidebar-drag', 'dragging');
+      // Dispatch the release and history traversal in one task so the 160ms
+      // commit timer cannot finish before the navigation under test.
+      if (release) {
+        await page.evaluate(() => {
+          document.addEventListener(
+            'touchend',
+            () => {
+              document.documentElement.dataset.releasePhase =
+                document.documentElement.dataset.sidebarDrag;
+              history.back();
+            },
+            { once: true },
+          );
+        });
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        await expect(page.locator('html')).toHaveAttribute('data-release-phase', 'settling');
+      } else await page.goBack();
+      await expect(page).toHaveURL('/');
+      await expect(page.locator('html')).not.toHaveAttribute('data-sidebar-drag');
+      if (!release)
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await expect(page.locator('[data-sidebar-panel]')).toHaveCount(0);
+      await page.waitForTimeout(200);
+      await expect(page.locator('[data-sidebar-panel]')).toHaveCount(0);
+    }
+    await swipe(page, [80, 280], [210, 280]);
+    await expect(page.getByRole('dialog', { name: '对话列表', exact: true })).toHaveAttribute(
+      'data-state',
+      'open',
+    );
+  } finally {
+    await cdp.detach();
+    await page.request.delete(`/api/conversations/${id}`, { headers });
+  }
 });
 
 test('a fast short flick commits while the same slow movement returns and preserves the draft', async ({
@@ -63,12 +148,12 @@ test('a fast short flick commits while the same slow movement returns and preser
   const input = page.getByLabel('消息', { exact: true });
   await input.fill('手势不能改变草稿');
   const panel = page.getByRole('dialog', { name: '对话列表', exact: true });
-  await swipe(page, [24, 280], [98, 280], false, 480);
+  await swipe(page, [80, 280], [154, 280], false, 480);
   await expect(page.locator('[data-sidebar-panel]')).toHaveCount(0);
   await expect(input).toHaveValue('手势不能改变草稿');
-  await swipe(page, [24, 280], [98, 280], false, 0, 180);
+  await swipe(page, [80, 280], [154, 280], false, 0, 180);
   await expect(page.locator('[data-sidebar-panel]')).toHaveCount(0);
-  await swipe(page, [24, 280], [98, 280], false, 0);
+  await swipe(page, [80, 280], [154, 280], false, 0);
   await expect(panel).toHaveAttribute('data-state', 'open');
   await page.getByRole('button', { name: '收起侧栏', exact: true }).tap();
   await expect(input).toHaveValue('手势不能改变草稿');
@@ -82,12 +167,12 @@ test('a second finger and viewport rotation cancel an inert preview and allow th
   const begin = async () => {
     await cdp.send('Input.dispatchTouchEvent', {
       type: 'touchStart',
-      touchPoints: [{ x: 24, y: 280, id: 1 }],
+      touchPoints: [{ x: 80, y: 280, id: 1 }],
     });
     for (let step = 1; step <= 8; step++) {
       await cdp.send('Input.dispatchTouchEvent', {
         type: 'touchMove',
-        touchPoints: [{ x: 24 + (46 * step) / 8, y: 280, id: 1 }],
+        touchPoints: [{ x: 80 + (46 * step) / 8, y: 280, id: 1 }],
       });
       await page.waitForTimeout(20);
     }
@@ -101,8 +186,8 @@ test('a second finger and viewport rotation cancel an inert preview and allow th
     await cdp.send('Input.dispatchTouchEvent', {
       type: 'touchStart',
       touchPoints: [
-        { x: 70, y: 280, id: 1 },
-        { x: 100, y: 350, id: 2 },
+        { x: 126, y: 280, id: 1 },
+        { x: 156, y: 350, id: 2 },
       ],
     });
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
@@ -117,7 +202,7 @@ test('a second finger and viewport rotation cancel an inert preview and allow th
     await cdp.detach();
   }
   await page.setViewportSize({ width: 390, height: 844 });
-  await swipe(page, [24, 280], [210, 280]);
+  await swipe(page, [80, 280], [210, 280]);
   await expect(panel).toHaveAttribute('data-state', 'open');
 });
 
@@ -128,16 +213,16 @@ test('composer input and open settings or search keep their own touch interactio
   const input = page.getByLabel('消息', { exact: true });
   await input.fill('输入控件内不打开侧栏');
   const box = await input.boundingBox();
-  const x = Math.max(24, box!.x + 4),
+  const x = Math.max(80, box!.x + 4),
     y = box!.y + box!.height / 2;
-  expect(x).toBeLessThanOrEqual(40);
+  expect(x).toBeLessThanOrEqual(112);
   await swipe(page, [x, y], [210, y]);
   await expect(page.locator('[data-sidebar-panel]')).toHaveCount(0);
   await expect(input).toHaveValue('输入控件内不打开侧栏');
   await openSpaceSettings(page);
   const settings = page.getByRole('dialog', { name: '设置', exact: true });
   const settingsBox = await settings.boundingBox();
-  await swipe(page, [24, settingsBox!.y + 70], [210, settingsBox!.y + 70]);
+  await swipe(page, [80, settingsBox!.y + 70], [210, settingsBox!.y + 70]);
   await expect(settings).toBeVisible();
   await expect(page.locator('[data-sidebar-panel]')).toHaveCount(0);
   await settings.getByRole('button', { name: '关闭设置', exact: true }).tap();
@@ -145,7 +230,7 @@ test('composer input and open settings or search keep their own touch interactio
   const search = page.getByRole('dialog', { name: '全局搜索', exact: true });
   await expect(search).toBeVisible();
   const searchBox = await search.boundingBox();
-  await swipe(page, [24, searchBox!.y + 80], [210, searchBox!.y + 80]);
+  await swipe(page, [80, searchBox!.y + 80], [210, searchBox!.y + 80]);
   await expect(search).toBeVisible();
   await expect(page.locator('[data-sidebar-panel]')).toHaveCount(0);
   await search.getByRole('button', { name: '关闭全局搜索', exact: true }).tap();
@@ -175,6 +260,7 @@ test('wide code, formulas and tables keep horizontal scrolling and an open menu 
       '```text\n' + 'long_line_'.repeat(40) + '\n```',
       '$$\n' + Array.from({ length: 50 }, () => 'x').join(' + ') + '\n$$',
       '| ' + 'wide_header_'.repeat(30) + ' | B |\n| --- | --- |\n| value | value |',
+      ...Array.from({ length: 20 }, (_, i) => `正文滚动段落 ${i}`),
     ].join('\n\n');
     const revision = await page.request.patch(`/api/conversations/${id}/messages/${assistant}`, {
       headers,
@@ -195,13 +281,20 @@ test('wide code, formulas and tables keep horizontal scrolling and an open menu 
       });
       expect(initial).toBeGreaterThan(100);
       const box = await block.boundingBox();
-      const x = Math.max(24, box!.x + 4),
+      const x = Math.max(80, box!.x + 4),
         y = box!.y + box!.height / 2;
-      expect(x).toBeLessThanOrEqual(40);
+      expect(x).toBeLessThanOrEqual(112);
       await swipe(page, [x, y], [210, y]);
       await expect.poll(() => block.evaluate((node) => node.scrollLeft)).toBeLessThan(initial);
       await expect(page.locator('[data-sidebar-panel]')).toHaveCount(0);
     }
+    const viewport = page.getByTestId('message-viewport');
+    await viewport.evaluate((node) => {
+      node.scrollTop = 0;
+    });
+    await swipe(page, [80, 400], [82, 250]);
+    await expect.poll(() => viewport.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+    await expect(page.locator('[data-sidebar-panel]')).toHaveCount(0);
     const selected = page.getByText('手势不能抢走已选择的文字', { exact: true });
     await selected.scrollIntoViewIfNeeded();
     await selected.evaluate((node) => {
@@ -216,13 +309,13 @@ test('wide code, formulas and tables keep horizontal scrolling and an open menu 
     const selectedBox = await selected.boundingBox();
     await swipe(
       page,
-      [24, selectedBox!.y + selectedBox!.height / 2],
+      [80, selectedBox!.y + selectedBox!.height / 2],
       [210, selectedBox!.y + selectedBox!.height / 2],
     );
     await expect(page.locator('[data-sidebar-panel]')).toHaveCount(0);
     await page.getByRole('button', { name: '更多会话操作', exact: true }).tap();
     await expect(page.getByRole('menu')).toBeVisible();
-    await swipe(page, [24, 280], [210, 280]);
+    await swipe(page, [80, 280], [210, 280]);
     await expect(page.locator('[data-sidebar-panel]')).toHaveCount(0);
     await expect(page).toHaveURL(path);
   } finally {
@@ -234,15 +327,23 @@ test('touch swipes preview and commit the sidebar; vertical, short and cancelled
   page,
 }) => {
   const panel = page.getByRole('dialog', { name: '对话列表', exact: true });
-  await swipe(page, [24, 280], [28, 400]);
+  await swipe(page, [80, 280], [84, 400]);
   await expect(page.locator('[data-sidebar-panel]')).toHaveCount(0);
-  await swipe(page, [24, 280], [45, 280]);
+  await swipe(page, [80, 280], [101, 280]);
   await expect(page.locator('[data-sidebar-panel]')).toHaveCount(0);
-  await swipe(page, [24, 280], [200, 280], true);
+  await swipe(page, [80, 280], [200, 280], true);
   await expect(page.locator('[data-sidebar-panel]')).toHaveCount(0);
-  await swipe(page, [24, 280], [210, 280]);
+  await swipe(page, [80, 280], [210, 280]);
   await expect(panel).toHaveAttribute('data-state', 'open');
-  await swipe(page, [260, 400], [60, 400]);
+  // Other navigation tests leave real rows here; start on the row, away from
+  // its menu button, whose own touch interaction must remain excluded.
+  expect(
+    await page.evaluate(() => {
+      const target = document.elementFromPoint(200, 400);
+      return Boolean(target?.closest('[data-sidebar-panel]') && !target.closest('button'));
+    }),
+  ).toBe(true);
+  await swipe(page, [200, 400], [60, 400]);
   await expect(page.locator('[data-sidebar-panel]')).toHaveCount(0);
   await expect(page.getByRole('button', { name: '打开对话列表' })).toBeFocused();
   // A completed drag cannot swallow the next independent button tap.
@@ -254,9 +355,9 @@ test.describe('reduced motion', () => {
   test.use({ reducedMotion: 'reduce' });
   test('first swipe opens and closing restores focus', async ({ page }) => {
     const panel = page.getByRole('dialog', { name: '对话列表', exact: true });
-    await swipe(page, [24, 280], [210, 280]);
+    await swipe(page, [80, 280], [210, 280]);
     await expect(panel).toHaveAttribute('data-state', 'open');
-    await swipe(page, [260, 400], [60, 400]);
+    await swipe(page, [200, 400], [60, 400]);
     await expect(page.locator('[data-sidebar-panel]')).toHaveCount(0);
     await expect(page.getByRole('button', { name: '打开对话列表', exact: true })).toBeFocused();
   });
@@ -288,7 +389,7 @@ test('search closes by a real tap after scrolling, viewport changes and repeated
         const panel = page.getByRole('dialog', { name: '对话列表', exact: true });
         const list = panel.locator('.overflow-y-auto');
         const box = await list.boundingBox();
-        await swipe(page, [24, box!.y + box!.height * 0.8], [26, box!.y + box!.height * 0.2]);
+        await swipe(page, [80, box!.y + box!.height * 0.8], [82, box!.y + box!.height * 0.2]);
         await expect.poll(() => list.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
         await expect(panel).toHaveAttribute('data-state', 'open');
         const row = panel.getByRole('link').last();
