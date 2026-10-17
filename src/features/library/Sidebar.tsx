@@ -1,6 +1,5 @@
-import { useEffect, useRef, type ReactNode, type RefObject } from 'react';
+import type { ReactNode, RefObject } from 'react';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
-import { useSidebarSwipe } from './useSidebarSwipe';
 export function Sidebar({
   desktop,
   collapsed,
@@ -18,11 +17,6 @@ export function Sidebar({
   children: ReactNode;
   onClosed?: () => boolean;
 }) {
-  const { preview, dragging } = useSidebarSwipe(desktop, open, onOpenChange);
-  const committed = useRef(open);
-  useEffect(() => {
-    if (open) committed.current = true;
-  }, [open]);
   if (desktop)
     return (
       !collapsed && (
@@ -32,29 +26,16 @@ export function Sidebar({
       )
     );
   return (
-    <Sheet open={open || preview} modal={!preview} onOpenChange={onOpenChange}>
-      {preview && (
-        <div
-          aria-hidden
-          className="sidebar-swipe-preview fixed inset-0 z-50 bg-black/40 pointer-events-none"
-        />
-      )}
+    <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="left"
         showCloseButton={false}
         aria-describedby={undefined}
-        data-sidebar-panel=""
         aria-hidden={!open || undefined}
         inert={!open || undefined}
-        className="sidebar-surface sidebar-swipe-panel data-[side=left]:w-[min(20rem,calc(100dvw-1rem))] gap-0 border-0 p-0"
-        overlayProps={{ className: 'sidebar-swipe-overlay' }}
-        onOpenAutoFocus={(event) => {
-          if (preview || dragging) event.preventDefault();
-        }}
+        className="sidebar-surface data-[side=left]:w-[min(20rem,calc(100dvw-1rem))] gap-0 border-0 p-0"
         onCloseAutoFocus={(event) => {
           event.preventDefault();
-          if (preview || dragging || !committed.current) return;
-          committed.current = false;
           if (onClosed?.()) return;
           // A new page or dialog can deliberately claim focus while the sheet closes.
           const active = document.activeElement;

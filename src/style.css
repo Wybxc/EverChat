@@ -5,7 +5,6 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --sidebar-swipe-inset: env(safe-area-inset-left, 0px);
   color-scheme: light;
   --radius: 0.75rem;
   --background: #ffffff;
@@ -241,32 +240,6 @@
 [data-slot='sheet-overlay'] {
   background: rgb(0 0 0 / 0.4);
   backdrop-filter: none;
-}
-.sidebar-swipe-panel {
-  touch-action: pan-y pinch-zoom;
-}
-[data-sidebar-drag] .sidebar-swipe-panel {
-  animation: none !important;
-  transform: translateX(var(--sidebar-drag-x, 0px));
-  transition: none;
-}
-[data-sidebar-drag] .sidebar-swipe-overlay,
-.sidebar-swipe-preview {
-  opacity: var(--sidebar-drag-opacity, 1);
-}
-[data-sidebar-drag='settling'] .sidebar-swipe-panel,
-[data-sidebar-drag='settling'] .sidebar-swipe-overlay,
-[data-sidebar-drag='settling'] .sidebar-swipe-preview {
-  transition:
-    transform 160ms ease-out,
-    opacity 160ms ease-out;
-}
-@media (prefers-reduced-motion: reduce) {
-  [data-sidebar-drag] .sidebar-swipe-panel,
-  [data-sidebar-drag] .sidebar-swipe-overlay,
-  .sidebar-swipe-preview {
-    transition: none;
-  }
 }
 .field-control {
   display: flex;
