@@ -1,8 +1,9 @@
 import { expect, test } from '@playwright/test';
 
-test('production math renders with real KaTeX fonts after an offline reload without the HTTP cache', async ({
+test('production math caches its first use before an offline reload, including real KaTeX fonts', async ({
   page,
   context,
+  browserName,
 }) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
@@ -13,13 +14,31 @@ test('production math renders with real KaTeX fonts after an offline reload with
       page.evaluate(async () => (await navigator.serviceWorker.getRegistration())?.active?.state),
     )
     .toBe('activated');
-  await page.reload();
   await expect
     .poll(() => page.evaluate(() => navigator.serviceWorker.controller?.state))
     .toBe('activated');
-  const cdp = await context.newCDPSession(page);
-  await cdp.send('Network.clearBrowserCache');
-  await cdp.detach();
+  await page.evaluate(() => document.fonts.ready.then(() => undefined));
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const resources = performance
+          .getEntriesByType('resource')
+          .map(({ name }) => name)
+          .filter((url) => /\/assets\/.*\.(?:js|css|woff2)$/.test(url));
+        return (
+          resources.length > 0 &&
+          (
+            await Promise.all(resources.map((url) => caches.match(url, { ignoreSearch: true })))
+          ).every(Boolean)
+        );
+      }),
+    )
+    .toBe(true);
+  if (browserName === 'chromium') {
+    const cdp = await context.newCDPSession(page);
+    await cdp.send('Network.clearBrowserCache');
+    await cdp.detach();
+  }
   await context.setOffline(true);
   try {
     await page.reload();

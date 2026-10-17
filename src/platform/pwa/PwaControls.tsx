@@ -79,8 +79,8 @@ export function PwaSettings() {
           ? state.available
             ? ' 有新版本'
             : state.ready
-              ? ' 离线资源已就绪'
-              : ' 离线资源尚未就绪'
+              ? ' 可离线启动'
+              : ' 离线启动尚未就绪'
           : null}
       </p>
       {state.error && (

@@ -6,6 +6,7 @@ import { textPdf } from '../support/assets/pdf';
 
 test('production assets load the real PDF worker and bundled Chinese CMaps and fonts without a public document URL', async ({
   page,
+  context,
 }) => {
   const id = '00000000-0000-4000-8000-000000000101',
     bytes = textPdf([['生产构建预算：42 元。']], { unicode: true });
@@ -75,6 +76,9 @@ test('production assets load the real PDF worker and bundled Chinese CMaps and f
     return route.fulfill({ json: [] });
   });
   await page.goto(`/c/${id}`);
+  await expect
+    .poll(() => page.evaluate(() => navigator.serviceWorker.controller?.state))
+    .toBe('activated');
   await expect(page.getByRole('button', { name: '添加附件', exact: true })).toBeEnabled();
   await page
     .getByLabel('选择聊天文件')
@@ -82,4 +86,37 @@ test('production assets load the real PDF worker and bundled Chinese CMaps and f
   await page.getByRole('button', { name: '预览 生产.pdf' }).click();
   await expect(page.getByRole('dialog').locator('pre')).toContainText('生产构建预算：42 元');
   expect(extracted?.pdf).toEqual({ pages: 1, parserVersion: PDF_PARSER_VERSION });
+  const parserUrl = await page.evaluate(() =>
+    performance
+      .getEntriesByType('resource')
+      .map(({ name }) => name)
+      .find((url) => /\/chat-pdf-[\w-]+\.js$/.test(url))!,
+  );
+  await expect
+    .poll(() => page.evaluate(async (url) => Boolean(await caches.match(url)), parserUrl))
+    .toBe(true);
+  const cdp = await context.newCDPSession(page);
+  await cdp.send('Network.clearBrowserCache');
+  await cdp.detach();
+  await context.setOffline(true);
+  try {
+    await page.reload();
+    // Parsing is local; uploading remains online-only. A fresh page must load the
+    // actual parser, worker and Chinese font resources solely from the module cache.
+    const result = await page.evaluate(
+      async ({ url, bytes, sha }) => {
+        const parser = await import(url);
+        return parser.prepareChatPdf(
+          new File([new Uint8Array(bytes)], '离线.pdf', { type: 'application/pdf' }),
+          sha,
+          new AbortController().signal,
+        );
+      },
+      { url: parserUrl, bytes: [...bytes], sha: createHash('sha256').update(bytes).digest('hex') },
+    );
+    expect(result.text).toBe(extracted!.text);
+    expect(result.pdf).toEqual({ pages: 1, parserVersion: PDF_PARSER_VERSION });
+  } finally {
+    await context.setOffline(false);
+  }
 });

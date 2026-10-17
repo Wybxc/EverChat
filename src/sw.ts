@@ -1,7 +1,15 @@
 /// <reference lib="webworker" />
 import { cacheNames, clientsClaim, setCacheNameDetails } from 'workbox-core';
-import { addPlugins, createHandlerBoundToURL, precacheAndRoute } from 'workbox-precaching';
+import {
+  addPlugins,
+  createHandlerBoundToURL,
+  getCacheKeyForURL,
+  precacheAndRoute,
+} from 'workbox-precaching';
 import { NavigationRoute, registerRoute } from 'workbox-routing';
+import { CacheFirst } from 'workbox-strategies';
+import { CacheExpiration, ExpirationPlugin } from 'workbox-expiration';
+import { isBundledAsset } from './platform/pwa/assets';
 import {
   APP_VERSION,
   PWA_CHANNEL,
@@ -17,25 +25,36 @@ setCacheNameDetails({
   prefix: 'everchat-static',
   ...(repairGeneration ? { suffix: repairGeneration } : {}),
 });
-addPlugins([
-  {
-    fetchDidSucceed: async ({ request, response }) => {
+const validateResource = {
+  fetchDidSucceed: async ({ request, response }: { request: Request; response: Response }) => {
+    if (
+      response.redirected ||
+      !response.ok ||
+      new URL(response.url).origin !== self.location.origin
+    )
+      throw new Error('Application resource was redirected or unavailable');
+    const path = new URL(request.url).pathname;
+    if (path.startsWith('/assets/')) {
+      const type = response.headers.get('Content-Type') ?? '';
       if (
-        response.redirected ||
-        !response.ok ||
-        new URL(response.url).origin !== self.location.origin
+        type.includes('text/html') ||
+        (/\.(?:js|mjs)$/.test(path) && !/(?:java|ecma)script/.test(type)) ||
+        (path.endsWith('.css') && !type.includes('text/css'))
       )
-        throw new Error('Application resource was redirected or unavailable');
-      if (
-        /\.(?:js|mjs|css|woff2)(?:$|\?)/.test(request.url) &&
-        response.headers.get('Content-Type')?.includes('text/html')
-      )
-        throw new Error('Application resource returned an authentication page');
-      return response;
-    },
+        throw new Error('Application resource returned an invalid content type');
+    }
+    return response;
   },
-]);
+};
+addPlugins([validateResource]);
 precacheAndRoute(self.__WB_MANIFEST);
+// Only immutable bundled assets; API responses, attachments and authentication never enter this cache.
+const moduleCache = `${cacheNames.runtime}-modules`;
+const modules = new CacheFirst({
+  cacheName: moduleCache,
+  plugins: [validateResource, new ExpirationPlugin({ maxEntries: 192, purgeOnQuotaError: true })],
+});
+registerRoute(({ url }) => isBundledAsset(url, self.location.origin), modules);
 registerRoute(
   new NavigationRoute(createHandlerBoundToURL('/index.html'), {
     denylist: [/^\/api(?:\/|$)/, /^\/auth(?:\/|$)/, /^\/cdn-cgi(?:\/|$)/],
@@ -46,8 +65,15 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     (async () => {
       for (const name of await caches.keys())
-        if (name.startsWith(STATIC_CACHE_PREFIX) && name !== cacheNames.precache)
+        if (
+          name.startsWith(STATIC_CACHE_PREFIX) &&
+          name !== cacheNames.precache &&
+          name !== moduleCache
+        ) {
           await caches.delete(name);
+          if (name.endsWith('-modules'))
+            await new CacheExpiration(name, { maxEntries: 192 }).delete();
+        }
     })(),
   );
 });
@@ -111,6 +137,34 @@ async function coordinate() {
 }
 self.addEventListener('message', (event) => {
   if (event.data?.channel !== PWA_CHANNEL) return;
+  if (event.data.type === 'cache-used' && Array.isArray(event.data.urls)) {
+    const candidates: unknown[] = event.data.urls;
+    const urls = [...new Set(candidates.filter((url): url is string => typeof url === 'string'))]
+      .slice(0, 192)
+      .filter((url) => {
+        try {
+          return isBundledAsset(new URL(url), self.location.origin) && !getCacheKeyForURL(url);
+        } catch {
+          return false;
+        }
+      });
+    // Cover resources used by the first page before this worker took control. This is
+    // best effort and never extends installation or downloads modules the page hasn't used.
+    event.waitUntil(
+      Promise.all(
+        Array.from({ length: Math.min(4, urls.length) }, async () => {
+          for (let url = urls.pop(); url; url = urls.pop())
+            await Promise.allSettled(
+              modules.handleAll({
+                request: new Request(url, { credentials: 'same-origin' }),
+                event,
+              }),
+            );
+        }),
+      ),
+    );
+    return;
+  }
   if (event.data.type === 'version') {
     event.ports[0]?.postMessage({ version: APP_VERSION });
     return;

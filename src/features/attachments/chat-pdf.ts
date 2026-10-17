@@ -34,7 +34,7 @@ function binaryFactory(signal: AbortSignal) {
     async fetch({ kind, filename }: { kind: string; filename: string }) {
       const url = resource[kind]?.get(filename);
       if (!url) throw new Error('PDF 所需的内置字体资源不可用。');
-      const response = await fetch(url, { signal, credentials: 'omit' });
+      const response = await fetch(url, { signal, credentials: 'same-origin' });
       if (!response.ok) throw new Error('PDF 字体资源加载失败。');
       return new Uint8Array(await response.arrayBuffer());
     }

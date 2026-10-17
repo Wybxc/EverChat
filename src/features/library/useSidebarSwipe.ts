@@ -3,14 +3,14 @@ import { hasOpenModal } from '../../components/Modal';
 import { pwaSnapshot } from '../../platform/pwa/controller';
 
 const interactive =
-  'input, textarea, select, button, a, [contenteditable="true"], [role="menu"], [role="slider"], pre, table, .katex-display';
+  'input, textarea, select, button, [contenteditable="true"], [role="menu"], [role="slider"], pre, table, .katex-display';
 type Gesture = {
   id: number;
   x: number;
   y: number;
-  lastX: number;
   lastTime: number;
   velocity: number;
+  samples: { x: number; time: number }[];
   width: number;
   opening: boolean;
   locked: boolean;
@@ -43,6 +43,7 @@ export function useSidebarSwipe(desktop: boolean, open: boolean, change: (open: 
       clearTimeout(finishTimer);
       const previous = gesture;
       gesture = undefined;
+      document.removeEventListener('touchmove', touchMove, true);
       if (previous?.target.hasPointerCapture?.(previous.id))
         previous.target.releasePointerCapture(previous.id);
       settling = false;
@@ -66,6 +67,7 @@ export function useSidebarSwipe(desktop: boolean, open: boolean, change: (open: 
         return;
       const panel = event.target.closest('[data-sidebar-panel]');
       const opening = !current.current.open;
+      if (opening && event.target.closest('a')) return;
       const safeLeft =
         parseFloat(getComputedStyle(root).getPropertyValue('--sidebar-swipe-inset')) || 0;
       if (opening ? event.clientX < safeLeft + 16 || event.clientX > safeLeft + 40 : !panel) return;
@@ -88,14 +90,15 @@ export function useSidebarSwipe(desktop: boolean, open: boolean, change: (open: 
         id: event.pointerId,
         x: event.clientX,
         y: event.clientY,
-        lastX: event.clientX,
         lastTime: event.timeStamp,
         velocity: 0,
+        samples: [{ x: event.clientX, time: event.timeStamp }],
         width,
         opening,
         locked: false,
         target: event.target,
       };
+      document.addEventListener('touchmove', touchMove, { capture: true, passive: false });
     };
     const move = (event: PointerEvent) => {
       const g = gesture;
@@ -119,10 +122,15 @@ export function useSidebarSwipe(desktop: boolean, open: boolean, change: (open: 
         root.dataset.sidebarDrag = 'dragging';
       }
       event.preventDefault();
-      if (event.timeStamp > g.lastTime)
-        g.velocity = (event.clientX - g.lastX) / (event.timeStamp - g.lastTime);
+      if (event.timeStamp > g.lastTime) {
+        g.samples.push({ x: event.clientX, time: event.timeStamp });
+        // Keep a short trajectory rather than trusting one coalesced or delayed event.
+        while (g.samples.length > 2 && event.timeStamp - g.samples[0]!.time > 120)
+          g.samples.shift();
+        const first = g.samples[0]!;
+        g.velocity = (event.clientX - first.x) / (event.timeStamp - first.time);
+      }
       g.lastTime = event.timeStamp;
-      g.lastX = event.clientX;
       paint(Math.max(-g.width, Math.min(0, (g.opening ? -g.width : 0) + dx)), g.width);
     };
     const finish = (event: PointerEvent) => {
@@ -167,6 +175,12 @@ export function useSidebarSwipe(desktop: boolean, open: boolean, change: (open: 
     const cancel = (event: PointerEvent) => {
       if (gesture?.id === event.pointerId) finish(event);
     };
+    // The opening strip is part of the real content, so its touch-action must stay
+    // unrestricted for code scrolling and selection. Only claim native panning
+    // after a single-finger horizontal sidebar drag has actually locked.
+    const touchMove = (event: TouchEvent) => {
+      if (gesture?.locked && event.touches.length === 1 && event.cancelable) event.preventDefault();
+    };
     document.addEventListener('pointerdown', down, true);
     document.addEventListener('pointermove', move, { capture: true, passive: false });
     document.addEventListener('pointerup', finish, true);
@@ -178,6 +192,7 @@ export function useSidebarSwipe(desktop: boolean, open: boolean, change: (open: 
       clear();
       document.removeEventListener('pointerdown', down, true);
       document.removeEventListener('pointermove', move, true);
+      document.removeEventListener('touchmove', touchMove, true);
       document.removeEventListener('pointerup', finish, true);
       document.removeEventListener('pointercancel', cancel, true);
       document.removeEventListener('lostpointercapture', cancel, true);

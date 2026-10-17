@@ -12,7 +12,12 @@ export default defineConfig({
     {
       name: 'webkit',
       use: { browserName: 'webkit' },
-      testMatch: ['lifecycle.spec.ts', 'cloudflare-assets.spec.ts'],
+      testMatch: [
+        'lifecycle.spec.ts',
+        'cloudflare-assets.spec.ts',
+        'caching.spec.ts',
+        'math.spec.ts',
+      ],
     },
   ],
   webServer: {

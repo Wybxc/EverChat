@@ -5,9 +5,11 @@ import { cloudflare } from '@cloudflare/vite-plugin';
 import { VitePWA } from 'vite-plugin-pwa';
 import { fileURLToPath } from 'node:url';
 import { localAccess } from './scripts/dev/access';
+import { startupCache } from './scripts/build/startup-cache';
 
 export default defineConfig(async ({ command, mode }) => {
   const local = command === 'serve' && mode !== 'access' ? await localAccess() : null;
+  const startup = startupCache();
   return {
     define: {
       'import.meta.env.VITE_APP_VERSION': JSON.stringify(
@@ -25,6 +27,7 @@ export default defineConfig(async ({ command, mode }) => {
       ...(local ? [local.plugin] : []),
       react(),
       tailwindcss(),
+      startup.plugin,
       VitePWA({
         injectRegister: false,
         registerType: 'prompt',
@@ -49,7 +52,13 @@ export default defineConfig(async ({ command, mode }) => {
           ],
         },
         injectManifest: {
-          globPatterns: ['**/*.{js,css,html,svg,png,webmanifest}', '**/KaTeX_*.woff2'],
+          globPatterns: ['**/*.{js,css,html,svg,png,webmanifest}'],
+          manifestTransforms: [
+            async (manifest) => ({
+              manifest: manifest.filter(({ url }) => startup.includes(url)),
+              warnings: [],
+            }),
+          ],
         },
       }),
       cloudflare({

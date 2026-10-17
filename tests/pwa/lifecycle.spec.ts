@@ -26,6 +26,16 @@ async function version(page: Page) {
   });
   return result;
 }
+async function cacheOptionalModule(page: Page) {
+  const { optionalAsset } = (await (await control(page.request, {})).json()) as {
+    optionalAsset: string;
+  };
+  await page.evaluate((url) => fetch(url).then(() => undefined), optionalAsset);
+  await expect
+    .poll(() => page.evaluate(async (url) => Boolean(await caches.match(url)), optionalAsset))
+    .toBe(true);
+  return optionalAsset;
+}
 
 test.beforeEach(async ({ request }) => {
   await control(request, {
@@ -36,6 +46,7 @@ test.beforeEach(async ({ request }) => {
     failSw: false,
     swMode: 'normal',
     swDelay: 0,
+    assetDelay: 0,
   });
 });
 test.afterEach(async ({ context, request }) => {
@@ -47,6 +58,7 @@ test.afterEach(async ({ context, request }) => {
     failSw: false,
     swMode: 'normal',
     swDelay: 0,
+    assetDelay: 0,
   });
 });
 
@@ -57,6 +69,7 @@ test('two real production builds wait for unsaved settings in every tab and pres
   await controlled(page, `/c/${id}`);
   const second = await context.newPage();
   await controlled(second);
+  const optionalAsset = await cacheOptionalModule(page);
   await page.getByLabel('消息', { exact: true }).fill('第一页的未发送草稿');
   await second.getByLabel('消息', { exact: true }).fill('第二页的新对话草稿');
   await control(page.request, { failSettings: true });
@@ -91,6 +104,9 @@ test('two real production builds wait for unsaved settings in every tab and pres
   await expect(second.getByLabel('消息', { exact: true })).toHaveValue('第二页的新对话草稿');
   await settings(page);
   await expect(page.getByTestId('app-version')).toHaveText('pwa-test-b');
+  expect(await page.evaluate(async (url) => Boolean(await caches.match(url)), optionalAsset)).toBe(
+    true,
+  );
 });
 
 test('repair only removes app static caches and keeps chat IndexedDB, drafts and offline requests', async ({
@@ -159,7 +175,7 @@ test('failed registration is visible and can be retried without losing a draft',
   await expect
     .poll(() => page.evaluate(() => navigator.serviceWorker.controller?.state))
     .toBe('activated');
-  await expect(panel).toContainText('离线资源已就绪');
+  await expect(panel).toContainText('可离线启动');
   await panel.getByRole('button', { name: '关闭设置', exact: true }).click();
   await expect(page.getByLabel('消息', { exact: true })).toHaveValue('注册失败时的草稿');
 });
@@ -167,7 +183,7 @@ test('failed registration is visible and can be retried without losing a draft',
 test('a failed first resource install reacquires registration on retry and preserves the draft', async ({
   page,
 }) => {
-  // Fail a lazy chunk so the shell loads, but the real SW precache install fails.
+  // The shell remains usable when a required offline icon fails to install.
   await control(page.request, { failAsset: true });
   await page.goto('/');
   await page.getByLabel('消息', { exact: true }).fill('首次离线安装失败的草稿');
@@ -182,7 +198,7 @@ test('a failed first resource install reacquires registration on retry and prese
   await expect
     .poll(() => page.evaluate(() => navigator.serviceWorker.controller?.state))
     .toBe('activated');
-  await expect(panel).toContainText('离线资源已就绪');
+  await expect(panel).toContainText('可离线启动');
   await panel.getByRole('button', { name: '关闭设置', exact: true }).click();
   await expect(page.getByLabel('消息', { exact: true })).toHaveValue('首次离线安装失败的草稿');
 });
@@ -193,6 +209,15 @@ test('an interrupted update keeps the old version and draft, then retries safely
   await controlled(page);
   await page.getByLabel('消息', { exact: true }).fill('更新中断时的草稿');
   const panel = await settings(page);
+  // Force an unchanged required resource to be reacquired by the new installation.
+  await page.evaluate(async () => {
+    for (const name of await caches.keys()) {
+      if (!name.startsWith('everchat-static-')) continue;
+      const cache = await caches.open(name);
+      for (const request of await cache.keys())
+        if (new URL(request.url).pathname === '/icon-512.png') await cache.delete(request);
+    }
+  });
   await control(page.request, { version: 'b', failAsset: true });
   await panel.getByRole('button', { name: '检查更新', exact: true }).click();
   await expect(panel.getByRole('alert')).toContainText('离线资源未能准备');
@@ -244,6 +269,34 @@ test('slow checks end their UI wait, coalesce retries and cannot overwrite a lat
   expect(await version(page)).toBe('pwa-test-a');
 });
 
+test('retrying a first installation downloads resources without queueing another update or a check timeout', async ({
+  page,
+}) => {
+  await control(page.request, { failSw: true });
+  await page.goto('/');
+  await page.getByLabel('消息', { exact: true }).fill('慢速安装时保留的草稿');
+  const panel = await settings(page);
+  await expect(panel.getByRole('alert')).toContainText('暂时无法检查更新');
+  const before = await control(page.request, { failSw: false, assetDelay: 20000 });
+  const { swRequests } = (await before.json()) as { swRequests: number };
+  await panel.getByRole('button', { name: '检查更新', exact: true }).click();
+  await expect(panel.getByRole('button', { name: '准备更新资源', exact: true })).toBeDisabled();
+  await panel.getByText('更新诊断', { exact: true }).click();
+  await expect(panel.locator('pre')).toContainText('"phase": "install"');
+  // The browser install job stays live beyond the check deadline. Background signals reuse it.
+  await page.evaluate(() => window.dispatchEvent(new Event('everchat:network-ready')));
+  await expect(panel.locator('pre')).toContainText('"phase": "install"');
+  await page.waitForTimeout(16000);
+  await expect(panel.getByRole('alert')).toHaveCount(0);
+  await expect(panel.locator('pre')).not.toContainText('"failure": "timeout"');
+  await expect(panel).toContainText('可离线启动');
+  const after = await control(page.request, {});
+  expect(((await after.json()) as { swRequests: number }).swRequests).toBe(swRequests + 1);
+  await expect(panel.getByRole('button', { name: '检查更新', exact: true })).toBeEnabled();
+  await panel.getByRole('button', { name: '关闭设置', exact: true }).click();
+  await expect(page.getByLabel('消息', { exact: true })).toHaveValue('慢速安装时保留的草稿');
+});
+
 test('mobile production search leaves a tappable close control and returns focus to the sidebar trigger', async ({
   browser,
 }) => {
@@ -274,6 +327,7 @@ test('a failed repair download retains the active cache and unrelated caches unt
   page,
 }) => {
   await controlled(page);
+  const optionalAsset = await cacheOptionalModule(page);
   await page.getByLabel('消息', { exact: true }).fill('修复下载失败仍保留的草稿');
   await page.evaluate(async () => {
     await (await caches.open('another-app-cache')).put('/unrelated', new Response('keep'));
@@ -296,6 +350,9 @@ test('a failed repair download retains the active cache and unrelated caches unt
   expect(await page.evaluate(async () => (await caches.match('/unrelated'))?.text())).toBe('keep');
   const retained = await page.evaluate(() => caches.keys());
   for (const name of oldCaches) expect(retained).toContain(name);
+  expect(await page.evaluate(async (url) => Boolean(await caches.match(url)), optionalAsset)).toBe(
+    true,
+  );
   await control(page.request, { failAsset: false });
   await Promise.all([
     page.waitForEvent('framenavigated', (frame) => frame === page.mainFrame()),
@@ -303,6 +360,9 @@ test('a failed repair download retains the active cache and unrelated caches unt
   ]);
   await expect(page.getByLabel('消息', { exact: true })).toHaveValue('修复下载失败仍保留的草稿');
   expect(await page.evaluate(async () => (await caches.match('/unrelated'))?.text())).toBe('keep');
+  await expect
+    .poll(() => page.evaluate(async (url) => Boolean(await caches.match(url)), optionalAsset))
+    .toBe(false);
 });
 
 test('retired archive flags in an existing offline cache do not hide titles from the sidebar or search', async ({

@@ -1,6 +1,6 @@
 import { messageParts } from '../../../shared/conversation/content';
 // Serve the production shell with read-only synthetic API data; DO behavior is covered by the main E2E suite.
-import { readFile, mkdtemp, rm } from 'node:fs/promises';
+import { readFile, readdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { startCloudflareAssets } from './cloudflare-assets';
 import { createServer } from 'node:http';
@@ -16,6 +16,15 @@ let failSettings = false,
   failSw = false;
 let swMode: 'normal' | 'html' | 'redirect' = 'normal';
 let swDelay = 0;
+let assetDelay = 0;
+let swRequests = 0;
+let moduleResponse: 'normal' | 'html' | 'redirect' | 'failure' = 'normal';
+let richMarkdown = false;
+const optionalAsset =
+  '/assets/' +
+  (await readdir(resolve(builds.a, 'assets'))).find(
+    (name) => name.startsWith('mermaid-parser.core-') && name.endsWith('.js'),
+  )!;
 const defaultProviderSettings = () => ({
   providers: [],
   activeProviderId: null,
@@ -55,6 +64,9 @@ const server = createServer(async (request, response) => {
       failSw?: boolean;
       swMode?: typeof swMode;
       swDelay?: number;
+      assetDelay?: number;
+      moduleResponse?: typeof moduleResponse;
+      richMarkdown?: boolean;
       resetSettings?: boolean;
     };
     if (input.version) root = builds[input.version];
@@ -63,8 +75,11 @@ const server = createServer(async (request, response) => {
     if (input.failSw !== undefined) failSw = input.failSw;
     if (input.swMode !== undefined) swMode = input.swMode;
     if (input.swDelay !== undefined) swDelay = input.swDelay;
+    if (input.assetDelay !== undefined) assetDelay = input.assetDelay;
+    if (input.moduleResponse !== undefined) moduleResponse = input.moduleResponse;
+    if (input.richMarkdown !== undefined) richMarkdown = input.richMarkdown;
     if (input.resetSettings) providerSettings = defaultProviderSettings();
-    return json({ ok: true });
+    return json({ ok: true, swRequests, optionalAsset });
   }
   if (path === '/api/settings/providers') {
     if (request.method === 'PUT') {
@@ -126,8 +141,14 @@ const server = createServer(async (request, response) => {
           id: 'assistant',
           role: 'assistant',
           parts: messageParts(
-            '**已保存的正文**\n\n行内 $E=mc^2$。\n\n\\[\n\\frac{1}{2}\n\\]',
-            '**已保存的思考** \\(a+b\\)',
+            richMarkdown
+              ? [
+                  '**按需模块**：$E=mc^2$',
+                  '```javascript\nconst cached = 42;\n```',
+                  '```mermaid\ngraph LR\nA[启动] --> B[按需缓存]\n```',
+                ].join('\n\n')
+              : '**已保存的正文**\n\n行内 $E=mc^2$。\n\n\\[\n\\frac{1}{2}\n\\]',
+            richMarkdown ? '' : '**已保存的思考** \\(a+b\\)',
           ),
           status: 'completed',
           createdAt: 2,
@@ -143,7 +164,23 @@ const server = createServer(async (request, response) => {
     response.end();
     return;
   }
-  if (path === '/sw.js' && swDelay) await new Promise((resolve) => setTimeout(resolve, swDelay));
+  if (path === '/sw.js') {
+    swRequests++;
+    if (swDelay) await new Promise((resolve) => setTimeout(resolve, swDelay));
+  }
+  if (assetDelay && path === '/icon-512.png')
+    await new Promise((resolve) => setTimeout(resolve, assetDelay));
+  if (path === optionalAsset && moduleResponse !== 'normal') {
+    response.writeHead(
+      moduleResponse === 'redirect' ? 302 : moduleResponse === 'failure' ? 503 : 200,
+      {
+        'Content-Type': 'text/html',
+        ...(moduleResponse === 'redirect' ? { Location: '/cdn-cgi/access/login' } : {}),
+      },
+    );
+    response.end('<html>Authentication or unavailable</html>');
+    return;
+  }
   if (path === '/sw.js' && swMode !== 'normal') {
     response.writeHead(swMode === 'html' ? 200 : 302, {
       'Content-Type': 'text/html',
@@ -152,10 +189,7 @@ const server = createServer(async (request, response) => {
     response.end('<html>Authentication</html>');
     return;
   }
-  if (
-    (failSw && path === '/sw.js') ||
-    (failAsset && path.startsWith('/assets/mermaid') && path.endsWith('.js'))
-  ) {
+  if ((failSw && path === '/sw.js') || (failAsset && path === '/icon-512.png')) {
     response.writeHead(503);
     response.end('Fixture static resource failure');
     return;

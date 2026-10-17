@@ -12,6 +12,7 @@ import {
 import { reloadBlocked } from './reload-guard';
 import { freezeForReload } from './browser-lock';
 import { APP_VERSION, PWA_CHANNEL, type Preparation, type ReloadCommand } from './protocol';
+import { isBundledAsset } from './assets';
 
 type InstallPrompt = Event & {
   prompt(): Promise<void>;
@@ -78,6 +79,18 @@ let changing = false;
 let controllerScript: string | undefined;
 let started = false;
 let lastCheck = 0;
+let initialControlAt: number | undefined;
+const earlyAssets = new Set<string>();
+function cacheEarlyResources(worker: ServiceWorker, entries: PerformanceEntry[]) {
+  const urls = entries
+    .map(({ name }) => name)
+    .filter((url) => {
+      if (!isBundledAsset(new URL(url), location.origin) || earlyAssets.has(url)) return false;
+      earlyAssets.add(url);
+      return true;
+    });
+  if (urls.length) worker.postMessage({ channel: PWA_CHANNEL, type: 'cache-used', urls });
+}
 function diagnostic(source: PwaSource, phase: PwaPhase, failure?: PwaFailure, error?: unknown) {
   publish({
     diagnostic: {
@@ -158,6 +171,10 @@ function request<T>(worker: ServiceWorker, type: string): Promise<T> {
 async function controllerChanged() {
   const worker = navigator.serviceWorker.controller;
   if (!worker) return;
+  if (!controllerScript) {
+    initialControlAt = performance.now();
+    cacheEarlyResources(worker, performance.getEntriesByType('resource'));
+  }
   const freshRepair =
     worker.scriptURL !== controllerScript && new URL(worker.scriptURL).searchParams.has('repair');
   controllerScript = worker.scriptURL;
@@ -202,7 +219,7 @@ function watch(next: ServiceWorkerRegistration, source: PwaSource) {
     if (!installing) return;
     const repairInstall = state.repairing;
     diagnostic(sources.get(next) ?? 'background', 'install');
-    publish({ installing: true });
+    publish({ installing: true, checking: false, error: '', noticeError: false });
     const changed = () => {
       if (registration !== next) return;
       if (installing.state === 'installed' || installing.state === 'activated') {
@@ -280,15 +297,36 @@ export function startPwa() {
     installPrompt = undefined;
     publish({ installed: true, canInstall: false });
   });
-  window.addEventListener('vite:preloadError', () =>
-    publish({
-      resourceError: true,
-      error: '界面资源未能加载，请修复缓存后重试。',
-      noticeError: true,
-    }),
-  );
+  window.addEventListener('vite:preloadError', () => {
+    // A module never used online is intentionally absent from the offline cache.
+    // Markdown keeps a readable fallback and retries when connectivity returns.
+    if (navigator.onLine)
+      publish({
+        resourceError: true,
+        error: '界面资源未能加载，请修复缓存后重试。',
+        noticeError: true,
+      });
+  });
   if (!state.supported) return;
   controllerScript = navigator.serviceWorker.controller?.scriptURL;
+  if (
+    !controllerScript &&
+    typeof PerformanceObserver !== 'undefined' &&
+    PerformanceObserver.supportedEntryTypes.includes('resource')
+  ) {
+    // A request can start before control and finish afterwards. Observe those late
+    // completions as well; requests started under SW control already cache normally.
+    const observer = new PerformanceObserver((list) => {
+      const worker = navigator.serviceWorker.controller;
+      const controlledAt = initialControlAt;
+      if (worker && controlledAt !== undefined)
+        cacheEarlyResources(
+          worker,
+          list.getEntries().filter(({ startTime }) => startTime < controlledAt),
+        );
+    });
+    observer.observe({ type: 'resource', buffered: true });
+  }
   navigator.serviceWorker.addEventListener('controllerchange', () => void controllerChanged());
   navigator.serviceWorker.addEventListener('message', (event) => {
     if (event.data?.channel !== PWA_CHANNEL) return;
@@ -313,7 +351,7 @@ export function startPwa() {
   else window.addEventListener('load', () => void registerPwa(), { once: true });
 }
 export async function checkPwaUpdate(source: PwaSource = 'manual') {
-  if (!state.supported || state.preparing) return;
+  if (!state.supported || state.preparing || state.installing) return;
   if (checking) return checking;
   if (!navigator.onLine) {
     if (source === 'manual') {
@@ -329,7 +367,7 @@ export async function checkPwaUpdate(source: PwaSource = 'manual') {
   diagnostic(source, 'check');
   const timer = setTimeout(() => {
     timedOut = true;
-    if (id !== checkId || state.available) return;
+    if (id !== checkId || state.available || state.installing) return;
     diagnostic(source, 'check', 'timeout');
     publish({
       checking: false,
@@ -341,6 +379,9 @@ export async function checkPwaUpdate(source: PwaSource = 'manual') {
     let phase: PwaPhase = 'register';
     try {
       let next = await currentRegistration(source);
+      // A register/update job already owns this installation. Another update would
+      // queue behind its resource downloads and turn that wait into a false check timeout.
+      if (next.installing) return;
       phase = 'check';
       try {
         await next.update();
@@ -348,6 +389,7 @@ export async function checkPwaUpdate(source: PwaSource = 'manual') {
         if (!(error instanceof Error) || error.name !== 'InvalidStateError') throw error;
         registration = undefined;
         next = await currentRegistration(source);
+        if (next.installing) return;
         await next.update(); // One recovery attempt; never loop on a broken installation.
       }
       if (id !== checkId) return;
