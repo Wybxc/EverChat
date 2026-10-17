@@ -53,7 +53,7 @@ export function useChatAttachments({
   refreshLibrary: () => void;
   setError: (error: string) => void;
 }) {
-  const { draft, revisionOf, draftImages, draftFiles, setDraftImages, setDraftFiles } = chatDraft;
+  const { draft, draftImages, draftFiles, setDraftImages, setDraftFiles } = chatDraft;
   const imageUpload = useRef<{ origin: string | null; controller: AbortController } | null>(null);
   const [imageProgress, setImageProgress] = useState<{
     name: string;
@@ -189,9 +189,8 @@ export function useChatAttachments({
       }
       controller.signal.throwIfAborted();
       if (selectedRef.current !== origin) throw new DOMException('已切换对话', 'AbortError');
-      const savedDraft = read<{ text: string; revisionOf?: string }>(`draft:${origin ?? 'new'}`, {
+      const savedDraft = read<{ text: string }>(`draft:${origin ?? 'new'}`, {
         text: draft,
-        revisionOf,
       });
       const images = [...draftImages, ...uploadedImages],
         files = [...draftFiles, ...uploadedFiles];

@@ -2,6 +2,7 @@ import { expect, test, type APIRequestContext } from '@playwright/test';
 import WebSocket from 'ws';
 import type { EverChatBackup } from '../../../shared/backup/backup';
 import { messageParts, messageText } from '../../../shared/conversation/content';
+import { MAX_MESSAGE_TEXT_BYTES } from '../../../shared/conversation/limits';
 import { DEFAULT_CONVERSATION_SETTINGS } from '../../../shared/conversation/settings';
 import type { ConversationSettings, Submission } from '../../../shared/conversation/types';
 import type { ProviderSettings } from '../../../shared/providers/types';
@@ -332,7 +333,10 @@ test('message mutations require authentication and reject generation races or in
       (
         await request.patch(endpoint, {
           headers,
-          data: { requestId: crypto.randomUUID(), content: 'a'.repeat(100001) },
+          data: {
+            requestId: crypto.randomUUID(),
+            content: '\u0000'.repeat(Math.floor(MAX_MESSAGE_TEXT_BYTES / 6) + 1),
+          },
         })
       ).status(),
     ).toBe(400);
@@ -388,9 +392,12 @@ test('editing and deleting an answer preserves drafts and focus while another de
       .getByTestId('assistant-message')
       .getByRole('button', { name: '编辑回答', exact: true })
       .click();
-    const editor = page.getByRole('dialog', { name: '编辑回答', exact: true });
+    const editor = page.getByRole('form', { name: '编辑回答', exact: true });
     await expect(editor.getByLabel('回答内容')).toBeFocused();
-    await expect(editor.getByRole('button', { name: '关闭消息操作' })).toBeInViewport();
+    await expect(page.getByRole('dialog', { name: '编辑回答', exact: true })).toHaveCount(0);
+    await expect(page.getByTestId('assistant-message').getByTestId('message-editor')).toBeVisible();
+    await expect(composer).toHaveValue('保留草稿');
+    await expect(editor.getByRole('button', { name: '取消编辑' })).toBeInViewport();
     await expect(editor.getByRole('button', { name: '保存新版本' })).toBeInViewport();
     await editor.getByLabel('回答内容').fill('手动修改后的回答');
     await page.route('**/api/conversations/*/messages/*', async (route) => {
@@ -447,6 +454,93 @@ test('editing and deleting an answer preserves drafts and focus while another de
     await expect(page.getByTestId('assistant-message')).not.toContainText('手动修改后的回答');
   } finally {
     await second.close();
+    await fixture.cleanup();
+  }
+});
+
+test('inline edits keep the composer draft, cancel with Escape, submit with Mod+Enter and use compact pointer targets', async ({
+  page,
+}) => {
+  const fixture = await setup(page.request);
+  try {
+    await fixture.send('原始提问');
+    await fixture.done();
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`/c/${fixture.id}`);
+    const composer = page.getByRole('textbox', { name: '消息', exact: true });
+    await composer.fill('独立的底部草稿');
+    const user = page.getByTestId('user-message');
+    const edit = user.getByRole('button', { name: '编辑提问', exact: true });
+    await expect(edit).toBeVisible();
+    const box = (await edit.boundingBox())!;
+    expect(box.width).toBe(32);
+    expect(box.height).toBe(32);
+    await edit.click();
+    const input = user.getByRole('textbox', { name: '提问内容', exact: true });
+    await expect(input).toBeFocused();
+    await expect(input).toHaveValue('原始提问');
+    await page.screenshot({ path: '/tmp/everchat-inline-desktop.png' });
+    await expect(composer).toHaveValue('独立的底部草稿');
+    await expect(page.getByRole('dialog', { name: '编辑提问', exact: true })).toHaveCount(0);
+    await input.fill('不保存的内容');
+    await page.reload();
+    await expect(input).toHaveValue('不保存的内容');
+    await expect(composer).toHaveValue('独立的底部草稿');
+    await input.press('Escape');
+    await expect(input).toHaveCount(0);
+    await expect(edit).toBeFocused();
+    expect((await fixture.snapshot()).messages).toHaveLength(2);
+    await edit.click();
+    await input.fill('修改后的提问');
+    await input.press('Enter');
+    await input.pressSequentially('第二行');
+    await expect(input).toHaveValue('修改后的提问\n第二行');
+    expect((await fixture.snapshot()).messages).toHaveLength(2);
+    await input.press('ControlOrMeta+Enter');
+    await expect(page.getByTestId('user-message')).toHaveCount(1);
+    await expect(page.getByTestId('user-message')).toContainText('修改后的提问');
+    await expect(page.getByTestId('assistant-message')).toHaveAttribute('data-status', 'completed');
+    await expect(composer).toHaveValue('独立的底部草稿');
+    await expect(page.getByRole('textbox', { name: '提问内容', exact: true })).toHaveCount(0);
+    await expect(
+      page.getByTestId('user-message').getByRole('button', { name: '编辑提问', exact: true }),
+    ).toBeFocused();
+    const messages = (await fixture.snapshot()).messages;
+    expect(messages[2]).toMatchObject({ revisionOf: messages[0].id, parentId: null });
+    await page.setViewportSize({ width: 320, height: 568 });
+    const answer = page.getByTestId('assistant-message');
+    const answerEdit = answer.getByRole('button', { name: '编辑回答', exact: true });
+    await expect
+      .poll(async () => (await answerEdit.boundingBox())!.width)
+      .toBeGreaterThanOrEqual(44);
+    await answerEdit.click();
+    const inline = answer.getByTestId('message-editor');
+    await inline.getByLabel('回答内容').fill('## 原位编辑\n\n' + '长段落内容。'.repeat(100));
+    await expect(inline.getByRole('button', { name: '取消编辑', exact: true })).toBeInViewport();
+    await expect(inline.getByRole('button', { name: '保存新版本', exact: true })).toBeInViewport();
+    const bounds = (await inline.boundingBox())!;
+    expect(bounds.x).toBeGreaterThanOrEqual(0);
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(320);
+    await page.screenshot({ path: '/tmp/everchat-inline-mobile.png' });
+    await inline.getByRole('button', { name: '取消编辑', exact: true }).click();
+    await expect(answerEdit).toBeFocused();
+    await expect(composer).toHaveValue('独立的底部草稿');
+    await page.evaluate(() => {
+      document.documentElement.style.fontSize = '32px';
+    });
+    await page
+      .getByTestId('user-message')
+      .getByRole('button', { name: '编辑提问', exact: true })
+      .click();
+    const largeEditor = page.getByTestId('user-message').getByTestId('message-editor');
+    await expect(
+      largeEditor.getByRole('button', { name: '取消编辑', exact: true }),
+    ).toBeInViewport();
+    await expect(
+      largeEditor.getByRole('button', { name: '保存并重新生成', exact: true }),
+    ).toBeInViewport();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
+  } finally {
     await fixture.cleanup();
   }
 });

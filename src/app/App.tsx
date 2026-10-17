@@ -89,7 +89,7 @@ import { ComposerParameters } from '../features/chat/ComposerParameters';
 import { ConversationActions } from '../features/chat/ConversationActions';
 import { ConversationSearch } from '../features/chat/ConversationSearch';
 import { ConversationSettingsDialog } from '../features/chat/ConversationSettings';
-import { MessageMutationDialog } from '../features/chat/MessageMutationDialog';
+import { MessageDeleteDialog } from '../features/chat/MessageDeleteDialog';
 import { MessageView } from '../features/chat/MessageView';
 import { SummaryDialog } from '../features/chat/SummaryDialog';
 import { SummaryView } from '../features/chat/SummaryView';
@@ -121,7 +121,7 @@ import {
   WEB_TOOL_SETTINGS_KEY,
 } from '../features/web-tools/web-tool-settings';
 import { api, ApiError } from '../platform/api';
-import { clearLocal, read, storageEpoch, write } from '../platform/storage';
+import { clearLocal, read, remove, storageEpoch, write } from '../platform/storage';
 import { AppFrame, LoadingContent, SidebarHeader, SpaceSettingsButton } from './AppFrame';
 import { SettingsDialog } from './SettingsDialog';
 import { AccessGate } from './AccessGate';
@@ -172,9 +172,18 @@ export function App({
     sessionRef,
     selectedRef,
     getView: () => ({ head: branches.head, version: branches.navigationVersion.current }),
-    onAccepted: (accepted) => {
+    onAccepted: (accepted, item) => {
       branches.choose(accepted.assistantId, { automatic: true });
       scrollToBottom();
+      if (item.input.revisionOf) {
+        prepareMutationFocus(
+          item.conversation.id,
+          accepted.userId,
+          'visible',
+          branches.navigationVersion.current,
+        );
+        closeMutationFocus();
+      }
     },
     onActivity: (id, activity) => observeActivity(id, activity),
     onUnauthorized: loggedOut,
@@ -190,8 +199,6 @@ export function App({
     setDraftFiles,
     draftImages,
     setDraftImages,
-    revisionOf,
-    setRevisionOf,
     updateDraft,
     removeImage,
     removeDocument,
@@ -254,10 +261,21 @@ export function App({
     messageId: string;
     targetId: string;
   } | null>(null);
-  const [messageMutation, setMessageMutation] = useState<{
-    id: string;
-    mode: 'edit' | 'delete';
-  } | null>(null);
+  const [messageMutation, setMessageMutation] = useState<
+    | {
+        id: string;
+        mode: 'delete';
+      }
+    | {
+        id: string;
+        mode: 'edit';
+        content: string;
+        requestId: string;
+      }
+    | null
+  >(null);
+  const messageMutationRef = useRef(messageMutation);
+  messageMutationRef.current = messageMutation;
   const [conversationSettingsOpen, setConversationSettingsOpen] = useState(false);
   const [focusWebTools, setFocusWebTools] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
@@ -324,7 +342,6 @@ export function App({
       forgetConversation(id);
       if (selectedRef.current === id) {
         setDraft('');
-        setRevisionOf(undefined);
         setDraftImages([]);
         setDraftFiles([]);
       }
@@ -483,7 +500,6 @@ export function App({
     messages: snapshot.messages,
     parentId: branches.continuationParentId,
     draft,
-    revisionOf,
     draftImages,
     draftFiles,
     conversationSettings,
@@ -504,14 +520,17 @@ export function App({
   });
 
   const editPending = (item: Pending) => {
-    if (!item.input.summaryThrough) {
+    const original = snapshot.messages.find((message) => message.id === item.input.revisionOf);
+    if (original) {
+      pauseFollowing();
+      branches.choose(original.id);
+      beginMessageEdit(original, item.input.content ?? '');
+    } else if (!item.input.summaryThrough) {
       setDraft(item.input.content ?? '');
-      setRevisionOf(item.input.revisionOf);
       setDraftImages(item.images ?? []);
       setDraftFiles(item.files ?? []);
       writeChatCache(`draft:${item.conversation.id}`, {
         text: item.input.content ?? '',
-        revisionOf: item.input.revisionOf,
         images: item.images ?? [],
         files: item.files ?? [],
       });
@@ -520,7 +539,7 @@ export function App({
     commitPending(
       pendingRef.current.filter((next) => next.input.requestId !== item.input.requestId),
     );
-    editor.current?.focus({ preventScroll: true });
+    if (!original) editor.current?.focus({ preventScroll: true });
   };
   useEffect(() => {
     setConversationSettingsOpen(false);
@@ -529,6 +548,14 @@ export function App({
   useEffect(() => {
     setSummaryOpen(false);
     setSummaryTarget(null);
+    setMessageMutation(
+      selected && !deletedAt(selected)
+        ? read<Extract<NonNullable<typeof messageMutation>, { mode: 'edit' }> | null>(
+            `message-edit:${selected}`,
+            null,
+          )
+        : null,
+    );
   }, [selected]);
   useEffect(() => {
     if (!selectedModel?.reasoningSupported) {
@@ -582,7 +609,8 @@ export function App({
     snapshot.deletedAt ||
     (selected && !currentConversation),
   );
-  const generationBlocked = messageBlocked || Boolean(imageProgress);
+  const generationBlocked =
+    messageBlocked || Boolean(imageProgress) || messageMutation?.mode === 'edit';
   useReloadBlocker(
     imageProgress
       ? '附件尚在上传或解析'
@@ -731,17 +759,20 @@ export function App({
     });
   };
 
-  const queue = async (input: SubmitInput) => {
+  const queue = async (input: SubmitInput, inline = false) => {
+    const reject = (message: string) => {
+      if (inline) throw new Error(message);
+      setError(message);
+      return false;
+    };
     if (input.content !== undefined && !messageTextFits(input.content.trim())) {
-      setError(MESSAGE_TEXT_LIMIT_MESSAGE);
-      return;
+      return reject(MESSAGE_TEXT_LIMIT_MESSAGE);
     }
     const origin = selected,
       epoch = storageEpoch();
     const settings = v.safeParse(conversationSettingsSchema, conversationSettings);
     if (!settings.success) {
-      setError('请先修正会话参数。');
-      return;
+      return reject('请先修正会话参数。');
     }
     input = {
       ...input,
@@ -755,11 +786,13 @@ export function App({
       };
     if (input.content !== undefined && !input.revisionOf && input.parentId === undefined) {
       if (branches.index.order.length && !branches.continuationParentId) {
-        setError('请选择可继续的版本，或新建对话。');
-        return;
+        return reject('请选择可继续的版本，或新建对话。');
       }
       input = { ...input, parentId: branches.continuationParentId };
     }
+    const source = contextSource(snapshot.messages, input);
+    const images = inline ? (source.images ?? []) : draftImages;
+    const files = inline ? (source.files ?? []) : draftFiles;
     const requestView = input.revisionOf ?? input.retryOf ?? branches.head;
     if (requestView && requestView !== branches.head) {
       pauseFollowing();
@@ -800,15 +833,15 @@ export function App({
         if (!service?.hasApiKey) throw new Error('请先配置联网服务，或关闭会话中的联网工具。');
       } catch (error) {
         if (selectedRef.current === origin && storageEpoch() === epoch)
-          setError(error instanceof Error ? error.message : '无法读取联网服务配置。');
-        return;
+          return reject(error instanceof Error ? error.message : '无法读取联网服务配置。');
+        return false;
       }
       if (
         selectedRef.current !== origin ||
         storageEpoch() !== epoch ||
         !sessionRef.current?.authenticated
       )
-        return;
+        return false;
     }
     if (generationModel) {
       try {
@@ -823,15 +856,14 @@ export function App({
           },
           settings.output,
         );
-        const source = contextSource(snapshot.messages, input);
         const prepared = prepareChatContext(
           snapshot.messages,
           source.parentId,
           source.content,
           config,
           settings.output,
-          input.retryOf ? source.images : draftImages,
-          input.retryOf ? source.files : draftFiles,
+          input.retryOf ? source.images : images,
+          input.retryOf ? source.files : files,
         );
         if (prepared.automatic) {
           const selection = settings.output.autoCompression.model;
@@ -847,8 +879,7 @@ export function App({
           });
         }
       } catch (error) {
-        setError(error instanceof Error ? error.message : '会话参数无效。');
-        return;
+        return reject(error instanceof Error ? error.message : '会话参数无效。');
       }
     }
     const conversation: ConversationInfo = currentConversation ?? {
@@ -869,17 +900,17 @@ export function App({
       input,
       viewHeadId: requestView,
       modelLabel: generationModel?.name || input.selection?.model,
-      images: input.retryOf ? undefined : draftImages,
-      files: input.retryOf ? undefined : draftFiles,
+      images: input.retryOf ? undefined : images,
+      files: input.retryOf ? undefined : files,
     };
-    if (!commitPending([...pendingRef.current, item])) return;
+    if (!commitPending([...pendingRef.current, item]))
+      return reject('浏览器存储已满，无法保存待发送消息。');
     if (!conversations.some((item) => item.id === conversation.id)) {
       rememberConversation(conversation);
     }
-    if (!input.retryOf) {
+    if (!input.retryOf && !inline) {
       writeChatCache(`draft:${selected ?? 'new'}`, { text: '' });
       setDraft('');
-      setRevisionOf(undefined);
       setDraftImages([]);
       setDraftFiles([]);
     }
@@ -891,9 +922,10 @@ export function App({
     });
     if (branches.navigationVersion.current === navigationVersion) {
       scrollToBottom();
-      editor.current?.focus({ preventScroll: true });
+      if (!inline) editor.current?.focus({ preventScroll: true });
     }
     await deliver(item);
+    return true;
   };
   const submit = async (event?: SubmitEvent<HTMLFormElement>) => {
     event?.preventDefault();
@@ -911,7 +943,6 @@ export function App({
         content: draft.trim(),
         ...(draftFiles.length ? { fileIds: draftFiles.map((file) => file.attachmentId) } : {}),
         ...(draftImages.length ? { imageIds: draftImages.map((image) => image.attachmentId) } : {}),
-        ...(revisionOf ? { revisionOf } : {}),
       });
     } finally {
       setSending(false);
@@ -977,26 +1008,55 @@ export function App({
       setSending(false);
     }
   };
+  const beginMessageEdit = (message: Message, content = messageText(message)) => {
+    const value = {
+      id: message.id,
+      mode: 'edit' as const,
+      content,
+      requestId: crypto.randomUUID(),
+    };
+    setMessageMutation(value);
+    writeChatCache(`message-edit:${selected}`, value);
+  };
   const edit = (message: Message) => {
-    if (message.role === 'assistant') {
-      setMessageMutation({ id: message.id, mode: 'edit' });
-      return;
-    }
-    setRevisionOf(message.id);
-    setDraft(messageText(message));
-    setDraftImages(messageImages(message));
-    setDraftFiles(messageFiles(message));
-    writeChatCache(`draft:${selected}`, {
-      text: messageText(message),
-      revisionOf: message.id,
-      images: messageImages(message),
-      files: messageFiles(message),
+    pauseFollowing();
+    beginMessageEdit(message);
+  };
+  const closeMessageEdit = () => {
+    const id = messageMutation?.id;
+    remove([`message-edit:${selected}`]);
+    setMessageMutation(null);
+    requestAnimationFrame(() => {
+      if (selectedRef.current === selected) {
+        const target =
+          document.querySelector<HTMLButtonElement>(
+            `[data-message-id="${id}"] [data-message-edit]`,
+          ) ?? editor.current;
+        target?.focus({ preventScroll: true });
+      }
     });
-    editor.current?.focus();
   };
   const confirmMessageMutation = async (content: string, requestId: string) => {
     if (!selected || !messageMutation) return;
     if (messageMutation.mode === 'edit') {
+      if (mutationMessage?.role === 'user') {
+        if (messageBlocked || !selectedModel)
+          throw new Error('请等待同步或生成完成，并选择可用模型。');
+        if (
+          !(await queue(
+            {
+              requestId,
+              content,
+              revisionOf: messageMutation.id,
+              imageIds: messageImages(mutationMessage).map((image) => image.attachmentId),
+              fileIds: messageFiles(mutationMessage).map((file) => file.attachmentId),
+            },
+            true,
+          ))
+        )
+          throw new Error('会话已切换，请返回原消息后重试。');
+        return;
+      }
       const version = branches.navigationVersion.current;
       const result = await api<{ messageId: string }>(
         `/conversations/${selected}/messages/${messageMutation.id}`,
@@ -1014,14 +1074,6 @@ export function App({
       await api(`/conversations/${selected}/messages/${messageMutation.id}`, 'DELETE');
       if (selectedRef.current === selected && version === branches.navigationVersion.current)
         prepareMutationFocus(selected, messageMutation.id, 'deleted', version);
-      if (revisionOf === messageMutation.id) {
-        setRevisionOf(undefined);
-        writeChatCache(`draft:${selected}`, {
-          text: draft,
-          images: draftImages,
-          files: draftFiles,
-        });
-      }
     }
   };
   const quote = (message: Message) => {
@@ -1034,7 +1086,6 @@ export function App({
       .map((line) => `> ${line}`)
       .join('\n');
     const next = `${prefix}${textWithinBytes(quoted, available)}`;
-    setRevisionOf(undefined);
     setDraft(next);
     setError('');
     writeChatCache(`draft:${selected ?? 'new'}`, {
@@ -1056,8 +1107,8 @@ export function App({
     setDraft('');
     setDraftImages([]);
     setDraftFiles([]);
-    setRevisionOf(undefined);
     setSettingsDraft(null);
+    setMessageMutation(null);
     setNewConversationSettings({ ...DEFAULT_CONVERSATION_SETTINGS });
     setSettingsOpen(false);
     setConversationSettingsOpen(false);
@@ -1078,7 +1129,6 @@ export function App({
       queryClient.clear();
       navigate(null, true);
       setDraft('');
-      setRevisionOf(undefined);
       setNewConversationSettings({ ...DEFAULT_CONVERSATION_SETTINGS });
       setSettingsDraft(null);
       setConversationSettingsOpen(false);
@@ -1558,7 +1608,7 @@ export function App({
                           }
                           conversationId={selected!}
                           message={message}
-                          busy={messageBlocked}
+                          busy={messageBlocked || Boolean(messageMutation)}
                           onRetry={() => void retry(message)}
                           onProviderSettings={() => {
                             setRequestedProviderId(message.providerId ?? undefined);
@@ -1566,6 +1616,43 @@ export function App({
                             openSettings();
                           }}
                           onEdit={() => edit(message)}
+                          editing={
+                            messageMutation?.mode === 'edit' && messageMutation.id === message.id
+                              ? {
+                                  content: messageMutation.content,
+                                  change: (content) => {
+                                    const value = {
+                                      ...messageMutation,
+                                      content,
+                                      requestId: crypto.randomUUID(),
+                                    };
+                                    setMessageMutation(value);
+                                    writeChatCache(`message-edit:${selected}`, value);
+                                  },
+                                  save: async () => {
+                                    await confirmMessageMutation(
+                                      messageMutation.content,
+                                      messageMutation.requestId,
+                                    );
+                                    if (
+                                      read<{ requestId?: string }>(`message-edit:${selected}`, {})
+                                        .requestId === messageMutation.requestId
+                                    )
+                                      remove([`message-edit:${selected}`]);
+                                    if (
+                                      selectedRef.current === selected &&
+                                      messageMutationRef.current?.mode === 'edit' &&
+                                      messageMutationRef.current.requestId ===
+                                        messageMutation.requestId
+                                    ) {
+                                      setMessageMutation(null);
+                                    }
+                                    closeMutationFocus();
+                                  },
+                                  cancel: closeMessageEdit,
+                                }
+                              : undefined
+                          }
                           onQuote={() => quote(message)}
                           onDelete={() => setMessageMutation({ id: message.id, mode: 'delete' })}
                           canRetry={liveUserIds.has(message.parentId ?? '')}
@@ -1805,35 +1892,25 @@ export function App({
                   {error}
                 </p>
               )}
-              {revisionOf && (
-                <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
-                  <span>编辑消息</span>
-                  {!branches.ids.includes(revisionOf) && (
+              {messageMutation?.mode === 'edit' &&
+                (!branches.ids.includes(messageMutation.id) || mutationMessage?.deletedAt) && (
+                  <div className="mb-2 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                    <span>{mutationMessage?.deletedAt ? '原消息已删除' : '消息编辑尚未完成'}</span>
                     <Button
                       variant="ghost"
+                      disabled={Boolean(mutationMessage?.deletedAt)}
                       onClick={() => {
                         pauseFollowing();
-                        branches.choose(revisionOf);
+                        branches.choose(messageMutation.id);
                       }}
                     >
                       返回原消息
                     </Button>
-                  )}
-                  <Button
-                    variant="ghost"
-                    onClick={() => {
-                      setRevisionOf(undefined);
-                      writeChatCache(`draft:${selected}`, {
-                        text: draft,
-                        images: draftImages,
-                        files: draftFiles,
-                      });
-                    }}
-                  >
-                    取消
-                  </Button>
-                </div>
-              )}
+                    <Button variant="ghost" onClick={closeMessageEdit}>
+                      取消编辑
+                    </Button>
+                  </div>
+                )}
               <form onSubmit={submit} data-testid="chat-composer" className="chat-composer">
                 {selected && (draftFiles.length > 0 || draftImages.length > 0) && (
                   <div
@@ -2182,16 +2259,15 @@ export function App({
           }}
         />
       )}
-      {messageMutation && mutationMessage && (
-        <MessageMutationDialog
+      {messageMutation?.mode === 'delete' && mutationMessage && (
+        <MessageDeleteDialog
           key={`${selected}:${messageMutation.id}:${messageMutation.mode}`}
           message={mutationMessage}
-          mode={messageMutation.mode}
           affectsSummaries={snapshot.messages.some(
             (message) =>
               !message.deletedAt && message.summary?.sourceIds.includes(mutationMessage.id),
           )}
-          confirm={confirmMessageMutation}
+          confirm={() => confirmMessageMutation('', '')}
           close={() => setMessageMutation(null)}
           restoreCompletedFocus={closeMutationFocus}
         />

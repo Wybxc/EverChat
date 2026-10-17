@@ -16,16 +16,34 @@ export function useBranchScrollAnchor(
     version: number;
   } | null>(null);
   useLayoutEffect(() => {
+    if (!content || !viewport) return;
+    const clear = () => content.style.removeProperty('--branch-anchor-space');
+    viewport.addEventListener(SCROLL_INTENT_EVENT, clear);
+    return () => {
+      viewport.removeEventListener(SCROLL_INTENT_EVENT, clear);
+      clear();
+    };
+  }, [content, viewport, conversationId]);
+  useLayoutEffect(() => {
     if (!anchor || anchor.conversationId !== conversationId || !viewport || !content) return;
     const row = content.querySelector<HTMLElement>(anchor.selector);
     if (!row) return;
+    let endSpace = parseFloat(content.style.getPropertyValue('--branch-anchor-space')) || 0;
     const restore = () => {
       if (anchor.version !== version.current) return;
       if (!row.isConnected) {
         setAnchor(null);
         return;
       }
-      viewport.scrollTop += row.getBoundingClientRect().top - anchor.top;
+      const target = viewport.scrollTop + row.getBoundingClientRect().top - anchor.top;
+      // Compact descendants may leave too little content below the operation
+      // row to reach its old position. Reserve only the missing scroll range.
+      const missing = Math.ceil(target - (viewport.scrollHeight - viewport.clientHeight));
+      if (missing > 0) {
+        endSpace += missing;
+        content.style.setProperty('--branch-anchor-space', `${endSpace}px`);
+      }
+      viewport.scrollTop = target;
     };
     restore();
     const button =
@@ -54,6 +72,8 @@ export function useBranchScrollAnchor(
       window.removeEventListener('popstate', release);
       viewport.removeEventListener(SCROLL_INTENT_EVENT, release);
       viewport.removeEventListener(SCROLL_LAYOUT_EVENT, restore);
+      // Keep the reserved range when a pointer press releases the anchor;
+      // collapsing it here can move a button between pointerdown and click.
     };
   }, [anchor, conversationId, viewport, content]);
   return useCallback(

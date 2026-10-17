@@ -13,6 +13,7 @@ import { MessageActions } from './MessageActions';
 import { MarkdownContent } from './rendering/MarkdownContent';
 import { useFollowScroll } from './useFollowScroll';
 import { ProviderFailureView } from '../providers/ProviderFailureView';
+import { MessageEditor } from './MessageEditor';
 
 export function MessageView({
   navigationRef,
@@ -31,6 +32,7 @@ export function MessageView({
   onShowFollowing,
   canFork,
   onFork,
+  editing,
 }: {
   navigationRef?: Ref<HTMLElement>;
   conversationId: string;
@@ -48,6 +50,12 @@ export function MessageView({
   onShowFollowing: () => void;
   canFork: boolean;
   onFork: () => Promise<void>;
+  editing?: {
+    content: string;
+    change: (content: string) => void;
+    save: () => Promise<void>;
+    cancel: () => void;
+  };
 }) {
   const [copied, setCopied] = useState(false);
   const [forking, setForking] = useState(false),
@@ -116,19 +124,27 @@ export function MessageView({
       <article
         data-testid="user-message"
         data-message-id={message.id}
-        className="group ml-auto w-fit max-w-[90%] sm:max-w-[82%]"
+        className={`group ml-auto ${editing ? 'w-full' : 'w-fit'} max-w-[90%] sm:max-w-[82%]`}
       >
         <DocumentPreviews conversationId={conversationId} files={messageFiles(message)} />
         <ImagePreviews conversationId={conversationId} images={messageImages(message)} />
-        {messageText(message) && (
-          <div
-            data-search-content={`${message.id}:content`}
-            className="rounded-[1.375rem] bg-user-message text-user-message-foreground px-4 py-2.5 text-base leading-7 whitespace-pre-wrap break-words sm:px-4 sm:py-2.5"
-          >
-            {messageText(message)}
-          </div>
+        {editing ? (
+          <MessageEditor
+            {...editing}
+            user
+            hasAttachments={Boolean(messageFiles(message).length || messageImages(message).length)}
+          />
+        ) : (
+          messageText(message) && (
+            <div
+              data-search-content={`${message.id}:content`}
+              className="rounded-[1.375rem] bg-user-message text-user-message-foreground px-4 py-2.5 text-base leading-7 whitespace-pre-wrap break-words sm:px-4 sm:py-2.5"
+            >
+              {messageText(message)}
+            </div>
+          )
         )}
-        {actions}
+        {!editing && actions}
         {forkError && (
           <p role="alert" className="mt-1 text-xs">
             {forkError}
@@ -192,7 +208,9 @@ export function MessageView({
         </Disclosure>
       )}
       <ToolActivity task={message.tools} stateKey={`tools:${message.id}`} />
-      {messageText(message) ? (
+      {editing ? (
+        <MessageEditor {...editing} user={false} hasAttachments={false} />
+      ) : messageText(message) ? (
         <MarkdownContent
           content={messageText(message)}
           searchId={`${message.id}:content`}
@@ -215,7 +233,7 @@ export function MessageView({
       {message.status === 'cancelled' && (
         <p className="mt-4 text-xs text-muted-foreground">已停止</p>
       )}
-      {actions}
+      {!editing && actions}
       {forkError && (
         <p role="alert" className="mt-1 text-xs">
           {forkError}

@@ -13,7 +13,7 @@ type OutboxOptions = {
   sessionRef: RefObject<SessionInfo | null>;
   selectedRef: RefObject<string | null>;
   getView: () => { head: string | null; version: number };
-  onAccepted: (result: Submission) => void;
+  onAccepted: (result: Submission, item: Pending) => void;
   onActivity: (id: string, activity: ConversationActivity) => void;
   onUnauthorized: () => void;
   onDeleted: (id: string, time: number) => void;
@@ -80,7 +80,7 @@ export function useOutbox(options: OutboxOptions) {
         selectedRef.current === follow.id &&
         latest.current.getView().version === follow.version
       ) {
-        latest.current.onAccepted(accepted);
+        latest.current.onAccepted(accepted, item);
       }
       followRequests.current.delete(key);
       commitPending(pendingRef.current.filter((next) => next.input.requestId !== key));

@@ -1,45 +1,35 @@
-import { MAX_MESSAGE_TEXT_BYTES } from '../../../shared/conversation/limits';
 import { Modal, ModalTitle } from '../../components/Modal';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
 import { Spinner } from '@/components/ui/spinner';
-import { messageText } from '../../../shared/conversation/content';
 import { useId, useRef, useState, type SubmitEvent } from 'react';
 import { X } from 'lucide-react';
 import type { Message } from '../../../shared/conversation/types';
 
-export function MessageMutationDialog({
+export function MessageDeleteDialog({
   message,
-  mode,
   affectsSummaries = false,
   confirm,
   close,
   restoreCompletedFocus,
 }: {
   message: Message;
-  mode: 'edit' | 'delete';
   affectsSummaries?: boolean;
-  confirm: (content: string, requestId: string) => Promise<void>;
+  confirm: () => Promise<void>;
   close: () => void;
   restoreCompletedFocus?: () => void;
 }) {
   const titleId = useId(),
-    input = useRef<HTMLTextAreaElement>(null),
     cancel = useRef<HTMLButtonElement>(null);
-  const [content, setContent] = useState(messageText(message)),
-    [busy, setBusy] = useState(false),
+  const [busy, setBusy] = useState(false),
     [error, setError] = useState('');
-  const request = useRef({ id: crypto.randomUUID(), content: messageText(message).trim() });
   const confirmed = useRef(false);
   const submit = async (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (busy || (mode === 'edit' && !content.trim())) return;
-    if (request.current.content !== content.trim())
-      request.current = { id: crypto.randomUUID(), content: content.trim() };
+    if (busy) return;
     setError('');
     setBusy(true);
     try {
-      await confirm(content, request.current.id);
+      await confirm();
       confirmed.current = true;
       close();
     } catch (cause) {
@@ -54,9 +44,9 @@ export function MessageMutationDialog({
       onOpenChange={(next) => {
         if (!next) close();
       }}
-      alert={mode === 'delete'}
+      alert
       busy={busy}
-      initialFocus={mode === 'edit' ? input : cancel}
+      initialFocus={cancel}
       aria-labelledby={titleId}
       onCloseAutoFocus={(event) => {
         if (confirmed.current && restoreCompletedFocus) {
@@ -68,7 +58,7 @@ export function MessageMutationDialog({
       <div className="p-5 flex max-h-[85dvh] max-w-2xl flex-col overflow-hidden">
         <div className="mb-4 flex shrink-0 items-center justify-between gap-3">
           <ModalTitle id={titleId} className="text-lg font-semibold">
-            {mode === 'edit' ? '编辑回答' : message.summary ? '删除摘要' : '删除消息'}
+            {message.summary ? '删除摘要' : '删除消息'}
           </ModalTitle>
           <div>
             <Button
@@ -84,25 +74,13 @@ export function MessageMutationDialog({
           </div>
         </div>
         <form className="flex min-h-0 flex-col" onSubmit={(event) => void submit(event)}>
-          {mode === 'edit' ? (
-            <Textarea
-              ref={input}
-              aria-label="回答内容"
-              className="h-72 min-h-32 w-full shrink overflow-y-auto"
-              maxLength={MAX_MESSAGE_TEXT_BYTES}
-              value={content}
-              onChange={(event) => setContent(event.target.value)}
-              disabled={busy}
-            />
-          ) : (
-            <p>
-              {message.summary
-                ? '删除摘要？原始消息仍保留。'
-                : affectsSummaries
-                  ? '删除这条消息？覆盖它的历史摘要也会清除。'
-                  : '删除这条消息？'}
-            </p>
-          )}
+          <p>
+            {message.summary
+              ? '删除摘要？原始消息仍保留。'
+              : affectsSummaries
+                ? '删除这条消息？覆盖它的历史摘要也会清除。'
+                : '删除这条消息？'}
+          </p>
           {error && (
             <p role="alert" className="mt-3 shrink-0 text-sm">
               {error}
@@ -118,13 +96,9 @@ export function MessageMutationDialog({
             >
               取消
             </Button>
-            <Button
-              variant={mode === 'delete' ? 'destructive' : 'default'}
-              type="submit"
-              disabled={busy || (mode === 'edit' && !content.trim())}
-            >
+            <Button variant="destructive" type="submit" disabled={busy}>
               {busy && <Spinner />}
-              {mode === 'edit' ? '保存新版本' : '确认删除'}
+              确认删除
             </Button>
           </div>
         </form>

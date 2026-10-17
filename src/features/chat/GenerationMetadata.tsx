@@ -52,7 +52,7 @@ export function GenerationMetadata({ generation }: { generation?: GenerationResu
       <Button
         variant="ghost"
         type="button"
-        className="min-h-11 min-w-0 max-w-full px-2 text-xs text-muted-foreground"
+        className="min-w-0 max-w-full px-2 text-xs text-muted-foreground"
         aria-label="生成信息"
         aria-description={summary || undefined}
         data-testid="generation-summary"

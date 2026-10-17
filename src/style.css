@@ -172,14 +172,34 @@
 [data-slot='tabs-trigger'],
 [data-slot='dropdown-menu-item'],
 [data-slot='command-item'] {
-  min-height: max(2.75rem, 44px);
+  min-height: max(2rem, 32px);
   height: auto;
 }
 [data-ui-button][data-size^='icon'] {
-  min-width: max(2.75rem, 44px);
+  min-width: max(2rem, 32px);
 }
 [data-ui-button] {
   white-space: normal;
+}
+/* Compact pointer controls; touch-capable devices retain independent hit areas. */
+@media (any-pointer: coarse), (max-width: 40rem) {
+  [data-ui-button],
+  [data-slot='tabs-trigger'],
+  [data-slot='dropdown-menu-item'],
+  [data-slot='command-item'] {
+    min-height: max(2.75rem, 44px);
+  }
+  [data-ui-button][data-size^='icon'] {
+    min-width: max(2.75rem, 44px);
+  }
+}
+.message-following {
+  min-height: max(2rem, 32px);
+}
+@media (any-pointer: coarse), (max-width: 40rem) {
+  .message-following {
+    min-height: max(2.75rem, 44px);
+  }
 }
 [data-slot='input'],
 [data-slot='native-select'],
@@ -307,7 +327,9 @@
   --navigation-clearance: 0px;
   --message-end-space: 1rem;
   padding-top: var(--message-end-space);
-  padding-bottom: calc(var(--message-end-space) + var(--navigation-clearance));
+  padding-bottom: calc(
+    var(--message-end-space) + var(--navigation-clearance) + var(--branch-anchor-space, 0px)
+  );
 }
 .conversation-viewport[data-navigation='true'] .conversation-messages {
   --navigation-clearance: calc(var(--navigation-button-size) + 0.75rem);

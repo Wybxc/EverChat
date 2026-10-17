@@ -23,7 +23,6 @@ export function useContextPreview({
   messages,
   parentId,
   draft,
-  revisionOf,
   draftImages,
   draftFiles,
   conversationSettings,
@@ -35,7 +34,6 @@ export function useContextPreview({
   messages: Message[];
   parentId: string | null;
   draft: string;
-  revisionOf?: string;
   draftImages: ImagePart[];
   draftFiles: DocumentPart[];
   conversationSettings: ConversationSettings;
@@ -44,7 +42,7 @@ export function useContextPreview({
   reasoningEffort: ReasoningEffort | '';
   session: SessionInfo | null;
 }) {
-  const previewSource = contextSource(messages, { content: draft, revisionOf, parentId: parentId });
+  const previewSource = contextSource(messages, { content: draft, parentId });
   const previewHistory = useMemo(() => {
     try {
       return summaryContext(messages, previewSource.parentId, conversationSettings.useSummaries);

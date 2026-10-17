@@ -52,7 +52,7 @@ export function useMutationFocus({
         ) {
           const target =
             document.querySelector<HTMLElement>(
-              `[data-message-id="${intent.messageId}"] button[aria-label="${intent.state === 'visible' ? '编辑回答' : '更多消息操作'}"]`,
+              `[data-message-id="${intent.messageId}"] button${intent.state === 'visible' ? '[data-message-edit]' : '[aria-label="更多消息操作"]'}`,
             ) ??
             [
               ...document.querySelectorAll<HTMLElement>(
@@ -60,6 +60,9 @@ export function useMutationFocus({
               ),
             ].at(-1) ??
             editor.current;
+          // Regenerating a prompt temporarily disables its edit action. Keep the
+          // intent until it becomes available, unless the reader moves focus.
+          if (target instanceof HTMLButtonElement && target.disabled) return;
           target?.focus({ preventScroll: true });
         }
         setIntent(null);

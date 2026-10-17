@@ -356,11 +356,12 @@ test('editing a past prompt or answer creates an independent version and keeps a
       .getByRole('button', { name: '上一个回答版本', exact: true })
       .click();
     await expect(at(page, m[3].id)).toBeVisible();
-    await at(page, m[0].id).getByRole('button', { name: '更多消息操作', exact: true }).click();
-    await page.getByRole('menuitem', { name: '编辑为新版本', exact: true }).click();
-    await expect(page.getByRole('textbox', { name: '消息', exact: true })).toHaveValue('原始提问');
-    await page.getByRole('textbox', { name: '消息', exact: true }).fill('修改后的根提问');
-    await page.getByRole('button', { name: '发送消息', exact: true }).click();
+    await at(page, m[0].id).getByRole('button', { name: '编辑提问', exact: true }).click();
+    await expect(
+      at(page, m[0].id).getByRole('textbox', { name: '提问内容', exact: true }),
+    ).toHaveValue('原始提问');
+    await page.getByRole('textbox', { name: '提问内容', exact: true }).fill('修改后的根提问');
+    await page.getByRole('button', { name: '保存并重新生成', exact: true }).click();
     await expect(page.getByTestId('user-message')).toHaveCount(1);
     await expect(page.getByTestId('user-message')).toContainText('修改后的根提问');
     await expect(page.getByTestId('assistant-message')).toHaveAttribute('data-status', 'completed');
@@ -947,22 +948,23 @@ test('long Markdown switches keep the navigation anchor and editing another bran
       await new Promise(requestAnimationFrame);
     });
     await expect(forward).toBeInViewport();
-    expect((await forward.boundingBox())!.y).toBeCloseTo(top, 0);
-    await at(page, m[2].id).getByRole('button', { name: '更多消息操作', exact: true }).click();
-    await page.getByRole('menuitem', { name: '编辑为新版本', exact: true }).click();
-    const editor = page.getByRole('textbox', { name: '消息', exact: true });
+    await expect.poll(async () => (await forward.boundingBox())!.y).toBeCloseTo(top, 0);
+    await at(page, m[2].id).getByRole('button', { name: '编辑提问', exact: true }).click();
+    const editor = page.getByRole('textbox', { name: '提问内容', exact: true });
     await expect(editor).toHaveValue('原分支追问');
     await editor.fill('绑定原追问的修改');
     await forward.click();
     await expect(at(page, m[2].id)).toHaveCount(0);
     await expect(page.getByRole('button', { name: '返回原消息', exact: true })).toBeVisible();
+    await expect(editor).toHaveCount(0);
+    await page.getByRole('button', { name: '返回原消息', exact: true }).click();
     await expect(editor).toHaveValue('绑定原追问的修改');
     const accepted = page.waitForResponse(
       (response) =>
         response.request().method() === 'POST' &&
         response.url().endsWith(`/conversations/${f.id}/messages`),
     );
-    await page.getByRole('button', { name: '发送消息', exact: true }).click();
+    await page.getByRole('button', { name: '保存并重新生成', exact: true }).click();
     const response = await accepted,
       submission = await response.json();
     expect(response.request().postDataJSON()).toMatchObject({ revisionOf: m[2].id });

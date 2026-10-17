@@ -27,7 +27,7 @@ export function BranchSwitcher({ count, position, label, parent, change }: Branc
         <ChevronLeft className="size-4" />
       </IconButton>
       <span
-        className="min-w-10 text-center text-xs tabular-nums"
+        className="min-w-8 text-center text-xs tabular-nums"
         aria-label={`${label} ${position + 1}，共 ${count} 个`}
       >
         {position + 1} / {count}

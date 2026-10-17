@@ -8,11 +8,9 @@ export function useChatDraft(selected: string | null) {
   const [draft, setDraft] = useState('');
   const [draftFiles, setDraftFiles] = useState<DocumentPart[]>([]);
   const [draftImages, setDraftImages] = useState<ImagePart[]>([]);
-  const [revisionOf, setRevisionOf] = useState<string | undefined>();
   useEffect(() => {
     const saved: {
       text: string;
-      revisionOf?: string;
       images?: ImagePart[];
       files?: DocumentPart[];
     } =
@@ -20,7 +18,6 @@ export function useChatDraft(selected: string | null) {
         ? { text: '' }
         : read(`draft:${selected ?? 'new'}`, { text: '' });
     setDraft(saved.text);
-    setRevisionOf(saved.revisionOf);
     setDraftImages(saved.images ?? []);
     setDraftFiles(saved.files ?? []);
   }, [selected]);
@@ -28,7 +25,6 @@ export function useChatDraft(selected: string | null) {
     setDraft(text);
     write(`draft:${selected ?? 'new'}`, {
       text,
-      revisionOf,
       images: draftImages,
       files: draftFiles,
     });
@@ -36,12 +32,12 @@ export function useChatDraft(selected: string | null) {
   const removeImage = (id: string) => {
     const images = draftImages.filter((image) => image.attachmentId !== id);
     setDraftImages(images);
-    write(`draft:${selected ?? 'new'}`, { text: draft, revisionOf, images, files: draftFiles });
+    write(`draft:${selected ?? 'new'}`, { text: draft, images, files: draftFiles });
   };
   const removeDocument = (id: string) => {
     const files = draftFiles.filter((file) => file.attachmentId !== id);
     setDraftFiles(files);
-    write(`draft:${selected ?? 'new'}`, { text: draft, revisionOf, images: draftImages, files });
+    write(`draft:${selected ?? 'new'}`, { text: draft, images: draftImages, files });
   };
   return {
     draft,
@@ -50,8 +46,6 @@ export function useChatDraft(selected: string | null) {
     setDraftFiles,
     draftImages,
     setDraftImages,
-    revisionOf,
-    setRevisionOf,
     updateDraft,
     removeImage,
     removeDocument,

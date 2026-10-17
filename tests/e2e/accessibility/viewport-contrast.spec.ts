@@ -219,6 +219,8 @@ async function contrast(
 test('semantic theme text, selected navigation, placeholders and focus meet contrast targets', async ({
   page,
 }) => {
+  // Sample the final theme colors rather than intermediate transition frames.
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   const source = await fixture(page);
   try {
     await page.goto(`/c/${source.id}`);

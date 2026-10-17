@@ -56,13 +56,13 @@ export function MessageActions({
     user = message.role === 'user';
   return (
     <div
-      className={`message-actions mt-1 flex flex-wrap items-center gap-1 text-muted-foreground ${user ? 'justify-end' : ''}`}
+      className={`message-actions mt-1 flex flex-wrap items-center gap-0.5 text-muted-foreground ${user ? 'justify-end' : ''}`}
     >
       <BranchSwitcher {...branch} />
       {hasFollowing && (
         <button
           type="button"
-          className="min-h-11 rounded-md px-2 text-xs text-foreground hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+          className="message-following rounded-md px-2 text-xs text-foreground hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
           onClick={showFollowing}
         >
           查看后续
@@ -89,16 +89,15 @@ export function MessageActions({
           <RefreshCw className="h-[0.875rem] w-[0.875rem]" />
         </IconButton>
       )}
-      {!user && (
-        <IconButton
-          type="button"
-          onClick={edit}
-          label="编辑回答"
-          disabled={active || busy || !navigator.onLine}
-        >
-          <Pencil className="size-3.5" />
-        </IconButton>
-      )}
+      <IconButton
+        type="button"
+        onClick={edit}
+        data-message-edit=""
+        label={user ? '编辑提问' : '编辑回答'}
+        disabled={active || busy || (!user && !navigator.onLine)}
+      >
+        <Pencil className="size-3.5" />
+      </IconButton>
       <ActionMenu
         label="更多消息操作"
         icon={<MoreHorizontal className="h-[1.0625rem] w-[1.0625rem]" />}
@@ -121,12 +120,6 @@ export function MessageActions({
               从这里继续
             </ActionMenuItem>
           </>
-        )}
-        {user && (
-          <ActionMenuItem disabled={active || busy} onSelect={edit} aria-label="编辑为新版本">
-            <Pencil className="h-[0.9375rem] w-[0.9375rem]" />
-            编辑为新版本
-          </ActionMenuItem>
         )}
         <ActionMenuSeparator />
         <ActionMenuItem
