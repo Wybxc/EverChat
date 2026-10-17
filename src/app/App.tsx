@@ -1673,7 +1673,11 @@ export function App({
                 )}
               </DisclosureScope>
             </div>
-            <ConversationNavigation {...readingNavigation} />
+            <ConversationNavigation
+              key={selected ?? 'new'}
+              viewport={viewport}
+              {...readingNavigation}
+            />
           </div>
 
           <div

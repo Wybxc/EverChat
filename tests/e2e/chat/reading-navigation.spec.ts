@@ -39,6 +39,70 @@ async function setup(page: Page) {
   };
 }
 
+test('navigation is quiet by default, reveals on hover and stays visible for keyboard focus', async ({
+  page,
+}, testInfo) => {
+  const fixture = await setup(page);
+  try {
+    await expect(toolbar(page)).toHaveCSS('opacity', '0');
+    await page.screenshot({ path: testInfo.outputPath('default-hidden.png') });
+    await toolbar(page).hover();
+    await expect(toolbar(page)).toHaveCSS('opacity', '1');
+    await page.mouse.move(4, 4);
+    await expect(toolbar(page)).toHaveCSS('opacity', '0');
+    const target = button(page, '跳到顶部');
+    await target.focus();
+    await target.press('ArrowRight');
+    await expect(toolbar(page)).toHaveAttribute('data-active', 'true');
+    // The idle timer expires, but keyboard focus must keep the controls visible.
+    await expect(toolbar(page)).not.toHaveAttribute('data-active', 'true');
+    await expect(toolbar(page)).toHaveCSS('opacity', '1');
+    await expect(target).toBeFocused();
+    await page.getByLabel('消息', { exact: true }).focus();
+    await expect(toolbar(page)).toHaveCSS('opacity', '0');
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+test('manual scrolling reveals navigation temporarily while programmatic scrolling stays quiet', async ({
+  page,
+}) => {
+  const fixture = await setup(page);
+  try {
+    await button(page, '跳到底部').press('Space');
+    await expect.poll(() => gap(page)).toBeLessThan(2);
+    await page.getByLabel('消息', { exact: true }).focus();
+    await page.mouse.move(4, 4);
+    await expect(toolbar(page)).toHaveCSS('opacity', '0');
+    await pane(page).evaluate((node) => {
+      node.scrollTop -= 100;
+    });
+    await expect.poll(() => gap(page)).toBeGreaterThan(50);
+    await expect(toolbar(page)).toHaveCSS('opacity', '0');
+    const position = await top(page),
+      box = await pane(page).boundingBox();
+    await page.mouse.move(box!.x + 4, box!.y + 64);
+    await page.mouse.wheel(0, -200);
+    await expect.poll(() => top(page)).toBeLessThan(position);
+    await expect(toolbar(page)).toHaveCSS('opacity', '1');
+    await expect(toolbar(page)).toHaveCSS('opacity', '0');
+    await button(page, '跳到底部').press('Space');
+    await expect.poll(() => gap(page)).toBeLessThan(2);
+    await page.getByLabel('消息', { exact: true }).focus();
+    await expect(toolbar(page)).toHaveCSS('opacity', '0');
+    await page.mouse.wheel(0, 120);
+    // An attempted downward scroll at the bottom followed by delayed growth still stays quiet.
+    await answer(page, fixture.user).evaluate((node) => {
+      node.style.paddingBottom = '100px';
+    });
+    await expect.poll(() => gap(page)).toBeLessThan(2);
+    await expect(toolbar(page)).toHaveCSS('opacity', '0');
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
 test('four buttons navigate actual answer starts, handle clamped ends and keep URL, draft and focus', async ({
   page,
 }, testInfo) => {
@@ -61,6 +125,8 @@ test('four buttons navigate actual answer starts, handle clamped ends and keep U
     await page.mouse.move(box!.x + 4, box!.y + 100);
     await page.mouse.wheel(0, 300);
     await expect.poll(() => offset(page, fixture.assistant)).toBeLessThan(-100);
+    // Availability is measured in the next animation frame after the native wheel scroll.
+    await expect(button(page, '上一条回答')).toHaveAttribute('aria-disabled', 'false');
     await button(page, '上一条回答').focus();
     await page.keyboard.press('Space');
     await expect.poll(() => offset(page, fixture.assistant)).toBeCloseTo(12, 0);
@@ -161,6 +227,8 @@ test.describe('touch layouts', () => {
         await page.evaluate((font) => {
           document.documentElement.style.fontSize = `${font}px`;
         }, size.font);
+        await pane(page).tap({ position: { x: 4, y: 12 } });
+        await expect(toolbar(page)).toHaveCSS('opacity', '1');
         // Resize/font changes settle through the viewport observer; sample both rects together.
         await expect
           .poll(() =>
@@ -206,6 +274,20 @@ test.describe('touch layouts', () => {
           path: testInfo.outputPath(`mobile-${size.width}-${size.font}.png`),
         });
       }
+      await expect(toolbar(page)).toHaveCSS('opacity', '0');
+      // Hidden touch controls must not intercept taps on the underlying message area.
+      expect(
+        await button(page, '跳到顶部').evaluate((node) => {
+          const rect = node.getBoundingClientRect();
+          return (
+            document
+              .elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)
+              ?.closest('button') === node
+          );
+        }),
+      ).toBe(false);
+      await pane(page).tap({ position: { x: 4, y: 12 } });
+      await expect(toolbar(page)).toHaveCSS('opacity', '1');
       await page.keyboard.press('ControlOrMeta+j');
       await expect(toolbar(page)).toHaveCount(0);
       await expect(page.getByLabel('消息', { exact: true })).toBeFocused();
@@ -343,6 +425,9 @@ test('reading buttons pause a live answer and bottom navigation resumes continuo
     const running = page.getByTestId('assistant-message').last();
     await expect(running).toHaveAttribute('data-status', 'running');
     const height = () => pane(page).evaluate((node) => node.scrollHeight);
+    const autoHeight = await height();
+    await expect.poll(height).toBeGreaterThan(autoHeight + 100);
+    await expect(toolbar(page)).toHaveCSS('opacity', '0');
     await button(page, '跳到顶部').click();
     const atStart = await height();
     await expect.poll(height).toBeGreaterThan(atStart + 100);

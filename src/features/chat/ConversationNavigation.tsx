@@ -8,9 +8,11 @@ import {
   TooltipTrigger,
 } from '../../components/ui/tooltip';
 import type { ReadingAction } from './useMessageNavigation';
+import { useNavigationVisibility } from './useNavigationVisibility';
 
 export function ConversationNavigation({
   visible,
+  viewport,
   vertical,
   atTop,
   atBottom,
@@ -20,6 +22,7 @@ export function ConversationNavigation({
   navigate,
 }: {
   visible: boolean;
+  viewport: HTMLElement | null;
   vertical: boolean;
   atTop: boolean;
   atBottom: boolean;
@@ -29,6 +32,7 @@ export function ConversationNavigation({
   navigate: (action: ReadingAction) => void;
 }) {
   const touch = useRef(false);
+  const visibility = useNavigationVisibility(viewport, visible);
   const [openTooltip, setOpenTooltip] = useState<ReadingAction | null>(null);
   useEffect(() => {
     if (!visible) {
@@ -47,8 +51,15 @@ export function ConversationNavigation({
     <TooltipProvider delayDuration={400}>
       <div
         className="conversation-navigation"
+        data-active={visibility.active || undefined}
         role="group"
         aria-label="对话阅读导航"
+        onPointerEnter={(event) => {
+          if (event.pointerType === 'mouse') visibility.enter();
+        }}
+        onPointerLeave={(event) => {
+          if (event.pointerType === 'mouse') visibility.leave();
+        }}
         onPointerDownCapture={(event) => {
           touch.current = event.pointerType === 'touch';
           if (touch.current) setOpenTooltip(null);
@@ -58,9 +69,11 @@ export function ConversationNavigation({
         }}
         onKeyDownCapture={() => {
           touch.current = false;
+          visibility.show();
         }}
         onFocusCapture={(event) => {
           if (event.target.matches(':focus-visible')) touch.current = false;
+          visibility.show();
         }}
       >
         {actions.map(({ id, label, icon: Icon, unavailable }) => (
@@ -84,6 +97,7 @@ export function ConversationNavigation({
                 onClick={(event) => {
                   // Safari does not focus a button on pointer activation by default.
                   event.currentTarget.focus({ preventScroll: true });
+                  visibility.show();
                   if (!unavailable) navigate(id);
                 }}
               >

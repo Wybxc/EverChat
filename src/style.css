@@ -324,6 +324,19 @@
   background: var(--background);
   color: var(--foreground);
   box-shadow: 0 1px 3px rgb(0 0 0 / 0.08);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms;
+}
+.conversation-navigation[data-active='true'],
+.conversation-navigation:has(:focus-visible) {
+  opacity: 1;
+  pointer-events: auto;
+}
+@media (hover: hover) and (pointer: fine) {
+  .conversation-navigation {
+    pointer-events: auto;
+  }
 }
 .conversation-navigation [data-ui-button] {
   width: var(--navigation-button-size);
