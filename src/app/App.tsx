@@ -1,3 +1,10 @@
+import {
+  MAX_MESSAGE_TEXT_BYTES,
+  MESSAGE_TEXT_LIMIT_MESSAGE,
+  messageTextFits,
+  jsonTextBytes,
+  textWithinBytes,
+} from '../../shared/conversation/limits';
 import { completeSignOut, pendingLogout } from '../platform/auth';
 import { useMutationFocus } from '../features/chat/useMutationFocus';
 import { Alert } from '@/components/ui/alert';
@@ -725,6 +732,10 @@ export function App({
   };
 
   const queue = async (input: SubmitInput) => {
+    if (input.content !== undefined && !messageTextFits(input.content.trim())) {
+      setError(MESSAGE_TEXT_LIMIT_MESSAGE);
+      return;
+    }
     const origin = selected,
       epoch = storageEpoch();
     const settings = v.safeParse(conversationSettingsSchema, conversationSettings);
@@ -1017,13 +1028,12 @@ export function App({
     const source = messageText(message).trim();
     if (!source) return;
     const prefix = draft.trim() ? `${draft.trim()}\n\n` : '';
-    const available = Math.max(0, 16_000 - prefix.length);
+    const available = Math.max(0, MAX_MESSAGE_TEXT_BYTES - jsonTextBytes(prefix));
     const quoted = source
       .split(/\r?\n/u)
       .map((line) => `> ${line}`)
-      .join('\n')
-      .slice(0, available);
-    const next = `${prefix}${quoted}`;
+      .join('\n');
+    const next = `${prefix}${textWithinBytes(quoted, available)}`;
     setRevisionOf(undefined);
     setDraft(next);
     setError('');
@@ -1874,7 +1884,7 @@ export function App({
                   className="composer-editor block min-h-11 w-full resize-none border-0 px-2 py-1 text-base leading-6 placeholder:text-muted-foreground outline-none! focus:outline-none!"
                   placeholder={active ? '生成中…' : '输入消息…'}
                   value={draft}
-                  maxLength={16000}
+                  maxLength={MAX_MESSAGE_TEXT_BYTES}
                   rows={1}
                   onChange={(event) => updateDraft(event.target.value)}
                   onKeyDown={(event) => {

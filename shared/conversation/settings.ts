@@ -1,7 +1,8 @@
+import { MAX_SYSTEM_PROMPT_LENGTH } from './limits';
 import * as v from 'valibot';
 import type { ConversationSettings } from './types';
 import type { ProviderConfig } from '../providers/types';
-import { validateOutputLimit } from '../models/metadata';
+import { MAX_MODEL_TOKENS, validateOutputLimit } from '../models/metadata';
 import { WEB_TOOL_NAMES } from '../web-tools/tasks';
 
 export const DEFAULT_CONVERSATION_SETTINGS: ConversationSettings = {
@@ -18,12 +19,12 @@ export const DEFAULT_CONVERSATION_SETTINGS: ConversationSettings = {
 };
 export const conversationSettingsSchema = v.pipe(
   v.strictObject({
-    systemPrompt: v.nullable(v.pipe(v.string(), v.maxLength(20_000))),
+    systemPrompt: v.nullable(v.pipe(v.string(), v.maxLength(MAX_SYSTEM_PROMPT_LENGTH))),
     temperature: v.nullable(v.pipe(v.number(), v.finite(), v.minValue(0), v.maxValue(2))),
     topP: v.nullable(v.pipe(v.number(), v.finite(), v.minValue(0), v.maxValue(1))),
     useGlobalMaxOutputTokens: v.boolean(),
     maxOutputTokens: v.nullable(
-      v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(100_000)),
+      v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(MAX_MODEL_TOKENS)),
     ),
     recentMessages: v.nullable(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(1000))),
     contextBudget: v.nullable(

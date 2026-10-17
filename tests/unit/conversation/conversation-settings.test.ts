@@ -1,3 +1,5 @@
+import { MAX_MODEL_TOKENS } from '../../../shared/models/metadata';
+import { MAX_SYSTEM_PROMPT_LENGTH } from '../../../shared/conversation/limits';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import * as v from 'valibot';
@@ -53,9 +55,9 @@ test('conversation settings reject non-finite numbers, bounds, fractional output
     { topP: 1.1 },
     { maxOutputTokens: 0 },
     { maxOutputTokens: 1.5 },
-    { maxOutputTokens: 100001 },
+    { maxOutputTokens: MAX_MODEL_TOKENS + 1 },
     { apiKey: 'secret' },
-    { systemPrompt: 'x'.repeat(20001) },
+    { systemPrompt: 'x'.repeat(MAX_SYSTEM_PROMPT_LENGTH + 1) },
   ]) {
     assert.equal(v.safeParse(conversationSettingsSchema, { ...defaults, ...patch }).success, false);
   }

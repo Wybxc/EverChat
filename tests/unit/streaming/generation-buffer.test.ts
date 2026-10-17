@@ -3,14 +3,13 @@ import { test } from 'node:test';
 import {
   MAX_BATCH_BYTES,
   MAX_COMMIT_BYTES,
-  MAX_STREAM_BYTES,
   payloadBytes,
   validateBatch,
   validateCommit,
 } from '../../../shared/streaming/batches';
 import type { StreamBatch } from '../../../shared/streaming/protocol';
 import { GenerationBuffer } from '../../../worker/generation/buffer';
-import { GenerationCancelled, ProviderError } from '../../../worker/generation/errors';
+import { GenerationCancelled } from '../../../worker/generation/errors';
 const encode = (value: string) => new TextEncoder().encode(value);
 const collected = (batches: StreamBatch[]) =>
   Buffer.concat(batches.map((batch) => validateBatch(batch)));
@@ -113,17 +112,27 @@ test('rejection by a terminal task stops buffering and cannot produce another ch
   assert.equal(attempts, 1);
 });
 
-test('the wire limit preserves exactly its bounded received prefix, including the final tail', () => {
-  const batches: StreamBatch[] = [];
-  const buffer = new GenerationBuffer('run', 'answer', (group) => {
-    batches.push(...group);
+test('wire overhead beyond 4 MiB does not interrupt bounded commits or change offsets', () => {
+  let received = 0,
+    chunks = 0;
+  const buffer = new GenerationBuffer('run', 'answer', (batches) => {
+    for (const batch of batches) {
+      assert.equal(batch.startOffset, received);
+      received += validateBatch(batch).byteLength;
+      chunks++;
+    }
+    assert.ok(
+      payloadBytes(validateCommit({ runId: 'run', messageId: 'answer', batches })) <=
+        MAX_COMMIT_BYTES,
+    );
     return true;
   });
-  const bytes = new Uint8Array(MAX_STREAM_BYTES + 1).fill(97);
-  assert.throws(() => buffer.add(bytes), ProviderError);
+  const bytes = new Uint8Array(64 * 1024).fill(97);
+  for (let i = 0; i < 160; i++) buffer.add(bytes);
   buffer.flush();
-  assert.deepEqual(collected(batches), Buffer.from(bytes.subarray(0, MAX_STREAM_BYTES)));
-  assert.throws(() => buffer.add(new Uint8Array([98])), ProviderError);
+  assert.equal(received, 10 * 1024 * 1024);
+  assert.ok(chunks > 1);
+  assert.equal(buffer.previewTail.length, 0);
 });
 
 test('microbatches share one atomic commit without changing preview offsets', () => {

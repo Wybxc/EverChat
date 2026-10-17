@@ -1,7 +1,8 @@
 import type { ProviderConfig, ProviderKind } from '../../shared/providers/types';
-import { MAX_EVENT_CHARACTERS } from '../../shared/streaming/provider-stream';
 import { ProviderError } from '../generation/errors';
 import { providerErrorSummary, providerFailure } from './failure';
+
+const MAX_ERROR_PREFIX_BYTES = 256 * 1024;
 
 function dataLines(frame: string) {
   return frame
@@ -159,10 +160,6 @@ export function safeProviderStream(
     }
     held.push(bytes);
     heldBytes += bytes.length;
-    if (heldBytes > MAX_EVENT_CHARACTERS) {
-      fail('供应商流事件超过原型限制。', 'protocol');
-      return;
-    }
     const accepted = bytes.subarray(0, Math.max(0, 8192 - prefix.length));
     if (accepted.length) prefix += String.fromCharCode(...accepted);
     if (prefix.length >= inspectAt) {
@@ -177,6 +174,8 @@ export function safeProviderStream(
         prefix = '';
       }
     }
+    if (!normal && heldBytes > MAX_ERROR_PREFIX_BYTES)
+      fail('供应商错误响应超过安全解析大小。', 'protocol');
   };
   const feed = (bytes: Uint8Array) => {
     let start = 0;

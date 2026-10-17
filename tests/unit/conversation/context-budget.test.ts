@@ -5,6 +5,7 @@ import { backupMessage } from '../../../shared/backup/backup';
 import { messageParts } from '../../../shared/conversation/content';
 import {
   assertContextFits,
+  assertStoredContextFits,
   buildContext,
   contextEstimateSchema,
   contextSource,
@@ -37,6 +38,26 @@ const history: ChatInput[] = [
   { role: 'user', content: '新问题'.repeat(20) },
   { role: 'assistant', content: '新回答'.repeat(20) },
 ];
+
+test('large model windows cannot create a context/config row beyond the SQLite task budget', () => {
+  const large = 'x'.repeat(768_000);
+  const model = { ...config, modelMetadata: metadata({ contextWindow: 10_000_000 }) };
+  const built = buildContext(
+    [
+      { role: 'user', content: large },
+      { role: 'assistant', content: large },
+    ],
+    'next',
+    model,
+    defaults,
+  );
+  assert.doesNotThrow(() => assertStoredContextFits(built.messages, model));
+  assert.throws(
+    () =>
+      assertStoredContextFits(built.messages, { ...model, systemPrompt: '\u0000'.repeat(64_000) }),
+    /单次任务.*存储保护/,
+  );
+});
 
 test('text estimates account for Unicode, punctuation and empty input with bounded work on long content', () => {
   assert.equal(estimateTextTokens(''), 0);

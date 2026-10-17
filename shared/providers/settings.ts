@@ -1,3 +1,5 @@
+import { MAX_PROVIDER_MODELS } from './limits';
+import { MAX_SYSTEM_PROMPT_LENGTH } from '../conversation/limits';
 import * as v from 'valibot';
 import { MAX_MODEL_TOKENS, reasoningEfforts } from '../models/metadata';
 import { providerOptions } from './endpoints';
@@ -32,7 +34,7 @@ export const modelSchema = v.object({
   name: v.pipe(v.string(), v.trim(), v.maxLength(200)),
   enabled: v.boolean(),
   useGlobalSystemPrompt: v.optional(v.boolean()),
-  systemPrompt: v.optional(v.pipe(v.string(), v.maxLength(20_000))),
+  systemPrompt: v.optional(v.pipe(v.string(), v.maxLength(MAX_SYSTEM_PROMPT_LENGTH))),
   reasoningSupport: v.optional(v.picklist(['auto', 'supported', 'unsupported'])),
   reportedMetadata: v.optional(
     v.strictObject({ ...metadataFields, reasoning: v.optional(v.boolean()) }),
@@ -63,7 +65,7 @@ const profileSchema = v.object({
   name: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(100)),
   provider: v.picklist(providerTypes),
   baseUrl: v.pipe(v.string(), v.trim(), v.maxLength(2048)),
-  models: v.pipe(v.array(modelSchema), v.maxLength(200)),
+  models: v.pipe(v.array(modelSchema), v.maxLength(MAX_PROVIDER_MODELS)),
   apiKey: v.optional(v.pipe(v.string(), v.trim(), v.maxLength(4096))),
 });
 export const providerSettingsSchema = v.object({
@@ -71,9 +73,9 @@ export const providerSettingsSchema = v.object({
   providers: v.pipe(v.array(profileSchema), v.maxLength(50)),
   activeProviderId: v.nullable(v.pipe(v.string(), v.uuid())),
   activeModel: v.pipe(v.string(), v.trim(), v.maxLength(200)),
-  systemPrompt: v.pipe(v.string(), v.maxLength(20_000)),
+  systemPrompt: v.pipe(v.string(), v.maxLength(MAX_SYSTEM_PROMPT_LENGTH)),
   maxOutputTokens: v.optional(
-    v.nullable(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(100_000))),
+    v.nullable(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(MAX_MODEL_TOKENS))),
     null,
   ),
 });

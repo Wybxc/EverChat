@@ -1,3 +1,4 @@
+import { MAX_SYSTEM_PROMPT_LENGTH } from '../../../shared/conversation/limits';
 import { Modal, ModalTitle } from '../../components/Modal';
 import { Button } from '@/components/ui/button';
 import { NativeSelect } from '@/components/ui/native-select';
@@ -323,7 +324,7 @@ function PresetEditor({
         <Textarea
           aria-label="预设系统提示词"
           className="min-h-48 w-full"
-          maxLength={20000}
+          maxLength={MAX_SYSTEM_PROMPT_LENGTH}
           rows={8}
           value={settings.systemPrompt}
           disabled={removing}

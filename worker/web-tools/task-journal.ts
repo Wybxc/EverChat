@@ -1,3 +1,5 @@
+import { MAX_MESSAGES } from '../platform/resource-limits';
+import { MAX_MESSAGE_TEXT_BYTES, jsonTextBytes } from '../../shared/conversation/limits';
 import { createHash } from 'node:crypto';
 import * as v from 'valibot';
 import { estimateTextTokens } from '../../shared/conversation/token-estimate';
@@ -21,7 +23,7 @@ import {
 } from '../providers/tool-turn';
 
 export const TOOL_TASK_TIMEOUT_MS = 10 * 60_000;
-export const MAX_TOOL_TASKS = 256;
+export const MAX_TOOL_TASKS = MAX_MESSAGES;
 export const TOOL_DEFINITION_TOKENS = 2048;
 type Terminal = 'completed' | 'failed' | 'cancelled';
 type Root = {
@@ -37,6 +39,7 @@ type Root = {
   initialTokens: number;
   modelRequests: number;
   toolRequests: number;
+  // Existing SQL column names; counters measure escaped JSON text bytes.
   textCharacters: number;
   reasoningCharacters: number;
   error: string | null;
@@ -311,10 +314,10 @@ export class ToolTaskJournal {
     let text = 0,
       reasoning = 0;
     for (const part of turn.content) {
-      if (part.type === 'text') text += part.text.length;
-      if (part.type === 'reasoning') reasoning += part.text.length;
+      if (part.type === 'text') text += jsonTextBytes(part.text);
+      if (part.type === 'reasoning') reasoning += jsonTextBytes(part.text);
     }
-    if (root.textCharacters + text > 100_000 || root.reasoningCharacters + reasoning > 100_000)
+    if (root.textCharacters + text + root.reasoningCharacters + reasoning > MAX_MESSAGE_TEXT_BYTES)
       taskError('工具任务的正文或思考总量超过限制。');
     for (const call of turn.calls)
       if (

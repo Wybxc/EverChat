@@ -1,3 +1,4 @@
+import { MAX_MESSAGE_TEXT_BYTES } from '../../../shared/conversation/limits';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { test, type TestContext } from 'node:test';
@@ -298,8 +299,8 @@ test('unclaimed, mismatched or malformed model turns never publish executable ca
         { type: 'tool-call', toolCallId: 'extra', toolName: 'web_search', input: { query: 'x' } },
       ],
     },
-    turn([call()], 'x'.repeat(100_001)),
-    turn([call()], '', 'x'.repeat(100_001)),
+    turn([call()], 'x'.repeat(MAX_MESSAGE_TEXT_BYTES + 1)),
+    turn([call()], '', 'x'.repeat(MAX_MESSAGE_TEXT_BYTES + 1)),
   ] as ProviderToolTurn[];
   for (const invalid of malformed)
     assert.throws(() => write((j) => j.saveTurn(input.runId, invalid, config)));
@@ -514,15 +515,20 @@ test('three tool exchanges permit four model requests and stop a fourth tool rou
 test('aggregate text and thought limits apply across model rounds, not independently to each connection', (t) => {
   const { write, begin, save, finish, journal } = database(t),
     input = begin();
-  save(input, turn([call()], 'x'.repeat(60_000), 'y'.repeat(60_000)));
+  save(input, turn([call()], 'x'.repeat(200_000), 'y'.repeat(200_000)));
   finish(input.id, 'search-0');
   const runId = crypto.randomUUID();
   write((j) => j.queueModel(input.id, 1, runId, crypto.randomUUID(), config));
   write((j) => j.claimModel(runId));
-  for (const value of [turn([], 'x'.repeat(40_001)), turn([], 'answer', 'y'.repeat(40_001))])
+  for (const value of [
+    turn([], 'x'.repeat(MAX_MESSAGE_TEXT_BYTES - 400_000 + 1)),
+    turn([], 'answer', 'y'.repeat(MAX_MESSAGE_TEXT_BYTES - 400_000 + 1)),
+  ])
     assert.throws(() => write((j) => j.saveTurn(runId, value, config)), /总量/);
   assert.equal(journal.state(input.id).phase, 'running');
-  write((j) => j.saveTurn(runId, turn([], 'x'.repeat(40_000), 'y'.repeat(40_000)), config));
+  write((j) =>
+    j.saveTurn(runId, turn([], 'x'.repeat(MAX_MESSAGE_TEXT_BYTES - 400_000), ''), config),
+  );
   assert.equal(journal.state(input.id).status, 'completed');
 });
 

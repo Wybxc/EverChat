@@ -63,7 +63,7 @@ export class StreamJournal {
     const rows = this.query<CommitRow>(
       `SELECT * FROM ${this.table} WHERE runId = ? ORDER BY chunkSeq`,
       message.runId,
-    ).toArray();
+    );
     const parser = new ProviderStream(
       descriptor.protocol,
       true,

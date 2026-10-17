@@ -1,3 +1,4 @@
+import { MAX_SQL_PAYLOAD_BYTES } from '../../shared/conversation/limits';
 import type { BackupMessage, ConversationBackup } from '../../shared/backup/backup';
 import { DEFAULT_CONVERSATION_SETTINGS } from '../../shared/conversation/settings';
 import type { ConversationSettings, Message } from '../../shared/conversation/types';
@@ -48,13 +49,16 @@ export function planConversationRestore(
   }));
   const batches: Message[][] = [],
     settings = backup.settings ?? DEFAULT_CONVERSATION_SETTINGS;
+  // Restore runs inside the DO over a native stream; batches bound SQLite event
+  // rows, not RPC payloads. Leave 100 kB below the platform's 2 MB row limit.
   const overhead = payloadBytes(JSON.stringify(settings)) + 64;
   let batch: Message[] = [],
     bytes = overhead;
   for (const message of messages) {
     const size = payloadBytes(JSON.stringify(message)) + 1;
-    if (size + overhead > 1_000_000) return { error: '单条恢复消息过大。', status: 413 };
-    if (batch.length && bytes + size > 1_000_000) {
+    if (size + overhead > MAX_SQL_PAYLOAD_BYTES)
+      return { error: '单条恢复消息过大。', status: 413 };
+    if (batch.length && bytes + size > MAX_SQL_PAYLOAD_BYTES) {
       batches.push(batch);
       batch = [];
       bytes = overhead;

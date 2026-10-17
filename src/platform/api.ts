@@ -18,6 +18,7 @@ export async function api<T>(
   method = 'GET',
   body?: unknown,
   signal?: AbortSignal,
+  timeoutMs = 20_000,
 ): Promise<T> {
   if (path !== '/session' && typeof window !== 'undefined' && !networkIdentity())
     throw new ApiError(503, '请先恢复连接并确认访问身份。', 'AUTH_UNAVAILABLE');
@@ -34,7 +35,7 @@ export async function api<T>(
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: AbortSignal.any([
         ...(signal ? [signal] : []),
-        AbortSignal.timeout(20_000),
+        AbortSignal.timeout(timeoutMs),
         ...(path !== '/session' ? [authSignal()] : []),
       ]),
     });

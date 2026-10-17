@@ -1,9 +1,36 @@
+import { MAX_MESSAGE_TEXT_BYTES } from '../../../shared/conversation/limits';
+import { messageParts, messagePartsSchema } from '../../../shared/conversation/content';
+import * as v from 'valibot';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { ProviderKind } from '../../../shared/providers/types';
 import { MAX_EVENT_CHARACTERS, ProviderStream } from '../../../shared/streaming/provider-stream';
 import { providerStreams } from '../../support/providers/streams';
 const encoder = new TextEncoder();
+
+test('streaming and restored checkpoints share a combined escaped-text budget without splitting emoji', () => {
+  let parser = new ProviderStream('openai-chat', true);
+  const feed = (delta: Record<string, string>) =>
+    parser.feed(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta }] })}\n\n`));
+  feed({ reasoning_content: 'r'.repeat(200_000) });
+  feed({ content: 'x'.repeat(MAX_MESSAGE_TEXT_BYTES - 200_000 - 6) + '\ud83d' });
+  parser = new ProviderStream(
+    'openai-chat',
+    true,
+    parser.checkpoint(),
+    parser.content,
+    parser.reasoning,
+  );
+  feed({ content: '\ude42zz' });
+  assert.ok(parser.content.endsWith('🙂zz'));
+  assert.equal(parser.failed, false);
+  feed({ content: 'overflow' });
+  assert.ok(parser.failed);
+  assert.ok(
+    v.safeParse(messagePartsSchema, messageParts(parser.content, parser.reasoning)).success,
+  );
+  assert.ok(parser.content.endsWith('🙂zz'));
+});
 
 test('Responses bounds thought identities while retaining an already decoded prefix', () => {
   const parser = new ProviderStream('openai-responses', true);
@@ -124,16 +151,16 @@ test('malformed UTF-8, oversized incomplete frames and output limits fail explic
   assert.throws(() => invalid.assertComplete(), /格式无效/);
   const huge = new ProviderStream('openai-chat', true);
   huge.feed(encoder.encode('data: ' + 'x'.repeat(MAX_EVENT_CHARACTERS + 1)));
-  assert.throws(() => huge.assertComplete(), /超过原型限制/);
+  assert.throws(() => huge.assertComplete(), /超过解析缓冲大小/);
   assert.equal(huge.checkpoint().tail, '');
   const limited = new ProviderStream('openai-chat', true);
   limited.feed(
     encoder.encode(
-      `data: ${JSON.stringify({ choices: [{ delta: { content: '文'.repeat(99_999) + '🙂' } }] })}\n\n`,
+      `data: ${JSON.stringify({ choices: [{ delta: { content: '文'.repeat(Math.floor(MAX_MESSAGE_TEXT_BYTES / 3)) + '🙂' } }] })}\n\n`,
     ),
   );
-  assert.equal(limited.content, '文'.repeat(99_999));
-  assert.throws(() => limited.assertComplete(), /100,000/);
+  assert.equal(limited.content, '文'.repeat(Math.floor(MAX_MESSAGE_TEXT_BYTES / 3)));
+  assert.throws(() => limited.assertComplete(), /768 KiB/);
 });
 
 test('an oversized complete event is rejected before its JSON payload is materialized', () => {
@@ -143,7 +170,7 @@ test('an oversized complete event is rejected before its JSON payload is materia
       `data: ${JSON.stringify({ diagnostic: 'x'.repeat(MAX_EVENT_CHARACTERS + 1) })}\n\n`,
     ),
   );
-  assert.throws(() => parser.assertComplete(), /超过原型限制/);
+  assert.throws(() => parser.assertComplete(), /超过解析缓冲大小/);
   assert.equal(parser.content, '');
   assert.equal(parser.checkpoint().tail, '');
 });
@@ -159,7 +186,7 @@ test('Responses replaces a previous summary with raw thoughts and preserves Unic
   assert.equal(parser.reasoning, '完整的思考');
   assert.equal(parser.checkpoint().thoughts[0].summary, '');
   const limited = new ProviderStream('openai-responses', true);
-  limited.feed(event('reasoning_text', '文'.repeat(99_999) + '🙂'));
-  assert.equal(limited.reasoning, '文'.repeat(99_999));
-  assert.throws(() => limited.assertComplete(), /100,000/);
+  limited.feed(event('reasoning_text', '文'.repeat(Math.floor(MAX_MESSAGE_TEXT_BYTES / 3)) + '🙂'));
+  assert.equal(limited.reasoning, '文'.repeat(Math.floor(MAX_MESSAGE_TEXT_BYTES / 3)));
+  assert.throws(() => limited.assertComplete(), /768 KiB/);
 });

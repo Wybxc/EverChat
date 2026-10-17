@@ -1,12 +1,13 @@
+import { MAX_SYSTEM_PROMPT_LENGTH } from '../conversation/limits';
 import * as v from 'valibot';
 import type { PromptPresetInput } from './types';
 
-export const MAX_PROMPT_PRESETS = 50;
+export const MAX_PROMPT_PRESETS = 200;
 export const MAX_PRESET_TEXT_BYTES = 512 * 1024;
 export const PRESET_CAPACITY_MESSAGE = '预设数量或内容总量已达上限，请整理已有预设。';
 export const promptPresetInputSchema = v.strictObject({
   name: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(100)),
-  systemPrompt: v.pipe(v.string(), v.maxLength(20_000)),
+  systemPrompt: v.pipe(v.string(), v.maxLength(MAX_SYSTEM_PROMPT_LENGTH)),
 });
 const promptPresetSchema = v.strictObject({
   id: v.pipe(v.string(), v.uuid()),

@@ -1,3 +1,4 @@
+import { MAX_MESSAGE_TEXT_BYTES, jsonTextBytes } from '../../shared/conversation/limits';
 import type {
   LanguageModelV4FunctionTool,
   LanguageModelV4Prompt,
@@ -24,7 +25,7 @@ import {
 import { ProviderError } from '../generation/errors';
 import { providerCallOptions, providerModel } from './sdk';
 
-export const MAX_TOOL_TURN_WIRE_BYTES = 2 * 1024 * 1024;
+export const MAX_TOOL_TURN_WIRE_BYTES = 8 * 1024 * 1024;
 const MAX_TOOL_TURN_CONTEXT_BYTES = 1024 * 1024;
 type AssistantPart =
   LanguageModelV4TextPart | LanguageModelV4ReasoningPart | LanguageModelV4ToolCallPart;
@@ -203,14 +204,13 @@ export function validateProviderToolTurn(
   let text = 0,
     reasoning = 0;
   for (const part of turn.content) {
-    if (part.type === 'text' && typeof part.text === 'string') text += part.text.length;
+    if (part.type === 'text' && typeof part.text === 'string') text += jsonTextBytes(part.text);
     else if (part.type === 'reasoning' && typeof part.text === 'string')
-      reasoning += part.text.length;
+      reasoning += jsonTextBytes(part.text);
     else if (part.type !== 'tool-call') throw new ProviderError('工具续接内容类型无效。');
   }
   if (
-    text > 100_000 ||
-    reasoning > 100_000 ||
+    text + reasoning > MAX_MESSAGE_TEXT_BYTES ||
     (!turn.calls.length && !turn.content.some((part) => part.type === 'text' && part.text.trim()))
   )
     throw new ProviderError('工具续接正文或思考内容无效。');
@@ -338,9 +338,12 @@ export async function collectProviderToolTurn(
             block = blocks.get(`${reasoning ? 'reasoning' : 'text'}:${part.id}`);
           if (!block) throw new ProviderError('供应商内容部分缺少起始状态。');
           if ('delta' in part) {
-            if (reasoning) reasoningCharacters += part.delta.length;
-            else textCharacters += part.delta.length;
-            if (textCharacters > 100_000 || reasoningCharacters > 100_000)
+            const joinsPair =
+              /^[\uDC00-\uDFFF]/.test(part.delta) && /[\uD800-\uDBFF]$/.test(block.text);
+            const deltaBytes = jsonTextBytes(part.delta) - (joinsPair ? 8 : 0);
+            if (reasoning) reasoningCharacters += deltaBytes;
+            else textCharacters += deltaBytes;
+            if (textCharacters + reasoningCharacters > MAX_MESSAGE_TEXT_BYTES)
               throw new ProviderError('工具轮次的正文或思考内容超过限制。');
             block.text += part.delta;
           }

@@ -1,3 +1,4 @@
+import { MAX_SYSTEM_PROMPT_LENGTH } from '../../../shared/conversation/limits';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -73,7 +74,7 @@ export function ModelOptions({
           <Textarea
             aria-label={`模型专属提示词 ${index + 1}`}
             rows={4}
-            maxLength={20000}
+            maxLength={MAX_SYSTEM_PROMPT_LENGTH}
             className="w-full border-input"
             value={model.systemPrompt ?? ''}
             onChange={(event) => onChange({ systemPrompt: event.target.value })}

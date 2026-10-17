@@ -1,3 +1,4 @@
+import { MAX_SYSTEM_PROMPT_LENGTH } from '../../../shared/conversation/limits';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import type { EverChatBackup } from '../../../shared/backup/backup';
 import { DEFAULT_CONVERSATION_SETTINGS as defaults } from '../../../shared/conversation/settings';
@@ -96,7 +97,7 @@ test('preset APIs authorize writes, pin copied task prompts, and merge backups w
     ).toBe(404);
     for (const patch of [
       { name: ' ' },
-      { systemPrompt: 'x'.repeat(20001) },
+      { systemPrompt: 'x'.repeat(MAX_SYSTEM_PROMPT_LENGTH + 1) },
       { apiKey: 'unexpected' },
     ])
       expect(

@@ -1,3 +1,4 @@
+import { MAX_PROVIDER_MODELS, MODEL_LIST_LIMIT_MESSAGE } from '../../shared/providers/limits';
 import type { DiscoveredModel, ModelMetadata } from '../../shared/models/types';
 import type { ProviderModelConfig } from '../../shared/providers/types';
 import { normalizeBaseUrl } from './config';
@@ -32,7 +33,12 @@ function modelsEndpoint(profile: ProviderModelConfig): URL {
   return url;
 }
 
-async function fetchPage(profile: ProviderModelConfig, url: URL): Promise<Record<string, unknown>> {
+async function fetchPage(
+  profile: ProviderModelConfig,
+  url: URL,
+  signal: AbortSignal,
+  budget: { remaining: number },
+): Promise<Record<string, unknown>> {
   const headers = new Headers({ Accept: 'application/json' });
   if (profile.provider === 'anthropic') {
     headers.set('x-api-key', profile.apiKey ?? '');
@@ -44,7 +50,7 @@ async function fetchPage(profile: ProviderModelConfig, url: URL): Promise<Record
     response = await fetch(url, {
       headers,
       redirect: 'manual',
-      signal: AbortSignal.timeout(20_000),
+      signal: AbortSignal.any([signal, AbortSignal.timeout(20_000)]),
     });
   } catch {
     throw new ProviderModelError(
@@ -58,10 +64,36 @@ async function fetchPage(profile: ProviderModelConfig, url: URL): Promise<Record
     throw new ProviderModelError(error.message, 502, error.details);
   }
   try {
-    const data: unknown = await response.json();
+    if (!response.body) throw new Error();
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false });
+    let size = 0,
+      text = '';
+    try {
+      while (true) {
+        const next = await reader.read();
+        if (next.done) break;
+        size += next.value.byteLength;
+        budget.remaining -= next.value.byteLength;
+        if (size > 2 * 1024 * 1024 || budget.remaining < 0)
+          throw new ProviderModelError(
+            '供应商模型目录超过获取大小保护，请手动添加需要的模型。',
+            502,
+          );
+        text += decoder.decode(next.value, { stream: true });
+      }
+      text += decoder.decode();
+    } catch (error) {
+      await reader.cancel().catch(() => {});
+      throw error;
+    } finally {
+      reader.releaseLock();
+    }
+    const data: unknown = JSON.parse(text);
     if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error();
     return data as Record<string, unknown>;
-  } catch {
+  } catch (error) {
+    if (error instanceof ProviderModelError) throw error;
     throw new ProviderModelError('供应商返回了无法识别的模型列表。', 502);
   }
 }
@@ -161,17 +193,29 @@ export async function fetchProviderModels(
   const url = modelsEndpoint(profile);
   const found = new Map<string, DiscoveredModel>();
   let pageToken: string | undefined;
-  for (let page = 0; page < 5 && found.size < 200; page++) {
+  const seen = new Set<string>();
+  const signal = AbortSignal.timeout(45_000);
+  const budget = { remaining: 8 * 1024 * 1024 };
+  for (let page = 0; page < 10; page++) {
     if (pageToken)
       url.searchParams.set(profile.provider === 'gemini' ? 'pageToken' : 'after_id', pageToken);
-    const response = await fetchPage(profile, url);
+    const response = await fetchPage(profile, url, signal, budget);
     for (const model of modelEntries(profile, response)) {
       if (!found.has(model.id)) found.set(model.id, model);
-      if (found.size >= 200) break;
+      if (found.size > MAX_PROVIDER_MODELS) throw new ProviderModelError(MODEL_LIST_LIMIT_MESSAGE);
     }
     const next =
       response.nextPageToken ?? (response.has_more === true ? response.last_id : undefined);
-    if (typeof next !== 'string' || !next) break;
+    if (response.has_more === true && (typeof next !== 'string' || !next))
+      throw new ProviderModelError('供应商模型目录缺少下一页游标。', 502);
+    if (next !== undefined && typeof next !== 'string')
+      throw new ProviderModelError('供应商模型目录的分页游标无效。', 502);
+    if (!next) break;
+    if (seen.has(next))
+      throw new ProviderModelError('供应商模型目录分页游标重复，请检查 API 端点。', 502);
+    if (page === 9)
+      throw new ProviderModelError('模型目录超过 10 页的获取保护，请手动添加需要的模型。');
+    seen.add(next);
     pageToken = next;
   }
   return [...found.values()].sort((a, b) => a.id.localeCompare(b.id));

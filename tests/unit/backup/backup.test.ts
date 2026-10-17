@@ -10,6 +10,11 @@ import { messageParts, messageText } from '../../../shared/conversation/content'
 import { DEFAULT_CONVERSATION_SETTINGS } from '../../../shared/conversation/settings';
 import type { Message } from '../../../shared/conversation/types';
 import { ProviderStream } from '../../../shared/streaming/provider-stream';
+import { planConversationRestore } from '../../../worker/backup/restore-plan';
+import {
+  MAX_MESSAGE_TEXT_BYTES,
+  MAX_SYSTEM_PROMPT_LENGTH,
+} from '../../../shared/conversation/limits';
 
 const assistant: Message = {
   id: crypto.randomUUID(),
@@ -113,6 +118,24 @@ test('validateBackup accepts version 1 backups and rejects malformed messages', 
   const saved = backup.conversation.messages[0];
   assert.deepEqual(saved.parts, messageParts('正文', '思考'));
   assert.equal('content' in saved || 'reasoning' in saved, false);
+  const large = validateBackup({
+    ...backup,
+    conversation: {
+      ...backup.conversation,
+      settings: {
+        ...DEFAULT_CONVERSATION_SETTINGS,
+        systemPrompt: '\u0000'.repeat(MAX_SYSTEM_PROMPT_LENGTH),
+      },
+      messages: [{ ...saved, parts: messageParts('x'.repeat(MAX_MESSAGE_TEXT_BYTES)) }],
+    },
+    settings: { ...backup.settings, maxOutputTokens: 200_000 },
+  });
+  const plan = planConversationRestore(large.conversation);
+  assert.ok(!('error' in plan));
+  const eventBytes = new TextEncoder().encode(
+    JSON.stringify({ messages: plan.batches[0], settings: plan.settings }),
+  ).byteLength;
+  assert.ok(eventBytes > 1_000_000 && eventBytes < 1_900_000);
   for (const invalid of [
     { ...saved, content: 'old shape', reasoning: 'old shape' },
     { ...saved, role: 'user' },

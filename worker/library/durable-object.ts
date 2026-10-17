@@ -1,5 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
 import { initializeConversationMetadata } from './metadata';
+import type { AccessIdentity } from '../../shared/auth/types';
 import type { DocumentPart } from '../../shared/attachments/documents';
 import type { AttachmentInput } from '../../shared/attachments/files';
 import type { ImagePart } from '../../shared/attachments/images';
@@ -757,8 +758,13 @@ export class Library extends DurableObject<Env> {
   async saveProviderSettingsResponse(body: ReadableStream<Uint8Array>) {
     return this.providers.saveProviderSettingsResponse(body);
   }
-  sessionSettings() {
-    return this.providers.sessionSettings();
+  sessionResponse(identity: AccessIdentity, logoutUrl: string) {
+    return json({
+      ...this.providers.sessionSettings(),
+      authenticated: true,
+      logoutUrl,
+      identity,
+    });
   }
   private async attachmentAction<T>(
     action: () => T | Promise<T>,
@@ -847,8 +853,11 @@ export class Library extends DurableObject<Env> {
   backupSettings(): BackupSettings {
     return this.providers.backupSettings();
   }
-  providerForModelList(id: string): ProviderModelConfig | null {
-    return this.providers.providerForModelList(id);
+  providerForModelList(id: string, model?: string): ProviderModelConfig | null {
+    return this.providers.providerForModelList(id, model);
+  }
+  providerModelsResponse(id: string) {
+    return this.providers.providerModelsResponse(id);
   }
   saveProviderSettings(
     input: ProviderSettingsInput,

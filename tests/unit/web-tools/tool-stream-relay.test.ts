@@ -1,3 +1,4 @@
+import { MAX_TOOL_TURN_WIRE_BYTES } from '../../../worker/providers/tool-turn';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { backupMessage } from '../../../shared/backup/backup';
@@ -111,7 +112,7 @@ test('large split signatures never enter public pending-event state, and oversiz
     },
     () => {},
   );
-  assert.throws(() => oversized.add(new Uint8Array(2 * 1024 * 1024 + 1)), /2 MiB/);
+  assert.throws(() => oversized.add(new Uint8Array(MAX_TOOL_TURN_WIRE_BYTES + 1)), /8 MiB/);
   assert.equal(writes, 0);
   const truncated = new ToolStreamRelay(
     { provider: 'openai-chat' },

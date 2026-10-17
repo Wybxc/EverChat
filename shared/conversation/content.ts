@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import { MAX_MESSAGE_TEXT_BYTES, MESSAGE_TEXT_LIMIT_MESSAGE, messageTextFits } from './limits';
 import {
   documentPartSchema,
   MAX_MESSAGE_DOCUMENTS,
@@ -35,7 +36,7 @@ export const messageAttachments = (message: { parts: readonly MessagePart[] } | 
   ...messageFiles(message),
 ];
 
-const text = v.pipe(v.string(), v.minLength(1), v.maxLength(100_000));
+const text = v.pipe(v.string(), v.minLength(1), v.maxLength(MAX_MESSAGE_TEXT_BYTES));
 export const messagePartsSchema = v.pipe(
   v.array(
     v.variant('type', [
@@ -46,6 +47,10 @@ export const messagePartsSchema = v.pipe(
     ]),
   ),
   v.maxLength(2 + MAX_MESSAGE_IMAGES + MAX_MESSAGE_DOCUMENTS),
+  v.check(
+    (parts) => messageTextFits(messageText({ parts }), messageText({ parts }, 'reasoning')),
+    MESSAGE_TEXT_LIMIT_MESSAGE,
+  ),
   v.check((parts) => {
     const channels = parts.filter((part) => part.type === 'text' || part.type === 'reasoning'),
       images = parts.filter((part) => part.type === 'image'),

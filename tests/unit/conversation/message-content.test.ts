@@ -1,3 +1,8 @@
+import {
+  MAX_MESSAGE_TEXT_BYTES,
+  jsonTextBytes,
+  textWithinBytes,
+} from '../../../shared/conversation/limits';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import * as v from 'valibot';
@@ -31,7 +36,7 @@ test('parts reject unsupported types, empty or oversized text, extra fields and 
     null,
     [{ type: 'tool', text: 'x' }],
     [{ type: 'text', text: '' }],
-    [{ type: 'text', text: 'x'.repeat(100_001) }],
+    [{ type: 'text', text: 'x'.repeat(MAX_MESSAGE_TEXT_BYTES + 1) }],
     [{ type: 'text', text: 'x', apiKey: 'secret' }],
     [
       { type: 'text', text: 'a' },
@@ -118,5 +123,32 @@ test('snapshot caches use the current DTO key and refetch instead of decoding an
   } finally {
     if (descriptor) Object.defineProperty(globalThis, 'localStorage', descriptor);
     else Reflect.deleteProperty(globalThis, 'localStorage');
+  }
+});
+
+test('message byte budgets include JSON escaping and combine answer and reasoning', () => {
+  const budget = MAX_MESSAGE_TEXT_BYTES;
+  assert.ok(
+    v.safeParse(messagePartsSchema, messageParts('文'.repeat(150_000), '思'.repeat(100_000)))
+      .success,
+  );
+  assert.ok(v.safeParse(messagePartsSchema, messageParts('x'.repeat(budget))).success);
+  assert.equal(
+    v.safeParse(messagePartsSchema, messageParts('x'.repeat(budget), 'y')).success,
+    false,
+  );
+  assert.equal(
+    v.safeParse(messagePartsSchema, messageParts('\u0000'.repeat(Math.floor(budget / 6) + 1)))
+      .success,
+    false,
+  );
+  for (const text of ['a文🙂\u0000"\\', '\ud83d', '\ude00', '🙂🙂', '\n\t\r']) {
+    for (let size = 0; size < 40; size++) {
+      const prefix = textWithinBytes(text, size);
+      assert.ok(text.startsWith(prefix));
+      assert.ok(jsonTextBytes(prefix) <= size);
+      if (prefix.length < text.length && /[\uDC00-\uDFFF]/.test(text[prefix.length]))
+        assert.doesNotMatch(prefix, /[\uD800-\uDBFF]$/u);
+    }
   }
 });

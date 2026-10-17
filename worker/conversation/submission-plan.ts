@@ -46,7 +46,7 @@ export function planSubmissionParent(
     : undefined;
   if (input.revisionOf && !original) return { error: '找不到要编辑的消息。', status: 404 };
   if (messages.length + (parent ? 1 : 2) > MAX_MESSAGES)
-    return { error: '此对话已达到原型的消息上限，请新建对话。', status: 507 };
+    return { error: '此对话已达到消息数量保护上限，请新建对话。', status: 507 };
   const content = parent ? messageText(parent) : (input.content?.trim() ?? '');
   if (input.retryOf && (input.imageIds !== undefined || input.fileIds !== undefined))
     return { error: '重新生成不能更换原提问的附件。', status: 400 };

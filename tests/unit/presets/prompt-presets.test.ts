@@ -1,3 +1,4 @@
+import { MAX_SYSTEM_PROMPT_LENGTH } from '../../../shared/conversation/limits';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
@@ -162,7 +163,7 @@ test('preset schemas reject leaked fields, invalid IDs, duplicate IDs and oversi
   const preset = { id: crypto.randomUUID(), name: '预设', systemPrompt: '', updatedAt: 1 };
   for (const input of [
     { name: '', systemPrompt: '' },
-    { name: 'ok', systemPrompt: 'x'.repeat(20001) },
+    { name: 'ok', systemPrompt: 'x'.repeat(MAX_SYSTEM_PROMPT_LENGTH + 1) },
     { name: 'ok', systemPrompt: '', apiKey: 'unexpected' },
   ])
     assert.equal(v.safeParse(promptPresetInputSchema, input).success, false);

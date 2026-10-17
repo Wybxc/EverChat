@@ -1,12 +1,11 @@
 import {
   MAX_BATCH_BYTES,
   MAX_COMMIT_BYTES,
-  MAX_STREAM_BYTES,
   payloadBytes,
   streamBatches,
 } from '../../shared/streaming/batches';
 import type { StreamBatch } from '../../shared/streaming/protocol';
-import { GenerationCancelled, ProviderError } from './errors';
+import { GenerationCancelled } from './errors';
 
 const PREVIEW_INTERVAL_MS = 100;
 const COMMIT_INTERVAL_MS = 1500;
@@ -16,7 +15,6 @@ const COMMIT_TARGET_BYTES = 32 * 1024;
 export class GenerationBuffer {
   private bytes: Uint8Array[] = [];
   private byteLength = 0;
-  private receivedBytes = 0;
   private chunkSeq = 0;
   private offset = 0;
   private pending: StreamBatch[] = [];
@@ -39,20 +37,14 @@ export class GenerationBuffer {
   }
   add(bytes: Uint8Array) {
     this.check();
-    const accepted = Math.min(bytes.length, MAX_STREAM_BYTES - this.receivedBytes);
-    for (let index = 0; index < accepted;) {
-      const length = Math.min(accepted - index, MAX_BATCH_BYTES - this.byteLength);
+    for (let index = 0; index < bytes.length;) {
+      const length = Math.min(bytes.length - index, MAX_BATCH_BYTES - this.byteLength);
       this.bytes.push(bytes.slice(index, index + length));
       this.byteLength += length;
-      this.receivedBytes += length;
       index += length;
       if (this.byteLength >= MAX_BATCH_BYTES) this.seal();
     }
     this.tick();
-    if (accepted !== bytes.length)
-      throw new ProviderError(
-        '供应商响应已达到 4 MiB 的原型限制。已保存部分内容，请主动重新生成。',
-      );
   }
   tick() {
     this.check();

@@ -1,6 +1,7 @@
 import * as v from 'valibot';
 import {
   assertContextFits,
+  assertStoredContextFits,
   buildContext,
   ContextBudgetError,
   contextHistory,
@@ -15,7 +16,7 @@ import { branchPath } from './branch-path';
 import { type ConversationSettings, type Message } from './types';
 import { type ProviderConfig } from '../providers/types';
 
-export const MAX_SUMMARIES = 20,
+export const MAX_SUMMARIES = 100,
   MAX_SUMMARY_CHARACTERS = 20_000;
 export const summaryCoverageSchema = v.pipe(
   v.strictObject({
@@ -159,7 +160,10 @@ export function prepareChatContext(
       '没有可继续压缩的完整历史，回答未调用模型。请提高预算或关闭自动压缩后重试。',
     );
   }
-  if (!automatic) assertContextFits(built.estimate);
+  if (!automatic) {
+    assertContextFits(built.estimate);
+    assertStoredContextFits(built.messages, config);
+  }
   return { ...built, automatic };
 }
 
@@ -215,6 +219,7 @@ export function summaryGeneration(messages: Message[], throughId: string, config
     prepared.summary ? summaryPrefix(prepared.summary) : undefined,
   );
   assertContextFits(built.estimate);
+  assertStoredContextFits(built.messages, generationConfig);
   if (built.estimate.omittedMessages)
     throw new ContextBudgetError(
       '完整历史超出摘要模型窗口。请选择更大窗口的模型、更早的覆盖边界，或先压缩较早历史。',

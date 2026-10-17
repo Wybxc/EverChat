@@ -5,7 +5,6 @@ import { decodeBytes, encodeBytes } from './provider-stream';
 export const STREAM_VERSION = 'raw-sse-v1' as const;
 export const MAX_BATCH_BYTES = 8192;
 export const MAX_COMMIT_BYTES = 64 * 1024;
-export const MAX_STREAM_BYTES = 4 * 1024 * 1024;
 const encoder = new TextEncoder();
 export const payloadBytes = (payload: string) => encoder.encode(payload).byteLength;
 
@@ -52,8 +51,7 @@ export function validateBatch(batch: StreamBatch): Uint8Array {
     !bytes.length ||
     bytes.length > MAX_BATCH_BYTES ||
     encodeBytes(bytes) !== batch.data ||
-    batch.endOffset !== batch.startOffset + bytes.length ||
-    batch.endOffset > MAX_STREAM_BYTES
+    batch.endOffset !== batch.startOffset + bytes.length
   )
     throw new Error('Invalid stream batch size or offset');
   return bytes;

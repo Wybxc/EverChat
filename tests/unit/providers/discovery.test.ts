@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { fetchProviderModels } from '../../../worker/providers/models';
+import { MAX_PROVIDER_MODELS } from '../../../shared/providers/limits';
 
 const profileId = '00000000-0000-4000-8000-000000000012';
 
@@ -77,4 +78,58 @@ test('model discovery sanitizes upstream errors and requires a stored key', asyn
     () => fetchProviderModels({ ...settings.providers[0], apiKey: undefined }),
     /API 密钥/,
   );
+});
+
+test('model discovery follows more than five pages and preserves more than 200 unique models', async (t) => {
+  let calls = 0;
+  t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
+    const url = new URL(input instanceof Request ? input.url : input.toString());
+    const page = Number(url.searchParams.get('pageToken') ?? 0);
+    calls++;
+    return Response.json({
+      models: Array.from({ length: 100 }, (_, i) => ({ name: `models/m-${page * 100 + i}` })),
+      ...(page < 7 ? { nextPageToken: String(page + 1) } : {}),
+    });
+  });
+  const models = await fetchProviderModels({ ...settings.providers[0], provider: 'gemini' });
+  assert.equal(calls, 8);
+  assert.equal(models.length, 800);
+  assert.ok(models.some(({ id }) => id === 'm-799'));
+});
+
+test('discovery rejects count overflow and cursor cycles instead of returning a silently truncated list', async (t) => {
+  const mock = t.mock.method(globalThis, 'fetch', async () =>
+    Response.json({
+      data: Array.from({ length: MAX_PROVIDER_MODELS + 1 }, (_, i) => ({ id: `m-${i}` })),
+    }),
+  );
+  await assert.rejects(fetchProviderModels(settings.providers[0]), /1000/);
+  mock.mock.mockImplementation(async () =>
+    Response.json({ data: [{ id: 'm' }], has_more: true, last_id: 'm' }),
+  );
+  await assert.rejects(
+    fetchProviderModels({ ...settings.providers[0], provider: 'anthropic' }),
+    /游标重复/,
+  );
+});
+
+test('discovery cancels oversized streamed pages before parsing them', async (t) => {
+  let cancelled = false;
+  t.mock.method(
+    globalThis,
+    'fetch',
+    async () =>
+      new Response(
+        new ReadableStream({
+          pull(controller) {
+            controller.enqueue(new Uint8Array(256 * 1024).fill(32));
+          },
+          cancel() {
+            cancelled = true;
+          },
+        }),
+      ),
+  );
+  await assert.rejects(fetchProviderModels(settings.providers[0]), /大小保护/);
+  assert.ok(cancelled);
 });

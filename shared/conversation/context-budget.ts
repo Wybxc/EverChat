@@ -1,3 +1,4 @@
+import { MAX_SQL_PAYLOAD_BYTES } from './limits';
 import { assertDocumentContext, documentTokens, type DocumentPart } from '../attachments/documents';
 import * as v from 'valibot';
 import { branchPath } from './branch-path';
@@ -199,6 +200,23 @@ export function buildContext(
   assertImageContext(messages, config);
   assertDocumentContext(messages);
   return { messages, estimate };
+}
+
+// Only validate contexts that will actually be persisted, not an intermediate
+// planning result that will be replaced by automatic compression.
+export function assertStoredContextFits(
+  messages: ChatInput[],
+  config: Pick<ProviderConfig, 'systemPrompt'>,
+) {
+  const encoder = new TextEncoder();
+  if (
+    encoder.encode(JSON.stringify(messages)).byteLength +
+      encoder.encode(JSON.stringify(config)).byteLength >
+    MAX_SQL_PAYLOAD_BYTES
+  )
+    throw new ContextBudgetError(
+      '本次上下文与供应商配置超过云端单次任务的存储保护大小。请减少携带的历史或先生成摘要。',
+    );
 }
 
 export function assertContextFits(estimate: ContextEstimate) {

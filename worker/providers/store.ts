@@ -1,3 +1,4 @@
+import { ProviderModelError, fetchProviderModels } from './models';
 import { MAX_BACKUP_BYTES, type BackupSettings } from '../../shared/backup/backup';
 import { DEFAULT_TITLE_SETTINGS, type TitleSettings } from '../../shared/conversation/titles';
 import { chatModels } from '../../shared/models/selection';
@@ -166,8 +167,30 @@ export class ProviderSettingsStore {
     };
   }
 
-  providerForModelList(id: string): ProviderModelConfig | null {
-    return this.providerSettingsData().providers.find((profile) => profile.id === id) ?? null;
+  providerForModelList(id: string, model?: string): ProviderModelConfig | null {
+    const profile = this.providerSettingsData().providers.find((profile) => profile.id === id);
+    return profile
+      ? {
+          ...profile,
+          models: model ? profile.models.filter((entry) => entry.id === model) : profile.models,
+        }
+      : null;
+  }
+
+  async providerModelsResponse(id: string): Promise<Response> {
+    const profile = this.providerForModelList(id);
+    if (!profile) return json({ error: '找不到这个供应商。' }, 404);
+    try {
+      // Parse directories in the owning DO rather than the 10 ms Free HTTP Worker.
+      return json({ models: await fetchProviderModels(profile) });
+    } catch (error) {
+      return error instanceof ProviderModelError
+        ? json(
+            { error: error.message, code: 'PROVIDER_ERROR', failure: error.details },
+            error.status,
+          )
+        : json({ error: '获取模型列表失败。' }, 502);
+    }
   }
 
   saveProviderSettings(

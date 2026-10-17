@@ -124,7 +124,7 @@ export async function parseBody<TSchema extends v.GenericSchema>(
     size += value.byteLength;
     if (size > (options.maxBytes ?? 64_000)) {
       await reader.cancel();
-      throw new HttpError(413, options.tooLarge ?? '消息太长，请控制在 16,000 字以内。');
+      throw new HttpError(413, options.tooLarge ?? '请求超过此接口的大小保护限制。');
     }
     text += decoder.decode(value, { stream: true });
   }

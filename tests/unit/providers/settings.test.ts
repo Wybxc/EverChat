@@ -1,3 +1,6 @@
+import { MAX_MODEL_TOKENS } from '../../../shared/models/metadata';
+import { MAX_PROVIDER_MODELS } from '../../../shared/providers/limits';
+import { MAX_SYSTEM_PROMPT_LENGTH } from '../../../shared/conversation/limits';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { ProviderKind, ProviderSettingsInput } from '../../../shared/providers/types';
@@ -28,6 +31,38 @@ const settings = {
   systemPrompt: 'system',
   maxOutputTokens: 128,
 };
+
+test('large model lists, prompts and explicit output limits share their new save bounds', () => {
+  const models = [
+    settings.providers[0].models[0],
+    ...Array.from({ length: MAX_PROVIDER_MODELS - 1 }, (_, i) => ({
+      id: `model-${i}`,
+      name: `Model ${i}`,
+      enabled: false,
+    })),
+  ];
+  const input = {
+    ...settings,
+    systemPrompt: 'x'.repeat(MAX_SYSTEM_PROMPT_LENGTH),
+    maxOutputTokens: 200_000,
+    providers: [{ ...settings.providers[0], models }],
+  };
+  const saved = mergeProviderSettings(settings, input);
+  assert.equal(saved.providers[0].models.length, MAX_PROVIDER_MODELS);
+  assert.equal(saved.systemPrompt, input.systemPrompt);
+  assert.equal(runtimeProviderConfig(saved)?.maxOutputTokens, 200_000);
+  assert.throws(() =>
+    mergeProviderSettings(settings, {
+      ...input,
+      providers: [
+        {
+          ...input.providers[0],
+          models: [...models, { id: 'overflow', name: '', enabled: false }],
+        },
+      ],
+    }),
+  );
+});
 
 test('output limits default to unset while explicit configured limits remain available', () => {
   const env = {
@@ -215,7 +250,7 @@ test('provider profiles reject insecure endpoints, duplicate models and invalid 
       }),
     );
   }
-  for (const maxOutputTokens of [0, -1, 0.5, 100001])
+  for (const maxOutputTokens of [0, -1, 0.5, MAX_MODEL_TOKENS + 1])
     assert.throws(() => mergeProviderSettings(settings, { ...settings, maxOutputTokens }));
   assert.throws(() =>
     mergeProviderSettings(settings, {

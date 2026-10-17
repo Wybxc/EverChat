@@ -1,3 +1,4 @@
+import { MAX_SYSTEM_PROMPT_LENGTH } from '../../../shared/conversation/limits';
 import { expect, test, type APIRequestContext } from '@playwright/test';
 import WebSocket from 'ws';
 import { DEFAULT_CONVERSATION_SETTINGS as defaults } from '../../../shared/conversation/settings';
@@ -129,7 +130,7 @@ test('conversation settings validate, inherit and pin task configuration, and su
       { topP: -1 },
       { maxOutputTokens: 0 },
       { maxOutputTokens: 1.2 },
-      { systemPrompt: 'x'.repeat(20001) },
+      { systemPrompt: 'x'.repeat(MAX_SYSTEM_PROMPT_LENGTH + 1) },
       { apiKey: 'unexpected' },
     ])
       expect((await fixture.save({ ...defaults, ...patch } as ConversationSettings)).status()).toBe(

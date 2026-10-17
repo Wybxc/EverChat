@@ -1,3 +1,8 @@
+import {
+  MAX_MESSAGE_TEXT_BYTES,
+  MAX_SYSTEM_PROMPT_LENGTH,
+  MESSAGE_TEXT_LIMIT_MESSAGE,
+} from '../../shared/conversation/limits';
 import * as v from 'valibot';
 import { MAX_MESSAGE_DOCUMENTS } from '../../shared/attachments/documents';
 import { MAX_MESSAGE_IMAGES } from '../../shared/attachments/images';
@@ -52,7 +57,7 @@ const cancelSchema = v.object({ runId: uuidSchema });
 
 const assistantEditSchema = v.object({
   requestId: uuidSchema,
-  content: v.pipe(v.string(), v.maxLength(100_000)),
+  content: v.pipe(v.string(), v.maxLength(MAX_MESSAGE_TEXT_BYTES)),
 });
 
 export function registerConversationRoutes(app: ApiRouter) {
@@ -69,7 +74,7 @@ export function registerConversationRoutes(app: ApiRouter) {
     const id = conversationId(context);
     await requireConversation(context, id);
     const settings = await parseBody(context, conversationSettingsSchema, {
-      maxBytes: 160_000,
+      maxBytes: MAX_SYSTEM_PROMPT_LENGTH * 6 + 4096,
       tooLarge: '会话参数太长。',
     });
     const result = await context.env.CONVERSATIONS.getByName(id).saveSettings(id, settings);
@@ -108,7 +113,7 @@ export function registerConversationRoutes(app: ApiRouter) {
     const id = conversationId(context);
     const library = await requireConversation(context, id);
     const input = (await parseBody(context, submitSchema, {
-      maxBytes: 240_000,
+      maxBytes: MAX_MESSAGE_TEXT_BYTES + MAX_SYSTEM_PROMPT_LENGTH * 6 + 8192,
       tooLarge: '消息或会话参数太长。',
     })) as SubmitInput;
     if (
@@ -171,8 +176,8 @@ export function registerConversationRoutes(app: ApiRouter) {
     if (!v.safeParse(uuidSchema, messageId).success) throw new HttpError(404, '找不到这条消息。');
     const library = await requireConversation(context, id);
     const input = await parseBody(context, assistantEditSchema, {
-      maxBytes: 640_000,
-      tooLarge: '回答太长，请控制在 100,000 字以内。',
+      maxBytes: MAX_MESSAGE_TEXT_BYTES + 4096,
+      tooLarge: MESSAGE_TEXT_LIMIT_MESSAGE,
     });
     const result = await context.env.CONVERSATIONS.getByName(id).reviseAssistant(
       id,

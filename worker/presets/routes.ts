@@ -1,3 +1,4 @@
+import { MAX_SYSTEM_PROMPT_LENGTH } from '../../shared/conversation/limits';
 import * as v from 'valibot';
 import { promptPresetInputSchema } from '../../shared/presets/schema';
 import { requireAuth, uuidSchema } from '../http/access';
@@ -15,7 +16,7 @@ export function registerPresetsRoutes(app: ApiRouter) {
     const id = context.req.param('id');
     if (!v.safeParse(uuidSchema, id).success) throw new HttpError(404, '找不到这个预设。');
     const input = await parseBody(context, promptPresetInputSchema, {
-      maxBytes: 160_000,
+      maxBytes: MAX_SYSTEM_PROMPT_LENGTH * 6 + 4096,
       tooLarge: '提示词预设太长。',
     });
     const result = await context.env.LIBRARY.getByName('personal').savePromptPreset(id, input);

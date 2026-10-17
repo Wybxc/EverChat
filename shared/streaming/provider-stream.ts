@@ -1,8 +1,15 @@
 import { createParser, type EventSourceParser } from 'eventsource-parser';
+import {
+  MAX_MESSAGE_TEXT_BYTES,
+  MESSAGE_TEXT_LIMIT_MESSAGE,
+  jsonTextBytes,
+  textWithinBytes,
+} from '../conversation/limits';
 import type { ProviderKind } from '../providers/types';
 
-export const MAX_EVENT_CHARACTERS = 256 * 1024;
-const LIMIT = 100_000;
+export const MAX_EVENT_CHARACTERS = 1024 * 1024;
+const MAX_TAIL_JSON_BYTES = 1024 * 1024;
+const EVENT_LIMIT_MESSAGE = '供应商单个流事件超过解析缓冲大小，已保留可解析的内容。';
 export interface StreamUsage {
   inputTokens?: number;
   outputTokens?: number;
@@ -71,6 +78,8 @@ export class ProviderStream {
   private state: StreamState;
   private readonly parser: EventSourceParser;
   private deltas: ParsedDelta[] = [];
+  private contentBytes: number;
+  private reasoningBytes: number;
   constructor(
     protocol: ProviderKind,
     showReasoning: boolean,
@@ -81,6 +90,8 @@ export class ProviderStream {
   ) {
     this.content = content;
     this.reasoning = reasoning;
+    this.contentBytes = jsonTextBytes(content);
+    this.reasoningBytes = jsonTextBytes(reasoning);
     this.state = checkpoint
       ? structuredClone(checkpoint)
       : {
@@ -102,7 +113,7 @@ export class ProviderStream {
       maxBufferSize: MAX_EVENT_CHARACTERS,
       onEvent: (event) => this.event(event.data),
       onError: (error) => {
-        if (error.type === 'max-buffer-size-exceeded') this.fail('供应商流事件超过原型限制。');
+        if (error.type === 'max-buffer-size-exceeded') this.fail(EVENT_LIMIT_MESSAGE);
       },
     });
     if (this.state.tail) this.parser.feed(this.state.tail);
@@ -152,7 +163,11 @@ export class ProviderStream {
       this.parser.feed(text);
       if (this.state.failure) return;
       this.state.tail = unfinishedSseTail(this.state.tail + text);
-      if (this.state.tail.length > MAX_EVENT_CHARACTERS) this.fail('供应商流事件超过原型限制。');
+      if (
+        this.state.tail.length > MAX_EVENT_CHARACTERS ||
+        jsonTextBytes(this.state.tail) > MAX_TAIL_JSON_BYTES
+      )
+        this.fail(EVENT_LIMIT_MESSAGE);
     } catch {
       this.fail('供应商流格式无效。已保存部分内容，请主动重新生成。');
     }
@@ -187,28 +202,28 @@ export class ProviderStream {
     this.state.tail = '';
     this.state.utf8 = '';
   }
-  private append(kind: 'content' | 'reasoning', value: unknown) {
-    if (this.state.failure) return;
+  private append(kind: 'content' | 'reasoning', value: unknown): string {
+    if (this.state.failure) return '';
     const text = string(value);
-    if (!text) return;
-    if (kind === 'reasoning' && !this.state.showReasoning) return;
+    if (!text) return '';
+    if (kind === 'reasoning' && !this.state.showReasoning) return '';
     this.state[kind === 'content' ? 'textDeltas' : 'reasoningDeltas']++;
-    let accepted = text.slice(0, Math.max(0, LIMIT - this[kind].length));
-    if (
-      accepted.length < text.length &&
-      /[\uD800-\uDBFF]$/.test(accepted) &&
-      /[\uDC00-\uDFFF]/.test(text[accepted.length])
-    )
-      accepted = accepted.slice(0, -1);
+    // Joining split surrogate pairs changes their JSON byte cost from 12 to 4.
+    const joinsPair = /^[\uDC00-\uDFFF]/.test(text) && /[\uD800-\uDBFF]$/.test(this[kind]);
+    const available =
+      MAX_MESSAGE_TEXT_BYTES - this.contentBytes - this.reasoningBytes + (joinsPair ? 8 : 0);
+    const deltaBytes = jsonTextBytes(text);
+    const accepted = deltaBytes <= available ? text : textWithinBytes(text, available);
+    const bytes =
+      (accepted === text ? deltaBytes : jsonTextBytes(accepted)) - (joinsPair && accepted ? 8 : 0);
     this[kind] += accepted;
+    if (kind === 'content') this.contentBytes += bytes;
+    else this.reasoningBytes += bytes;
     if (accepted) this.deltas.push({ kind, text: accepted });
-    if (accepted.length !== text.length)
-      this.fail(
-        kind === 'content'
-          ? '回答已达到 100,000 字的原型限制。'
-          : '思考内容已达到 100,000 字的原型限制。',
-      );
+    if (accepted.length !== text.length) this.fail(MESSAGE_TEXT_LIMIT_MESSAGE);
+    return accepted;
   }
+
   private usage(value: unknown, kind: ProviderKind) {
     const usage = object(value),
       inputDetails = object(usage.input_tokens_details ?? usage.prompt_tokens_details),
@@ -270,7 +285,7 @@ export class ProviderStream {
   private event(data: string) {
     if (this.state.failure) return;
     if (data.length > MAX_EVENT_CHARACTERS) {
-      this.fail('供应商流事件超过原型限制。');
+      this.fail(EVENT_LIMIT_MESSAGE);
       return;
     }
     if (data === '[DONE]') {
@@ -365,14 +380,14 @@ export class ProviderStream {
   private responseThought(event: Record<string, unknown>, channel: 'raw' | 'summary') {
     if (!this.state.showReasoning) return;
     if (string(event.item_id).length > 200) {
-      this.fail('思考片段标识超过原型限制。');
+      this.fail('供应商思考片段标识超过长度保护。');
       return;
     }
     const id = `${string(event.item_id)}:${number(event.content_index ?? event.summary_index) ?? 0}`;
     let part = this.state.thoughts.find((part) => part.id === id);
     if (!part) {
-      if (this.state.thoughts.length >= 64) {
-        this.fail('思考片段超过原型限制。');
+      if (this.state.thoughts.length >= 256) {
+        this.fail('供应商思考片段数量超过解析状态容量。');
         return;
       }
       part = { id, raw: '', summary: '' };
@@ -381,19 +396,21 @@ export class ProviderStream {
     const delta = string(event.delta);
     if (!delta) return;
     if (channel === 'summary' && part.raw) return;
+    if (part === this.state.thoughts.at(-1) && !(channel === 'raw' && part.summary)) {
+      // The usual ordered stream only appends. Avoid re-encoding and joining the
+      // entire growing thought on every token; replacement/reordering uses the path below.
+      part[channel] += this.append('reasoning', delta);
+      return;
+    }
     const previous = this.reasoning;
+    const otherBytes = this.reasoningBytes - jsonTextBytes(part.raw || part.summary);
     if (channel === 'raw') part.summary = '';
-    part[channel] += delta;
+    const next = part[channel] + delta;
+    part[channel] = textWithinBytes(next, MAX_MESSAGE_TEXT_BYTES - this.contentBytes - otherBytes);
     this.state.reasoningDeltas++;
-    const next = this.state.thoughts.map((part) => part.raw || part.summary).join('');
-    this.reasoning = next.slice(0, LIMIT);
-    if (
-      next.length > LIMIT &&
-      /[\uD800-\uDBFF]$/.test(this.reasoning) &&
-      /[\uDC00-\uDFFF]/.test(next[LIMIT])
-    )
-      this.reasoning = this.reasoning.slice(0, -1);
-    if (next.length > LIMIT) this.fail('思考内容已达到 100,000 字的原型限制。');
+    this.reasoning = this.state.thoughts.map((part) => part.raw || part.summary).join('');
+    this.reasoningBytes = jsonTextBytes(this.reasoning);
+    if (part[channel].length !== next.length) this.fail(MESSAGE_TEXT_LIMIT_MESSAGE);
     // Consumers that append deltas only are used for supplier tests; the UI uses the full decoded view.
     if (this.reasoning.startsWith(previous))
       this.deltas.push({ kind: 'reasoning', text: this.reasoning.slice(previous.length) });

@@ -1,3 +1,6 @@
+import { MAX_PROVIDER_MODELS } from '../providers/limits';
+import { MAX_MODEL_TOKENS } from '../models/metadata';
+import { MAX_SYSTEM_PROMPT_LENGTH } from '../conversation/limits';
 import * as v from 'valibot';
 import { conversationSettingsSchema } from '../conversation/settings';
 import { addGenerationUsage, generationSchema } from '../streaming/generation';
@@ -265,12 +268,12 @@ export function validateBackup(value: unknown): EverChatBackup {
     settings.providers.length > 50 ||
     !nullableString(settings.activeProviderId, 64) ||
     !isString(settings.activeModel, 200) ||
-    !isString(settings.systemPrompt, 20_000) ||
+    !isString(settings.systemPrompt, MAX_SYSTEM_PROMPT_LENGTH) ||
     !(
       settings.maxOutputTokens === null ||
       (Number.isSafeInteger(settings.maxOutputTokens) &&
         Number(settings.maxOutputTokens) > 0 &&
-        Number(settings.maxOutputTokens) <= 100_000)
+        Number(settings.maxOutputTokens) <= MAX_MODEL_TOKENS)
     )
   )
     throw new Error('备份中的配置无效。');
@@ -285,7 +288,7 @@ export function validateBackup(value: unknown): EverChatBackup {
       ) ||
       !isString(provider.baseUrl, 2048) ||
       !Array.isArray(provider.models) ||
-      provider.models.length > 200
+      provider.models.length > MAX_PROVIDER_MODELS
     )
       throw new Error('备份中的供应商配置无效。');
     const models = provider.models.map((model) => {

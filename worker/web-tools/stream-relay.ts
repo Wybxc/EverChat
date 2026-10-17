@@ -34,7 +34,7 @@ export class ToolStreamRelay {
   }
   add(bytes: Uint8Array) {
     if ((this.received += bytes.byteLength) > MAX_TOOL_TURN_WIRE_BYTES)
-      throw new ProviderError('工具响应超过 2 MiB 的原型限制。');
+      throw new ProviderError('工具响应超过 8 MiB 的续接保护大小，已保留收到的正文和思考。');
     this.privateBytes(bytes);
     this.parser.feed(bytes);
     this.deltas();

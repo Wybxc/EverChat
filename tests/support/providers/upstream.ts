@@ -18,6 +18,10 @@ export function installMockUpstream() {
     ) {
       return Response.json({ error: { message: 'Unauthorized' } }, { status: 401 });
     }
+    if (url.pathname === '/large/models')
+      return Response.json({
+        data: Array.from({ length: 350 }, (_, i) => ({ id: `catalog-${i}` })),
+      });
     if (url.pathname === '/v1/models') {
       if (request.headers.has('x-api-key'))
         return Response.json({
@@ -76,6 +80,26 @@ export function installMockUpstream() {
     };
     const encoder = new TextEncoder();
     const modelId = requestBody.model ?? /\/models\/([^/:]+):/.exec(url.pathname)?.[1];
+    if (modelId === 'alarm-free-tier-large') {
+      let step = 0;
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          pull(controller) {
+            if (step++ < 160) {
+              controller.enqueue(encoder.encode(`: ${'keepalive '.repeat(3277)}\n\n`));
+            } else {
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: '思'.repeat(110_000), content: '答'.repeat(110_000) }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`,
+                ),
+              );
+              controller.close();
+            }
+          },
+        }),
+        { headers: { 'Content-Type': 'text/event-stream' } },
+      );
+    }
     if (modelId?.startsWith('title-fixture-')) {
       const data = requestBody as typeof requestBody & {
         max_tokens?: number;

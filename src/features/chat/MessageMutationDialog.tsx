@@ -1,3 +1,4 @@
+import { MAX_MESSAGE_TEXT_BYTES } from '../../../shared/conversation/limits';
 import { Modal, ModalTitle } from '../../components/Modal';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -88,7 +89,7 @@ export function MessageMutationDialog({
               ref={input}
               aria-label="回答内容"
               className="h-72 min-h-32 w-full shrink overflow-y-auto"
-              maxLength={100000}
+              maxLength={MAX_MESSAGE_TEXT_BYTES}
               value={content}
               onChange={(event) => setContent(event.target.value)}
               disabled={busy}

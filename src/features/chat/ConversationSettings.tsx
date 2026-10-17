@@ -1,3 +1,5 @@
+import { MAX_MODEL_TOKENS } from '../../../shared/models/metadata';
+import { MAX_SYSTEM_PROMPT_LENGTH } from '../../../shared/conversation/limits';
 import { Modal, ModalTitle } from '../../components/Modal';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -285,7 +287,7 @@ export function ConversationSettingsDialog({
                   <Textarea
                     className="min-h-32 w-full border-input"
                     aria-label="会话系统提示词"
-                    maxLength={20000}
+                    maxLength={MAX_SYSTEM_PROMPT_LENGTH}
                     value={settings.systemPrompt}
                     onChange={(event) => update({ systemPrompt: event.currentTarget.value })}
                   />
@@ -368,7 +370,7 @@ export function ConversationSettingsDialog({
                   label="输出 Token 上限"
                   value={settings.maxOutputTokens}
                   min={1}
-                  max={100000}
+                  max={MAX_MODEL_TOKENS}
                   integer
                   change={(maxOutputTokens) => update({ maxOutputTokens })}
                 />

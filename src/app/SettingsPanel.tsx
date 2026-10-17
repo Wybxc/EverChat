@@ -1,3 +1,5 @@
+import { MAX_MODEL_TOKENS } from '../../shared/models/metadata';
+import { MAX_SYSTEM_PROMPT_LENGTH } from '../../shared/conversation/limits';
 import { storageEpoch } from '../platform/storage';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -372,7 +374,7 @@ function SettingsForm({
           <Textarea
             id="provider-prompt"
             rows={6}
-            maxLength={20000}
+            maxLength={MAX_SYSTEM_PROMPT_LENGTH}
             className="w-full border-input"
             value={settings.systemPrompt}
             onChange={(event) => update({ ...settings, systemPrompt: event.target.value })}
@@ -386,7 +388,7 @@ function SettingsForm({
             id="provider-tokens"
             type="number"
             min={1}
-            max={100000}
+            max={MAX_MODEL_TOKENS}
             step={1}
             placeholder="不设置"
             className="w-full border-input sm:max-w-48"

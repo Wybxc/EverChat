@@ -4,7 +4,7 @@ import { editModel, openSpaceSettings } from '../../support/browser/ui';
 
 const headers = { Origin: 'http://127.0.0.1:5174' };
 
-test('mobile settings browse 200 compact models, mount one editor, preserve edits and confirm deletion', async ({
+test('mobile settings browse 320 compact models, mount one editor, preserve edits and confirm deletion', async ({
   page,
 }) => {
   await page.request.post('/__dev/access/login', { headers });
@@ -28,7 +28,7 @@ test('mobile settings browse 200 compact models, mount one editor, preserve edit
                 provider: 'openai-chat',
                 baseUrl: 'https://provider.test/v1',
                 apiKey: 'integration-test-key',
-                models: Array.from({ length: 200 }, (_, index) => ({
+                models: Array.from({ length: 320 }, (_, index) => ({
                   id: `model-${index}`,
                   name: `模型 ${index}`,
                   enabled: index === 0,
@@ -49,20 +49,20 @@ test('mobile settings browse 200 compact models, mount one editor, preserve edit
     await expect(page.getByLabel('名称', { exact: true })).not.toBeVisible();
     await page.getByRole('button', { name: '大模型列表', exact: false }).click();
     await expect(page.getByRole('button', { name: '供应商列表', exact: true })).toBeFocused();
-    await expect(page.getByTestId('provider-model-row')).toHaveCount(200);
+    await expect(page.getByTestId('provider-model-row')).toHaveCount(320);
     await expect(page.locator('input[aria-label^="模型 ID"]')).toHaveCount(0);
-    await page.getByLabel('筛选模型').fill('model-199');
+    await page.getByLabel('筛选模型').fill('model-319');
     await expect(page.getByTestId('provider-model-row')).toHaveCount(1);
-    await page.getByLabel('启用模型 模型 199', { exact: true }).check();
-    await editModel(page, 200);
+    await page.getByLabel('启用模型 模型 319', { exact: true }).check();
+    await editModel(page, 320);
     await expect(page.locator('input[aria-label^="模型 ID"]')).toHaveCount(1);
-    await page.getByLabel('模型显示名 200', { exact: true }).fill('已自定义');
+    await page.getByLabel('模型显示名 320', { exact: true }).fill('已自定义');
     await expect(page.getByTestId('settings-save-status')).toHaveText('已保存');
     const saved = (await page.request
       .get('/api/settings/providers')
       .then((response) => response.json())) as ProviderSettings;
-    expect(saved.providers[0].models[199]).toMatchObject({
-      id: 'model-199',
+    expect(saved.providers[0].models[319]).toMatchObject({
+      id: 'model-319',
       name: '已自定义',
       enabled: true,
     });
@@ -73,14 +73,28 @@ test('mobile settings browse 200 compact models, mount one editor, preserve edit
     expect(
       (await page.request.get('/api/settings/providers').then((response) => response.json()))
         .providers[0].models,
-    ).toHaveLength(200);
+    ).toHaveLength(320);
     await page.getByRole('button', { name: '删除模型 已自定义', exact: true }).click();
     await confirmation.getByRole('button', { name: '确认删除', exact: true }).click();
     await expect(page.getByTestId('settings-save-status')).toHaveText('已保存');
     expect(
       (await page.request.get('/api/settings/providers').then((response) => response.json()))
         .providers[0].models,
-    ).toHaveLength(199);
+    ).toHaveLength(319);
+    await page.getByLabel('筛选模型').fill('');
+    await page.getByLabel('API 端点', { exact: true }).fill('https://provider.test/large');
+    await expect(page.getByTestId('settings-save-status')).toHaveText('已保存');
+    await page.getByRole('button', { name: '获取', exact: true }).click();
+    await expect(page.getByText('已获取 350 个模型', { exact: true })).toBeVisible();
+    await expect(page.getByTestId('provider-model-row')).toHaveCount(669);
+    const merged = (await page.request
+      .get('/api/settings/providers')
+      .then((r) => r.json())) as ProviderSettings;
+    expect(merged.providers[0].models).toHaveLength(669);
+    expect(merged.providers[0].models[0]).toMatchObject({ id: 'model-0', enabled: true });
+    expect(merged.providers[0].models.find((model) => model.id === 'catalog-349')).toMatchObject({
+      enabled: false,
+    });
     await page.getByRole('button', { name: '供应商列表', exact: true }).click();
     await expect(page.getByRole('button', { name: '大模型列表', exact: false })).toBeFocused();
     await expect(page.getByLabel('名称', { exact: true })).not.toBeVisible();

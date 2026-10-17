@@ -1,3 +1,4 @@
+import { MAX_PROVIDER_MODELS, MODEL_LIST_LIMIT_MESSAGE } from '../../../shared/providers/limits';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -312,6 +313,10 @@ export function ProviderEditor({
       await store.flush();
       const result = await api<{ models: DiscoveredModel[] }>(
         `/settings/providers/${target.id}/models`,
+        'GET',
+        undefined,
+        undefined,
+        60_000,
       );
       const current = store.getSnapshot().settings;
       const profile = current.providers.find((profile) => profile.id === target.id);
@@ -328,7 +333,8 @@ export function ProviderEditor({
         ...result.models
           .filter((model) => !existing.has(model.id))
           .map((model) => ({ ...model, enabled: false })),
-      ].slice(0, 200);
+      ];
+      if (models.length > MAX_PROVIDER_MODELS) throw new Error(MODEL_LIST_LIMIT_MESSAGE);
       update({
         ...current,
         providers: current.providers.map((profile) =>
@@ -352,8 +358,8 @@ export function ProviderEditor({
       setNotice('模型 ID 已存在');
       return;
     }
-    if (selected.models.length >= 200) {
-      setNotice('最多添加 200 个模型');
+    if (selected.models.length >= MAX_PROVIDER_MODELS) {
+      setNotice(MODEL_LIST_LIMIT_MESSAGE);
       return;
     }
     update(

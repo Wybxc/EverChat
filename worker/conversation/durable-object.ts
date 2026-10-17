@@ -1,3 +1,4 @@
+import { MESSAGE_TEXT_LIMIT_MESSAGE, messageTextFits } from '../../shared/conversation/limits';
 import { DurableObject } from 'cloudflare:workers';
 import { DocumentError, type DocumentPart } from '../../shared/attachments/documents';
 import {
@@ -14,6 +15,7 @@ import {
 } from '../../shared/conversation/content';
 import {
   assertContextFits,
+  assertStoredContextFits,
   buildContext,
   ContextBudgetError,
   historyCountWithinLimit,
@@ -486,13 +488,13 @@ export class Conversation extends DurableObject<Env> {
         ).toArray().length
       )
         return { error: '请等待生成完成或先停止，再编辑消息。', status: 409 };
-      if (!content.trim() || content.trim().length > 100_000)
-        return { error: '请输入 1 到 100,000 字的回答。', status: 400 };
+      if (!content.trim() || !messageTextFits(content.trim()))
+        return { error: MESSAGE_TEXT_LIMIT_MESSAGE, status: 400 };
       if (this.ctx.storage.sql.databaseSize > MAX_DATABASE_START_BYTES)
         return { error: DATABASE_LIMIT_MESSAGE, status: 507 };
       const messages = this.messages.all();
       if (messages.length >= MAX_MESSAGES)
-        return { error: '此对话已达到原型的消息上限，请新建对话。', status: 507 };
+        return { error: '此对话已达到消息数量保护上限，请新建对话。', status: 507 };
       const revision: Message = {
         id: crypto.randomUUID(),
         role: 'assistant',
@@ -685,12 +687,12 @@ export class Conversation extends DurableObject<Env> {
       }
       if (input.summaryThrough) {
         if (messages.length >= MAX_MESSAGES)
-          return { error: '此对话已达到原型的消息上限，请新建对话。', status: 507 };
+          return { error: '此对话已达到消息数量保护上限，请新建对话。', status: 507 };
         if (
           messages.filter((message) => message.summary && !message.deletedAt).length >=
           MAX_SUMMARIES
         )
-          return { error: '摘要数量已达到原型上限，请删除旧摘要或新建对话。', status: 507 };
+          return { error: '摘要数量已达到容量上限，请删除旧摘要或新建对话。', status: 507 };
         let prepared;
         try {
           prepared = summaryGeneration(messages, input.summaryThrough, config);
@@ -775,8 +777,8 @@ export class Conversation extends DurableObject<Env> {
           : { value: [] as DocumentPart[] };
       if ('error' in documents) return documents;
       const files = documents.value;
-      if ((!content && !images.length && !files.length) || content.length > 16_000)
-        return { error: '请输入 1 到 16,000 字的消息。', status: 400 };
+      if ((!content && !images.length && !files.length) || !messageTextFits(content))
+        return { error: '请输入消息，正文须在 768 KiB 的存储保护大小以内。', status: 400 };
       const settings = input.settings ?? this.messages.settings();
       let generationConfig: ProviderConfig;
       try {
@@ -802,12 +804,12 @@ export class Conversation extends DurableObject<Env> {
         contextEstimate = built.estimate;
         if (built.automatic) {
           if (messages.length + (parent ? 2 : 3) > MAX_MESSAGES)
-            return { error: '此对话已达到原型的消息上限，请新建对话。', status: 507 };
+            return { error: '此对话已达到消息数量保护上限，请新建对话。', status: 507 };
           if (
             messages.filter((message) => message.summary && !message.deletedAt).length >=
             MAX_SUMMARIES
           )
-            return { error: '摘要数量已达到原型上限，请删除旧摘要或关闭自动压缩。', status: 507 };
+            return { error: '摘要数量已达到容量上限，请删除旧摘要或关闭自动压缩。', status: 507 };
           const summaryConfig = settings.autoCompression.model
             ? await this.env.LIBRARY.getByName('personal').providerConfig(
                 settings.autoCompression.model,
@@ -2011,6 +2013,7 @@ export class Conversation extends DurableObject<Env> {
             files,
           );
           assertContextFits(built.estimate);
+          assertStoredContextFits(built.messages, JSON.parse(run.config) as ProviderConfig);
           // Count limits can intentionally omit raw history; token pressure after compression must be explicit.
           if (
             built.estimate.retainedMessages <
