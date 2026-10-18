@@ -1,5 +1,13 @@
 import { Button } from '@/components/ui/button';
-import { Component, useEffect, useMemo, useState, type ReactNode } from 'react';
+import {
+  Component,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import type { PluginConfig, StreamdownProps } from 'streamdown';
 import { recoverApplicationResources } from '../../../platform/pwa/controller';
 
@@ -52,14 +60,41 @@ const markdownPluginLoaders = {
     ),
 };
 
+interface MarkdownBoundaryProps {
+  children: ReactNode;
+  fallback: ReactNode;
+  streaming: boolean;
+  container: RefObject<HTMLDivElement | null>;
+}
+type ScrollSnapshot = { element: HTMLElement; top: number }[];
+
 // Streamdown also loads internal React.lazy chunks, whose rejection escapes the plugin loaders.
-class MarkdownBoundary extends Component<
-  { children: ReactNode; fallback: ReactNode },
-  { failed: boolean }
-> {
+class MarkdownBoundary extends Component<MarkdownBoundaryProps, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() {
     return { failed: true };
+  }
+  getSnapshotBeforeUpdate(previous: MarkdownBoundaryProps): ScrollSnapshot | null {
+    if (!previous.streaming || this.props.streaming) return null;
+    const positions: ScrollSnapshot = [];
+    // Static rendering replaces the stream's blocks. WebKit can reset enclosing
+    // scroll panes during that commit, even when their final height is unchanged.
+    for (
+      let element = this.props.container.current?.parentElement;
+      element;
+      element = element.parentElement
+    )
+      if (element.scrollTop > 0) positions.push({ element, top: element.scrollTop });
+    return positions;
+  }
+  componentDidUpdate(
+    _previous: MarkdownBoundaryProps,
+    _state: { failed: boolean },
+    positions: ScrollSnapshot | null,
+  ) {
+    // Read the committed position first; unchanged panes need no programmatic scroll.
+    for (const { element, top } of positions ?? [])
+      if (element.isConnected && element.scrollTop !== top) element.scrollTop = top;
   }
   render() {
     return this.state.failed ? this.props.fallback : this.props.children;
@@ -105,6 +140,7 @@ export function MarkdownContent({
   searchId?: string;
   className?: string;
 }) {
+  const container = useRef<HTMLDivElement>(null);
   const [Renderer, setRenderer] = useState<MarkdownRenderer | null>(() => markdownRenderer);
   const [plugins, setPlugins] = useState<PluginConfig | null>(null);
   const [normalizeMath, setNormalizeMath] = useState<((source: string) => string) | null>(null);
@@ -169,8 +205,12 @@ export function MarkdownContent({
     [content, needsMath, normalizeMath, plugins?.math],
   );
   return (
-    <div data-search-content={searchId}>
-      <MarkdownBoundary fallback={<MarkdownFallback content={content} className={className} />}>
+    <div ref={container} data-search-content={searchId}>
+      <MarkdownBoundary
+        container={container}
+        streaming={streaming}
+        fallback={<MarkdownFallback content={content} className={className} />}
+      >
         {Renderer ? (
           <Renderer
             className={`${className} space-y-3`}

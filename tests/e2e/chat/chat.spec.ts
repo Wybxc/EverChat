@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { messageText } from '../../../shared/conversation/content';
 import { chooseChatModel, expectChatModel, openSpaceSettings } from '../../support/browser/ui';
@@ -398,20 +398,17 @@ test('DeepSeek-compatible Responses streams Markdown thoughts, persists them and
   await expect(thoughts.locator('[data-streamdown="strong"]')).toBeVisible();
 });
 
-test('streaming answers and thoughts follow the bottom, pause when scrolled up and resume at the bottom', async ({
-  page,
-  context,
-}) => {
+async function startScrollTest(page: Page) {
   await page.setViewportSize({ width: 900, height: 700 });
   await login(page);
-  const settings = await context.request
+  const settings = await page.request
     .get('/api/settings/providers')
     .then((response) => response.json());
   settings.providers[0].models = [{ id: 'scroll-test', name: '滚动测试', enabled: true }];
   settings.activeModel = 'scroll-test';
   expect(
     (
-      await context.request.put('/api/settings/providers', {
+      await page.request.put('/api/settings/providers', {
         headers: { Origin: origin },
         data: settings,
       })
@@ -423,13 +420,21 @@ test('streaming answers and thoughts follow the bottom, pause when scrolled up a
   const answer = page.getByTestId('assistant-message');
   const conversation = page.getByRole('region', { name: '对话消息' }).locator('..');
   const thoughts = answer.getByTestId('message-reasoning').locator('.overflow-y-auto');
-  const metrics = (pane: typeof conversation) =>
-    pane.evaluate((node) => ({
-      top: node.scrollTop,
-      height: node.scrollHeight,
-      gap: node.scrollHeight - node.scrollTop - node.clientHeight,
-      overflow: node.scrollHeight - node.clientHeight,
-    }));
+  return { answer, conversation, thoughts };
+}
+
+const metrics = (pane: Locator) =>
+  pane.evaluate((node) => ({
+    top: node.scrollTop,
+    height: node.scrollHeight,
+    gap: node.scrollHeight - node.scrollTop - node.clientHeight,
+    overflow: node.scrollHeight - node.clientHeight,
+  }));
+
+test('streaming answers and thoughts follow the bottom, pause when scrolled up and resume at the bottom', async ({
+  page,
+}) => {
+  const { answer, conversation, thoughts } = await startScrollTest(page);
   await expect.poll(async () => (await metrics(conversation)).overflow).toBeGreaterThan(400);
   await expect.poll(async () => (await metrics(thoughts)).overflow).toBeGreaterThan(300);
   const initial = await metrics(conversation);
@@ -480,6 +485,7 @@ test('streaming answers and thoughts follow the bottom, pause when scrolled up a
   await expect.poll(async () => (await metrics(thoughts)).gap).toBeLessThan(2);
   await expect(answer).toHaveAttribute('data-status', 'completed', { timeout: 30_000 });
   await expect.poll(async () => (await metrics(conversation)).gap).toBeLessThan(2);
+  await expect.poll(async () => (await metrics(thoughts)).gap).toBeLessThan(2);
   await conversation.evaluate((node) => {
     node.scrollTop -= 250;
   });
@@ -489,3 +495,34 @@ test('streaming answers and thoughts follow the bottom, pause when scrolled up a
   await expect(page.getByRole('heading', { name: '今天想聊些什么？' })).toBeVisible();
   await expect(page.getByRole('button', { name: '跳到底部' })).toHaveCount(0);
 });
+
+for (const status of ['completed', 'cancelled'] as const) {
+  test(`streaming answers preserve both reading positions when ${status}`, async ({ page }) => {
+    const { answer, conversation, thoughts } = await startScrollTest(page);
+    await expect.poll(async () => (await metrics(conversation)).overflow).toBeGreaterThan(700);
+    await expect.poll(async () => (await metrics(thoughts)).overflow).toBeGreaterThan(700);
+    for (const pane of [thoughts, conversation]) {
+      await pane.evaluate((node) => {
+        node.scrollTop -= 250;
+      });
+      await expect.poll(async () => (await metrics(pane)).gap).toBeGreaterThan(100);
+    }
+    const reading = await metrics(conversation),
+      readingThoughts = await metrics(thoughts);
+    await expect
+      .poll(async () => (await metrics(conversation)).height)
+      .toBeGreaterThan(reading.height + 50);
+    await expect
+      .poll(async () => (await metrics(thoughts)).height)
+      .toBeGreaterThan(readingThoughts.height + 50);
+    expect((await metrics(conversation)).top).toBeCloseTo(reading.top, 0);
+    expect((await metrics(thoughts)).top).toBeCloseTo(readingThoughts.top, 0);
+    await expect(answer).toHaveAttribute('data-status', 'running');
+    if (status === 'cancelled') await page.getByRole('button', { name: '停止生成' }).click();
+    await expect(answer).toHaveAttribute('data-status', status, { timeout: 30_000 });
+    await expect.poll(async () => (await metrics(conversation)).top).toBeCloseTo(reading.top, 0);
+    await expect
+      .poll(async () => (await metrics(thoughts)).top)
+      .toBeCloseTo(readingThoughts.top, 0);
+  });
+}

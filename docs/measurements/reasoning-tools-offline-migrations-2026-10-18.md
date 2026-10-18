@@ -18,9 +18,9 @@ Chromium 已验证四种模型协议的三段思考／两轮工具穿插、来�
 
 Library 重启／读取回归确认不创建历史迁移任务。生产只读检查搜索返回 200、`indexing: false`，现有历史索引已就绪；本次不改变 SQL 格式、不停机迁移生产数据。既有库版本门禁继续拒绝未完成离线迁移的旧格式。
 
-WebKit 四种协议的顺序展示、跨段搜索、DeepSeek Responses 思考恢复和折叠区搜索均通过。长回答滚动测试在流式结束时失败：主视口回到顶部，距底部 2,422 px；使用改造前的 MessageView 和 ToolActivity 完整对照仍在同一断言失败，属于既有滚动问题，未记为通过，也未在本次迁移改动中修复。
+WebKit 四种协议的顺序展示、跨段搜索、DeepSeek Responses 思考恢复和折叠区搜索均通过。当时长回答滚动测试在流式结束时失败：主视口回到顶部，距底部 2,422 px；使用改造前的 MessageView 和 ToolActivity 完整对照仍在同一断言失败，属于既有滚动问题，未记为通过。后续已定位到 Markdown 渲染模式切换并修复，见[调试与回归记录](webkit-stream-completion-scroll-2026-10-18.md)。
 
-离线迁移改造 `3421138` 已推送，Workers Builds 成功。思考展示改造继续采用 `main` 的 Workers Builds；推送成功不等同于部署完成，发布后核对构建与生产只读接口。
+离线迁移改造 `3421138` 和思考展示改造 `d9f8137` 均已推送，Workers Builds 成功。部署后只读核对首页、对话清单和搜索均返回 200，搜索 `indexing: false`，临时运维接口 `/api/__operations/identity` 返回 404。
 
 ## 证据边界
 
