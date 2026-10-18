@@ -5,6 +5,9 @@ import { resolve } from 'node:path';
 import { createTestHarness } from 'wrangler';
 import { migrateStorage } from '../../../scripts/operations/migrate-storage';
 import type { Statement } from '../../../scripts/operations/storage-protocol';
+import { rebuildSearch } from '../../../scripts/operations/rebuild-search';
+import { initializeConversation } from '../../../worker/conversation/schema';
+import type { SqlQuery } from '../../../worker/generation/metrics';
 
 test('native maintenance transport rejects anonymous HTTP, preserves unrelated state and atomically retries interrupted imports', async () => {
   const runId = crypto.randomUUID();
@@ -88,6 +91,7 @@ test('native maintenance transport rejects anonymous HTTP, preserves unrelated s
       ['copy', 'deleted', 'live'].map((name) => ({
         kind: 'conversation',
         id: conversations.CONVERSATIONS.idFromName(name).toString(),
+        name,
       })),
     );
     assert.deepEqual(
@@ -156,6 +160,62 @@ test('native maintenance transport rejects anonymous HTTP, preserves unrelated s
     ]);
     assert.equal((await request('cleanup')).status, 200);
     assert.deepEqual(await (await request('receipt')).json(), null);
+    // Index values are computed locally; workerd only imports prepared rows.
+    const source = new DatabaseSync(':memory:');
+    try {
+      const query: SqlQuery = <T extends Record<string, SqlStorageValue>>(
+        sql: string,
+        ...args: SqlStorageValue[]
+      ) => {
+        const rows = source.prepare(sql).all(...(args as (string | number | null)[])) as T[];
+        return {
+          toArray: () => rows,
+          one: () => rows[0],
+          *[Symbol.iterator]() {
+            yield* rows;
+          },
+        };
+      };
+      initializeConversation({ exec: query } as unknown as SqlStorage, false);
+      source.exec(
+        "INSERT INTO messages(id,role,content,reasoning,status,createdAt) VALUES ('a','assistant','**canonical** content','公开思考','completed',1)",
+      );
+      for (const sql of [
+        "ALTER TABLE conversations ADD COLUMN title TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE conversation_copies ADD COLUMN status TEXT NOT NULL DEFAULT 'completed'",
+        'CREATE TABLE archive_imports(id TEXT PRIMARY KEY,status TEXT)',
+      ]) {
+        local.exec(sql);
+        await remote.exec(sql);
+      }
+      const indexPatch = rebuildSearch(local, [{ id: 'live', db: source }]);
+      for (let page = 0; page < indexPatch.length; page++) {
+        try {
+          assert.equal(
+            (await request('apply', { job: 'offline-index', page, statements: [indexPatch[page]] }))
+              .status,
+            200,
+          );
+        } catch (cause) {
+          throw new Error(`Offline index patch failed at ${page}: ${indexPatch[page].sql}`, {
+            cause,
+          });
+        }
+      }
+      assert.deepEqual(
+        await remote.exec(
+          "SELECT text FROM search_fields JOIN search_fts ON search_fields.id=search_fts.rowid WHERE search_fts.normalized GLOB '*canonical*'",
+        ),
+        [{ text: 'canonical content' }],
+      );
+      assert.deepEqual(
+        await (await request('rows', { table: 'search_fts', offset: 0 })).json(),
+        [],
+      );
+      assert.equal((await request('cleanup')).status, 200);
+    } finally {
+      source.close();
+    }
   } finally {
     local.close();
     await harness.close();

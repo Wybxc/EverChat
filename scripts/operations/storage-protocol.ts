@@ -11,6 +11,11 @@ export interface TableSchema {
 export interface IndexSchema extends TableSchema {
   table: string;
 }
+export interface StorageSnapshot {
+  schema: TableSchema[];
+  indexes: IndexSchema[];
+  rows: Record<string, Record<string, WireValue>[]>;
+}
 export const MIGRATION_TABLES: Record<StoreKind, string[]> = {
   conversation: [
     'storage_schema',
@@ -25,6 +30,9 @@ export const MIGRATION_TABLES: Record<StoreKind, string[]> = {
     'message_versions',
     'generation_checkpoints',
     'message_content_chunks',
+    'message_search_versions',
+    'message_summaries',
+    'message_deletions',
   ],
   library: [
     'storage_schema',
@@ -32,6 +40,15 @@ export const MIGRATION_TABLES: Record<StoreKind, string[]> = {
     'conversation_copies',
     'web_tool_service',
     'web_tool_credentials',
+    'conversations',
+    'conversation_deletions',
+    'archive_imports',
+    'search_revision',
+    'search_messages',
+    'search_fields',
+    'search_fts',
+    'search_backfill',
+    'search_problems',
   ],
 };
 export const quoteIdentifier = (name: string) => `"${name.replaceAll('"', '""')}"`;

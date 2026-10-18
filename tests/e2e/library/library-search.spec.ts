@@ -39,6 +39,42 @@ async function seed(request: APIRequestContext, count = 1) {
   return id;
 }
 
+test('Library startup and reads do not enqueue historical data migrations', async ({ request }) => {
+  await request.post('/__dev/access/login', { headers });
+  const id = crypto.randomUUID();
+  try {
+    expect(
+      (
+        await request.post('/api/conversations', {
+          headers,
+          data: { id, title: '历史索引离线迁移' },
+        })
+      ).status(),
+    ).toBe(201);
+    expect((await control(request, { id }).then((r) => r.json())).progress).toBeNull();
+    expect(
+      (
+        await request.post(`/api/__test/conversations/${id}/indexed-history`, {
+          headers,
+          data: { count: 1 },
+        })
+      ).ok(),
+    ).toBe(true);
+    // Abort intentionally returns an error. The next RPC starts a new instance.
+    await request.post('/api/__test/library/attachments', {
+      headers,
+      data: { resetLibrary: true },
+    });
+    expect((await request.get('/api/conversations')).ok()).toBe(true);
+    await search(request, '全文TOKEN');
+    const state = await control(request, { id }).then((r) => r.json());
+    expect(state.progress).toBeNull();
+    expect(state.versions).toHaveLength(0);
+  } finally {
+    await request.delete(`/api/conversations/${id}`, { headers });
+  }
+});
+
 test('cross-conversation search uses paginated literal text and jumps to the matching body or thoughts', async ({
   page,
 }) => {

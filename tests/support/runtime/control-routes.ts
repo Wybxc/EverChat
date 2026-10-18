@@ -88,6 +88,12 @@ export function createTestWorker(
           );
         } catch (error) {
           if (
+            input.resetLibrary &&
+            error instanceof Error &&
+            error.message.includes('Intentional Library reset during R2 cleanup')
+          )
+            return Response.json({ restarted: true }, { status: 503 });
+          if (
             typeof input.noBucket === 'boolean' &&
             error instanceof Error &&
             error.message.includes('Intentional Library restart with changed R2 binding')

@@ -78,6 +78,7 @@ export class Conversation extends DurableObject {
         .filter((row) => input.tables?.includes(row.table));
     } else if (input.action === 'rows') {
       if (!input.tables?.includes(input.table!)) throw new Error('Table outside migration scope');
+      if (input.table === 'search_fts') return Response.json([]);
       const table = quoteIdentifier(input.table!);
       const keys = sql
         .exec<{ name: string; pk: number }>(`PRAGMA table_info(${table})`)
@@ -125,13 +126,15 @@ export class Conversation extends DurableObject {
         if (input.page !== (last?.job === input.job ? last.page + 1 : 0))
           throw new Error('Patch page gap');
         for (const statement of input.statements!)
-          sql.exec(
-            statement.sql,
-            ...statement.args.map((value) => {
-              const decoded = decodeValue(value);
-              return decoded instanceof Uint8Array ? (decoded.buffer as ArrayBuffer) : decoded;
-            }),
-          );
+          sql
+            .exec(
+              statement.sql,
+              ...statement.args.map((value) => {
+                const decoded = decodeValue(value);
+                return decoded instanceof Uint8Array ? (decoded.buffer as ArrayBuffer) : decoded;
+              }),
+            )
+            .toArray();
         sql.exec(
           'INSERT INTO ops_migration VALUES (1, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET job=excluded.job, page=excluded.page, digest=excluded.digest',
           input.job!,
@@ -186,6 +189,7 @@ async function dispatch(request: Request, env: OperationsEnv) {
       names.map((name) => ({
         kind: 'conversation',
         id: env.CONVERSATIONS.idFromName(name).toString(),
+        name,
       })),
     );
   }

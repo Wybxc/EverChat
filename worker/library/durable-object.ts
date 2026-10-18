@@ -135,12 +135,8 @@ export class Library extends DurableObject<Env> {
       )
       .toArray())
       this.interruptedImportFiles.add(row.id);
-    // Feature initialization reads existing messages in bounded pages, never on a search request.
-    ctx.storage.sql
-      .exec(`INSERT OR IGNORE INTO search_backfill(conversationId) SELECT id FROM conversations
-      WHERE NOT EXISTS (SELECT 1 FROM conversation_deletions WHERE conversation_deletions.id = conversations.id)
-      AND NOT EXISTS (SELECT 1 FROM conversation_copies WHERE conversation_copies.id = conversations.id AND conversation_copies.status != 'completed')
-      AND NOT EXISTS (SELECT 1 FROM archive_imports WHERE archive_imports.id = conversations.id AND archive_imports.status != 'completed')`);
+    // Historical indexing is an offline operation. Only explicit copy/import
+    // jobs may enqueue a full scan; ordinary writes use the conversation outbox.
     ctx.waitUntil(this.scheduleMaintenance());
   }
   private async scheduleMaintenance() {
@@ -269,11 +265,6 @@ export class Library extends DurableObject<Env> {
       now,
     );
     this.titles.create(id, source);
-    this.ctx.storage.sql.exec(
-      'INSERT OR IGNORE INTO search_backfill(conversationId) VALUES (?)',
-      id,
-    );
-    this.ctx.waitUntil(this.scheduleMaintenance());
     return this.get(id)!;
   }
   touch(id: string) {
@@ -429,7 +420,7 @@ export class Library extends DurableObject<Env> {
           Date.now() + searchRetryDelay(job.attempts + 1),
           job.conversationId,
         );
-        console.warn('EverChat search initialization will retry');
+        console.warn('EverChat copy/import indexing will retry');
       }
     }
     await this.ctx.storage.transaction(async () => {

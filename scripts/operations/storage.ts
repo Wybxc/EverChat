@@ -2,30 +2,25 @@ import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { chmod, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
-import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
+import { DatabaseSync } from 'node:sqlite';
 import { parseArgs } from 'node:util';
 import { unstable_readConfig } from 'wrangler';
 import { cloudflareRead } from '../measurements/support/cloudflare-api';
 import { migrateStorage } from './migrate-storage';
+import { rebuildSearch } from './rebuild-search';
+import { localSnapshot, restoreSnapshot, snapshotStatements } from './storage-snapshot';
 import {
   MIGRATION_TABLES,
-  decodeValue,
-  encodeValue,
   quoteIdentifier,
   type StoreKind,
   type Statement,
   type TableSchema,
   type IndexSchema,
-  type WireValue,
+  type StorageSnapshot as Snapshot,
 } from './storage-protocol';
 
-type Target = { kind: StoreKind; id: string };
+type Target = { kind: StoreKind; id: string; name?: string };
 type Manifest = { runId: string; account: string; worker: string; objects: Target[] };
-type Snapshot = {
-  schema: TableSchema[];
-  indexes: IndexSchema[];
-  rows: Record<string, Record<string, WireValue>[]>;
-};
 const { positionals, values } = parseArgs({
   allowPositionals: true,
   options: {
@@ -33,6 +28,7 @@ const { positionals, values } = parseArgs({
     account: { type: 'string' },
     config: { type: 'string', default: 'wrangler.jsonc' },
     'access-token-file': { type: 'string' },
+    'rebuild-search': { type: 'boolean', default: false },
   },
 });
 const action = positionals[0];
@@ -112,7 +108,17 @@ if (action === 'prepare') {
     console.log(JSON.stringify({ preflight: true, authenticated: true, databaseRequests: 0 }));
   } else if (action === 'convert') {
     assert.ok(await hasFile('backup-complete.json'), 'Back up every target before conversion');
-    for (const target of manifest.objects) {
+    const options = { rebuiltSearch: values['rebuild-search'] };
+    if (await hasFile('conversion-options.json'))
+      assert.deepEqual(
+        await load('conversion-options.json'),
+        options,
+        'Do not change conversion options during a resumed run',
+      );
+    else await save('conversion-options.json', options);
+    // Conversations must be converted first: the offline Library index reads
+    // their semantic content chunks, never a business RPC or a runtime backfill.
+    for (const target of [...manifest.objects].sort((a, b) => a.kind.localeCompare(b.kind))) {
       const prefix = base(target),
         snapshot = await load<Snapshot>(`${prefix}.before.json`);
       if (await hasFile(`${prefix}.patch.json`)) continue;
@@ -124,17 +130,32 @@ if (action === 'prepare') {
       await writeFile(path, '', { mode: 0o600, flag: 'wx' });
       const db = new DatabaseSync(path);
       try {
-        for (const table of snapshot.schema) {
-          db.exec(table.sql);
-          for (const row of snapshot.rows[table.name]) {
-            const keys = Object.keys(row);
-            db.prepare(
-              `INSERT INTO ${quoteIdentifier(table.name)} (${keys.map(quoteIdentifier).join(',')}) VALUES (${keys.map(() => '?').join(',')})`,
-            ).run(...(Object.values(row).map(decodeValue) as SQLInputValue[]));
-          }
-        }
-        for (const index of snapshot.indexes) db.exec(index.sql);
+        restoreSnapshot(db, snapshot);
         const patch = migrateStorage(db, target.kind);
+        if (target.kind === 'library' && values['rebuild-search']) {
+          assert.equal(
+            manifest.objects.filter(({ kind }) => kind === 'library').length,
+            1,
+            'Offline search rebuild requires the canonical personal Library',
+          );
+          const sources = function* () {
+            for (const conversation of manifest.objects) {
+              if (conversation.kind !== 'conversation' || !conversation.name) continue;
+              const source = new DatabaseSync(join(directory, `${base(conversation)}.sqlite`), {
+                readOnly: true,
+              });
+              try {
+                yield { id: conversation.name, db: source };
+              } finally {
+                source.close();
+              }
+            }
+          };
+          // Keep the remote version gate closed until the entire prepared index
+          // has been imported. No interpretation of old messages runs remotely.
+          const marker = patch.pop()!;
+          patch.push(...rebuildSearch(db, sources()), marker);
+        }
         db.exec('VACUUM');
         await save(`${prefix}.after.json`, localSnapshot(db, target.kind));
         // The patch is the per-object completion marker. Publish it only after
@@ -147,7 +168,10 @@ if (action === 'prepare') {
         db.close();
       }
     }
-    await save('conversion-complete.json', { objects: manifest.objects.length });
+    await save('conversion-complete.json', {
+      objects: manifest.objects.length,
+      rebuiltSearch: values['rebuild-search'],
+    });
     console.log(
       JSON.stringify({ converted: true, objects: manifest.objects.length, remoteRequests: 0 }),
     );
@@ -197,9 +221,9 @@ if (action === 'prepare') {
         const schema = await call<TableSchema[]>(target, { action: 'schema' }),
           rows: Snapshot['rows'] = {};
         for (const table of schema) {
-          const values: Record<string, WireValue>[] = [];
+          const values: Snapshot['rows'][string] = [];
           while (true) {
-            const page = await call<Record<string, WireValue>[]>(target, {
+            const page = await call<Snapshot['rows'][string]>(target, {
               action: 'rows',
               table: table.name,
               offset: values.length,
@@ -278,17 +302,7 @@ if (action === 'prepare') {
             sql: `DROP TABLE IF EXISTS ${quoteIdentifier(table)}`,
             args: [],
           }));
-          for (const table of before.schema) {
-            statements.push({ sql: table.sql, args: [] });
-            for (const row of before.rows[table.name]) {
-              const keys = Object.keys(row);
-              statements.push({
-                sql: `INSERT INTO ${quoteIdentifier(table.name)} (${keys.map(quoteIdentifier).join(',')}) VALUES (${keys.map(() => '?').join(',')})`,
-                args: Object.values(row),
-              });
-            }
-          }
-          for (const index of before.indexes) statements.push({ sql: index.sql, args: [] });
+          statements.push(...snapshotStatements(before));
           const job = `${manifest.runId}:rollback:${hash(statements)}`;
           const receipt = await call<{ job: string; page: number } | null>(target, {
             action: 'receipt',
@@ -309,40 +323,6 @@ if (action === 'prepare') {
   }
 }
 
-function localSnapshot(db: DatabaseSync, kind: StoreKind): Snapshot {
-  const schema = (
-    db
-      .prepare(
-        "SELECT name,sql FROM sqlite_master WHERE type='table' AND sql IS NOT NULL ORDER BY name",
-      )
-      .all() as unknown as TableSchema[]
-  ).filter(({ name }) => MIGRATION_TABLES[kind].includes(name));
-  const rows: Snapshot['rows'] = {};
-  const indexes = (
-    db
-      .prepare(
-        "SELECT name, sql, tbl_name AS 'table' FROM sqlite_master WHERE type IN ('index','trigger') AND sql IS NOT NULL ORDER BY name",
-      )
-      .all() as unknown as IndexSchema[]
-  ).filter((row) => MIGRATION_TABLES[kind].includes(row.table));
-  for (const table of schema) {
-    const keys = db
-      .prepare(`PRAGMA table_info(${quoteIdentifier(table.name)})`)
-      .all()
-      .filter(({ pk }) => pk)
-      .sort((a, b) => Number(a.pk) - Number(b.pk))
-      .map(({ name }) => quoteIdentifier(String(name)));
-    rows[table.name] = db
-      .prepare(
-        `SELECT * FROM ${quoteIdentifier(table.name)}${keys.length ? ` ORDER BY ${keys.join(',')}` : ''}`,
-      )
-      .all()
-      .map((row) =>
-        Object.fromEntries(Object.entries(row).map(([key, value]) => [key, encodeValue(value)])),
-      );
-  }
-  return { schema, indexes, rows };
-}
 function patchPages(statements: Statement[]) {
   const pages: Statement[][] = [];
   let page: Statement[] = [],
