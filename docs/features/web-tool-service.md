@@ -2,6 +2,8 @@
 
 阶段 5 的联网功能。明确配置 Tavily 后，Conversation DO 可执行 `web_search` 和 `read_webpage`，Workflow 编排有限的模型与工具轮次。工具过程展示来源链接，模型工具定义要求在回答中引用来源。网页设置、独立会话开关和后台执行均已接入，并使用隔离本地运行时与模拟上游验证。
 
+DeepSeek Search／Fetch 的后续接入见[计划](../plans/deepseek-web-tools-plan.md)（2026-10-18，尚未实施）；本篇仍说明当前 Tavily 服务。
+
 ## 网页使用
 
 1. 打开空间设置的「联网」Tab，填写 Tavily API 密钥和每日请求上限。修改自动保存，失败保留当前编辑并提供重试；页面显示今日已用次数，可手动刷新。
