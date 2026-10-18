@@ -13,7 +13,6 @@ import type { ProviderConfig } from '../../shared/providers/types';
 import {
   assertWebToolSupport,
   MAX_TOOL_CALLS_PER_TURN,
-  MAX_TOOL_EXCHANGES,
   MAX_TOOL_INPUT_BYTES,
   validateWebToolCall,
   validateWebToolIdentity,
@@ -446,7 +445,6 @@ export function providerToolPrompt(
   enabled: readonly WebToolName[],
   config: ProviderConfig,
 ): LanguageModelV4Prompt {
-  if (exchanges.length > MAX_TOOL_EXCHANGES) throw new ProviderError('工具轮数已达上限。');
   const prompt: LanguageModelV4Prompt = [],
     used = new Set<string>();
   try {

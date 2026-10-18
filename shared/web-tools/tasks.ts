@@ -5,7 +5,6 @@ import type { ResolvedModelMetadata } from '../models/types';
 export const WEB_TOOL_NAMES = ['web_search', 'read_webpage'] as const;
 export type WebToolName = (typeof WEB_TOOL_NAMES)[number];
 export const MAX_TOOL_CALLS_PER_TURN = 2;
-export const MAX_TOOL_EXCHANGES = 3;
 export const MAX_TOOL_INPUT_BYTES = 8 * 1024;
 const MAX_TOOL_RESULT_BYTES = 64 * 1024;
 export const MAX_TOOL_SOURCES = 5;
@@ -147,7 +146,6 @@ export function validReasoningBreaks(task: PublicToolTask, reasoning?: string): 
   const rounds = new Set(task.calls.map((item) => item.round));
   return (
     breaks.length === rounds.size &&
-    breaks.length <= MAX_TOOL_EXCHANGES + 1 &&
     breaks.every(({ round, reasoningEnd }, index) => {
       if (
         !rounds.has(round) ||
@@ -170,32 +168,26 @@ export function validReasoningBreaks(task: PublicToolTask, reasoning?: string): 
     })
   );
 }
-const round = v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(MAX_TOOL_EXCHANGES));
+const round = v.pipe(v.number(), v.safeInteger(), v.minValue(0));
 export const publicToolTaskSchema = v.pipe(
   v.strictObject({
     status: v.picklist(['active', 'completed', 'failed', 'cancelled']),
     round,
     reasoningBreaks: v.optional(
-      v.pipe(
-        v.array(
-          v.strictObject({
-            round,
-            reasoningEnd: v.pipe(v.number(), v.safeInteger(), v.minValue(0)),
-          }),
-        ),
-        v.maxLength(MAX_TOOL_EXCHANGES + 1),
-      ),
-    ),
-    calls: v.pipe(
       v.array(
         v.strictObject({
           round,
-          call: webToolCallSchema,
-          state: v.picklist(['queued', 'running', 'completed', 'failed', 'cancelled']),
-          result: v.optional(webToolOutcomeSchema),
+          reasoningEnd: v.pipe(v.number(), v.safeInteger(), v.minValue(0)),
         }),
       ),
-      v.maxLength(2 * (MAX_TOOL_EXCHANGES + 1)),
+    ),
+    calls: v.array(
+      v.strictObject({
+        round,
+        call: webToolCallSchema,
+        state: v.picklist(['queued', 'running', 'completed', 'failed', 'cancelled']),
+        result: v.optional(webToolOutcomeSchema),
+      }),
     ),
   }),
   v.check(

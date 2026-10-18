@@ -1284,7 +1284,7 @@ export class Conversation extends DurableObject<Env> {
   async scheduleToolModel(taskId: string, round: number): Promise<ToolTaskState> {
     const state = this.toolTaskState(taskId);
     if (state.status !== 'active') return state;
-    if (!Number.isInteger(round) || round < 0 || round > 3 || round > state.round + 1)
+    if (!Number.isSafeInteger(round) || round < 0 || round > state.round + 1)
       throw new ProviderError('工具模型轮次无效。');
     let change: Change | null;
     try {

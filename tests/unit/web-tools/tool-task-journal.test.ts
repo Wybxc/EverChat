@@ -4,7 +4,12 @@ import { DatabaseSync } from 'node:sqlite';
 import { test, type TestContext } from 'node:test';
 import { resolveModelMetadata } from '../../../shared/models/metadata';
 import type { ProviderConfig, ProviderKind } from '../../../shared/providers/types';
-import type { WebToolCall, WebToolOutcome } from '../../../shared/web-tools/tasks';
+import {
+  publicToolTaskSchema,
+  type WebToolCall,
+  type WebToolOutcome,
+} from '../../../shared/web-tools/tasks';
+import * as v from 'valibot';
 import type { SqlQuery } from '../../../worker/generation/metrics';
 import {
   collectProviderToolTurn,
@@ -483,33 +488,39 @@ test('terminal answer erases private payloads while retaining a digest for dupli
   assert.equal(journal.publicCalls(input.runId)[0].state, 'completed');
 });
 
-test('three tool exchanges permit four model requests and stop a fourth tool round before any tool fetch', (t) => {
-  const { journal, write, begin, query } = database(t),
+test('tool tasks can exceed the former round and total request limits and complete normally', (t) => {
+  const { journal, write, begin } = database(t),
     input = begin();
   let runId = input.runId;
-  for (let round = 0; round <= 3; round++) {
+  for (let round = 0; round < 10; round++) {
     write((j) => j.claimModel(runId));
-    write((j) => j.saveTurn(runId, turn([call(`${round}-a`), call(`${round}-b`)]), config));
-    if (round === 3) break;
+    write((j) =>
+      j.saveTurn(
+        runId,
+        turn([call(`${round}-a`), call(`${round}-b`)], '', `thinking ${round}`),
+        config,
+      ),
+    );
     for (const id of [`${round}-a`, `${round}-b`]) {
       write((j) => j.claimTool(input.id, id));
       write((j) => j.finishTool(input.id, id, outcome(id)));
     }
+    assert.equal(journal.exchanges(input.id, round + 1, config).length, round + 1);
     runId = crypto.randomUUID();
     write((j) => j.queueModel(input.id, round + 1, runId, crypto.randomUUID(), config));
   }
-  assert.equal(journal.state(input.id).status, 'failed');
-  assert.match(journal.state(input.id).error!, /轮数/);
-  assert.equal(journal.state(input.id).modelRequests, 4);
-  assert.equal(journal.state(input.id).toolRequests, 6);
-  assert.ok(journal.publicCalls(runId).every((entry) => entry.state === 'failed'));
-  assert.throws(() => write((j) => j.claimTool(input.id, '3-a')), /已停止/);
-  assert.equal(
-    query<{ count: number }>(
-      'SELECT COUNT(*) AS count FROM web_tool_models WHERE turn IS NOT NULL',
-    ).one().count,
-    0,
-  );
+  write((j) => j.claimModel(runId));
+  write((j) => j.saveTurn(runId, turn([], 'final answer'), config));
+  const state = journal.state(input.id);
+  assert.equal(state.status, 'completed');
+  assert.equal(state.modelRequests, 11);
+  assert.equal(state.toolRequests, 20);
+  const task = {
+    ...journal.publicTask(input.id),
+    reasoningBreaks: Array.from({ length: 10 }, (_, round) => ({ round, reasoningEnd: round })),
+  };
+  assert.equal(v.is(publicToolTaskSchema, task), true);
+  assert.equal(task.calls.length, 20);
 });
 
 test('aggregate text and thought limits apply across model rounds, not independently to each connection', (t) => {

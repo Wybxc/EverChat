@@ -1,6 +1,5 @@
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from 'cloudflare:workers';
 import type { Env } from '../http/env';
-import { MAX_TOOL_EXCHANGES } from '../../shared/web-tools/tasks';
 import type { ToolTaskState } from './task-journal';
 
 export interface ToolWorkflowParams {
@@ -28,7 +27,7 @@ export class WebToolWorkflow extends WorkflowEntrypoint<Env, ToolWorkflowParams>
     // every step attempt so Workflow retries can read the recovered journal.
     const conversation = () => this.env.CONVERSATIONS.getByName(conversationId);
     try {
-      for (let round = 0; round <= MAX_TOOL_EXCHANGES; round++) {
+      for (let round = 0; ; round++) {
         const scheduled = await step.do(`schedule-model-${round}`, retry, async () =>
           reference(await conversation().scheduleToolModel(taskId, round)),
         );
@@ -52,7 +51,6 @@ export class WebToolWorkflow extends WorkflowEntrypoint<Env, ToolWorkflowParams>
           if (result.status !== 'active') return { status: result.status };
         }
       }
-      throw new Error('Tool round limit exceeded');
     } catch {
       return step.do('stop-interrupted-task', retry, async () => {
         const state = await conversation().failToolTask(taskId);

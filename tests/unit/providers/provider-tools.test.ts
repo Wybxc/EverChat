@@ -267,7 +267,7 @@ test('bounded replay cancels oversized or stalled bodies and does not fetch remo
   }
 });
 
-test('continuation requires every result exactly once and pins provider identity and finite rounds', async () => {
+test('continuation requires every result exactly once and pins provider identity across rounds', async () => {
   const config = configuration('anthropic'),
     turn = await collectProviderToolTurn(
       config,
@@ -299,7 +299,6 @@ test('continuation requires every result exactly once and pins provider identity
   );
   assert.throws(() => providerToolPrompt([exchange], ['read_webpage'], config), /不符/);
   assert.throws(() => providerToolPrompt([exchange, exchange], enabled, config), /不符/);
-  assert.throws(() => providerToolPrompt(Array(4).fill(exchange), enabled, config), /轮数/);
   const damaged = JSON.parse(JSON.stringify(turn));
   damaged.content[0].providerOptions = {};
   assert.throws(

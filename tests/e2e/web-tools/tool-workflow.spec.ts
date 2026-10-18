@@ -306,24 +306,27 @@ test('native context budget stops after saved tool results and never starts a se
   }
 });
 
-test('native round budget stops after four models and six tools with the unexecuted calls recorded as failures', async ({
+test('native Workflow continues beyond the former round limit and remains cancellable', async ({
   request,
 }) => {
   const f = await setup(request, 'openai-chat', { loop: true });
   try {
     await expect
-      .poll(async () => (await f.snapshot()).messages[1].status, { timeout: 40_000 })
-      .toBe('failed');
+      .poll(async () => (await f.state()).toolCalls, { timeout: 50_000 })
+      .toBeGreaterThanOrEqual(8);
     const answer = (await f.snapshot()).messages[1];
-    expect(answer.error).toContain('轮数');
-    expect(answer.tools!.calls).toHaveLength(8);
-    expect(answer.tools!.calls.slice(-2).every((call) => call.state === 'failed')).toBe(true);
-    expect(await f.state()).toMatchObject({
-      modelCalls: 4,
-      toolCalls: 6,
-      privatePayloads: 0,
-      privateStreams: 0,
-    });
+    expect(answer.status).toBe('running');
+    expect(answer.error).toBeFalsy();
+    expect(answer.tools!.round).toBeGreaterThanOrEqual(3);
+    expect(
+      (
+        await request.post(`/api/conversations/${f.id}/cancel`, {
+          headers,
+          data: { runId: answer.runId },
+        })
+      ).ok(),
+    ).toBe(true);
+    await expect.poll(async () => (await f.snapshot()).messages[1].status).toBe('cancelled');
   } finally {
     await f.cleanup();
   }

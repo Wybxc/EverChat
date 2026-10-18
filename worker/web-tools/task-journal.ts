@@ -6,7 +6,6 @@ import { estimateTextTokens } from '../../shared/conversation/token-estimate';
 import type { ProviderConfig } from '../../shared/providers/types';
 import {
   assertWebToolSupport,
-  MAX_TOOL_EXCHANGES,
   validateWebToolOutcome,
   type PublicToolTask,
   type WebToolCall,
@@ -287,8 +286,7 @@ export class ToolTaskJournal {
       root = this.root(model.rootId);
     this.active(root);
     if (model.phase !== 'queued') return false;
-    if (model.round !== root.round || root.modelRequests >= MAX_TOOL_EXCHANGES + 1)
-      taskError('模型步骤或请求预算无效。');
+    if (model.round !== root.round) taskError('模型步骤轮次无效。');
     this.query("UPDATE web_tool_models SET phase = 'running' WHERE runId = ?", runId);
     this.query('UPDATE web_tool_tasks SET modelRequests = modelRequests + 1 WHERE id = ?', root.id);
     return true;
@@ -353,8 +351,6 @@ export class ToolTaskJournal {
     );
     this.notify(root, model.round);
     if (!turn.calls.length) this.stop(root.id, 'completed');
-    else if (model.round >= MAX_TOOL_EXCHANGES)
-      this.stop(root.id, 'failed', '工具轮数已达上限，未执行后续调用。');
     return true;
   }
   claimTool(rootId: string, callId: string): boolean {
@@ -368,12 +364,7 @@ export class ToolTaskJournal {
       ).toArray()[0] ?? taskError('工具调用不存在。');
     if (call.state !== 'queued') return false;
     const model = this.model(call.runId)!;
-    if (
-      model.phase !== 'tools' ||
-      model.round !== root.round ||
-      root.toolRequests >= 2 * MAX_TOOL_EXCHANGES
-    )
-      taskError('工具步骤或请求预算无效。');
+    if (model.phase !== 'tools' || model.round !== root.round) taskError('工具步骤轮次无效。');
     this.query(
       "UPDATE web_tool_calls SET state = 'running' WHERE rootId = ? AND callId = ?",
       rootId,
@@ -414,9 +405,8 @@ export class ToolTaskJournal {
     this.active(root);
     if (
       root.identity !== providerToolIdentity(config) ||
-      !Number.isInteger(throughRound) ||
-      throughRound < 0 ||
-      throughRound > MAX_TOOL_EXCHANGES
+      !Number.isSafeInteger(throughRound) ||
+      throughRound < 0
     )
       taskError('工具续接轮次或供应商无效。');
     const models = this.query<Model>(
@@ -452,13 +442,7 @@ export class ToolTaskJournal {
     config: ProviderConfig,
   ): boolean {
     const root = this.root(rootId);
-    if (
-      !v.is(uuid, runId) ||
-      !v.is(uuid, messageId) ||
-      !Number.isInteger(round) ||
-      round < 1 ||
-      round > MAX_TOOL_EXCHANGES
-    )
+    if (!v.is(uuid, runId) || !v.is(uuid, messageId) || !Number.isSafeInteger(round) || round < 1)
       taskError('下一模型步骤标识无效。');
     const existing = this.query<Model>(
       'SELECT * FROM web_tool_models WHERE rootId = ? AND round = ?',
