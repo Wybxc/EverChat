@@ -7,6 +7,20 @@ import {
   type SyncPacket,
 } from './protocol';
 import { MAX_COMMIT_BYTES, validateBatch } from './batches';
+import { messageText } from '../conversation/content';
+import { validReasoningBreaks } from '../web-tools/tasks';
+
+function validToolPositions(snapshot: Snapshot) {
+  return snapshot.messages.every(
+    (message) =>
+      !message.tools || validReasoningBreaks(message.tools, messageText(message, 'reasoning')),
+  );
+}
+
+function assertToolPositions(snapshot: Snapshot) {
+  if (!validToolPositions(snapshot)) throw new Error('Tool reasoning position mismatch');
+  return snapshot;
+}
 
 // Preview state is ephemeral. Only durable can be cached, exported or used to resume.
 export class StreamSync {
@@ -14,6 +28,7 @@ export class StreamSync {
   view: Snapshot;
   private pending = new Map<string, StreamBatch[]>();
   constructor(initial: Snapshot = { messages: [], seq: 0 }) {
+    if (!validToolPositions(initial)) initial = { messages: [], seq: 0 };
     this.durable = initial;
     this.view = initial;
   }
@@ -33,7 +48,7 @@ export class StreamSync {
       this.durable = { messages: [], seq: this.durable.seq, deletedAt: packet.deletedAt };
       this.resetPreview();
     } else if (packet.type === 'snapshot') {
-      this.durable = packet.snapshot;
+      this.durable = assertToolPositions(packet.snapshot);
       this.resetPreview();
     } else if (packet.type === 'state') {
       if (packet.snapshot.seq < this.durable.seq) return false;
@@ -42,6 +57,7 @@ export class StreamSync {
         (this.durable.epoch && packet.snapshot.epoch !== this.durable.epoch)
       )
         throw new Error('State baseline mismatch');
+      assertToolPositions(packet.snapshot);
       const messages = new Map(this.durable.messages.map((message) => [message.id, message]));
       for (const message of packet.snapshot.messages) messages.set(message.id, message);
       this.durable = { ...this.durable, ...packet.snapshot, messages: [...messages.values()] };
@@ -52,7 +68,7 @@ export class StreamSync {
     else {
       const change = packet.type === 'commit-ack' ? this.confirm(packet) : packet;
       if (!change) return false;
-      this.durable = applyChange(this.durable, change);
+      this.durable = assertToolPositions(applyChange(this.durable, change));
       if (this.durable !== previous) this.rebase();
     }
     return this.durable !== previous;

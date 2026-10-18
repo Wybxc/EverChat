@@ -123,7 +123,7 @@ const webToolOutcomeSchema = v.variant('status', [
 ]);
 export type WebToolOutcome = v.InferOutput<typeof webToolOutcomeSchema>;
 export type WebToolFailure = NonNullable<Extract<WebToolOutcome, { status: 'failed' }>['failure']>;
-interface PublicToolCall {
+export interface PublicToolCall {
   round: number;
   call: WebToolCall;
   state: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
@@ -133,12 +133,59 @@ export interface PublicToolTask {
   status: 'active' | 'completed' | 'failed' | 'cancelled';
   round: number;
   calls: PublicToolCall[];
+  /** UTF-16 offsets in the message's cumulative public reasoning, one per tool round. */
+  reasoningBreaks?: ReasoningBreak[];
+}
+export interface ReasoningBreak {
+  round: number;
+  reasoningEnd: number;
+}
+
+export function validReasoningBreaks(task: PublicToolTask, reasoning?: string): boolean {
+  const breaks = task.reasoningBreaks;
+  if (breaks === undefined) return true; // Historical messages have no ordering information.
+  const rounds = new Set(task.calls.map((item) => item.round));
+  return (
+    breaks.length === rounds.size &&
+    breaks.length <= MAX_TOOL_EXCHANGES + 1 &&
+    breaks.every(({ round, reasoningEnd }, index) => {
+      if (
+        !rounds.has(round) ||
+        !Number.isSafeInteger(round) ||
+        round < 0 ||
+        round > task.round ||
+        !Number.isSafeInteger(reasoningEnd) ||
+        reasoningEnd < 0 ||
+        (index > 0 &&
+          (round <= breaks[index - 1].round || reasoningEnd < breaks[index - 1].reasoningEnd))
+      )
+        return false;
+      if (reasoning === undefined) return true;
+      const before = reasoning.charCodeAt(reasoningEnd - 1),
+        after = reasoning.charCodeAt(reasoningEnd);
+      return (
+        reasoningEnd <= reasoning.length &&
+        !(before >= 0xd800 && before <= 0xdbff && after >= 0xdc00 && after <= 0xdfff)
+      );
+    })
+  );
 }
 const round = v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(MAX_TOOL_EXCHANGES));
 export const publicToolTaskSchema = v.pipe(
   v.strictObject({
     status: v.picklist(['active', 'completed', 'failed', 'cancelled']),
     round,
+    reasoningBreaks: v.optional(
+      v.pipe(
+        v.array(
+          v.strictObject({
+            round,
+            reasoningEnd: v.pipe(v.number(), v.safeInteger(), v.minValue(0)),
+          }),
+        ),
+        v.maxLength(MAX_TOOL_EXCHANGES + 1),
+      ),
+    ),
     calls: v.pipe(
       v.array(
         v.strictObject({
@@ -153,6 +200,7 @@ export const publicToolTaskSchema = v.pipe(
   }),
   v.check(
     (task) =>
+      validReasoningBreaks(task) &&
       new Set(task.calls.map((item) => item.call.id)).size === task.calls.length &&
       task.calls.every((item) => {
         if (

@@ -291,12 +291,18 @@ test('tool process backups retain safe outcomes, stop unfinished work and reject
   const partial = backupMessage({
     ...assistant,
     parentId: null,
-    tools: { status: 'active', round: 0, calls: [completed, running] },
+    tools: {
+      status: 'active',
+      round: 0,
+      calls: [completed, running],
+      reasoningBreaks: [{ round: 0, reasoningEnd: 2 }],
+    },
   });
   assert.deepEqual(partial.tools, {
     status: 'failed',
     round: 0,
     calls: [completed, { ...running, state: 'cancelled' }],
+    reasoningBreaks: [{ round: 0, reasoningEnd: 2 }],
   });
   const backup = {
     format: BACKUP_FORMAT,
@@ -336,6 +342,8 @@ test('tool process backups retain safe outcomes, stop unfinished work and reject
       calls: [{ ...completed, result: { ...completed.result, signature: 'private' } }],
     },
     { ...partial.tools, calls: [{ ...completed, state: 'running' }] },
+    { ...partial.tools, reasoningBreaks: [{ round: 0, reasoningEnd: 5 }] },
+    { ...partial.tools, reasoningBreaks: [] },
     {
       ...partial.tools,
       calls: [

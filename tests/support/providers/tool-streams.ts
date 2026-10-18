@@ -5,6 +5,7 @@ export const toolQuery = 'Cloudflare 文档🙂';
 export function toolStream(
   protocol: ProviderKind,
   options: {
+    reasoning?: string;
     name?: string;
     input?: string;
     count?: number;
@@ -14,6 +15,7 @@ export function toolStream(
     calls?: { name: string; input: string }[];
   } = {},
 ) {
+  const reasoning = options.reasoning ?? '检索资料🙂';
   const name = options.name ?? 'web_search',
     input = options.input ?? JSON.stringify({ query: toolQuery });
   const calls = (
@@ -22,7 +24,7 @@ export function toolStream(
   if (protocol === 'openai-chat')
     return (
       [
-        { choices: [{ index: 0, delta: { reasoning_content: '检索资料🙂' } }] },
+        { choices: [{ index: 0, delta: { reasoning_content: reasoning } }] },
         ...calls.flatMap((call, index) => [
           {
             choices: [
@@ -74,7 +76,7 @@ export function toolStream(
         item_id: 'rs_fixture',
         output_index: 0,
         summary_index: 0,
-        delta: '检索资料🙂',
+        delta: reasoning,
       },
       {
         type: 'response.output_item.done',
@@ -83,7 +85,7 @@ export function toolStream(
           type: 'reasoning',
           id: 'rs_fixture',
           encrypted_content: 'encrypted-fixture',
-          summary: [{ type: 'summary_text', text: '检索资料🙂' }],
+          summary: [{ type: 'summary_text', text: reasoning }],
         },
       },
       ...calls.flatMap((call, index) => [
@@ -145,7 +147,7 @@ export function toolStream(
       {
         type: 'content_block_delta',
         index: 0,
-        delta: { type: 'thinking_delta', thinking: '检索资料🙂' },
+        delta: { type: 'thinking_delta', thinking: reasoning },
       },
       ...(options.signature ?? ['fixture-', 'signature']).map((signature) => ({
         type: 'content_block_delta',
@@ -193,10 +195,13 @@ export function toolStream(
         index: 0,
         content: {
           role: 'model',
-          parts: calls.map((call, index) => ({
-            functionCall: { id: call.id, name: call.name, args: JSON.parse(call.input) },
-            ...(index === 0 ? { thoughtSignature: 'fixture-signature' } : {}),
-          })),
+          parts: [
+            ...(options.reasoning !== undefined ? [{ text: reasoning, thought: true }] : []),
+            ...calls.map((call, index) => ({
+              functionCall: { id: call.id, name: call.name, args: JSON.parse(call.input) },
+              ...(index === 0 ? { thoughtSignature: 'fixture-signature' } : {}),
+            })),
+          ],
         },
         finishReason: 'STOP',
       },
@@ -222,6 +227,7 @@ export function fragmentedToolBody(wire: string, size = 11) {
 export function toolFinalStream(
   protocol: ProviderKind,
   workload?: { chunks: number; size: number },
+  reasoning?: string,
 ) {
   const pieces = workload
     ? Array.from({ length: workload.chunks }, () => 'x'.repeat(workload.size - 2) + '🙂')
@@ -229,6 +235,9 @@ export function toolFinalStream(
   const text = pieces.join('');
   if (protocol === 'openai-chat')
     return (
+      (reasoning
+        ? frame({ choices: [{ index: 0, delta: { reasoning_content: reasoning } }] })
+        : '') +
       pieces.map((content) => frame({ choices: [{ index: 0, delta: { content } }] })).join('') +
       frame({
         choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
@@ -242,6 +251,32 @@ export function toolFinalStream(
         type: 'response.created',
         response: { id: 'resp_final', created_at: 1, model: 'tool-fixture' },
       },
+      ...(reasoning
+        ? [
+            {
+              type: 'response.output_item.added',
+              output_index: 1,
+              item: { type: 'reasoning', id: 'rs_final', encrypted_content: null },
+            },
+            {
+              type: 'response.reasoning_summary_text.delta',
+              item_id: 'rs_final',
+              output_index: 1,
+              summary_index: 0,
+              delta: reasoning,
+            },
+            {
+              type: 'response.output_item.done',
+              output_index: 1,
+              item: {
+                type: 'reasoning',
+                id: 'rs_final',
+                encrypted_content: 'encrypted-fixture',
+                summary: [{ type: 'summary_text', text: reasoning }],
+              },
+            },
+          ]
+        : []),
       {
         type: 'response.output_item.added',
         output_index: 0,
@@ -315,34 +350,77 @@ export function toolFinalStream(
           usage: { input_tokens: 10, output_tokens: 0 },
         },
       },
-      { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+      ...(reasoning
+        ? [
+            {
+              type: 'content_block_start',
+              index: 0,
+              content_block: { type: 'thinking', thinking: '' },
+            },
+            {
+              type: 'content_block_delta',
+              index: 0,
+              delta: { type: 'thinking_delta', thinking: reasoning },
+            },
+            {
+              type: 'content_block_delta',
+              index: 0,
+              delta: { type: 'signature_delta', signature: 'fixture-signature' },
+            },
+            { type: 'content_block_stop', index: 0 },
+          ]
+        : []),
+      {
+        type: 'content_block_start',
+        index: reasoning ? 1 : 0,
+        content_block: { type: 'text', text: '' },
+      },
       ...pieces.map((text) => ({
         type: 'content_block_delta',
-        index: 0,
+        index: reasoning ? 1 : 0,
         delta: { type: 'text_delta', text },
       })),
-      { type: 'content_block_stop', index: 0 },
+      { type: 'content_block_stop', index: reasoning ? 1 : 0 },
       { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 5 } },
       { type: 'message_stop' },
     ]
       .map(frame)
       .join('');
-  return pieces
-    .map((text, index) =>
-      frame({
-        candidates: [
-          {
-            index: 0,
-            content: { role: 'model', parts: [{ text }] },
-            ...(index === pieces.length - 1 ? { finishReason: 'STOP' } : {}),
-          },
-        ],
-        ...(index === pieces.length - 1
-          ? {
-              usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5, totalTokenCount: 15 },
-            }
-          : {}),
-      }),
-    )
-    .join('');
+  return (
+    (reasoning
+      ? frame({
+          candidates: [
+            {
+              index: 0,
+              content: {
+                role: 'model',
+                parts: [{ text: reasoning, thought: true, thoughtSignature: 'fixture-signature' }],
+              },
+            },
+          ],
+        })
+      : '') +
+    pieces
+      .map((text, index) =>
+        frame({
+          candidates: [
+            {
+              index: 0,
+              content: { role: 'model', parts: [{ text }] },
+              ...(index === pieces.length - 1 ? { finishReason: 'STOP' } : {}),
+            },
+          ],
+          ...(index === pieces.length - 1
+            ? {
+                usageMetadata: {
+                  promptTokenCount: 10,
+                  candidatesTokenCount: 5,
+                  totalTokenCount: 15,
+                },
+              }
+            : {}),
+        }),
+      )
+      .join('')
+  );
 }

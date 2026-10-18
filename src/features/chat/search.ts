@@ -26,7 +26,7 @@ export function matchAt(text: string, query: string, ordinal: number) {
   return null;
 }
 
-type Segment = { node: Text; start: number; end: number };
+type Segment = { node: Text; start: number; end: number; scope?: Element | null };
 export interface SearchText {
   text: string;
   segments: Segment[];
@@ -60,23 +60,32 @@ export function renderedText(root: HTMLElement): SearchText {
     }
     previousBlock = block;
     const text = node.nodeValue;
-    segments.push({ node: node as Text, start: length, end: length + text.length });
+    segments.push({
+      node: node as Text,
+      start: length,
+      end: length + text.length,
+      scope: node.parentElement?.closest('[data-reasoning-part]'),
+    });
     parts.push(text);
     length += text.length;
   }
   return { text: parts.join(''), segments };
 }
 
-export function textRange(source: SearchText, match: { start: number; end: number }) {
-  const start = source.segments.find(
-    (segment) => segment.start <= match.start && segment.end > match.start,
-  );
-  const end = source.segments.find(
-    (segment) => segment.start < match.end && segment.end >= match.end,
-  );
-  if (!start || !end) return null;
-  const range = document.createRange();
-  range.setStart(start.node, match.start - start.start);
-  range.setEnd(end.node, match.end - end.start);
-  return range;
+// Separate ranges prevent a cross-fragment match from highlighting the intervening tool UI.
+export function textRanges(source: SearchText, match: { start: number; end: number }): Range[] {
+  const ranges: Range[] = [];
+  let scope: Element | null | undefined;
+  let current: Range | undefined;
+  for (const segment of source.segments) {
+    if (segment.end <= match.start || segment.start >= match.end) continue;
+    if (!current || scope !== segment.scope) {
+      current = document.createRange();
+      current.setStart(segment.node, Math.max(0, match.start - segment.start));
+      ranges.push(current);
+      scope = segment.scope;
+    }
+    current.setEnd(segment.node, Math.min(segment.end, match.end) - segment.start);
+  }
+  return ranges;
 }

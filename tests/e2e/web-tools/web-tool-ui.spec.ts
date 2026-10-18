@@ -10,7 +10,11 @@ import { chooseChatModel, openSpaceSettings } from '../../support/browser/ui';
 const origin = 'http://127.0.0.1:5174',
   headers = { Origin: origin },
   key = 'tvly-browser-private-service-key';
-async function setup(request: APIRequestContext, provider: ProviderKind = 'openai-chat') {
+async function setup(
+  request: APIRequestContext,
+  provider: ProviderKind = 'openai-chat',
+  flow = false,
+) {
   expect((await request.post('/__dev/access/login', { headers })).ok()).toBe(true);
   const original = (await request
     .get('/api/settings/providers')
@@ -22,7 +26,7 @@ async function setup(request: APIRequestContext, provider: ProviderKind = 'opena
     apiKey: string;
   };
   const providerId = crypto.randomUUID(),
-    model = `tools-service-${provider}`;
+    model = `tools-${flow ? 'flow' : 'service'}-${provider}`;
   const config = {
     providers: [
       {
@@ -267,6 +271,102 @@ const combinations: [ProviderKind, WebToolName[]][] = [
   ['gemini', ['web_search', 'read_webpage']],
 ];
 
+for (const provider of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'] as const)
+  test(`${provider} reasoning interleaves search and fetch, retains source state and supports cross-fragment search after reload`, async ({
+    page,
+    context,
+  }) => {
+    const f = await setup(context.request, provider, true);
+    try {
+      await page.goto('/');
+      await enable(page, ['web_search', 'read_webpage']);
+      const sent = await send(page, '按顺序检索并核对资料');
+      f.ids.push(sent.id);
+      const answer = page.getByTestId('assistant-message'),
+        reasoning = answer.getByTestId('message-reasoning');
+      await expect(reasoning).toHaveAttribute('open');
+      const firstCall = answer.locator('[data-tool-id="call_flow_0_0"]');
+      await expect(firstCall).toHaveAttribute('data-tool-state', 'running');
+      await firstCall.locator(':scope > details > summary').click();
+      await expect(firstCall.locator(':scope > details')).toHaveAttribute('open');
+      await expect(answer.locator('[data-tool-id="call_flow_1_0"]')).toBeVisible();
+      await expect(firstCall.locator(':scope > details')).toHaveAttribute('open');
+      await expect(answer).toHaveAttribute('data-status', 'completed');
+      await expect(reasoning.locator('[data-streamdown="strong"]')).toHaveText([
+        '搜索之前🙂',
+        '搜索之后🙂',
+        '整合结果🙂',
+      ]);
+      expect(
+        await reasoning
+          .locator('[data-search-content] > *')
+          .evaluateAll((nodes) =>
+            nodes
+              .filter((node) => node.textContent)
+              .map((node) =>
+                node.hasAttribute('data-reasoning-part') ? node.textContent : '工具',
+              ),
+          ),
+      ).toEqual([
+        '搜索之前🙂\n第一行\n第二行。',
+        '工具',
+        '搜索之后🙂\n核对网页。',
+        '工具',
+        '整合结果🙂\n继续分析。',
+      ]);
+      await expect(reasoning.locator('[data-reasoning-part="0"] br')).toHaveCount(2);
+      const snapshot = await f.snapshot(sent.id);
+      expect(snapshot.messages[1].tools!.reasoningBreaks).toEqual([
+        { round: 0, reasoningEnd: '**搜索之前🙂**\n第一行\n第二行。'.length },
+        {
+          round: 1,
+          reasoningEnd: ('**搜索之前🙂**\n第一行\n第二行。' + '**搜索之后🙂**\n\n核对网页。')
+            .length,
+        },
+      ]);
+      expect((await f.runtime(sent.id, sent.input.requestId)).privatePayloads).toBe(0);
+      if (provider === 'openai-chat') {
+        await page.screenshot({
+          path: 'test-results/reasoning-tools-desktop.png',
+          animations: 'disabled',
+        });
+        await page.setViewportSize({ width: 390, height: 844 });
+        await page.emulateMedia({ colorScheme: 'dark' });
+        expect(
+          await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+        ).toBe(true);
+        await page.screenshot({
+          path: 'test-results/reasoning-tools-mobile-dark.png',
+          animations: 'disabled',
+        });
+        await page.setViewportSize({ width: 1280, height: 720 });
+      }
+      await page.reload();
+      await expect(answer).toHaveAttribute('data-status', 'completed');
+      await reasoning.locator(':scope > summary').click();
+      await page.getByRole('button', { name: '搜索当前对话', exact: true }).click();
+      const search = page.getByRole('search', { name: '当前对话搜索', exact: true }),
+        input = search.getByLabel('查找当前对话', { exact: true });
+      await input.fill('搜索之后🙂');
+      await expect(search.getByRole('status')).toContainText('1 / 1');
+      await expect(reasoning).toHaveAttribute('open');
+      await input.fill('第二行。 搜索之后🙂');
+      await expect(search.getByRole('status')).toContainText('1 / 1');
+      await expect
+        .poll(() =>
+          page.evaluate(() =>
+            [...(CSS.highlights.get('everchat-search')?.values() ?? [])].map(String),
+          ),
+        )
+        .toEqual(['第二行。', '搜索之后🙂']);
+      await input.fill('Cloudflare');
+      await expect(search.getByRole('status')).toContainText('无结果');
+    } finally {
+      await page.close();
+      await f.cleanup();
+    }
+  });
+
 test('a failed tool has one visible error while collapsed and can reveal and focus its call', async ({
   page,
   context,
@@ -307,8 +407,11 @@ test('a failed tool has one visible error while collapsed and can reveal and foc
     ).toBe(202);
     await page.goto(`/c/${id}`);
     const answer = page.getByTestId('assistant-message'),
-      activity = page.getByTestId('tool-activity');
+      activity = page.getByTestId('tool-call');
     await expect(answer).toHaveAttribute('data-status', 'failed');
+    const reasoning = page.getByTestId('message-reasoning');
+    await reasoning.locator(':scope > summary').click();
+    await expect(reasoning).not.toHaveAttribute('open');
     await expect(activity).not.toHaveAttribute('open');
     await expect(answer.getByRole('alert')).toHaveCount(1);
     const error = answer.getByRole('alert');
@@ -316,15 +419,16 @@ test('a failed tool has one visible error while collapsed and can reveal and foc
     await expect(error).toBeVisible();
     await expect(answer.getByText('生成失败', { exact: true })).toBeVisible();
     await answer.getByRole('button', { name: /^查看失败调用/ }).click();
+    await expect(reasoning).toHaveAttribute('open');
     await expect(activity).toHaveAttribute('open');
-    const call = activity.locator('[data-tool-state="failed"]');
+    const call = answer.locator('[data-tool-state="failed"]');
     await expect(call).toBeFocused();
     await expect(call).toHaveAttribute(
       'aria-describedby',
       (await error.getAttribute('id')) as string,
     );
     await expect(answer.getByRole('alert')).toHaveCount(1);
-    await activity.locator(':scope > summary').click();
+    await reasoning.locator(':scope > summary').click();
     await expect(error).toBeVisible();
   } finally {
     await page.close();
@@ -349,7 +453,8 @@ for (const [provider, tools] of combinations)
         'data-status',
         'completed',
       );
-      await page.getByTestId('tool-activity').locator(':scope > summary').click();
+      for (const summary of await page.getByTestId('tool-call').locator(':scope > summary').all())
+        await summary.click();
       await expect(page.getByTestId('tool-activity').getByRole('link')).toHaveCount(tools.length);
       await expect(
         page
@@ -599,7 +704,9 @@ test('copy and restore retain enabled tools and saved sources without executing 
       expect((await f.runtime(id, crypto.randomUUID())).serviceRequests).toHaveLength(0);
     }
     await page.goto(`/c/${restored.id}`);
-    await page.getByTestId('tool-activity').locator(':scope > summary').click();
+    await expect(page.getByTestId('tool-call')).toHaveCount(2);
+    for (const summary of await page.getByTestId('tool-call').locator(':scope > summary').all())
+      await summary.click();
     await expect(page.getByTestId('tool-activity').getByRole('link')).toHaveCount(2);
     const modal = await parameters(page);
     for (const label of ['联网搜索', '网页读取'])

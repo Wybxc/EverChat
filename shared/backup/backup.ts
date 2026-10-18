@@ -4,7 +4,7 @@ import { MAX_SYSTEM_PROMPT_LENGTH } from '../conversation/limits';
 import * as v from 'valibot';
 import { conversationSettingsSchema } from '../conversation/settings';
 import { addGenerationUsage, generationSchema } from '../streaming/generation';
-import { messagePartsSchema } from '../conversation/content';
+import { messagePartsSchema, messageText } from '../conversation/content';
 import { promptPresetListSchema } from '../presets/schema';
 import { modelSchema } from '../providers/settings';
 import {
@@ -17,7 +17,7 @@ import type { PromptPreset } from '../presets/types';
 import type { ProviderApiKind } from '../providers/types';
 import type { ProviderModel } from '../models/types';
 import { branchPath } from '../conversation/branch-path';
-import { publicToolTaskSchema } from '../web-tools/tasks';
+import { publicToolTaskSchema, validReasoningBreaks } from '../web-tools/tasks';
 import { titleSettingsSchema, type TitleSettings } from '../conversation/titles';
 
 export const BACKUP_FORMAT = 'everchat-backup';
@@ -217,7 +217,10 @@ export function validateBackup(value: unknown): EverChatBackup {
       message.tools === undefined ? undefined : v.safeParse(publicToolTaskSchema, message.tools);
     if (
       tools &&
-      (!tools.success || message.role !== 'assistant' || tools.output.status !== message.status)
+      (!tools.success ||
+        message.role !== 'assistant' ||
+        tools.output.status !== message.status ||
+        !validReasoningBreaks(tools.output, messageText({ parts: parts.output }, 'reasoning')))
     )
       throw new Error('备份中的工具过程无效。');
     return {

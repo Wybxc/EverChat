@@ -4,14 +4,12 @@ import { useRef, useState, type Ref } from 'react';
 import { messageFiles, messageImages, messageText } from '../../../shared/conversation/content';
 import { isActive } from '../../../shared/conversation/message-state';
 import { type Message } from '../../../shared/conversation/types';
-import { Disclosure } from '../../components/Disclosure';
 import { DocumentPreviews } from '../attachments/DocumentPreviews';
 import { ImagePreviews } from '../attachments/ImagePreviews';
-import { ToolActivity } from '../web-tools/ToolActivity';
 import { BranchSwitcher, type BranchNavigation } from './BranchSwitcher';
 import { MessageActions } from './MessageActions';
 import { MarkdownContent } from './rendering/MarkdownContent';
-import { useFollowScroll } from './useFollowScroll';
+import { ReasoningContent } from './ReasoningContent';
 import { ProviderFailureView } from '../providers/ProviderFailureView';
 import { MessageEditor } from './MessageEditor';
 
@@ -61,7 +59,6 @@ export function MessageView({
   const [forking, setForking] = useState(false),
     [forkError, setForkError] = useState('');
   const forkLock = useRef(false);
-  const reasoningScroll = useFollowScroll(message.id);
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(messageText(message));
@@ -185,29 +182,7 @@ export function MessageView({
         )}
         {message.status === 'failed' && toolErrorVisible && <span>生成失败</span>}
       </div>
-      {messageText(message, 'reasoning') && (
-        <Disclosure
-          stateKey={`reasoning:${message.id}`}
-          defaultOpen
-          title="思考过程"
-          className="mb-2"
-          testId="message-reasoning"
-        >
-          <div
-            ref={reasoningScroll.viewportRef}
-            className="reasoning-content max-h-[min(22rem,40dvh)] overflow-y-auto overscroll-contain break-words"
-          >
-            <div ref={reasoningScroll.contentRef}>
-              <MarkdownContent
-                content={messageText(message, 'reasoning')}
-                searchId={`${message.id}:reasoning`}
-                streaming={isActive(message)}
-              />
-            </div>
-          </div>
-        </Disclosure>
-      )}
-      <ToolActivity task={message.tools} stateKey={`tools:${message.id}`} />
+      <ReasoningContent message={message} />
       {editing ? (
         <MessageEditor {...editing} user={false} hasAttachments={false} />
       ) : messageText(message) ? (

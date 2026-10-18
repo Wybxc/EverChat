@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, Search, X } from 'lucide-react';
-import { countMatches, matchAt, renderedText, textRange, type SearchText } from './search';
+import { countMatches, matchAt, renderedText, textRanges, type SearchText } from './search';
 import { PAUSE_FOLLOW_EVENT } from './useFollowScroll';
 
 interface Field {
@@ -87,12 +87,13 @@ export function ConversationSearch({
       const ordinal = index - field.offset,
         match = matchAt(field.source.text, query, ordinal);
       if (!match) return;
-      const range = textRange(field.source, match);
+      const ranges = textRanges(field.source, match),
+        range = ranges[0];
       position.current = { key: field.key, ordinal, index };
       currentArticle = field.root.closest<HTMLElement>('[data-message-id]');
       currentArticle?.setAttribute('data-search-current', 'true');
       if (range && typeof Highlight !== 'undefined' && CSS.highlights)
-        CSS.highlights.set('everchat-search', new Highlight(range));
+        CSS.highlights.set('everchat-search', new Highlight(...ranges));
       setStatus({
         count,
         index,

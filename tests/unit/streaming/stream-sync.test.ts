@@ -7,6 +7,7 @@ import { commitAck, streamBatches } from '../../../shared/streaming/batches';
 import type { Commit } from '../../../shared/streaming/protocol';
 import { ProviderStream, encodeBytes } from '../../../shared/streaming/provider-stream';
 import { StreamSync } from '../../../shared/streaming/sync';
+import { reasoningBlocks } from '../../../shared/web-tools/reasoning-flow';
 
 const message: Message = {
   id: 'answer',
@@ -37,6 +38,62 @@ const commit: Commit = {
   messageId: 'answer',
   batches: [first],
 };
+
+test('a tool boundary atomically fixes a preview prefix and survives a new run, stale previews and reconnect', () => {
+  const sync = new StreamSync({ messages: [message], seq: 0, epoch: 'epoch' });
+  sync.receive({ type: 'preview', batch: first });
+  const ended: Message = {
+    ...sync.view.messages[0],
+    liveOffset: undefined,
+    durableOffset: first.endOffset,
+    streamVersion: null,
+    tools: {
+      status: 'active',
+      round: 0,
+      calls: [
+        {
+          round: 0,
+          call: { id: 'search', name: 'web_search', input: { query: '资料' } },
+          state: 'running',
+        },
+      ],
+      reasoningBreaks: [{ round: 0, reasoningEnd: 3 }],
+    },
+  };
+  sync.receive({ type: 'change', seq: 1, messages: [ended] });
+  assert.equal(sync.hasPreview, false);
+  const continued = {
+    ...ended,
+    runId: 'next',
+    durableOffset: 0,
+    streamVersion: message.streamVersion,
+    streamState: new ProviderStream('openai-chat', true).checkpoint(),
+  };
+  sync.receive({ type: 'change', seq: 2, messages: [continued] });
+  assert.throws(() => sync.receive({ type: 'preview', batch: first }), /identity mismatch/);
+  const next = [...streamBatches('next', 'answer', 0, 0, wire('回答', '再思考🙂'))][0];
+  sync.receive({ type: 'preview', batch: next });
+  assert.deepEqual(
+    reasoningBlocks(
+      messageText(sync.view.messages[0], 'reasoning'),
+      sync.view.messages[0].tools,
+    ).map((block) => (block.type === 'reasoning' ? block.text : '搜索')),
+    ['先思考', '搜索', '再思考🙂'],
+  );
+  sync.receive({ type: 'commit', seq: 3, runId: 'next', messageId: 'answer', batches: [next] });
+  const saved = sync.durable;
+  const reconnect = new StreamSync();
+  reconnect.receive({ type: 'snapshot', snapshot: saved });
+  assert.deepEqual(reconnect.view, saved);
+  const bad = { ...continued, parts: [] };
+  assert.throws(
+    () =>
+      sync.receive({ type: 'state', after: 3, snapshot: { ...saved, seq: 4, messages: [bad] } }),
+    /position mismatch/,
+  );
+  assert.equal(sync.durable, saved);
+  assert.deepEqual(new StreamSync({ ...saved, messages: [bad] }).durable, { messages: [], seq: 0 });
+});
 
 test('settings changes survive live previews, confirmation and message-only updates', () => {
   const settings = { ...DEFAULT_CONVERSATION_SETTINGS, systemPrompt: 'conversation prompt' };

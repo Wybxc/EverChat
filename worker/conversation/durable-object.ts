@@ -96,9 +96,11 @@ import { addGenerationUsage } from '../../shared/streaming/generation';
 import type { ProviderFailure } from '../../shared/providers/failure';
 import { providerFailure } from '../providers/failure';
 import type { WebToolServiceConfig } from '../../shared/web-tools/service';
+import { updateToolTask } from '../../shared/web-tools/reasoning-flow';
 import {
   assertWebToolSupport,
   type PublicToolTask,
+  type ReasoningBreak,
   type WebToolCall,
   type WebToolName,
   type WebToolOutcome,
@@ -930,7 +932,12 @@ export class Conversation extends DurableObject<Env> {
           input.requestId,
           JSON.stringify(input.tools),
           createHash('sha256').update(fingerprint).digest('hex'),
-          JSON.stringify({ status: 'active', round: 0, calls: [] } satisfies PublicToolTask),
+          JSON.stringify({
+            status: 'active',
+            round: 0,
+            calls: [],
+            reasoningBreaks: [],
+          } satisfies PublicToolTask),
         );
       this.query(
         'INSERT INTO runs (id, conversationId, assistantId, context, chunkSeq, updatedAt, config, streamVersion, executor) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)',
@@ -1067,15 +1074,34 @@ export class Conversation extends DurableObject<Env> {
     ).toArray()[0];
   }
   private refreshToolMessage(rootId: string, conversationId?: string): Change | null {
+    const request = this.writeToolTask(rootId, this.tools.publicTask(rootId));
+    return request
+      ? this.messages.record([this.messages.message(request.messageId)!], conversationId)
+      : null;
+  }
+  private writeToolTask(
+    rootId: string,
+    task: PublicToolTask,
+    boundary?: ReasoningBreak,
+    reasoning?: string,
+  ) {
     const request = this.query<ToolRequestRow>(
       'SELECT * FROM message_web_tools WHERE rootId = ?',
       rootId,
     ).toArray()[0];
     if (!request) return null;
-    const payload = JSON.stringify(this.tools.publicTask(rootId));
+    const previous = JSON.parse(request.payload) as PublicToolTask;
+    const payload = JSON.stringify(
+      updateToolTask(
+        previous,
+        task,
+        reasoning ?? messageText(this.messages.rawMessage(request.messageId)!, 'reasoning'),
+        boundary,
+      ),
+    );
     if (payload === request.payload) return null;
     this.query('UPDATE message_web_tools SET payload = ? WHERE rootId = ?', payload, rootId);
-    return this.messages.record([this.messages.message(request.messageId)!], conversationId);
+    return request;
   }
   private initializeToolTasks() {
     for (const request of this.query<ToolRequestRow>(
@@ -1309,11 +1335,7 @@ export class Conversation extends DurableObject<Env> {
           'INSERT INTO tool_model_permits VALUES (?) ON CONFLICT DO NOTHING',
           current.runId,
         );
-        this.query(
-          'UPDATE message_web_tools SET payload = ? WHERE rootId = ?',
-          JSON.stringify(this.tools.publicTask(taskId)),
-          taskId,
-        );
+        this.writeToolTask(taskId, this.tools.publicTask(taskId));
         return this.messages.record([this.messages.message(state.messageId)!]);
       });
     } catch (error) {
@@ -1949,18 +1971,21 @@ export class Conversation extends DurableObject<Env> {
         const state = this.tools.state(toolModel.rootId);
         finalStatus = state.status === 'active' ? 'running' : state.status;
         error = state.error ?? error;
-        this.query(
-          'UPDATE message_web_tools SET payload = ? WHERE rootId = ?',
-          JSON.stringify(this.tools.publicTask(toolModel.rootId)),
+        this.writeToolTask(
           toolModel.rootId,
+          this.tools.publicTask(toolModel.rootId),
+          status === 'completed' && toolTurn?.calls.length
+            ? { round: toolModel.round, reasoningEnd: messageText(message, 'reasoning').length }
+            : undefined,
+          messageText(message, 'reasoning'),
         );
         this.query('DELETE FROM tool_model_permits WHERE runId = ?', runId);
       } else if (toolRequest)
-        this.query(
-          'UPDATE message_web_tools SET payload = ? WHERE messageId = ?',
-          JSON.stringify({ status: finalStatus, round: 0, calls: [] }),
-          message.id,
-        );
+        this.writeToolTask(toolRequest.rootId, {
+          status: finalStatus,
+          round: 0,
+          calls: [],
+        });
       if (message.streamVersion === STREAM_VERSION) this.journal.compact(message);
       if (toolRequest) this.privateToolStreams.purge(runId);
       if (finalStatus === 'failed') {
@@ -2105,11 +2130,7 @@ export class Conversation extends DurableObject<Env> {
         this.query("UPDATE runs SET config = NULL, context = '[]' WHERE id = ?", run.id);
         this.query('DELETE FROM generation_timings WHERE runId = ?', run.id);
         if (answer.tools)
-          this.query(
-            'UPDATE message_web_tools SET payload = ? WHERE messageId = ?',
-            JSON.stringify({ status, round: 0, calls: [] } satisfies PublicToolTask),
-            answer.id,
-          );
+          this.writeToolTask(this.toolRequest(answer.id)!.rootId, { status, round: 0, calls: [] });
       }
       this.query(
         'UPDATE messages SET status = ?, error = ? WHERE id = ?',

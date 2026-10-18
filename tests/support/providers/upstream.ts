@@ -212,7 +212,7 @@ export function installMockUpstream() {
       });
     }
     const toolModel =
-      /^tools-(?:(loop|pause|service)-)?(?:(large|sustained)-)?(openai-chat|openai-responses|anthropic|gemini)$/.exec(
+      /^tools-(?:(loop|pause|service|flow)-)?(?:(large|sustained)-)?(openai-chat|openai-responses|anthropic|gemini)$/.exec(
         modelId ?? '',
       );
     const toolKind = toolModel?.[3] as ProviderKind | undefined;
@@ -243,8 +243,16 @@ export function installMockUpstream() {
           (toolKind === 'gemini' && !serialized.includes('fixture-signature')))
       )
         return Response.json({ error: 'Missing continuation metadata' }, { status: 400 });
-      const loop = requestBody.model?.startsWith('tools-loop-'),
-        round = loop ? (serialized.match(/"role":"tool"/g) ?? []).length / 2 : 0;
+      const loop = modelId?.startsWith('tools-loop-'),
+        flow = modelId?.startsWith('tools-flow-');
+      const round = flow
+        ? Math.max(
+            -1,
+            ...[...serialized.matchAll(/call_flow_(\d+)_/g)].map((match) => Number(match[1])),
+          ) + 1
+        : loop
+          ? (serialized.match(/"role":"tool"/g) ?? []).length / 2
+          : 0;
       // The mock workload is independent of diagnostic counters so a later CPU
       // validation can use the same input with all instrumentation switched off.
       const encodedWorkload = (runtimeEnv as MeasurementEnv).LOCAL_TOOL_WORKLOAD;
@@ -257,10 +265,27 @@ export function installMockUpstream() {
               ? (JSON.parse(encodedWorkload) as { chunks: number; size: number; interval: number })
               : undefined;
       let wire =
-        continued && !loop
-          ? toolFinalStream(toolKind, workload)
+        continued && !loop && (!flow || round >= 2)
+          ? toolFinalStream(toolKind, workload, flow ? '**整合结果🙂**\n\n继续分析。' : undefined)
           : toolStream(toolKind, {
               count: 2,
+              ...(flow
+                ? {
+                    reasoning:
+                      round === 0
+                        ? '**搜索之前🙂**\n第一行\n第二行。'
+                        : '**搜索之后🙂**\n\n核对网页。',
+                    calls: [
+                      {
+                        name: round === 0 ? 'web_search' : 'read_webpage',
+                        input:
+                          round === 0
+                            ? JSON.stringify({ query: 'Cloudflare 文档🙂' })
+                            : JSON.stringify({ url: 'https://developers.cloudflare.com/' }),
+                      },
+                    ],
+                  }
+                : {}),
               ...(modelId?.startsWith('tools-service-')
                 ? {
                     calls: [
@@ -273,8 +298,8 @@ export function installMockUpstream() {
                   }
                 : {}),
             })
-              .replaceAll('call_0', `call_${round}_0`)
-              .replaceAll('call_1', `call_${round}_1`);
+              .replaceAll('call_0', flow ? `call_flow_${round}_0` : `call_${round}_0`)
+              .replaceAll('call_1', flow ? `call_flow_${round}_1` : `call_${round}_1`);
       if (!continued && toolKind === 'openai-chat')
         wire = wire.replace(
           '"reasoning_content":"检索资料🙂"',

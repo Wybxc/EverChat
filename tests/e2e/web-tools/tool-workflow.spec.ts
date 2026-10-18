@@ -124,7 +124,13 @@ for (const provider of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
       expect(messageText(answer)).toBe(
         (provider === 'openai-chat' ? '先查阅资料。\n' : '') + '**工具回答🙂**\n结论。',
       );
-      expect(answer.tools).toMatchObject({ status: 'completed', round: 1 });
+      expect(answer.tools).toMatchObject({
+        status: 'completed',
+        round: 1,
+        reasoningBreaks: [
+          { round: 0, reasoningEnd: provider === 'gemini' ? 0 : '检索资料🙂'.length },
+        ],
+      });
       expect(answer.tools!.calls.map((item) => item.state)).toEqual(['completed', 'completed']);
       expect(answer.generation).toMatchObject({
         usage: { inputTokens: 15, outputTokens: 8 },
@@ -166,7 +172,7 @@ for (const provider of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
         },
       });
       expect(rejected.status()).toBe(400);
-      expect(await rejected.json()).toEqual({ error: '当前模型不支持工具调用。' });
+      expect(await rejected.json()).toEqual({ error: '当前模型不支持工具调用。', status: 400 });
       expect(await f.snapshot()).toEqual(snapshot);
       expect((await f.state()).modelCalls).toBe(2);
     } finally {
@@ -345,7 +351,8 @@ test('tool process sync survives page closure and a second device, with no priva
       'data-status',
       'completed',
     );
-    await other.getByTestId('tool-activity').locator(':scope > summary').click();
+    for (const summary of await other.getByTestId('tool-call').locator(':scope > summary').all())
+      await summary.click();
     await expect(other.getByTestId('tool-activity').getByRole('link')).toHaveCount(2);
     await other
       .getByTestId('assistant-message')
