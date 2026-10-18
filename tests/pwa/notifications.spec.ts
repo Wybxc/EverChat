@@ -16,6 +16,7 @@ test.use({ channel: 'chromium' });
 async function fixture(context: BrowserContext, page: Page) {
   await context.grantPermissions(['notifications'], { origin: 'http://127.0.0.1:5175' });
   const sockets = new Set<WebSocketRoute>();
+  const checks: { id: string; foreground: boolean }[] = [];
   let device: NotificationDevice | null = null;
   await context.route('**/api/notifications/config', (route) =>
     route.fulfill({ json: { publicKey: null } }),
@@ -30,6 +31,14 @@ async function fixture(context: BrowserContext, page: Page) {
     ws.send(JSON.stringify({ type: 'ready' }));
     ws.onMessage((data) => {
       if (data === 'ping') ws.send('pong');
+      else {
+        const packet = JSON.parse(String(data)) as {
+          type: string;
+          id: string;
+          foreground: boolean;
+        };
+        if (packet.type === 'check') checks.push(packet);
+      }
     });
   });
   await page.addInitScript(() => {
@@ -64,6 +73,7 @@ async function fixture(context: BrowserContext, page: Page) {
   return {
     panel,
     sockets,
+    checks,
     get device() {
       return device;
     },
@@ -159,6 +169,41 @@ test('push registration normalizes browser subscription fields before sending th
     expirationTime: null,
     keys: { auth: Buffer.alloc(16, 255).toString('base64url'), p256dh: publicKey },
   });
+});
+
+test('a signed-in page reports account focus without enabling notifications, including never mode', async ({
+  page,
+  context,
+}) => {
+  const f = await fixture(context, page);
+  await context.clearPermissions();
+  expect(await page.evaluate(() => Notification.permission)).toBe('default');
+  await page.bringToFront();
+  await expect.poll(() => f.sockets.size).toBe(1);
+  const confirm = async () => {
+    const id = crypto.randomUUID();
+    for (const ws of f.sockets) ws.send(JSON.stringify({ type: 'check', id }));
+    await expect.poll(() => f.checks.find((packet) => packet.id === id)?.foreground).toBe(true);
+  };
+  await confirm();
+  await f.panel.getByLabel('回答完成通知').selectOption('never');
+  await expect(f.panel.getByRole('status')).toHaveText('已停用');
+  await expect.poll(() => f.sockets.size).toBe(1);
+  await confirm();
+  expect(f.device).toBeNull();
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { permissionRequests: number }).permissionRequests,
+    ),
+  ).toBe(0);
+  await context.setOffline(true);
+  await page.getByRole('button', { name: '退出并清除本地记录', exact: true }).click();
+  await expect(page.getByRole('button', { name: '完成退出', exact: true })).toBeVisible();
+  await expect.poll(() => f.sockets.size).toBe(0);
+  await context.setOffline(false);
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect(page.getByRole('button', { name: '完成退出', exact: true })).toBeVisible();
+  expect(f.sockets.size).toBe(0);
 });
 
 test('production SW notifications require explicit enable, keep preferences on reload and coordinate duplicate local delivery across windows', async ({

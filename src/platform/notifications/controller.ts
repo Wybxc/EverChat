@@ -105,15 +105,7 @@ const closeSocket = () => {
   }
 };
 function connect(value: NotificationPreference) {
-  if (
-    stopped ||
-    !authorized() ||
-    !navigator.onLine ||
-    !value.enabled ||
-    value.mode === 'never' ||
-    value.owner !== owner ||
-    value.syncedRevision !== value.revision
-  ) {
+  if (stopped || !authorized() || !navigator.onLine) {
     closeSocket();
     return;
   }
@@ -132,6 +124,7 @@ function connect(value: NotificationPreference) {
     }, 30_000);
   };
   ws.onmessage = (event) => {
+    if (stopped || current !== generation || socket !== ws || !authorized()) return;
     if (event.data === 'pong') return;
     try {
       const packet = JSON.parse(event.data) as NotificationPacket;
@@ -169,10 +162,13 @@ const keyBytes = (key: string) =>
   );
 async function synchronizeNow() {
   let value = await refresh();
-  if (!authorized() || !navigator.onLine || value.owner !== owner) {
+  if (!authorized() || !navigator.onLine) {
     closeSocket();
     return;
   }
+  // Presence belongs to the signed-in page, independently of notification permission.
+  connect(value);
+  if (value.owner !== owner) return;
   const expectedOwner = owner,
     current = generation;
   let subscription: PushSubscription | null = null;
@@ -374,13 +370,15 @@ export async function testNotification() {
   }
 }
 export async function disableNotificationsForLogout() {
+  stopped = true;
+  generation++;
+  closeSocket();
   const value = await notificationPreference();
   const disabled = await changeNotificationPreference({
     enabled: false,
     mode: 'never',
     push: false,
   });
-  closeSocket();
   broadcast();
   await refresh();
   if (value.owner === owner && authorized() && navigator.onLine) {

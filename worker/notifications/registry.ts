@@ -93,15 +93,17 @@ export class NotificationRegistry {
     return value;
   }
   connect(request: Request, owner: string, expires: number, instanceId: string) {
+    if (!v.is(notificationDeviceSchema.entries.instanceId, instanceId))
+      throw new HttpError(400, '通知实例格式无效。');
     const device = this.row(instanceId);
-    if (!device || device.owner !== owner) throw new HttpError(403, '请先启用此实例的通知。');
+    if (device && device.owner !== owner) throw new HttpError(403, '通知实例不属于此账号。');
     if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket')
       throw new HttpError(426, '需要实时连接。');
     const pair = new WebSocketPair();
     this.ctx.acceptWebSocket(pair[1], [instanceId]);
     pair[1].serializeAttachment({
       instanceId,
-      owner: device.owner,
+      owner,
       expires,
     } satisfies Connection);
     pair[1].send(JSON.stringify({ type: 'ready' } satisfies NotificationPacket));
@@ -122,15 +124,15 @@ export class NotificationRegistry {
         value.id.length < 180 &&
         value.foreground === true
       ) {
-        // Complete only this delivery's current check. Keeping one reply on the
-        // socket loses other completions and lets stale replies overwrite it.
+        // Any authenticated window for this owner can suppress the target device's
+        // current conditional delivery, even if this window has no subscription.
         const separator = value.id.lastIndexOf(':');
         if (separator > 0)
           this.query(
-            'UPDATE notification_deliveries SET done = 1 WHERE id = ? AND device = ? AND checkToken = ? AND done = 0 AND nextAt > ?',
+            'UPDATE notification_deliveries SET done = 1 WHERE id = ? AND checkToken = ? AND device IN (SELECT id FROM notification_devices WHERE owner = ?) AND done = 0 AND nextAt > ?',
             value.id.slice(0, separator),
-            connection.instanceId,
             value.id,
+            connection.owner,
             this.now(),
           );
       }
@@ -139,18 +141,15 @@ export class NotificationRegistry {
       /* Invalid control messages cannot change a subscription. */
     }
   }
-  private sockets(instanceId: string) {
+  private sockets(owner: string, instanceId?: string) {
     return this.ctx.getWebSockets(instanceId).filter((socket) => {
       const data = socket.deserializeAttachment() as Connection | null;
-      if (
-        !data ||
-        data.expires * 1000 <= this.now() ||
-        this.row(instanceId)?.owner !== data.owner
-      ) {
+      const device = data && this.row(data.instanceId);
+      if (!data || data.expires * 1000 <= this.now() || (device && device.owner !== data.owner)) {
         socket.close(4401, 'Session expired');
         return false;
       }
-      return socket.readyState === WebSocket.OPEN;
+      return data.owner === owner && socket.readyState === WebSocket.OPEN;
     });
   }
   enqueue(input: AnswerCompletion) {
@@ -206,23 +205,8 @@ export class NotificationRegistry {
           this.done(job);
           continue;
         }
-        const sockets = this.sockets(job.device);
-        if (!device.subscription) {
-          for (const socket of sockets) {
-            try {
-              socket.send(
-                JSON.stringify({
-                  type: 'local',
-                  completion,
-                  revision: device.revision,
-                } satisfies NotificationPacket),
-              );
-            } catch {}
-          }
-          this.done(job);
-          continue;
-        }
         if (
+          device.subscription &&
           device.subscription.expirationTime !== null &&
           device.subscription.expirationTime <= this.now()
         ) {
@@ -234,15 +218,9 @@ export class NotificationRegistry {
           this.done(job);
           continue;
         }
-        if (device.mode === 'unfocused' && sockets.length && !job.checkToken) {
+        const sockets = device.mode === 'unfocused' ? this.sockets(row!.owner) : [];
+        if (sockets.length && !job.checkToken) {
           const token = `${job.id}:${crypto.randomUUID()}`;
-          for (const socket of sockets) {
-            try {
-              socket.send(
-                JSON.stringify({ type: 'check', id: token } satisfies NotificationPacket),
-              );
-            } catch {}
-          }
           this.query(
             'UPDATE notification_deliveries SET checkToken = ?, nextAt = ? WHERE id = ? AND device = ?',
             token,
@@ -250,6 +228,28 @@ export class NotificationRegistry {
             job.id,
             job.device,
           );
+          for (const socket of sockets) {
+            try {
+              socket.send(
+                JSON.stringify({ type: 'check', id: token } satisfies NotificationPacket),
+              );
+            } catch {}
+          }
+          continue;
+        }
+        if (!device.subscription) {
+          for (const socket of this.sockets(row!.owner, job.device)) {
+            try {
+              socket.send(
+                JSON.stringify({
+                  type: 'local',
+                  completion,
+                  revision: device.revision,
+                } satisfies NotificationPacket),
+              );
+            } catch {}
+          }
+          this.done(job);
           continue;
         }
         const started = this.now();

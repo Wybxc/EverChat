@@ -136,7 +136,7 @@ test('persisted ordinary answers and regenerated versions notify once, while his
     await f.cleanup();
   }
 });
-test('concurrent focus confirmations suppress both answers over a real notification socket, then background delivery resumes', async ({
+test('an unregistered active desktop suppresses concurrent mobile notifications over a real socket, then background delivery resumes', async ({
   request,
 }) => {
   const f = await fixture(request);
@@ -153,8 +153,9 @@ test('concurrent focus confirmations suppress both answers over a real notificat
     const cookies = (await request.storageState()).cookies
       .map(({ name, value }) => `${name}=${value}`)
       .join('; ');
+    // Only the phone has a subscription; the desktop reports presence without enabling notifications.
     socket = new WebSocket(
-      `ws://127.0.0.1:5174/api/notifications/sync?instance=${f.device.instanceId}`,
+      `ws://127.0.0.1:5174/api/notifications/sync?instance=${crypto.randomUUID()}`,
       { headers: { ...headers, Cookie: cookies } },
     );
     const checks: string[] = [];

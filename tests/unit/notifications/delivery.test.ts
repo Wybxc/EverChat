@@ -72,9 +72,10 @@ function registry(t: TestContext) {
   });
   const context = {
     setWebSocketAutoResponse() {},
-    getWebSockets: (id: string) => sockets.filter((s) => s.instanceId === id),
+    getWebSockets: (id?: string) => sockets.filter((s) => !id || s.instanceId === id),
   } as unknown as DurableObjectState;
-  const sent: AnswerCompletion[] = [];
+  const sent: AnswerCompletion[] = [],
+    targets: string[] = [];
   let status = 201,
     exists = true,
     failure: unknown;
@@ -82,8 +83,9 @@ function registry(t: TestContext) {
     new NotificationRegistry(
       context,
       f.query,
-      async (_device, completion) => {
+      async (device, completion) => {
         sent.push(completion);
+        targets.push(device.instanceId);
         if (failure) throw failure;
         return { status };
       },
@@ -91,8 +93,8 @@ function registry(t: TestContext) {
       f.now,
     );
   let store = reader();
-  function socket(instanceId: string, expires = 10000) {
-    let attachment: unknown = { instanceId, owner: 'owner', expires };
+  function socket(instanceId: string, expires = 10000, owner = 'owner') {
+    let attachment: unknown = { instanceId, owner, expires };
     const packets: { type: string; id?: string }[] = [];
     return {
       instanceId,
@@ -112,6 +114,7 @@ function registry(t: TestContext) {
   return {
     ...f,
     sent,
+    targets,
     sockets,
     logs: () => log.mock.calls.map((call) => call.arguments),
     fail: (error: unknown) => {
@@ -129,8 +132,8 @@ function registry(t: TestContext) {
     remove: () => {
       exists = false;
     },
-    connect: (id: string, expires?: number) => {
-      const ws = socket(id, expires);
+    connect: (id: string, expires?: number, owner?: string) => {
+      const ws = socket(id, expires, owner);
       sockets.push(ws);
       return ws;
     },
@@ -181,6 +184,10 @@ test('device ownership, endpoint validation, monotonic revisions and enable time
     d = device();
   f.store.save('owner', d);
   assert.throws(() => f.store.save('other', { ...d, revision: 2 }), /不属于/);
+  const request = new Request('https://chat.example.com/api/notifications/sync');
+  assert.throws(() => f.store.connect(request, 'owner', 10000, 'invalid'), /格式无效/);
+  assert.throws(() => f.store.connect(request, 'other', 10000, d.instanceId), /不属于/);
+  assert.throws(() => f.store.connect(request, 'owner', 10000, crypto.randomUUID()), /实时连接/);
   for (const endpoint of [
     'http://localhost/push',
     'https://fcm.googleapis.com.evil.example/',
@@ -258,6 +265,69 @@ test('each retry checks focus again and stale replies cannot suppress a later at
   f.advance(1000);
   await f.store.flush();
   assert.equal(f.sent.length, 1);
+});
+test('an active desktop without notification permission suppresses mobile conditional delivery but not always mode', async (t) => {
+  const f = registry(t),
+    mobile = device(),
+    always = { ...device(), mode: 'always' as const };
+  f.store.save('owner', mobile);
+  f.store.save('owner', always);
+  // Presence does not require a persisted device or a Push subscription.
+  const desktop = f.connect(crypto.randomUUID());
+  f.store.enqueue(f.completion);
+  await f.store.flush();
+  assert.deepEqual(f.targets, [always.instanceId]);
+  assert.equal(desktop.packets.length, 1);
+  f.reply(desktop, desktop.packets[0].id!, true);
+  f.reopen();
+  f.advance(1000);
+  await f.store.flush();
+  assert.deepEqual(f.targets, [always.instanceId]);
+  assert.equal(f.query('SELECT * FROM notification_devices').toArray().length, 2);
+  const next = { ...f.completion, messageId: crypto.randomUUID(), completedAt: f.now() };
+  f.store.enqueue(next);
+  await f.store.flush();
+  f.reply(desktop, desktop.packets.at(-1)!.id!, false);
+  f.advance(1000);
+  await f.store.flush();
+  assert.deepEqual(f.targets, [always.instanceId, always.instanceId, mobile.instanceId]);
+});
+test('disabled desktop notifications still participate in account focus checks, including local-only delivery', async (t) => {
+  const f = registry(t),
+    desktop = { ...device(false), mode: 'never' as const },
+    local = device(false),
+    mobile = device();
+  for (const d of [desktop, local, mobile]) f.store.save('owner', d);
+  const active = f.connect(desktop.instanceId),
+    localWindow = f.connect(local.instanceId);
+  f.store.enqueue(f.completion);
+  await f.store.flush();
+  assert.equal(f.sent.length, 0);
+  assert.equal(active.packets.length, 2);
+  for (const packet of active.packets) f.reply(active, packet.id!, true);
+  f.advance(1000);
+  await f.store.flush();
+  assert.equal(f.sent.length, 0);
+  assert.ok(localWindow.packets.every((packet) => packet.type === 'check'));
+});
+test('another account cannot observe or confirm a focus check, even with a copied token', async (t) => {
+  const f = registry(t),
+    mobile = device(),
+    other = device();
+  f.store.save('owner', mobile);
+  f.store.save('other', other);
+  const desktop = f.connect(crypto.randomUUID()),
+    stranger = f.connect(other.instanceId, undefined, 'other');
+  f.store.enqueue(f.completion);
+  await f.store.flush();
+  assert.equal(desktop.packets.length, 1);
+  assert.equal(stranger.packets.length, 1);
+  assert.notEqual(desktop.packets[0].id, stranger.packets[0].id);
+  f.reply(stranger, desktop.packets[0].id!, true);
+  f.reply(stranger, stranger.packets[0].id!, true);
+  f.advance(1000);
+  await f.store.flush();
+  assert.deepEqual(f.targets, [mobile.instanceId]);
 });
 test('simultaneous foreground completions remain suppressed when focus replies arrive out of order', async (t) => {
   const f = registry(t),

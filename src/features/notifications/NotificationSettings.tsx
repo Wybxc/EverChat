@@ -28,6 +28,11 @@ export function NotificationSettings() {
           <option value="unfocused">仅在无焦点或后台时发送</option>
         </NativeSelect>
       </label>
+      {state.mode === 'unfocused' && (
+        <p className="text-xs text-muted-foreground">
+          同一账号任一设备的 EverChat 页面可见且有焦点时不提醒。
+        </p>
+      )}
       <p role="status" className="text-xs text-muted-foreground">
         {state.mode === 'never'
           ? state.pending
