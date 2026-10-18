@@ -95,9 +95,12 @@ async function setup(request: APIRequestContext) {
 }
 
 async function replay(request: APIRequestContext, id: string) {
+  const baseline = (await request
+    .get(`/api/conversations/${id}`)
+    .then((response) => response.json())) as Snapshot;
   const { cookies } = await request.storageState();
   const socket = new WebSocket(
-    `${origin.replace('http:', 'ws:')}/api/conversations/${id}/sync?after=0`,
+    `${origin.replace('http:', 'ws:')}/api/conversations/${id}/sync?after=${baseline.seq}&epoch=${baseline.epoch ?? ''}`,
     {
       headers: {
         ...headers,
@@ -105,7 +108,7 @@ async function replay(request: APIRequestContext, id: string) {
       },
     },
   );
-  const packets: SyncPacket[] = [];
+  const packets: SyncPacket[] = [{ type: 'snapshot', snapshot: baseline }];
   try {
     await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => reject(new Error('Replay timeout')), 10_000);

@@ -127,7 +127,7 @@ export function SettingsPanel(props: PanelProps) {
           </TabsList>
           <div
             data-testid="settings-scroll"
-            className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 sm:p-4"
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 pb-0 sm:p-4 sm:pb-0"
           >
             <section
               id="settings-panel-general"

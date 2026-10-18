@@ -8,6 +8,7 @@ import {
   WEB_TOOL_NAMES,
   type WebToolCall,
   type WebToolOutcome,
+  type WebToolFailure,
 } from '../../shared/web-tools/tasks';
 
 export const WEB_TOOL_RESPONSE_BYTES = 512 * 1024;
@@ -17,10 +18,7 @@ const credentialsError = '联网服务密钥无效或没有访问权限。';
 const quotaError = '联网服务的请求或用量额度已用尽。';
 const timeoutError = '联网工具执行已停止或超过 15 秒期限。';
 export function terminalWebToolError(outcome: WebToolOutcome): string | undefined {
-  return outcome.status === 'failed' &&
-    [credentialsError, quotaError, timeoutError].includes(outcome.error)
-    ? outcome.error
-    : undefined;
+  return outcome.status === 'failed' && outcome.failure?.terminal ? outcome.error : undefined;
 }
 const invalid = () => new Error('联网服务返回了无效或超限的结果。');
 const object = (value: unknown): Record<string, unknown> => {
@@ -79,14 +77,24 @@ export async function executeWebTool(
   fetcher: WebToolFetch = (request) => fetch(request),
 ): Promise<WebToolOutcome> {
   const call = validateWebToolCall(input, WEB_TOOL_NAMES);
-  const failed = (error: string): WebToolOutcome => ({
+  const failed = (
+    error: string,
+    code: WebToolFailure['code'] = 'INVALID_RESULT',
+    terminal = false,
+    httpStatus?: number,
+  ): WebToolOutcome => ({
     id: call.id,
     name: call.name,
     status: 'failed',
-    error,
+    error: `${config.provider === 'deepseek' ? 'DeepSeek' : 'Tavily'}${httpStatus ? ` · HTTP ${httpStatus}` : ''}：${error}`,
+    failure: { provider: config.provider, code, terminal, ...(httpStatus ? { httpStatus } : {}) },
   });
-  if (config.provider !== 'tavily' || !config.apiKey || /[^\x21-\x7e]/.test(config.apiKey))
-    return failed('尚未配置联网工具服务。');
+  if (
+    !['tavily', 'deepseek'].includes(config.provider) ||
+    !config.apiKey ||
+    /[^\x21-\x7e]/.test(config.apiKey)
+  )
+    return failed('尚未配置联网工具服务。', 'CONFIGURATION', true);
   const controller = new AbortController(),
     abort = () => controller.abort(),
     timer = setTimeout(abort, WEB_TOOL_TIMEOUT_MS);
@@ -94,29 +102,39 @@ export async function executeWebTool(
   if (signal.aborted) abort();
   try {
     controller.signal.throwIfAborted();
-    const search = call.name === 'web_search';
-    const body = search
-      ? {
-          query: call.input.query,
-          topic: 'general',
-          search_depth: 'basic',
-          max_results: MAX_TOOL_SOURCES,
-          auto_parameters: false,
-          include_answer: false,
-          include_raw_content: false,
-          include_images: false,
-          include_favicon: false,
-        }
-      : {
-          urls: [call.input.url],
-          extract_depth: 'basic',
-          format: 'text',
-          timeout: 10,
-          include_images: false,
-          include_favicon: false,
-        };
+    const search = call.name === 'web_search',
+      deepseek = config.provider === 'deepseek';
+    if (deepseek && search && [...call.input.query].length > 128)
+      return failed('搜索词不能超过 128 个字符，请缩短后重试。', 'INVALID_INPUT');
+    const endpoint = deepseek
+      ? `https://api.deepseek.com/v1/tools/${search ? 'search' : 'fetch'}`
+      : `https://api.tavily.com/${search ? 'search' : 'extract'}`;
+    const body = deepseek
+      ? search
+        ? { query: call.input.query, count: MAX_TOOL_SOURCES, need_content: false }
+        : { url: call.input.url }
+      : search
+        ? {
+            query: call.input.query,
+            topic: 'general',
+            search_depth: 'basic',
+            max_results: MAX_TOOL_SOURCES,
+            auto_parameters: false,
+            include_answer: false,
+            include_raw_content: false,
+            include_images: false,
+            include_favicon: false,
+          }
+        : {
+            urls: [call.input.url],
+            extract_depth: 'basic',
+            format: 'text',
+            timeout: 10,
+            include_images: false,
+            include_favicon: false,
+          };
     const response = await fetcher(
-      new Request(`https://api.tavily.com/${search ? 'search' : 'extract'}`, {
+      new Request(endpoint, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${config.apiKey}`,
@@ -130,24 +148,44 @@ export async function executeWebTool(
     );
     if (!response.ok) {
       await response.body?.cancel().catch(() => {});
-      return failed(
-        response.status === 401 || response.status === 403
-          ? credentialsError
-          : [429, 432, 433].includes(response.status)
-            ? quotaError
-            : '联网服务暂时不可用。',
-      );
+      const status = response.status;
+      if (status === 401 || (status === 403 && (!deepseek || search)))
+        return failed(credentialsError, 'AUTHENTICATION', true, status);
+      if (status === 402)
+        return failed(
+          deepseek ? '账户余额不足，请充值后重新尝试。' : quotaError,
+          'BALANCE',
+          true,
+          status,
+        );
+      if ([429, 432, 433].includes(status))
+        return failed(
+          status === 429 ? '服务限速，请稍后重新尝试。' : quotaError,
+          'RATE_LIMIT',
+          true,
+          status,
+        );
+      if (deepseek && !search && [403, 404].includes(status))
+        return failed(
+          '网页受限或没有可读取的正文，请尝试其他来源。',
+          'PAGE_UNAVAILABLE',
+          false,
+          status,
+        );
+      if ([400, 413].includes(status))
+        return failed('请求参数无效或过长，请调整后重试。', 'INVALID_INPUT', false, status);
+      return failed('联网服务暂时不可用，请稍后重新尝试。', 'SERVICE_UNAVAILABLE', false, status);
     }
-    if (
-      response.redirected ||
-      (response.url && response.url !== `https://api.tavily.com/${search ? 'search' : 'extract'}`)
-    ) {
+    if (response.redirected || (response.url && response.url !== endpoint)) {
       await response.body?.cancel();
       throw invalid();
     }
     const data = await responseJson(response, controller.signal);
+    if (deepseek && !search)
+      data.results = [{ url: call.input.url, title: data.title, content: data.content }];
     if (!Array.isArray(data.results)) throw invalid();
     if (
+      !deepseek &&
       !search &&
       (!Array.isArray(data.failed_results) ||
         data.failed_results.length ||
@@ -158,7 +196,13 @@ export async function executeWebTool(
     let remaining = MAX_TOOL_SOURCE_CHARACTERS;
     for (const item of data.results.slice(0, search ? MAX_TOOL_SOURCES : 1)) {
       const row = object(item),
-        content = search ? row.content : row.raw_content;
+        content = deepseek
+          ? search
+            ? row.summary || row.snippet || ''
+            : row.content
+          : search
+            ? row.content
+            : row.raw_content;
       if (
         typeof row.url !== 'string' ||
         !publicWebUrl(row.url) ||
@@ -194,7 +238,9 @@ export async function executeWebTool(
       throw invalid();
     return outcome;
   } catch {
-    return failed(controller.signal.aborted ? timeoutError : '联网服务返回了无效结果或连接中断。');
+    return controller.signal.aborted
+      ? failed(timeoutError, 'TIMEOUT', true)
+      : failed('联网服务返回了无效结果或连接中断。', 'INVALID_RESULT');
   } finally {
     clearTimeout(timer);
     signal.removeEventListener('abort', abort);

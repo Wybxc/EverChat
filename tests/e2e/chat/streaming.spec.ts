@@ -19,7 +19,7 @@ async function subscribe(
   const { cookies } = await request.storageState();
   const cookie = cookies.map(({ name, value }) => `${name}=${value}`).join('; ');
   const socket = new WebSocket(
-    `${origin.replace('http:', 'ws:')}/api/conversations/${id}/sync?after=${initial.seq}`,
+    `${origin.replace('http:', 'ws:')}/api/conversations/${id}/sync?after=${initial.seq}&epoch=${initial.epoch ?? ''}`,
     { headers: { ...headers, Cookie: cookie } },
   );
   const packets: SyncPacket[] = [];
@@ -35,10 +35,20 @@ async function subscribe(
       failure = error;
       reject(error);
     });
-    socket.on('message', (data) => {
+    socket.on('message', async (data) => {
       try {
         const packet = JSON.parse(data.toString()) as SyncPacket;
         packets.push(packet);
+        if (packet.type === 'resync') {
+          const baseline = (await request
+            .get(`/api/conversations/${id}`)
+            .then((response) => response.json())) as Snapshot;
+          sync.receive({ type: 'snapshot', snapshot: baseline });
+          socket.send(
+            JSON.stringify({ type: 'sync-check', seq: baseline.seq, epoch: baseline.epoch }),
+          );
+          return;
+        }
         sync.receive(packet);
         if (packet.type === 'preview' && acknowledge)
           socket.send(
@@ -109,10 +119,23 @@ test('large completed history crosses the DO response boundary and recovers from
     expect(messageText(message)).toBe(index % 2 ? '正文🙂'.repeat(22500) : '历史🙂'.repeat(4000));
     expect(messageText(message, 'reasoning')).toBe(index % 2 ? '思考🙂'.repeat(22500) : '');
   }
-  const full = await subscribe(request, id);
+  const paged: Snapshot['messages'] = [];
+  let cursor = 0;
+  while (true) {
+    const page = await request
+      .get(`/api/conversations/${id}?after=${cursor}`)
+      .then((response) => response.json());
+    expect(page.snapshot.epoch).toBe(stored.epoch);
+    paged.push(...page.snapshot.messages);
+    if (page.done) break;
+    expect(page.after).toBeGreaterThan(cursor);
+    cursor = page.after;
+  }
+  expect(paged).toEqual(stored.messages);
+  const full = await subscribe(request, id, { ...stored, seq: 0, messages: [] });
   try {
     expect(full.snapshot()).toEqual(stored);
-    expect(full.packets.map(({ type }) => type)).toEqual(['snapshot', 'ready']);
+    expect(full.packets.map(({ type }) => type)).toEqual(['resync', 'ready']);
     const latest = await subscribe(request, id, stored);
     try {
       expect(latest.snapshot()).toEqual(stored);

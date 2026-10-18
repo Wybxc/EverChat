@@ -50,6 +50,19 @@ test('mobile settings browse 320 compact models, mount one editor, preserve edit
     await page.getByRole('button', { name: '大模型列表', exact: false }).click();
     await expect(page.getByRole('button', { name: '供应商列表', exact: true })).toBeFocused();
     await expect(page.getByTestId('provider-model-row')).toHaveCount(320);
+    expect(
+      (await page.locator('.provider-model-toggle').first().boundingBox())!.height,
+    ).toBeGreaterThanOrEqual(44);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    expect(
+      (await page.locator('.provider-model-toggle').first().boundingBox())!.height,
+    ).toBeGreaterThanOrEqual(32);
+    expect(
+      (await page.getByRole('button', { name: '模型设置 1', exact: true }).boundingBox())!.width,
+    ).toBe(32);
+    await page.screenshot({ path: test.info().outputPath('providers-desktop.png') });
+    await page.setViewportSize({ width: 320, height: 568 });
+    await page.screenshot({ path: test.info().outputPath('providers-mobile.png') });
     await expect(page.locator('input[aria-label^="模型 ID"]')).toHaveCount(0);
     await page.getByLabel('筛选模型').fill('model-319');
     await expect(page.getByTestId('provider-model-row')).toHaveCount(1);

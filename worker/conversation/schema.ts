@@ -1,5 +1,7 @@
-import { PRIVATE_TOOL_STREAM_SCHEMA, STREAM_JOURNAL_SCHEMA } from '../streaming/journal';
+import { PRIVATE_TOOL_STREAM_SCHEMA } from '../streaming/journal';
+import { initializeCheckpoints } from '../streaming/checkpoints';
 import { CONVERSATION_ACTIVITY_SCHEMA } from './activity';
+import { initializeConversationState } from './state';
 export const DELETION_SCHEMA =
   'CREATE TABLE IF NOT EXISTS conversation_deletion (id INTEGER PRIMARY KEY CHECK (id = 1), deletedAt INTEGER NOT NULL)';
 
@@ -27,14 +29,10 @@ export function initializeConversation(sql: SqlStorage, metrics: boolean) {
     config TEXT, streamVersion TEXT, durableOffset INTEGER NOT NULL DEFAULT 0,
     executor TEXT NOT NULL DEFAULT 'do-v1', startedAt INTEGER, cancelRequested INTEGER NOT NULL DEFAULT 0
   )`);
-  sql.exec(
-    'CREATE TABLE IF NOT EXISTS events (seq INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL)',
-  );
   sql.exec(CONVERSATION_ACTIVITY_SCHEMA);
   sql.exec(
     "CREATE INDEX IF NOT EXISTS messages_activity ON messages(status) WHERE role = 'assistant'",
   );
-  sql.exec(STREAM_JOURNAL_SCHEMA);
   sql.exec(PRIVATE_TOOL_STREAM_SCHEMA);
   sql.exec(
     'CREATE TABLE IF NOT EXISTS message_generations (messageId TEXT PRIMARY KEY, payload TEXT NOT NULL)',
@@ -70,6 +68,8 @@ export function initializeConversation(sql: SqlStorage, metrics: boolean) {
   sql.exec(
     'CREATE TABLE IF NOT EXISTS search_retry (id INTEGER PRIMARY KEY CHECK (id = 1), attempts INTEGER NOT NULL, nextAt INTEGER NOT NULL)',
   );
+  initializeConversationState(sql);
+  initializeCheckpoints(sql);
   if (metrics)
     sql.exec(
       'CREATE TABLE IF NOT EXISTS generation_measurements (id INTEGER PRIMARY KEY, payload TEXT NOT NULL)',

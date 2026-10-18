@@ -830,12 +830,15 @@ test('a search URL for an uncached message waits for a fresh authoritative snaps
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    await page.route(`**/api/conversations/${f.id}`, async (route) => {
-      waiting = true;
-      const response = await route.fetch();
-      await gate;
-      await route.fulfill({ response });
-    });
+    await page.route(
+      (url) => url.pathname === `/api/conversations/${f.id}`,
+      async (route) => {
+        waiting = true;
+        const response = await route.fetch();
+        await gate;
+        await route.fulfill({ response });
+      },
+    );
     await result.click();
     await expect.poll(() => waiting).toBe(true);
     await page.evaluate(async () => {

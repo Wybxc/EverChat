@@ -141,3 +141,20 @@ test('invalid claims and rolled-back reservations do not charge capacity', (t) =
   );
   assert.equal(store.settings().usedToday, 0);
 });
+
+test('switching network services retains separate keys and pins accepted task credentials', (t) => {
+  const { store, read, write } = setup(t);
+  write(() => store.save(input));
+  const accepted = store.config()!;
+  write(() => store.save({ provider: 'deepseek', dailyLimit: 20 }));
+  assert.equal(store.settings().provider, 'deepseek');
+  assert.equal(store.config(), undefined);
+  write(() => store.save({ provider: 'deepseek', dailyLimit: 20, apiKey: 'deepseek-private-key' }));
+  assert.equal(read().key(), 'deepseek-private-key');
+  assert.deepEqual(accepted, { provider: 'tavily', apiKey: input.apiKey, dailyLimit: 20 });
+  write(() => store.save({ provider: 'tavily', dailyLimit: 20 }));
+  assert.equal(read().key(), input.apiKey);
+  write(() => store.save({ provider: 'tavily', dailyLimit: 20, apiKey: '' }));
+  write(() => store.save({ provider: 'deepseek', dailyLimit: 20 }));
+  assert.equal(read().key(), 'deepseek-private-key');
+});

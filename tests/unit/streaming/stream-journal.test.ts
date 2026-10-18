@@ -13,7 +13,7 @@ import {
 import { ProviderStream, encodeBytes } from '../../../shared/streaming/provider-stream';
 import { initializeConversation } from '../../../worker/conversation/schema';
 import type { SqlQuery } from '../../../worker/generation/metrics';
-import { StreamJournal } from '../../../worker/streaming/journal';
+import { STREAM_JOURNAL_SCHEMA, StreamJournal } from '../../../worker/streaming/journal';
 
 const message: Message = {
   id: 'assistant',
@@ -124,6 +124,8 @@ test('fresh schema initializes idempotently with the current executor and stream
   try {
     initializeConversation(sql, false);
     initializeConversation(sql, false);
+    query(STREAM_JOURNAL_SCHEMA);
+    query('CREATE TABLE events (seq INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL)');
     query(
       'INSERT INTO runs (id, conversationId, assistantId, context, updatedAt) VALUES (?, ?, ?, ?, ?)',
       'run',
@@ -149,6 +151,8 @@ test('SQLite journal survives a new reader, deduplicates batches and compacts on
   const { db, sql, query, transaction } = database();
   try {
     initializeConversation(sql, false);
+    query(STREAM_JOURNAL_SCHEMA);
+    query('CREATE TABLE events (seq INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL)');
     query(
       'INSERT INTO messages (id, role, content, reasoning, status, createdAt, runId, streamVersion) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       message.id,
@@ -233,6 +237,8 @@ test('journal replay rejects a gap rather than returning a partial result as com
   const { db, sql, query } = database();
   try {
     initializeConversation(sql, false);
+    query(STREAM_JOURNAL_SCHEMA);
+    query('CREATE TABLE events (seq INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL)');
     const journal = new StreamJournal(query);
     const first = [...streamBatches('run', 'assistant', 0, 0, wire('第一批', ''))][0];
     const second = [
@@ -249,6 +255,8 @@ test('a grouped commit persists once, replays every boundary and rolls back with
   const { db, sql, query, transaction } = database();
   try {
     initializeConversation(sql, false);
+    query(STREAM_JOURNAL_SCHEMA);
+    query('CREATE TABLE events (seq INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL)');
     const first = [...streamBatches('run', 'assistant', 0, 0, wire('首段🙂', '思考'))][0];
     const second = [
       ...streamBatches('run', 'assistant', 1, first.endOffset, wire('末段', '结论')),
@@ -292,6 +300,8 @@ test('each model round appends to its saved display prefix while private replay 
   const { db, sql, query } = database();
   try {
     initializeConversation(sql, false);
+    query(STREAM_JOURNAL_SCHEMA);
+    query('CREATE TABLE events (seq INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL)');
     const prefix = { ...message, parts: messageParts('上一轮🙂\n', '先前思考\n') };
     query(
       'INSERT INTO messages (id, role, content, reasoning, status, createdAt, runId, streamVersion) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',

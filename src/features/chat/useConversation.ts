@@ -2,7 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import ReconnectingWebSocket from 'reconnecting-websocket';
 import { StreamSync } from '../../../shared/streaming/sync';
 import { isActive } from '../../../shared/conversation/message-state';
-import { type Snapshot, type SyncPacket } from '../../../shared/streaming/protocol';
+import {
+  type Snapshot,
+  type SnapshotPage,
+  type SyncPacket,
+} from '../../../shared/streaming/protocol';
 import { api, ApiError } from '../../platform/api';
 import { notifyAuthFailure } from '../../platform/auth';
 import { SnapshotWriter } from './snapshot-writer';
@@ -102,6 +106,13 @@ export function useConversation(
         if (socket?.readyState === ReconnectingWebSocket.OPEN) {
           socket.send('ping');
           socket.send('session-check');
+          socket.send(
+            JSON.stringify({
+              type: 'sync-check',
+              seq: sync.durable.seq,
+              epoch: sync.durable.epoch,
+            }),
+          );
         }
       }, 20_000);
     };
@@ -134,7 +145,26 @@ export function useConversation(
       }
       setLoading(sync.durable.messages.length === 0);
       try {
-        const cloud = await api<Snapshot>(`/conversations/${id}`, 'GET', undefined, request.signal);
+        const first = await api<SnapshotPage>(
+          `/conversations/${id}?after=0`,
+          'GET',
+          undefined,
+          request.signal,
+        );
+        let page = first;
+        const cloud: Snapshot = { ...first.snapshot, messages: [...first.snapshot.messages] };
+        while (!page.done) {
+          const next = await api<SnapshotPage>(
+            `/conversations/${id}?after=${page.after}`,
+            'GET',
+            undefined,
+            request.signal,
+          );
+          if (next.after <= page.after || next.snapshot.epoch !== cloud.epoch)
+            throw new Error('对话分页状态已变化，请重新同步。');
+          cloud.messages.push(...next.snapshot.messages);
+          page = next;
+        }
         if (!alive || token !== generation) return;
         setAuthoritativeFor(id);
         setConnectionError('');
@@ -143,6 +173,7 @@ export function useConversation(
           const url = new URL(`/api/conversations/${id}/sync`, location.href);
           url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
           url.searchParams.set('after', String(sync.durable.seq));
+          if (sync.durable.epoch) url.searchParams.set('epoch', sync.durable.epoch);
           return url.toString();
         };
         socket = new ReconnectingWebSocket(socketUrl, [], {
@@ -184,7 +215,7 @@ export function useConversation(
           } catch {
             resetPreview();
             setConnection('connecting');
-            socket?.reconnect();
+            void connect();
           }
         };
         socket.onclose = (event) => {

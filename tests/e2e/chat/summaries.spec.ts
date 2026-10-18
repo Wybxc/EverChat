@@ -3,7 +3,7 @@ import WebSocket from 'ws';
 import { validateBackup, type EverChatBackup } from '../../../shared/backup/backup';
 import { messageParts, messageText } from '../../../shared/conversation/content';
 import { DEFAULT_CONVERSATION_SETTINGS as defaults } from '../../../shared/conversation/settings';
-import { SUMMARY_SYSTEM_PROMPT } from '../../../shared/conversation/summaries';
+import { MAX_SUMMARIES, SUMMARY_SYSTEM_PROMPT } from '../../../shared/conversation/summaries';
 import type {
   ConversationSettings,
   Submission,
@@ -23,9 +23,12 @@ const origin = 'http://127.0.0.1:5174',
   headers = { Origin: origin },
   fact = '__SUMMARY_FACT_42__';
 async function replay(request: APIRequestContext, id: string) {
+  const baseline = (await request
+    .get(`/api/conversations/${id}`)
+    .then((response) => response.json())) as Snapshot;
   const { cookies } = await request.storageState();
   const socket = new WebSocket(
-    `${origin.replace('http:', 'ws:')}/api/conversations/${id}/sync?after=0`,
+    `${origin.replace('http:', 'ws:')}/api/conversations/${id}/sync?after=${baseline.seq}&epoch=${baseline.epoch ?? ''}`,
     {
       headers: {
         ...headers,
@@ -33,7 +36,7 @@ async function replay(request: APIRequestContext, id: string) {
       },
     },
   );
-  const packets: SyncPacket[] = [];
+  const packets: SyncPacket[] = [{ type: 'snapshot', snapshot: baseline }];
   try {
     await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => reject(new Error('Replay timeout')), 10_000);
@@ -1263,7 +1266,7 @@ test('the summary limit rejects before calling a supplier and deleting an old su
       .then((response) => response.json())) as EverChatBackup;
     const path = backup.conversation.messages.slice(0, 2);
     backup.conversation.messages.push(
-      ...Array.from({ length: 20 }, (_, index) => ({
+      ...Array.from({ length: MAX_SUMMARIES }, (_, index) => ({
         ...path[1],
         id: crypto.randomUUID(),
         parts: messageParts(`摘要 ${index}`),
@@ -1308,7 +1311,7 @@ test('the summary limit rejects before calling a supplier and deleting an old su
           .get(`/api/conversations/${id}`)
           .then((response) => response.json())) as Snapshot
       ).messages.filter((message) => message.summary && !message.deletedAt),
-    ).toHaveLength(20);
+    ).toHaveLength(MAX_SUMMARIES);
   } finally {
     await fixture.cleanup();
   }

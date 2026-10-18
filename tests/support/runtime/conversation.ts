@@ -119,7 +119,14 @@ export class Conversation extends ProductionConversation {
     return this.serviceMode() ? super.webToolsConfigured(names, service) : true;
   }
   protected override async fetchWebTool(request: Request): Promise<Response> {
-    if (!['https://api.tavily.com/search', 'https://api.tavily.com/extract'].includes(request.url))
+    if (
+      ![
+        'https://api.tavily.com/search',
+        'https://api.tavily.com/extract',
+        'https://api.deepseek.com/v1/tools/search',
+        'https://api.deepseek.com/v1/tools/fetch',
+      ].includes(request.url)
+    )
       throw new Error('Unexpected service origin');
     this.resourceMeter?.upstream('toolRequests');
     const sql = this.ctx.storage.sql,
@@ -165,8 +172,10 @@ export class Conversation extends ProductionConversation {
       content: '本地工具结果🙂',
     };
     const result = request.url.endsWith('/search')
-      ? { results: [source] }
-      : { results: [{ url: source.url, raw_content: source.content }], failed_results: [] };
+      ? { results: [{ ...source, summary: source.content }] }
+      : request.url.endsWith('/fetch')
+        ? { title: source.title, content: source.content }
+        : { results: [{ url: source.url, raw_content: source.content }], failed_results: [] };
     this.resourceMeter?.upstream(
       'toolResponseBytes',
       new TextEncoder().encode(JSON.stringify(result)).byteLength,
@@ -333,7 +342,9 @@ export class Conversation extends ProductionConversation {
       ...this.fixtureResources(),
       deletedAt: marker,
       alarmAt: await this.ctx.storage.getAlarm(),
-      events: this.fixtureCount('events'),
+      events: this.ctx.storage.sql
+        .exec("SELECT name FROM sqlite_master WHERE name = 'events'")
+        .toArray().length,
       submissions: this.fixtureCount('submissions'),
     };
   }
@@ -370,7 +381,7 @@ export class Conversation extends ProductionConversation {
       runs: this.fixtureCount('runs'),
       dependencies: this.fixtureCount('run_dependencies'),
       retainedContexts: this.fixtureCount('runs', "WHERE context != '[]'"),
-      journalRows: this.fixtureCount('stream_commits'),
+      journalRows: this.fixtureCount('generation_checkpoints'),
       calls: hasCalls
         ? sql
             .exec<{ calls: number }>('SELECT COALESCE(SUM(calls), 0) AS calls FROM fixture_calls')
@@ -575,8 +586,8 @@ export class Conversation extends ProductionConversation {
           'History fixture',
         );
       }
-      // Simulate compacted old events, so a cursor of zero must use the full snapshot path.
-      sql.exec("INSERT INTO events (seq, payload) VALUES (501, '[]')");
+      sql.exec('UPDATE conversation_state SET seq = 501 WHERE id = 1');
+      sql.exec('INSERT INTO message_versions SELECT id, 501 FROM messages');
     });
     return {
       messages: pairs * 2,

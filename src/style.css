@@ -168,38 +168,34 @@
   }
 }
 
+:root {
+  --control-target: max(2rem, 32px);
+  --space-actions: 0.125rem;
+  --space-related: 0.5rem;
+  --space-fields: 0.75rem;
+  --space-sections: 1rem;
+}
+@media (any-pointer: coarse), (max-width: 40rem) {
+  :root {
+    --control-target: max(2.75rem, 44px);
+  }
+}
+
 [data-ui-button],
 [data-slot='tabs-trigger'],
 [data-slot='dropdown-menu-item'],
 [data-slot='command-item'] {
-  min-height: max(2rem, 32px);
+  min-height: var(--control-target);
   height: auto;
 }
 [data-ui-button][data-size^='icon'] {
-  min-width: max(2rem, 32px);
+  min-width: var(--control-target);
 }
 [data-ui-button] {
   white-space: normal;
 }
-/* Compact pointer controls; touch-capable devices retain independent hit areas. */
-@media (any-pointer: coarse), (max-width: 40rem) {
-  [data-ui-button],
-  [data-slot='tabs-trigger'],
-  [data-slot='dropdown-menu-item'],
-  [data-slot='command-item'] {
-    min-height: max(2.75rem, 44px);
-  }
-  [data-ui-button][data-size^='icon'] {
-    min-width: max(2.75rem, 44px);
-  }
-}
 .message-following {
-  min-height: max(2rem, 32px);
-}
-@media (any-pointer: coarse), (max-width: 40rem) {
-  .message-following {
-    min-height: max(2.75rem, 44px);
-  }
+  min-height: var(--control-target);
 }
 [data-slot='input'],
 [data-slot='native-select'],
@@ -287,10 +283,10 @@
 .sidebar-link {
   display: flex;
   align-items: center;
-  min-height: max(2.75rem, 44px);
+  min-height: var(--control-target);
   gap: 0.5rem;
   border-radius: 0.625rem;
-  padding: 0.5rem 0.75rem;
+  padding: 0.25rem 0.75rem;
 }
 .sidebar-link:hover {
   background: var(--muted);
@@ -444,7 +440,7 @@
 }
 .provider-connection {
   display: grid;
-  gap: 0.75rem;
+  gap: var(--space-fields);
   grid-template-columns: minmax(0, 1fr);
 }
 .provider-details {
@@ -477,7 +473,7 @@
 }
 .settings-tab-list [data-slot='tabs-trigger'] {
   flex: 0 0 auto;
-  padding-inline: 1rem;
+  padding-inline: 0.75rem;
   color: var(--muted-foreground);
 }
 .settings-tab-list [data-state='active'] {
@@ -487,7 +483,7 @@
 }
 .settings-fields label:has([data-slot='checkbox']),
 .settings-fields label:has([data-slot='switch']) {
-  min-height: max(2.75rem, 44px);
+  min-height: var(--control-target);
 }
 .progress-meter {
   width: 100%;
@@ -517,8 +513,8 @@
 .dialog-actions {
   display: flex;
   justify-content: end;
-  gap: 0.5rem;
-  margin-top: 1rem;
+  gap: var(--space-related);
+  margin-top: var(--space-sections);
 }
 .compact-disclosure {
   overflow: visible;
@@ -526,11 +522,11 @@
 .compact-disclosure > summary {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  min-height: max(2.75rem, 44px);
+  gap: var(--space-related);
+  min-height: var(--control-target);
   cursor: pointer;
   list-style: none;
-  padding-block: 0.5rem;
+  padding-block: 0.25rem;
 }
 .compact-disclosure > summary::-webkit-details-marker {
   display: none;
@@ -777,4 +773,35 @@
 }
 [data-slot='command-input'] {
   min-height: max(2.75rem, 44px);
+}
+
+/* The overlay does not intercept dragleave/drop or move the composer focus. */
+.file-drop-overlay {
+  position: absolute;
+  inset: 0.5rem;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  border: 2px dashed var(--primary);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--background) 92%, transparent);
+  color: var(--foreground);
+  pointer-events: none;
+  padding: 1rem;
+  text-align: center;
+}
+.file-drop-overlay > div {
+  border-radius: var(--radius-lg);
+  background: var(--background);
+  padding: 0.75rem 1rem;
+  font-size: 1rem;
+}
+
+/* Dense repeated navigation shares the same physical target as toolbars. */
+.provider-list-row[data-ui-button],
+.provider-model-toggle {
+  min-height: var(--control-target);
+}
+.message-actions {
+  gap: var(--space-actions);
 }

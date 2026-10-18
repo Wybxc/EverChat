@@ -59,9 +59,12 @@ async function setup(request: APIRequestContext, model = 'benchmark-text-2-10-32
   };
 }
 async function subscribe(request: APIRequestContext, id: string) {
+  const baseline = (await request
+    .get(`/api/conversations/${id}`)
+    .then((response) => response.json())) as Snapshot;
   const { cookies } = await request.storageState();
   const socket = new WebSocket(
-    `${origin.replace('http:', 'ws:')}/api/conversations/${id}/sync?after=0`,
+    `${origin.replace('http:', 'ws:')}/api/conversations/${id}/sync?after=${baseline.seq}&epoch=${baseline.epoch ?? ''}`,
     {
       headers: {
         ...headers,
@@ -69,7 +72,7 @@ async function subscribe(request: APIRequestContext, id: string) {
       },
     },
   );
-  const packets: SyncPacket[] = [];
+  const packets: SyncPacket[] = [{ type: 'snapshot', snapshot: baseline }];
   let closeCode: number | undefined;
   socket.on('close', (code) => {
     closeCode = code;

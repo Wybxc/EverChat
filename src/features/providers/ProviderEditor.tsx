@@ -472,9 +472,9 @@ export function ProviderEditor({
   return (
     <DisclosureScope key={`${open}:${selectedId}:${modelListRevision}`}>
       <div>
-        <fieldset className="gap-4" disabled={Boolean(fetchingId)}>
+        <fieldset className="gap-3" disabled={Boolean(fetchingId)}>
           <legend className="sr-only">AI 供应商</legend>
-          <div className="grid gap-4 md:grid-cols-[minmax(11rem,0.3fr)_minmax(0,0.7fr)]">
+          <div className="grid gap-3 md:grid-cols-[minmax(11rem,0.3fr)_minmax(0,0.7fr)]">
             <div
               ref={providerList}
               className={`${mobileDetail ? 'hidden md:flex' : 'flex'} min-w-0 flex-col gap-2`}
@@ -497,7 +497,7 @@ export function ProviderEditor({
                       focusDetails();
                     }}
                     aria-current={selectedId === profile.id ? 'true' : undefined}
-                    className={`flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-sm ${selectedId === profile.id ? 'bg-primary/10 text-foreground' : 'hover:bg-muted'}`}
+                    className={`provider-list-row flex w-full items-center gap-2 rounded-lg px-3 py-1 text-left text-sm ${selectedId === profile.id ? 'bg-primary/10 text-foreground' : 'hover:bg-muted'}`}
                   >
                     <span className="min-w-0 flex-1 truncate">{profile.name || '新供应商'}</span>
                     {settings.activeProviderId === profile.id && <Badge>默认</Badge>}
@@ -708,10 +708,10 @@ export function ProviderEditor({
                           <div
                             key={`${selected.id}-${index}`}
                             data-testid="provider-model-row"
-                            className={`min-w-0 px-2 py-1 ${expanded ? 'bg-muted' : ''}`}
+                            className={`min-w-0 px-2 py-0.5 ${expanded ? 'bg-muted' : ''}`}
                           >
                             <div className="flex min-w-0 items-center gap-2">
-                              <label className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-2">
+                              <label className="provider-model-toggle flex min-w-0 flex-1 cursor-pointer items-center gap-2">
                                 <Checkbox
                                   className="shrink-0"
                                   aria-label={`启用模型 ${model.name || model.id}`}
@@ -733,9 +733,9 @@ export function ProviderEditor({
                               </label>
                               <Button
                                 variant="ghost"
-                                size="icon"
+                                size="icon-sm"
                                 type="button"
-                                className="h-11 w-11 shrink-0"
+                                className="shrink-0"
                                 aria-label={`模型设置 ${index + 1}`}
                                 aria-expanded={expanded}
                                 aria-controls={`model-editor-${selected.id}-${index}`}

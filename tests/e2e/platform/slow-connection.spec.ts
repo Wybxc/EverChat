@@ -298,7 +298,7 @@ test('uncached history keeps an editable draft and does not steal focus when it 
 }, info) => {
   const data = await fixture(page);
   const id = await data.create('慢速历史');
-  const request = await hold(page, `**/api/conversations/${id}`);
+  const request = await hold(page, `**/api/conversations/${id}?after=*`);
   try {
     await page.goto(`/c/${id}`);
     await request.entered;
@@ -349,7 +349,7 @@ test('cached history remains readable through a failed refresh and a late respon
         page.evaluate((id) => Boolean(localStorage.getItem(`everchat:snapshot:parts-v1:${id}`)), a),
       )
       .toBe(true);
-    const request = await hold(page, `**/api/conversations/${a}`, true);
+    const request = await hold(page, `**/api/conversations/${a}?after=*`, true);
     try {
       await page.reload();
       await request.entered;
@@ -365,7 +365,7 @@ test('cached history remains readable through a failed refresh and a late respon
     } finally {
       request.release();
     }
-    const late = await hold(page, `**/api/conversations/${a}`);
+    const late = await hold(page, `**/api/conversations/${a}?after=*`);
     try {
       await page.reload();
       await late.entered;

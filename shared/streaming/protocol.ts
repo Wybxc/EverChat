@@ -1,11 +1,18 @@
 import type { Message, ConversationSettings } from '../conversation/types';
 import type { ConversationActivity } from '../conversation/activity';
 export interface Snapshot {
+  epoch?: string;
   activity?: ConversationActivity;
   messages: Message[];
   seq: number;
   deletedAt?: number;
   settings?: ConversationSettings;
+}
+
+export interface SnapshotPage {
+  snapshot: Snapshot;
+  after: number;
+  done: boolean;
 }
 
 export interface Change {
@@ -59,6 +66,8 @@ export type SyncPacket =
   | DurableChange
   | Preview
   | CommitAck
+  | { type: 'resync' }
+  | { type: 'state'; after: number; snapshot: Snapshot }
   | { type: 'snapshot'; snapshot: Snapshot }
   | { type: 'ready'; seq: number }
   | { type: 'deleted'; deletedAt: number };

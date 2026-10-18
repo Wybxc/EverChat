@@ -162,3 +162,42 @@ test('unconfirmed previews are bounded even without persistence acknowledgements
   sync.resetPreview();
   assert.equal(messageText(sync.view.messages[0]), '');
 });
+
+test('latest-state reconciliation skips lost notifications and preserves only the unconfirmed preview tail', () => {
+  const sync = new StreamSync({ messages: [message], seq: 0, epoch: 'epoch' });
+  sync.receive({ type: 'preview', batch: first });
+  sync.receive({ type: 'preview', batch: second });
+  const confirmed = new StreamSync({ messages: [message], seq: 0 });
+  confirmed.receive(commit);
+  sync.receive({
+    type: 'state',
+    after: 0,
+    snapshot: { ...confirmed.durable, epoch: 'epoch', seq: 100 },
+  });
+  assert.equal(sync.durable.seq, 100);
+  assert.equal(messageText(sync.durable.messages[0]), '**正文🙂**');
+  assert.equal(messageText(sync.view.messages[0]), '**正文🙂**第二段');
+  assert.equal(sync.hasPreview, true);
+  const unchanged = sync.durable;
+  assert.throws(
+    () => sync.receive({ type: 'state', after: 100, snapshot: { ...unchanged, epoch: 'other' } }),
+    /baseline mismatch/,
+  );
+  assert.equal(sync.durable, unchanged);
+  assert.throws(() => sync.receive({ type: 'resync' }), /Fresh state/);
+  assert.equal(
+    sync.receive({ type: 'state', after: 0, snapshot: { ...unchanged, seq: 99 } }),
+    false,
+  );
+  sync.receive({
+    type: 'state',
+    after: 100,
+    snapshot: {
+      ...unchanged,
+      seq: 101,
+      messages: [{ ...message, parts: [], status: 'completed', deletedAt: 2 }],
+    },
+  });
+  assert.equal(sync.hasPreview, false);
+  assert.deepEqual(sync.view.messages[0].parts, []);
+});

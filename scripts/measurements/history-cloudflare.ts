@@ -66,10 +66,11 @@ function validate(snapshot: Snapshot, history: History) {
   }
 }
 async function replay(history: History, snapshot?: Snapshot) {
-  const began = Date.now(),
-    sync = new StreamSync(snapshot);
+  const began = Date.now();
+  const baseline = snapshot ?? (await api<Snapshot>(`/conversations/${history.conversationId}`));
+  const sync = new StreamSync(baseline);
   const socket = new WebSocket(
-    `${origin.replace('https:', 'wss:')}/api/conversations/${history.conversationId}/sync?after=${snapshot?.seq ?? 0}`,
+    `${origin.replace('https:', 'wss:')}/api/conversations/${history.conversationId}/sync?after=${baseline.seq}&epoch=${baseline.epoch ?? ''}`,
     {
       agent,
       handshakeTimeout: 30000,

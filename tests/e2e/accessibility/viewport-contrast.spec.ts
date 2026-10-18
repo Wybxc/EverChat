@@ -124,6 +124,8 @@ test('viewport matrix preserves usable reading, compact navigation, menus and ri
           expect(
             (await page.getByTestId('message-viewport').boundingBox())!.height,
           ).toBeGreaterThanOrEqual(300);
+        if (width === 390 || width === 1280)
+          await page.screenshot({ path: test.info().outputPath(`layout-${mode}-${width}.png`) });
       }
     }
   } finally {

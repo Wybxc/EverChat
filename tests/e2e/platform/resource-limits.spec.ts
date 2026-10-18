@@ -64,7 +64,7 @@ async function setup(request: APIRequestContext) {
   };
 }
 
-test('history capacity rejects generation before writing messages or calling the supplier, without hiding existing history', async ({
+test('large unrelated branches no longer reject generation at four MiB of history', async ({
   request,
 }) => {
   const fixture = await setup(request);
@@ -78,17 +78,29 @@ test('history capacity rejects generation before writing messages or calling the
       data: {
         parentId: before.messages.at(-1)!.id,
         requestId: crypto.randomUUID(),
-        content: '不能接受的输入',
+        content: '从所选分支继续',
       },
     });
-    expect(response.status()).toBe(507);
-    expect((await response.json()).error).toContain('历史容量');
-    expect(
-      await action(request, fixture.id, 'resources').then((response) => response.json()),
-    ).toMatchObject({ messages: 32, runs: 0, calls: 0 });
-    expect(
-      await request.get(`/api/conversations/${fixture.id}`).then((response) => response.json()),
-    ).toEqual(before);
+    expect(response.status()).toBe(202);
+    const accepted = await response.json();
+    await request.post(`/api/conversations/${fixture.id}/cancel`, {
+      headers,
+      data: { runId: accepted.runId },
+    });
+    const after = (await request
+      .get(`/api/conversations/${fixture.id}`)
+      .then((result) => result.json())) as Snapshot;
+    expect(after.messages).toHaveLength(34);
+    expect(after.messages.slice(0, 32)).toEqual(before.messages);
+    const stats = await request
+      .get(`/api/conversations/${fixture.id}/storage`)
+      .then((result) => result.json());
+    expect(stats.canonicalBytes).toBeGreaterThan(4 * 1024 * 1024);
+    expect(stats.idempotencyBytes).toBeLessThan(1024);
+    await test.info().attach('storage-accounting', {
+      body: JSON.stringify(stats),
+      contentType: 'application/json',
+    });
   } finally {
     await fixture.restore();
   }
@@ -148,6 +160,11 @@ test('capacity reached during generation terminates without retrying, retains th
     expect(messageText(stored.messages[1]).startsWith(prefix)).toBe(true);
     expect(messageText(stored.messages[1])).not.toContain('服务端生成完成');
     expect(stored.messages[1].error).toContain('存储容量');
+    expect(stored.messages[1].generation?.failure).toMatchObject({
+      stage: 'storage',
+      code: 'CONVERSATION_STORAGE_CAPACITY',
+      type: 'write',
+    });
     const resources = await action(request, fixture.id, 'resources').then((result) =>
       result.json(),
     );
@@ -234,16 +251,19 @@ test('a storage sync error is visible, pauses automatic retries and supports man
   const fixture = await setup(page.request);
   let failing = true,
     reads = 0;
-  await page.route(`**/api/conversations/${fixture.id}`, async (route) => {
-    reads++;
-    if (failing)
-      await route.fulfill({
-        status: 507,
-        contentType: 'application/json',
-        body: JSON.stringify({ error: STORAGE_QUOTA_MESSAGE }),
-      });
-    else await route.continue();
-  });
+  await page.route(
+    (url) => url.pathname === `/api/conversations/${fixture.id}`,
+    async (route) => {
+      reads++;
+      if (failing)
+        await route.fulfill({
+          status: 507,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: STORAGE_QUOTA_MESSAGE }),
+        });
+      else await route.continue();
+    },
+  );
   try {
     await page.goto('/');
     await page

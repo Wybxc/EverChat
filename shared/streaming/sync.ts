@@ -28,12 +28,24 @@ export class StreamSync {
     // A confirmed deletion is permanent, including across reconnects and delayed packets.
     if (this.durable.deletedAt) return false;
     const previous = this.durable;
+    if (packet.type === 'resync') throw new Error('Fresh state required');
     if (packet.type === 'deleted') {
       this.durable = { messages: [], seq: this.durable.seq, deletedAt: packet.deletedAt };
       this.resetPreview();
     } else if (packet.type === 'snapshot') {
       this.durable = packet.snapshot;
       this.resetPreview();
+    } else if (packet.type === 'state') {
+      if (packet.snapshot.seq < this.durable.seq) return false;
+      if (
+        packet.after !== this.durable.seq ||
+        (this.durable.epoch && packet.snapshot.epoch !== this.durable.epoch)
+      )
+        throw new Error('State baseline mismatch');
+      const messages = new Map(this.durable.messages.map((message) => [message.id, message]));
+      for (const message of packet.snapshot.messages) messages.set(message.id, message);
+      this.durable = { ...this.durable, ...packet.snapshot, messages: [...messages.values()] };
+      this.rebase();
     } else if (packet.type === 'ready') {
       if (packet.seq !== this.durable.seq) throw new Error('Sync readiness gap');
     } else if (packet.type === 'preview') this.preview(packet.batch);

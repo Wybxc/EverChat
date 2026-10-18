@@ -8,17 +8,20 @@ export function AppFrame({
   sidebar,
   header,
   children,
+  dropOverlay,
 }: {
   sidebar: ReactNode;
   header: ReactNode;
   children: ReactNode;
+  dropOverlay?: ReactNode;
 }) {
   return (
     <div className="flex h-dvh min-h-0 overflow-hidden" data-testid="app-frame">
       {sidebar}
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col" data-chat-drop-zone>
         <header className="chat-header flex shrink-0 items-center gap-2">{header}</header>
         {children}
+        {dropOverlay}
       </div>
     </div>
   );

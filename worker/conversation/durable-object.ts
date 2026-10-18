@@ -67,17 +67,16 @@ import type { Env } from '../http/env';
 import { json } from '../http/response';
 import {
   DATABASE_LIMIT_MESSAGE,
-  HISTORY_LIMIT_MESSAGE,
   MAX_DATABASE_BYTES,
   MAX_DATABASE_START_BYTES,
   MAX_DATABASE_WRITE_BYTES,
-  MAX_HISTORY_START_BYTES,
   MAX_MESSAGES,
   storageErrorMessage,
 } from '../platform/resource-limits';
 import { openProviderStream } from '../providers/stream';
 import { searchRetryDelay } from '../search/index';
 import { StreamJournal } from '../streaming/journal';
+import { GenerationCheckpoints } from '../streaming/checkpoints';
 import {
   ConversationSubscribers,
   validSubscription,
@@ -88,6 +87,8 @@ import { DELETION_SCHEMA, initializeConversation } from './schema';
 import { planSubmissionParent } from './submission-plan';
 import { ConversationActivityJournal } from './activity';
 import { ConversationTitles, TITLE_JOBS_SCHEMA } from './titles';
+import { databaseUsage } from './capacity';
+import { ConversationState, requestFingerprint } from './state';
 
 import { createHash } from 'node:crypto';
 import { ImageContextError, type ImagePart } from '../../shared/attachments/images';
@@ -128,7 +129,15 @@ type Dependency = {
   summaryId: string;
   payload: string;
 } & Record<string, SqlStorageValue>;
-type Failure = { error: string; status: number };
+type Failure = { error: string; status: number; code?: string; stage?: string };
+const capacityError = (phase: 'write' | 'terminal') =>
+  new ProviderError(DATABASE_LIMIT_MESSAGE, {
+    stage: 'storage',
+    occurredAt: Date.now(),
+    code: 'CONVERSATION_STORAGE_CAPACITY',
+    type: phase,
+    message: DATABASE_LIMIT_MESSAGE,
+  });
 type Claim = {
   context: ChatInput[];
   config?: ProviderConfig;
@@ -156,7 +165,7 @@ export class Conversation extends DurableObject<Env> {
   private meter?: GenerationMeter;
   private readonly subscribers: ConversationSubscribers;
   private readonly messages: ConversationMessages;
-  private readonly journal: StreamJournal;
+  private readonly journal: GenerationCheckpoints;
   private readonly privateToolStreams: StreamJournal;
   private readonly tools!: ToolTaskJournal;
   private readonly activeTools = new Map<
@@ -176,7 +185,9 @@ export class Conversation extends DurableObject<Env> {
     this.subscribers = new ConversationSubscribers(ctx, (packet, recipients) =>
       this.meter?.broadcast(packet, recipients),
     );
-    initializeConversation(ctx.storage.sql, env.GENERATION_METRICS === '1');
+    ctx.storage.transactionSync(() =>
+      initializeConversation(ctx.storage.sql, env.GENERATION_METRICS === '1'),
+    );
     this.deletedAt =
       ctx.storage.sql
         .exec<{ deletedAt: number }>('SELECT deletedAt FROM conversation_deletion WHERE id = 1')
@@ -188,7 +199,7 @@ export class Conversation extends DurableObject<Env> {
         Date.now,
         () => !this.deletedAt,
       );
-    this.journal = new StreamJournal(this.query.bind(this));
+    this.journal = new GenerationCheckpoints(this.query.bind(this));
     this.messages = new ConversationMessages(
       this.query.bind(this),
       this.journal,
@@ -342,6 +353,45 @@ export class Conversation extends DurableObject<Env> {
   private run(id: string): Run | undefined {
     return this.query<Run>('SELECT * FROM runs WHERE id = ?', id).toArray()[0];
   }
+  snapshotPageResponse(after: number): Response {
+    if (this.deletedAt) return json({ error: '这个对话已删除。' }, 410);
+    return json(this.messages.page(after));
+  }
+  private capacityBytes(threshold: number) {
+    const size = this.ctx.storage.sql.databaseSize;
+    return size > threshold ? databaseUsage(this.ctx.storage.sql).usedBytes : size;
+  }
+  storageStats() {
+    const sum = (table: string, expression: string) =>
+      this.query<{ bytes: number }>(
+        `SELECT COALESCE(SUM(${expression}), 0) AS bytes FROM ${table}`,
+      ).one().bytes;
+    return {
+      databaseBytes: this.ctx.storage.sql.databaseSize,
+      ...databaseUsage(this.ctx.storage.sql),
+      limits: {
+        admissionBytes: MAX_DATABASE_START_BYTES,
+        writeBytes: MAX_DATABASE_WRITE_BYTES,
+        maximumBytes: MAX_DATABASE_BYTES,
+      },
+      messages: this.query<{ count: number }>('SELECT COUNT(*) AS count FROM messages').one().count,
+      canonicalBytes:
+        sum(
+          'messages',
+          'length(CAST(content AS BLOB)) + COALESCE(length(CAST(reasoning AS BLOB)), 0)',
+        ) + sum('message_content_chunks', 'length(CAST(payload AS BLOB))'),
+      checkpointBytes: sum('generation_checkpoints', 'length(CAST(state AS BLOB))'),
+      privateStreamBytes: sum('tool_stream_commits', 'length(CAST(payload AS BLOB))'),
+      activeTaskBytes: sum(
+        'runs',
+        'length(CAST(context AS BLOB)) + COALESCE(length(CAST(config AS BLOB)), 0)',
+      ),
+      idempotencyBytes: sum(
+        'submissions',
+        'length(CAST(fingerprint AS BLOB)) + length(CAST(result AS BLOB))',
+      ),
+    };
+  }
   snapshotResponse(): Response {
     if (this.deletedAt) return json({ error: '这个对话已删除。' }, 410);
     // RPC transfers a Response body as a stream, keeping history decoding and JSON work out of the Free Worker.
@@ -470,7 +520,7 @@ export class Conversation extends DurableObject<Env> {
       { messageId: string; change: Change } | { messageId: string } | Failure
     >(() => {
       if (this.deletedAt) return { error: '这个对话已删除。', status: 410 };
-      const fingerprint = JSON.stringify(['assistant-edit', messageId, content.trim()]);
+      const fingerprint = requestFingerprint(['assistant-edit', messageId, content.trim()]);
       const existing = this.query<{ fingerprint: string; result: string }>(
         'SELECT fingerprint, result FROM submissions WHERE id = ?',
         requestId,
@@ -490,10 +540,14 @@ export class Conversation extends DurableObject<Env> {
         return { error: '请等待生成完成或先停止，再编辑消息。', status: 409 };
       if (!content.trim() || !messageTextFits(content.trim()))
         return { error: MESSAGE_TEXT_LIMIT_MESSAGE, status: 400 };
-      if (this.ctx.storage.sql.databaseSize > MAX_DATABASE_START_BYTES)
-        return { error: DATABASE_LIMIT_MESSAGE, status: 507 };
-      const messages = this.messages.all();
-      if (messages.length >= MAX_MESSAGES)
+      if (this.capacityBytes(MAX_DATABASE_START_BYTES) > MAX_DATABASE_START_BYTES)
+        return {
+          error: DATABASE_LIMIT_MESSAGE,
+          status: 507,
+          code: 'CONVERSATION_STORAGE_CAPACITY',
+          stage: 'admission',
+        };
+      if (this.messages.count() >= MAX_MESSAGES)
         return { error: '此对话已达到消息数量保护上限，请新建对话。', status: 507 };
       const revision: Message = {
         id: crypto.randomUUID(),
@@ -509,8 +563,6 @@ export class Conversation extends DurableObject<Env> {
         model: original.model,
         modelName: original.modelName,
       };
-      if (payloadBytes(JSON.stringify([...messages, revision])) > MAX_HISTORY_START_BYTES)
-        return { error: HISTORY_LIMIT_MESSAGE, status: 507 };
       this.messages.insert(revision);
       const result = { messageId: revision.id };
       this.query(
@@ -558,6 +610,7 @@ export class Conversation extends DurableObject<Env> {
         ),
       ];
       for (const message of affected) {
+        this.journal.erase(message.id);
         this.query(
           'UPDATE messages SET content = ?, reasoning = NULL, error = NULL WHERE id = ?',
           '',
@@ -591,8 +644,6 @@ export class Conversation extends DurableObject<Env> {
         affected.map((message) => this.messages.rawMessage(message.id)!),
         conversationId,
       );
-      // Force stale cursors to use the redacted snapshot instead of replaying deleted text.
-      this.query('DELETE FROM events WHERE seq < ?', change.seq);
       return { deletedAt, change };
     });
     if ('change' in accepted) {
@@ -614,7 +665,7 @@ export class Conversation extends DurableObject<Env> {
       Submission | Failure | { result: Submission; change: Change }
     >(async () => {
       if (this.deletedAt) return { error: '这个对话已删除。', status: 410 };
-      const fingerprint = JSON.stringify([
+      const fingerprint = requestFingerprint([
         input.content ?? null,
         input.retryOf ?? null,
         input.revisionOf ?? null,
@@ -674,17 +725,16 @@ export class Conversation extends DurableObject<Env> {
         ).toArray().length
       )
         return { error: '这个对话正在生成回答，请等待完成或先停止。', status: 409 };
-      if (this.ctx.storage.sql.databaseSize > MAX_DATABASE_START_BYTES)
-        return { error: DATABASE_LIMIT_MESSAGE, status: 507 };
-      const messages: Message[] = [];
-      let historyBytes = 32;
-      for (const row of this.messages.rows()) {
-        const message = this.messages.decorate(row);
-        historyBytes += payloadBytes(JSON.stringify(message)) + 1;
-        if (historyBytes > MAX_HISTORY_START_BYTES)
-          return { error: HISTORY_LIMIT_MESSAGE, status: 507 };
-        messages.push(message);
-      }
+      if (this.capacityBytes(MAX_DATABASE_START_BYTES) > MAX_DATABASE_START_BYTES)
+        return {
+          error: DATABASE_LIMIT_MESSAGE,
+          status: 507,
+          code: 'CONVERSATION_STORAGE_CAPACITY',
+          stage: 'admission',
+        };
+      const messages = this.messages.forHead(
+        input.summaryThrough ?? input.retryOf ?? input.revisionOf ?? input.parentId,
+      );
       if (input.summaryThrough) {
         if (messages.length >= MAX_MESSAGES)
           return { error: '此对话已达到消息数量保护上限，请新建对话。', status: 507 };
@@ -1549,8 +1599,8 @@ export class Conversation extends DurableObject<Env> {
           return false;
         this.ctx.storage.transactionSync(() => {
           this.privateToolStreams.append({ runId, messageId: claim.assistantId!, batches });
-          if (this.ctx.storage.sql.databaseSize > MAX_DATABASE_WRITE_BYTES)
-            throw new ProviderError(DATABASE_LIMIT_MESSAGE);
+          if (this.capacityBytes(MAX_DATABASE_WRITE_BYTES) > MAX_DATABASE_WRITE_BYTES)
+            throw capacityError('write');
         });
         const barrier = (active.persistence ?? Promise.resolve()).then(() =>
           this.ctx.storage.sync(),
@@ -1745,22 +1795,35 @@ export class Conversation extends DurableObject<Env> {
       throw new Error('Stream sequence or offset gap');
     if (this.env.GENERATION_METRICS === '1' && !this.meter)
       this.meter = new GenerationMeter(runId, Date.now, 'since-last-resume', 'do-v1');
-    if (this.ctx.storage.sql.databaseSize > MAX_DATABASE_WRITE_BYTES)
-      throw new ProviderError(DATABASE_LIMIT_MESSAGE);
-    const change: Commit = this.ctx.storage.transactionSync(() => {
-      if (!this.journal.append(commit)) throw new Error('Conflicting stream sequence');
-      this.query(
-        'UPDATE runs SET chunkSeq = ?, durableOffset = ?, updatedAt = ? WHERE id = ?',
-        last.chunkSeq,
-        last.endOffset,
-        Date.now(),
-        runId,
-      );
-      const seq = this.messages.recordPayload(JSON.stringify(commit));
-      if (this.ctx.storage.sql.databaseSize > MAX_DATABASE_WRITE_BYTES)
-        throw new ProviderError(DATABASE_LIMIT_MESSAGE);
-      return { type: 'commit', ...commit, seq };
-    });
+    if (this.capacityBytes(MAX_DATABASE_WRITE_BYTES) > MAX_DATABASE_WRITE_BYTES)
+      throw capacityError('write');
+    let change: Commit;
+    try {
+      change = this.ctx.storage.transactionSync(() => {
+        if (
+          !this.journal.append(commit, {
+            protocol: message.tools
+              ? 'openai-chat'
+              : (JSON.parse(run.config!) as ProviderConfig).provider,
+          })
+        )
+          throw new Error('Conflicting stream sequence');
+        this.query(
+          'UPDATE runs SET chunkSeq = ?, durableOffset = ?, updatedAt = ? WHERE id = ?',
+          last.chunkSeq,
+          last.endOffset,
+          Date.now(),
+          runId,
+        );
+        const seq = this.messages.advance([message.id]);
+        if (this.capacityBytes(MAX_DATABASE_WRITE_BYTES) > MAX_DATABASE_WRITE_BYTES)
+          throw capacityError('write');
+        return { type: 'commit', ...commit, seq };
+      });
+    } catch (error) {
+      this.journal.forget(runId);
+      throw error;
+    }
     this.meter?.rawCheckpoint(last.endOffset - first.startOffset);
     this.broadcast(change);
     return true;
@@ -1940,8 +2003,8 @@ export class Conversation extends DurableObject<Env> {
             messageText(message),
           );
       }
-      if (this.ctx.storage.sql.databaseSize > MAX_DATABASE_BYTES)
-        throw new ProviderError(DATABASE_LIMIT_MESSAGE);
+      if (this.capacityBytes(MAX_DATABASE_BYTES) > MAX_DATABASE_BYTES)
+        throw capacityError('terminal');
       return { change: terminal, finalStatus };
     });
     this.broadcast(change);
@@ -2000,7 +2063,7 @@ export class Conversation extends DurableObject<Env> {
             files: DocumentPart[];
           };
           if (!run.config) throw new Error('回答配置已丢失。');
-          const prepared = summaryContext(this.messages.all(), parentId, true);
+          const prepared = summaryContext(this.messages.forHead(parentId), parentId, true);
           if (prepared.summary?.id !== dependency.summaryId)
             throw new Error('自动摘要覆盖范围不匹配。');
           const built = buildContext(
@@ -2158,39 +2221,8 @@ export class Conversation extends DurableObject<Env> {
     const [client, server] = Object.values(new WebSocketPair());
     this.ctx.acceptWebSocket(server);
     server.serializeAttachment({ expires, revalidate } satisfies Attachment);
-    const cursor = Number(new URL(request.url).searchParams.get('after'));
-    const current = this.messages.seq();
-    const first = this.query<{ seq: number }>(
-      'SELECT COALESCE(MIN(seq), 0) AS seq FROM events',
-    ).one().seq;
-    if (!Number.isSafeInteger(cursor) || cursor < first - 1 || cursor > current) {
-      this.subscribers.send(
-        JSON.stringify({ type: 'snapshot', snapshot: this.messages.snapshot() }),
-        undefined,
-        server,
-      );
-    } else {
-      for (const row of this.query<{ seq: number; payload: string }>(
-        'SELECT * FROM events WHERE seq > ? ORDER BY seq',
-        cursor,
-      )) {
-        const payload = JSON.parse(row.payload) as
-          Message[] | StreamCommit | Pick<Change, 'messages' | 'settings' | 'activity'>;
-        this.subscribers.send(
-          JSON.stringify(
-            Array.isArray(payload)
-              ? { type: 'change', seq: row.seq, messages: payload }
-              : { type: 'runId' in payload ? 'commit' : 'change', seq: row.seq, ...payload },
-          ),
-          undefined,
-          server,
-        );
-      }
-    }
-    this.subscribers.send(JSON.stringify({ type: 'ready', seq: current }), undefined, server);
-    // No await between replay, ready and this tail: the next live preview follows exactly once.
-    for (const batch of this.activeGeneration?.buffer.previewTail ?? [])
-      this.preview(batch, server);
+    const params = new URL(request.url).searchParams;
+    this.syncState(server, Number(params.get('after')), params.get('epoch'));
     return new Response(null, { status: 101, webSocket: client });
   }
   webSocketMessage(socket: WebSocket, data: string | ArrayBuffer) {
@@ -2200,7 +2232,42 @@ export class Conversation extends DurableObject<Env> {
       socket.close(4003, 'Conversation deleted');
       return;
     }
+    if (typeof data === 'string' && data.length <= 1024 && data.startsWith('{')) {
+      try {
+        const check = JSON.parse(data) as { type?: string; seq?: number; epoch?: string };
+        if (check.type === 'sync-check') {
+          this.syncState(socket, check.seq ?? -1, check.epoch ?? null);
+          return;
+        }
+      } catch {
+        /* Malformed acknowledgements are rejected below. */
+      }
+    }
     this.subscribers.acknowledge(socket, data);
+  }
+  private syncState(socket: WebSocket, cursor: number, epoch: string | null) {
+    const current = new ConversationState(this.query.bind(this)).current();
+    const valid =
+      Number.isSafeInteger(cursor) &&
+      cursor >= 0 &&
+      cursor <= current.seq &&
+      epoch === current.epoch;
+    const snapshot =
+      valid && cursor < current.seq ? this.messages.changes(cursor, 900 * 1024) : undefined;
+    if (!valid || (cursor < current.seq && !snapshot)) {
+      this.subscribers.send(JSON.stringify({ type: 'resync' }), undefined, socket);
+      return;
+    }
+    if (snapshot)
+      this.subscribers.send(
+        JSON.stringify({ type: 'state', after: cursor, snapshot }),
+        undefined,
+        socket,
+      );
+    this.subscribers.send(JSON.stringify({ type: 'ready', seq: current.seq }), undefined, socket);
+    // No await between the state baseline, readiness and tail subscription.
+    for (const batch of this.activeGeneration?.buffer.previewTail ?? [])
+      this.preview(batch, socket);
   }
   webSocketClose(socket: WebSocket, code: number, reason: string) {
     // Reserved status codes describe a missing close frame; they cannot be sent back on the wire.

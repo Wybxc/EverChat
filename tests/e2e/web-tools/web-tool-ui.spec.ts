@@ -683,3 +683,48 @@ test('a late reveal after switching tabs and a late autosave after logout cannot
     await f.cleanup();
   }
 });
+
+test('DeepSeek service selection retains both keys and executes Search and Fetch through the production tool loop', async ({
+  page,
+  context,
+}) => {
+  const f = await setup(context.request);
+  try {
+    await page.goto('/');
+    await space(page);
+    const choice = page.getByLabel('联网服务', { exact: true });
+    const field = page.getByLabel('联网服务 API 密钥', { exact: true });
+    await choice.selectOption('deepseek');
+    await expect(choice).toBeEnabled();
+    await field.fill('deepseek-browser-private-key');
+    await expect(page.getByTestId('web-tool-save-status')).toHaveText('已保存');
+    expect((await f.settings()).provider).toBe('deepseek');
+    await choice.selectOption('tavily');
+    await expect(choice).toBeEnabled();
+    await page.getByRole('button', { name: '查看联网服务密钥', exact: true }).click();
+    await expect(field).toHaveValue(key);
+    await choice.selectOption('deepseek');
+    await expect(choice).toBeEnabled();
+    await expect(field).toHaveValue('');
+    await page.getByRole('button', { name: '关闭设置', exact: true }).click();
+    await enable(page, ['web_search', 'read_webpage']);
+    const sent = await send(page);
+    f.ids.push(sent.id);
+    await expect(page.getByTestId('assistant-message')).toHaveAttribute('data-status', 'completed');
+    const state = await f.runtime(sent.id, sent.input.requestId);
+    expect(state.serviceRequests.map((call: { url: string }) => call.url)).toEqual([
+      'https://api.deepseek.com/v1/tools/search',
+      'https://api.deepseek.com/v1/tools/fetch',
+    ]);
+    expect(state.modelCalls).toBe(2);
+    expect(state.privateStreams).toBe(0);
+    await noCachedKey(page);
+    const cached = await page.evaluate(() =>
+      JSON.stringify(Object.fromEntries(Object.entries(localStorage))),
+    );
+    expect(cached).not.toContain('deepseek-browser-private-key');
+  } finally {
+    await page.close();
+    await f.cleanup();
+  }
+});

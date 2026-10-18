@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
+import { NativeSelect } from '@/components/ui/native-select';
 import { Input } from '@/components/ui/input';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Eye, EyeOff, RefreshCw } from 'lucide-react';
@@ -55,7 +56,7 @@ function ServiceEditor({ initial, active }: { initial: WebToolServiceSettings; a
         },
         (_saved, draft) => {
           const parsed = v.safeParse(webToolServiceInputSchema, {
-            provider: 'tavily',
+            provider: draft.provider,
             dailyLimit: draft.dailyLimit,
             ...(draft.apiKey === undefined ? {} : { apiKey: draft.apiKey }),
           });
@@ -66,6 +67,7 @@ function ServiceEditor({ initial, active }: { initial: WebToolServiceSettings; a
       ),
   );
   const { settings, status, error } = useSyncExternalStore(store.subscribe, store.getSnapshot);
+  const [switching, setSwitching] = useState(false);
   const [revealed, setRevealed] = useState<string | null>(null),
     [reading, setReading] = useState(false),
     [readError, setReadError] = useState('');
@@ -103,6 +105,28 @@ function ServiceEditor({ initial, active }: { initial: WebToolServiceSettings; a
     hide();
     store.update({ ...store.getSnapshot().settings, ...patch });
   };
+  const switchProvider = async (provider: WebToolServiceSettings['provider']) => {
+    if (provider === settings.provider || switching) return;
+    hide();
+    setSwitching(true);
+    try {
+      await store.flush();
+      await store.refresh(async () => {
+        const result = await api<WebToolServiceSettings>('/settings/web-tools', 'PUT', {
+          provider,
+          dailyLimit: store.getSnapshot().settings.dailyLimit,
+        });
+        if (storageEpoch() !== epoch) throw new Error('登录状态已改变。');
+        queryClient.setQueryData(WEB_TOOL_SETTINGS_KEY, result);
+        write('web-tool-settings', result);
+        return result;
+      });
+    } catch (error) {
+      setReadError(error instanceof Error ? error.message : '切换服务失败。');
+    } finally {
+      setSwitching(false);
+    }
+  };
   const reveal = async () => {
     if (revealed !== null || reading) {
       hide();
@@ -135,13 +159,27 @@ function ServiceEditor({ initial, active }: { initial: WebToolServiceSettings; a
   };
   return (
     <div className="space-y-4" onBlur={() => void store.flush().catch(() => {})}>
-      <h3 className="text-lg font-semibold">Tavily</h3>
+      <label className="block space-y-1 text-sm">
+        <span>联网服务</span>
+        <NativeSelect
+          aria-label="联网服务"
+          value={settings.provider}
+          disabled={switching}
+          onChange={(event) =>
+            void switchProvider(event.currentTarget.value as WebToolServiceSettings['provider'])
+          }
+        >
+          <option value="tavily">Tavily</option>
+          <option value="deepseek">DeepSeek Search / Fetch</option>
+        </NativeSelect>
+      </label>
       <div className="space-y-1">
         <label htmlFor="web-tool-key" className="block text-sm font-medium">
           API 密钥
         </label>
         <div className="flex gap-2">
           <Input
+            disabled={switching}
             id="web-tool-key"
             aria-label="联网服务 API 密钥"
             type={revealed === null ? 'password' : 'text'}
@@ -158,6 +196,7 @@ function ServiceEditor({ initial, active }: { initial: WebToolServiceSettings; a
             type="button"
             aria-label={revealed === null ? '查看联网服务密钥' : '隐藏联网服务密钥'}
             aria-pressed={revealed !== null}
+            disabled={switching}
             onClick={() => void reveal()}
           >
             {reading ? (
@@ -171,7 +210,7 @@ function ServiceEditor({ initial, active }: { initial: WebToolServiceSettings; a
           <Button
             variant="secondary"
             type="button"
-            disabled={!settings.hasApiKey && !settings.apiKey}
+            disabled={switching || (!settings.hasApiKey && !settings.apiKey)}
             onClick={() => update({ apiKey: '' })}
           >
             清除密钥

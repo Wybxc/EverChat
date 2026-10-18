@@ -111,13 +111,14 @@ const sampleConversation = (id: string, taskId?: string, windowId?: string) =>
 const sampleLibrary = (windowId?: string) =>
   api<LibrarySample>('/__test/resources/library', { windowId });
 async function subscriber(id: string, disconnect: boolean) {
+  const baseline = await api<Snapshot>(`/conversations/${id}`);
   const socket = new WebSocket(
-    `${origin.replace('http:', 'ws:')}/api/conversations/${id}/sync?after=0`,
+    `${origin.replace('http:', 'ws:')}/api/conversations/${id}/sync?after=${baseline.seq}&epoch=${baseline.epoch ?? ''}`,
     { headers: { Cookie: cookie, Origin: origin } },
   );
   sockets.add(socket);
   const observed = { frames: 0, bytes: 0, disconnected: false },
-    sync = new StreamSync();
+    sync = new StreamSync(baseline);
   let failure: unknown;
   await new Promise<void>((ready, reject) => {
     const timer = setTimeout(() => reject(new Error('WebSocket readiness timed out')), 10_000);
@@ -409,7 +410,12 @@ try {
       sample.report.upstream.modelBytes,
       'Every upstream byte must enter the private journal exactly once',
     );
-    assert.ok(sample.report.streams.public.wireBytes > 0 && sample.report.eventPayloadBytes > 0);
+    assert.ok(sample.report.streams.public.wireBytes > 0);
+    assert.equal(
+      sample.report.eventPayloadBytes,
+      0,
+      'Synchronization notifications must not duplicate stream payloads in SQL',
+    );
     const total = (report: ToolResourceWindow) =>
       Object.values(report.sql).reduce((sum, value) => sum + value.rowsWritten, 0);
     results.push({
@@ -417,6 +423,7 @@ try {
       protocol: scenario.protocol,
       status: answer.status,
       conversation: sample,
+      storage: await api(`/conversations/${id}/storage`),
       library: { ...library, usedInWindow: library.usedToday - libraryStart.usedToday },
       client: live.observed,
     });

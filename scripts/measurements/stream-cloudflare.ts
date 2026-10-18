@@ -65,8 +65,9 @@ async function subscriber(
   initial: Snapshot = { messages: [], seq: 0 },
   acknowledge = true,
 ) {
+  if (!initial.epoch) initial = await api<Snapshot>(`/conversations/${id}`);
   const socket = new WebSocket(
-    `${origin.replace('https:', 'wss:')}/api/conversations/${id}/sync?after=${initial.seq}`,
+    `${origin.replace('https:', 'wss:')}/api/conversations/${id}/sync?after=${initial.seq}&epoch=${initial.epoch ?? ''}`,
     { agent, handshakeTimeout: 30000, headers: { ...access.headers, Origin: origin } },
   );
   sockets.add(socket);

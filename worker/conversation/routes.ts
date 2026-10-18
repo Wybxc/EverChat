@@ -78,8 +78,15 @@ export function registerConversationRoutes(app: ApiRouter) {
       tooLarge: '会话参数太长。',
     });
     const result = await context.env.CONVERSATIONS.getByName(id).saveSettings(id, settings);
-    if ('error' in result) return json({ error: result.error }, result.status);
+    if ('error' in result) return json(result, result.status);
     return json(result);
+  });
+
+  app.get('/conversations/:id/storage', async (context) => {
+    await requireAuth(context);
+    const id = conversationId(context);
+    await requireConversation(context, id);
+    return json(await context.env.CONVERSATIONS.getByName(id).storageStats());
   });
 
   app.get('/conversations/:id/measurements', async (context) => {
@@ -149,7 +156,7 @@ export function registerConversationRoutes(app: ApiRouter) {
     const baseConfig = await library.providerConfig(input.selection);
     if (!baseConfig) {
       const result = await context.env.CONVERSATIONS.getByName(id).submit(id, input, null);
-      if ('error' in result) return json({ error: result.error }, result.status);
+      if ('error' in result) return json(result, result.status);
       await library.touch(id);
       return json(result, 202);
     }
@@ -164,7 +171,7 @@ export function registerConversationRoutes(app: ApiRouter) {
       config,
       await library.titleConfig(true),
     );
-    if ('error' in result) return json({ error: result.error }, result.status);
+    if ('error' in result) return json(result, result.status);
     await library.touch(id);
     return json(result, 202);
   });
@@ -185,7 +192,7 @@ export function registerConversationRoutes(app: ApiRouter) {
       input.requestId,
       input.content,
     );
-    if ('error' in result) return json({ error: result.error }, result.status);
+    if ('error' in result) return json(result, result.status);
     await library.touch(id);
     return json(result, 201);
   });
@@ -197,7 +204,7 @@ export function registerConversationRoutes(app: ApiRouter) {
     if (!v.safeParse(uuidSchema, messageId).success) throw new HttpError(404, '找不到这条消息。');
     await requireConversation(context, id);
     const result = await context.env.CONVERSATIONS.getByName(id).deleteMessage(id, messageId);
-    if ('error' in result) return json({ error: result.error }, result.status);
+    if ('error' in result) return json(result, result.status);
     return json(result);
   });
 

@@ -83,8 +83,7 @@ test('activity is transactionally versioned only at lifecycle changes; raw byte 
     const running = s.record();
     assert.equal(running.activity?.version, 2);
     assert.equal(s.record().activity, undefined);
-    for (let i = 0; i < 200; i++)
-      s.messages.recordPayload(JSON.stringify({ runId, messageId, batches: [] }));
+    for (let i = 0; i < 200; i++) s.messages.advance([messageId]);
     assert.equal(s.writes(), 2);
     assert.equal(s.activity.snapshot()?.version, 2);
     s.db.exec('BEGIN');
@@ -97,11 +96,11 @@ test('activity is transactionally versioned only at lifecycle changes; raw byte 
     s.query("UPDATE messages SET status = 'cancelled' WHERE id = ?", messageId);
     const idle = s.record();
     assert.deepEqual(idle.activity, { status: 'idle', version: 4, updatedAt: 1000 });
-    const persisted = JSON.parse(
-      s.query<{ payload: string }>('SELECT payload FROM events WHERE seq = ?', idle.seq).one()
-        .payload,
+    assert.equal(s.messages.changes(running.seq).activity?.status, 'idle');
+    assert.equal(
+      s.query("SELECT name FROM sqlite_master WHERE name = 'events'").toArray().length,
+      0,
     );
-    assert.deepEqual(persisted.activity, idle.activity);
     const snapshot = s.messages.snapshot();
     const next = applyChange({ ...snapshot, seq: idle.seq - 1, activity: running.activity }, idle);
     assert.deepEqual(next.activity, idle.activity);

@@ -36,6 +36,13 @@ export function registerLibraryRoutes(app: ApiRouter) {
     await requireAuth(context);
     const id = conversationId(context);
     await requireConversation(context, id);
+    const after = context.req.query('after');
+    if (after !== undefined) {
+      const cursor = Number(after);
+      if (!Number.isSafeInteger(cursor) || cursor < 0)
+        throw new HttpError(400, '对话分页游标无效。');
+      return context.env.CONVERSATIONS.getByName(id).snapshotPageResponse(cursor);
+    }
     return context.env.CONVERSATIONS.getByName(id).snapshotResponse();
   });
 

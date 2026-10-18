@@ -72,6 +72,7 @@ import { hasOpenModal, Modal, ModalTitle } from '../components/Modal';
 import { AttachmentDialog } from '../features/attachments/AttachmentDialog';
 import { DocumentPreviews } from '../features/attachments/DocumentPreviews';
 import { ImagePreviews } from '../features/attachments/ImagePreviews';
+import { useFileDrop } from '../features/attachments/useFileDrop';
 import { useChatAttachments } from '../features/attachments/useChatAttachments';
 import { BackupProgressDialog } from '../features/backup/BackupProgressDialog';
 import { exportChatFile } from '../features/backup/export-chat';
@@ -571,7 +572,15 @@ export function App({
     );
   }, [selectedModel]);
   useComposerSize(editor, draft);
-  const { imageUpload, imageProgress, addImages, addDocuments } = useChatAttachments({
+  const {
+    imageUpload,
+    imageProgress,
+    addImages,
+    addDocuments,
+    addFiles,
+    attachmentError,
+    clearAttachmentError,
+  } = useChatAttachments({
     selected,
     selectedRef,
     currentConversation,
@@ -581,7 +590,7 @@ export function App({
     chatDraft,
     conversationSettings,
     resetNewTools,
-    select: (id) => select(id),
+    select: (id) => select(id, false),
     refreshLibrary,
     setError,
   });
@@ -609,6 +618,20 @@ export function App({
     snapshot.deletedAt ||
     (selected && !currentConversation),
   );
+  const draggingFiles = useFileDrop({
+    canDrop: () =>
+      Boolean(
+        session?.authenticated &&
+        session.attachmentsConfigured &&
+        navigator.onLine &&
+        !attachmentBlocked &&
+        !messageMutation &&
+        !sidebarOpen &&
+        !hasOpenModal(),
+      ),
+    onFiles: (files) => void addFiles(files),
+    onRejected: setError,
+  });
   const generationBlocked =
     messageBlocked || Boolean(imageProgress) || messageMutation?.mode === 'edit';
   useReloadBlocker(
@@ -622,9 +645,9 @@ export function App({
             ? '请先保存或关闭消息编辑'
             : null,
   );
-  const select = (id: string | null) => {
+  const select = (id: string | null, focusComposer = true) => {
     setSearchJump(null);
-    setEditorFocusTarget({ id });
+    if (focusComposer) setEditorFocusTarget({ id });
     branches.navigationVersion.current++;
     navigate(id);
     setSidebarOpen(false);
@@ -936,6 +959,7 @@ export function App({
     )
       return;
     setError('');
+    clearAttachmentError();
     setSending(true);
     try {
       await queue({
@@ -1308,6 +1332,13 @@ export function App({
   return (
     <>
       <AppFrame
+        dropOverlay={
+          draggingFiles ? (
+            <div className="file-drop-overlay" role="status" data-testid="file-drop-overlay">
+              <div>松开以添加图片或文件</div>
+            </div>
+          ) : undefined
+        }
         sidebar={
           <Sidebar
             desktop={desktop}
@@ -1887,9 +1918,9 @@ export function App({
                   )}
                 </div>
               )}
-              {error && (
+              {(error || attachmentError) && (
                 <p role="alert" className="mb-3 text-xs font-medium text-foreground">
-                  {error}
+                  {error || attachmentError}
                 </p>
               )}
               {messageMutation?.mode === 'edit' &&

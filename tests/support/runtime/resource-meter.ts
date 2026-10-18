@@ -6,7 +6,7 @@ const emptyStream = () => ({ commits: 0, wireBytes: 0, payloadBytes: 0 });
 const bucket = (statement: string) =>
   /\btool_stream_commits\b/i.test(statement)
     ? 'privateStream'
-    : /\bstream_commits\b/i.test(statement)
+    : /\b(?:stream_commits|generation_checkpoints|message_content_chunks)\b/i.test(statement)
       ? 'publicStream'
       : /\bevents\b/i.test(statement)
         ? 'events'
@@ -20,6 +20,7 @@ const bucket = (statement: string) =>
 type SqlBucket = ReturnType<typeof bucket>;
 export class FixtureResourceMeter {
   readonly instanceId = crypto.randomUUID();
+  private checkpointOffsets = new Map<string, number>();
   private windowId?: string;
   private startedAt = 0;
   private encoder = new TextEncoder();
@@ -73,6 +74,13 @@ export class FixtureResourceMeter {
           ...bindings: SqlStorageValue[]
         ) => {
           const cursor = target.exec<T>(statement, ...bindings);
+          const checkpoint = /^\s*INSERT INTO generation_checkpoints\b/i.test(statement);
+          const previousOffset = checkpoint
+            ? (this.checkpointOffsets.get(String(bindings[0])) ?? 0)
+            : 0;
+          if (checkpoint) this.checkpointOffsets.set(String(bindings[0]), Number(bindings[3]));
+          if (/^\s*DELETE FROM generation_checkpoints WHERE runId/i.test(statement))
+            this.checkpointOffsets.delete(String(bindings[0]));
           if (!this.windowId || /\b(?:fixture_\w+|generation_measurements)\b/i.test(statement))
             return cursor;
           // Keep the original bucket when a cursor is consumed after another window begins.
@@ -96,6 +104,20 @@ export class FixtureResourceMeter {
             stream.wireBytes += Number(bindings[4]) - Number(bindings[3]);
             stream.payloadBytes += this.encoder.encode(String(bindings[5])).byteLength;
           }
+          if (checkpoint) {
+            this.counts.streams.public.commits++;
+            this.counts.streams.public.wireBytes += Math.max(
+              0,
+              Number(bindings[3]) - previousOffset,
+            );
+            this.counts.streams.public.payloadBytes += this.encoder.encode(
+              String(bindings[4]),
+            ).byteLength;
+          }
+          if (/^\s*INSERT INTO message_content_chunks\b/i.test(statement))
+            this.counts.streams.public.payloadBytes += this.encoder.encode(
+              String(bindings[3]),
+            ).byteLength;
           if (/^\s*INSERT INTO events\b/i.test(statement))
             this.counts.eventPayloadBytes += this.encoder.encode(String(bindings[0])).byteLength;
           return new Proxy(cursor, {

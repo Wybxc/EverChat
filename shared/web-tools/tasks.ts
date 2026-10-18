@@ -96,9 +96,33 @@ const webToolOutcomeSchema = v.variant('status', [
       ),
     ),
   }),
-  v.strictObject({ id: callId, name, status: v.literal('failed'), error: safeText(500) }),
+  v.strictObject({
+    id: callId,
+    name,
+    status: v.literal('failed'),
+    error: safeText(500),
+    failure: v.optional(
+      v.strictObject({
+        provider: v.picklist(['tavily', 'deepseek']),
+        code: v.picklist([
+          'CONFIGURATION',
+          'INVALID_INPUT',
+          'AUTHENTICATION',
+          'BALANCE',
+          'RATE_LIMIT',
+          'PAGE_UNAVAILABLE',
+          'SERVICE_UNAVAILABLE',
+          'INVALID_RESULT',
+          'TIMEOUT',
+        ]),
+        httpStatus: v.optional(v.pipe(v.number(), v.integer(), v.minValue(100), v.maxValue(599))),
+        terminal: v.boolean(),
+      }),
+    ),
+  }),
 ]);
 export type WebToolOutcome = v.InferOutput<typeof webToolOutcomeSchema>;
+export type WebToolFailure = NonNullable<Extract<WebToolOutcome, { status: 'failed' }>['failure']>;
 interface PublicToolCall {
   round: number;
   call: WebToolCall;

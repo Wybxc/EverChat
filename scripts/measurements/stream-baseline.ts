@@ -79,13 +79,14 @@ async function api<T>(
 }
 
 async function subscriber(id: string, disconnect: boolean) {
+  const baseline = await api<Snapshot>(`/conversations/${id}`);
   const socket = new WebSocket(
-    `${origin.replace('http:', 'ws:')}/api/conversations/${id}/sync?after=0`,
+    `${origin.replace('http:', 'ws:')}/api/conversations/${id}/sync?after=${baseline.seq}&epoch=${baseline.epoch ?? ''}`,
     { headers: { Cookie: cookie, Origin: origin } },
   );
   sockets.add(socket);
   const observed = { frames: 0, bytes: 0, disconnected: false };
-  const sync = new StreamSync();
+  const sync = new StreamSync(baseline);
   let failure: Error | undefined;
   await new Promise<void>((resolveReady, reject) => {
     const timer = setTimeout(() => reject(new Error('WebSocket readiness timed out')), 10_000);

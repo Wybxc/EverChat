@@ -295,3 +295,111 @@ test('streaming JSON preserves fragmented UTF-8', async () => {
   assert.equal(result.status, 'completed');
   if (result.status === 'completed') assert.deepEqual(result.sources, [source]);
 });
+
+test('DeepSeek Search and Fetch normalize summaries and Markdown with fixed endpoints and the originally requested URL', async () => {
+  const service: WebToolServiceConfig = { ...config, provider: 'deepseek' };
+  const fetcher: WebToolFetch = async (request) => {
+    assert.equal(request.redirect, 'manual');
+    assert.equal(request.headers.get('Authorization'), `Bearer ${service.apiKey}`);
+    if (request.url.endsWith('/search')) {
+      assert.equal(request.url, 'https://api.deepseek.com/v1/tools/search');
+      assert.deepEqual(await request.json(), {
+        query: search.input.query,
+        count: 5,
+        need_content: false,
+      });
+      return json({ results: [{ ...source, content: '', summary: '长摘要', snippet: '短摘要' }] });
+    }
+    assert.equal(request.url, 'https://api.deepseek.com/v1/tools/fetch');
+    assert.deepEqual(await request.json(), { url: webpage.input.url });
+    return json({
+      title: '网页',
+      content: '# Markdown\n\n正文',
+      url: 'https://untrusted.example/',
+    });
+  };
+  const result = await executeWebTool(service, search, new AbortController().signal, fetcher);
+  assert.deepEqual(result, {
+    id: search.id,
+    name: search.name,
+    status: 'completed',
+    sources: [{ ...source, content: '长摘要' }],
+  });
+  const page = await executeWebTool(service, webpage, new AbortController().signal, fetcher);
+  assert.deepEqual(page, {
+    id: webpage.id,
+    name: webpage.name,
+    status: 'completed',
+    sources: [{ title: '网页', url: webpage.input.url, content: '# Markdown\n\n正文' }],
+  });
+});
+
+test('DeepSeek query limits count Unicode points and reject before a paid request', async () => {
+  const service: WebToolServiceConfig = { ...config, provider: 'deepseek' };
+  let calls = 0;
+  const fetcher: WebToolFetch = async () => {
+    calls++;
+    return json({ results: [] });
+  };
+  const signal = new AbortController().signal;
+  assert.equal(
+    (
+      await executeWebTool(
+        service,
+        { ...search, input: { query: '🙂'.repeat(128) } },
+        signal,
+        fetcher,
+      )
+    ).status,
+    'completed',
+  );
+  assert.equal(
+    (
+      await executeWebTool(
+        service,
+        { ...search, input: { query: '🙂'.repeat(129) } },
+        signal,
+        fetcher,
+      )
+    ).status,
+    'failed',
+  );
+  assert.equal(calls, 1);
+});
+
+test('DeepSeek account failures stop the task, while Fetch 403/404 remain page failures and never retry or leak diagnostics', async () => {
+  const { terminalWebToolError } = await import('../../../worker/web-tools/service');
+  const service: WebToolServiceConfig = { ...config, provider: 'deepseek' };
+  for (const status of [401, 402, 429, 403, 404, 500]) {
+    let calls = 0;
+    const result = await executeWebTool(
+      service,
+      webpage,
+      new AbortController().signal,
+      async () => {
+        calls++;
+        return new Response(service.apiKey, { status });
+      },
+    );
+    assert.equal(calls, 1);
+    assert.equal(result.status, 'failed');
+    assert.equal(Boolean(terminalWebToolError(result)), [401, 402, 429].includes(status));
+    if (result.status === 'failed') {
+      assert.equal(result.failure?.provider, 'deepseek');
+      assert.equal(result.failure?.httpStatus, status);
+      assert.match(result.error, new RegExp(`DeepSeek · HTTP ${status}`));
+      if (status === 402) assert.match(result.error, /余额不足/);
+      if (status === 429) assert.match(result.error, /限速/);
+      if ([403, 404].includes(status)) assert.equal(result.failure?.code, 'PAGE_UNAVAILABLE');
+      assert.equal(
+        terminalWebToolError({ ...result, error: '换一种错误文案' }),
+        result.failure?.terminal ? '换一种错误文案' : undefined,
+      );
+    }
+    assert.ok(!JSON.stringify(result).includes(service.apiKey));
+  }
+  const malformed = await executeWebTool(service, webpage, new AbortController().signal, async () =>
+    json({ title: '页面', content: '' }),
+  );
+  assert.equal(malformed.status, 'failed');
+});

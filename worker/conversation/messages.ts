@@ -7,16 +7,19 @@ import {
   messageText,
 } from '../../shared/conversation/content';
 import { isActive } from '../../shared/conversation/message-state';
+import { branchPath } from '../../shared/conversation/branch-path';
 import { DEFAULT_CONVERSATION_SETTINGS } from '../../shared/conversation/settings';
 import type { ConversationSettings, Message } from '../../shared/conversation/types';
 import type { ProviderConfig } from '../../shared/providers/types';
 import type { SearchDocument } from '../../shared/search/query';
-import { STREAM_VERSION } from '../../shared/streaming/batches';
+import { STREAM_VERSION, payloadBytes } from '../../shared/streaming/batches';
 import type { Change, Snapshot } from '../../shared/streaming/protocol';
 import { type PublicToolTask } from '../../shared/web-tools/tasks';
 import type { SqlQuery } from '../generation/metrics';
 import type { ConversationActivityJournal } from './activity';
 import { StreamJournal } from '../streaming/journal';
+import { ConversationState } from './state';
+import { GenerationCheckpoints } from '../streaming/checkpoints';
 
 export type Row = Omit<Message, 'parts' | 'waitingForSummary'> & {
   content: string;
@@ -35,10 +38,10 @@ export class ConversationMessages {
     private readonly query: SqlQuery,
     private readonly journal: StreamJournal,
     private readonly runConfig: (id: string) => string | null | undefined,
-    private readonly onEvent: (payload: string) => void,
+    _onEvent: (payload: string) => void,
     private readonly activity?: ConversationActivityJournal,
   ) {}
-  decorate(row: Row): Message {
+  decorate(row: Row, includeContent = true): Message {
     const {
       generationResult,
       summaryResult,
@@ -50,13 +53,17 @@ export class ConversationMessages {
       reasoning,
       ...message
     } = row;
+    const text =
+      includeContent && this.journal instanceof GenerationCheckpoints
+        ? this.journal.read(message.id, content, reasoning ?? '')
+        : { content, reasoning: reasoning ?? '' };
     return {
       ...message,
       ...(toolResult && !message.deletedAt
         ? { tools: JSON.parse(toolResult) as PublicToolTask }
         : {}),
       parts: [
-        ...messageParts(content, reasoning ?? ''),
+        ...messageParts(text.content, text.reasoning),
         ...(imageResult ? (JSON.parse(imageResult) as ImagePart[]) : []),
         ...(fileResult ? (JSON.parse(fileResult) as DocumentPart[]) : []),
       ],
@@ -79,14 +86,47 @@ export class ConversationMessages {
     });
   }
 
-  rows() {
+  rows(metadataOnly = false) {
+    const columns = metadataOnly
+      ? "messages.id, messages.role, '' AS content, NULL AS reasoning, messages.status, messages.createdAt, messages.runId, messages.parentId, messages.revisionOf, messages.error, messages.providerId, messages.model, messages.modelName, messages.streamVersion, messages.durableOffset"
+      : 'messages.*';
+    const attachments = metadataOnly
+      ? 'NULL AS imageResult, NULL AS fileResult, NULL AS toolResult'
+      : 'message_images.payload AS imageResult, message_files.payload AS fileResult, message_web_tools.payload AS toolResult';
     return this.query<Row>(
-      'SELECT messages.*, message_deletions.deletedAt, message_generations.payload AS generationResult, message_summaries.payload AS summaryResult, message_images.payload AS imageResult, message_files.payload AS fileResult, message_web_tools.payload AS toolResult, run_dependencies.summaryId AS waitingForSummary FROM messages LEFT JOIN message_deletions ON message_deletions.id = messages.id LEFT JOIN message_generations ON message_generations.messageId = messages.id LEFT JOIN message_summaries ON message_summaries.messageId = messages.id LEFT JOIN message_images ON message_images.messageId = messages.id LEFT JOIN message_files ON message_files.messageId = messages.id LEFT JOIN message_web_tools ON message_web_tools.messageId = messages.id LEFT JOIN run_dependencies ON run_dependencies.runId = messages.runId ORDER BY messages.rowid',
+      `SELECT ${columns}, message_deletions.deletedAt, message_generations.payload AS generationResult, message_summaries.payload AS summaryResult, ${attachments}, run_dependencies.summaryId AS waitingForSummary FROM messages LEFT JOIN message_deletions ON message_deletions.id = messages.id LEFT JOIN message_generations ON message_generations.messageId = messages.id LEFT JOIN message_summaries ON message_summaries.messageId = messages.id LEFT JOIN message_images ON message_images.messageId = messages.id LEFT JOIN message_files ON message_files.messageId = messages.id LEFT JOIN message_web_tools ON message_web_tools.messageId = messages.id LEFT JOIN run_dependencies ON run_dependencies.runId = messages.runId ORDER BY messages.rowid`,
     );
   }
 
   all(): Message[] {
     return Array.from(this.rows(), (row) => this.materialize(this.decorate(row)));
+  }
+
+  count(): number {
+    return this.query<{ count: number }>('SELECT COUNT(*) AS count FROM messages').one().count;
+  }
+
+  forHead(headId: string | null | undefined): Message[] {
+    const graph = Array.from(this.rows(true), (row) => this.decorate(row, false));
+    let path: Message[];
+    try {
+      path = headId ? branchPath(graph, headId) : [];
+    } catch {
+      // Submission validation reports missing or cyclic parents without reading unrelated bodies.
+      return graph;
+    }
+    const needed = new Set(path.map(({ id }) => id));
+    for (const message of graph) {
+      const source = message.summary?.sourceIds;
+      if (
+        !message.deletedAt &&
+        source &&
+        source.length <= path.length &&
+        source.every((id, index) => path[index].id === id)
+      )
+        needed.add(message.id);
+    }
+    return graph.map((message) => (needed.has(message.id) ? this.message(message.id)! : message));
   }
 
   settings(): ConversationSettings {
@@ -120,7 +160,28 @@ export class ConversationMessages {
   }
 
   seq(): number {
-    return this.query<{ seq: number }>('SELECT COALESCE(MAX(seq), 0) AS seq FROM events').one().seq;
+    return new ConversationState(this.query).current().seq;
+  }
+
+  page(after: number) {
+    const rows = this.query<{ id: string; ordinal: number }>(
+      'SELECT id, rowid AS ordinal FROM messages WHERE rowid > ? ORDER BY rowid LIMIT 32',
+      after,
+    ).toArray();
+    const messages: Message[] = [];
+    let bytes = 0,
+      cursor = after;
+    for (const row of rows) {
+      const message = this.message(row.id)!;
+      const size = payloadBytes(JSON.stringify(message));
+      if (messages.length && bytes + size > 1024 * 1024) break;
+      messages.push(message);
+      bytes += size;
+      cursor = row.ordinal;
+    }
+    const done = !this.query('SELECT id FROM messages WHERE rowid > ? LIMIT 1', cursor).toArray()
+      .length;
+    return { snapshot: { ...this.snapshotHeader(), messages }, after: cursor, done };
   }
 
   snapshot(): Snapshot {
@@ -128,6 +189,7 @@ export class ConversationMessages {
     return {
       messages: this.all(),
       seq: this.seq(),
+      epoch: new ConversationState(this.query).current().epoch,
       settings: this.settings(),
       ...(activity ? { activity } : {}),
     };
@@ -135,13 +197,7 @@ export class ConversationMessages {
 
   record(messages: Message[], conversationId?: string, settings?: ConversationSettings): Change {
     const activity = this.activity?.record();
-    const seq = this.recordPayload(
-      JSON.stringify(
-        settings || activity
-          ? { messages, ...(settings ? { settings } : {}), ...(activity ? { activity } : {}) }
-          : messages,
-      ),
-    );
+    const seq = this.advance(messages.map((message) => message.id));
     if (conversationId)
       for (const message of messages)
         if (!isActive(message) && !message.summary) {
@@ -176,12 +232,39 @@ export class ConversationMessages {
     };
   }
 
-  recordPayload(payload: string): number {
-    this.onEvent(payload);
-    this.query('INSERT INTO events (payload) VALUES (?)', payload);
-    const seq = this.seq();
-    this.query('DELETE FROM events WHERE seq < ?', seq - 500);
-    return seq;
+  advance(ids: string[]): number {
+    return new ConversationState(this.query).advance(ids);
+  }
+
+  changes(after: number): Snapshot;
+  changes(after: number, maxBytes: number): Snapshot | undefined;
+  changes(after: number, maxBytes = Infinity): Snapshot | undefined {
+    const ids = new Set(
+      this.query<{ messageId: string }>(
+        'SELECT messageId FROM message_versions WHERE version > ?',
+        after,
+      )
+        .toArray()
+        .map((row) => row.messageId),
+    );
+    const messages: Message[] = [];
+    let bytes = 0;
+    for (const id of ids) {
+      const message = this.message(id);
+      if (!message) continue;
+      bytes += payloadBytes(JSON.stringify(message));
+      if (bytes > maxBytes) return undefined;
+      messages.push(message);
+    }
+    return { ...this.snapshotHeader(), messages };
+  }
+
+  private snapshotHeader() {
+    return {
+      ...new ConversationState(this.query).current(),
+      settings: this.settings(),
+      activity: this.activity?.snapshot(),
+    };
   }
 
   insert(message: Message) {

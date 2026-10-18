@@ -101,8 +101,9 @@ export async function runToolValidation(options: ToolValidationOptions) {
     }
   }
   async function subscriber(id: string, disconnect = false) {
+    const baseline = await api<Snapshot>(`/conversations/${id}`);
     const socket = new WebSocket(
-      `${origin.replace(/^http/, 'ws')}/api/conversations/${id}/sync?after=0`,
+      `${origin.replace(/^http/, 'ws')}/api/conversations/${id}/sync?after=${baseline.seq}&epoch=${baseline.epoch ?? ''}`,
       {
         ...(agent ? { agent } : {}),
         handshakeTimeout: 30_000,
@@ -110,7 +111,7 @@ export async function runToolValidation(options: ToolValidationOptions) {
       },
     );
     sockets.add(socket);
-    const sync = new StreamSync(),
+    const sync = new StreamSync(baseline),
       observed = { frames: 0, bytes: 0, disconnected: false };
     let failure: unknown,
       closed = false;
