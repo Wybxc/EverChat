@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { Component, useEffect, useMemo, useState, type ReactNode } from 'react';
-import type { PluginConfig } from 'streamdown';
+import type { PluginConfig, StreamdownProps } from 'streamdown';
 import { recoverApplicationResources } from '../../../platform/pwa/controller';
 
 import 'katex/dist/katex.min.css';
@@ -9,13 +9,15 @@ import 'streamdown/styles.css';
 type MarkdownRenderer = (typeof import('streamdown'))['Streamdown'];
 
 let markdownRenderer: MarkdownRenderer | null = null;
+let markdownRemarkPlugins: StreamdownProps['remarkPlugins'];
 
 let markdownRendererPromise: Promise<MarkdownRenderer> | null = null;
 
 function loadMarkdownRenderer() {
   if (markdownRenderer) return Promise.resolve(markdownRenderer);
-  return (markdownRendererPromise ??= import('streamdown')
-    .then(({ Streamdown }) => {
+  return (markdownRendererPromise ??= Promise.all([import('streamdown'), import('remark-breaks')])
+    .then(([{ Streamdown, defaultRemarkPlugins }, { default: remarkBreaks }]) => {
+      markdownRemarkPlugins = [...Object.values(defaultRemarkPlugins), remarkBreaks];
       markdownRenderer = Streamdown;
       return Streamdown;
     })
@@ -174,6 +176,7 @@ export function MarkdownContent({
             className={`${className} space-y-3`}
             mode={streaming ? 'streaming' : 'static'}
             isAnimating={streaming}
+            remarkPlugins={markdownRemarkPlugins}
             components={{
               a: ({ children, ...props }) => (
                 <a {...props} target="_blank" rel="noopener noreferrer">
