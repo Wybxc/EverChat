@@ -16,6 +16,16 @@ import 'streamdown/styles.css';
 
 type MarkdownRenderer = (typeof import('streamdown'))['Streamdown'];
 
+const markdownComponents: StreamdownProps['components'] = {
+  a: ({ children, ...props }) => (
+    <a {...props} target="_blank" rel="noopener noreferrer">
+      {children}
+    </a>
+  ),
+  img: ({ alt }) => <span className="text-muted-foreground">[图片：{alt ?? '附件'}]</span>,
+  table: ({ node: _node, ...props }) => <table {...props} />,
+};
+
 let markdownRenderer: MarkdownRenderer | null = null;
 let markdownRemarkPlugins: StreamdownProps['remarkPlugins'];
 
@@ -217,16 +227,7 @@ export function MarkdownContent({
             mode={streaming ? 'streaming' : 'static'}
             isAnimating={streaming}
             remarkPlugins={markdownRemarkPlugins}
-            components={{
-              a: ({ children, ...props }) => (
-                <a {...props} target="_blank" rel="noopener noreferrer">
-                  {children}
-                </a>
-              ),
-              img: ({ alt }) => (
-                <span className="text-muted-foreground">[图片：{alt ?? '附件'}]</span>
-              ),
-            }}
+            components={markdownComponents}
             plugins={plugins ?? undefined}
             controls={{
               code: { copy: true, download: false },
