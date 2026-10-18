@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
-import { chmod, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import { parseArgs } from 'node:util';
@@ -46,8 +46,11 @@ assert.ok(values.directory, '--directory is required');
 const directory = resolve(values.directory);
 await mkdir(directory, { recursive: true, mode: 0o700 });
 await chmod(directory, 0o700);
-const save = (file: string, value: unknown) =>
-  writeFile(join(directory, file), JSON.stringify(value), { mode: 0o600 });
+const save = async (file: string, value: unknown) => {
+  const temporary = join(directory, `${file}.${randomUUID()}.tmp`);
+  await writeFile(temporary, JSON.stringify(value), { mode: 0o600, flag: 'wx' });
+  await rename(temporary, join(directory, file));
+};
 const load = async <T>(file: string) =>
   JSON.parse(await readFile(join(directory, file), 'utf8')) as T;
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -114,7 +117,11 @@ if (action === 'prepare') {
         snapshot = await load<Snapshot>(`${prefix}.before.json`);
       if (await hasFile(`${prefix}.patch.json`)) continue;
       const path = join(directory, `${prefix}.sqlite`);
-      await writeFile(path, '', { mode: 0o600 });
+      // Only disposable conversion copies are recreated. A crashed SQLite
+      // transaction can leave a hot journal; it must not recover over a new copy.
+      for (const suffix of ['', '-journal', '-wal', '-shm'])
+        await rm(`${path}${suffix}`, { force: true });
+      await writeFile(path, '', { mode: 0o600, flag: 'wx' });
       const db = new DatabaseSync(path);
       try {
         for (const table of snapshot.schema) {
