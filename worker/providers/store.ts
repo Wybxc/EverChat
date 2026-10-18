@@ -142,6 +142,7 @@ export class ProviderSettingsStore {
       model: config?.model ?? '',
       modelName: config?.modelName ?? '',
       activeProviderId: config?.providerId ?? null,
+      providerNames: Object.fromEntries(settings.providers.map(({ id, name }) => [id, name])),
       models: chatModels(settings),
       systemPrompt: settings.systemPrompt,
       maxOutputTokens: settings.maxOutputTokens,

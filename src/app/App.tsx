@@ -942,7 +942,9 @@ export function App({
       conversation,
       input,
       viewHeadId: requestView,
-      modelLabel: generationModel?.name || input.selection?.model,
+      modelLabel: generationModel
+        ? `${generationModel.providerName} · ${generationModel.name}`
+        : input.selection?.model,
       images: input.retryOf ? undefined : images,
       files: input.retryOf ? undefined : files,
     };
@@ -1660,6 +1662,7 @@ export function App({
                           }
                           conversationId={selected!}
                           message={message}
+                          providerName={session?.providerNames?.[message.providerId ?? '']}
                           busy={messageBlocked || Boolean(messageMutation)}
                           onRetry={() => void retry(message)}
                           onProviderSettings={() => {

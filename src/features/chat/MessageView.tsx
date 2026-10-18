@@ -17,6 +17,7 @@ export function MessageView({
   navigationRef,
   conversationId,
   message,
+  providerName,
   busy,
   onRetry,
   onProviderSettings,
@@ -35,6 +36,7 @@ export function MessageView({
   navigationRef?: Ref<HTMLElement>;
   conversationId: string;
   message: Message;
+  providerName?: string;
   busy: boolean;
   onRetry: () => void;
   onProviderSettings?: () => void;
@@ -168,6 +170,7 @@ export function MessageView({
       <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
         <InfinityIcon className="h-4 w-4 shrink-0" aria-hidden="true" strokeWidth={1.7} />
         <span className="min-w-0 break-words font-semibold">
+          {providerName && <>{providerName} · </>}
           {message.modelName || message.model || 'EverChat'}
         </span>
         {isActive(message) && (

@@ -117,6 +117,7 @@ export function useSession() {
         model: model?.id ?? '',
         modelName: model?.name || model?.id || '',
         activeProviderId: model ? profile!.id : null,
+        providerNames: Object.fromEntries(config.providers.map(({ id, name }) => [id, name])),
         models: chatModels(config),
         systemPrompt: config.systemPrompt,
         maxOutputTokens: config.maxOutputTokens,

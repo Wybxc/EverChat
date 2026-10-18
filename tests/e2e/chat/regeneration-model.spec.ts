@@ -35,7 +35,7 @@ test('regeneration fixes the currently chosen provider, prompt and model title w
               models: [
                 {
                   id: model,
-                  name: `Model ${index + 1}`,
+                  name: 'Shared Model',
                   enabled: true,
                   systemPrompt: `Instructions ${index + 1}`,
                   useGlobalSystemPrompt: false,
@@ -62,7 +62,11 @@ test('regeneration fixes the currently chosen provider, prompt and model title w
     await expect.poll(async () => (await snapshot()).messages[1]?.status).toBe('completed');
     const first = (await snapshot()).messages[1];
     await page.goto(`/c/${id}`);
+    await expect(page.getByTestId('assistant-message')).toContainText('Provider 1 · Shared Model');
     await chooseChatModel(page, JSON.stringify([secondProvider, model]));
+    await expect(page.getByRole('combobox', { name: '聊天模型' })).toHaveText(
+      'Provider 2 · Shared Model',
+    );
     const editor = page.getByRole('textbox', { name: '消息', exact: true });
     await editor.fill('不能被重生成清空的草稿');
     await page.getByLabel('思维强度', { exact: true }).selectOption('high');
@@ -77,7 +81,7 @@ test('regeneration fixes the currently chosen provider, prompt and model title w
     expect(run.config).toMatchObject({
       providerId: secondProvider,
       model,
-      modelName: 'Model 2',
+      modelName: 'Shared Model',
       systemPrompt: 'Instructions 2',
       reasoningEffort: 'high',
     });
@@ -85,27 +89,28 @@ test('regeneration fixes the currently chosen provider, prompt and model title w
     await expect(editor).toHaveValue('不能被重生成清空的草稿');
     await chooseChatModel(page, JSON.stringify([firstProvider, model]));
     const answer = page.locator(`[data-message-id="${accepted.assistantId}"]`);
-    await expect(answer).toContainText('Model 2');
+    await expect(answer).toContainText('Provider 2 · Shared Model');
+    await expect(answer).not.toContainText('Provider 1 · Shared Model');
     await expect(answer).toHaveAttribute('data-status', 'completed');
     const saved = (await snapshot()).messages;
     expect(saved.find((m) => m.id === first.id)).toEqual(first);
     expect(saved.at(-1)).toMatchObject({
       providerId: secondProvider,
       model,
-      modelName: 'Model 2',
+      modelName: 'Shared Model',
       parentId: first.parentId,
     });
     await page.reload();
     await expect(editor).toHaveValue('不能被重生成清空的草稿');
-    await expect(answer).toContainText('Model 2');
+    await expect(answer).toContainText('Provider 2 · Shared Model');
     await chooseChatModel(page, JSON.stringify([secondProvider, model]));
     await page.context().setOffline(true);
     await answer.getByRole('button', { name: '重新生成', exact: true }).click();
     const pending = page.getByTestId('pending-message');
     await expect(pending).toContainText('等待发送');
-    await expect(pending).toContainText('Model 2');
+    await expect(pending).toContainText('Provider 2 · Shared Model');
     await chooseChatModel(page, JSON.stringify([firstProvider, model]));
-    await expect(pending).toContainText('Model 2');
+    await expect(pending).toContainText('Provider 2 · Shared Model');
     await expect(editor).toHaveValue('不能被重生成清空的草稿');
     const delivered = page.waitForResponse(
       (r) => r.request().method() === 'POST' && r.url().endsWith(`/conversations/${id}/messages`),
@@ -118,9 +123,28 @@ test('regeneration fixes the currently chosen provider, prompt and model title w
     });
     const offlineAccepted = await deliveredResponse.json();
     const offlineAnswer = page.locator(`[data-message-id="${offlineAccepted.assistantId}"]`);
-    await expect(offlineAnswer).toContainText('Model 2');
+    await expect(offlineAnswer).toContainText('Provider 2 · Shared Model');
     await expect(offlineAnswer).toHaveAttribute('data-status', 'completed');
     await expect(editor).toHaveValue('不能被重生成清空的草稿');
+    const settings = (await page.request
+      .get('/api/settings/providers')
+      .then((r) => r.json())) as ProviderSettings;
+    await page.request.put('/api/settings/providers', {
+      headers,
+      data: {
+        ...settings,
+        providers: settings.providers.map((profile) =>
+          profile.id === secondProvider
+            ? { ...profile, models: profile.models.map((entry) => ({ ...entry, enabled: false })) }
+            : profile,
+        ),
+      },
+    });
+    await page.reload();
+    await expect(offlineAnswer).toContainText('Provider 2 · Shared Model');
+    await expect(page.getByRole('combobox', { name: '聊天模型' })).toHaveText(
+      'Provider 1 · Shared Model',
+    );
   } finally {
     await page.context().setOffline(false);
     await page.request.delete(`/api/conversations/${id}`, { headers });

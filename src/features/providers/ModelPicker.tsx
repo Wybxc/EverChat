@@ -39,7 +39,9 @@ export function ModelPicker({
           className="min-w-11 flex-1 justify-between gap-1 px-2 sm:max-w-80"
           title={`${selected.providerName} · ${selected.name}`}
         >
-          <span className="truncate">{selected.name}</span>
+          <span className="truncate">
+            {selected.providerName} · {selected.name}
+          </span>
           <ChevronDown className="size-3.5 shrink-0" />
         </Button>
       </PopoverTrigger>

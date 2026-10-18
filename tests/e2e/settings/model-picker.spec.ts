@@ -65,10 +65,15 @@ test('searchable model picker works with keyboard and keeps distinct model ident
       'data-model-key',
       JSON.stringify([data.providerId, 'test-model-2']),
     );
+    await expect(page.getByRole('combobox', { name: '聊天模型' })).toHaveText(
+      'UI Test · Thinking Test',
+    );
     await expect(page.getByLabel('消息', { exact: true })).toHaveValue('保留草稿');
     await expect(page.getByLabel('消息', { exact: true })).toBeFocused();
     await chooseChatModel(page, JSON.stringify([data.providerId, 'test-model']));
-    await expect(page.getByRole('combobox', { name: '聊天模型' })).toContainText('EverChat Test');
+    await expect(page.getByRole('combobox', { name: '聊天模型' })).toHaveText(
+      'UI Test · EverChat Test',
+    );
   } finally {
     await data.cleanup();
   }

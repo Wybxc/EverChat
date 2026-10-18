@@ -21,6 +21,7 @@ export interface SessionSettings {
   model: string;
   modelName?: string;
   activeProviderId?: string | null;
+  providerNames?: Record<string, string>;
   models?: ChatModel[];
   attachmentsConfigured: boolean;
   systemPrompt?: string;
