@@ -31,7 +31,38 @@ export class Conversation extends DurableObject {
     };
     const sql = this.ctx.storage.sql;
     let result: unknown;
-    if (input.action === 'schema') {
+    if (input.action === 'catalog') {
+      // The control-plane inventory can omit objects referenced by the app.
+      // Read canonical names without starting the business Library constructor.
+      const sources = [
+        ['conversations', 'id'],
+        ['conversation_deletions', 'id'],
+        ['conversation_copies', 'id'],
+        ['conversation_copies', 'sourceId'],
+        ['archive_imports', 'id'],
+      ];
+      const tables = new Set(
+        sql
+          .exec<{ name: string }>("SELECT name FROM sqlite_master WHERE type='table'")
+          .toArray()
+          .map(({ name }) => name),
+      );
+      const selects = sources
+        .filter(([table]) => tables.has(table))
+        .map(
+          ([table, column]) =>
+            `SELECT ${quoteIdentifier(column)} AS id FROM ${quoteIdentifier(table)}`,
+        );
+      result = selects.length
+        ? sql
+            .exec<{ id: string }>(
+              `SELECT id FROM (${selects.join(' UNION ')}) WHERE id IS NOT NULL ORDER BY id LIMIT 256 OFFSET ?`,
+              input.offset ?? 0,
+            )
+            .toArray()
+            .map(({ id }) => id)
+        : [];
+    } else if (input.action === 'schema') {
       result = sql
         .exec<{ name: string; sql: string }>(
           "SELECT name, sql FROM sqlite_master WHERE type='table' AND sql IS NOT NULL ORDER BY name",
@@ -139,8 +170,25 @@ export class Operations extends WorkerEntrypoint<OperationsEnv> {
   }
 }
 async function dispatch(request: Request, env: OperationsEnv) {
-  if (new URL(request.url).pathname === '/identity')
-    return Response.json({ runId: env.OPS_RUN_ID });
+  const url = new URL(request.url);
+  if (url.pathname === '/identity') return Response.json({ runId: env.OPS_RUN_ID });
+  if (url.pathname === '/catalog') {
+    const offset = Number(url.searchParams.get('offset') ?? 0);
+    if (!Number.isSafeInteger(offset) || offset < 0) throw new Error('Invalid catalog offset');
+    const response = await env.LIBRARY.getByName('personal').fetch(
+      new Request('https://maintenance.invalid/', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'catalog', offset }),
+      }),
+    );
+    const names = (await response.json()) as string[];
+    return Response.json(
+      names.map((name) => ({
+        kind: 'conversation',
+        id: env.CONVERSATIONS.idFromName(name).toString(),
+      })),
+    );
+  }
   const input = (await request.json()) as { kind: StoreKind; id: string; runId: string };
   if (
     input.runId !== env.OPS_RUN_ID ||

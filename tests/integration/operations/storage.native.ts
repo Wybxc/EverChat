@@ -59,7 +59,7 @@ test('native maintenance transport rejects anonymous HTTP, preserves unrelated s
       runId,
     });
     const env = (await worker.getEnv()) as { LIBRARY: DurableObjectNamespace };
-    const id = env.LIBRARY.idFromName('sample').toString();
+    const id = env.LIBRARY.idFromName('personal').toString();
     const remote = await worker.getDurableObjectStorage('LIBRARY', { id });
     const seed = [
       'CREATE TABLE conversation_metadata(id TEXT PRIMARY KEY,pinned INTEGER NOT NULL,archived INTEGER NOT NULL)',
@@ -68,11 +68,32 @@ test('native maintenance transport rejects anonymous HTTP, preserves unrelated s
       "INSERT INTO web_tool_service VALUES (1,'private-key',20)",
       'CREATE TABLE unrelated(id TEXT PRIMARY KEY,payload TEXT)',
       "INSERT INTO unrelated VALUES ('untouched','private-data')",
+      'CREATE TABLE conversations(id TEXT PRIMARY KEY)',
+      "INSERT INTO conversations VALUES ('live')",
+      'CREATE TABLE conversation_deletions(id TEXT PRIMARY KEY)',
+      "INSERT INTO conversation_deletions VALUES ('deleted')",
+      'CREATE TABLE conversation_copies(id TEXT PRIMARY KEY,sourceId TEXT)',
+      "INSERT INTO conversation_copies VALUES ('copy','live')",
     ];
     for (const sql of seed) {
       local.exec(sql);
       await remote.exec(sql);
     }
+    const catalog = await (
+      await client.fetch('https://operations.invalid/catalog?offset=0')
+    ).json();
+    const conversations = (await worker.getEnv()) as { CONVERSATIONS: DurableObjectNamespace };
+    assert.deepEqual(
+      catalog,
+      ['copy', 'deleted', 'live'].map((name) => ({
+        kind: 'conversation',
+        id: conversations.CONVERSATIONS.idFromName(name).toString(),
+      })),
+    );
+    assert.deepEqual(
+      await (await client.fetch('https://operations.invalid/catalog?offset=3')).json(),
+      [],
+    );
     const request = async (action: string, more: Record<string, unknown> = {}) =>
       client.fetch('https://operations.invalid/', {
         method: 'POST',

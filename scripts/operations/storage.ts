@@ -178,6 +178,21 @@ if (action === 'prepare') {
           throw new Error(`Maintenance ${input.action} failed: HTTP ${response.status}`);
         return response.json() as Promise<T>;
       };
+      const discoverTargets = async () => {
+        const targets = await listTargets(manifest.account, manifest.worker);
+        let offset = 0;
+        while (true) {
+          const response = await send(`/catalog?offset=${offset}`);
+          assert.equal(response.status, 200, 'Cannot inspect canonical conversation catalog');
+          const page = (await response.json()) as Target[];
+          if (!page.length) break;
+          targets.push(...page);
+          offset += page.length;
+        }
+        return [
+          ...new Map(targets.map((target) => [`${target.kind}:${target.id}`, target])).values(),
+        ].sort((a, b) => a.kind.localeCompare(b.kind) || a.id.localeCompare(b.id));
+      };
       const snapshot = async (target: Target): Promise<Snapshot> => {
         const schema = await call<TableSchema[]>(target, { action: 'schema' }),
           rows: Snapshot['rows'] = {};
@@ -202,7 +217,7 @@ if (action === 'prepare') {
           !(await hasFile('conversion-complete.json')),
           'Do not overwrite a backup after conversion',
         );
-        manifest.objects = await listTargets(manifest.account, manifest.worker);
+        manifest.objects = await discoverTargets();
         await save('manifest.json', manifest);
         for (const target of manifest.objects) {
           const file = `${base(target)}.before.json`;
@@ -229,7 +244,7 @@ if (action === 'prepare') {
         await save('apply-complete.json', { objects: manifest.objects.length });
       } else if (action === 'verify') {
         assert.deepEqual(
-          await listTargets(manifest.account, manifest.worker),
+          await discoverTargets(),
           manifest.objects,
           'Namespace inventory changed during maintenance',
         );
