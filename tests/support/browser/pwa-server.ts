@@ -1,4 +1,5 @@
 import { messageParts } from '../../../shared/conversation/content';
+import type { Snapshot } from '../../../shared/streaming/protocol';
 // Serve the production shell with read-only synthetic API data; DO behavior is covered by the main E2E suite.
 import { readFile, readdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -45,7 +46,8 @@ const types: Record<string, string> = {
   '.webmanifest': 'application/manifest+json',
 };
 const server = createServer(async (request, response) => {
-  const path = new URL(request.url ?? '/', 'http://127.0.0.1:5175').pathname;
+  const url = new URL(request.url ?? '/', 'http://127.0.0.1:5175');
+  const path = url.pathname;
   const json = (data: unknown) => {
     response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     response.end(JSON.stringify(data));
@@ -122,8 +124,8 @@ const server = createServer(async (request, response) => {
       deletionCursor: 0,
       hasMoreDeletions: false,
     });
-  if (path === `/api/conversations/${conversationId}`)
-    return json({
+  if (path === `/api/conversations/${conversationId}`) {
+    const snapshot: Snapshot = {
       seq: 1,
       messages: [
         {
@@ -158,7 +160,9 @@ const server = createServer(async (request, response) => {
           error: null,
         },
       ],
-    });
+    };
+    return json(url.searchParams.has('after') ? { snapshot, after: 2, done: true } : snapshot);
+  }
   if (path.startsWith('/api/')) {
     response.writeHead(404);
     response.end();

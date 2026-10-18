@@ -1,3 +1,8 @@
+import {
+  completionId,
+  type AnswerCompletion,
+  type NotificationDevice,
+} from '../../../shared/notifications/protocol';
 import { AttachmentStore } from '../../../worker/attachments/store';
 import type { Env } from '../../../worker/http/env';
 import { HttpError } from '../../../worker/http/response';
@@ -27,6 +32,38 @@ export type AttachmentControl = {
   noBucket?: boolean;
 };
 export class Library extends ProductionLibrary {
+  private notificationFixture() {
+    this.ctx.storage.sql.exec(
+      'CREATE TABLE IF NOT EXISTS fixture_notification_pushes (ordinal INTEGER PRIMARY KEY AUTOINCREMENT, device TEXT NOT NULL, completionId TEXT NOT NULL, payload TEXT NOT NULL)',
+    );
+  }
+  protected override async sendNotificationPush(
+    device: NotificationDevice,
+    completion: AnswerCompletion,
+  ) {
+    this.notificationFixture();
+    this.ctx.storage.sql.exec(
+      'INSERT INTO fixture_notification_pushes(device, completionId, payload) VALUES (?, ?, ?)',
+      device.instanceId,
+      completionId(completion),
+      JSON.stringify(completion),
+    );
+    return { status: 201 };
+  }
+  async fixtureNotifications(completion?: AnswerCompletion) {
+    this.notificationFixture();
+    if (completion) await this.answerCompleted(completion);
+    return {
+      pushes: this.ctx.storage.sql
+        .exec('SELECT device, completionId, payload FROM fixture_notification_pushes')
+        .toArray(),
+      pending: this.ctx.storage.sql
+        .exec('SELECT id, device, done FROM notification_deliveries')
+        .toArray(),
+      devices: this.ctx.storage.sql.exec('SELECT id, revision FROM notification_devices').toArray(),
+      alarm: await this.ctx.storage.getAlarm(),
+    };
+  }
   private activityFixture() {
     this.ctx.storage.sql.exec(
       'CREATE TABLE IF NOT EXISTS fixture_activity (id TEXT PRIMARY KEY, fail INTEGER NOT NULL, calls INTEGER NOT NULL)',

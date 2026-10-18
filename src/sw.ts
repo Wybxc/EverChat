@@ -1,4 +1,5 @@
 /// <reference lib="webworker" />
+import { registerAnswerNotifications } from './platform/notifications/service-worker';
 import { cacheNames, clientsClaim, setCacheNameDetails } from 'workbox-core';
 import {
   addPlugins,
@@ -20,6 +21,7 @@ import {
 declare const self: ServiceWorkerGlobalScope & {
   __WB_MANIFEST: { url: string; revision: string | null }[];
 };
+registerAnswerNotifications();
 const repairGeneration = new URL(self.location.href).searchParams.get('repair');
 setCacheNameDetails({
   prefix: 'everchat-static',

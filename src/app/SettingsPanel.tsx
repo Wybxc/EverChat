@@ -21,6 +21,7 @@ import { SettingsAutosave } from '../features/providers/settings-autosave';
 import { WebToolSettingsPanel } from '../features/web-tools/WebToolSettings';
 import { api } from '../platform/api';
 import { useMediaQuery } from '../platform/useMediaQuery';
+import { NotificationSettings } from '../features/notifications/NotificationSettings';
 import { PwaSettings } from '../platform/pwa/PwaControls';
 
 type PanelProps = {
@@ -137,6 +138,7 @@ export function SettingsPanel(props: PanelProps) {
               className="space-y-4"
             >
               {props.themeControl}
+              <NotificationSettings />
               <PwaSettings />
               {props.onLogout && (
                 <>

@@ -8,6 +8,7 @@ import { registerPresetsRoutes } from '../presets/routes';
 import { registerProvidersRoutes } from '../providers/routes';
 import { registerSearchRoutes } from '../search/routes';
 import { registerWebToolsRoutes } from '../web-tools/routes';
+import { registerNotificationRoutes } from '../notifications/routes';
 import { authenticateAccess, type Authenticator } from './auth';
 import { HttpError, json, type AppEnv } from './response';
 import { registerSessionRoutes } from './session-routes';
@@ -31,6 +32,7 @@ export function createApi(
   });
 
   registerSessionRoutes(app, logoutUrl);
+  registerNotificationRoutes(app);
   registerProvidersRoutes(app);
   registerWebToolsRoutes(app);
   registerPresetsRoutes(app);

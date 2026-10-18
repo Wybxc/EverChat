@@ -50,6 +50,10 @@ import type { ConversationActivity } from '../../shared/conversation/activity';
 import { LibraryTitles, TITLE_INDEX_SCHEMA } from './titles';
 import type { TitleSource } from '../../shared/conversation/titles';
 import { LIBRARY_ACTIVITY_SCHEMA, LibraryActivityIndex } from './activity';
+import { NotificationRegistry } from '../notifications/registry';
+import { sendWebPush } from '../notifications/push';
+import type { AnswerCompletion, NotificationDevice } from '../../shared/notifications/protocol';
+import type { AccessPrincipal } from '../http/auth';
 
 type Deletion = { id: string; deletedAt: number; completed: number } & Record<
   string,
@@ -70,6 +74,7 @@ const decorate = (row: Record<string, SqlStorageValue>) =>
   }) as unknown as ConversationInfo;
 
 export class Library extends DurableObject<Env> {
+  private readonly notifications: NotificationRegistry;
   private readonly restorer: ArchiveRestorer;
   private readonly providers: ProviderSettingsStore;
   private readonly searchIndex: SearchIndex;
@@ -111,6 +116,12 @@ export class Library extends DurableObject<Env> {
         ...bindings: SqlStorageValue[]
       ) => ctx.storage.sql.exec<T>(statement, ...bindings),
     );
+    this.notifications = new NotificationRegistry(
+      ctx,
+      ctx.storage.sql.exec.bind(ctx.storage.sql),
+      (device, completion) => this.sendNotificationPush(device, completion),
+      (id) => Boolean(this.get(id)),
+    );
     this.providers = new ProviderSettingsStore(ctx.storage, env, this.presets);
     this.searchIndex = new SearchIndex(ctx.storage);
     this.attachments = new AttachmentStore(ctx.storage, env.ATTACHMENTS, (id) =>
@@ -149,11 +160,18 @@ export class Library extends DurableObject<Env> {
         .toArray()[0];
       const cleanup = this.attachments.nextCleanup();
       const copy = Math.min(this.copies.nextMaintenance(), this.nextImportMaintenance());
-      if (!pending && cleanup === undefined && !Number.isFinite(copy)) return;
+      const notifications = this.notifications.nextAlarm();
+      if (
+        !pending &&
+        cleanup === undefined &&
+        !Number.isFinite(copy) &&
+        !Number.isFinite(notifications)
+      )
+        return;
       const alarm = await this.ctx.storage.getAlarm();
       const next = Math.max(
         Date.now() + 1000,
-        Math.min(pending?.nextAt ?? Infinity, cleanup ?? Infinity, copy),
+        Math.min(pending?.nextAt ?? Infinity, cleanup ?? Infinity, copy, notifications),
       );
       if (alarm === null || alarm > next) await this.ctx.storage.setAlarm(next);
     });
@@ -216,6 +234,42 @@ export class Library extends DurableObject<Env> {
   }
   reportActivity(id: string, activity: ConversationActivity) {
     this.activity.accept(id, activity);
+  }
+  protected sendNotificationPush(device: NotificationDevice, completion: AnswerCompletion) {
+    return sendWebPush(this.env, device, completion);
+  }
+  async saveNotificationDevice(owner: string, input: NotificationDevice) {
+    try {
+      const result = this.notifications.save(owner, input);
+      await this.ctx.storage.sync();
+      await this.scheduleMaintenance();
+      return json(result);
+    } catch (error) {
+      if (error instanceof HttpError) return json({ error: error.message }, error.status);
+      throw error;
+    }
+  }
+  async answerCompleted(completion: AnswerCompletion) {
+    this.ctx.storage.transactionSync(() => this.notifications.enqueue(completion));
+    await this.ctx.storage.sync();
+    await this.scheduleMaintenance();
+  }
+  notificationChannel(request: Request, principal: AccessPrincipal, instanceId: string) {
+    try {
+      return this.notifications.connect(request, principal, instanceId);
+    } catch (error) {
+      if (error instanceof HttpError) return json({ error: error.message }, error.status);
+      throw error;
+    }
+  }
+  webSocketMessage(socket: WebSocket, data: string | ArrayBuffer) {
+    this.notifications.message(socket, data);
+  }
+  webSocketClose(socket: WebSocket, code: number, reason: string) {
+    socket.close(code, reason);
+  }
+  webSocketError(socket: WebSocket) {
+    socket.close(1011, 'Connection error');
   }
   get(id: string): ConversationInfo | null {
     const row = this.ctx.storage.sql
@@ -341,6 +395,7 @@ export class Library extends DurableObject<Env> {
     });
   }
   async alarm() {
+    await this.notifications.flush();
     for (const job of this.imports.pending())
       if (
         job.status === 'uploading' &&
@@ -439,6 +494,7 @@ export class Library extends DurableObject<Env> {
         cleanup === undefined ? Infinity : Math.max(Date.now() + 1000, cleanup),
         this.copies.nextMaintenance(),
         this.nextImportMaintenance(),
+        this.notifications.nextAlarm(),
       );
       if (Number.isFinite(next)) await this.ctx.storage.setAlarm(next);
       else await this.ctx.storage.deleteAlarm();

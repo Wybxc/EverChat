@@ -1,4 +1,10 @@
+import { clearNotificationStorage } from './notifications/store';
 import { delMany, entries, set, setMany } from 'idb-keyval';
+
+let notificationCleanup = clearNotificationStorage;
+export function registerNotificationCleanup(cleanup: () => Promise<void>) {
+  notificationCleanup = cleanup;
+}
 
 const PREFIX = 'everchat:';
 const cache = new Map<string, unknown>();
@@ -116,11 +122,16 @@ export function remove(keys: string[]) {
 
 export async function clearLocal() {
   lockStorageWrites();
+  let failure: unknown;
+  try {
+    await notificationCleanup();
+  } catch (error) {
+    failure = error;
+  }
   const keys = new Set(cache.keys());
   cache.clear();
   failedWrites.clear();
   latestWrites.clear();
-  let failure: unknown;
   try {
     for (const key of Object.keys(localStorage))
       if (key.startsWith(PREFIX)) {

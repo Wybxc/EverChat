@@ -5,6 +5,10 @@ import {
   jsonTextBytes,
   textWithinBytes,
 } from '../../shared/conversation/limits';
+import {
+  disableNotificationsForLogout,
+  startNotifications,
+} from '../platform/notifications/controller';
 import { completeSignOut, pendingLogout } from '../platform/auth';
 import { useMutationFocus } from '../features/chat/useMutationFocus';
 import { Alert } from '@/components/ui/alert';
@@ -166,6 +170,17 @@ export function App({
     invalid: invalidRoute,
     navigate,
   } = useConversationRoute();
+  const notificationOwner = session?.identity ? identityKey(session.identity) : null;
+  useEffect(
+    () =>
+      startNotifications(notificationOwner, (id, messageId) => {
+        setSettingsOpen(false);
+        setGlobalSearchOpen(false);
+        setSidebarOpen(false);
+        navigate(id, false, messageId);
+      }),
+    [notificationOwner, navigate],
+  );
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
   const { pending, pendingRef, setPending, followRequests, commitPending, deliver } = useOutbox({
@@ -1147,6 +1162,7 @@ export function App({
       cancelBackup();
       const target = session?.logoutUrl ?? logoutTarget;
       setLogoutTarget(target);
+      await disableNotificationsForLogout();
       signOut();
       const channel = new BroadcastChannel('everchat-access');
       channel.postMessage('sign-out');

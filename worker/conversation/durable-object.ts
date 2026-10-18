@@ -89,6 +89,7 @@ import { ConversationActivityJournal } from './activity';
 import { ConversationTitles, TITLE_JOBS_SCHEMA } from './titles';
 import { databaseUsage } from './capacity';
 import { ConversationState, requestFingerprint } from './state';
+import { CompletionOutbox } from '../notifications/outbox';
 
 import { createHash } from 'node:crypto';
 import { ImageContextError, type ImagePart } from '../../shared/attachments/images';
@@ -181,6 +182,7 @@ export class Conversation extends DurableObject<Env> {
   private readonly activity?: ConversationActivityJournal;
   private activityFlush?: Promise<void>;
   private readonly titles?: ConversationTitles;
+  private readonly completionOutbox: CompletionOutbox;
   private activeAlarmAt?: number;
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -195,6 +197,7 @@ export class Conversation extends DurableObject<Env> {
         .exec<{ deletedAt: number }>('SELECT deletedAt FROM conversation_deletion WHERE id = 1')
         .toArray()[0]?.deletedAt ?? null;
     this.deletionCleaned = this.deletedAt !== null;
+    this.completionOutbox = new CompletionOutbox(this.query.bind(this));
     if (!this.deletedAt)
       this.activity = new ConversationActivityJournal(
         this.query.bind(this),
@@ -241,7 +244,11 @@ export class Conversation extends DurableObject<Env> {
         ).toArray().length
       )
         ctx.waitUntil(this.scheduleAlarm());
-      if (this.activity?.nextAlarm() != null || this.titles?.nextAlarm() != null)
+      if (
+        this.activity?.nextAlarm() != null ||
+        this.titles?.nextAlarm() != null ||
+        this.completionOutbox.nextAlarm() != null
+      )
         ctx.waitUntil(this.scheduleAlarm());
     }
   }
@@ -1248,6 +1255,8 @@ export class Conversation extends DurableObject<Env> {
       if (title != null && !this.activeGeneration) times.push(Math.max(Date.now() + 1000, title));
       const activity = this.activity?.nextAlarm();
       if (activity != null) times.push(activity);
+      const completion = this.completionOutbox.nextAlarm();
+      if (completion != null) times.push(completion);
       if (this.query('SELECT messageId FROM search_outbox LIMIT 1').toArray().length)
         times.push(
           searchSuccess
@@ -1443,6 +1452,7 @@ export class Conversation extends DurableObject<Env> {
   }
   async alarm() {
     if (this.deletedAt) return;
+    await this.flushCompletions();
     await this.flushActivity();
     const searchSuccess = await this.flushSearchIndex();
     // Retrying lifecycle reports must not start another upstream while a model is live.
@@ -1504,6 +1514,13 @@ export class Conversation extends DurableObject<Env> {
     );
     if (titleWork) this.ctx.waitUntil(titleWork.finally(() => this.scheduleAlarm()));
     await this.scheduleAlarm(searchSuccess);
+  }
+  private async flushCompletions() {
+    if (this.deletedAt) return;
+    await this.ctx.storage.sync();
+    await this.completionOutbox.flush((completion) =>
+      this.env.LIBRARY.getByName('personal').answerCompleted(completion),
+    );
   }
   async generateTitle(conversationId: string, requestId: string) {
     if (this.deletedAt) return { error: '这个对话已删除。', status: 410 };
@@ -2018,6 +2035,11 @@ export class Conversation extends DurableObject<Env> {
         run.conversationId,
       );
       if (finalStatus === 'completed' && !message.summary) {
+        this.completionOutbox.record({
+          conversationId: run.conversationId,
+          messageId: message.id,
+          completedAt: Date.now(),
+        });
         const first = this.query<{ id: string }>(
           "SELECT id FROM messages WHERE role='user' ORDER BY rowid LIMIT 1",
         ).toArray()[0];
@@ -2038,6 +2060,8 @@ export class Conversation extends DurableObject<Env> {
       for (const [key, active] of this.activeTools)
         if (key.startsWith(`${toolModel.rootId}:`)) active.abort.abort();
     }
+    if (finalStatus === 'completed' && !message.summary)
+      this.ctx.waitUntil(this.flushCompletions().finally(() => this.scheduleAlarm()));
     this.updateSearchSoon();
     if (this.meter?.runId === runId) {
       const final = this.messages.message(message.id)!;

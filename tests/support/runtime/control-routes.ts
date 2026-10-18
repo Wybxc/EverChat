@@ -103,6 +103,20 @@ export function createTestWorker(
           throw error;
         }
       }
+      if (url.pathname === '/api/__test/library/notifications') {
+        if (request.method !== 'POST' || request.headers.get('Origin') !== url.origin)
+          return new Response('Forbidden', { status: 403 });
+        if (!(await authenticated(request, env)))
+          return new Response('Unauthorized', { status: 401 });
+        const input = (await request.json()) as {
+          completion?: import('../../../shared/notifications/protocol').AnswerCompletion;
+        };
+        return Response.json(
+          await (env.LIBRARY as unknown as DurableObjectNamespace<Library>)
+            .getByName('personal')
+            .fixtureNotifications(input.completion),
+        );
+      }
       if (url.pathname === '/api/__test/library/activity') {
         if (request.method !== 'POST' || request.headers.get('Origin') !== url.origin)
           return new Response('Forbidden', { status: 403 });

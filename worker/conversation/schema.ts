@@ -3,6 +3,7 @@ import { CHECKPOINT_SCHEMA, CONTENT_CHUNKS_SCHEMA } from '../streaming/checkpoin
 import { initializeStorageSchema } from '../platform/storage-schema';
 import { CONVERSATION_ACTIVITY_SCHEMA } from './activity';
 import { initializeConversationState } from './state';
+import { COMPLETION_OUTBOX_SCHEMA } from '../notifications/outbox';
 export const DELETION_SCHEMA =
   'CREATE TABLE IF NOT EXISTS conversation_deletion (id INTEGER PRIMARY KEY CHECK (id = 1), deletedAt INTEGER NOT NULL)';
 
@@ -32,6 +33,7 @@ export function initializeConversation(sql: SqlStorage, metrics: boolean) {
     executor TEXT NOT NULL DEFAULT 'do-v1', startedAt INTEGER, cancelRequested INTEGER NOT NULL DEFAULT 0
   )`);
   sql.exec(CONVERSATION_ACTIVITY_SCHEMA);
+  sql.exec(COMPLETION_OUTBOX_SCHEMA);
   sql.exec(
     "CREATE INDEX IF NOT EXISTS messages_activity ON messages(status) WHERE role = 'assistant'",
   );
