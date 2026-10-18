@@ -14,13 +14,15 @@ pnpm test:operations
 pnpm build
 pnpm exec wrangler deployments list
 pnpm ops:storage prepare --directory /private/tmp/everchat-storage-maintenance --account <account-id>
-cloudflared access login https://chat.wybxc.cc
+cloudflared access login --quiet https://chat.wybxc.cc/auth/resume
 umask 077
 cloudflared access token --app=https://chat.wybxc.cc > /private/tmp/everchat-storage-maintenance/access-token
 pnpm ops:storage preflight --directory /private/tmp/everchat-storage-maintenance
 ```
 
 `prepare` 只读取绑定和命名空间对象清单，不实例化业务对象。目前要求配置中有且只有一个允许邮箱，明确作为运维身份。该目录权限为 0700，备份、补丁及本地 SQLite 权限为 0600；文件含对话文本和凭据，不应提交到 Git、打印到控制台或上传公共制品。
+
+同一时间只启动一个 `cloudflared access login` 进程，使用当前进程给出的链接，等命令成功退出后再取令牌。独立 PWA 的导航缓存可能拦截根路径，因此命令行登录使用 `/auth/resume`。浏览器显示成功不能代替 CLI 完成和 `preflight` 成功。
 
 临时部署保留 Worker 名称、DO 类和命名空间、Workflow、R2 绑定、域名和 Access。普通业务请求统一返回 503；已有业务 WebSocket／上游连接随部署中断。临时 `/api/__operations/` 同时接受 Access 边缘认证和应用 JWT 签名、邮箱验证，POST 还校验 Origin。只有配置的单个运维邮箱可以调用；临时接口随正式版本恢复而移除，不新增长期令牌或放宽 Access。`preflight` 只验证原服务的认证恢复入口，不唤醒数据库；必须成功后才进入维护窗口。
 
@@ -34,10 +36,10 @@ pnpm ops:storage cleanup --directory /private/tmp/everchat-storage-maintenance
 pnpm exec wrangler deploy --config dist/everchat/wrangler.json
 ```
 
-- `backup` 在暂停业务后重新枚举所有有存储的 Conversation／Library 对象，避免遗漏准备阶段后新增的对象；逐页导出迁移涉及的表和索引／触发器。全部备份完成前不能转换。备份只覆盖迁移涉及的 SQL 表，不冒充包含附件的完整站点备份；其他表、DO KV 和 R2 附件不受补丁影响。
+- `backup` 在暂停业务后重新枚举 Conversation／Library 对象，并合并 Library 中对话、删除记录、复制任务及导入任务引用的对象。控制面清单曾遗漏实际已有数据的旧对话，不能单独作为完整性依据。逐页导出迁移涉及的表和索引／触发器；全部备份完成前不能转换。备份只覆盖迁移涉及的 SQL 表，不冒充包含附件的完整站点备份；其他表、DO KV 和 R2 附件不受补丁影响。
 - `convert` 完全在本地工作，生成 SQLite 校验结果及确定的 SQL 补丁，不连接 Cloudflare。对旧库移除事件历史，规范公开流的可靠前缀与检查点，将输入指纹转为 SHA-256；保留消息 ID、分支、删除标记及幂等结果。Library 的历史归档字段、复制字段及工具服务凭据也在这里转换。
 - `apply` 每批以事务写回，并同时记录任务 ID、页码及补丁摘要。网络中断后重复执行该命令，从确认的批次继续。版本标记在补丁末尾写入；部分导入的对象不能被业务代码误当成完整新库。单批最多 64 条语句，通常不超过 256 KiB；单个较大参数化语句单独一批。
-- `verify` 再次核对命名空间对象清单，并比较线上与本地预期的涉及表结构、索引／触发器和逐行值。全部通过后才能清理批次记录、部署正式程序恢复访问。
+- `verify` 再次核对控制面与应用索引合并后的对象清单，并比较线上与本地预期的涉及表结构、索引／触发器和逐行值。全部通过后才能清理批次记录、部署正式程序恢复访问。恢复后还须逐个检查可见对话的快照及存储接口，确认业务构造函数可以读取。
 
 临时维护程序的 Alarm 只延后一分钟，不读取或转换业务数据；正式代码恢复后按原有任务恢复逻辑处理。不要长时间停留在维护版本。
 
@@ -67,4 +69,10 @@ pnpm exec wrangler rollback <previous-version-id>
 
 379 项单元测试、本地 workerd 运维通道测试、7 项生成／取消／重启恢复集成测试、类型检查、构建和格式检查通过。覆盖已有库拒绝启动且不修改数据、本地转换失败回滚、历史流可靠前缀保留、补丁重试、无关数据隔离，以及 Miniflare 内部元数据不影响空库创建。
 
-线上对象清单已读取，共 26 个 Conversation 和 1 个 Library；尚未导出或写回生产 SQL。临时维护部署已撤回，网站继续运行维护前的业务版本。本机 Access 会话仍需完成登录，认证预检成功后再执行维护窗口；在数据库迁移验收前，不推送会触发自动部署的新代码。
+生产迁移已完成：38 个 Conversation（含 1 个已删除对象）及 1 个 Library 均为版本 1。全部 143 条消息、分支字段、运行记录及对话删除标记与迁移前一致；移除 2,363 条旧事件记录，公开流不再保留历史 wire 日志。云端涉及表的结构、索引／触发器和逐行值已与本地结果核对一致，临时批次记录已清除。
+
+首次控制面清单只覆盖 28 个对象，恢复后的读取检查发现 11 个旧对话缺少版本标记。工具随后增加应用索引联合枚举，使用独立补充批次完成全部 39 个对象的备份、转换、写回及校验，保留首轮原始备份。后续迁移必须使用联合枚举，不能仅凭控制面清单或结构校验判定成功。
+
+正式服务恢复版本为 `63f4aaaf-5015-4a16-b1c8-12e7611a2bf4`。只读验收：首页及 Library 为 200，37 个可见对话的存储接口和所有分页均为 200，共读回 143 条消息；临时 `/api/__operations/identity` 为 404。验收未发送模型生成请求。
+
+两轮私有备份保存在本机 `.wrangler/operations/storage-2026-10-18/{initial,supplement}`，目录权限 0700、文件权限 0600，复制后已核对 SHA-256，且被 Git 忽略。备份不含 Access 令牌和认证日志。若需撤回两轮迁移，先恢复补充批次，再恢复首轮批次，最后回滚业务版本。
