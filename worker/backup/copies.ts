@@ -25,13 +25,8 @@ export class CopyJobs {
   constructor(private storage: DurableObjectStorage) {
     storage.sql
       .exec(`CREATE TABLE IF NOT EXISTS conversation_copies (id TEXT PRIMARY KEY, sourceId TEXT NOT NULL,
-      messageId TEXT, status TEXT NOT NULL, createdAt INTEGER NOT NULL, lease INTEGER NOT NULL, error TEXT, errorStatus INTEGER)`);
-    const columns = storage.sql
-      .exec<{ name: string }>('PRAGMA table_info(conversation_copies)')
-      .toArray();
-    for (const name of ['viewHeadId', 'copiedHeadId'])
-      if (!columns.some((column) => column.name === name))
-        storage.sql.exec(`ALTER TABLE conversation_copies ADD COLUMN ${name} TEXT`);
+      messageId TEXT, status TEXT NOT NULL, createdAt INTEGER NOT NULL, lease INTEGER NOT NULL, error TEXT, errorStatus INTEGER,
+      viewHeadId TEXT, copiedHeadId TEXT)`);
     storage.sql.exec(
       'CREATE INDEX IF NOT EXISTS conversation_copies_status ON conversation_copies(status, lease)',
     );

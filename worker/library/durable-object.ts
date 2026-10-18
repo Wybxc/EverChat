@@ -1,5 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
 import { initializeConversationMetadata } from './metadata';
+import { initializeStorageSchema } from '../platform/storage-schema';
 import type { AccessIdentity } from '../../shared/auth/types';
 import type { DocumentPart } from '../../shared/attachments/documents';
 import type { AttachmentInput } from '../../shared/attachments/files';
@@ -82,6 +83,9 @@ export class Library extends DurableObject<Env> {
   private readonly interruptedImportFiles = new Set<string>();
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
+    ctx.storage.transactionSync(() =>
+      initializeStorageSchema(ctx.storage.sql.exec.bind(ctx.storage.sql)),
+    );
     this.webTools = new WebToolSettings(
       <T extends Record<string, SqlStorageValue>>(
         statement: string,

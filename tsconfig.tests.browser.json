@@ -12,6 +12,7 @@
     "vite.config.ts"
   ],
   "exclude": [
+    "tests/integration/operations",
     "tests/e2e/platform/resource-limits.spec.ts",
     "tests/integration/web-tools/tool-task-journal.spec.ts"
   ]

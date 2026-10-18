@@ -22,22 +22,11 @@ export class WebToolSettings {
     private readonly now = Date.now,
   ) {
     query(
-      'CREATE TABLE IF NOT EXISTS web_tool_service (id INTEGER PRIMARY KEY CHECK (id = 1), apiKey TEXT NOT NULL, dailyLimit INTEGER NOT NULL)',
+      "CREATE TABLE IF NOT EXISTS web_tool_service (id INTEGER PRIMARY KEY CHECK (id = 1), apiKey TEXT NOT NULL, dailyLimit INTEGER NOT NULL, provider TEXT NOT NULL DEFAULT 'tavily')",
     );
     query(
       'CREATE TABLE IF NOT EXISTS web_tool_credentials (provider TEXT PRIMARY KEY, apiKey TEXT NOT NULL)',
     );
-    if (
-      !query<{ name: string }>('PRAGMA table_info(web_tool_service)')
-        .toArray()
-        .some((column) => column.name === 'provider')
-    ) {
-      query("ALTER TABLE web_tool_service ADD COLUMN provider TEXT NOT NULL DEFAULT 'tavily'");
-      query(
-        "INSERT OR IGNORE INTO web_tool_credentials SELECT 'tavily', apiKey FROM web_tool_service WHERE id = 1",
-      );
-      query("UPDATE web_tool_service SET apiKey = ''");
-    }
     query('CREATE TABLE IF NOT EXISTS web_tool_requests (id TEXT PRIMARY KEY, day TEXT NOT NULL)');
     query('CREATE INDEX IF NOT EXISTS web_tool_requests_day ON web_tool_requests(day)');
   }

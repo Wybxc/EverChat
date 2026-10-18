@@ -5,6 +5,8 @@
   "type": "module",
   "packageManager": "pnpm@12.6.0",
   "scripts": {
+    "ops:storage": "node --import tsx/esm scripts/operations/storage.ts",
+    "test:operations": "node --import tsx/esm --test tests/integration/operations/storage.native.ts",
     "dev": "vite --host 127.0.0.1",
     "dev:access": "vite --host 127.0.0.1 --mode access",
     "build": "pnpm typecheck && vite build",
@@ -12,7 +14,7 @@
     "deploy": "pnpm build && wrangler deploy",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "typecheck": "tsc -p tsconfig.app.json && tsc -p tsconfig.worker.json && tsc -p tsconfig.tools.json && tsc -p tsconfig.shared.json && tsc -p tsconfig.sw.json && pnpm typecheck:tests",
+    "typecheck": "tsc -p tsconfig.app.json && tsc -p tsconfig.worker.json && tsc -p tsconfig.tools.json && tsc -p tsconfig.operations.json && tsc -p tsconfig.shared.json && tsc -p tsconfig.sw.json && pnpm typecheck:tests",
     "update:model-catalog": "node --import tsx/esm scripts/models/update-catalog.ts",
     "test": "node --import tsx/esm scripts/testing/run-unit.ts",
     "test:e2e": "playwright test",
@@ -25,7 +27,7 @@
     "measure:tools": "node --import tsx/esm scripts/measurements/tool-baseline.ts",
     "measure:cloudflare-tools": "node --import tsx/esm scripts/measurements/tools-cloudflare.ts",
     "measure:tools-platform-local": "node --import tsx/esm scripts/measurements/tool-platform-local.ts",
-    "check": "pnpm test && pnpm build && pnpm test:e2e && pnpm test:pwa",
+    "check": "pnpm test && pnpm test:operations && pnpm build && pnpm test:e2e && pnpm test:pwa",
     "typecheck:tests": "tsc -p tsconfig.tests.client.json && tsc -p tsconfig.tests.node.json && tsc -p tsconfig.tests.runtime.json && tsc -p tsconfig.tests.browser.json"
   },
   "dependencies": {

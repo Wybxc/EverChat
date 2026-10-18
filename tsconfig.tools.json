@@ -11,6 +11,7 @@
   },
   "include": ["scripts", "shared"],
   "exclude": [
+    "scripts/operations",
     "scripts/measurements/support/*worker.ts",
     "scripts/dev/*worker.ts",
     "scripts/measurements/support/access.ts"

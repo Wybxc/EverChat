@@ -10,6 +10,7 @@ import { ConversationState, requestFingerprint } from '../../../worker/conversat
 import type { SqlQuery } from '../../../worker/generation/metrics';
 import { GenerationCheckpoints } from '../../../worker/streaming/checkpoints';
 import { STREAM_JOURNAL_SCHEMA } from '../../../worker/streaming/journal';
+import { migrateStorage } from '../../../scripts/operations/migrate-storage';
 
 function fixture() {
   const db = new DatabaseSync(':memory:');
@@ -165,7 +166,7 @@ test('rollback discards the decoder and retry saves exactly once; canonical chun
   }
 });
 
-test('one-time migration removes wire and event duplicates while preserving prefixes, versions and idempotency', () => {
+test('offline operations remove wire and event duplicates while preserving prefixes, versions and idempotency', () => {
   const f = fixture();
   try {
     f.query('DROP TABLE conversation_state');
@@ -200,8 +201,8 @@ test('one-time migration removes wire and event duplicates while preserving pref
       last.endOffset,
       JSON.stringify(batches),
     );
-    initializeConversation(f.sql, false);
-    initializeConversation(f.sql, false);
+    migrateStorage(f.db, 'conversation');
+    migrateStorage(f.db, 'conversation');
     assert.equal(f.messages.seq(), 501);
     assert.equal(f.messages.changes(0).messages[0].id, 'a');
     assert.equal(messageText(f.messages.message('a')!), '已保存正文');

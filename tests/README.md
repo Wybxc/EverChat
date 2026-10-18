@@ -2,6 +2,8 @@
 
 全部命令在仓库根目录使用 pnpm 执行。
 
+数据库离线运维另有 `pnpm test:operations`：直接运行本地 workerd 的私有服务入口、事务回滚、补丁重试与业务隔离验证。入口位于 `integration/operations/*.native.ts`，不由 Playwright 或纯单测发现器重复执行。
+
 | 目录                   | 责任                                        | 命令                              |
 | ---------------------- | ------------------------------------------- | --------------------------------- |
 | `unit/<domain>`        | 纯规则、解析、状态机、适配契约与存储边界    | `pnpm test`                       |
@@ -13,7 +15,7 @@
 | `support/runtime`      | 测试 DO、控制路由、故障注入、资源计数       | 通过 Vite 的测试入口装配          |
 | `support/assets`       | 合成 PDF、固定资源及来源说明                | 被附件与 PWA 场景使用             |
 
-`pnpm check` 依次执行单测、类型检查／构建、integration + e2e、PWA。单测递归发现并排序 `tests/**/*.test.ts`，零匹配失败；用 `pnpm test --list` 检查文件清单。主 Playwright 明确匹配 `e2e/**/*.spec.ts` 和 `integration/**/*.spec.ts`，不包含生产 PWA。
+`pnpm check` 依次执行单测、本地运维原生集成测试、类型检查／构建、integration + e2e、PWA。单测递归发现并排序 `tests/**/*.test.ts`，零匹配失败；用 `pnpm test --list` 检查文件清单。主 Playwright 明确匹配 `e2e/**/*.spec.ts` 和 `integration/**/*.spec.ts`，不包含生产 PWA。
 
 集成与浏览器测试继续串行：多个场景会修改同一 Library 的供应商与工具设置。integration 中 request 场景没有 page/browser 夹具，不启动浏览器。混合浏览器场景的资源限制文件保留在 e2e，避免错分。
 

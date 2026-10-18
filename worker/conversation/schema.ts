@@ -1,11 +1,13 @@
 import { PRIVATE_TOOL_STREAM_SCHEMA } from '../streaming/journal';
-import { initializeCheckpoints } from '../streaming/checkpoints';
+import { CHECKPOINT_SCHEMA, CONTENT_CHUNKS_SCHEMA } from '../streaming/checkpoints';
+import { initializeStorageSchema } from '../platform/storage-schema';
 import { CONVERSATION_ACTIVITY_SCHEMA } from './activity';
 import { initializeConversationState } from './state';
 export const DELETION_SCHEMA =
   'CREATE TABLE IF NOT EXISTS conversation_deletion (id INTEGER PRIMARY KEY CHECK (id = 1), deletedAt INTEGER NOT NULL)';
 
 export function initializeConversation(sql: SqlStorage, metrics: boolean) {
+  initializeStorageSchema(sql.exec.bind(sql));
   sql.exec(DELETION_SCHEMA);
   if (sql.exec('SELECT deletedAt FROM conversation_deletion WHERE id = 1').toArray().length) return;
   sql.exec(`CREATE TABLE IF NOT EXISTS messages (
@@ -69,7 +71,8 @@ export function initializeConversation(sql: SqlStorage, metrics: boolean) {
     'CREATE TABLE IF NOT EXISTS search_retry (id INTEGER PRIMARY KEY CHECK (id = 1), attempts INTEGER NOT NULL, nextAt INTEGER NOT NULL)',
   );
   initializeConversationState(sql);
-  initializeCheckpoints(sql);
+  sql.exec(CHECKPOINT_SCHEMA);
+  sql.exec(CONTENT_CHUNKS_SCHEMA);
   if (metrics)
     sql.exec(
       'CREATE TABLE IF NOT EXISTS generation_measurements (id INTEGER PRIMARY KEY, payload TEXT NOT NULL)',
