@@ -60,7 +60,7 @@ import {
 import { modelSelectionKey } from '../../shared/models/selection';
 import { type ModelSelection, type ReasoningEffort } from '../../shared/models/types';
 import type { SearchResult } from '../../shared/search/query';
-import { assertWebToolSupport } from '../../shared/web-tools/tasks';
+import { assertWebToolSupport, WEB_TOOL_NAMES } from '../../shared/web-tools/tasks';
 import {
   ActionMenu,
   ActionMenuItem,
@@ -279,6 +279,7 @@ export function App({
   messageMutationRef.current = messageMutation;
   const [conversationSettingsOpen, setConversationSettingsOpen] = useState(false);
   const [focusWebTools, setFocusWebTools] = useState(false);
+  const toolsToggleRef = useRef<(() => void) | null>(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [summaryTarget, setSummaryTarget] = useState<{
     throughId: string;
@@ -646,6 +647,7 @@ export function App({
             : null,
   );
   const select = (id: string | null, focusComposer = true) => {
+    if (id === null) resetNewTools();
     setSearchJump(null);
     if (focusComposer) setEditorFocusTarget({ id });
     branches.navigationVersion.current++;
@@ -799,8 +801,11 @@ export function App({
     }
     input = {
       ...input,
-      settings: settings.output,
-      ...(settings.output.tools.length ? { tools: settings.output.tools } : {}),
+      settings: {
+        ...settings.output,
+        tools: settings.output.tools.length ? [...WEB_TOOL_NAMES] : [],
+      },
+      tools: settings.output.tools.length ? [...WEB_TOOL_NAMES] : undefined,
     };
     if (!input.selection && selectedModel)
       input = {
@@ -2097,10 +2102,7 @@ export function App({
                         write(`reasoning-effort:${modelSelectionKey(selectedModel)}`, value);
                     }}
                     webEnabled={Boolean(conversationSettings.tools?.length)}
-                    openWeb={() => {
-                      setFocusWebTools(true);
-                      setConversationSettingsOpen(true);
-                    }}
+                    toggleWeb={() => toolsToggleRef.current?.()}
                     estimate={contextPreview?.estimate}
                     focusComposer={() => editor.current?.focus({ preventScroll: true })}
                   />
@@ -2244,6 +2246,7 @@ export function App({
           effort={reasoningEffort}
           open={conversationSettingsOpen}
           focusTools={focusWebTools}
+          toolsToggleRef={toolsToggleRef}
           close={() => {
             setConversationSettingsOpen(false);
             setFocusWebTools(false);

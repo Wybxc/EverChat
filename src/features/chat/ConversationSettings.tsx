@@ -7,7 +7,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Switch } from '@/components/ui/switch';
-import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useId, useRef, useState, useSyncExternalStore, type RefObject } from 'react';
 import { X } from 'lucide-react';
 import * as v from 'valibot';
 import type { ChatModel, ReasoningEffort } from '../../../shared/models/types';
@@ -104,6 +104,7 @@ export function ConversationSettingsDialog({
   managePresets,
   manageWebTools,
   focusTools = false,
+  toolsToggleRef,
 }: {
   id: string | null;
   initial: ConversationSettings;
@@ -116,6 +117,7 @@ export function ConversationSettingsDialog({
   managePresets: () => void;
   manageWebTools: () => void;
   focusTools?: boolean;
+  toolsToggleRef?: RefObject<(() => void) | null>;
 }) {
   const titleId = useId();
   const service = useWebToolSettings(open);
@@ -190,6 +192,14 @@ export function ConversationSettingsDialog({
       write(draftKey, { settings, dirty: true });
     store.update(settings);
   };
+  useEffect(() => {
+    if (!toolsToggleRef) return;
+    toolsToggleRef.current = () =>
+      update({ tools: store.getSnapshot().settings.tools.length ? [] : [...WEB_TOOL_NAMES] });
+    return () => {
+      toolsToggleRef.current = null;
+    };
+  }, [store, toolsToggleRef]);
   const support = model
     ? samplingSupport({
         ...model,
@@ -383,41 +393,25 @@ export function ConversationSettingsDialog({
                 <>
                   联网工具{' '}
                   <span className="ml-2 text-xs font-normal text-muted-foreground">
-                    {settings.tools.length
-                      ? settings.tools
-                          .map((name) => (name === 'web_search' ? '搜索' : '网页读取'))
-                          .join('、')
-                      : '关闭'}
+                    {settings.tools.length ? '开启' : '关闭'}
                   </span>
                 </>
               }
               {...sectionProps('tools')}
             >
               <div className="space-y-2">
-                {WEB_TOOL_NAMES.map((name) => (
-                  <label
-                    key={name}
-                    className="flex min-h-11 items-center justify-between gap-3 text-sm"
-                  >
-                    <span>{name === 'web_search' ? '联网搜索' : '网页读取'}</span>
-                    <Switch
-                      checked={settings.tools.includes(name)}
-                      disabled={
-                        !settings.tools.includes(name) &&
-                        (!canAttemptCapability(model?.metadata, 'toolCalls') ||
-                          !service.data?.hasApiKey)
-                      }
-                      onCheckedChange={(checked) =>
-                        update({
-                          tools:
-                            checked === true
-                              ? [...settings.tools, name]
-                              : settings.tools.filter((tool) => tool !== name),
-                        })
-                      }
-                    />
-                  </label>
-                ))}
+                <label className="flex min-h-11 items-center justify-between gap-3 text-sm">
+                  <span>联网搜索</span>
+                  <Switch
+                    checked={settings.tools.length > 0}
+                    disabled={
+                      !settings.tools.length && !canAttemptCapability(model?.metadata, 'toolCalls')
+                    }
+                    onCheckedChange={(checked) =>
+                      update({ tools: checked ? [...WEB_TOOL_NAMES] : [] })
+                    }
+                  />
+                </label>
                 {!canAttemptCapability(model?.metadata, 'toolCalls') && (
                   <p className="text-xs text-muted-foreground">当前模型不支持工具调用。</p>
                 )}

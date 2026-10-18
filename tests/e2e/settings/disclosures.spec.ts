@@ -182,7 +182,8 @@ test('conversation groups open by task, reveal invalid generation values, and ke
     await limit.fill('64');
     await expect(dialog.getByRole('status')).toHaveText('已保存');
     await dialog.getByRole('button', { name: '关闭会话参数' }).click();
-    await page.getByRole('button', { name: '联网工具', exact: true }).click();
+    await page.getByRole('button', { name: '会话参数', exact: true }).click();
+    await group(dialog, '联网工具').locator('summary').click();
     await expect.poll(() => isOpen(group(dialog, '联网工具'))).toBe(true);
     await group(dialog, '联网工具').locator('summary').click();
     await expect(dialog.getByText('无法读取联网服务配置。', { exact: true })).toBeVisible();

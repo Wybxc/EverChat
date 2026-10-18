@@ -123,25 +123,22 @@ async function tab(page: Page, name: string) {
 }
 async function parameters(page: Page) {
   await expect(page.getByRole('combobox', { name: '聊天模型', exact: true })).toBeVisible();
-  const more = page.getByRole('button', { name: '更多参数', exact: true });
-  if (await more.count()) await more.click();
-  await page.getByRole('button', { name: '联网工具', exact: true }).click();
-  return page.getByRole('dialog', { name: /^(新对话参数|会话参数)$/ });
+  await page.getByRole('button', { name: '会话参数', exact: true }).click();
+  const modal = page.getByRole('dialog', { name: /^(新对话参数|会话参数)$/ });
+  const tools = modal
+    .locator('details')
+    .filter({ has: page.locator('summary').filter({ hasText: '联网工具' }) })
+    .first();
+  if (!((await tools.getAttribute('open')) !== null))
+    await tools.locator(':scope > summary').click();
+  return modal;
 }
-async function enable(page: Page, tools: WebToolName[]) {
-  const modal = await parameters(page);
-  for (const [name, label] of [
-    ['web_search', '联网搜索'],
-    ['read_webpage', '网页读取'],
-  ] as const) {
-    const checkbox = modal.getByRole('switch', { name: label, exact: true });
-    await expect(checkbox).not.toBeChecked();
-    if (tools.includes(name)) {
-      await expect(checkbox).toBeEnabled();
-      await checkbox.check();
-    }
-  }
-  await modal.getByRole('button', { name: '关闭会话参数', exact: true }).click();
+async function enable(page: Page) {
+  const toggle = page.getByRole('button', { name: '联网搜索', exact: true });
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
 }
 async function send(page: Page, content = '查询 Cloudflare 文档') {
   await page.getByLabel('消息', { exact: true }).fill(content);
@@ -265,8 +262,8 @@ test('web settings autosave, validate ceilings, reveal explicitly, hide across t
 });
 
 const combinations: [ProviderKind, WebToolName[]][] = [
-  ['openai-chat', ['web_search']],
-  ['openai-responses', ['read_webpage']],
+  ['openai-chat', ['web_search', 'read_webpage']],
+  ['openai-responses', ['web_search', 'read_webpage']],
   ['anthropic', ['web_search', 'read_webpage']],
   ['gemini', ['web_search', 'read_webpage']],
 ];
@@ -279,7 +276,7 @@ for (const provider of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
     const f = await setup(context.request, provider, true);
     try {
       await page.goto('/');
-      await enable(page, ['web_search', 'read_webpage']);
+      await enable(page);
       const sent = await send(page, '按顺序检索并核对资料');
       f.ids.push(sent.id);
       const answer = page.getByTestId('assistant-message'),
@@ -437,14 +434,14 @@ test('a failed tool has one visible error while collapsed and can reveal and foc
 });
 
 for (const [provider, tools] of combinations)
-  test(`${provider} browser toggles execute only selected production tools and a new conversation returns to off`, async ({
+  test(`${provider} composer toggle enables search and fetch together and a new conversation returns to off`, async ({
     page,
     context,
   }) => {
     const f = await setup(context.request, provider);
     try {
       await page.goto('/');
-      await enable(page, tools);
+      await enable(page);
       const sent = await send(page);
       f.ids.push(sent.id);
       expect(sent.input.tools).toEqual(tools);
@@ -473,18 +470,14 @@ for (const [provider, tools] of combinations)
       );
       await page.reload();
       const restored = await parameters(page);
-      for (const [name, label] of [
-        ['web_search', '联网搜索'],
-        ['read_webpage', '网页读取'],
-      ] as const)
-        await expect(restored.getByRole('switch', { name: label, exact: true })).toBeChecked({
-          checked: tools.includes(name),
-        });
+      await expect(restored.getByRole('switch', { name: '联网搜索', exact: true })).toBeChecked();
+      await expect(restored.getByRole('switch', { name: '网页读取', exact: true })).toHaveCount(0);
       await restored.getByRole('button', { name: '关闭会话参数', exact: true }).click();
       await page.getByRole('button', { name: '开启新对话', exact: true }).click();
-      const fresh = await parameters(page);
-      for (const label of ['联网搜索', '网页读取'])
-        await expect(fresh.getByRole('switch', { name: label, exact: true })).not.toBeChecked();
+      await expect(page.getByRole('button', { name: '联网搜索', exact: true })).toHaveAttribute(
+        'aria-pressed',
+        'false',
+      );
       await noCachedKey(page);
     } finally {
       await page.close();
@@ -499,7 +492,7 @@ test('offline queue pins enabled tools and delivers the same request once after 
   const f = await setup(context.request);
   try {
     await page.goto('/');
-    await enable(page, ['read_webpage']);
+    await enable(page);
     await context.setOffline(true);
     await page.getByLabel('消息', { exact: true }).fill('离线排队后读取网页');
     await page.getByRole('button', { name: '发送消息', exact: true }).click();
@@ -510,14 +503,14 @@ test('offline queue pins enabled tools and delivers the same request once after 
       JSON.parse(localStorage.getItem('everchat:pending') ?? '[]'),
     );
     expect(pending).toHaveLength(1);
-    expect(pending[0].input.tools).toEqual(['read_webpage']);
-    expect(pending[0].input.settings.tools).toEqual(['read_webpage']);
+    expect(pending[0].input.tools).toEqual(['web_search', 'read_webpage']);
+    expect(pending[0].input.settings.tools).toEqual(['web_search', 'read_webpage']);
     const taskId = pending[0].input.requestId;
     await context.setOffline(false);
     await expect(page.getByTestId('assistant-message')).toHaveAttribute('data-status', 'completed');
-    await expect.poll(async () => (await f.runtime(id, taskId)).serviceRequests.length).toBe(1);
+    await expect.poll(async () => (await f.runtime(id, taskId)).serviceRequests.length).toBe(2);
     expect((await f.runtime(id, taskId)).modelCalls).toBe(2);
-    expect((await f.snapshot(id)).settings!.tools).toEqual(['read_webpage']);
+    expect((await f.snapshot(id)).settings!.tools).toEqual(['web_search', 'read_webpage']);
     await expect
       .poll(() =>
         page.evaluate(() => JSON.parse(localStorage.getItem('everchat:pending') ?? '[]').length),
@@ -537,7 +530,7 @@ test('unsupported model or removed credentials preserve the draft and enabled ch
   const f = await setup(context.request);
   try {
     await page.goto('/');
-    await enable(page, ['web_search']);
+    await enable(page);
     await chooseChatModel(page, JSON.stringify([f.providerId, 'unsupported-tools-model']));
     await page.getByLabel('消息', { exact: true }).fill('模型不支持时保留');
     await page.getByRole('button', { name: '发送消息', exact: true }).click();
@@ -548,7 +541,7 @@ test('unsupported model or removed credentials preserve the draft and enabled ch
     ).toHaveLength(0);
     const modal = await parameters(page);
     await expect(modal.getByRole('switch', { name: '联网搜索', exact: true })).toBeChecked();
-    await expect(modal.getByRole('switch', { name: '网页读取', exact: true })).toBeDisabled();
+    await expect(modal.getByRole('switch', { name: '网页读取', exact: true })).toHaveCount(0);
     await modal.getByRole('button', { name: '关闭会话参数', exact: true }).click();
     await chooseChatModel(page, JSON.stringify([f.providerId, f.model]));
     await f.saveService('');
@@ -582,7 +575,7 @@ test('configuring a service from conversation parameters returns to the same dia
     await f.saveService('');
     await page.goto('/');
     const modal = await parameters(page);
-    await expect(modal.getByRole('switch', { name: '联网搜索', exact: true })).toBeDisabled();
+    await expect(modal.getByRole('switch', { name: '联网搜索', exact: true })).toBeEnabled();
     await modal.getByRole('button', { name: '配置联网服务', exact: true }).click();
     await expect(page.getByRole('tab', { name: '联网', exact: true })).toHaveAttribute(
       'aria-selected',
@@ -645,7 +638,7 @@ test('creating a conversation for an attachment preserves its enabled tools and 
   const f = await setup(context.request);
   try {
     await page.goto('/');
-    await enable(page, ['web_search']);
+    await enable(page);
     await page.getByLabel('选择聊天文件', { exact: true }).setInputFiles({
       name: 'context.txt',
       mimeType: 'text/plain',
@@ -654,10 +647,12 @@ test('creating a conversation for an attachment preserves its enabled tools and 
     await expect(page).toHaveURL(/\/c\/[^/]+(?:\?branch=[^#]+)?$/);
     const id = new URL(page.url()).pathname.split('/').at(-1)!;
     f.ids.push(id);
-    await expect.poll(async () => (await f.snapshot(id)).settings!.tools).toEqual(['web_search']);
+    await expect
+      .poll(async () => (await f.snapshot(id)).settings!.tools)
+      .toEqual(['web_search', 'read_webpage']);
     const sent = await send(page);
     expect(sent.id).toBe(id);
-    expect(sent.input.tools).toEqual(['web_search']);
+    expect(sent.input.tools).toEqual(['web_search', 'read_webpage']);
     await expect(page.getByTestId('assistant-message')).toHaveAttribute('data-status', 'completed');
     await page.getByRole('button', { name: '开启新对话', exact: true }).click();
     const fresh = await parameters(page);
@@ -675,7 +670,7 @@ test('copy and restore retain enabled tools and saved sources without executing 
   const f = await setup(context.request);
   try {
     await page.goto('/');
-    await enable(page, ['web_search', 'read_webpage']);
+    await enable(page);
     const sent = await send(page);
     f.ids.push(sent.id);
     await expect(page.getByTestId('assistant-message')).toHaveAttribute('data-status', 'completed');
@@ -709,8 +704,8 @@ test('copy and restore retain enabled tools and saved sources without executing 
       await summary.click();
     await expect(page.getByTestId('tool-activity').getByRole('link')).toHaveCount(2);
     const modal = await parameters(page);
-    for (const label of ['联网搜索', '网页读取'])
-      await expect(modal.getByRole('switch', { name: label, exact: true })).toBeChecked();
+    await expect(modal.getByRole('switch', { name: '联网搜索', exact: true })).toBeChecked();
+    await expect(modal.getByRole('switch', { name: '网页读取', exact: true })).toHaveCount(0);
     await noCachedKey(page);
   } finally {
     await page.close();
@@ -814,7 +809,7 @@ test('DeepSeek service selection retains both keys and executes Search and Fetch
     await expect(choice).toBeEnabled();
     await expect(field).toHaveValue('');
     await page.getByRole('button', { name: '关闭设置', exact: true }).click();
-    await enable(page, ['web_search', 'read_webpage']);
+    await enable(page);
     const sent = await send(page);
     f.ids.push(sent.id);
     await expect(page.getByTestId('assistant-message')).toHaveAttribute('data-status', 'completed');

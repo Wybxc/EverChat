@@ -14,7 +14,7 @@ export function ComposerParameters({
   effort,
   chooseEffort,
   webEnabled,
-  openWeb,
+  toggleWeb,
   estimate,
   focusComposer,
 }: {
@@ -23,16 +23,15 @@ export function ComposerParameters({
   effort: ReasoningEffort | '';
   chooseEffort: (effort: ReasoningEffort | '') => void;
   webEnabled: boolean;
-  openWeb: () => void;
+  toggleWeb: () => void;
   estimate?: ContextEstimate;
   focusComposer: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
-  const nextAction = useRef<(() => void) | null>(null);
   useEffect(() => setOpen(false), [compact]);
   const effortLabel = effort ? effortLabels[effort] : '默认';
-  const description = `思维：${effortLabel}；联网${webEnabled ? '已开启' : '未开启'}`;
+  const description = `思维：${effortLabel}`;
   const reasoning = model?.reasoningSupported && model.reasoningEfforts.length > 0 && (
     <NativeSelect
       aria-label="思维强度"
@@ -53,22 +52,15 @@ export function ComposerParameters({
   const web = (
     <Button
       variant="ghost"
-      size={compact ? 'default' : 'icon'}
+      size="icon"
       type="button"
-      className={`${compact ? 'w-full justify-start' : 'composer-icon'} ${webEnabled ? 'bg-muted' : ''}`}
-      aria-label="联网工具"
+      className={`composer-icon ${webEnabled ? 'bg-accent text-accent-foreground' : ''}`}
+      aria-label="联网搜索"
       aria-pressed={webEnabled}
-      title={webEnabled ? '联网已开启' : '联网工具'}
-      onClick={() => {
-        if (compact) {
-          // Open the dialog after the popover has returned focus to a persistent trigger.
-          nextAction.current = openWeb;
-          setOpen(false);
-        } else openWeb();
-      }}
+      title={webEnabled ? '关闭联网搜索' : '开启联网搜索'}
+      onClick={toggleWeb}
     >
       <Globe className="size-[1.125rem]" />
-      {compact && `联网${webEnabled ? '已开启' : '工具'}`}
     </Button>
   );
   if (!compact)
@@ -80,61 +72,57 @@ export function ComposerParameters({
       </>
     );
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          ref={trigger}
-          type="button"
-          variant="ghost"
-          size="icon"
-          className={`composer-icon relative ${effort || webEnabled ? 'bg-muted' : ''}`}
+    <>
+      {web}
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            ref={trigger}
+            type="button"
+            variant="ghost"
+            size="icon"
+            className={`composer-icon relative ${effort ? 'bg-muted' : ''}`}
+            aria-label="更多参数"
+            aria-description={description}
+            title={description}
+          >
+            <SlidersHorizontal className="size-[1.125rem]" />
+            {effort && (
+              <span
+                aria-hidden="true"
+                className="absolute top-0 right-0 rounded bg-secondary px-0.5 text-[0.625rem] leading-tight text-secondary-foreground"
+              >
+                {effortLabels[effort].slice(0, 1)}
+              </span>
+            )}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent
+          side="top"
+          align="end"
           aria-label="更多参数"
-          aria-description={description}
-          title={description}
+          className="max-h-[var(--radix-popover-content-available-height)] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto overscroll-contain p-4"
+          onCloseAutoFocus={(event) => {
+            if (!trigger.current?.isConnected) {
+              event.preventDefault();
+              focusComposer();
+            }
+          }}
         >
-          <SlidersHorizontal className="size-[1.125rem]" />
-          {(effort || webEnabled) && (
-            <span
-              aria-hidden="true"
-              className="absolute top-0 right-0 rounded bg-secondary px-0.5 text-[0.625rem] leading-tight text-secondary-foreground"
-            >
-              {effort ? effortLabels[effort].slice(0, 1) : '网'}
-            </span>
+          {reasoning && (
+            <label className="space-y-1 text-xs">
+              <span>思维强度</span>
+              {reasoning}
+            </label>
           )}
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent
-        side="top"
-        align="end"
-        aria-label="更多参数"
-        className="max-h-[var(--radix-popover-content-available-height)] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto overscroll-contain p-4"
-        onCloseAutoFocus={(event) => {
-          const action = nextAction.current;
-          nextAction.current = null;
-          if (action) {
-            event.preventDefault();
-            trigger.current?.focus({ preventScroll: true });
-            action();
-          } else if (!trigger.current?.isConnected) {
-            event.preventDefault();
-            focusComposer();
-          }
-        }}
-      >
-        {reasoning && (
-          <label className="space-y-1 text-xs">
-            <span>思维强度</span>
-            {reasoning}
-          </label>
-        )}
-        {web}
-        {estimate && (
-          <section data-testid="context-estimate" className="border-t pt-3 text-xs">
-            <h2 className="mb-2 font-medium">上下文估算</h2>
-            <ContextEstimateDetails estimate={estimate} />
-          </section>
-        )}
-      </PopoverContent>
-    </Popover>
+          {estimate && (
+            <section data-testid="context-estimate" className="border-t pt-3 text-xs">
+              <h2 className="mb-2 font-medium">上下文估算</h2>
+              <ContextEstimateDetails estimate={estimate} />
+            </section>
+          )}
+        </PopoverContent>
+      </Popover>
+    </>
   );
 }

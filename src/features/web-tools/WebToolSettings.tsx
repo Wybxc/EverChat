@@ -246,7 +246,7 @@ function ServiceEditor({ initial, active }: { initial: WebToolServiceSettings; a
         </Button>
       </div>
       <p className="text-xs text-muted-foreground">
-        会话参数中开启搜索或网页读取。请求上限按次数计算，可能产生服务与模型费用。
+        在输入框中开启联网搜索，同时启用搜索和网页读取。请求上限按次数计算，可能产生服务与模型费用。
       </p>
       <div className="flex items-center gap-3 text-xs text-muted-foreground">
         <span data-testid="web-tool-save-status" role={status === 'error' ? 'alert' : 'status'}>

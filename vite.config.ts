@@ -45,7 +45,7 @@ export default defineConfig(async ({ command, mode }) => {
           scope: '/',
           display: 'standalone',
           background_color: '#ffffff',
-          theme_color: '#9f2850',
+          theme_color: '#e45d8d',
           icons: [
             { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
             { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
