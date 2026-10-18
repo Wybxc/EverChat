@@ -1,0 +1,193 @@
+{
+  "queriedAt": "2026-10-18T09:28:50.424Z",
+  "window": {
+    "start": "2026-10-18T09:27:00.000Z",
+    "end": "2026-10-18T09:28:00.000Z"
+  },
+  "workerName": "everchat",
+  "test": {
+    "model": "deepseek-flash",
+    "status": "completed",
+    "startedAt": "2026-10-18T09:27:31.985Z",
+    "finishedAt": "2026-10-18T09:27:35.842Z"
+  },
+  "units": {
+    "cpuTime": "microseconds",
+    "cpuTimeUs": "microseconds",
+    "activeTime": "microseconds",
+    "duration": "GB*s"
+  },
+  "scope": "Production namespace-level window containing one synthetic DeepSeek answer and completion notification attempt, plus unrelated traffic and sync. Includes AI generation and authentication; not notification-only CPU/SQL. Adaptive/sampled and eventually consistent analytics; missing data is unavailable, not zero. Device receipt requires separate user confirmation. No content, subscriptions, endpoints, credentials, or production namespace IDs retained.",
+  "data": {
+    "viewer": {
+      "accounts": [
+        {
+          "conversationsInvocations": [
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "status": "clientDisconnected",
+                "type": "jsrpc"
+              },
+              "quantiles": {
+                "cpuTimeP50": 642,
+                "cpuTimeP99": 1907
+              },
+              "sum": {
+                "errors": 2,
+                "requests": 2
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "status": "success",
+                "type": "jsrpc"
+              },
+              "quantiles": {
+                "cpuTimeP50": 14820,
+                "cpuTimeP99": 14820
+              },
+              "sum": {
+                "errors": 0,
+                "requests": 1
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "status": "clientDisconnected",
+                "type": "alarm"
+              },
+              "quantiles": {
+                "cpuTimeP50": 56,
+                "cpuTimeP99": 56
+              },
+              "sum": {
+                "errors": 1,
+                "requests": 1
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "status": "success",
+                "type": "alarm"
+              },
+              "quantiles": {
+                "cpuTimeP50": 30372,
+                "cpuTimeP99": 30372
+              },
+              "sum": {
+                "errors": 0,
+                "requests": 1
+              }
+            }
+          ],
+          "conversationsPeriodic": [
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "sum": {
+                "activeTime": 1245896,
+                "cpuTime": 47798,
+                "duration": 0.159474688,
+                "exceededCpuErrors": 0,
+                "exceededMemoryErrors": 0,
+                "fatalInternalErrors": 0,
+                "inboundWebsocketMsgCount": 0,
+                "outboundWebsocketMsgCount": 0,
+                "rowsRead": 267,
+                "rowsWritten": 156
+              }
+            }
+          ],
+          "libraryInvocations": [
+            {
+              "avg": {
+                "sampleInterval": 1.105263157894737
+              },
+              "dimensions": {
+                "status": "success",
+                "type": "jsrpc"
+              },
+              "quantiles": {
+                "cpuTimeP50": 502,
+                "cpuTimeP99": 9571
+              },
+              "sum": {
+                "errors": 0,
+                "requests": 21
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "status": "success",
+                "type": "alarm"
+              },
+              "quantiles": {
+                "cpuTimeP50": 3261,
+                "cpuTimeP99": 11881
+              },
+              "sum": {
+                "errors": 0,
+                "requests": 10
+              }
+            }
+          ],
+          "libraryPeriodic": [
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "sum": {
+                "activeTime": 60000064,
+                "cpuTime": 73384,
+                "duration": 7.680008192,
+                "exceededCpuErrors": 0,
+                "exceededMemoryErrors": 0,
+                "fatalInternalErrors": 0,
+                "inboundWebsocketMsgCount": 0,
+                "outboundWebsocketMsgCount": 0,
+                "rowsRead": 1677,
+                "rowsWritten": 49
+              }
+            }
+          ],
+          "workersInvocationsAdaptive": [
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "status": "success",
+                "usageModel": "standard"
+              },
+              "max": {
+                "cpuTime": 10458
+              },
+              "sum": {
+                "cpuTimeUs": 33016,
+                "errors": 0,
+                "requests": 7
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "errors": null
+}
