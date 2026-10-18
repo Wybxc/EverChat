@@ -1,0 +1,10 @@
+{
+  "checkedAt": "2026-10-18T11:25:47.144Z",
+  "workerName": "everchat-notification-pipeline-validation",
+  "workerSettingsStatus": 404,
+  "workerDeleted": true,
+  "testSecretsDeleted": true,
+  "localFixtureStateDeleted": true,
+  "productionSecretsChanged": false,
+  "fixtureDataCleanup": "All three producer and Library cases completed deleteAll(); getAlarm() returned null before Worker deletion."
+}

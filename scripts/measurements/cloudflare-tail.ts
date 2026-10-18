@@ -14,6 +14,7 @@ const configs: Record<string, string> = {
   'everchat-stream-validation': 'wrangler.stream-validation.jsonc',
   'everchat-tools-validation': 'wrangler.tool-validation.jsonc',
   'everchat-notifications-validation': 'wrangler.notification-validation.jsonc',
+  'everchat-notification-pipeline-validation': 'wrangler.notification-pipeline-validation.jsonc',
 };
 if (!values.worker || !Object.hasOwn(configs, values.worker))
   throw new Error('Use only an isolated validation Worker');

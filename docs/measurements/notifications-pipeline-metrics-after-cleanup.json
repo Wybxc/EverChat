@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "queriedAt": "2026-10-18T11:26:02.908Z",
+  "window": {
+    "start": "2026-10-18T11:23:00.000Z",
+    "end": "2026-10-18T11:25:00.000Z"
+  },
+  "storageWindow": {
+    "start": "2026-10-18T11:00:00.000Z",
+    "end": "2026-10-18T11:26:01.711Z"
+  },
+  "workerName": "everchat-notification-pipeline-validation",
+  "namespaces": [
+    {
+      "name": "CONVERSATIONS",
+      "id": "cc251efda5ae4b2cb5a8d8dd226ccd20"
+    },
+    {
+      "name": "LIBRARY",
+      "id": "2988fe4efcb9453db0dae67ce2ee61e7"
+    }
+  ],
+  "units": {
+    "cpuTime": "microseconds",
+    "cpuTimeUs": "microseconds",
+    "activeTime": "microseconds",
+    "duration": "GB*s",
+    "storedBytes": "bytes",
+    "memoryUsageBytes": "bytes"
+  },
+  "scope": "Isolated deployed namespaces and Worker, diagnostic counters enabled. Adaptive fields may be sampled; empty arrays do not prove zero usage. Invocation minute rounding includes setup and idle activity. Storage uses a separate wider window and reports samples rather than the exact functional-run peak.",
+  "available": {
+    "workersInvocationsAdaptive": false,
+    "durableObjectsInvocationsAdaptiveGroups": false,
+    "durableObjectsPeriodicGroups": false,
+    "durableObjectsSqlStorageGroups": false
+  },
+  "data": {
+    "viewer": {
+      "accounts": [
+        {
+          "durableObjectsInvocationsAdaptiveGroups": [],
+          "durableObjectsPeriodicGroups": [],
+          "durableObjectsSqlStorageGroups": [],
+          "workersInvocationsAdaptive": []
+        }
+      ]
+    }
+  },
+  "errors": null
+}

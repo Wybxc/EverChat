@@ -1,0 +1,490 @@
+{
+  "workerName": "everchat-notification-pipeline-validation",
+  "runtime": "cloudflare",
+  "startedAt": "2026-10-18T11:23:23.341Z",
+  "finishedAt": "2026-10-18T11:23:40.308Z",
+  "complete": true,
+  "cases": [
+    {
+      "devices": 0,
+      "startedAt": "2026-10-18T11:23:25.267Z",
+      "finishedAt": "2026-10-18T11:23:27.712Z",
+      "report": {
+        "producer": {
+          "report": {
+            "windowId": "95fa1b3d-dbd3-4dac-a4cb-fdba34f1e82f",
+            "instanceId": "50ac4d9a-299a-4d57-a980-338beefc6650",
+            "elapsedMs": 2477,
+            "sql": {
+              "privateStream": {
+                "statements": 0,
+                "rowsRead": 0,
+                "rowsWritten": 0
+              },
+              "publicStream": {
+                "statements": 0,
+                "rowsRead": 0,
+                "rowsWritten": 0
+              },
+              "events": {
+                "statements": 0,
+                "rowsRead": 0,
+                "rowsWritten": 0
+              },
+              "webService": {
+                "statements": 0,
+                "rowsRead": 0,
+                "rowsWritten": 0
+              },
+              "toolState": {
+                "statements": 0,
+                "rowsRead": 0,
+                "rowsWritten": 0
+              },
+              "search": {
+                "statements": 0,
+                "rowsRead": 0,
+                "rowsWritten": 0
+              },
+              "other": {
+                "statements": 4,
+                "rowsRead": 4,
+                "rowsWritten": 3
+              }
+            },
+            "streams": {
+              "public": {
+                "commits": 0,
+                "wireBytes": 0,
+                "payloadBytes": 0
+              },
+              "private": {
+                "commits": 0,
+                "wireBytes": 0,
+                "payloadBytes": 0
+              }
+            },
+            "eventPayloadBytes": 0,
+            "broadcasts": {
+              "frames": 0,
+              "bytes": 0
+            },
+            "alarms": {
+              "set": 1,
+              "delete": 0
+            },
+            "upstream": {
+              "modelRequests": 0,
+              "modelBytes": 0,
+              "toolRequests": 0,
+              "toolResponseBytes": 0
+            }
+          },
+          "pending": 0,
+          "databaseBytes": 24576
+        },
+        "library": {
+          "report": {
+            "windowId": "95fa1b3d-dbd3-4dac-a4cb-fdba34f1e82f",
+            "instanceId": "316569f3-a0f5-4934-9e58-c6bea44e3632",
+            "elapsedMs": 3151,
+            "sql": {
+              "privateStream": {
+                "statements": 0,
+                "rowsRead": 0,
+                "rowsWritten": 0
+              },
+              "publicStream": {
+                "statements": 0,
+                "rowsRead": 0,
+                "rowsWritten": 0
+              },
+              "events": {
+                "statements": 0,
+                "rowsRead": 0,
+                "rowsWritten": 0
+              },
+              "webService": {
+                "statements": 0,
+                "rowsRead": 0,
+                "rowsWritten": 0
+              },
+              "toolState": {
+                "statements": 0,
+                "rowsRead": 0,
+                "rowsWritten": 0
+              },
+              "search": {
+                "statements": 1,
+                "rowsRead": 1,
+                "rowsWritten": 0
+              },
+              "other": {
+                "statements": 7,
+                "rowsRead": 8,
+                "rowsWritten": 0
+              }
+            },
+            "streams": {
+              "public": {
+                "commits": 0,
+                "wireBytes": 0,
+                "payloadBytes": 0
+              },
+              "private": {
+                "commits": 0,
+                "wireBytes": 0,
+                "payloadBytes": 0
+              }
+            },
+            "eventPayloadBytes": 0,
+            "broadcasts": {
+              "frames": 0,
+              "bytes": 0
+            },
+            "alarms": {
+              "set": 0,
+              "delete": 0
+            },
+            "upstream": {
+              "modelRequests": 0,
+              "modelBytes": 0,
+              "toolRequests": 0,
+              "toolResponseBytes": 0
+            }
+          },
+          "pushes": 0,
+          "deliveries": [],
+          "alarmAt": null,
+          "databaseBytes": 278528
+        }
+      }
+    },
+    {
+      "devices": 1,
+      "startedAt": "2026-10-18T11:23:30.038Z",
+      "finishedAt": "2026-10-18T11:23:33.518Z",
+      "report": {
+        "producer": {
+          "report": {
+            "windowId": "82766367-47c0-4d9e-bac7-421a5c5458d6",
+            "instanceId": "bce76162-d4af-495f-b812-6320ccb1f011",
+            "elapsedMs": 3547,
+            "sql": {
+              "privateStream": {
+                "statements": 0,
+                "rowsRead": 0,
+                "rowsWritten": 0
+              },
+              "publicStream": {
+                "statements": 0,
+                "rowsRead": 0,
+                "rowsWritten": 0
+              },
+              "events": {
+                "statements": 0,
+                "rowsRead": 0,
+                "rowsWritten": 0
+              },
+              "webService": {
+                "statements": 0,
+                "rowsRead": 0,
+                "rowsWritten": 0
+              },
+              "toolState": {
+                "statements": 0,
+                "rowsRead": 0,
+                "rowsWritten": 0
+              },
+              "search": {
+                "statements": 0,
+                "rowsRead": 0,
+                "rowsWritten": 0
+              },
+              "other": {
+                "statements": 4,
+                "rowsRead": 4,
+                "rowsWritten": 3
+              }
+            },
+            "streams": {
+              "public": {
+                "commits": 0,
+                "wireBytes": 0,
+                "payloadBytes": 0
+              },
+              "private": {
+                "commits": 0,
+                "wireBytes": 0,
+                "payloadBytes": 0
+              }
+            },
+            "eventPayloadBytes": 0,
+            "broadcasts": {
+              "frames": 0,
+              "bytes": 0
+            },
+            "alarms": {
+              "set": 1,
+              "delete": 0
+            },
+            "upstream": {
+              "modelRequests": 0,
+              "modelBytes": 0,
+              "toolRequests": 0,
+              "toolResponseBytes": 0
+            }
+          },
+          "pending": 0,
+          "databaseBytes": 24576
+        },
+        "library": {
+          "report": {
+            "windowId": "82766367-47c0-4d9e-bac7-421a5c5458d6",
+            "instanceId": "660e1d63-7cbb-491b-b26d-8f2f4c35c942",
+            "elapsedMs": 4145,
+            "sql": {
+              "privateStream": {
+                "statements": 0,
+                "rowsRead": 0,
+                "rowsWritten": 0
+              },
+              "publicStream": {
+                "statements": 0,
+                "rowsRead": 0,
+                "rowsWritten": 0
+              },
+              "events": {
+                "statements": 0,
+                "rowsRead": 0,
+                "rowsWritten": 0
+              },
+              "webService": {
+                "statements": 0,
+                "rowsRead": 0,
+                "rowsWritten": 0
+              },
+              "toolState": {
+                "statements": 0,
+                "rowsRead": 0,
+                "rowsWritten": 0
+              },
+              "search": {
+                "statements": 3,
+                "rowsRead": 4,
+                "rowsWritten": 0
+              },
+              "other": {
+                "statements": 23,
+                "rowsRead": 25,
+                "rowsWritten": 6
+              }
+            },
+            "streams": {
+              "public": {
+                "commits": 0,
+                "wireBytes": 0,
+                "payloadBytes": 0
+              },
+              "private": {
+                "commits": 0,
+                "wireBytes": 0,
+                "payloadBytes": 0
+              }
+            },
+            "eventPayloadBytes": 0,
+            "broadcasts": {
+              "frames": 0,
+              "bytes": 0
+            },
+            "alarms": {
+              "set": 2,
+              "delete": 0
+            },
+            "upstream": {
+              "modelRequests": 0,
+              "modelBytes": 0,
+              "toolRequests": 0,
+              "toolResponseBytes": 0
+            }
+          },
+          "pushes": 1,
+          "deliveries": [
+            {
+              "done": 1,
+              "count": 1
+            }
+          ],
+          "alarmAt": 1792326210038,
+          "databaseBytes": 282624
+        }
+      }
+    },
+    {
+      "devices": 9,
+      "startedAt": "2026-10-18T11:23:36.577Z",
+      "finishedAt": "2026-10-18T11:23:40.308Z",
+      "report": {
+        "producer": {
+          "report": {
+            "windowId": "33ffa370-7dfa-4bad-abcb-5515636e8432",
+            "instanceId": "e6614d22-e1ca-41a8-99f3-661ba2655916",
+            "elapsedMs": 3770,
+            "sql": {
+              "privateStream": {
+                "statements": 0,
+                "rowsRead": 0,
+                "rowsWritten": 0
+              },
+              "publicStream": {
+                "statements": 0,
+                "rowsRead": 0,
+                "rowsWritten": 0
+              },
+              "events": {
+                "statements": 0,
+                "rowsRead": 0,
+                "rowsWritten": 0
+              },
+              "webService": {
+                "statements": 0,
+                "rowsRead": 0,
+                "rowsWritten": 0
+              },
+              "toolState": {
+                "statements": 0,
+                "rowsRead": 0,
+                "rowsWritten": 0
+              },
+              "search": {
+                "statements": 0,
+                "rowsRead": 0,
+                "rowsWritten": 0
+              },
+              "other": {
+                "statements": 4,
+                "rowsRead": 4,
+                "rowsWritten": 3
+              }
+            },
+            "streams": {
+              "public": {
+                "commits": 0,
+                "wireBytes": 0,
+                "payloadBytes": 0
+              },
+              "private": {
+                "commits": 0,
+                "wireBytes": 0,
+                "payloadBytes": 0
+              }
+            },
+            "eventPayloadBytes": 0,
+            "broadcasts": {
+              "frames": 0,
+              "bytes": 0
+            },
+            "alarms": {
+              "set": 1,
+              "delete": 0
+            },
+            "upstream": {
+              "modelRequests": 0,
+              "modelBytes": 0,
+              "toolRequests": 0,
+              "toolResponseBytes": 0
+            }
+          },
+          "pending": 0,
+          "databaseBytes": 24576
+        },
+        "library": {
+          "report": {
+            "windowId": "33ffa370-7dfa-4bad-abcb-5515636e8432",
+            "instanceId": "4d14495d-431f-4ab4-983c-f1975fc18f88",
+            "elapsedMs": 4924,
+            "sql": {
+              "privateStream": {
+                "statements": 0,
+                "rowsRead": 0,
+                "rowsWritten": 0
+              },
+              "publicStream": {
+                "statements": 0,
+                "rowsRead": 0,
+                "rowsWritten": 0
+              },
+              "events": {
+                "statements": 0,
+                "rowsRead": 0,
+                "rowsWritten": 0
+              },
+              "webService": {
+                "statements": 0,
+                "rowsRead": 0,
+                "rowsWritten": 0
+              },
+              "toolState": {
+                "statements": 0,
+                "rowsRead": 0,
+                "rowsWritten": 0
+              },
+              "search": {
+                "statements": 5,
+                "rowsRead": 7,
+                "rowsWritten": 0
+              },
+              "other": {
+                "statements": 67,
+                "rowsRead": 93,
+                "rowsWritten": 54
+              }
+            },
+            "streams": {
+              "public": {
+                "commits": 0,
+                "wireBytes": 0,
+                "payloadBytes": 0
+              },
+              "private": {
+                "commits": 0,
+                "wireBytes": 0,
+                "payloadBytes": 0
+              }
+            },
+            "eventPayloadBytes": 0,
+            "broadcasts": {
+              "frames": 0,
+              "bytes": 0
+            },
+            "alarms": {
+              "set": 3,
+              "delete": 0
+            },
+            "upstream": {
+              "modelRequests": 0,
+              "modelBytes": 0,
+              "toolRequests": 0,
+              "toolResponseBytes": 0
+            }
+          },
+          "pushes": 9,
+          "deliveries": [
+            {
+              "done": 1,
+              "count": 9
+            }
+          ],
+          "alarmAt": 1792326216577,
+          "databaseBytes": 282624
+        }
+      }
+    }
+  ],
+  "cleanup": {
+    "cases": 3,
+    "deleteAllCompleted": true,
+    "alarmsCleared": true
+  },
+  "scope": "Production outbox and Library notification pipeline with real Alarms/RPC/SQL/encryption; mock gateway. No chat generation, focus WebSockets or retries. Native cursor counters exclude preparation and observer SQL; platform CPU includes setup and report requests."
+}

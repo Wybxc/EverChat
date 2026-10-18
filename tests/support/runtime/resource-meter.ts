@@ -1,4 +1,4 @@
-// Local fixture instrumentation only. It observes native cursor counters without
+// Isolated fixture instrumentation only. It observes native cursor counters without
 // draining results early and never retains SQL, bindings, model text or secrets.
 import type { ToolResourceWindow } from '../../../scripts/measurements/support/resources';
 const emptySql = () => ({ statements: 0, rowsRead: 0, rowsWritten: 0 });

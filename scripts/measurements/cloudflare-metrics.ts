@@ -26,11 +26,15 @@ const functional = JSON.parse(await readFile(values.functional!, 'utf8')) as {
   complete: boolean;
 };
 assert.ok(
-  ['everchat-stream-validation', TOOL_VALIDATION_WORKER].includes(functional.workerName),
+  [
+    'everchat-stream-validation',
+    TOOL_VALIDATION_WORKER,
+    'everchat-notification-pipeline-validation',
+  ].includes(functional.workerName),
   'Use only isolated validation Workers',
 );
 const toolRun = functional.workerName === TOOL_VALIDATION_WORKER;
-if (toolRun)
+if (toolRun || functional.workerName === 'everchat-notification-pipeline-validation')
   assert.equal(
     (functional as { runtime?: string }).runtime,
     'cloudflare',
@@ -161,8 +165,7 @@ await writeFile(
         storedBytes: 'bytes',
         memoryUsageBytes: 'bytes',
       },
-      scope:
-        'Isolated deployed namespaces and Worker, diagnostic counters disabled. Adaptive fields may be sampled; empty arrays do not prove zero usage. Invocation minute rounding includes setup and idle activity. Storage uses a separate wider window and reports samples rather than the exact functional-run peak.',
+      scope: `Isolated deployed namespaces and Worker, diagnostic counters ${functional.workerName === 'everchat-notification-pipeline-validation' ? 'enabled' : 'disabled'}. Adaptive fields may be sampled; empty arrays do not prove zero usage. Invocation minute rounding includes setup and idle activity. Storage uses a separate wider window and reports samples rather than the exact functional-run peak.`,
       available,
       data: response.data,
       errors: response.errors,

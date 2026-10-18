@@ -4,6 +4,7 @@ import {
   type BrowserContext,
   type Page,
   type WebSocketRoute,
+  type Worker,
 } from '@playwright/test';
 import { NOTIFICATION_CHANNEL, type NotificationDevice } from '../../shared/notifications/protocol';
 import type { Snapshot } from '../../shared/streaming/protocol';
@@ -78,6 +79,52 @@ type Probe = typeof globalThis & {
   registration: ServiceWorkerRegistration;
   notificationCalls: number;
 };
+
+async function notificationTarget(context: BrowserContext, page: Page) {
+  const conversationId = '00000000-0000-4000-8000-000000000101';
+  const source = (await page.request
+    .get(`/api/conversations/${conversationId}`)
+    .then((response) => response.json())) as Snapshot;
+  const userId = crypto.randomUUID(),
+    messageId = crypto.randomUUID();
+  source.messages[0].id = userId;
+  source.messages[1].id = messageId;
+  source.messages[1].parentId = userId;
+  await context.route(`**/api/conversations/${conversationId}?*`, (route) =>
+    route.fulfill({ json: { snapshot: source, after: 2, done: true } }),
+  );
+  return { conversationId, messageId, completedAt: Date.now() };
+}
+
+async function clickNotification(worker: Worker) {
+  await expect
+    .poll(() =>
+      worker.evaluate(
+        async () => (await (globalThis as Probe).registration.getNotifications()).length,
+      ),
+    )
+    .toBe(1);
+  await worker.evaluate(async () => {
+    const notification = (await (globalThis as Probe).registration.getNotifications())[0];
+    const EventConstructor = (
+      globalThis as typeof globalThis & {
+        NotificationEvent: new (type: string, init: { notification: Notification }) => Event;
+      }
+    ).NotificationEvent;
+    const event = new EventConstructor('notificationclick', { notification });
+    let completion: Promise<unknown> | undefined;
+    // Synthetic events lack system activation; OS window activation has separate device evidence.
+    Object.defineProperty(event, 'waitUntil', {
+      value: (work: Promise<unknown>) => {
+        completion = work.catch((error: Error) => {
+          if (error.name !== 'InvalidAccessError' && error.name !== 'NotAllowedError') throw error;
+        });
+      },
+    });
+    globalThis.dispatchEvent(event);
+    await completion;
+  });
+}
 
 test('push registration normalizes browser subscription fields before sending them to the server', async ({
   page,
@@ -300,18 +347,8 @@ test('a simulated notification click enters the completed branch through SPA nav
   context,
 }) => {
   const f = await fixture(context, page);
-  const conversationId = '00000000-0000-4000-8000-000000000101';
-  const source = (await page.request
-    .get(`/api/conversations/${conversationId}`)
-    .then((response) => response.json())) as Snapshot;
-  const userId = crypto.randomUUID(),
-    messageId = crypto.randomUUID();
-  source.messages[0].id = userId;
-  source.messages[1].id = messageId;
-  source.messages[1].parentId = userId;
-  await context.route(`**/api/conversations/${conversationId}?*`, (route) =>
-    route.fulfill({ json: { snapshot: source, after: 2, done: true } }),
-  );
+  const completion = await notificationTarget(context, page);
+  const { conversationId, messageId } = completion;
   await f.panel.getByLabel('回答完成通知').selectOption('always');
   await f.panel.getByRole('button', { name: '启用系统通知', exact: true }).click();
   await expect(f.panel.getByRole('status')).toHaveText('页面通知可用');
@@ -321,7 +358,28 @@ test('a simulated notification click enters the completed branch through SPA nav
   await page.evaluate((value) => {
     document.documentElement.dataset.notificationDocument = value;
   }, marker);
-  f.emit({ conversationId, messageId, completedAt: Date.now() });
+  f.emit(completion);
+  const worker = context.serviceWorkers()[0];
+  await clickNotification(worker);
+  await expect(page).toHaveURL(`/c/${conversationId}?branch=${messageId}`);
+  await expect(page.getByTestId('assistant-message')).toContainText('已保存的正文');
+  await expect(page.locator('html')).toHaveAttribute('data-notification-document', marker);
+  await page.getByRole('button', { name: '开启新对话', exact: true }).click();
+  await expect(page.getByLabel('消息', { exact: true })).toHaveValue('通知前正在输入的草稿');
+});
+
+test('notification clicks retain the destination branch and draft through an expired session and Access resume', async ({
+  page,
+  context,
+}) => {
+  const f = await fixture(context, page);
+  const completion = await notificationTarget(context, page);
+  await f.panel.getByLabel('回答完成通知').selectOption('always');
+  await f.panel.getByRole('button', { name: '启用系统通知', exact: true }).click();
+  await expect(f.panel.getByRole('status')).toHaveText('页面通知可用');
+  await page.getByRole('button', { name: '关闭设置', exact: true }).click();
+  await page.getByLabel('消息', { exact: true }).fill('登录过期前的通知草稿');
+  f.emit(completion);
   const worker = context.serviceWorkers()[0];
   await expect
     .poll(() =>
@@ -330,30 +388,45 @@ test('a simulated notification click enters the completed branch through SPA nav
       ),
     )
     .toBe(1);
-  await worker.evaluate(async () => {
-    const notification = (await (globalThis as Probe).registration.getNotifications())[0];
-    const EventConstructor = (
-      globalThis as typeof globalThis & {
-        NotificationEvent: new (type: string, init: { notification: Notification }) => Event;
-      }
-    ).NotificationEvent;
-    const event = new EventConstructor('notificationclick', { notification });
-    let completion: Promise<unknown> | undefined;
-    // Synthetic events have no system activation. Exercise the real handler's routing,
-    // while leaving OS window activation to the explicit device acceptance test.
-    Object.defineProperty(event, 'waitUntil', {
-      value: (work: Promise<unknown>) => {
-        completion = work.catch((error: Error) => {
-          if (error.name !== 'InvalidAccessError' && error.name !== 'NotAllowedError') throw error;
-        });
-      },
-    });
-    globalThis.dispatchEvent(event);
-    await completion;
+  await page.route('**/api/session', (route) =>
+    route.fulfill({ status: 401, contentType: 'text/html', body: '<html>Access expired</html>' }),
+  );
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect(page.getByRole('button', { name: '重新登录', exact: true })).toBeVisible();
+  await clickNotification(worker);
+  const target = `/c/${completion.conversationId}?branch=${completion.messageId}`;
+  await expect(page).toHaveURL(target);
+  await expect(page.getByLabel('消息', { exact: true })).toHaveCount(0);
+  let resumed: string | null = null;
+  // Exercise the production SW/app with a local Access redirect fixture; real SSO is separate.
+  await page.route('**/auth/resume?*', (route) => {
+    resumed = new URL(route.request().url()).searchParams.get('returnTo');
+    return route.fulfill({ status: 303, headers: { Location: resumed! } });
   });
-  await expect(page).toHaveURL(`/c/${conversationId}?branch=${messageId}`);
+  await page.unroute('**/api/session');
+  await page.getByRole('button', { name: '重新登录', exact: true }).click();
+  await expect(page).toHaveURL(target);
   await expect(page.getByTestId('assistant-message')).toContainText('已保存的正文');
-  await expect(page.locator('html')).toHaveAttribute('data-notification-document', marker);
+  expect(resumed).toBe(target);
   await page.getByRole('button', { name: '开启新对话', exact: true }).click();
-  await expect(page.getByLabel('消息', { exact: true })).toHaveValue('通知前正在输入的草稿');
+  await expect(page.getByLabel('消息', { exact: true })).toHaveValue('登录过期前的通知草稿');
+});
+
+test('revoked notification permission disables delivery on resume without prompting again', async ({
+  page,
+  context,
+}) => {
+  const f = await fixture(context, page);
+  await f.panel.getByRole('button', { name: '启用系统通知', exact: true }).click();
+  await expect(f.panel.getByRole('status')).toHaveText('页面通知可用');
+  await context.clearPermissions();
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect.poll(() => f.device?.mode).toBe('never');
+  expect(f.device?.subscription).toBeNull();
+  await expect(f.panel.getByRole('status')).toHaveText('未启用');
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { permissionRequests: number }).permissionRequests,
+    ),
+  ).toBe(1);
 });

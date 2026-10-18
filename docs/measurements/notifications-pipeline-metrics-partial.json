@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "queriedAt": "2026-10-18T11:23:59.326Z",
+  "window": {
+    "start": "2026-10-18T11:23:00.000Z",
+    "end": "2026-10-18T11:25:00.000Z"
+  },
+  "storageWindow": {
+    "start": "2026-10-18T11:00:00.000Z",
+    "end": "2026-10-18T11:23:58.786Z"
+  },
+  "workerName": "everchat-notification-pipeline-validation",
+  "namespaces": [
+    {
+      "name": "CONVERSATIONS",
+      "id": "cc251efda5ae4b2cb5a8d8dd226ccd20"
+    },
+    {
+      "name": "LIBRARY",
+      "id": "2988fe4efcb9453db0dae67ce2ee61e7"
+    }
+  ],
+  "units": {
+    "cpuTime": "microseconds",
+    "cpuTimeUs": "microseconds",
+    "activeTime": "microseconds",
+    "duration": "GB*s",
+    "storedBytes": "bytes",
+    "memoryUsageBytes": "bytes"
+  },
+  "scope": "Isolated deployed namespaces and Worker, diagnostic counters enabled. Adaptive fields may be sampled; empty arrays do not prove zero usage. Invocation minute rounding includes setup and idle activity. Storage uses a separate wider window and reports samples rather than the exact functional-run peak.",
+  "available": {
+    "workersInvocationsAdaptive": true,
+    "durableObjectsInvocationsAdaptiveGroups": false,
+    "durableObjectsPeriodicGroups": false,
+    "durableObjectsSqlStorageGroups": false
+  },
+  "data": {
+    "viewer": {
+      "accounts": [
+        {
+          "durableObjectsInvocationsAdaptiveGroups": [],
+          "durableObjectsPeriodicGroups": [],
+          "durableObjectsSqlStorageGroups": [],
+          "workersInvocationsAdaptive": [
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "status": "success",
+                "usageModel": "standard"
+              },
+              "max": {
+                "cpuTime": 2946,
+                "memoryUsageBytes": 4091916
+              },
+              "quantiles": {
+                "cpuTimeP50": 1077,
+                "cpuTimeP99": 2946
+              },
+              "sum": {
+                "cpuTimeUs": 10354,
+                "errors": 0,
+                "requests": 8
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "errors": null
+}

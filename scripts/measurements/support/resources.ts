@@ -1,4 +1,4 @@
-// Local diagnostic counters. Neither elapsed time nor these operation counts are
+// Diagnostic fixture counters. Neither elapsed time nor these operation counts are
 // Cloudflare CPU, billed requests, Workflow storage, or account usage.
 export interface ToolResourceWindow {
   windowId: string;
