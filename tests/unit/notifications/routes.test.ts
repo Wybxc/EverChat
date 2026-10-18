@@ -90,3 +90,57 @@ test('subscription API normalizes omitted expiry and diagnoses invalid fields wi
   assert.doesNotMatch(diagnostic.error, /sensitive-fixture/);
   assert.equal((await send('{malformed')).status, 400);
 });
+
+test('notification upgrades use fetch transport with verified identity and discard client credentials and forged session headers', async () => {
+  const principal = {
+    issuer: 'https://team.cloudflareaccess.com',
+    sub: 'fixture',
+    email: 'fixture@example.com',
+    expires: Math.floor(Date.now() / 1000) + 3600,
+  };
+  const app = createApi(async () => principal);
+  let forwarded: Request | undefined;
+  const env = {
+    LIBRARY: {
+      getByName: () => ({
+        fetch: (request: Request) => {
+          forwarded = request;
+          return new Response('fetch transport');
+        },
+      }),
+    },
+  } as unknown as Env;
+  const response = await app.request(
+    'https://chat.example.com/api/notifications/sync?instance=fixture',
+    {
+      headers: {
+        Upgrade: 'websocket',
+        Origin: 'https://chat.example.com',
+        Cookie: 'sensitive-fixture',
+        'Cf-Access-Jwt-Assertion': 'sensitive-fixture',
+        'X-Notification-Owner': 'forged',
+        'X-Session-Expires': '9999999999',
+      },
+    },
+    env,
+  );
+  assert.equal(await response.text(), 'fetch transport');
+  assert.ok(forwarded);
+  assert.equal(forwarded.url, 'https://chat.example.com/api/notifications/sync?instance=fixture');
+  assert.equal(forwarded.headers.get('Upgrade'), 'websocket');
+  assert.equal(
+    forwarded.headers.get('X-Notification-Owner'),
+    JSON.stringify([principal.issuer, principal.sub]),
+  );
+  assert.equal(forwarded.headers.get('X-Session-Expires'), String(principal.expires));
+  assert.equal(forwarded.headers.get('Cookie'), null);
+  assert.equal(forwarded.headers.get('Cf-Access-Jwt-Assertion'), null);
+  forwarded = undefined;
+  const foreign = await app.request(
+    'https://chat.example.com/api/notifications/sync?instance=fixture',
+    { headers: { Upgrade: 'websocket', Origin: 'https://other.example' } },
+    env,
+  );
+  assert.equal(foreign.status, 403);
+  assert.equal(forwarded, undefined);
+});

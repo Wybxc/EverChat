@@ -53,7 +53,6 @@ import { LIBRARY_ACTIVITY_SCHEMA, LibraryActivityIndex } from './activity';
 import { NotificationRegistry } from '../notifications/registry';
 import { sendWebPush } from '../notifications/push';
 import type { AnswerCompletion, NotificationDevice } from '../../shared/notifications/protocol';
-import type { AccessPrincipal } from '../http/auth';
 
 type Deletion = { id: string; deletedAt: number; completed: number } & Record<
   string,
@@ -254,9 +253,21 @@ export class Library extends DurableObject<Env> {
     await this.ctx.storage.sync();
     await this.scheduleMaintenance();
   }
-  notificationChannel(request: Request, principal: AccessPrincipal, instanceId: string) {
+  async fetch(request: Request) {
+    const url = new URL(request.url);
+    if (request.method !== 'GET' || url.pathname !== '/api/notifications/sync')
+      return json({ error: '找不到这个接口。' }, 404);
+    const owner = request.headers.get('X-Notification-Owner'),
+      expires = Number(request.headers.get('X-Session-Expires'));
+    if (!owner || !Number.isSafeInteger(expires) || expires <= Date.now() / 1000)
+      return json({ error: '请重新登录。', code: 'AUTH_REQUIRED' }, 401);
     try {
-      return this.notifications.connect(request, principal, instanceId);
+      return this.notifications.connect(
+        request,
+        owner,
+        expires,
+        url.searchParams.get('instance') ?? '',
+      );
     } catch (error) {
       if (error instanceof HttpError) return json({ error: error.message }, error.status);
       throw error;

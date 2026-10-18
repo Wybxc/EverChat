@@ -47,11 +47,17 @@ export function registerNotificationRoutes(app: ApiRouter) {
       input,
     );
   });
-  app.get('/notifications/sync', async (context) =>
-    context.env.LIBRARY.getByName('personal').notificationChannel(
-      context.req.raw,
-      await requireAuth(context),
-      context.req.query('instance') ?? '',
-    ),
-  );
+  app.get('/notifications/sync', async (context) => {
+    const principal = await requireAuth(context);
+    // A WebSocket upgrade must use fetch transport rather than RPC serialization.
+    // Rebuild internal headers so client-supplied identity or expiry cannot survive.
+    const headers = new Headers({
+      Upgrade: context.req.header('Upgrade') ?? '',
+      'X-Notification-Owner': identityKey(principal),
+      'X-Session-Expires': String(principal.expires),
+    });
+    return context.env.LIBRARY.getByName('personal').fetch(
+      new Request(context.req.raw, { headers }),
+    );
+  });
 }

@@ -259,6 +259,60 @@ test('each retry checks focus again and stale replies cannot suppress a later at
   await f.store.flush();
   assert.equal(f.sent.length, 1);
 });
+test('simultaneous foreground completions remain suppressed when focus replies arrive out of order', async (t) => {
+  const f = registry(t),
+    d = device();
+  f.store.save('owner', d);
+  const ws = f.connect(d.instanceId);
+  f.store.enqueue(f.completion);
+  f.store.enqueue({
+    ...f.completion,
+    conversationId: crypto.randomUUID(),
+    messageId: crypto.randomUUID(),
+  });
+  await f.store.flush();
+  assert.equal(ws.packets.length, 2);
+  for (const packet of [...ws.packets].reverse()) f.reply(ws, packet.id!, true);
+  f.reopen();
+  f.advance(1000);
+  await f.store.flush();
+  assert.equal(f.sent.length, 0);
+});
+test('a stale or duplicate background reply cannot undo a foreground confirmation', async (t) => {
+  const f = registry(t),
+    d = device();
+  f.store.save('owner', d);
+  const ws = f.connect(d.instanceId);
+  f.status(503);
+  f.store.enqueue(f.completion);
+  await f.store.flush();
+  const old = ws.packets.at(-1)!.id!;
+  f.reply(ws, old, false);
+  f.advance(1000);
+  await f.store.flush();
+  assert.equal(f.sent.length, 1);
+  f.advance(1000);
+  await f.store.flush();
+  const fresh = ws.packets.at(-1)!.id!;
+  f.reply(ws, fresh, true);
+  f.reply(ws, old, false);
+  f.reply(ws, fresh, false);
+  f.advance(1000);
+  await f.store.flush();
+  assert.equal(f.sent.length, 1);
+});
+test('focus confirmations received after the decision deadline do not suppress delivery', async (t) => {
+  const f = registry(t),
+    d = device();
+  f.store.save('owner', d);
+  const ws = f.connect(d.instanceId);
+  f.store.enqueue(f.completion);
+  await f.store.flush();
+  f.advance(1001);
+  f.reply(ws, ws.packets[0].id!, true);
+  await f.store.flush();
+  assert.equal(f.sent.length, 1);
+});
 test('closed or expired sessions do not prevent push; stopping a device, deleted conversations and expiry cancel pending work', async (t) => {
   const f = registry(t),
     d = device();

@@ -1,5 +1,4 @@
 import * as v from 'valibot';
-import { identityKey } from '../../shared/auth/types';
 import {
   allowedPushEndpoint,
   completionId,
@@ -12,7 +11,6 @@ import {
   type NotificationPacket,
 } from '../../shared/notifications/protocol';
 import type { SqlQuery } from '../generation/metrics';
-import type { AccessPrincipal } from '../http/auth';
 import { HttpError } from '../http/response';
 import type { PushResult } from './push';
 
@@ -43,8 +41,6 @@ type Connection = {
   instanceId: string;
   owner: string;
   expires: number;
-  checkId?: string;
-  foreground?: boolean;
 };
 
 export class NotificationRegistry {
@@ -96,10 +92,9 @@ export class NotificationRegistry {
     );
     return value;
   }
-  connect(request: Request, principal: AccessPrincipal, instanceId: string) {
+  connect(request: Request, owner: string, expires: number, instanceId: string) {
     const device = this.row(instanceId);
-    if (!device || device.owner !== identityKey(principal))
-      throw new HttpError(403, '请先启用此实例的通知。');
+    if (!device || device.owner !== owner) throw new HttpError(403, '请先启用此实例的通知。');
     if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket')
       throw new HttpError(426, '需要实时连接。');
     const pair = new WebSocketPair();
@@ -107,7 +102,7 @@ export class NotificationRegistry {
     pair[1].serializeAttachment({
       instanceId,
       owner: device.owner,
-      expires: principal.expires,
+      expires,
     } satisfies Connection);
     pair[1].send(JSON.stringify({ type: 'ready' } satisfies NotificationPacket));
     return new Response(null, { status: 101, webSocket: pair[0] });
@@ -125,13 +120,20 @@ export class NotificationRegistry {
         value.type === 'check' &&
         typeof value.id === 'string' &&
         value.id.length < 180 &&
-        typeof value.foreground === 'boolean'
-      )
-        socket.serializeAttachment({
-          ...connection,
-          checkId: value.id,
-          foreground: value.foreground,
-        });
+        value.foreground === true
+      ) {
+        // Complete only this delivery's current check. Keeping one reply on the
+        // socket loses other completions and lets stale replies overwrite it.
+        const separator = value.id.lastIndexOf(':');
+        if (separator > 0)
+          this.query(
+            'UPDATE notification_deliveries SET done = 1 WHERE id = ? AND device = ? AND checkToken = ? AND done = 0 AND nextAt > ?',
+            value.id.slice(0, separator),
+            connection.instanceId,
+            value.id,
+            this.now(),
+          );
+      }
       if (value.type === 'session-check') socket.send('pong');
     } catch {
       /* Invalid control messages cannot change a subscription. */
@@ -233,7 +235,7 @@ export class NotificationRegistry {
           continue;
         }
         if (device.mode === 'unfocused' && sockets.length && !job.checkToken) {
-          const token = crypto.randomUUID();
+          const token = `${job.id}:${crypto.randomUUID()}`;
           for (const socket of sockets) {
             try {
               socket.send(
@@ -248,16 +250,6 @@ export class NotificationRegistry {
             job.id,
             job.device,
           );
-          continue;
-        }
-        if (
-          device.mode === 'unfocused' &&
-          sockets.some((socket) => {
-            const info = socket.deserializeAttachment() as Connection;
-            return info.checkId === job.checkToken && info.foreground === true;
-          })
-        ) {
-          this.done(job);
           continue;
         }
         const started = this.now();

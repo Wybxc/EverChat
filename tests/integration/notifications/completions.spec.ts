@@ -1,4 +1,6 @@
 import { expect, test, type APIRequestContext } from '@playwright/test';
+import { once } from 'node:events';
+import WebSocket from 'ws';
 import type { NotificationDevice } from '../../../shared/notifications/protocol';
 import type { ProviderSettings } from '../../../shared/providers/types';
 import type { Snapshot } from '../../../shared/streaming/protocol';
@@ -64,6 +66,7 @@ async function fixture(request: APIRequestContext, model = 'test-model') {
       .post('/api/__test/library/notifications', { headers, data: {} })
       .then((r) => r.json()) as Promise<{
       pushes: { device: string; completionId: string; payload: string }[];
+      pending: { id: string; device: string; done: number }[];
     }>;
   const pushes = async () =>
     (await report()).pushes.filter((item) => item.device === device.instanceId);
@@ -87,6 +90,7 @@ async function fixture(request: APIRequestContext, model = 'test-model') {
     submit,
     snapshot,
     pushes,
+    report,
     cleanup: async () => {
       await request.put('/api/notifications/device', {
         headers,
@@ -129,6 +133,74 @@ test('persisted ordinary answers and regenerated versions notify once, while his
     await expect.poll(async () => (await f.pushes()).length).toBe(2);
     expect(new Set((await f.pushes()).map((item) => item.completionId)).size).toBe(2);
   } finally {
+    await f.cleanup();
+  }
+});
+test('concurrent focus confirmations suppress both answers over a real notification socket, then background delivery resumes', async ({
+  request,
+}) => {
+  const f = await fixture(request);
+  let socket: WebSocket | undefined;
+  try {
+    expect(
+      (
+        await request.put('/api/notifications/device', {
+          headers,
+          data: { ...f.device, revision: 2, mode: 'unfocused' },
+        })
+      ).ok(),
+    ).toBe(true);
+    const cookies = (await request.storageState()).cookies
+      .map(({ name, value }) => `${name}=${value}`)
+      .join('; ');
+    socket = new WebSocket(
+      `ws://127.0.0.1:5174/api/notifications/sync?instance=${f.device.instanceId}`,
+      { headers: { ...headers, Cookie: cookies } },
+    );
+    const checks: string[] = [];
+    let foreground = true;
+    socket.on('message', (data) => {
+      const packet = JSON.parse(data.toString()) as { type: string; id: string };
+      if (packet.type !== 'check') return;
+      if (!foreground) {
+        socket!.send(JSON.stringify({ type: 'check', id: packet.id, foreground: false }));
+        return;
+      }
+      checks.push(packet.id);
+      if (checks.length === 2)
+        for (const id of [...checks].reverse())
+          socket!.send(JSON.stringify({ type: 'check', id, foreground: true }));
+    });
+    await once(socket, 'open');
+    for (let i = 0; i < 2; i++)
+      expect(
+        (
+          await request.post('/api/__test/library/notifications', {
+            headers,
+            data: {
+              completion: {
+                conversationId: f.id,
+                messageId: crypto.randomUUID(),
+                completedAt: Date.now(),
+              },
+            },
+          })
+        ).ok(),
+      ).toBe(true);
+    await expect
+      .poll(async () =>
+        (await f.report()).pending
+          .filter((item) => item.device === f.device.instanceId)
+          .map((item) => item.done),
+      )
+      .toEqual([1, 1]);
+    expect(checks).toHaveLength(2);
+    expect(await f.pushes()).toHaveLength(0);
+    foreground = false;
+    await f.submit({ content: '切到后台后正常通知' });
+    await expect.poll(async () => (await f.pushes()).length).toBe(1);
+  } finally {
+    socket?.close(1000, 'Test complete');
     await f.cleanup();
   }
 });
