@@ -8,7 +8,7 @@ const uuid = v.pipe(v.string(), v.uuid());
 const timestamp = v.pipe(v.number(), v.safeInteger(), v.minValue(0));
 export const subscriptionSchema = v.strictObject({
   endpoint: v.pipe(v.string(), v.maxLength(4096), v.url()),
-  expirationTime: v.nullable(v.pipe(v.number(), v.finite(), v.minValue(0))),
+  expirationTime: v.optional(v.nullable(v.pipe(v.number(), v.finite(), v.minValue(0))), null),
   keys: v.strictObject({
     auth: v.pipe(v.string(), v.regex(/^[A-Za-z0-9_-]{22}={0,2}$/)),
     p256dh: v.pipe(v.string(), v.regex(/^[A-Za-z0-9_-]{87}=?$/)),

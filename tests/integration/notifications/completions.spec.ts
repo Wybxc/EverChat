@@ -90,7 +90,7 @@ async function fixture(request: APIRequestContext, model = 'test-model') {
     cleanup: async () => {
       await request.put('/api/notifications/device', {
         headers,
-        data: { ...device, revision: 2, mode: 'never', subscription: null },
+        data: { ...device, revision: 3, mode: 'never', subscription: null },
       });
       await request.delete(`/api/conversations/${id}`, { headers });
       await request.put('/api/settings/providers', { headers, data: original });
@@ -203,7 +203,7 @@ test('cancelled answers do not notify', async ({ request }) => {
   }
 });
 
-test('notification APIs require authentication, same-origin writes and supported push services', async ({
+test('notification APIs require authentication, same-origin writes and valid subscriptions', async ({
   request,
   playwright,
 }) => {
@@ -211,18 +211,38 @@ test('notification APIs require authentication, same-origin writes and supported
   const anonymous = await playwright.request.newContext({ baseURL: 'http://127.0.0.1:5174' });
   try {
     expect((await anonymous.get('/api/notifications/config')).status()).toBe(401);
-    expect(
-      (await anonymous.put('/api/notifications/device', { headers, data: f.device })).status(),
-    ).toBe(401);
-    // Keep this pre-body rejection independent of Vite's streaming request-body proxy.
+    // An unread anonymous request body can poison Vite's internal workerd connection.
+    expect((await anonymous.put('/api/notifications/device', { headers })).status()).toBe(401);
     expect((await request.put('/api/notifications/device')).status()).toBe(403);
+    const invalid = await request.put('/api/notifications/device', {
+      headers,
+      data: {
+        ...f.device,
+        subscription: {
+          ...f.device.subscription!,
+          keys: { auth: 'sensitive-fixture', p256dh: 'invalid' },
+        },
+      },
+    });
+    expect(invalid.status()).toBe(400);
+    const diagnostic = await invalid.json();
+    expect(diagnostic.code).toBe('INVALID_NOTIFICATION_DEVICE');
+    expect(diagnostic.error).toContain('subscription.keys.auth');
+    expect(diagnostic.error).not.toContain('sensitive-fixture');
+    const { expirationTime: _expiry, ...withoutExpiry } = f.device.subscription!;
+    const normalized = await request.put('/api/notifications/device', {
+      headers,
+      data: { ...f.device, revision: 2, subscription: withoutExpiry },
+    });
+    expect(normalized.status()).toBe(200);
+    expect((await normalized.json()).subscription.expirationTime).toBeNull();
     expect(
       (
         await request.put('/api/notifications/device', {
           headers,
           data: {
             ...f.device,
-            revision: 2,
+            revision: 3,
             subscription: {
               ...f.device.subscription!,
               endpoint: 'https://untrusted.example.com/push',

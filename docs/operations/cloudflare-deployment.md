@@ -85,3 +85,5 @@ Workers Free、Durable Objects Free 和 Workflows Free 的免费用量边界按�
 退出时先登记停用，清除本地偏好并尽力取消 Push 订阅；网络和注销等候均有期限，离线时不阻塞退出。已交给系统的通知仍可能到达。网关 404／410 清除失效订阅，认证类失败停止盲目重试；429／服务端故障在期限内退避，不能通过反复重新生成回答来重试通知。通知投递问题不改变已保存回答的成功状态。
 
 平台验证发现 Workers 不接受请求的 `redirect: 'error'`；通知发送使用 `manual`，不得改成自动跟随重定向。隔离加密测量与真实设备验收的范围、复测和清理方式见[通知平台记录](../measurements/notifications-cloudflare-2026-10-18.md)。
+
+排查时先区分订阅保存与远程投递：`INVALID_NOTIFICATION_DEVICE` 返回失败字段路径，不包含订阅实际值；请勿要求用户复制完整订阅。投递日志 `EverChat notification delivery` 只记录完成／匿名安装 ID、尝试次数、状态、结果和耗时，异常只保留类型。`accepted` 表示推送网关接受，不能用来断言设备显示或用户已读。

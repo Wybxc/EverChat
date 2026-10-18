@@ -260,17 +260,51 @@ export class NotificationRegistry {
           this.done(job);
           continue;
         }
-        let result: PushResult;
+        const started = this.now();
+        let result: PushResult, errorType: string | undefined;
         try {
           result = await this.send(device, completion);
-        } catch {
+        } catch (error) {
           result = { status: 503 };
+          // Error messages may contain subscription URLs or credentials.
+          errorType =
+            error instanceof Error &&
+            [
+              'Error',
+              'TypeError',
+              'TimeoutError',
+              'AbortError',
+              'DataError',
+              'OperationError',
+              'NotSupportedError',
+              'InvalidAccessError',
+            ].includes(error.name)
+              ? error.name
+              : 'UnknownError';
         }
-        if (result.status >= 200 && result.status < 300) {
+        const accepted = result.status >= 200 && result.status < 300,
+          expired = [404, 410].includes(result.status),
+          retryable = [408, 429].includes(result.status) || result.status >= 500;
+        console.info('EverChat notification delivery', {
+          completionId: job.id,
+          instanceId: device.instanceId,
+          attempt: job.attempts + 1,
+          status: result.status,
+          result: accepted
+            ? 'accepted'
+            : expired
+              ? 'invalid-subscription'
+              : retryable
+                ? 'retry'
+                : 'rejected',
+          elapsedMs: Math.max(0, this.now() - started),
+          ...(errorType ? { errorType } : {}),
+        });
+        if (accepted) {
           this.done(job);
           continue;
         }
-        if ([404, 410].includes(result.status)) {
+        if (expired) {
           if (this.row(job.device)?.revision === job.revision)
             this.query(
               'UPDATE notification_devices SET payload = ? WHERE id = ?',
@@ -280,7 +314,7 @@ export class NotificationRegistry {
           this.done(job);
           continue;
         }
-        if (![408, 429].includes(result.status) && result.status < 500) {
+        if (!retryable) {
           this.done(job);
           continue;
         }

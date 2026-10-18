@@ -78,6 +78,42 @@ type Probe = typeof globalThis & {
   registration: ServiceWorkerRegistration;
   notificationCalls: number;
 };
+
+test('push registration normalizes browser subscription fields before sending them to the server', async ({
+  page,
+  context,
+}) => {
+  await page.addInitScript(() => {
+    const key = new Uint8Array(65).fill(254),
+      auth = new Uint8Array(16).fill(255);
+    key[0] = 4;
+    PushManager.prototype.getSubscription = async () =>
+      ({
+        endpoint: 'https://web.push.apple.com/fixture-ios',
+        options: { applicationServerKey: key.buffer, userVisibleOnly: true },
+        getKey: (name: string) => (name === 'auth' ? auth : key).buffer,
+        unsubscribe: async () => true,
+        // WebKit dictionaries may omit expiry; never trust arbitrary browser JSON fields.
+        toJSON: () => {
+          throw new Error('Unexpected browser JSON serialization');
+        },
+      }) as unknown as PushSubscription;
+  });
+  const f = await fixture(context, page);
+  const publicKey = Buffer.from([4, ...new Array<number>(64).fill(254)]).toString('base64url');
+  await context.route('**/api/notifications/config', (route) =>
+    route.fulfill({ json: { publicKey } }),
+  );
+  await f.panel.getByRole('button', { name: '启用系统通知', exact: true }).click();
+  await expect(f.panel.getByRole('status')).toHaveText('后台推送已就绪');
+  await expect(f.panel.getByRole('alert')).toHaveCount(0);
+  expect(f.device?.subscription).toEqual({
+    endpoint: 'https://web.push.apple.com/fixture-ios',
+    expirationTime: null,
+    keys: { auth: Buffer.alloc(16, 255).toString('base64url'), p256dh: publicKey },
+  });
+});
+
 test('production SW notifications require explicit enable, keep preferences on reload and coordinate duplicate local delivery across windows', async ({
   page,
   context,

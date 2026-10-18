@@ -10,6 +10,7 @@ import {
 } from '../../../shared/notifications/protocol';
 import { identityKey } from '../../../shared/auth/types';
 import { api } from '../api';
+import { serializePushSubscription } from './subscription';
 import { networkIdentity, notifyAuthFailure } from '../auth';
 import {
   acknowledgeNotificationPreference,
@@ -210,15 +211,15 @@ async function synchronizeNow() {
   if (stopped || current !== generation || expectedOwner !== owner) return;
   const latest = await notificationPreference();
   if (latest.revision !== value.revision) return synchronizeNow();
-  if (value.push !== Boolean(subscription))
+  if (value.push !== Boolean(subscription)) {
     value = await changeNotificationPreference({ push: Boolean(subscription) });
+    await refresh();
+  }
   const input: NotificationDevice = {
     instanceId: value.instanceId,
     revision: value.revision,
     mode: value.enabled && permission() === 'granted' ? value.mode : 'never',
-    subscription: subscription
-      ? (subscription.toJSON() as NotificationDevice['subscription'])
-      : null,
+    subscription: subscription ? serializePushSubscription(subscription) : null,
   };
   const saved = await api<NotificationDevice>('/notifications/device', 'PUT', input);
   if (stopped || current !== generation) return;

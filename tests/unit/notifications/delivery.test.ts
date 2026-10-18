@@ -61,7 +61,8 @@ const device = (push = true): NotificationDevice => ({
 });
 function registry(t: TestContext) {
   const f = fixture(t),
-    sockets: ReturnType<typeof socket>[] = [];
+    sockets: ReturnType<typeof socket>[] = [],
+    log = t.mock.method(console, 'info', () => {});
   Object.defineProperty(globalThis, 'WebSocketRequestResponsePair', {
     value: class {},
     configurable: true,
@@ -75,13 +76,15 @@ function registry(t: TestContext) {
   } as unknown as DurableObjectState;
   const sent: AnswerCompletion[] = [];
   let status = 201,
-    exists = true;
+    exists = true,
+    failure: unknown;
   const reader = () =>
     new NotificationRegistry(
       context,
       f.query,
       async (_device, completion) => {
         sent.push(completion);
+        if (failure) throw failure;
         return { status };
       },
       () => exists,
@@ -110,6 +113,10 @@ function registry(t: TestContext) {
     ...f,
     sent,
     sockets,
+    logs: () => log.mock.calls.map((call) => call.arguments),
+    fail: (error: unknown) => {
+      failure = error;
+    },
     get store() {
       return store;
     },
@@ -294,4 +301,52 @@ test('always mode bypasses focus checks, 410 invalidates push, local delivery ha
   f.store.save('owner', { ...d, revision: 2, mode: 'never' });
   await f.store.flush();
   assert.equal(ws.packets.length, 1);
+});
+
+test('delivery diagnostics distinguish gateway outcomes and never retain endpoints, keys or exception messages', async (t) => {
+  const f = registry(t),
+    d = { ...device(), mode: 'always' as const };
+  f.store.save('owner', d);
+  for (const status of [201, 302, 403, 429, 503]) {
+    f.status(status);
+    f.store.enqueue({ ...f.completion, messageId: crypto.randomUUID() });
+    await f.store.flush();
+  }
+  const failure = new Error(`Failed request to ${d.subscription!.endpoint} with secret-value`);
+  // Even a custom error name must not be able to smuggle sensitive text into logs.
+  failure.name = d.subscription!.keys.auth;
+  f.fail(failure);
+  f.store.enqueue({ ...f.completion, messageId: crypto.randomUUID() });
+  await f.store.flush();
+  const logs = f.logs();
+  assert.equal(logs.length, 6);
+  assert.deepEqual(
+    logs.map(([, data]) => data.result),
+    ['accepted', 'rejected', 'rejected', 'retry', 'retry', 'retry'],
+  );
+  assert.equal(logs.at(-1)![1].errorType, 'UnknownError');
+  for (const [event, data] of logs) {
+    assert.equal(event, 'EverChat notification delivery');
+    assert.ok(
+      Object.keys(data).every((key) =>
+        [
+          'completionId',
+          'instanceId',
+          'attempt',
+          'status',
+          'result',
+          'elapsedMs',
+          'errorType',
+        ].includes(key),
+      ),
+    );
+  }
+  const serialized = JSON.stringify(logs);
+  for (const sensitive of [
+    d.subscription!.endpoint,
+    d.subscription!.keys.auth,
+    d.subscription!.keys.p256dh,
+    'secret-value',
+  ])
+    assert.equal(serialized.includes(sensitive), false);
 });
