@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { createDecipheriv, createECDH, createPublicKey, hkdfSync, randomBytes } from 'node:crypto';
+import { createECDH, createPublicKey, randomBytes } from 'node:crypto';
+import { decryptWebPush } from '../../support/notifications/decrypt';
 import { test } from 'node:test';
 import { jwtVerify } from 'jose';
 import { sendWebPush } from '../../../worker/notifications/push';
@@ -40,7 +41,7 @@ test('Web Push uses independently decryptable RFC 8291 aes128gcm and a valid end
     return new Response(null, { status: 201 });
   });
   assert.equal((await sendWebPush(env, device, completion)).status, 201);
-  assert.equal(captured?.redirect, 'error');
+  assert.equal(captured?.redirect, 'manual');
   const headers = new Headers(captured!.headers);
   assert.equal(headers.get('Content-Encoding'), 'aes128gcm');
   assert.ok(Number(headers.get('TTL')) > 0 && Number(headers.get('TTL')) <= 3600);
@@ -61,40 +62,8 @@ test('Web Push uses independently decryptable RFC 8291 aes128gcm and a valid end
     algorithms: ['ES256'],
   });
   assert.equal(verified.payload.sub, env.VAPID_SUBJECT);
-  const body = Buffer.from(captured!.body as Uint8Array),
-    salt = body.subarray(0, 16),
-    keyLength = body[20],
-    sender = body.subarray(21, 21 + keyLength);
-  const secret = ua.computeSecret(sender),
-    ikm = hkdfSync(
-      'sha256',
-      secret,
-      auth,
-      Buffer.concat([Buffer.from('WebPush: info\0'), publicKey, sender]),
-      32,
-    );
-  const cek = hkdfSync(
-    'sha256',
-    Buffer.from(ikm),
-    salt,
-    Buffer.from('Content-Encoding: aes128gcm\0'),
-    16,
-  );
-  const nonce = hkdfSync(
-    'sha256',
-    Buffer.from(ikm),
-    salt,
-    Buffer.from('Content-Encoding: nonce\0'),
-    12,
-  );
-  const encrypted = body.subarray(21 + keyLength),
-    decipher = createDecipheriv('aes-128-gcm', Buffer.from(cek), Buffer.from(nonce));
-  decipher.setAuthTag(encrypted.subarray(-16));
-  const plaintext = Buffer.concat([decipher.update(encrypted.subarray(0, -16)), decipher.final()]);
-  let end = plaintext.length;
-  while (end > 0 && plaintext[end - 1] === 0) end--;
-  assert.equal(plaintext[end - 1], 2);
-  assert.deepEqual(JSON.parse(plaintext.subarray(0, end - 1).toString()), {
+  const plaintext = decryptWebPush(ua, auth, captured!.body as Uint8Array);
+  assert.deepEqual(JSON.parse(plaintext.toString()), {
     channel: 'everchat:notifications',
     ...completion,
   });

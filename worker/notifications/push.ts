@@ -39,7 +39,8 @@ export async function sendWebPush(
   );
   const response = await fetch(device.subscription.endpoint, {
     ...payload,
-    redirect: 'error',
+    // Workers supports manual redirects. Never forward VAPID credentials to a new URL.
+    redirect: 'manual',
     signal: AbortSignal.timeout(10_000),
   });
   const retry = response.headers.get('Retry-After');

@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "workerName": "everchat-notifications-validation",
+  "runtime": "cloudflare",
+  "startedAt": "2026-10-18T08:56:10.943Z",
+  "finishedAt": "2026-10-18T08:56:12.314Z",
+  "complete": true,
+  "baselineRequests": 5,
+  "encryptionRequests": 10,
+  "results": [
+    {
+      "service": "apple",
+      "cipherBytes": 4096,
+      "serverElapsedMs": 0,
+      "encryptedPayloadVerified": true,
+      "vapidVerified": true
+    },
+    {
+      "service": "apple",
+      "cipherBytes": 4096,
+      "serverElapsedMs": 0,
+      "encryptedPayloadVerified": true,
+      "vapidVerified": true
+    },
+    {
+      "service": "apple",
+      "cipherBytes": 4096,
+      "serverElapsedMs": 0,
+      "encryptedPayloadVerified": true,
+      "vapidVerified": true
+    },
+    {
+      "service": "apple",
+      "cipherBytes": 4096,
+      "serverElapsedMs": 0,
+      "encryptedPayloadVerified": true,
+      "vapidVerified": true
+    },
+    {
+      "service": "apple",
+      "cipherBytes": 4096,
+      "serverElapsedMs": 0,
+      "encryptedPayloadVerified": true,
+      "vapidVerified": true
+    },
+    {
+      "service": "fcm",
+      "cipherBytes": 4096,
+      "serverElapsedMs": 0,
+      "encryptedPayloadVerified": true,
+      "vapidVerified": true
+    },
+    {
+      "service": "fcm",
+      "cipherBytes": 4096,
+      "serverElapsedMs": 0,
+      "encryptedPayloadVerified": true,
+      "vapidVerified": true
+    },
+    {
+      "service": "fcm",
+      "cipherBytes": 4096,
+      "serverElapsedMs": 0,
+      "encryptedPayloadVerified": true,
+      "vapidVerified": true
+    },
+    {
+      "service": "fcm",
+      "cipherBytes": 4096,
+      "serverElapsedMs": 0,
+      "encryptedPayloadVerified": true,
+      "vapidVerified": true
+    },
+    {
+      "service": "fcm",
+      "cipherBytes": 4096,
+      "serverElapsedMs": 0,
+      "encryptedPayloadVerified": true,
+      "vapidVerified": true
+    }
+  ],
+  "scope": "Actual Cloudflare Worker running production sendWebPush and Web Crypto. Isolated ephemeral keys and mock gateway; no production data, real push delivery, DOs, SQL, R2 or AI requests. Independent Node RFC 8291 decryption and VAPID verification. serverElapsedMs is wall time, not CPU. Use sanitized platform tail/analytics for CPU; this does not measure full Library Alarm overhead or device acceptance."
+}

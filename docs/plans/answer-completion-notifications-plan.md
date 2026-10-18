@@ -1,6 +1,6 @@
 # 回答完成通知：权限调研与实施计划
 
-日期：2026-10-18。状态：A／B 阶段已实现，完成本地规则、原生运行时与生产 SW 验证；C 阶段真实设备推送及 Cloudflare CPU 测量待验收。生产 VAPID 密钥已配置为 Worker Secrets，没有在用户设备申请权限。
+日期：2026-10-18。状态：A／B 阶段已实现，完成本地规则、原生运行时、生产 SW 和 Cloudflare 加密路径验证；C 阶段真实设备推送及完整投递资源测量待验收。生产 VAPID 密钥已配置为 Worker Secrets，没有在用户设备申请权限。
 
 ## 目标与结论
 
@@ -167,7 +167,8 @@ Apple 平台依据：[iOS／iPadOS Web Push](https://webkit.org/blog/13878/)、[
 - 标准实现选择 `@block65/webcrypto-web-push@2.0.0`。单测用独立 Node ECDH／HKDF／AES-GCM 解密验证 RFC 8291，并验证 RFC 8292 VAPID 签名与端点 audience；没有把旧版 `aesgcm` 当作当前协议。
 - 本地 394 项单元测试和类型检查通过；原生运行时已验证普通／重新生成幂等、工具最终一次、失败／取消／手动编辑／摘要不通知。完整 40 项生产 PWA 回归和 2 项 Access 回归通过；生产构建 SW 验证首启无权限弹窗、主动启用、本地系统通知、多窗口去重及保存乱序。测试使用完整 Chromium 的新 headless 模式，headless-shell 不支持通知授权。
 - 新增空表不转换、扫描或回填历史数据。已有对象初始化只建新功能表，历史数据如需维护仍走离线运维。
+- 增补通知点击的 SPA 分支定位与草稿保留回归。隔离 Cloudflare Worker 的 10 次加密／独立解密／VAPID 验签通过，并修复 `redirect: 'error'` 在平台不受支持的问题，改用不跟随重定向的 `manual`。平台 CPU 样本和清理证据见[测量记录](../measurements/notifications-cloudflare-2026-10-18.md)；此轮使用模拟网关，不算真实系统推送验收。
 
-以下不因本地测试通过而标记完成：真实 Apple／FCM 网关接收、iOS 和 macOS PWA 锁屏／关闭投递、权限撤销、Access 过期后的通知点击、系统专注模式，以及真实 Cloudflare CPU／请求／SQL 用量。浏览器 CDP 模拟 push 不经过网络加密和推送网关，不能作为这些项目的证据。
+以下不因本地测试通过而标记完成：真实 Apple／FCM 网关接收、iOS 和 macOS PWA 锁屏／关闭投递、权限撤销、Access 过期后的通知点击、系统专注模式，以及完整投递流程的真实 Cloudflare CPU／请求／SQL 用量。浏览器 CDP 模拟 push 不经过网络加密和推送网关，不能作为这些项目的证据。
 
 上线后先由用户在目标 PWA 中点击启用并允许通知，确认「后台推送已就绪」，再以无私人内容的短回答验证前台／后台／关闭、多窗口和分支定位。测试按钮只验证当前 SW 显示，不宣称远程验收。密钥配置及操作见[部署文档](../operations/cloudflare-deployment.md#回答完成通知)。

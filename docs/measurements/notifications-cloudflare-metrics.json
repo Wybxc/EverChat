@@ -1,0 +1,47 @@
+{
+  "queriedAt": "2026-10-18T08:57:04.855Z",
+  "workerName": "everchat-notifications-validation",
+  "window": {
+    "start": "2026-10-18T08:56:00.000Z",
+    "end": "2026-10-18T08:57:00.000Z"
+  },
+  "units": {
+    "cpuTime": "microseconds",
+    "cpuTimeUs": "microseconds",
+    "memoryUsageBytes": "bytes"
+  },
+  "scope": "Isolated crypto wrapper and mock gateway only. Adaptive analytics may be sampled; empty data is unavailable, never zero. Includes identity/noop/setup requests in this minute, not full DO/SQL or real gateway delivery.",
+  "data": {
+    "viewer": {
+      "accounts": [
+        {
+          "workersInvocationsAdaptive": [
+            {
+              "avg": {
+                "sampleInterval": 1.3846153846153846
+              },
+              "dimensions": {
+                "status": "success",
+                "usageModel": "standard"
+              },
+              "max": {
+                "cpuTime": 7999,
+                "memoryUsageBytes": 3958251
+              },
+              "quantiles": {
+                "cpuTimeP50": 2474,
+                "cpuTimeP99": 7999
+              },
+              "sum": {
+                "cpuTimeUs": 49922,
+                "errors": 0,
+                "requests": 18
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "errors": null
+}

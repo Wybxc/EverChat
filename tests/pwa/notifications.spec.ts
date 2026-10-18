@@ -6,6 +6,7 @@ import {
   type WebSocketRoute,
 } from '@playwright/test';
 import { NOTIFICATION_CHANNEL, type NotificationDevice } from '../../shared/notifications/protocol';
+import type { Snapshot } from '../../shared/streaming/protocol';
 import { openSpaceSettings } from '../support/browser/ui';
 
 test.use({ channel: 'chromium' });
@@ -256,4 +257,67 @@ test('browser-delivered push always displays, including foreground and duplicate
     },
   ]);
   await cdp.detach();
+});
+
+test('a simulated notification click enters the completed branch through SPA navigation and preserves the existing draft', async ({
+  page,
+  context,
+}) => {
+  const f = await fixture(context, page);
+  const conversationId = '00000000-0000-4000-8000-000000000101';
+  const source = (await page.request
+    .get(`/api/conversations/${conversationId}`)
+    .then((response) => response.json())) as Snapshot;
+  const userId = crypto.randomUUID(),
+    messageId = crypto.randomUUID();
+  source.messages[0].id = userId;
+  source.messages[1].id = messageId;
+  source.messages[1].parentId = userId;
+  await context.route(`**/api/conversations/${conversationId}?*`, (route) =>
+    route.fulfill({ json: { snapshot: source, after: 2, done: true } }),
+  );
+  await f.panel.getByLabel('回答完成通知').selectOption('always');
+  await f.panel.getByRole('button', { name: '启用系统通知', exact: true }).click();
+  await expect(f.panel.getByRole('status')).toHaveText('页面通知可用');
+  await page.getByRole('button', { name: '关闭设置', exact: true }).click();
+  await page.getByLabel('消息', { exact: true }).fill('通知前正在输入的草稿');
+  const marker = crypto.randomUUID();
+  await page.evaluate((value) => {
+    document.documentElement.dataset.notificationDocument = value;
+  }, marker);
+  f.emit({ conversationId, messageId, completedAt: Date.now() });
+  const worker = context.serviceWorkers()[0];
+  await expect
+    .poll(() =>
+      worker.evaluate(
+        async () => (await (globalThis as Probe).registration.getNotifications()).length,
+      ),
+    )
+    .toBe(1);
+  await worker.evaluate(async () => {
+    const notification = (await (globalThis as Probe).registration.getNotifications())[0];
+    const EventConstructor = (
+      globalThis as typeof globalThis & {
+        NotificationEvent: new (type: string, init: { notification: Notification }) => Event;
+      }
+    ).NotificationEvent;
+    const event = new EventConstructor('notificationclick', { notification });
+    let completion: Promise<unknown> | undefined;
+    // Synthetic events have no system activation. Exercise the real handler's routing,
+    // while leaving OS window activation to the explicit device acceptance test.
+    Object.defineProperty(event, 'waitUntil', {
+      value: (work: Promise<unknown>) => {
+        completion = work.catch((error: Error) => {
+          if (error.name !== 'InvalidAccessError' && error.name !== 'NotAllowedError') throw error;
+        });
+      },
+    });
+    globalThis.dispatchEvent(event);
+    await completion;
+  });
+  await expect(page).toHaveURL(`/c/${conversationId}?branch=${messageId}`);
+  await expect(page.getByTestId('assistant-message')).toContainText('已保存的正文');
+  await expect(page.locator('html')).toHaveAttribute('data-notification-document', marker);
+  await page.getByRole('button', { name: '开启新对话', exact: true }).click();
+  await expect(page.getByLabel('消息', { exact: true })).toHaveValue('通知前正在输入的草稿');
 });

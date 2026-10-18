@@ -1,0 +1,9 @@
+{
+  "checkedAt": "2026-10-18T08:58:48.803Z",
+  "workerName": "everchat-notifications-validation",
+  "settingsStatus": 404,
+  "workerDeleted": true,
+  "ephemeralSecretsFileDeleted": true,
+  "productionResourcesChanged": false,
+  "scope": "Only the temporary crypto benchmark Worker and its ephemeral keys were removed. No DO/R2/Workflow resources were created by this benchmark."
+}

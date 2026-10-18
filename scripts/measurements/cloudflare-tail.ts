@@ -13,6 +13,7 @@ const { values } = parseArgs({
 const configs: Record<string, string> = {
   'everchat-stream-validation': 'wrangler.stream-validation.jsonc',
   'everchat-tools-validation': 'wrangler.tool-validation.jsonc',
+  'everchat-notifications-validation': 'wrangler.notification-validation.jsonc',
 };
 if (!values.worker || !Object.hasOwn(configs, values.worker))
   throw new Error('Use only an isolated validation Worker');
@@ -85,7 +86,7 @@ child.stdout.on('data', (data: string) => {
             ':id',
           );
           path =
-            /^\/api\/(session|login|logout|settings\/(?:web-tools|providers(?:\/:id\/models)?)|conversations(?:\/:id(?:\/(sync|messages|measurements|cancel|title))?)?|__validation\/(?:storage|identity|library|conversations\/:id\/(?:prepare|status)))$/.test(
+            /^\/api\/(session|login|logout|settings\/(?:web-tools|providers(?:\/:id\/models)?)|conversations(?:\/:id(?:\/(sync|messages|measurements|cancel|title))?)?|__validation\/(?:storage|identity|library|notifications\/(?:identity|noop|encrypt)|conversations\/:id\/(?:prepare|status)))$/.test(
               candidate,
             )
               ? candidate
