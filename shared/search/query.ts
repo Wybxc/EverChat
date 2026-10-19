@@ -26,6 +26,21 @@ export interface LibrarySearch {
 export const SEARCH_PAGE_SIZE = 20;
 export const SEARCH_QUERY_LIMIT = 200;
 export const normalizeSearch = (text: string) => text.toLowerCase().replace(/\s+/gu, ' ').trim();
+export function searchMatchRanges(text: string, query: string): { start: number; end: number }[] {
+  if (!query.trim()) return [];
+  const pattern = new RegExp(
+    query
+      .trim()
+      .split(/\s+/u)
+      .map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+      .join('\\s+'),
+    'giu',
+  );
+  return Array.from(text.matchAll(pattern), (match) => ({
+    start: match.index,
+    end: match.index + match[0].length,
+  }));
+}
 // GLOB has no ESCAPE clause. Bracket expressions quote its three metacharacters.
 export const literalGlob = (text: string) =>
   `*${text.replace(/[\[*?]/gu, (character) => `[${character}]`)}*`;

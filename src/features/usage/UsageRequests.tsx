@@ -27,7 +27,7 @@ export function RecordCost({ record }: { record: UsageRecord }) {
     </span>
   );
 }
-type Locate = (conversationId: string, messageId: string) => void;
+type Locate = ((conversationId: string, messageId: string) => void) | undefined;
 function RequestDetails({ record, onLocate }: { record: UsageRecord; onLocate: Locate }) {
   const client = useQueryClient(),
     [error, setError] = useState(''),
@@ -94,7 +94,8 @@ function RequestDetails({ record, onLocate }: { record: UsageRecord; onLocate: L
                 !event.metaKey &&
                 !event.ctrlKey &&
                 !event.shiftKey &&
-                !event.altKey
+                !event.altKey &&
+                onLocate
               ) {
                 event.preventDefault();
                 onLocate(record.conversationId!, record.messageId!);

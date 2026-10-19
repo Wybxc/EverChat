@@ -5,6 +5,7 @@ import type { UsageAttempt, UsageFilter, UsagePriceInput } from '../../shared/us
 import { UsageLedger } from './store';
 import { USAGE_SCHEMA } from './schema';
 import { json } from '../http/response';
+import { catalogPrice } from '../../shared/usage/catalog';
 
 export class UsageStore extends DurableObject<Env> {
   private readonly ledger: UsageLedger;
@@ -19,8 +20,17 @@ export class UsageStore extends DurableObject<Env> {
   price(providerId: string, model: string) {
     return this.ledger.price(providerId, model);
   }
-  prices() {
-    return this.ledger.prices();
+  async prices() {
+    const manual = this.ledger.prices();
+    const settings = await this.env.LIBRARY.getByName('personal').providerSettings();
+    const defaults = settings.providers.flatMap((provider) =>
+      provider.models.flatMap((model) => {
+        if (manual.some((price) => price.providerId === provider.id && price.model === model.id))
+          return [];
+        return catalogPrice(provider.id, model.id, provider.baseUrl) ?? [];
+      }),
+    );
+    return [...manual, ...defaults];
   }
   dimensions() {
     return this.ledger.dimensions();
@@ -43,7 +53,14 @@ export class UsageStore extends DurableObject<Env> {
   correct(id: string, amount: string, reason: string) {
     return this.ctx.storage.transactionSync(() => this.ledger.correct(id, amount, reason));
   }
-  reprice(id: string) {
-    return this.ctx.storage.transactionSync(() => this.ledger.reprice(id));
+  async reprice(id: string) {
+    const record = this.ledger.get(id);
+    let fallback = null;
+    if (record && !record.price && !this.ledger.price(record.providerId, record.model)) {
+      const settings = await this.env.LIBRARY.getByName('personal').providerSettings();
+      const provider = settings.providers.find((p) => p.id === record.providerId);
+      if (provider) fallback = catalogPrice(record.providerId, record.model, provider.baseUrl);
+    }
+    return this.ctx.storage.transactionSync(() => this.ledger.reprice(id, fallback));
   }
 }

@@ -94,9 +94,12 @@ test('cross-conversation search uses paginated literal text and jumps to the mat
       expect((await search(page.request, query)).results.length, query).toBeGreaterThan(0);
     await page.goto('/');
     await page.getByRole('button', { name: '全局搜索', exact: true }).click();
+    await page.getByRole('combobox', { name: '搜索对话', exact: true }).fill('跨对话');
+    await expect(page.locator('[data-testid="global-search"] mark').first()).toHaveText('跨对话');
     await page.getByRole('combobox', { name: '搜索对话', exact: true }).fill('全文TOKEN');
     const results = page.getByRole('region', { name: '正文搜索结果' });
     await expect(results.getByRole('link')).toHaveCount(20);
+    await expect(results.getByRole('link').first().locator('mark')).toHaveText('全文TOKEN');
     await results.getByRole('button', { name: '加载更多结果' }).focus();
     await page.keyboard.press('Enter');
     await expect(results.getByRole('link')).toHaveCount(40);

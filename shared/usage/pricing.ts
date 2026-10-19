@@ -92,7 +92,20 @@ export function estimateCost(
       (usage.textOutputTokens ?? 0) + (usage.reasoningTokens ?? 0) > usage.outputTokens
     )
       return { ...unknown, state: 'invalid' };
-    add(usage.outputTokens, price.output);
+    if (price.reasoning != null && differentOutput(price.reasoning, price.output)) {
+      if (usage.reasoningTokens === undefined) {
+        missing = true;
+        if (usage.textOutputTokens !== undefined) add(usage.textOutputTokens, price.output);
+      } else {
+        add(
+          usage.outputTokens === undefined
+            ? usage.textOutputTokens
+            : usage.outputTokens - usage.reasoningTokens,
+          price.output,
+        );
+        add(usage.reasoningTokens, price.reasoning);
+      }
+    } else add(usage.outputTokens, price.output);
     if (price.perRequest !== null) {
       amount += decimalMicros(price.perRequest) * 1_000_000n;
       known = true;
@@ -103,4 +116,8 @@ export function estimateCost(
     amount: known ? amount.toString() : null,
     state: !known ? 'unpriced' : missing ? 'partial' : 'priced',
   };
+}
+
+function differentOutput(reasoning: string, output: string | null) {
+  return output === null || decimalMicros(reasoning) !== decimalMicros(output);
 }

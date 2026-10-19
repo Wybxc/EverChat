@@ -1,6 +1,18 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { literalGlob, searchCandidateGlob } from '../../../shared/search/query';
+import { literalGlob, searchCandidateGlob, searchMatchRanges } from '../../../shared/search/query';
+
+test('search highlighting matches literal phrases, preserves source positions and ignores empty queries', () => {
+  const text = '全文TOKEN 和 全文token · [a+b] · alpha\n beta · <script>';
+  const found = (query: string) =>
+    searchMatchRanges(text, query).map((r) => text.slice(r.start, r.end));
+  assert.deepEqual(found('全文token'), ['全文TOKEN', '全文token']);
+  assert.deepEqual(found('[a+b]'), ['[a+b]']);
+  assert.deepEqual(found(' alpha  beta '), ['alpha\n beta']);
+  assert.deepEqual(found('<script>'), ['<script>']);
+  assert.deepEqual(found('  '), []);
+  assert.deepEqual(found('.*'), []);
+});
 
 test('search candidates fit the DO 50-byte pattern limit without splitting UTF-8 or escaped glob characters', () => {
   for (const text of [

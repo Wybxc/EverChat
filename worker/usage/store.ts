@@ -213,11 +213,11 @@ export class UsageLedger {
     this.rollup(record, 1);
     return record;
   }
-  reprice(id: string) {
+  reprice(id: string, fallback: UsagePrice | null = null) {
     const record = this.get(id);
     if (!record || record.price || record.status === 'running')
       throw new Error('只能为此前未定价的已结束请求补充价格。');
-    const price = this.price(record.providerId, record.model);
+    const price = this.price(record.providerId, record.model) ?? fallback;
     if (!price) throw new Error('请先配置模型价格。');
     this.rollup(record, -1);
     record.price = price;

@@ -15,6 +15,7 @@ import {
 const rates = [
   ['input', '每百万输入 Token'],
   ['output', '每百万输出 Token'],
+  ['reasoning', '每百万思考 Token'],
   ['cacheRead', '每百万缓存读取 Token'],
   ['cacheWrite', '每百万缓存写入 Token'],
   ['perRequest', '每次请求'],
@@ -71,6 +72,7 @@ export function PriceEditor({
     currency: saved?.currency ?? 'CNY',
     input: saved?.input ?? null,
     output: saved?.output ?? null,
+    reasoning: saved?.reasoning ?? null,
     cacheRead: saved?.cacheRead ?? null,
     cacheWrite: saved?.cacheWrite ?? null,
     perRequest: saved?.perRequest ?? null,
@@ -161,12 +163,18 @@ export function PriceEditor({
       </label>
       <p className="text-xs text-muted-foreground">
         留空表示未知，0
-        表示免费。缓存单价留空时继承输入单价。阶梯、套餐等复杂计费请在请求详情中修正。
+        表示免费。缓存单价留空时继承输入单价，思考单价留空时继承输出单价。阶梯、套餐等复杂计费请在请求详情中修正。
       </p>
-      {saved && (
+      {saved?.id.startsWith('models.dev:') ? (
         <p className="text-xs text-muted-foreground">
-          当前价格生效于 {new Date(saved.effectiveFrom).toLocaleString()}
+          默认参考价格：{saved.source} · USD。保存后使用自定义价格。
         </p>
+      ) : (
+        saved && (
+          <p className="text-xs text-muted-foreground">
+            当前价格生效于 {new Date(saved.effectiveFrom).toLocaleString()}
+          </p>
+        )
       )}
       {error && (
         <p role="alert" className="text-sm text-destructive">

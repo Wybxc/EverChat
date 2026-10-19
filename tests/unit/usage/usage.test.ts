@@ -7,6 +7,8 @@ import { priceInputSchema, type UsageAttempt, type UsagePrice } from '../../../s
 import { USAGE_OUTBOX_SCHEMA, USAGE_SCHEMA } from '../../../worker/usage/schema';
 import { UsageLedger } from '../../../worker/usage/store';
 import { UsageOutbox } from '../../../worker/usage/outbox';
+import { UsageAccounting, modelIdentity } from '../../../worker/usage/accounting';
+import type { Env } from '../../../worker/http/env';
 import type { SqlQuery } from '../../../worker/generation/metrics';
 
 const price: UsagePrice = {
@@ -73,6 +75,53 @@ function fixture() {
     },
   };
 }
+test('accounting chooses manual prices before endpoint defaults, snapshots them once, and leaves lookup failures unpriced', async () => {
+  const s = fixture();
+  try {
+    let configured: UsagePrice | null = null,
+      fail = false;
+    const accounting = new UsageAccounting(
+      s.query,
+      {
+        USAGE: {
+          getByName: () => ({
+            price: async () => {
+              if (fail) throw new Error('unavailable');
+              return configured;
+            },
+          }),
+        },
+      } as unknown as Pick<Env, 'USAGE'>,
+      async () => {},
+    );
+    const model = modelIdentity({
+      provider: 'openai-chat',
+      providerId: 'instance',
+      baseUrl: 'https://api.deepseek.com/',
+      model: 'deepseek-flash',
+      systemPrompt: '',
+      maxOutputTokens: null,
+    });
+    const start = (id: string) =>
+      accounting.start(
+        { id, taskId: id, conversationId: null, messageId: null, kind: 'chat' },
+        model,
+      );
+    await start('default');
+    assert.equal(accounting.get('default')?.price?.currency, 'USD');
+    assert.equal(Object.hasOwn(accounting.get('default')!, 'baseUrl'), false);
+    configured = { ...price, providerId: 'instance', model: model.model, input: '0' };
+    await start('manual');
+    assert.equal(accounting.get('manual')?.price?.id, price.id);
+    assert.equal(accounting.get('manual')?.price?.input, '0');
+    assert.equal(accounting.get('default')?.price?.currency, 'USD');
+    fail = true;
+    await start('outage');
+    assert.equal(accounting.get('outage')?.price, null);
+  } finally {
+    s.db.close();
+  }
+});
 test('fixed decimal pricing excludes cache and reasoning subsets from double billing', () => {
   assert.deepEqual(estimateCost(attempt().usage, true, price, 'chat'), {
     currency: 'CNY',

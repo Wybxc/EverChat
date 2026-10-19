@@ -7,6 +7,7 @@ import { conversationUrl } from '../../app/useConversationRoute';
 import type { LibrarySearch as SearchPage, SearchResult } from '../../../shared/search/query';
 import { deletedAt } from '../chat/cache';
 import { SearchResultItem } from './SearchResultItem';
+import { SearchHighlight } from './SearchHighlight';
 
 export function LibrarySearch({
   query,
@@ -74,10 +75,11 @@ export function LibrarySearch({
                   open={() => open(result, debounced)}
                 >
                   <span className="block truncate text-xs font-medium">
-                    {result.title} · {result.field === 'reasoning' ? '思考' : '正文'}
+                    <SearchHighlight text={result.title} query={debounced} /> ·{' '}
+                    {result.field === 'reasoning' ? '思考' : '正文'}
                   </span>
                   <span className="mt-1 block line-clamp-3 break-words text-xs text-muted-foreground">
-                    {result.excerpt}
+                    <SearchHighlight text={result.excerpt} query={debounced} />
                   </span>
                 </SearchResultItem>
               </li>

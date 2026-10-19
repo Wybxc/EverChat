@@ -19,6 +19,7 @@ export const priceInputSchema = v.strictObject({
   currency: v.pipe(v.string(), v.regex(/^[A-Z]{3}$/)),
   input: rate,
   output: rate,
+  reasoning: v.optional(rate),
   cacheRead: rate,
   cacheWrite: rate,
   perRequest: rate,

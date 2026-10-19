@@ -1,5 +1,142 @@
 import { expect, test } from '@playwright/test';
+import { emptyTotals } from '../../../worker/usage/aggregate';
+test.use({ hasTouch: true });
 const headers = { Origin: 'http://127.0.0.1:5174' };
+test('configured official models receive catalog defaults and explicit custom zero pricing overrides them', async ({
+  request,
+}) => {
+  await request.post('/__dev/access/login', { headers });
+  const original = await request.get('/api/settings/providers').then((response) => response.json());
+  const providerId = crypto.randomUUID();
+  try {
+    expect(
+      (
+        await request.put('/api/settings/providers', {
+          headers,
+          data: {
+            ...original,
+            activeProviderId: providerId,
+            activeModel: 'deepseek-flash',
+            providers: [
+              {
+                id: providerId,
+                name: '默认价格验证',
+                provider: 'openai-chat',
+                baseUrl: 'https://api.deepseek.com/',
+                apiKey: 'integration-test-key',
+                models: [{ id: 'deepseek-flash', name: 'Flash', enabled: true }],
+              },
+            ],
+          },
+        })
+      ).ok(),
+    ).toBe(true);
+    const prices = () => request.get('/api/usage/prices').then((response) => response.json());
+    const price = (await prices()).find(
+      (entry: { providerId: string }) => entry.providerId === providerId,
+    );
+    expect(price).toMatchObject({
+      currency: 'USD',
+      input: '0.15',
+      output: '0.6',
+      cacheRead: '0.003',
+      reasoning: '0.6',
+    });
+    expect(price.id).toMatch(/^models.dev:/);
+    const { id: _id, effectiveFrom: _at, ...input } = price;
+    expect(
+      (
+        await request.put('/api/usage/prices', {
+          headers,
+          data: { ...input, input: '0', source: '自定义' },
+        })
+      ).ok(),
+    ).toBe(true);
+    expect(
+      (await prices()).filter((entry: { providerId: string }) => entry.providerId === providerId),
+    ).toMatchObject([{ input: '0', source: '自定义' }]);
+  } finally {
+    await request.put('/api/settings/providers', { headers, data: original });
+  }
+});
+test('line trend supports tooltips, keyboard inspection, metric switching and range selection on compact layouts', async ({
+  page,
+}) => {
+  await page.request.post('/__dev/access/login', { headers });
+  const trend = Array.from({ length: 12 }, (_, index) => ({
+    ...emptyTotals(),
+    key: `2026-10-${String(index + 1).padStart(2, '0')}`,
+    label: `2026-10-${String(index + 1).padStart(2, '0')}`,
+    at: Date.UTC(2026, 9, index + 1),
+    requests: index + 1,
+    inputTokens: 1000 * index,
+    outputTokens: 100 * index,
+    currencies: { USD: String(BigInt(index + 1) * 1000000000n) },
+  }));
+  await page.route('**/api/usage/report?*', (route) =>
+    route.fulfill({
+      json: { totals: emptyTotals(), trend, providers: [], models: [], collectedSince: null },
+    }),
+  );
+  await page.goto('/');
+  await page.getByRole('button', { name: '空间设置', exact: true }).click();
+  await page.getByRole('tab', { name: '用量统计', exact: true }).click();
+  const chart = page.getByRole('figure', { name: '用量趋势图' });
+  await expect(chart.locator('.recharts-line-curve')).toBeVisible();
+  await chart.locator('.recharts-wrapper').tap({ position: { x: 120, y: 70 } });
+  await expect(chart.locator('.recharts-tooltip-wrapper')).toBeVisible();
+  const plot = chart.locator('.recharts-surface').first();
+  await plot.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(chart.locator('.recharts-tooltip-wrapper')).toBeVisible();
+  await expect(chart.locator('.recharts-tooltip-wrapper')).toContainText('次请求');
+  await chart.getByLabel('趋势指标').selectOption('tokens');
+  await plot.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(chart.locator('.recharts-tooltip-wrapper')).toContainText('Tokens');
+  await chart.getByLabel('趋势指标').selectOption('USD');
+  await plot.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(chart.locator('.recharts-tooltip-wrapper')).toContainText('USD');
+  const travellers = chart.locator('.recharts-brush-traveller');
+  await expect(travellers).toHaveCount(2);
+  const handle = await travellers.last().boundingBox();
+  expect(handle).toBeTruthy();
+  await page.mouse.move(handle!.x + handle!.width / 2, handle!.y + handle!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(handle!.x - 90, handle!.y + handle!.height / 2);
+  await page.mouse.up();
+  await expect
+    .poll(() =>
+      travellers
+        .last()
+        .boundingBox()
+        .then((box) => box!.x),
+    )
+    .toBeLessThan(handle!.x - 50);
+  await page.setViewportSize({ width: 390, height: 740 });
+  await expect(chart.locator('.recharts-line-curve')).toBeVisible();
+  await expect
+    .poll(() => chart.evaluate((element) => element.scrollWidth <= element.clientWidth))
+    .toBe(true);
+  await expect
+    .poll(() =>
+      page
+        .getByRole('dialog', { name: '设置', exact: true })
+        .boundingBox()
+        .then((box) => Math.round(box!.x)),
+    )
+    .toBe(0);
+  await expect
+    .poll(() =>
+      page
+        .getByRole('dialog', { name: '设置', exact: true })
+        .boundingBox()
+        .then((box) => Math.round(box!.y)),
+    )
+    .toBe(0);
+  await page.screenshot({ path: '/tmp/everchat-usage-line-phone.png' });
+});
 for (const mobile of [false, true])
   test(`usage filters, pricing, export and dismissal work on ${mobile ? 'phone' : 'desktop'}`, async ({
     page,
@@ -58,14 +195,33 @@ for (const mobile of [false, true])
       await page.goto('/');
       await expect(page.getByRole('textbox', { name: '消息', exact: true })).toBeVisible();
       if (mobile) await page.getByRole('button', { name: '打开对话列表', exact: true }).click();
-      await page.getByRole('button', { name: '用量统计', exact: true }).click();
-      const dialog = page.getByRole('dialog', { name: '用量统计', exact: true });
+      await page.getByRole('button', { name: '空间设置', exact: true }).click();
+      await page.getByRole('tab', { name: '用量统计', exact: true }).click();
+      const dialog = page.getByRole('dialog', { name: '设置', exact: true });
       await expect(dialog).toBeVisible();
       await dialog.getByLabel('统计供应商', { exact: true }).selectOption(providerId);
       await expect(dialog.getByText('模型请求／回答', { exact: true })).toBeVisible();
       await dialog.getByRole('tab', { name: '请求', exact: true }).click();
-      await expect(dialog.locator('summary')).toContainText(providerName);
-      await dialog.locator('summary').click();
+      expect(
+        await dialog
+          .getByRole('tab', { name: '请求', exact: true })
+          .evaluate((element) => getComputedStyle(element).outlineStyle),
+      ).toBe('none');
+      expect(
+        await dialog
+          .getByRole('tablist', { name: '统计分类' })
+          .evaluate((element) => getComputedStyle(element).outlineStyle),
+      ).toBe('none');
+      await page.keyboard.press('ArrowRight');
+      await expect(dialog.getByRole('tab', { name: '定价', exact: true })).toBeFocused();
+      expect(
+        await dialog
+          .getByRole('tab', { name: '定价', exact: true })
+          .evaluate((element) => getComputedStyle(element).outlineStyle),
+      ).toBe('solid');
+      await dialog.getByRole('tab', { name: '请求', exact: true }).click();
+      await expect(dialog.locator('#usage-panel-requests summary')).toContainText(providerName);
+      await dialog.locator('#usage-panel-requests summary').click();
       await expect(dialog.getByRole('link', { name: '定位回答' })).toBeVisible();
       await dialog.getByRole('tab', { name: '定价', exact: true }).click();
       const row = dialog
@@ -81,7 +237,7 @@ for (const mobile of [false, true])
       await expect(editor).not.toBeVisible();
       await dialog.getByRole('tab', { name: '请求', exact: true }).click();
       if (!(await dialog.getByRole('button', { name: '按当前价格补算' }).isVisible()))
-        await dialog.locator('summary').click();
+        await dialog.locator('#usage-panel-requests summary').click();
       await dialog.getByRole('button', { name: '按当前价格补算' }).click();
       await expect(dialog.getByText('CNY 0.000060', { exact: true })).toBeVisible();
       await dialog.getByLabel('修正金额', { exact: true }).fill('0.01');

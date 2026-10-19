@@ -42,6 +42,7 @@ type PanelProps = {
   authenticated?: boolean;
   themeControl: ReactNode;
   onLogout?: () => void;
+  onLocate?: (conversationId: string, messageId: string) => void;
 };
 const tabs = [
   { id: 'general', label: '通用' },
@@ -49,10 +50,12 @@ const tabs = [
   { id: 'chat', label: '对话' },
   { id: 'presets', label: '预设' },
   { id: 'web-tools', label: '联网' },
+  { id: 'usage', label: '用量统计' },
   { id: 'shares', label: '分享' },
 ] as const;
 export type SettingsTab = (typeof tabs)[number]['id'];
 const ShareManagement = lazy(() => import('../features/sharing/ShareManagement'));
+const UsageSettings = lazy(() => import('../features/usage/UsageSettings'));
 
 export function SettingsPanel(props: PanelProps) {
   const { open, requestedTab, authenticated = true } = props;
@@ -226,6 +229,17 @@ export function SettingsPanel(props: PanelProps) {
                   >
                     <Suspense fallback={<LoadingContent label="正在读取分享" />}>
                       <ShareManagement active />
+                    </Suspense>
+                  </section>
+                )}
+                {open && tab === 'usage' && (
+                  <section
+                    id="settings-panel-usage"
+                    role="tabpanel"
+                    aria-labelledby="settings-tab-usage"
+                  >
+                    <Suspense fallback={<LoadingContent label="正在读取用量统计" />}>
+                      <UsageSettings onLocate={props.onLocate} />
                     </Suspense>
                   </section>
                 )}

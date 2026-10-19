@@ -3,6 +3,7 @@ import type { UsageAttempt } from '../../shared/usage/types';
 import type { Env } from '../http/env';
 import type { SqlQuery } from '../generation/metrics';
 import { UsageOutbox } from './outbox';
+import { catalogPrice } from '../../shared/usage/catalog';
 
 export type AttemptIdentity = Pick<
   UsageAttempt,
@@ -15,6 +16,7 @@ export function modelIdentity(config: ProviderConfig) {
     protocol: config.provider,
     model: config.model,
     modelName: config.modelName ?? config.model,
+    baseUrl: config.baseUrl,
   };
 }
 
@@ -30,14 +32,22 @@ export class UsageAccounting extends UsageOutbox {
   }
   async start(
     identity: AttemptIdentity,
-    model: Pick<UsageAttempt, 'providerId' | 'providerName' | 'protocol' | 'model' | 'modelName'>,
+    model: Pick<
+      UsageAttempt,
+      'providerId' | 'providerName' | 'protocol' | 'model' | 'modelName'
+    > & { baseUrl?: string },
   ) {
     if (!this.env.USAGE) return;
-    const price = await this.env.USAGE.getByName('personal')
+    const manualPrice = await this.env.USAGE.getByName('personal')
       .price(model.providerId, model.model)
-      .catch(() => null);
+      .catch(() => undefined);
     if (!this.live()) throw new DOMException('Request cancelled', 'AbortError');
-    this.begin({ ...identity, ...model, startedAt: Date.now() }, price);
+    const { baseUrl, ...identityModel } = model;
+    const price =
+      manualPrice === undefined
+        ? null
+        : (manualPrice ?? (baseUrl ? catalogPrice(model.providerId, model.model, baseUrl) : null));
+    this.begin({ ...identity, ...identityModel, startedAt: Date.now() }, price);
     // This fact must survive before the external side effect is possible.
     await this.sync();
   }

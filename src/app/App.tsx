@@ -28,7 +28,6 @@ import {
   Menu,
   Paperclip,
   Search,
-  ChartNoAxesCombined,
   SlidersHorizontal,
   Square,
   Upload,
@@ -147,7 +146,6 @@ import {
   type CommandId,
 } from './commands';
 
-const UsageDialog = lazy(() => import('../features/usage/UsageDialog'));
 const ShareDialog = lazy(() => import('../features/sharing/ShareDialog'));
 
 export function App({
@@ -271,11 +269,11 @@ export function App({
       });
     else setSidebarOpen((value) => !value);
   };
-  const [usageOpen, setUsageOpen] = useState(false);
   const [shareFor, setShareFor] = useState<string | null>(null);
   useEffect(() => {
     const open = () => {
-      setUsageOpen(true);
+      setRequestedSettingsTab('usage');
+      openSettings();
       setSidebarOpen(false);
     };
     window.addEventListener('everchat:open-usage', open);
@@ -1464,17 +1462,6 @@ export function App({
                 </div>
               )}
             </div>
-            <Button
-              variant="ghost"
-              className="mx-2 shrink-0 justify-start gap-2 px-3"
-              onClick={() => {
-                setUsageOpen(true);
-                setSidebarOpen(false);
-              }}
-            >
-              <ChartNoAxesCombined className="size-4" />
-              用量统计
-            </Button>
             <SpaceSettingsButton open={openSettings} />
           </Sidebar>
         }
@@ -2310,33 +2297,17 @@ export function App({
           )}
         </Suspense>
       )}
-      {usageOpen && session?.authenticated && (
-        <Suspense
-          fallback={
-            <Modal open={usageOpen} onOpenChange={setUsageOpen} showCloseButton>
-              <div className="w-full max-w-lg p-4">
-                <ModalTitle>用量统计</ModalTitle>
-                <LoadingContent label="正在打开用量统计" />
-              </div>
-            </Modal>
-          }
-        >
-          <UsageDialog
-            open={usageOpen}
-            onOpenChange={setUsageOpen}
-            onLocate={(id, messageId) => {
-              setUsageOpen(false);
-              navigate(id, false, messageId);
-            }}
-          />
-        </Suspense>
-      )}
       <SettingsPanel
         open={settingsOpen}
         requestedTab={requestedSettingsTab}
         requestedProviderId={settingsOpen ? requestedProviderId : undefined}
         onTabChange={setRequestedSettingsTab}
         onSaved={providerSaved}
+        onLocate={(id, messageId) => {
+          setSettingsOpen(false);
+          setRequestedSettingsTab(undefined);
+          navigate(id, false, messageId);
+        }}
         themeControl={<ThemeControl />}
         onLogout={() => void logout()}
         render={(content) => (

@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Command, CommandInput, CommandList, CommandGroup } from '@/components/ui/command';
 import { LibrarySearch } from './LibrarySearch';
 import { SearchResultItem } from './SearchResultItem';
+import { SearchHighlight } from './SearchHighlight';
+import { normalizeSearch } from '../../../shared/search/query';
 
 export function GlobalSearch({
   conversations,
@@ -31,7 +33,7 @@ export function GlobalSearch({
   const [query, setQuery] = useState('');
   const input = useRef<HTMLInputElement>(null);
   const titles = conversations.filter((item) =>
-    item.title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()),
+    normalizeSearch(item.title).includes(normalizeSearch(query)),
   );
   return (
     <Modal
@@ -107,7 +109,9 @@ export function GlobalSearch({
                     href={conversationUrl(item.id)}
                     open={() => select(item.id)}
                   >
-                    <span className="block truncate">{item.title}</span>
+                    <span className="block truncate">
+                      <SearchHighlight text={item.title} query={query} />
+                    </span>
                   </SearchResultItem>
                 ))}
                 {loading && (
