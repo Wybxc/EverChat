@@ -186,8 +186,9 @@ export class Conversation extends ProductionConversation {
     call: WebToolCall,
     signal: AbortSignal,
     service?: WebToolServiceConfig,
+    beforeRequest?: () => Promise<void>,
   ): Promise<WebToolOutcome> {
-    if (this.serviceMode()) return super.executeWebTool(call, signal, service);
+    if (this.serviceMode()) return super.executeWebTool(call, signal, service, beforeRequest);
     this.ctx.storage.sql.exec(
       'CREATE TABLE IF NOT EXISTS fixture_tool_calls (id TEXT PRIMARY KEY, calls INTEGER NOT NULL)',
     );

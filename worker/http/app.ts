@@ -12,6 +12,7 @@ import { registerNotificationRoutes } from '../notifications/routes';
 import { authenticateAccess, type Authenticator } from './auth';
 import { HttpError, json, type AppEnv } from './response';
 import { registerSessionRoutes } from './session-routes';
+import { registerUsageRoutes } from '../usage/routes';
 
 export type ApiRouter = Hono<AppEnv, Record<never, never>, '/api'>;
 export function createApi(
@@ -32,6 +33,7 @@ export function createApi(
   });
 
   registerSessionRoutes(app, logoutUrl);
+  registerUsageRoutes(app);
   registerNotificationRoutes(app);
   registerProvidersRoutes(app);
   registerWebToolsRoutes(app);

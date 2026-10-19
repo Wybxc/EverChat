@@ -12,6 +12,7 @@
   "include": ["scripts", "shared"],
   "exclude": [
     "scripts/operations",
+    "scripts/measurements/usage-ledger.ts",
     "scripts/measurements/support/*worker.ts",
     "scripts/dev/*worker.ts",
     "scripts/measurements/support/access.ts"

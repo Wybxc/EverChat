@@ -9,6 +9,8 @@ import { providerCallOptions, providerModel } from './sdk';
 import { probeImage } from './probe-image';
 import { httpProviderError, providerFailure } from './failure';
 import { ProviderError } from '../generation/errors';
+import { sdkUsage } from '../../shared/usage/normalize';
+import type { StreamUsage } from '../../shared/streaming/provider-stream';
 
 export const PROBE_TIMEOUT_MS = 15_000,
   PROBE_RESPONSE_BYTES = 64 * 1024;
@@ -20,6 +22,15 @@ export async function probeModelCapability(
   capability: ProbeCapability,
   signal: AbortSignal,
   fetch: typeof globalThis.fetch = globalThis.fetch,
+  accounting?: {
+    start: () => Promise<void>;
+    finish: (
+      status: 'completed' | 'failed' | 'cancelled',
+      usage: StreamUsage,
+      final: boolean,
+      httpStatus?: number,
+    ) => void;
+  },
 ): Promise<ModelProbeResult> {
   const nonce = crypto.randomUUID().replaceAll('-', '').slice(0, 6).toUpperCase();
   const timeout = AbortSignal.timeout(PROBE_TIMEOUT_MS),
@@ -69,9 +80,14 @@ export async function probeModelCapability(
         ]
       : undefined;
   let oversized = false;
+  let usage: StreamUsage = {},
+    final = false,
+    httpStatus: number | undefined;
   const boundedFetch: typeof globalThis.fetch = async (input, init) => {
     abort.throwIfAborted();
+    await accounting?.start();
     const response = await fetch(input, { ...init, signal: abort, redirect: 'manual' });
+    httpStatus = response.status;
     if (!response.ok) {
       throw await httpProviderError(response, config);
     }
@@ -130,6 +146,8 @@ export async function probeModelCapability(
     // A tool-capable model must make the actual call. No returned tool is executed.
     if (tools) options.toolChoice = { type: 'required' };
     const response = await providerModel(probeConfig, boundedFetch).doGenerate(options);
+    usage = sdkUsage(response.usage);
+    final = true;
     const content: LanguageModelV4Content[] = response.content;
     if (capability !== 'toolCalls') {
       const text = content
@@ -164,5 +182,12 @@ export async function probeModelCapability(
           ? error.details
           : providerFailure(config, 'connect'),
     };
+  } finally {
+    accounting?.finish(
+      signal.aborted ? 'cancelled' : final ? 'completed' : 'failed',
+      usage,
+      final,
+      httpStatus,
+    );
   }
 }

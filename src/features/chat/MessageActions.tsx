@@ -131,7 +131,9 @@ export function MessageActions({
           删除消息
         </ActionMenuItem>
       </ActionMenu>
-      {!user && !active && <GenerationMetadata generation={message.generation} />}
+      {!user && !active && (
+        <GenerationMetadata generation={message.generation} messageId={message.id} />
+      )}
       {!user && message.revisionOf && !message.generation && (
         <span className="px-1 text-xs">手动编辑</span>
       )}

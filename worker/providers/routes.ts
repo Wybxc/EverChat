@@ -2,8 +2,7 @@ import * as v from 'valibot';
 import { modelProbeInputSchema } from '../../shared/models/probe';
 import { requireAuth, uuidSchema } from '../http/access';
 import type { ApiRouter } from '../http/app';
-import { HttpError, json, parseBody } from '../http/response';
-import { probeModelCapability } from './probe';
+import { HttpError, parseBody } from '../http/response';
 
 export function registerProvidersRoutes(app: ApiRouter) {
   app.get('/settings/providers', async (context) => {
@@ -36,19 +35,10 @@ export function registerProvidersRoutes(app: ApiRouter) {
       maxBytes: 2048,
       tooLarge: '测试请求过大。',
     });
-    const profile = await context.env.LIBRARY.getByName('personal').providerForModelList(
+    return context.env.LIBRARY.getByName('personal').probeProviderModel(
       id,
       input.model,
-    );
-    if (!profile || !profile.models.some((model) => model.id === input.model))
-      throw new HttpError(404, '找不到这个模型。');
-    if (!profile.apiKey) throw new HttpError(400, '请先配置 API 密钥。');
-    return json(
-      await probeModelCapability(
-        { ...profile, model: input.model, systemPrompt: '', maxOutputTokens: null },
-        input.capability,
-        context.req.raw.signal,
-      ),
+      input.capability,
     );
   });
 }

@@ -19,6 +19,7 @@ export interface StorageSnapshot {
 export const MIGRATION_TABLES: Record<StoreKind, string[]> = {
   conversation: [
     'storage_schema',
+    'usage_outbox',
     'conversation_deletion',
     'messages',
     'submissions',
@@ -36,6 +37,7 @@ export const MIGRATION_TABLES: Record<StoreKind, string[]> = {
   ],
   library: [
     'storage_schema',
+    'usage_outbox',
     'conversation_metadata',
     'conversation_copies',
     'web_tool_service',

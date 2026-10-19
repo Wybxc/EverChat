@@ -29,6 +29,7 @@ export async function openProviderStream(
   loadImage?: (image: ImagePart) => Promise<Uint8Array>,
   loadDocument?: (file: DocumentPart) => Promise<string>,
   toolRequest?: ProviderToolRequest,
+  beforeRequest?: () => Promise<void>,
 ): Promise<ReadableStream<Uint8Array>> {
   if (!config.apiKey)
     throw new ProviderError('尚未配置供应商 API 密钥。', providerFailure(config, 'connect'));
@@ -123,6 +124,9 @@ export async function openProviderStream(
       reader.releaseLock();
     }
     if (!prepared) throw new Error('Missing provider request');
+    signal.throwIfAborted();
+    await beforeRequest?.();
+    signal.throwIfAborted();
     const response = await globalThis.fetch(prepared.input, {
       ...prepared.init,
       signal,

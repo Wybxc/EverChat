@@ -76,7 +76,7 @@ export function SummaryView({
         </Disclosure>
         {!isActive(message) && message.generation && (
           <div className="order-3 w-full sm:order-none sm:w-auto">
-            <GenerationMetadata generation={message.generation} />
+            <GenerationMetadata generation={message.generation} messageId={message.id} />
           </div>
         )}
         <ActionMenu

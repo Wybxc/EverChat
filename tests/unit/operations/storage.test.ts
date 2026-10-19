@@ -4,7 +4,10 @@ import { test } from 'node:test';
 import { migrateStorage } from '../../../scripts/operations/migrate-storage';
 import { decodeValue } from '../../../scripts/operations/storage-protocol';
 import { initializeConversation } from '../../../worker/conversation/schema';
-import { initializeStorageSchema } from '../../../worker/platform/storage-schema';
+import {
+  initializeStorageSchema,
+  STORAGE_SCHEMA_VERSION,
+} from '../../../worker/platform/storage-schema';
 import type { SqlQuery } from '../../../worker/generation/metrics';
 import { initializeConversationMetadata } from '../../../worker/library/metadata';
 
@@ -44,6 +47,42 @@ const snapshot = (db: DatabaseSync) =>
     .prepare("SELECT name,sql FROM sqlite_master WHERE type='table' ORDER BY name")
     .all()
     .map(({ name, sql }) => ({ name, sql, rows: db.prepare(`SELECT * FROM "${name}"`).all() }));
+
+test('schema 1 accounting upgrades are offline, including deleted conversations', () => {
+  for (const deleted of [false, true]) {
+    const local = new DatabaseSync(':memory:'),
+      remote = new DatabaseSync(':memory:');
+    try {
+      for (const db of [local, remote]) {
+        initializeConversation(storage(db).sql, false);
+        db.exec("UPDATE conversation_state SET epoch='fixed-schema-1-fixture'");
+        db.exec('DROP TABLE usage_outbox; UPDATE storage_schema SET version=1');
+        if (deleted) db.exec('INSERT INTO conversation_deletion VALUES (1,123)');
+      }
+      const original = snapshot(remote);
+      assert.throws(() => initializeConversation(storage(remote).sql, false), /本地运维迁移/);
+      assert.deepEqual(snapshot(remote), original);
+      const patch = migrateStorage(local, 'conversation');
+      for (const statement of patch)
+        remote.prepare(statement.sql).run(...statement.args.map(decodeValue));
+      assert.deepEqual(snapshot(remote), snapshot(local));
+      assert.equal(
+        remote.prepare('SELECT version FROM storage_schema').get()!.version,
+        STORAGE_SCHEMA_VERSION,
+      );
+      assert.equal(remote.prepare('SELECT COUNT(*) AS n FROM usage_outbox').get()!.n, 0);
+      initializeConversation(storage(remote).sql, false);
+      if (deleted)
+        assert.equal(
+          remote.prepare('SELECT deletedAt FROM conversation_deletion').get()!.deletedAt,
+          123,
+        );
+    } finally {
+      local.close();
+      remote.close();
+    }
+  }
+});
 
 test('application startup initializes a fresh schema repeatedly and rejects old or future databases without modifying them', () => {
   const db = new DatabaseSync(':memory:');

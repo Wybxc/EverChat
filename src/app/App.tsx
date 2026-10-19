@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import {
   MAX_MESSAGE_TEXT_BYTES,
   MESSAGE_TEXT_LIMIT_MESSAGE,
@@ -27,6 +28,7 @@ import {
   Menu,
   Paperclip,
   Search,
+  ChartNoAxesCombined,
   SlidersHorizontal,
   Square,
   Upload,
@@ -144,6 +146,8 @@ import {
   useAppCommands,
   type CommandId,
 } from './commands';
+
+const UsageDialog = lazy(() => import('../features/usage/UsageDialog'));
 
 export function App({
   initialSettings,
@@ -266,6 +270,15 @@ export function App({
       });
     else setSidebarOpen((value) => !value);
   };
+  const [usageOpen, setUsageOpen] = useState(false);
+  useEffect(() => {
+    const open = () => {
+      setUsageOpen(true);
+      setSidebarOpen(false);
+    };
+    window.addEventListener('everchat:open-usage', open);
+    return () => window.removeEventListener('everchat:open-usage', open);
+  }, []);
   const [settingsOpen, setSettingsOpen] = useState(initialSettings?.open ?? false);
   const [requestedSettingsTab, setRequestedSettingsTab] = useState<SettingsTab | undefined>(
     initialSettings?.tab,
@@ -1444,6 +1457,17 @@ export function App({
                 </div>
               )}
             </div>
+            <Button
+              variant="ghost"
+              className="mx-2 shrink-0 justify-start gap-2 px-3"
+              onClick={() => {
+                setUsageOpen(true);
+                setSidebarOpen(false);
+              }}
+            >
+              <ChartNoAxesCombined className="size-4" />
+              用量统计
+            </Button>
             <SpaceSettingsButton open={openSettings} />
           </Sidebar>
         }
@@ -2233,6 +2257,27 @@ export function App({
           </dl>
         </div>
       </Modal>
+      {usageOpen && session?.authenticated && (
+        <Suspense
+          fallback={
+            <Modal open={usageOpen} onOpenChange={setUsageOpen} showCloseButton>
+              <div className="w-full max-w-lg p-4">
+                <ModalTitle>用量统计</ModalTitle>
+                <LoadingContent label="正在打开用量统计" />
+              </div>
+            </Modal>
+          }
+        >
+          <UsageDialog
+            open={usageOpen}
+            onOpenChange={setUsageOpen}
+            onLocate={(id, messageId) => {
+              setUsageOpen(false);
+              navigate(id, false, messageId);
+            }}
+          />
+        </Suspense>
+      )}
       <SettingsPanel
         open={settingsOpen}
         requestedTab={requestedSettingsTab}

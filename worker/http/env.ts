@@ -1,11 +1,13 @@
 import type { Conversation } from '../conversation/durable-object';
 import type { Library } from '../library/durable-object';
 import type { ToolWorkflowParams } from '../web-tools/workflow';
+import type { UsageStore } from '../usage/durable-object';
 
 export interface Env {
   ASSETS: Fetcher;
   CONVERSATIONS: DurableObjectNamespace<Conversation>;
   LIBRARY: DurableObjectNamespace<Library>;
+  USAGE?: DurableObjectNamespace<UsageStore>;
   WEB_TOOLS: Workflow<ToolWorkflowParams>;
   ATTACHMENTS?: R2Bucket;
   ACCESS_TEAM_DOMAIN?: string;

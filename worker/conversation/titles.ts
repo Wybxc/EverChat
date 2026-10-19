@@ -1,6 +1,6 @@
 import { cleanTitle } from '../../shared/conversation/titles';
 import type { ChatInput, ProviderConfig } from '../../shared/providers/types';
-import { ProviderStream } from '../../shared/streaming/provider-stream';
+import { ProviderStream, type StreamState } from '../../shared/streaming/provider-stream';
 import type { SqlQuery } from '../generation/metrics';
 
 export const TITLE_JOBS_SCHEMA = `CREATE TABLE IF NOT EXISTS title_automatic (
@@ -51,6 +51,14 @@ export class ConversationTitles {
     private readonly query: SqlQuery,
     private readonly live: () => boolean,
     private readonly now = Date.now,
+    private readonly observe?: {
+      start: (job: TitleJob, config: ProviderConfig) => Promise<void>;
+      finish: (
+        job: TitleJob,
+        state: StreamState,
+        status: 'completed' | 'failed' | 'cancelled',
+      ) => void;
+    },
   ) {}
   initialize(config: ProviderConfig | null) {
     this.query(
@@ -138,6 +146,7 @@ export class ConversationTitles {
       config: ProviderConfig,
       input: ChatInput[],
       signal: AbortSignal,
+      beforeRequest?: () => Promise<void>,
     ) => Promise<ReadableStream<Uint8Array>>,
     chatBusy: () => boolean,
   ) {
@@ -155,6 +164,7 @@ export class ConversationTitles {
       config: ProviderConfig,
       input: ChatInput[],
       signal: AbortSignal,
+      beforeRequest?: () => Promise<void>,
     ) => Promise<ReadableStream<Uint8Array>>,
     chatBusy: () => boolean,
   ) {
@@ -261,13 +271,23 @@ export class ConversationTitles {
       config: ProviderConfig,
       input: ChatInput[],
       signal: AbortSignal,
+      beforeRequest?: () => Promise<void>,
     ) => Promise<ReadableStream<Uint8Array>>,
     signal: AbortSignal,
   ) {
     const config = JSON.parse(job.config!) as ProviderConfig;
-    const reader = (await open(config, JSON.parse(job.input), signal)).getReader();
     const parser = new ProviderStream(config.provider, false);
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+    let status: 'completed' | 'failed' | 'cancelled' = 'failed';
     try {
+      reader = (
+        await open(
+          config,
+          JSON.parse(job.input),
+          signal,
+          () => this.observe?.start(job, config) ?? Promise.resolve(),
+        )
+      ).getReader();
       while (true) {
         signal.throwIfAborted();
         const { done, value } = await reader.read();
@@ -277,9 +297,12 @@ export class ConversationTitles {
       }
       parser.assertComplete();
       if (parser.checkpoint().finishReason === 'length') throw new Error('Incomplete title');
-      return cleanTitle(parser.content);
+      const title = cleanTitle(parser.content);
+      status = 'completed';
+      return title;
     } finally {
-      void reader.cancel().catch(() => {});
+      this.observe?.finish(job, parser.checkpoint(), signal.aborted ? 'cancelled' : status);
+      void reader?.cancel().catch(() => {});
     }
   }
   private defer(job: TitleJob, delay: number) {

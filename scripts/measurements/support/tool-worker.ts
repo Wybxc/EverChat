@@ -16,6 +16,7 @@ import {
   type ToolValidationLibrary,
 } from './validation';
 export { WebToolWorkflow } from '../../../worker/web-tools/workflow';
+export { UsageStore } from '../../../worker/usage/durable-object';
 type ValidationEnv = Env & {
   VALIDATION_RUN_ID?: string;
   LOCAL_RESOURCE_METRICS?: string;

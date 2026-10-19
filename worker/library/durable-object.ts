@@ -1,3 +1,7 @@
+import { UsageAccounting, modelIdentity } from '../usage/accounting';
+import { USAGE_OUTBOX_SCHEMA } from '../usage/schema';
+import { probeModelCapability } from '../providers/probe';
+import type { ProbeCapability } from '../../shared/models/probe';
 import { DurableObject } from 'cloudflare:workers';
 import { initializeConversationMetadata } from './metadata';
 import { initializeStorageSchema } from '../platform/storage-schema';
@@ -73,6 +77,7 @@ const decorate = (row: Record<string, SqlStorageValue>) =>
   }) as unknown as ConversationInfo;
 
 export class Library extends DurableObject<Env> {
+  private readonly accounting: UsageAccounting;
   private readonly notifications: NotificationRegistry;
   private readonly restorer: ArchiveRestorer;
   private readonly providers: ProviderSettingsStore;
@@ -90,6 +95,11 @@ export class Library extends DurableObject<Env> {
     ctx.storage.transactionSync(() =>
       initializeStorageSchema(ctx.storage.sql.exec.bind(ctx.storage.sql)),
     );
+    ctx.storage.sql.exec(USAGE_OUTBOX_SCHEMA);
+    this.accounting = new UsageAccounting(ctx.storage.sql.exec.bind(ctx.storage.sql), env, () =>
+      ctx.storage.sync(),
+    );
+    ctx.storage.transactionSync(() => this.accounting.recover(new Set()));
     this.webTools = new WebToolSettings(
       <T extends Record<string, SqlStorageValue>>(
         statement: string,
@@ -159,7 +169,10 @@ export class Library extends DurableObject<Env> {
         .toArray()[0];
       const cleanup = this.attachments.nextCleanup();
       const copy = Math.min(this.copies.nextMaintenance(), this.nextImportMaintenance());
-      const notifications = this.notifications.nextAlarm();
+      const notifications = Math.min(
+        this.notifications.nextAlarm(),
+        this.accounting.nextAlarm() ?? Infinity,
+      );
       if (
         !pending &&
         cleanup === undefined &&
@@ -236,6 +249,51 @@ export class Library extends DurableObject<Env> {
   }
   protected sendNotificationPush(device: NotificationDevice, completion: AnswerCompletion) {
     return sendWebPush(this.env, device, completion);
+  }
+  async probeProviderModel(id: string, model: string, capability: ProbeCapability) {
+    const profile = await this.providerForModelList(id, model);
+    if (!profile || !profile.models.some((item) => item.id === model))
+      return json({ error: '找不到这个模型。' }, 404);
+    if (!profile.apiKey) return json({ error: '请先配置 API 密钥。' }, 400);
+    const config: ProviderConfig = {
+      ...profile,
+      providerId: profile.id,
+      providerName: profile.name,
+      modelName: profile.models.find((item) => item.id === model)?.name,
+      model,
+      systemPrompt: '',
+      maxOutputTokens: null,
+    };
+    const requestId = `probe:${crypto.randomUUID()}`;
+    const result = await probeModelCapability(
+      config,
+      capability,
+      AbortSignal.timeout(20_000),
+      undefined,
+      {
+        start: async () => {
+          await this.accounting.start(
+            {
+              id: requestId,
+              taskId: requestId,
+              conversationId: null,
+              messageId: null,
+              kind: 'probe',
+            },
+            modelIdentity(config),
+          );
+          await this.scheduleMaintenance();
+          this.ctx.waitUntil(this.accounting.deliver().finally(() => this.scheduleMaintenance()));
+        },
+        finish: (status, usage, usageIsFinal, httpStatus) => {
+          this.ctx.storage.transactionSync(() =>
+            this.accounting.finish(requestId, { status, usage, usageIsFinal, httpStatus }),
+          );
+        },
+      },
+    );
+    this.ctx.waitUntil(this.accounting.deliver().finally(() => this.scheduleMaintenance()));
+    return json(result);
   }
   async saveNotificationDevice(owner: string, input: NotificationDevice) {
     try {
@@ -406,6 +464,7 @@ export class Library extends DurableObject<Env> {
     });
   }
   async alarm() {
+    await this.accounting.deliver();
     await this.notifications.flush();
     for (const job of this.imports.pending())
       if (

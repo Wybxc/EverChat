@@ -27,12 +27,16 @@
     "bindings": [
       { "name": "CONVERSATIONS", "class_name": "Conversation" },
       { "name": "LIBRARY", "class_name": "Library" },
+      { "name": "USAGE", "class_name": "UsageStore" },
     ],
   },
   "r2_buckets": [{ "binding": "ATTACHMENTS", "bucket_name": "everchat-attachments" }],
   "workflows": [
     { "binding": "WEB_TOOLS", "name": "everchat-web-tools", "class_name": "WebToolWorkflow" },
   ],
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Conversation", "Library"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["Conversation", "Library"] },
+    { "tag": "v2-usage", "new_sqlite_classes": ["UsageStore"] },
+  ],
   "observability": { "enabled": true },
 }

@@ -90,6 +90,9 @@ import { ConversationTitles, TITLE_JOBS_SCHEMA } from './titles';
 import { databaseUsage } from './capacity';
 import { ConversationState, requestFingerprint } from './state';
 import { CompletionOutbox } from '../notifications/outbox';
+import { UsageAccounting, modelIdentity } from '../usage/accounting';
+import { USAGE_OUTBOX_SCHEMA } from '../usage/schema';
+import { initializeStorageSchema } from '../platform/storage-schema';
 
 import { createHash } from 'node:crypto';
 import { ImageContextError, type ImagePart } from '../../shared/attachments/images';
@@ -183,6 +186,7 @@ export class Conversation extends DurableObject<Env> {
   private activityFlush?: Promise<void>;
   private readonly titles?: ConversationTitles;
   private readonly completionOutbox: CompletionOutbox;
+  private readonly accounting: UsageAccounting;
   private activeAlarmAt?: number;
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -198,6 +202,12 @@ export class Conversation extends DurableObject<Env> {
         .toArray()[0]?.deletedAt ?? null;
     this.deletionCleaned = this.deletedAt !== null;
     this.completionOutbox = new CompletionOutbox(this.query.bind(this));
+    this.accounting = new UsageAccounting(
+      this.query.bind(this),
+      env,
+      () => ctx.storage.sync(),
+      () => !this.deletedAt,
+    );
     if (!this.deletedAt)
       this.activity = new ConversationActivityJournal(
         this.query.bind(this),
@@ -213,11 +223,51 @@ export class Conversation extends DurableObject<Env> {
       this.activity,
     );
     this.privateToolStreams = new StreamJournal(this.query.bind(this), 'tool_stream_commits');
+    // Reuse the existing parser checkpoint; never duplicate per-token accounting writes.
+    ctx.storage.transactionSync(() =>
+      this.accounting.recover(new Set(), (attempt) => {
+        if (this.deletedAt || !attempt.messageId || !['chat', 'summary'].includes(attempt.kind))
+          return;
+        if (
+          this.query(
+            'SELECT messageId FROM message_web_tools WHERE messageId=?',
+            attempt.messageId,
+          ).toArray().length
+        )
+          return;
+        return this.messages.message(attempt.messageId)?.streamState?.usage;
+      }),
+    );
+    if (this.deletedAt && this.accounting.nextAlarm() != null) ctx.waitUntil(this.scheduleAlarm());
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
     // A new instance cannot resume an old upstream socket. Recover before serving any snapshot.
     if (!this.deletedAt) {
       ctx.storage.sql.exec(TITLE_JOBS_SCHEMA);
-      this.titles = new ConversationTitles(this.query.bind(this), () => !this.deletedAt);
+      this.titles = new ConversationTitles(this.query.bind(this), () => !this.deletedAt, Date.now, {
+        start: async (job, config) => {
+          await this.accounting.start(
+            {
+              id: `title:${job.conversationId}:${job.id}`,
+              taskId: job.id,
+              conversationId: job.conversationId,
+              messageId: null,
+              kind: 'title',
+            },
+            modelIdentity(config),
+          );
+          this.ctx.waitUntil(this.accounting.deliver().finally(() => this.scheduleAlarm()));
+        },
+        finish: (job, state, status) => {
+          this.ctx.storage.transactionSync(() =>
+            this.accounting.finish(`title:${job.conversationId}:${job.id}`, {
+              status,
+              usage: state.usage,
+              usageIsFinal: state.usageIsFinal && state.done && !state.failure,
+            }),
+          );
+          this.ctx.waitUntil(this.accounting.deliver().finally(() => this.scheduleAlarm()));
+        },
+      });
       ctx.storage.transactionSync(() => this.titles!.recover());
       this.tools = new ToolTaskJournal(this.query.bind(this));
       ctx.storage.transactionSync(() => this.tools.recover());
@@ -247,7 +297,8 @@ export class Conversation extends DurableObject<Env> {
       if (
         this.activity?.nextAlarm() != null ||
         this.titles?.nextAlarm() != null ||
-        this.completionOutbox.nextAlarm() != null
+        this.completionOutbox.nextAlarm() != null ||
+        this.accounting.nextAlarm() != null
       )
         ctx.waitUntil(this.scheduleAlarm());
     }
@@ -1055,9 +1106,13 @@ export class Conversation extends DurableObject<Env> {
     call: WebToolCall,
     signal: AbortSignal,
     service?: WebToolServiceConfig,
+    beforeRequest?: () => Promise<void>,
   ): Promise<WebToolOutcome> {
     return service
-      ? executeWebTool(service, call, signal, (request) => this.fetchWebTool(request))
+      ? executeWebTool(service, call, signal, async (request) => {
+          await beforeRequest?.();
+          return this.fetchWebTool(request);
+        })
       : { id: call.id, name: call.name, status: 'failed', error: '尚未配置联网工具服务。' };
   }
   protected createWebToolWorkflow(params: ToolWorkflowParams) {
@@ -1231,8 +1286,13 @@ export class Conversation extends DurableObject<Env> {
   }
   private async scheduleAlarm(searchSuccess = false) {
     await this.ctx.storage.transaction(async () => {
-      if (this.deletedAt) return;
-      const times: number[] = [];
+      const usageAt = this.accounting.nextAlarm();
+      if (this.deletedAt) {
+        if (usageAt != null) await this.ctx.storage.setAlarm(Math.max(Date.now() + 1000, usageAt));
+        else await this.ctx.storage.deleteAlarm();
+        return;
+      }
+      const times: number[] = usageAt == null ? [] : [Math.max(Date.now() + 1000, usageAt)];
       if (this.activeGeneration)
         times.push(Math.max(Date.now() + 1000, this.activeAlarmAt ?? Date.now() + 30_000));
       else if (
@@ -1369,6 +1429,9 @@ export class Conversation extends DurableObject<Env> {
     if (existing) return existing.result;
     const claimed = this.ctx.storage.transactionSync(() => this.tools.claimTool(taskId, callId));
     if (!claimed) return this.tools.state(taskId);
+    const usageId = `web:${createHash('sha256')
+      .update(JSON.stringify([this.run(state.runId)!.conversationId, taskId, callId]))
+      .digest('hex')}`;
     const abort = new AbortController(),
       call = this.tools.publicCalls(state.runId).find((item) => item.call.id === callId)!.call;
     const change = this.ctx.storage.transactionSync(() => this.refreshToolMessage(taskId));
@@ -1399,7 +1462,26 @@ export class Conversation extends DurableObject<Env> {
           abort.signal.throwIfAborted();
           outcome = stopError
             ? { id: call.id, name: call.name, status: 'failed', error: stopError }
-            : await this.executeWebTool(call, abort.signal, service);
+            : await this.executeWebTool(call, abort.signal, service, async () => {
+                const provider = service!.provider;
+                await this.accounting.start(
+                  {
+                    id: usageId,
+                    taskId,
+                    conversationId: this.run(state.runId)!.conversationId,
+                    messageId: this.run(state.runId)!.assistantId,
+                    kind: call.name,
+                  },
+                  {
+                    providerId: `web:${provider}`,
+                    providerName: provider === 'deepseek' ? 'DeepSeek 联网' : 'Tavily',
+                    protocol: provider,
+                    model: call.name,
+                    modelName: call.name,
+                  },
+                );
+                this.ctx.waitUntil(this.accounting.deliver().finally(() => this.scheduleAlarm()));
+              });
           stopError ??= terminalWebToolError(outcome);
         } catch {
           outcome = {
@@ -1409,6 +1491,19 @@ export class Conversation extends DurableObject<Env> {
             error: '联网工具执行失败或超时。',
           };
         }
+        this.ctx.storage.transactionSync(() =>
+          this.accounting.finish(usageId, {
+            status: abort.signal.aborted
+              ? 'cancelled'
+              : outcome.status === 'completed'
+                ? 'completed'
+                : 'failed',
+            usage: {},
+            usageIsFinal: outcome.status === 'completed',
+            httpStatus: outcome.status === 'failed' ? outcome.failure?.httpStatus : undefined,
+          }),
+        );
+        this.ctx.waitUntil(this.accounting.deliver().finally(() => this.scheduleAlarm()));
         const current = this.toolTaskState(taskId);
         if (current.status !== 'active') return current;
         const update = this.ctx.storage.transactionSync(() => {
@@ -1451,7 +1546,11 @@ export class Conversation extends DurableObject<Env> {
     return this.toolTaskState(taskId);
   }
   async alarm() {
-    if (this.deletedAt) return;
+    await this.accounting.deliver();
+    if (this.deletedAt) {
+      await this.scheduleAlarm();
+      return;
+    }
     await this.flushCompletions();
     await this.flushActivity();
     const searchSuccess = await this.flushSearchIndex();
@@ -1503,7 +1602,8 @@ export class Conversation extends DurableObject<Env> {
     const titleWork = this.titles?.step(
       this.env.LIBRARY.getByName('personal'),
       () => this.ctx.storage.sync(),
-      (config, input, signal) => this.openModelStream(config, input, signal),
+      (config, input, signal, beforeRequest) =>
+        this.openModelStream(config, input, signal, undefined, undefined, undefined, beforeRequest),
       () =>
         Boolean(
           this.activeGeneration ||
@@ -1718,6 +1818,29 @@ export class Conversation extends DurableObject<Env> {
               exchanges: this.tools.exchanges(toolModel.rootId, toolModel.round, claim.config),
             }
           : undefined,
+        async () => {
+          const run = this.run(runId)!;
+          await this.accounting.start(
+            {
+              id: `model:${runId}`,
+              taskId: runId,
+              conversationId: run.conversationId,
+              messageId: run.assistantId,
+              kind: this.messages.message(run.assistantId)?.summary ? 'summary' : 'chat',
+              answer:
+                !this.messages.message(run.assistantId)?.summary &&
+                (!toolModel || toolModel.round === 0),
+            },
+            modelIdentity(claim.config!),
+          );
+          if (!this.deletedAt)
+            this.query(
+              'UPDATE generation_timings SET providerStartedAt=? WHERE runId=?',
+              Date.now(),
+              runId,
+            );
+          this.ctx.waitUntil(this.accounting.deliver().finally(() => this.scheduleAlarm()));
+        },
       );
       await consumeModelStream(body, active, probe, (bytes) => {
         if (relay) relay.add(bytes);
@@ -1887,6 +2010,7 @@ export class Conversation extends DurableObject<Env> {
     }
     if (this.env.GENERATION_METRICS === '1' && !this.meter)
       this.meter = new GenerationMeter(runId, Date.now, 'since-last-resume', 'do-v1');
+    let roundUsage = { usage: message.streamState?.usage ?? {}, usageIsFinal: false };
     if (message.streamState) {
       const state = message.streamState;
       const parser = new ProviderStream(
@@ -1917,6 +2041,10 @@ export class Conversation extends DurableObject<Env> {
           message.streamState.done &&
           !message.streamState.failure &&
           ['stop', 'length'].includes(message.streamState.finishReason ?? ''),
+      };
+      roundUsage = {
+        usage: toolTurn?.usage ?? message.streamState.usage,
+        usageIsFinal: toolTurn?.usageIsFinal ?? Boolean(message.generation.usageIsFinal),
       };
       if (toolModel) {
         message.generation = {
@@ -1975,6 +2103,19 @@ export class Conversation extends DurableObject<Env> {
       ),
     };
     const { change, finalStatus } = this.ctx.storage.transactionSync(() => {
+      const roundTiming = this.query<{ providerStartedAt: number; firstTokenAt: number | null }>(
+        'SELECT providerStartedAt,firstTokenAt FROM generation_timings WHERE runId=?',
+        runId,
+      ).toArray()[0];
+      this.accounting.finish(`model:${runId}`, {
+        status,
+        ...roundUsage,
+        firstTokenMs:
+          roundTiming?.firstTokenAt == null
+            ? undefined
+            : Math.max(0, roundTiming.firstTokenAt - roundTiming.providerStartedAt),
+        httpStatus: failureDetails?.status,
+      });
       let finalStatus: MessageStatus = status;
       if (toolModel) {
         if (status === 'completed' && toolTurn)
@@ -2055,6 +2196,7 @@ export class Conversation extends DurableObject<Env> {
       return { change: terminal, finalStatus };
     });
     this.broadcast(change);
+    this.ctx.waitUntil(this.accounting.deliver().finally(() => this.scheduleAlarm()));
     if (toolModel && finalStatus !== 'running') {
       if (this.activeGeneration?.runId === runId) this.activeGeneration.abort.abort();
       for (const [key, active] of this.activeTools)
@@ -2233,13 +2375,20 @@ export class Conversation extends DurableObject<Env> {
     // Keep all RPCs and Alarm continuations outside the empty-database interval.
     if (!this.deletionCleaned) {
       await this.ctx.blockConcurrencyWhile(async () => {
+        this.accounting.recover(new Set());
+        const pending = this.accounting.pending();
         await this.eraseDeletedStorage();
+        initializeStorageSchema(this.query.bind(this));
+        this.ctx.storage.sql.exec(USAGE_OUTBOX_SCHEMA);
+        this.accounting.restore(pending);
         this.ctx.storage.sql.exec(DELETION_SCHEMA);
         this.ctx.storage.sql.exec('INSERT INTO conversation_deletion VALUES (1, ?)', deletedAt);
         await this.ctx.storage.sync();
       });
       this.deletionCleaned = true;
     }
+    await this.accounting.deliver();
+    await this.scheduleAlarm();
     for (const socket of this.ctx.getWebSockets()) {
       try {
         if (validSubscription(socket, socket.deserializeAttachment() as Attachment))

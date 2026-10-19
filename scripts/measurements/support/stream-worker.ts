@@ -7,6 +7,7 @@ import type { Authenticator } from '../../../worker/http/auth';
 import { authenticateValidation } from './access';
 import type { Env } from '../../../worker/http/env';
 export { WebToolWorkflow } from '../../../worker/web-tools/workflow';
+export { UsageStore } from '../../../worker/usage/durable-object';
 export class Conversation extends FixtureConversation {
   validationStorageBytes() {
     return this.ctx.storage.sql.databaseSize;

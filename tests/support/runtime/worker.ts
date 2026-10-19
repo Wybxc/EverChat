@@ -4,6 +4,7 @@ import { createTestWorker } from './control-routes';
 import { authenticateLocal } from '../../../scripts/dev/worker';
 export { Conversation } from './conversation';
 export { Library } from './library';
+export { UsageStore } from '../../../worker/usage/durable-object';
 export { WebToolWorkflow } from './tool-workflow-metrics';
 installMockUpstream();
 export default createTestWorker(authenticateLocal, '/__dev/access/login');

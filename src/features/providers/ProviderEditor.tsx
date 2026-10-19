@@ -1,3 +1,4 @@
+import { ModelPriceButton } from '../usage/PriceEditor';
 import { MAX_PROVIDER_MODELS, MODEL_LIST_LIMIT_MESSAGE } from '../../../shared/providers/limits';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -761,6 +762,7 @@ export function ProviderEditor({
                                   results={testResults}
                                   testError={testError}
                                 />
+                                <ModelPriceButton providerId={selected.id} model={model.id} />
                                 <Button
                                   variant="ghost"
                                   type="button"

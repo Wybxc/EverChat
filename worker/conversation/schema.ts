@@ -4,12 +4,14 @@ import { initializeStorageSchema } from '../platform/storage-schema';
 import { CONVERSATION_ACTIVITY_SCHEMA } from './activity';
 import { initializeConversationState } from './state';
 import { COMPLETION_OUTBOX_SCHEMA } from '../notifications/outbox';
+import { USAGE_OUTBOX_SCHEMA } from '../usage/schema';
 export const DELETION_SCHEMA =
   'CREATE TABLE IF NOT EXISTS conversation_deletion (id INTEGER PRIMARY KEY CHECK (id = 1), deletedAt INTEGER NOT NULL)';
 
 export function initializeConversation(sql: SqlStorage, metrics: boolean) {
   initializeStorageSchema(sql.exec.bind(sql));
   sql.exec(DELETION_SCHEMA);
+  sql.exec(USAGE_OUTBOX_SCHEMA);
   if (sql.exec('SELECT deletedAt FROM conversation_deletion WHERE id = 1').toArray().length) return;
   sql.exec(`CREATE TABLE IF NOT EXISTS messages (
     id TEXT PRIMARY KEY, role TEXT NOT NULL, content TEXT NOT NULL, status TEXT NOT NULL,

@@ -7,6 +7,7 @@ import { STORAGE_SCHEMA, STORAGE_SCHEMA_VERSION } from '../../worker/platform/st
 import type { SqlQuery } from '../../worker/generation/metrics';
 import type { ProviderKind } from '../../shared/providers/types';
 import { encodeValue, type Statement, type StoreKind } from './storage-protocol';
+import { USAGE_OUTBOX_SCHEMA } from '../../worker/usage/schema';
 
 // Only this Node.js operations module understands previous database formats.
 // The returned patch contains values already converted locally, never a parser
@@ -42,11 +43,12 @@ export function migrateStorage(db: DatabaseSync, kind: StoreKind): Statement[] {
   try {
     if (exists('storage_schema')) {
       const version = db.prepare('SELECT version FROM storage_schema WHERE id=1').get()?.version;
-      if (version !== undefined && version !== STORAGE_SCHEMA_VERSION)
+      if (version !== undefined && version !== 1 && version !== STORAGE_SCHEMA_VERSION)
         throw new Error(`Unsupported storage schema version: ${version}`);
     }
     query(STORAGE_SCHEMA);
     query('DELETE FROM storage_schema');
+    query(USAGE_OUTBOX_SCHEMA);
     if (kind === 'conversation' && exists('messages')) {
       const seq = exists('events')
         ? Number(db.prepare('SELECT COALESCE(MAX(seq), 0) AS seq FROM events').get()!.seq)

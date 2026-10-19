@@ -254,6 +254,21 @@ for (const provider of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
       expect(duplicate.status()).toBe(202);
       expect(await duplicate.json()).toEqual(accepted);
       expect((await c.state()).serviceRequests).toHaveLength(2);
+      await expect
+        .poll(async () =>
+          request
+            .get(`/api/usage/answers/${answer.id}`)
+            .then((r) => r.json())
+            .then((r) => r.requests),
+        )
+        .toBe(4);
+      expect(
+        await request.get(`/api/usage/answers/${answer.id}`).then((r) => r.json()),
+      ).toMatchObject({
+        modelRequests: 2,
+        answers: 1,
+        requests: 4,
+      });
       const backup = (await request
         .get(`/api/conversations/${c.id}/backup`)
         .then((r) => r.json())) as EverChatBackup;

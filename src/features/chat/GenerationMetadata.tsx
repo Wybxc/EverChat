@@ -1,3 +1,7 @@
+import { useQuery } from '@tanstack/react-query';
+import { api } from '../../platform/api';
+import type { UsageTotals } from '../../../shared/usage/types';
+import { formatAmount } from '../../../shared/usage/pricing';
 import { useState } from 'react';
 import { Modal, ModalTitle } from '../../components/Modal';
 import { Button } from '@/components/ui/button';
@@ -26,8 +30,21 @@ const compact = new Intl.NumberFormat('zh-CN', { notation: 'compact', maximumFra
 const duration = (ms: number) =>
   ms < 1000 ? `${number.format(ms)} ms` : `${(ms / 1000).toFixed(2)} s`;
 
-export function GenerationMetadata({ generation }: { generation?: GenerationResult }) {
+export function GenerationMetadata({
+  generation,
+  messageId,
+}: {
+  generation?: GenerationResult;
+  messageId?: string;
+}) {
   const [open, setOpen] = useState(false);
+  const cost = useQuery({
+    queryKey: ['usage', 'answer', messageId],
+    enabled: open && Boolean(messageId),
+    queryFn: ({ signal }) =>
+      api<UsageTotals>(`/usage/answers/${messageId}`, 'GET', undefined, signal),
+    refetchOnWindowFocus: false,
+  });
   if (!generation) return null;
   const fields = usageFields.filter(([key]) => generation.usage[key] !== undefined);
   const usage = generation.usage;
@@ -66,6 +83,35 @@ export function GenerationMetadata({ generation }: { generation?: GenerationResu
           <ModalTitle>生成信息</ModalTitle>
           <div className="py-2">
             <dl className="space-y-2">
+              <div className="flex items-baseline justify-between gap-4">
+                <dt>费用估算</dt>
+                <dd>
+                  {cost.isFetching
+                    ? '读取中…'
+                    : cost.error
+                      ? '暂不可用'
+                      : Object.entries(cost.data?.currencies ?? {})
+                          .map(([currency, amount]) => `${currency} ${formatAmount(amount)}`)
+                          .join(' · ') || '未知'}
+                </dd>
+              </div>
+              {cost.data && (
+                <div className="flex items-baseline justify-between gap-4">
+                  <dt>实际请求</dt>
+                  <dd>
+                    {cost.data.requests} 次 · 费用不完整 {cost.data.unpriced} 项
+                  </dd>
+                </div>
+              )}
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setOpen(false);
+                  window.dispatchEvent(new Event('everchat:open-usage'));
+                }}
+              >
+                查看用量统计
+              </Button>
               <div className="flex items-baseline justify-between gap-4 sm:gap-6">
                 <dt>Token 用量</dt>
                 <dd>
