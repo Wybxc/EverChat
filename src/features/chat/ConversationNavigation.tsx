@@ -70,7 +70,12 @@ export function ConversationNavigation({
           if (touch.current) setOpenTooltip(null);
         }}
         onPointerMoveCapture={(event) => {
-          if (event.pointerType === 'mouse') touch.current = false;
+          // WebKit can synthesize mouse movement after a tap while the viewport animates.
+          if (
+            event.pointerType === 'mouse' &&
+            matchMedia('(hover: hover) and (pointer: fine)').matches
+          )
+            touch.current = false;
         }}
         onKeyDownCapture={() => {
           touch.current = false;
@@ -103,7 +108,8 @@ export function ConversationNavigation({
                   // Safari does not focus a button on pointer activation by default.
                   event.currentTarget.focus({ preventScroll: true });
                   visibility.show();
-                  if (!unavailable) navigate(id);
+                  // Layout can change after the rendered boundary state; the hook reads it fresh.
+                  navigate(id);
                 }}
               >
                 <Icon

@@ -42,11 +42,14 @@ export function useFollowScroll(resetKey?: string | null) {
       Math.abs(viewport.scrollTop - previousBottom) <= BOTTOM_THRESHOLD;
     const onScroll = () => {
       const bottom = distance() <= BOTTOM_THRESHOLD;
+      const currentBottom = viewport.scrollHeight - viewport.clientHeight;
       if (!paused.current && (bottom || reachedPreviousBottom())) following.current = true;
-      // Content growth can also emit a scroll event. Only upward movement pauses following.
-      else if (viewport.scrollTop < previousTop.current) following.current = false;
+      // WebKit can anchor upward while lazy content changes height, before ResizeObserver fires.
+      // An unchanged scroll range distinguishes ordinary upward scrolling from that reflow.
+      else if (viewport.scrollTop < previousTop.current && currentBottom === previousBottom)
+        following.current = false;
       previousTop.current = viewport.scrollTop;
-      previousBottom = viewport.scrollHeight - viewport.clientHeight;
+      previousBottom = currentBottom;
       if (following.current && !bottom) followBottom();
       else setAtBottom(bottom);
     };

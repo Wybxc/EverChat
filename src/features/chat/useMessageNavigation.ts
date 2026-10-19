@@ -69,6 +69,8 @@ export function useMessageNavigation({
       return;
     }
     let frame = 0,
+      motionFrame = 0,
+      moving: { id?: string } | undefined,
       dirty = true,
       anchors: AnswerAnchor[] = [],
       landed: { id: string; top: number } | undefined,
@@ -76,6 +78,9 @@ export function useMessageNavigation({
     const inset = () => parseFloat(getComputedStyle(document.documentElement).fontSize) * 0.75;
     const clear = (event?: Event) => {
       if (event?.type === 'keydown' && !isScrollKey(event)) return;
+      cancelAnimationFrame(motionFrame);
+      motionFrame = 0;
+      moving = undefined;
       landed = undefined;
       topLocked = false;
     };
@@ -87,8 +92,8 @@ export function useMessageNavigation({
           ? [{ id, top: viewport.scrollTop + element.getBoundingClientRect().top - origin }]
           : [];
       });
-      if (topLocked) viewport.scrollTop = 0;
-      if (landed) {
+      if (!moving && topLocked) viewport.scrollTop = 0;
+      if (!moving && landed) {
         const anchor = anchors.find(({ id }) => id === landed!.id);
         if (anchor) {
           viewport.scrollTop = Math.max(0, anchor.top - inset());
@@ -101,9 +106,10 @@ export function useMessageNavigation({
       answerTargets(
         anchors,
         viewport.scrollTop + inset(),
-        landed && Math.abs(landed.top - viewport.scrollTop) <= POSITION_TOLERANCE
-          ? landed.id
-          : undefined,
+        moving?.id ??
+          (landed && Math.abs(landed.top - viewport.scrollTop) <= POSITION_TOLERANCE
+            ? landed.id
+            : undefined),
       );
     const measure = () => {
       if (dirty) readLayout();
@@ -139,11 +145,54 @@ export function useMessageNavigation({
         });
     };
     const onScroll = () => {
-      if (landed && Math.abs(viewport.scrollTop - landed.top) > POSITION_TOLERANCE) clear();
+      if (!moving && landed && Math.abs(viewport.scrollTop - landed.top) > POSITION_TOLERANCE)
+        clear();
       request();
     };
     const onLayout = () => request(true);
     schedule.current = onLayout;
+    const move = (action: ReadingAction, id?: string) => {
+      pauseFollowing();
+      moving = { id };
+      const from = viewport.scrollTop;
+      const destination = () => {
+        const maximum = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
+        const position =
+          action === 'bottom'
+            ? maximum
+            : id
+              ? (anchors.find((anchor) => anchor.id === id)?.top ?? from + inset()) - inset()
+              : 0;
+        return Math.min(maximum, Math.max(0, position));
+      };
+      const duration = Math.min(420, Math.max(180, Math.abs(destination() - from) * 0.2));
+      const started = performance.now();
+      const finish = () => {
+        viewport.scrollTop = destination();
+        moving = undefined;
+        motionFrame = 0;
+        if (id) landed = { id, top: viewport.scrollTop };
+        else if (action === 'top') topLocked = true;
+        else scrollToBottom();
+        measure();
+      };
+      const step = (now: number) => {
+        if (dirty) readLayout();
+        const progress = Math.min(1, (now - started) / duration);
+        if (progress >= 1) finish();
+        else {
+          // Re-read the destination as streamed Markdown changes the content height.
+          viewport.scrollTop = from + (destination() - from) * (1 - (1 - progress) ** 3);
+          motionFrame = requestAnimationFrame(step);
+        }
+      };
+      if (
+        matchMedia('(prefers-reduced-motion: reduce)').matches ||
+        Math.abs(destination() - from) <= POSITION_TOLERANCE
+      )
+        finish();
+      else motionFrame = requestAnimationFrame(step);
+    };
     perform.current = (action) => {
       // Read fresh geometry for a click even if a layout observer has not delivered yet.
       readLayout();
@@ -151,9 +200,7 @@ export function useMessageNavigation({
       if (action === 'previous' || action === 'next') {
         const anchor = anchors.find(({ id }) => id === target);
         if (!anchor) return;
-        pauseFollowing();
-        viewport.scrollTop = Math.max(0, anchor.top - inset());
-        landed = { id: anchor.id, top: viewport.scrollTop };
+        move(action, anchor.id);
         setAnnouncement(
           uiMessage('chat', 'navigationPosition', {
             position: answers.indexOf(anchor.id) + 1,
@@ -161,12 +208,10 @@ export function useMessageNavigation({
           }),
         );
       } else if (action === 'top') {
-        pauseFollowing();
-        topLocked = true;
-        viewport.scrollTop = 0;
+        move(action);
         setAnnouncement(uiMessage('chat', 'navigationTop'));
       } else {
-        scrollToBottom();
+        move(action);
         setAnnouncement(uiMessage('chat', 'navigationBottom'));
       }
       measure();
@@ -180,6 +225,7 @@ export function useMessageNavigation({
     measure();
     return () => {
       cancelAnimationFrame(frame);
+      cancelAnimationFrame(motionFrame);
       schedule.current = () => {};
       perform.current = () => {};
       viewport.removeEventListener('scroll', onScroll);

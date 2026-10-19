@@ -39,6 +39,105 @@ async function setup(page: Page) {
   };
 }
 
+test('button navigation animates, yields to manual scrolling and respects reduced motion', async ({
+  page,
+}) => {
+  const fixture = await setup(page);
+  try {
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    await button(page, '跳到底部').press('Space');
+    await expect.poll(() => gap(page)).toBeLessThan(2);
+    await pane(page).evaluate((node) => {
+      const samples: number[] = [];
+      Object.assign(node, { navigationSamples: samples });
+      node.addEventListener('scroll', () => samples.push(node.scrollTop));
+    });
+    const animate = async (name: string, done: () => Promise<void>) => {
+      const start = await top(page);
+      await pane(page).evaluate((node) => {
+        (node as HTMLElement & { navigationSamples: number[] }).navigationSamples.length = 0;
+      });
+      await button(page, name).click();
+      await done();
+      const end = await top(page);
+      expect(Math.abs(end - start)).toBeGreaterThan(50);
+      expect(
+        await pane(page).evaluate(
+          (node, { start, end }) =>
+            (node as HTMLElement & { navigationSamples: number[] }).navigationSamples.some(
+              (position) =>
+                position > Math.min(start, end) + 2 && position < Math.max(start, end) - 2,
+            ),
+          { start, end },
+        ),
+      ).toBe(true);
+    };
+    await animate('跳到顶部', async () => {
+      await expect.poll(() => top(page)).toBe(0);
+    });
+    await animate('下一条回答', async () => {
+      await expect.poll(() => offset(page, fixture.assistant)).toBeCloseTo(12, 0);
+    });
+    await pane(page).evaluate((node) => {
+      node.dispatchEvent(new WheelEvent('wheel'));
+      node.scrollTop += 300;
+    });
+    await animate('上一条回答', async () => {
+      await expect.poll(() => offset(page, fixture.assistant)).toBeCloseTo(12, 0);
+    });
+    await animate('跳到底部', async () => {
+      await expect.poll(() => gap(page)).toBeLessThan(2);
+    });
+
+    const start = await top(page);
+    await button(page, '跳到顶部').click();
+    await expect.poll(() => top(page), { intervals: [10] }).toBeLessThan(start - 10);
+    const stopped = await pane(page).evaluate((node) => {
+      node.dispatchEvent(new WheelEvent('wheel'));
+      return node.scrollTop;
+    });
+    expect(stopped).toBeGreaterThan(0);
+    // Wait beyond the animation's maximum duration to ensure it does not reclaim the viewport.
+    await page.waitForTimeout(450);
+    expect(await top(page)).toBeCloseTo(stopped, 0);
+
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await pane(page).evaluate((node) => {
+      (node as HTMLElement & { navigationSamples: number[] }).navigationSamples.length = 0;
+    });
+    await button(page, '跳到顶部').click();
+    expect(await top(page)).toBe(0);
+    expect(
+      await pane(page).evaluate((node) =>
+        (node as HTMLElement & { navigationSamples: number[] }).navigationSamples.every(
+          (position) => position === 0,
+        ),
+      ),
+    ).toBe(true);
+    await button(page, '跳到底部').click();
+    await expect.poll(() => gap(page)).toBeLessThan(2);
+    await expect(button(page, '跳到底部')).toHaveAttribute('aria-disabled', 'true');
+    await pane(page).evaluate((node) => {
+      node.dispatchEvent(new Event('everchat:pause-follow'));
+      node.querySelector<HTMLElement>('[data-testid="user-message"]')!.style.paddingBottom =
+        '100px';
+      // Click in the same task, before ResizeObserver/React can update the disabled boundary.
+      document.querySelector<HTMLButtonElement>('button[aria-label="跳到底部"]')!.click();
+    });
+    await expect.poll(() => gap(page)).toBeLessThan(2);
+    await pane(page).evaluate((node) => {
+      // WebKit anchoring can move upward as lazy content grows, before ResizeObserver runs.
+      node.querySelector<HTMLElement>('[data-testid="user-message"]')!.style.paddingBottom =
+        '180px';
+      node.scrollTop -= 20;
+      node.dispatchEvent(new Event('scroll'));
+    });
+    await expect.poll(() => gap(page)).toBeLessThan(2);
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
 test('navigation is quiet by default, reveals on hover and stays visible for keyboard focus', async ({
   page,
 }, testInfo) => {
@@ -433,6 +532,7 @@ test('reading buttons pause a live answer and bottom navigation resumes continuo
     await expect.poll(height).toBeGreaterThan(atStart + 100);
     await expect.poll(() => top(page)).toBe(0);
     await button(page, '下一条回答').click();
+    await expect.poll(() => offset(page, fixture.assistant)).toBeCloseTo(12, 0);
     const reading = await top(page),
       readingHeight = await height();
     await expect.poll(height).toBeGreaterThan(readingHeight + 100);
