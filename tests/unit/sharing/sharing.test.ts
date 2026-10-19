@@ -88,13 +88,35 @@ test('share projection exposes only the selected completed branch, always includ
     blocks.filter((b) => b.channel === 'text').map((b) => b.text),
     ['正文 a', '正文 b'],
   );
-  assert.doesNotMatch(JSON.stringify(blocks), /private|other-branch|sourceIds/);
+  assert.doesNotMatch(
+    JSON.stringify(blocks),
+    /private-run|private-error|private-provider|other-branch|sourceIds/,
+  );
+  assert.equal(blocks.find((block) => block.role === 'assistant')?.modelName, 'private-model');
   assert.deepEqual(
     blocks.filter((b) => b.channel === 'reasoning').map((b) => b.text),
     ['思考 a', '思考 b'],
   );
   assert.throws(() => projectShare([a, { ...b, status: 'running' }], 'b'));
   assert.throws(() => projectShare([{ ...a, deletedAt: 10 }, b], 'b'));
+});
+test('share snapshots retain each answer model display name without provider metadata or repeated names per block', () => {
+  const user = message('user'),
+    answer = {
+      ...message('answer', 'user'),
+      modelName: 'Flash 显示名',
+      parts: messageParts('正文'.repeat(20000), '思考'),
+    };
+  const blocks = [...projectShare([user, answer], 'answer').blocks()];
+  assert.equal(blocks.filter((block) => block.modelName !== undefined).length, 1);
+  assert.equal(blocks.find((block) => block.role === 'assistant')?.modelName, 'Flash 显示名');
+  assert.ok(
+    blocks.filter((block) => block.role === 'user').every((block) => block.modelName === undefined),
+  );
+  assert.doesNotMatch(
+    JSON.stringify(blocks),
+    /private-model|private-provider|providerId|providerName/,
+  );
 });
 test('large public messages split below SQLite/RPC limits without corrupting surrogate pairs', () => {
   const text = '😀'.repeat(40_000),

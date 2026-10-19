@@ -39,6 +39,18 @@ test('controlled public shares stay network-only, skip private startup and do no
   await expect(shared.getByRole('heading', { name: '公开 PWA 快照', exact: true })).toBeVisible();
   await expect(shared.getByText('公开正文', { exact: true })).toBeVisible();
   await expect(shared.getByText('全文末尾', { exact: true })).toBeVisible();
+  await expect(
+    shared
+      .getByTestId('assistant-message')
+      .first()
+      .getByRole('heading', { name: 'Flash 分享模型', exact: true }),
+  ).toBeVisible();
+  await expect(
+    shared
+      .getByTestId('assistant-message')
+      .last()
+      .getByRole('heading', { name: 'EverChat', exact: true }),
+  ).toBeVisible();
   await expect(shared.locator('article')).toHaveCount(4);
   expect(publicCalls.length - previousCalls).toBe(1);
   await expect(shared.getByRole('button', { name: '继续阅读' })).toHaveCount(0);

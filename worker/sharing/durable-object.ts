@@ -135,6 +135,8 @@ export class ShareStore extends DurableObject<Env> {
             block.message >= header.messageCount ||
             !['user', 'assistant'].includes(block.role) ||
             !['text', 'reasoning'].includes(block.channel) ||
+            (block.modelName !== undefined &&
+              (block.role !== 'assistant' || typeof block.modelName !== 'string')) ||
             typeof block.text !== 'string' ||
             block.text.length > 16_384
           )

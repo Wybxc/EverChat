@@ -5,6 +5,7 @@ export const isSharePage = (path: string) => /^\/s(?:\/|$)/.test(path);
 export interface ShareBlock {
   message: number;
   role: 'user' | 'assistant';
+  modelName?: string;
   channel: 'text' | 'reasoning';
   text: string;
   omittedAttachments: number;

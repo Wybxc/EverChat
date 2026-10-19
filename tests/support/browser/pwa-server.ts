@@ -125,6 +125,7 @@ const server = createServer(async (request, response) => {
             message: 1,
             role: 'assistant',
             channel: 'reasoning',
+            modelName: 'Flash 分享模型',
             text: '**公开思考**\n保留换行',
             omittedAttachments: 0,
           },

@@ -12,6 +12,7 @@ export function projectShare(messages: Message[], headId: string) {
   if (!visible.length) throw new Error('当前分支没有可分享的消息。');
   const projected = visible.map((message) => ({
     role: message.role,
+    modelName: message.role === 'assistant' ? message.modelName || message.model : undefined,
     text: messageText(message),
     reasoning: messageText(message, 'reasoning'),
     omittedAttachments: messageAttachments(message).length,
@@ -30,6 +31,7 @@ export function projectShare(messages: Message[], headId: string) {
             yield {
               message,
               role: item.role,
+              ...(first && item.modelName ? { modelName: item.modelName } : {}),
               channel,
               text: content.slice(start, end),
               omittedAttachments: first ? item.omittedAttachments : 0,
@@ -42,6 +44,7 @@ export function projectShare(messages: Message[], headId: string) {
           yield {
             message,
             role: item.role,
+            ...(item.modelName ? { modelName: item.modelName } : {}),
             channel: 'text',
             text: '',
             omittedAttachments: item.omittedAttachments,

@@ -7,6 +7,7 @@ export function ShareContent({ blocks }: { blocks: ShareBlock[] }) {
   const messages: {
     index: number;
     role: 'user' | 'assistant';
+    modelName?: string;
     text: string;
     reasoning: string;
     omitted: number;
@@ -14,7 +15,14 @@ export function ShareContent({ blocks }: { blocks: ShareBlock[] }) {
   for (const block of blocks) {
     let message = messages.at(-1);
     if (message?.index !== block.message) {
-      message = { index: block.message, role: block.role, text: '', reasoning: '', omitted: 0 };
+      message = {
+        index: block.message,
+        role: block.role,
+        modelName: block.modelName,
+        text: '',
+        reasoning: '',
+        omitted: 0,
+      };
       messages.push(message);
     }
     message[block.channel] += block.text;
@@ -40,7 +48,7 @@ export function ShareContent({ blocks }: { blocks: ShareBlock[] }) {
             <>
               <h2 className="mb-2 flex items-center gap-2 text-xs font-semibold">
                 <InfinityIcon className="h-4 w-4 shrink-0" aria-hidden="true" strokeWidth={1.7} />
-                EverChat
+                <span className="min-w-0 break-words">{message.modelName || 'EverChat'}</span>
               </h2>
               {message.reasoning && (
                 <details className="mb-4 text-sm text-muted-foreground">

@@ -14,7 +14,9 @@ test('immutable selected-branch sharing stays anonymous, fully readable and dele
   const conversationId = crypto.randomUUID(),
     providerId = crypto.randomUUID();
   const anonymous = await browser.newContext();
-  const secretText = 'private-model-and-system-must-not-leak';
+  const secretText = 'private-system-must-not-leak',
+    modelName = '公开模型显示名',
+    providerName = 'private-provider-must-not-leak';
   try {
     expect(
       (
@@ -24,11 +26,11 @@ test('immutable selected-branch sharing stays anonymous, fully readable and dele
             providers: [
               {
                 id: providerId,
-                name: secretText,
+                name: providerName,
                 provider: 'openai-chat',
                 baseUrl: 'https://provider.test/v1',
                 apiKey: 'integration-test-key',
-                models: [{ id: 'raw-openai-chat', name: secretText, enabled: true }],
+                models: [{ id: 'raw-openai-chat', name: modelName, enabled: true }],
               },
             ],
             activeProviderId: providerId,
@@ -109,7 +111,7 @@ test('immutable selected-branch sharing stays anonymous, fully readable and dele
     expect(read.headers()['cache-control']).toBe('no-store');
     const body = await read.json();
     expect(JSON.stringify(body)).not.toMatch(
-      /private-model|integration-test-key|providerId|conversationId|runId|generation|summary|tokenCipher/,
+      /private-|integration-test-key|providerId|conversationId|runId|generation|summary|tokenCipher/,
     );
     expect(body.page.cursor).toBeNull();
     expect(body.page.blocks.some((b: { channel: string }) => b.channel === 'text')).toBe(true);
@@ -192,6 +194,18 @@ test('immutable selected-branch sharing stays anonymous, fully readable and dele
     // Reasoning is always in the snapshot, but remains collapsed in the public UI.
     await page.goto(`/s/${included.share.id}#${includedPublished.secret}`);
     const thought = page.getByTestId('assistant-message').locator('details');
+    await expect(
+      page.getByTestId('assistant-message').getByRole('heading', { name: modelName, exact: true }),
+    ).toBeVisible();
+    expect(
+      reasoning.page.blocks.find((block: { role: string }) => block.role === 'assistant').modelName,
+    ).toBe(modelName);
+    await expect(page.getByText(providerName, { exact: false })).toHaveCount(0);
+    expect(
+      reasoning.page.blocks.every(
+        (block: object) => !('providerId' in block) && !('providerName' in block),
+      ),
+    ).toBe(true);
     await expect(thought.locator('summary')).toHaveText('思考内容');
     expect(await thought.evaluate((element: HTMLDetailsElement) => element.open)).toBe(false);
     await thought.locator('summary').click();
