@@ -211,15 +211,20 @@ export function MessageView({
           {message.waitingForSummary ? t(($) => $.compactionBeforeAnswer) : t(($) => $.preparing)}
         </p>
       ) : null}
-      {message.status === 'failed' && (!toolErrorVisible || message.generation?.failure) && (
-        <ProviderFailureView
-          summary={issueMessage(message.generation?.issue ?? problem('GENERATION_INTERRUPTED'))}
-          failure={message.generation?.failure}
-          showSummary={!toolErrorVisible}
-          stateKey={`failure:${message.id}`}
-          onSettings={onProviderSettings}
-        />
-      )}
+      {(message.status === 'failed' || message.generation?.interrupted) &&
+        (!toolErrorVisible || message.generation?.failure || message.generation?.interrupted) && (
+          <ProviderFailureView
+            summary={
+              message.generation?.interrupted
+                ? uiMessage('chat', 'interruptedRetained')
+                : issueMessage(message.generation?.issue ?? problem('GENERATION_INTERRUPTED'))
+            }
+            failure={message.generation?.failure}
+            showSummary={!toolErrorVisible || message.generation?.interrupted}
+            stateKey={`failure:${message.id}`}
+            onSettings={onProviderSettings}
+          />
+        )}
       {message.status === 'cancelled' && (
         <p className="mt-4 text-xs text-muted-foreground">{t(($) => $.stopped)}</p>
       )}

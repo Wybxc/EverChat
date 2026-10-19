@@ -2065,6 +2065,7 @@ export class Conversation extends DurableObject<Env> {
                 { secrets: claim.context.map((message) => message.content) },
               ),
         cancelled ? undefined : issueOf(failure, 'GENERATION_INTERRUPTED'),
+        !active.cancelled && !active.failure && !tailFailed,
       );
     } finally {
       if (active.timer) clearInterval(active.timer);
@@ -2165,6 +2166,7 @@ export class Conversation extends DurableObject<Env> {
     toolTurn?: ProviderToolTurn,
     failureDetails?: ProviderFailure,
     failureIssue?: ErrorIssue,
+    retainPartial = false,
   ) {
     if (this.deletedAt) return;
     const run = this.run(runId);
@@ -2197,6 +2199,7 @@ export class Conversation extends DurableObject<Env> {
         } catch (failure) {
           status = 'failed';
           error = failure instanceof StreamParseError ? failure.message : '无法验证供应商回答。';
+          retainPartial = failure instanceof StreamParseError;
         }
       }
       message.parts = messageParts(parser.content, parser.reasoning);
@@ -2271,7 +2274,7 @@ export class Conversation extends DurableObject<Env> {
             : undefined,
       ),
     };
-    const { change, finalStatus } = this.ctx.storage.transactionSync(() => {
+    const { change, finalStatus, executionStatus } = this.ctx.storage.transactionSync(() => {
       const roundTiming = this.query<{ providerStartedAt: number; firstTokenAt: number | null }>(
         'SELECT providerStartedAt,firstTokenAt FROM generation_timings WHERE runId=?',
         runId,
@@ -2334,6 +2337,17 @@ export class Conversation extends DurableObject<Env> {
             toolModel || toolRequest ? 'tool' : 'protocol',
           );
       }
+      const executionStatus = finalStatus;
+      // Seal useful supplier output as a chat version; execution and tool accounting still fail.
+      if (
+        retainPartial &&
+        finalStatus === 'failed' &&
+        !message.summary &&
+        messageText(message).trim()
+      ) {
+        finalStatus = 'completed';
+        message.generation!.interrupted = true;
+      }
       this.query(
         'INSERT INTO message_generations (messageId, payload) VALUES (?, ?) ON CONFLICT(messageId) DO UPDATE SET payload = excluded.payload',
         message.id,
@@ -2355,7 +2369,7 @@ export class Conversation extends DurableObject<Env> {
         [this.messages.message(message.id)!, ...this.resolveDependentAnswers(runId, finalStatus)],
         run.conversationId,
       );
-      if (finalStatus === 'completed' && !message.summary) {
+      if (finalStatus === 'completed' && !message.summary && !message.generation?.interrupted) {
         this.completionOutbox.record({
           conversationId: run.conversationId,
           messageId: message.id,
@@ -2373,7 +2387,7 @@ export class Conversation extends DurableObject<Env> {
       }
       if (this.capacityBytes(MAX_DATABASE_BYTES) > MAX_DATABASE_BYTES)
         throw capacityError('terminal');
-      return { change: terminal, finalStatus };
+      return { change: terminal, finalStatus, executionStatus };
     });
     this.broadcast(change);
     this.ctx.waitUntil(this.accounting.deliver().finally(() => this.scheduleAlarm()));
@@ -2382,13 +2396,13 @@ export class Conversation extends DurableObject<Env> {
       for (const [key, active] of this.activeTools)
         if (key.startsWith(`${toolModel.rootId}:`)) active.abort.abort();
     }
-    if (finalStatus === 'completed' && !message.summary)
+    if (finalStatus === 'completed' && !message.summary && !message.generation?.interrupted)
       this.ctx.waitUntil(this.flushCompletions().finally(() => this.scheduleAlarm()));
     this.updateSearchSoon();
     if (this.meter?.runId === runId) {
       const final = this.messages.message(message.id)!;
       const report = this.meter.report(
-        finalStatus,
+        executionStatus,
         this.ctx.storage.sql.databaseSize,
         messageText(final).length,
         messageText(final, 'reasoning').length,

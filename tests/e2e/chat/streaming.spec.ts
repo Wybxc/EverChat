@@ -252,7 +252,7 @@ test('previews precede commits and reconnecting subscribers recover the same dur
   }
 });
 
-test('premature upstream EOF saves buffered text and thoughts, marks failure and preserves submission idempotency', async ({
+test('premature upstream EOF seals buffered text and thoughts as a retained answer and preserves submission idempotency', async ({
   request,
 }) => {
   expect((await request.post('/__dev/access/login', { headers })).ok()).toBe(true);
@@ -312,14 +312,15 @@ test('premature upstream EOF saves buffered text and thoughts, marks failure and
       .poll(
         () => live.snapshot().messages.find((message) => message.runId === accepted.runId)?.status,
       )
-      .toBe('failed');
+      .toBe('completed');
     const stored = (await request
       .get(`/api/conversations/${id}`)
       .then((response) => response.json())) as Snapshot;
     expect(live.snapshot()).toEqual(stored);
     expect(stored.messages[1]).toMatchObject({
-      status: 'failed',
+      status: 'completed',
       parts: messageParts('正文🙂'.repeat(400), '思考🙂'.repeat(400)),
+      generation: { interrupted: true, usageIsFinal: false },
     });
     expect(stored.messages[1].error).toBeTruthy();
     const repeated = await request.post(`/api/conversations/${id}/messages`, {

@@ -11,6 +11,8 @@ export interface GenerationTiming {
 }
 export interface GenerationResult {
   finishReason?: StreamState['finishReason'];
+  /** A retained ordinary answer whose supplier stream ended before successful completion. */
+  interrupted?: true;
   usage: StreamUsage;
   usageIsFinal: boolean;
   timing?: GenerationTiming;
@@ -49,6 +51,7 @@ const count = v.optional(
 );
 export const generationSchema = v.strictObject({
   finishReason: v.optional(v.picklist(['stop', 'length', 'other'])),
+  interrupted: v.optional(v.literal(true)),
   usage: v.strictObject({
     inputTokens: count,
     outputTokens: count,

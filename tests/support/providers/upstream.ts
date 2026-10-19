@@ -181,7 +181,7 @@ export function installMockUpstream() {
           headers: { 'x-request-id': 'req-diagnostic-http' },
         },
       );
-    if (modelId === 'diagnostic-stream') {
+    if (modelId === 'diagnostic-stream' || modelId === 'diagnostic-disconnect') {
       const protocol: ProviderKind = url.pathname.endsWith('/responses')
         ? 'openai-responses'
         : url.pathname.endsWith('/messages')
@@ -189,6 +189,24 @@ export function installMockUpstream() {
           : url.pathname.includes(':streamGenerateContent')
             ? 'gemini'
             : 'openai-chat';
+      if (modelId === 'diagnostic-disconnect') {
+        let cancelled = false;
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(encoder.encode(providerStreams[protocol].partial));
+            },
+            async pull(controller) {
+              await new Promise((resolve) => setTimeout(resolve, 200));
+              if (!cancelled) controller.error(new Error('Fixture supplier disconnected'));
+            },
+            cancel() {
+              cancelled = true;
+            },
+          }),
+          { headers: { 'Content-Type': 'text/event-stream' } },
+        );
+      }
       return new Response(
         providerStreams[protocol].partial +
           `data: ${JSON.stringify({

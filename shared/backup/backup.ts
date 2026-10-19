@@ -217,13 +217,20 @@ export function validateBackup(value: unknown): EverChatBackup {
       rawGeneration === undefined ? undefined : v.safeParse(generationSchema, rawGeneration);
     if (generation && (!generation.success || message.role !== 'assistant'))
       throw new AppError(problem('BACKUP_INVALID'), '备份中的生成元数据无效。');
+    const retained = generation?.success && generation.output.interrupted;
+    if (
+      retained &&
+      (message.status !== 'completed' || summary || !messageText({ parts: parts.output }).trim())
+    )
+      throw new AppError(problem('BACKUP_INVALID'), '备份中的保留回答无效。');
     const tools =
       message.tools === undefined ? undefined : v.safeParse(publicToolTaskSchema, message.tools);
     if (
       tools &&
       (!tools.success ||
         message.role !== 'assistant' ||
-        tools.output.status !== message.status ||
+        (tools.output.status !== message.status &&
+          !(retained && tools.output.status === 'failed')) ||
         !validReasoningBreaks(tools.output, messageText({ parts: parts.output }, 'reasoning')))
     )
       throw new AppError(problem('BACKUP_INVALID'), '备份中的工具过程无效。');

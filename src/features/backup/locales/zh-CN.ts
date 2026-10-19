@@ -31,6 +31,7 @@ export default {
   queued: '排队中',
   running: '生成中',
   completed: '已完成',
+  interrupted: '已中断，保留已生成内容',
   failed: '失败',
   cancelledStatus: '已停止',
 } as const;

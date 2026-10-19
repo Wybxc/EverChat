@@ -1,6 +1,7 @@
 import { expect, test, type APIRequestContext } from '@playwright/test';
 import { once } from 'node:events';
 import WebSocket from 'ws';
+import { validateBackup } from '../../../shared/backup/backup';
 import type { NotificationDevice } from '../../../shared/notifications/protocol';
 import type { ProviderSettings } from '../../../shared/providers/types';
 import type { Snapshot } from '../../../shared/streaming/protocol';
@@ -205,16 +206,58 @@ test('an unregistered active desktop suppresses concurrent mobile notifications 
     await f.cleanup();
   }
 });
-test('failed provider answers do not enter the completion outbox', async ({ request }) => {
-  const f = await fixture(request, 'diagnostic-http');
+for (const model of [
+  'diagnostic-http',
+  'diagnostic-stream',
+  'diagnostic-disconnect',
+  'benchmark-error-2-25-20',
+])
+  test(`${model}: provider failures and retained partial answers do not enter the completion outbox`, async ({
+    request,
+  }) => {
+    const f = await fixture(request, model);
+    try {
+      await f.submit({ content: '失败不发成功通知' });
+      await expect
+        .poll(async () => (await f.snapshot()).messages[1]?.status)
+        .toBe(model === 'diagnostic-http' ? 'failed' : 'completed');
+      expect((await f.snapshot()).messages[1].generation?.interrupted).toBe(
+        model === 'diagnostic-http' ? undefined : true,
+      );
+      expect(await f.pushes()).toHaveLength(0);
+    } finally {
+      await f.cleanup();
+    }
+  });
+test('a tool-enabled disconnected answer is retained with its failed tool state and remains restorable without a success notification', async ({
+  request,
+}) => {
+  const f = await fixture(request, 'diagnostic-disconnect');
+  let restoredId: string | undefined;
   try {
-    await f.submit({ content: '失败不发成功通知' });
-    await expect.poll(async () => (await f.snapshot()).messages[1]?.status).toBe('failed');
+    await f.submit({ content: '保留工具模式下的部分回答', tools: ['web_search', 'read_webpage'] });
+    await expect.poll(async () => (await f.snapshot()).messages[1]?.status).toBe('completed');
+    expect((await f.snapshot()).messages[1]).toMatchObject({
+      generation: { interrupted: true },
+      tools: { status: 'failed' },
+    });
     expect(await f.pushes()).toHaveLength(0);
+    const backup = await request.get(`/api/conversations/${f.id}/backup`).then((r) => r.json());
+    expect(() => validateBackup(backup)).not.toThrow();
+    const response = await request.post('/api/backup/restore', { headers, data: backup });
+    expect(response.status(), await response.text()).toBe(201);
+    const restored = await response.json();
+    restoredId = restored.id;
+    expect(restored.snapshot.messages[1]).toMatchObject({
+      generation: { interrupted: true },
+      tools: { status: 'failed' },
+    });
   } finally {
+    if (restoredId) await request.delete(`/api/conversations/${restoredId}`, { headers });
     await f.cleanup();
   }
 });
+
 test('tool execution and model continuation produce a single notification for the final public answer', async ({
   request,
 }) => {

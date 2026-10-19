@@ -31,6 +31,7 @@ export default {
   queued: 'Queued',
   running: 'Generating',
   completed: 'Completed',
+  interrupted: 'Interrupted; saved content retained',
   failed: 'Failed',
   cancelledStatus: 'Stopped',
 } as const;

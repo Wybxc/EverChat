@@ -36,12 +36,14 @@ export function exportChatFile(
     cancelled: 'cancelledStatus',
   } as const;
   const status = (message: Message) =>
-    message.status === 'completed'
-      ? ''
-      : t(($) => $.status, { status: t(($) => $[statuses[message.status]]) }) +
-        (message.error
-          ? ` (${renderIssue(message.generation?.issue ?? problem('GENERATION_INTERRUPTED'), locale)})`
-          : '');
+    message.generation?.interrupted
+      ? t(($) => $.status, { status: t(($) => $.interrupted) })
+      : message.status === 'completed'
+        ? ''
+        : t(($) => $.status, { status: t(($) => $[statuses[message.status]]) }) +
+          (message.error
+            ? ` (${renderIssue(message.generation?.issue ?? problem('GENERATION_INTERRUPTED'), locale)})`
+            : '');
   const attachments = (message: Message) =>
     [
       ...messageImages(message).map((image) => t(($) => $.image, { name: image.name })),

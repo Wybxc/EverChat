@@ -172,6 +172,7 @@ export default {
   queued: '排队中',
   generating: '生成中',
   generationFailed: '生成失败',
+  interruptedRetained: '回答已中断，已保留的内容将用于后续对话。',
   compactionBeforeAnswer: '压缩历史后开始回答…',
   preparing: '准备中…',
   partialAnswerSaved: '生成失败，已保存部分内容。',

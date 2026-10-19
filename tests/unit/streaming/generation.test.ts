@@ -161,6 +161,10 @@ test('Chat usage accepts DeepSeek cache counters, empty choices and zeroes witho
 test('generation metadata validation rejects invalid counters and leaked fields while preserving zero and unknown', () => {
   const base = { usage: { inputTokens: 0 }, usageIsFinal: false, timing: { firstTokenMs: 0 } };
   assert.deepEqual(v.parse(generationSchema, base), base);
+  assert.deepEqual(v.parse(generationSchema, { ...base, interrupted: true }), {
+    ...base,
+    interrupted: true,
+  });
   for (const value of [NaN, Infinity, -1, 0.5, Number.MAX_SAFE_INTEGER + 1, '12']) {
     assert.equal(
       v.safeParse(generationSchema, { ...base, usage: { inputTokens: value } }).success,
@@ -176,6 +180,7 @@ test('generation metadata validation rejects invalid counters and leaked fields 
     { ...base, usage: { apiKey: 'secret' } },
     { ...base, timing: { apiKey: 'secret' } },
     { ...base, usageIsFinal: 'true' },
+    { ...base, interrupted: 'true' },
   ])
     assert.equal(v.safeParse(generationSchema, value).success, false);
 });

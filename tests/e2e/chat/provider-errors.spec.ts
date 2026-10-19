@@ -2,11 +2,12 @@ import { expect, test } from '@playwright/test';
 import type { ProviderSettings } from '../../../shared/providers/types';
 import type { Snapshot } from '../../../shared/streaming/protocol';
 import { messageText } from '../../../shared/conversation/content';
+import { chooseChatModel } from '../../support/browser/ui';
 
 const headers = { Origin: 'http://127.0.0.1:5174' };
 
 for (const protocol of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'] as const) {
-  for (const mode of ['http', 'stream'] as const) {
+  for (const mode of ['http', 'stream', 'disconnect'] as const) {
     test(`${protocol} ${mode} failures expose safe diagnostics across reload, duplicate and backup restore`, async ({
       page,
     }, info) => {
@@ -16,7 +17,9 @@ for (const protocol of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
         .then((r) => r.json())) as ProviderSettings;
       const id = crypto.randomUUID(),
         providerId = crypto.randomUUID(),
+        nextProviderId = crypto.randomUUID(),
         extras: string[] = [];
+      const nextModel = 'benchmark-text-10-150-20';
       const model = `diagnostic-${mode}`;
       const publicWire: string[] = [];
       page.on('websocket', (socket) =>
@@ -51,6 +54,14 @@ for (const protocol of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
                     apiKey: 'integration-test-key',
                     models: [{ id: model, name: '诊断模型', enabled: true }],
                   },
+                  {
+                    id: nextProviderId,
+                    name: '后续对话供应商',
+                    provider: 'openai-chat',
+                    baseUrl: 'https://provider.test/v1',
+                    apiKey: 'integration-test-key',
+                    models: [{ id: nextModel, name: '后续模型', enabled: true }],
+                  },
                 ],
               },
             })
@@ -75,11 +86,13 @@ for (const protocol of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
         });
         const snapshot = () =>
           page.request.get(`/api/conversations/${id}`).then((r) => r.json()) as Promise<Snapshot>;
-        await expect.poll(async () => (await snapshot()).messages[1]?.status).toBe('failed');
+        await expect
+          .poll(async () => (await snapshot()).messages[1]?.status)
+          .toBe(mode !== 'http' ? 'completed' : 'failed');
         const message = (await snapshot()).messages[1];
+        expect(message.generation?.interrupted).toBe(mode !== 'http' ? true : undefined);
         const failure = message.generation?.failure;
         expect(failure).toMatchObject({
-          stage: mode === 'http' ? 'response' : 'stream',
           protocol,
           providerId,
           providerName: '错误诊断供应商',
@@ -87,12 +100,20 @@ for (const protocol of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
           modelName: '诊断模型',
           endpoint: 'https://provider.test/v1',
         });
-        expect(failure?.code).toBe(mode === 'http' ? 'invalid_api_key' : 'overloaded_error');
+        // The local fetch proxy can surface a broken stream as a premature EOF.
+        expect(
+          mode === 'disconnect'
+            ? ['stream', 'protocol']
+            : [mode === 'http' ? 'response' : 'stream'],
+        ).toContain(failure?.stage);
+        expect(failure?.code).toBe(
+          mode === 'http' ? 'invalid_api_key' : mode === 'stream' ? 'overloaded_error' : undefined,
+        );
         expect(JSON.stringify(failure)).not.toContain('integration-test-key');
         expect(JSON.stringify(failure)).not.toContain('private question');
         expect(publicWire.join('')).not.toContain('integration-test-key');
         expect(publicWire.join('')).not.toContain('overloaded_error');
-        if (mode === 'stream') {
+        if (mode !== 'http') {
           expect(messageText(message)).toBe('**正文🙂**\n');
           expect(messageText(message, 'reasoning')).toBe('**思考🙂**\n');
         } else {
@@ -100,17 +121,45 @@ for (const protocol of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
           expect(failure?.requestId).toBe('req-diagnostic-http');
         }
         await page.getByTestId('provider-failure').locator('summary').click();
-        await expect(page.getByTestId('provider-failure')).toContainText(failure!.code!);
+        await expect(page.getByTestId('provider-failure')).toContainText(failure?.code ?? model);
         await page.getByRole('button', { name: '复制诊断信息', exact: true }).click();
         const copied = await page.evaluate(
           () => (window as unknown as { diagnosticCopy: string }).diagnosticCopy,
         );
-        expect(copied).toContain(failure!.code!);
+        expect(copied).toContain(failure?.code ?? model);
         expect(copied).not.toContain('integration-test-key');
         await page.screenshot({ path: info.outputPath(`provider-error-${mode}-${protocol}.png`) });
         await page.reload();
         await expect(page.getByTestId('provider-failure')).toBeVisible();
         expect((await snapshot()).messages[1].generation?.failure).toEqual(failure);
+        if (mode !== 'http') {
+          await expect(page.getByTestId('assistant-message')).toHaveAttribute(
+            'data-status',
+            'completed',
+          );
+          await expect(page.getByTestId('provider-failure')).toContainText(
+            '已保留的内容将用于后续对话',
+          );
+          await chooseChatModel(page, JSON.stringify([nextProviderId, nextModel]));
+          const accepted = page.waitForResponse(
+            (response) =>
+              response.request().method() === 'POST' &&
+              response.url().endsWith(`/conversations/${id}/messages`),
+          );
+          await page.getByRole('textbox', { name: '消息', exact: true }).fill('请接着说');
+          await page.getByRole('button', { name: '发送消息', exact: true }).click();
+          const { runId } = await (await accepted).json();
+          const run = await page.request
+            .post(`/api/__test/conversations/${id}/context`, { headers, data: { runId } })
+            .then((response) => response.json());
+          expect(run.context).toEqual([
+            { role: 'user', content: 'private question' },
+            { role: 'assistant', content: '**正文🙂**\n' },
+            { role: 'user', content: '请接着说' },
+          ]);
+          await expect.poll(async () => (await snapshot()).messages[3]?.status).toBe('completed');
+          expect((await snapshot()).messages[2].parentId).toBe(message.id);
+        }
         const copy = await page.request
           .post(`/api/conversations/${id}/duplicate`, {
             headers,
@@ -122,6 +171,7 @@ for (const protocol of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
           .get(`/api/conversations/${copy.id}`)
           .then((r) => r.json())) as Snapshot;
         expect(duplicate.messages[1].generation?.failure).toEqual(failure);
+        expect(duplicate.messages[1].generation?.interrupted).toBe(message.generation?.interrupted);
         const backup = await page.request
           .get(`/api/conversations/${id}/backup`)
           .then((r) => r.json());
@@ -134,6 +184,9 @@ for (const protocol of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
         const restored = await restoredResponse.json();
         extras.push(restored.id);
         expect(restored.snapshot.messages[1].generation.failure).toEqual(failure);
+        expect(restored.snapshot.messages[1].generation.interrupted).toBe(
+          message.generation?.interrupted,
+        );
         await page.getByTestId('provider-failure').locator('summary').click();
         await page.getByRole('button', { name: '供应商设置', exact: true }).click();
         await expect(page.getByRole('dialog', { name: '设置', exact: true })).toBeVisible();

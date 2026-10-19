@@ -328,6 +328,24 @@ test('tool process backups retain safe outcomes, stop unfinished work and reject
     validateBackup(JSON.parse(JSON.stringify(backup))).conversation.messages[0].tools,
     partial.tools,
   );
+  const retained = {
+    ...partial,
+    status: 'completed',
+    generation: { usage: {}, usageIsFinal: false, interrupted: true },
+  };
+  const retainedBackup = {
+    ...backup,
+    conversation: { ...backup.conversation, messages: [retained] },
+  };
+  assert.deepEqual(validateBackup(retainedBackup).conversation.messages[0], retained);
+  assert.throws(
+    () =>
+      validateBackup({
+        ...retainedBackup,
+        conversation: { ...backup.conversation, messages: [{ ...retained, parts: [] }] },
+      }),
+    /保留回答无效/,
+  );
   const invalid = [
     { ...partial.tools, status: 'active' },
     { ...partial.tools, providerOptions: { signature: 'private' } },

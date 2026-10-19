@@ -179,6 +179,7 @@ export default {
   queued: 'Queued',
   generating: 'Generating',
   generationFailed: 'Generation failed',
+  interruptedRetained: 'Answer interrupted. Saved content will be included in follow-up messages.',
   compactionBeforeAnswer: 'Compacting history before answering…',
   preparing: 'Preparing…',
   partialAnswerSaved: 'Generation failed. Partial content has been saved.',
