@@ -1,21 +1,21 @@
 # Cloudflare 生产部署与用量告警
 
-记录日期：2026-10-16。以下为已保存的实际控制台配置；费用以账户账单和 Cloudflare 当前规则为准。
+更新日期：2026-10-19。以下为已保存的实际配置；待确认的 Access 路径调整单独标明，费用以账户账单和 Cloudflare 当前规则为准。
 
 ## 生产资源
 
-| 项目             | 当前配置                                                                  |
-| ---------------- | ------------------------------------------------------------------------- |
-| 网站             | <https://chat.wybxc.cc>                                                   |
-| 私有 GitHub 仓库 | <https://github.com/Wybxc/EverChat>                                       |
-| Worker           | `everchat`                                                                |
-| Workers 套餐     | Workers Free                                                              |
-| Access 套餐      | Teams Free                                                                |
-| Access 应用      | EverChat，覆盖整个正式域名，仅允许配置的所有者邮箱                        |
-| Durable Objects  | `CONVERSATIONS` → `everchat_Conversation`；`LIBRARY` → `everchat_Library` |
-| Workflow         | `WEB_TOOLS` → `everchat-web-tools`                                        |
-| 私有 R2          | `ATTACHMENTS` → `everchat-attachments`，Standard 存储                     |
-| 备用公开入口     | `workers_dev: false`、`preview_urls: false`                               |
+| 项目             | 当前配置                                                                                                                                     |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| 网站             | <https://chat.wybxc.cc>                                                                                                                      |
+| 私有 GitHub 仓库 | <https://github.com/Wybxc/EverChat>                                                                                                          |
+| Worker           | `everchat`                                                                                                                                   |
+| Workers 套餐     | Workers Free                                                                                                                                 |
+| Access 套餐      | Teams Free                                                                                                                                   |
+| Access 应用      | EverChat，覆盖整个正式域名，仅允许配置的所有者邮箱                                                                                           |
+| Durable Objects  | `CONVERSATIONS` → `everchat_Conversation`；`LIBRARY` → `everchat_Library`；`USAGE` → `everchat_UsageStore`；`SHARES` → `everchat_ShareStore` |
+| Workflow         | `WEB_TOOLS` → `everchat-web-tools`                                                                                                           |
+| 私有 R2          | `ATTACHMENTS` → `everchat-attachments`，Standard 存储                                                                                        |
+| 备用公开入口     | `workers_dev: false`、`preview_urls: false`                                                                                                  |
 
 原 `chat` CNAME 指向已下线的 Tunnel；经用户授权已切换到 Worker Custom Domain。Access 在域名切换前已启用。R2 不开放公共桶或 `r2.dev`，附件由受保护的 Worker 路由读取。
 
@@ -62,7 +62,7 @@ R2 Standard 每月免费包含 10 GB-month 存储、100 万次 Class A 和 1,000
 
 Workers Free、Durable Objects Free 和 Workflows Free 的免费用量边界按平台规则拒绝后续操作，而不是自动升级 Workers Paid；账户其他付费订阅仍须分别核对。[Workers](https://developers.cloudflare.com/workers/platform/pricing/)、[Durable Objects](https://developers.cloudflare.com/durable-objects/platform/pricing/)、[Workflows](https://developers.cloudflare.com/workflows/reference/pricing/)。
 
-## 上线验证
+## 初次上线验证（2026-10-16）
 
 涉及数据库格式变更时，先按[离线运维迁移](offline-storage-migration.md)完成维护窗口内的备份、本地转换、导入和校验，再发布业务代码。对象启动不承担迁移；不能直接推送新格式要求的代码后等待用户访问触发转换。
 
@@ -71,6 +71,14 @@ Workers Free、Durable Objects Free 和 Workflows Free 的免费用量边界按�
 - 用户授权的纯测试文件已上传到验证对话，WebSocket 同步确认、私有文本预览、原生下载均成功；下载与原文 SHA-256 相同。
 - 验证对话保留在 <https://chat.wybxc.cc/c/b669e6b2-912b-4158-980a-9a97f9459875>，未发起付费模型请求。
 - 本地 321 项单元测试、最终 29 项相关端到端回归、3 项生产 PWA 回归，以及类型检查、构建、格式检查通过。详细边界和未执行的真实撤销／性能测量见[Access 迁移记录](../plans/cloudflare-access-migration-plan.md)。
+
+## 费用统计与同域分享发布（2026-10-19）
+
+存量 65 个对象已通过维护窗口内的离线 schema 2 升级与逐行验证，保留 282 条消息；恢复后全量读取和私有 API 验收通过。生产增加 UsageStore／ShareStore 绑定及 `SHARE_LINK_KEY` Secret，密钥未进入静态包或 Git。提交 `41e078a` 的 Workers Builds 已成功，自动部署版本为 `b7832078-491d-4bbd-8bfa-3d77043ba853`。
+
+Access 当前仍覆盖整站。已准备将同一个应用的 Public hostnames 改为 `/api`、`/api/*`、`/auth`、`/auth/*`，保留原 Allow 身份、AUD 和会话设置；表单尚未保存，等待最终公开范围确认。前端／SW／分享页面随后可公开，公开数据读取仍逐次验证随机令牌、状态与有效期。此配置不用 Bypass，不能把私有后端改为 Everyone 放行。保存后必须完成匿名访问及撤销验收，不能把代码部署成功当成分享已对外可用。
+
+验收、资源测量与尚未完成的条件见[执行记录](../measurements/usage-sharing-implementation-2026-10-19.md)，回滚时可先恢复整站 Access 保护；数据库格式回滚仍须执行本地反向补丁，不能只回滚代码。
 
 ## 回答完成通知
 
