@@ -1,0 +1,128 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "compatibility_date": "2026-10-09",
+  "compatibility_flags": ["nodejs_compat"],
+  "preview_urls": false,
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+  },
+  "env": {
+    "stream": {
+      "name": "everchat-stream-validation",
+      "main": "../scripts/measurements/support/stream-worker.ts",
+      "workers_dev": false,
+      "routes": [
+        {
+          "pattern": "everchat-stream-validation.wybxc.cc",
+          "custom_domain": true,
+        },
+      ],
+      "vars": {
+        "AI_PROVIDER": "",
+        "AI_BASE_URL": "https://provider.test/v1",
+        "AI_MODEL": "",
+        "SYSTEM_PROMPT": "",
+        "GENERATION_METRICS": "0",
+      },
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "CONVERSATIONS",
+            "class_name": "Conversation",
+          },
+          {
+            "name": "LIBRARY",
+            "class_name": "Library",
+          },
+        ],
+      },
+      "migrations": [
+        {
+          "tag": "v1",
+          "new_sqlite_classes": ["Conversation", "Library"],
+        },
+      ],
+    },
+    "tools": {
+      "name": "everchat-tools-validation",
+      "main": "../scripts/measurements/support/tool-worker.ts",
+      "workers_dev": false,
+      "routes": [
+        {
+          "pattern": "everchat-tools-validation.wybxc.cc",
+          "custom_domain": true,
+        },
+      ],
+      "vars": {
+        "AI_PROVIDER": "",
+        "AI_BASE_URL": "https://provider.test/v1",
+        "AI_MODEL": "",
+        "SYSTEM_PROMPT": "",
+        "GENERATION_METRICS": "0",
+        "LOCAL_RESOURCE_METRICS": "0",
+        "LOCAL_TOOL_WORKLOAD": "{\"chunks\":120,\"size\":200,\"interval\":25}",
+      },
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "CONVERSATIONS",
+            "class_name": "Conversation",
+          },
+          {
+            "name": "LIBRARY",
+            "class_name": "Library",
+          },
+        ],
+      },
+      "workflows": [
+        {
+          "binding": "WEB_TOOLS",
+          "name": "everchat-tools-validation-flow",
+          "class_name": "WebToolWorkflow",
+        },
+      ],
+      "migrations": [
+        {
+          "tag": "v1",
+          "new_sqlite_classes": ["Conversation", "Library"],
+        },
+      ],
+    },
+    "notifications": {
+      "name": "everchat-notifications-validation",
+      "main": "../scripts/measurements/support/notification-worker.ts",
+      "workers_dev": true,
+    },
+    "notification-pipeline": {
+      "name": "everchat-notification-pipeline-validation",
+      "main": "../scripts/measurements/support/notification-pipeline-worker.ts",
+      "workers_dev": true,
+      "vars": {
+        "AI_PROVIDER": "",
+        "AI_BASE_URL": "",
+        "AI_MODEL": "",
+        "SYSTEM_PROMPT": "",
+        "GENERATION_METRICS": "0",
+      },
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "CONVERSATIONS",
+            "class_name": "NotificationProducer",
+          },
+          {
+            "name": "LIBRARY",
+            "class_name": "Library",
+          },
+        ],
+      },
+      "migrations": [
+        {
+          "tag": "v1",
+          "new_sqlite_classes": ["NotificationProducer", "Library"],
+        },
+      ],
+    },
+  },
+}

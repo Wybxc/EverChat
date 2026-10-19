@@ -12,6 +12,8 @@
 
 本轮 PWA、错误诊断、菜单与回答操作、全屏搜索、快捷键、单行输入工具栏、重新生成模型和 AI 标题的设计、实施顺序与进展见[对话体验改进计划](docs/plans/conversation-experience-improvement-plan.md)。侧边栏生成状态、对话菜单和低频活动索引详见[侧边栏对话操作方案](docs/plans/sidebar-conversation-actions-plan.md)。
 
+配置与脚本的合并方式、命令和验收进度见[整理记录](docs/plans/repository-configuration-and-scripts-plan.md)。
+
 项目目录与边界见[模块说明](docs/architecture/modules.md)，验证入口与测试合并记录见[测试说明](tests/README.md)。
 
 访问控制使用 Cloudflare Access；JWT 信任边界、本地联调与验证记录见[访问控制迁移方案](docs/plans/cloudflare-access-migration-plan.md)。
@@ -24,13 +26,12 @@
 
 ```sh
 pnpm install
-cp .dev.vars.example .dev.vars
 pnpm dev
 ```
 
 打开 http://127.0.0.1:5173，点击「重新登录」进入本地空间。在空间设置中添加供应商并选择默认模型后即可发送消息。日常开发由 Node 临时签发本地身份，只监听 loopback；私钥不传入 Worker 或浏览器，生产构建不包含本地签发入口。每次重启开发服务后需重新登录。
 
-真实 Access 联调使用 `pnpm dev:access`，填写 `.dev.vars.example` 中的 Access 变量，通过已经配置域名保护的命名 Tunnel 访问。它采用生产 JWT 验证入口，不能用日常开发 Cookie 登录；隧道入口必须独立配置可信 Origin 和 Access 应用 AUD。
+真实 Access 联调使用 `pnpm dev:access`，需要时在本机创建被 Git 忽略的 `.dev.vars`，填写 `ACCESS_TEAM_DOMAIN`、`ACCESS_AUD`、`ACCESS_ALLOWED_EMAILS` 和 `APP_ORIGIN`，通过已经配置域名保护的命名 Tunnel 访问。它采用生产 JWT 验证入口，不能用日常开发 Cookie 登录；隧道入口必须独立配置可信 Origin 和 Access 应用 AUD。日常开发无需创建环境变量文件，供应商通过网页设置。
 
 新对话位于 `/`，每个已创建或离线待发送的对话使用 `/c/:conversationId`。点击侧栏以 SPA 方式切换，支持浏览器前进／后退、直接打开链接和刷新；链接也可在新标签页打开。URL 决定当前对话，访问 `/` 始终进入新对话。各对话草稿独立保存。
 

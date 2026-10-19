@@ -58,14 +58,14 @@
 
 ## 复测与清理
 
-配置为 `wrangler.notification-validation.jsonc`。每次先确认同名 Worker 不存在，再在仓库外生成独立 P-256 VAPID 密钥和随机 `VALIDATION_SECRET`（0600 文件），部署该配置并写入其 Secrets。不要使用生产密钥。使用以下入口，结束后删除临时 Worker 并通过 Cloudflare API 核对 404：
+配置为 `config/wrangler.validation.jsonc --env notifications`。每次先确认同名 Worker 不存在，再在仓库外生成独立 P-256 VAPID 密钥和随机 `VALIDATION_SECRET`（0600 文件），部署该配置并写入其 Secrets。不要使用生产密钥。使用以下入口，结束后删除临时 Worker 并通过 Cloudflare API 核对 404：
 
 ```sh
-pnpm exec wrangler deploy --config wrangler.notification-validation.jsonc
-pnpm exec wrangler secret bulk <临时密钥文件> --config wrangler.notification-validation.jsonc
+pnpm exec wrangler deploy --config config/wrangler.validation.jsonc --env notifications
+pnpm exec wrangler secret bulk <临时密钥文件> --config config/wrangler.validation.jsonc --env notifications
 pnpm measure:cloudflare-tail --worker everchat-notifications-validation --seconds 90 --output /tmp/notifications-tail.json
 node --import tsx/esm scripts/measurements/notifications-cloudflare.ts --url <部署返回的workers.dev地址> --secrets <临时密钥文件> --output /tmp/notifications-functional.json
-pnpm exec wrangler delete --config wrangler.notification-validation.jsonc --force
+pnpm exec wrangler delete --config config/wrangler.validation.jsonc --env notifications --force
 ```
 
 鉴权令牌、公私钥、订阅地址、JWT 和加密负载均未写入报告。清理证据见[清理记录](notifications-cloudflare-cleanup.json)。

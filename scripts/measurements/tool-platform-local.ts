@@ -34,7 +34,7 @@ const token = await new SignJWT({ type: 'app', email: 'developer@everchat.local'
   .setExpirationTime('12h')
   .sign(privateKey);
 const access = { origin, headers: { Cookie: `everchat_dev_access=${token}` } };
-const source = unstable_readConfig({ config: 'wrangler.tool-validation.jsonc' });
+const source = unstable_readConfig({ config: 'config/wrangler.validation.jsonc', env: 'tools' });
 const config = {
   name: source.name,
   compatibility_date: source.compatibility_date,

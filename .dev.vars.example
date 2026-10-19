@@ -1,8 +1,0 @@
-# Local development uses an ephemeral signed identity; no application password.
-# Configure providers in the web settings. Optional default model key:
-# AI_API_KEY="your-provider-api-key"
-# Real Access integration: pnpm dev:access (use an Access-protected named tunnel).
-# ACCESS_TEAM_DOMAIN="your-team.cloudflareaccess.com"
-# ACCESS_AUD="your-application-audience-tag"
-# ACCESS_ALLOWED_EMAILS="you@example.com"
-# APP_ORIGIN="https://chat.example.com"

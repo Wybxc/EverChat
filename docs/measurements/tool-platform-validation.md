@@ -4,7 +4,7 @@
 
 ## 隔离与观察边界
 
-- [独立配置](../../wrangler.tool-validation.jsonc)仅用于 `everchat-tools-validation`，提供两个独立 SQLite DO 和 `everchat-tools-validation-flow`。不绑定 R2，未配置附件时聊天／工具仍能工作。使用生产 Workflow、供应商请求构造、AI SDK 续接和 Tavily 适配器，模型与工具 HTTP 响应由 fixture 模拟；其余外部供应商网络被禁用。
+- [独立配置](../../config/wrangler.validation.jsonc)仅用于 `everchat-tools-validation`，提供两个独立 SQLite DO 和 `everchat-tools-validation-flow`。不绑定 R2，未配置附件时聊天／工具仍能工作。使用生产 Workflow、供应商请求构造、AI SDK 续接和 Tavily 适配器，模型与工具 HTTP 响应由 fixture 模拟；其余外部供应商网络被禁用。
 - `LOCAL_RESOURCE_METRICS=0`、`GENERATION_METRICS=0`。不使用本地计数代理或测量版 Workflow，不在模型生成期间轮询 Library。mock 工作负载独立配置：默认 120 段 × 200 UTF-16 码元、每段 25ms；`large` 为 120 × 750；`sustained` 为 120 × 200、每段 500ms。协议控制事件和两次 1.5 秒工具响应照常保留。
 - [执行器](../../scripts/measurements/support/tool-platform-runner.ts)在发送凭据或写设置前核对 Worker 类型、版本、随机 `VALIDATION_RUN_ID`、模拟上游和关闭的计数开关。远程仅接受专用 `everchat-tools-validation.wybxc.cc` 域名；本地模式只接受显式的 `127.0.0.1`。拒绝跟随 HTTP 重定向。
 - `/api/__test/*` 在该入口返回 404。专用准备接口要求登录、同源、UUID 和两个固定模式，且仅允许未开始工具任务的对话；没有通用故障注入接口。
@@ -34,7 +34,7 @@ pnpm measure:tools-platform-local --suite sustained --port 5192 --output /tmp/ev
 
 ## Workers Free 复现
 
-1. 检查账户和专用 Worker／Workflow 名称，确认使用本轮隔离资源，保存 namespace ID 和部署版本。先创建覆盖隔离验证域名的 Access 应用与 Service Auth 策略，只允许该次验证的服务令牌。Worker 配置 `ACCESS_TEAM_DOMAIN`、`ACCESS_AUD`、`APP_ORIGIN`、`VALIDATION_ACCESS_SERVICE_IDS`（指定 Client ID）及 UUID `VALIDATION_RUN_ID`。权限为 0600 的凭据 JSON 包含 `ACCESS_ORIGIN`、`CF_ACCESS_CLIENT_ID`、`CF_ACCESS_CLIENT_SECRET`、`VALIDATION_RUN_ID`；文件绑定到验证 origin，不能用于正式 EverChat 域名。部署命令为 `pnpm exec wrangler deploy --config wrangler.tool-validation.jsonc`。先验证边缘保护，缺少 JWT 配置时业务入口拒绝访问。
+1. 检查账户和专用 Worker／Workflow 名称，确认使用本轮隔离资源，保存 namespace ID 和部署版本。先创建覆盖隔离验证域名的 Access 应用与 Service Auth 策略，只允许该次验证的服务令牌。Worker 配置 `ACCESS_TEAM_DOMAIN`、`ACCESS_AUD`、`APP_ORIGIN`、`VALIDATION_ACCESS_SERVICE_IDS`（指定 Client ID）及 UUID `VALIDATION_RUN_ID`。权限为 0600 的凭据 JSON 包含 `ACCESS_ORIGIN`、`CF_ACCESS_CLIENT_ID`、`CF_ACCESS_CLIENT_SECRET`、`VALIDATION_RUN_ID`；文件绑定到验证 origin，不能用于正式 EverChat 域名。部署命令为 `pnpm exec wrangler deploy --config config/wrangler.validation.jsonc --env tools`。先验证边缘保护，缺少 JWT 配置时业务入口拒绝访问。
 2. 三组分别运行下方命令，保存完整报告。并行启动专用 tail，使用 `--worker everchat-tools-validation`；tail 只保留脱敏路径、状态和可选资源字段。
 3. 每组用 `measure:cloudflare-metrics --functional <该组报告>` 查询对应分钟窗口，使用 `--url` 和同一 Secrets 文件取得终态 SQLite 分配。工具报告必须标记 `runtime: cloudflare`，本地报告会被拒绝。
 4. Worker／DO 图表与 Workflow 图表分别查询；某个数据集缺失不能使其他数据丢失。Workflow 使用 [`workflowsAdaptiveGroups`](https://developers.cloudflare.com/workflows/observability/metrics-analytics/)，本轮实际 schema 另核对 CPU、执行时长、步骤、重试和状态增长字段。`cpuTime` 为毫秒；`storageRate` 不是保留存储或账单。查询后保留缺失项，不写成零。各子窗口分钟取整后可能重叠，应另建总窗口，不能相加。

@@ -32,7 +32,7 @@ DO 中仍保留提交、修订、完成、取消、工具轮次及恢复的事�
 
 ## 检查入口
 
-`pnpm typecheck` 分别检查客户端、Worker、Node 工具、标准 Web Worker shared，以及客户端单测、Node 单测、Cloudflare 夹具、浏览器测试。平台验证 Worker 从 Node 工具检查中排除，进入 Cloudflare 运行时检查。
+根 `tsconfig.json` 集中公共编译选项与编辑器项目引用，`config/` 只保留 app、worker、sw、tooling 四种检查配置。`pnpm typecheck` 分别检查前端、生产 Worker、Service Worker，以及工具和全部测试。共享代码同时受前端和 Worker 的环境约束；工具与测试配置允许 Node、DOM 和 Cloudflare 类型，不放宽生产源码的独立检查。
 
 测试结构、发现规则和合并记录见 [测试说明](../../tests/README.md)。本次迁移的范围与验证记录见 [模块整理计划](../plans/project-organization-plan.md)。
 

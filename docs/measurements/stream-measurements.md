@@ -182,7 +182,7 @@ Worker 错误计数和资源超限计数均为零；DO HTTP 的断线状态仍�
 使用项目的 Node 26 工具环境和 pnpm。先用 `pnpm exec wrangler whoami --json` 确认账户，确认 `everchat-stream-validation` 尚不存在，避免覆盖他人的验证环境。先创建覆盖隔离验证主机名的 Access 应用和 Service Auth 策略；Worker 配置 `ACCESS_TEAM_DOMAIN`、`ACCESS_AUD`、`APP_ORIGIN` 和 `VALIDATION_ACCESS_SERVICE_IDS`（指定 Client ID）。创建权限为 `0600` 的临时凭据 JSON，包含 `ACCESS_ORIGIN`（与验证 URL 的 origin 完全一致）、`CF_ACCESS_CLIENT_ID`、`CF_ACCESS_CLIENT_SECRET`；不要打印或提交。部署凭据与 Access 服务凭据分别管理。确认域名保护生效后部署，不在正式 EverChat 应用添加服务身份。
 
 ```sh
-pnpm exec wrangler deploy --config wrangler.stream-validation.jsonc
+pnpm exec wrangler deploy --config config/wrangler.validation.jsonc --env stream
 pnpm measure:cloudflare --url https://everchat-stream-validation.wybxc.cc --credentials /tmp/everchat-stream-validation-secrets.json --output /tmp/everchat-cloudflare-functional.json
 pnpm measure:cloudflare-metrics --account YOUR_ACCOUNT_ID --functional /tmp/everchat-cloudflare-functional.json --url https://everchat-stream-validation.wybxc.cc --credentials /tmp/everchat-stream-validation-secrets.json --output /tmp/everchat-cloudflare-metrics.json
 ```
@@ -216,4 +216,4 @@ pnpm measure:cloudflare-history --source /tmp/everchat-history-before.json --url
 
 本机存在系统代理时，Node 不会自动读取 macOS 代理设置。可按现有代理配置设置 `HTTP_PROXY`、`HTTPS_PROXY` 和 `NODE_USE_ENV_PROXY=1`；WebSocket 工具使用显式代理 agent，保持 TLS 证书验证。
 
-保存报告后执行 `pnpm exec wrangler delete everchat-stream-validation --config wrangler.stream-validation.jsonc`，检查 Worker 返回 404、两个本轮 namespace 已不在账户列表中，再删除临时 Secrets 文件。不要使用 `--force` 跳过其他 Worker 的依赖检查。若 namespaces 仍存在，只清理本轮创建的 namespaces，并再次核实；不要删除正式对话数据。
+保存报告后执行 `pnpm exec wrangler delete everchat-stream-validation --config config/wrangler.validation.jsonc --env stream`，检查 Worker 返回 404、两个本轮 namespace 已不在账户列表中，再删除临时 Secrets 文件。不要使用 `--force` 跳过其他 Worker 的依赖检查。若 namespaces 仍存在，只清理本轮创建的 namespaces，并再次核实；不要删除正式对话数据。

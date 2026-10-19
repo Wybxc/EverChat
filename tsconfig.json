@@ -1,36 +1,23 @@
 {
   "files": [],
   "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "types": [],
     "paths": {
       "@/*": ["./src/*"]
     }
   },
   "references": [
-    { "path": "./tsconfig.operations.json" },
-    { "path": "./tsconfig.sw.json" },
-    {
-      "path": "./tsconfig.app.json"
-    },
-    {
-      "path": "./tsconfig.worker.json"
-    },
-    {
-      "path": "./tsconfig.tools.json"
-    },
-    {
-      "path": "./tsconfig.tests.client.json"
-    },
-    {
-      "path": "./tsconfig.tests.node.json"
-    },
-    {
-      "path": "./tsconfig.tests.runtime.json"
-    },
-    {
-      "path": "./tsconfig.tests.browser.json"
-    },
-    {
-      "path": "./tsconfig.shared.json"
-    }
+    { "path": "./config/tsconfig.app.json" },
+    { "path": "./config/tsconfig.worker.json" },
+    { "path": "./config/tsconfig.sw.json" },
+    { "path": "./config/tsconfig.tooling.json" }
   ]
 }

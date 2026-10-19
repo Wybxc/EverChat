@@ -32,14 +32,14 @@
 
 ## 复测入口
 
-配置为 `wrangler.notification-pipeline-validation.jsonc`，脚本为 `scripts/measurements/notification-pipeline.ts`。每次先确认同名 Worker 不存在，生成仓库外的随机测试 VAPID／验证口令文件（0600），部署后写入 Secrets；勿复用生产密钥。运行脚本前先连接 tail：
+配置为 `config/wrangler.validation.jsonc --env notification-pipeline`，脚本为 `scripts/measurements/notification-pipeline.ts`。每次先确认同名 Worker 不存在，生成仓库外的随机测试 VAPID／验证口令文件（0600），部署后写入 Secrets；勿复用生产密钥。运行脚本前先连接 tail：
 
 ```sh
-pnpm exec wrangler deploy --config wrangler.notification-pipeline-validation.jsonc
-pnpm exec wrangler secret bulk <测试密钥文件> --config wrangler.notification-pipeline-validation.jsonc
+pnpm exec wrangler deploy --config config/wrangler.validation.jsonc --env notification-pipeline
+pnpm exec wrangler secret bulk <测试密钥文件> --config config/wrangler.validation.jsonc --env notification-pipeline
 pnpm measure:cloudflare-tail --worker everchat-notification-pipeline-validation --seconds 60 --output /tmp/notifications-pipeline-tail.json
 node --import tsx/esm scripts/measurements/notification-pipeline.ts --url <部署返回地址> --secrets <测试密钥文件> --output /tmp/notifications-pipeline-functional.json
-pnpm exec wrangler delete --config wrangler.notification-pipeline-validation.jsonc --force
+pnpm exec wrangler delete --config config/wrangler.validation.jsonc --env notification-pipeline --force
 ```
 
 tail 与功能脚本在不同终端运行。功能脚本结束会对每个测试对象执行 `deleteAll()` 并清除 Alarm；随后删除临时 Worker，核对 404，再删除测试密钥。若中断发生在脚本清理之前，应先核对本次测试对象的状态，不重复生成未知结果的任务，也不将未完成样本写成通过。报告不含订阅地址、加密负载、私钥、JWT、聊天内容或生产身份。

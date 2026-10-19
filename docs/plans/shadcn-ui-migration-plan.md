@@ -209,7 +209,7 @@ shadcn/ui 将组件源代码加入项目，基础交互由选定的 primitives �
 
 1. 增加 `components.json`，选择 `radix-nova`、Neutral 基色、Lucide、`rsc: false`、`tsx: true`、`cssVariables: true`，CSS 指向现有 `src/style.css`。以实施时核定版本的 CLI schema 为准，记录实际 CLI 版本。
 2. 基础组件放在 `src/components/ui/`，`cn()` 放在 `src/lib/utils.ts`；聊天组合组件可放在 `src/components/chat/`，设置组合组件放在 `src/components/settings/`。业务 hooks 和 API 模块不随目录重排一起大改。
-3. 为编辑器与 CLI 在根 `tsconfig.json` 和 `tsconfig.app.json` 配置 `paths: { "@/*": ["./src/*"] }`，保留现有 references。Vite 增加同义的 `resolve.alias`；使用 ESM 的 `fileURLToPath(new URL('./src', import.meta.url))`，保持 Worker／tools 配置边界。
+3. 为编辑器与 CLI 在根 `tsconfig.json` 和 `config/tsconfig.app.json` 配置 `paths: { "@/*": ["./src/*"] }`，保留现有 references。Vite 增加同义的 `resolve.alias`；使用 ESM 的 `fileURLToPath(new URL('./src', import.meta.url))`，保持 Worker／tools 配置边界。
 4. TypeScript 6 已弃用 `baseUrl`；不直接照抄安装示例中的 `baseUrl`，也不为消除警告添加 `ignoreDeprecations`。[TypeScript 6 说明](https://www.typescriptlang.org/docs/handbook/release-notes/typescript-6-0.html)
 5. 按实际组件引入 CLI 生成的 Radix 依赖、`clsx`、`tailwind-merge`、变体工具及 Command 所需依赖；保留已有 Lucide。动画／基础 CSS 导入采用所选版本生成的规则，避免混合不同代际模板。
 6. 安装过程逐项审查 CSS、配置与 lockfile diff。合并 Vite alias，保留 React、Tailwind、Cloudflare、PWA 插件、测试环境配置和 SPA fallback；不能用官方最小示例覆盖整个 Vite 文件。[已有 Vite 项目的安装方式](https://ui.shadcn.com/docs/installation/vite)

@@ -1,9 +1,0 @@
-{
-  "extends": "./tsconfig.worker.json",
-  "compilerOptions": { "types": ["node", "@cloudflare/workers-types"] },
-  "include": [
-    "scripts/operations",
-    "tests/integration/operations",
-    "scripts/measurements/usage-ledger.ts"
-  ]
-}

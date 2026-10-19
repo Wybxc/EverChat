@@ -1,11 +1,10 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { cloudflare } from '@cloudflare/vite-plugin';
 import { VitePWA } from 'vite-plugin-pwa';
 import { fileURLToPath } from 'node:url';
 import { localAccess } from './scripts/dev/access';
-import { startupCache } from './scripts/build/startup-cache';
 
 export default defineConfig(async ({ command, mode }) => {
   const local = command === 'serve' && mode !== 'access' ? await localAccess() : null;
@@ -98,3 +97,36 @@ export default defineConfig(async ({ command, mode }) => {
     server: { port: 5173, strictPort: true },
   };
 });
+
+/** Follow static imports only: optional renderers and their fonts stay out of installation. */
+function startupCache() {
+  // VitePWA adds the manifest and includeAssets separately after this filter.
+  const assets = new Set(['index.html']);
+  const plugin: Plugin = {
+    name: 'everchat-startup-cache',
+    apply: 'build',
+    generateBundle: {
+      order: 'post',
+      handler(_options, bundle) {
+        if (this.environment.name !== 'client') return;
+        const visit = (name: string) => {
+          if (assets.has(name)) return;
+          const chunk = bundle[name];
+          if (chunk?.type !== 'chunk') return;
+          assets.add(name);
+          for (const css of chunk.viteMetadata?.importedCss ?? []) assets.add(css);
+          for (const dependency of chunk.imports) visit(dependency);
+        };
+        for (const chunk of Object.values(bundle))
+          if (
+            chunk.type === 'chunk' &&
+            (chunk.isEntry || chunk.facadeModuleId?.endsWith('/src/private-bootstrap.tsx'))
+          )
+            visit(chunk.fileName);
+        if (![...assets].some((name) => name.endsWith('.js')))
+          this.error('The startup precache must include the client entry script');
+      },
+    },
+  };
+  return { plugin, includes: (url: string) => assets.has(url) };
+}

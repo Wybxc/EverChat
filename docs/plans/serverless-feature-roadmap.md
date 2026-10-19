@@ -887,7 +887,7 @@ Responses 的 90,000 码元和每段 500ms、持续一分钟以上负载也在�
 
 ### 工具平台验证准备检查点（2026-10-15）
 
-上一检查点为 `47aca1e`。新增独立 API-only 入口和 `wrangler.tool-validation.jsonc`，使用生产 Workflow、两个独立 DO 与关闭的诊断计数。修复测试 Library 无附件桶时无法启动的问题，避免聊天／工具验证必须额外配置 R2。专用终态查询直接读取 SQL，不调用会过期任务的观察 helper；通用 `/api/__test/*` 在此入口禁用。
+上一检查点为 `47aca1e`。新增独立 API-only 入口和 `config/wrangler.validation.jsonc --env tools`，使用生产 Workflow、两个独立 DO 与关闭的诊断计数。修复测试 Library 无附件桶时无法启动的问题，避免聊天／工具验证必须额外配置 R2。专用终态查询直接读取 SQL，不调用会过期任务的观察 helper；通用 `/api/__test/*` 在此入口禁用。
 
 本地与平台共用执行器，写入前检查随机运行时标识及计数开关，仅允许专用远程地址或显式本地回环。平台指标与脱敏 tail 增加该 Worker 的受限支持；Workflow 图表独立查询，事件和 wallTime 不冒充引擎 CPU／存储。完整复现和观察边界见[平台验证说明](../measurements/tool-platform-validation.md)。
 

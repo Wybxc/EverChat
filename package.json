@@ -14,11 +14,11 @@
     "deploy": "pnpm build && wrangler deploy",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "typecheck": "tsc -p tsconfig.app.json && tsc -p tsconfig.worker.json && tsc -p tsconfig.tools.json && tsc -p tsconfig.operations.json && tsc -p tsconfig.shared.json && tsc -p tsconfig.sw.json && pnpm typecheck:tests",
-    "update:model-catalog": "node --import tsx/esm scripts/models/update-catalog.ts",
-    "test": "node --import tsx/esm scripts/testing/run-unit.ts",
-    "test:e2e": "playwright test",
-    "test:pwa": "playwright test --config playwright.pwa.config.ts",
+    "typecheck": "tsc -p config/tsconfig.app.json && tsc -p config/tsconfig.worker.json && tsc -p config/tsconfig.sw.json && tsc -p config/tsconfig.tooling.json",
+    "update:model-catalog": "node --import tsx/esm scripts/update-model-catalog.ts",
+    "test": "node --import tsx/esm scripts/test.ts unit",
+    "test:e2e": "node --import tsx/esm scripts/test.ts e2e",
+    "test:pwa": "node --import tsx/esm scripts/test.ts pwa",
     "measure:cloudflare-metrics": "node --import tsx/esm scripts/measurements/cloudflare-metrics.ts",
     "measure:cloudflare-tail": "node --import tsx/esm scripts/measurements/cloudflare-tail.ts",
     "measure:cloudflare": "node --import tsx/esm scripts/measurements/stream-cloudflare.ts",
@@ -27,8 +27,7 @@
     "measure:tools": "node --import tsx/esm scripts/measurements/tool-baseline.ts",
     "measure:cloudflare-tools": "node --import tsx/esm scripts/measurements/tools-cloudflare.ts",
     "measure:tools-platform-local": "node --import tsx/esm scripts/measurements/tool-platform-local.ts",
-    "check": "pnpm test && pnpm test:operations && pnpm build && pnpm test:e2e && pnpm test:pwa",
-    "typecheck:tests": "tsc -p tsconfig.tests.client.json && tsc -p tsconfig.tests.node.json && tsc -p tsconfig.tests.runtime.json && tsc -p tsconfig.tests.browser.json"
+    "check": "pnpm test && pnpm test:operations && pnpm build && pnpm test:e2e && pnpm test:pwa"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.78",
@@ -93,5 +92,14 @@
     "workbox-strategies": "7.4.1",
     "wrangler": "^4.149.0",
     "ws": "^8.22.0"
+  },
+  "prettier": {
+    "singleQuote": true,
+    "semi": true,
+    "trailingComma": "all",
+    "printWidth": 100,
+    "tabWidth": 2,
+    "useTabs": false,
+    "endOfLine": "lf"
   }
 }
