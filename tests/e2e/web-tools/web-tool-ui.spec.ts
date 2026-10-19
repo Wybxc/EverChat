@@ -125,12 +125,7 @@ async function parameters(page: Page) {
   await expect(page.getByRole('combobox', { name: '聊天模型', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '会话参数', exact: true }).click();
   const modal = page.getByRole('dialog', { name: /^(新对话参数|会话参数)$/ });
-  const tools = modal
-    .locator('details')
-    .filter({ has: page.locator('summary').filter({ hasText: '联网工具' }) })
-    .first();
-  if (!((await tools.getAttribute('open')) !== null))
-    await tools.locator(':scope > summary').click();
+  await modal.getByRole('tab', { name: '联网', exact: true }).click();
   return modal;
 }
 async function enable(page: Page) {
@@ -602,10 +597,7 @@ test('invalid new-conversation parameters reject attachments before creating a c
     await page.goto('/');
     await page.getByLabel('消息', { exact: true }).fill('参数无效时保留附件提问');
     const modal = await parameters(page);
-    await modal
-      .locator('summary')
-      .filter({ hasText: /^上下文/ })
-      .click();
+    await modal.getByRole('tab', { name: '上下文', exact: true }).click();
     await modal.getByLabel('上下文 Token 预算', { exact: true }).fill('0');
     await modal.getByRole('button', { name: '关闭会话参数', exact: true }).click();
     await expect(modal).not.toBeVisible();

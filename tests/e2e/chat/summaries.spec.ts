@@ -680,7 +680,7 @@ test('automatic compression preferences autosave with fee disclosure, offline ed
     await page.goto(`/c/${fixture.id}`);
     const composer = page.getByLabel('消息', { exact: true });
     await composer.fill('待发送草稿');
-    await openParameters(page);
+    await openParameters(page, '上下文');
     const modal = page.getByRole('dialog', { name: '会话参数', exact: true });
     await expect(modal.getByLabel('自动压缩历史', { exact: true })).not.toBeChecked();
     await expect(modal).toContainText('额外调用摘要模型');
@@ -694,7 +694,7 @@ test('automatic compression preferences autosave with fee disclosure, offline ed
     await other.request.post('/__dev/access/login', { headers });
     const second = await other.newPage();
     await second.goto(`/c/${fixture.id}`);
-    await openParameters(second);
+    await openParameters(second, '上下文');
     await expect(second.getByLabel('自动压缩历史', { exact: true })).toBeChecked();
     await context.setOffline(true);
     await modal.getByLabel('自动压缩阈值（%）', { exact: true }).fill('70');
@@ -718,7 +718,7 @@ test('automatic compression preferences autosave with fee disclosure, offline ed
     await expect
       .poll(async () => (await fixture.snapshot()).messages.at(-1)!.status)
       .toBe('cancelled');
-    await openParameters(page);
+    await openParameters(page, '上下文');
     await modal.getByLabel('使用历史摘要', { exact: true }).uncheck();
     await expect(modal.getByLabel('自动压缩历史', { exact: true })).not.toBeChecked();
     await expect(modal.getByRole('status')).toHaveText('已保存');
@@ -1101,7 +1101,7 @@ test('summary controls stream Markdown, preserve the draft and URL, sync another
     await second.reload();
     await expect(second.getByTestId('summary-message')).toHaveAttribute('data-status', 'completed');
     expect((await fixture.resources()).calls).toBe(1);
-    await openParameters(second);
+    await openParameters(second, '上下文');
     const settings = second.getByRole('dialog', { name: '会话参数', exact: true });
     await settings.getByLabel('使用历史摘要', { exact: true }).uncheck();
     await expect(settings.getByRole('status')).toHaveText('已保存');

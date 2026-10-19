@@ -262,8 +262,8 @@ test('composer estimates reflect model prompts and autosaved budgets across devi
     await other.request.post('/__dev/access/login', { headers });
     const second = await other.newPage();
     await second.goto(`/c/${fixture.id}`);
-    await openParameters(second);
-    await openParameters(page);
+    await openParameters(second, '上下文');
+    await openParameters(page, '上下文');
     const modal = page.getByRole('dialog', { name: '会话参数', exact: true });
     await modal.getByLabel('上下文 Token 预算', { exact: true }).fill('350');
     await expect(modal.getByRole('status')).toHaveText('已保存');
@@ -277,7 +277,7 @@ test('composer estimates reflect model prompts and autosaved budgets across devi
     await messageMenu(page.getByTestId('assistant-message').first());
     await page.getByRole('menuitem', { name: '从这里继续', exact: true }).first().click();
     await expect(page.getByTestId('context-omission')).toContainText('将省略 2 条');
-    await openParameters(page);
+    await openParameters(page, '上下文');
     await context.setOffline(true);
     await modal.getByLabel('上下文 Token 预算', { exact: true }).fill('400');
     await expect(modal.getByRole('alert')).toBeVisible();
@@ -324,7 +324,7 @@ test('an unknown model displays fallback capacity and an over-budget draft stays
       '窗口未识别',
     );
     await page.keyboard.press('Escape');
-    await openParameters(page);
+    await openParameters(page, '上下文');
     const modal = page.getByRole('dialog', { name: '新对话参数', exact: true });
     await modal.getByLabel('上下文 Token 预算', { exact: true }).fill('1');
     await expect(modal.getByRole('status')).toHaveText('已保存到本机');
@@ -338,7 +338,7 @@ test('an unknown model displays fallback capacity and an over-budget draft stays
     expect(
       await page.evaluate(() => JSON.parse(localStorage.getItem('everchat:pending') ?? '[]')),
     ).toHaveLength(0);
-    await openParameters(page);
+    await openParameters(page, '上下文');
     await modal.getByLabel('上下文 Token 预算', { exact: true }).fill('1.5');
     await expect(modal.getByRole('alert')).toContainText('正整数');
     await expect(modal.getByRole('button', { name: '关闭会话参数' })).toBeInViewport();

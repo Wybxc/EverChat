@@ -333,7 +333,7 @@ test('unknown tools remain opt-in; native API accepts a chosen tool while reject
       ).ok(),
     ).toBe(true);
     await page.goto('/');
-    await openParameters(page);
+    await openParameters(page, '联网');
     const checkbox = page.getByRole('switch', { name: '联网搜索', exact: true });
     await expect(checkbox).toBeEnabled();
     await expect(checkbox).not.toBeChecked();
@@ -360,7 +360,10 @@ test('unknown tools remain opt-in; native API accepts a chosen tool while reject
     expect(runtime.ok()).toBe(true);
     const state = await runtime.json();
     expect(state.modelCalls).toBe(2);
-    expect(state.serviceRequests).toHaveLength(1);
+    expect(state.serviceRequests.map((call: { url: string }) => call.url)).toEqual([
+      'https://api.tavily.com/search',
+      'https://api.tavily.com/extract',
+    ]);
     const path = `/api/settings/providers/${f.providerId}/models/test`,
       data = { model: 'tools-service-openai-chat', capability: 'text' };
     const guest = await playwright.request.newContext({ baseURL: headers.Origin });

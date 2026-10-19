@@ -385,7 +385,7 @@ test('logging out cannot restore parameter drafts when an earlier autosave respo
   }
 });
 
-test('conversation settings autosave, preserve failed and invalid drafts, sync devices and hide unsupported sampling controls', async ({
+test('conversation settings autosave, preserve failed and invalid drafts, sync devices and disable unsupported sampling controls', async ({
   page,
   browser,
 }) => {
@@ -432,6 +432,7 @@ test('conversation settings autosave, preserve failed and invalid drafts, sync d
     expect((await fixture.snapshot()).settings?.temperature).toBeNull();
     await modal.getByLabel('Temperature', { exact: true }).fill('0.7');
     await modal.getByLabel('Top P', { exact: true }).fill('0.8');
+    await modal.getByRole('tab', { name: '上下文', exact: true }).click();
     await modal.getByLabel('输出预算方式').selectOption('unset');
     await expect
       .poll(async () => (await fixture.snapshot()).settings)
@@ -451,8 +452,10 @@ test('conversation settings autosave, preserve failed and invalid drafts, sync d
     await expect(composer).toHaveValue('保留聊天草稿');
     await chooseChatModel(page, modelSelectionKey({ providerId: fixture.providerId, model: 'o3' }));
     await openParameters(page);
-    await expect(modal.getByLabel('Temperature', { exact: true })).toHaveCount(0);
-    await expect(modal.getByLabel('Top P', { exact: true })).toHaveCount(0);
+    await expect(modal.getByLabel('Temperature', { exact: true })).toBeDisabled();
+    await expect(modal.getByLabel('Temperature', { exact: true })).toHaveValue('0.7');
+    await expect(modal.getByLabel('Top P', { exact: true })).toBeDisabled();
+    await expect(modal.getByLabel('Top P', { exact: true })).toHaveValue('0.8');
     await expect(modal.getByLabel('会话系统提示词', { exact: true })).toHaveValue(
       '保留未保存的会话提示',
     );
@@ -478,6 +481,7 @@ test('an offline new conversation pins its parameters without overwriting anothe
     await modal.getByLabel('提示词预设', { exact: true }).selectOption('custom');
     await modal.getByLabel('会话系统提示词', { exact: true }).fill('OFFLINE');
     await modal.getByLabel('Temperature', { exact: true }).fill('0.3');
+    await modal.getByRole('tab', { name: '上下文', exact: true }).click();
     await modal.getByLabel('输出预算方式').selectOption('unset');
     await expect(modal.getByRole('status')).toHaveText('已保存到本机');
     await modal.getByRole('button', { name: '关闭会话参数' }).click();

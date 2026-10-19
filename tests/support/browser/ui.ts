@@ -51,7 +51,7 @@ export async function openModelAdder(page: Page) {
     await adder.locator('summary').click();
 }
 
-export async function openParameters(page: Page) {
+export async function openParameters(page: Page, tab: '常规' | '上下文' | '联网' = '常规') {
   await expect(page.getByRole('textbox', { name: '消息', exact: true })).toBeVisible();
   const trigger = page.getByRole('button', { name: '会话参数', exact: true });
   if (await trigger.isVisible()) await trigger.click();
@@ -62,13 +62,7 @@ export async function openParameters(page: Page) {
   const dialog = page
     .getByRole('dialog')
     .filter({ has: page.getByRole('button', { name: '关闭会话参数', exact: true }) });
-  for (const group of ['生成参数', '联网工具', '上下文']) {
-    const disclosure = dialog
-      .locator('details')
-      .filter({ has: page.locator('summary').filter({ hasText: new RegExp(`^${group}`) }) });
-    if (!(await disclosure.evaluate((node: HTMLDetailsElement) => node.open)))
-      await disclosure.locator('summary').click();
-  }
+  await dialog.getByRole('tab', { name: tab, exact: true }).click();
 }
 
 export async function chooseChatModel(page: Page, key: string) {

@@ -102,10 +102,8 @@ for (const width of [1280, 390])
         await expect(parameters.getByLabel('会话系统提示词', { exact: true })).toHaveValue(
           '写作预设内容',
         );
-        const generation = parameters
-          .locator('details')
-          .filter({ has: page.locator('summary').filter({ hasText: /^生成参数/ }) });
-        await expect(generation.getByLabel('输出预算方式')).toHaveCount(0);
+        await expect(parameters.locator('details')).toHaveCount(0);
+        await parameters.getByRole('tab', { name: '上下文', exact: true }).click();
         await parameters.getByLabel('输出预算方式').selectOption('custom');
         await parameters.getByLabel('输出 Token 预算', { exact: true }).fill('256');
         await parameters.getByRole('button', { name: '关闭会话参数' }).click();

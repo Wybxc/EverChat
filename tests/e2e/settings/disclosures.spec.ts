@@ -1,7 +1,11 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { DEFAULT_CONVERSATION_SETTINGS } from '../../../shared/conversation/settings';
 import type { ProviderSettings } from '../../../shared/providers/types';
-import { openModelAdder, openSpaceSettings, providerDetails } from '../../support/browser/ui';
+import {
+  openModelAdder,
+  openParameters,
+  openSpaceSettings,
+  providerDetails,
+} from '../../support/browser/ui';
 
 const headers = { Origin: 'http://127.0.0.1:5174' };
 
@@ -146,75 +150,111 @@ test('model disclosures preserve drafts and focus, remember capabilities within 
   }
 });
 
-test('conversation groups open by task, reveal invalid generation values, and keep collapsed costs and service errors visible', async ({
-  page,
-}) => {
-  const source = await fixture(page);
-  try {
-    await page.route('**/api/settings/web-tools', (route) =>
-      route.fulfill({
-        status: 503,
-        contentType: 'application/json',
-        body: '{"error":"test unavailable"}',
-      }),
-    );
-    await page.goto(`/c/${source.id}`);
-    await page.getByRole('button', { name: '会话参数', exact: true }).click();
-    const dialog = page.getByRole('dialog', { name: '会话参数', exact: true });
-    for (const [name, expected] of [
-      ['预设', true],
-      ['生成参数', false],
-      ['联网工具', false],
-      ['上下文', false],
-    ] as const) {
-      await expect.poll(() => isOpen(group(dialog, name))).toBe(expected);
+for (const width of [1280, 390])
+  test(`conversation parameter tabs retain drafts and expose errors at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 600 });
+    const source = await fixture(page);
+    try {
+      await page.route('**/api/settings/web-tools', (route) =>
+        route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: '{"error":"test unavailable"}',
+        }),
+      );
+      await page.goto(`/c/${source.id}`);
+      await openParameters(page);
+      const dialog = page.getByRole('dialog', { name: '会话参数', exact: true });
+      const tabs = dialog.getByRole('tablist', { name: '会话参数分类', exact: true });
+      await expect(tabs).toHaveAttribute('aria-orientation', 'horizontal');
+      await expect(tabs.getByRole('tab')).toHaveText(['常规', '上下文', '联网']);
+      expect(
+        await tabs.evaluate((el) =>
+          [...el.children].every(
+            (child) => child.getBoundingClientRect().bottom <= el.getBoundingClientRect().bottom,
+          ),
+        ),
+      ).toBe(true);
+      await expect(dialog.locator('details, summary')).toHaveCount(0);
+      await expect(dialog.getByRole('tab', { name: '常规', exact: true })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      );
+      await dialog.getByLabel('提示词预设', { exact: true }).selectOption('custom');
+      await dialog.getByLabel('会话系统提示词', { exact: true }).fill('切换分类仍保留的提示词');
+      await dialog.getByRole('tab', { name: '上下文', exact: true }).click();
+      await dialog.getByLabel('输出预算方式', { exact: true }).selectOption('custom');
+      const limit = dialog.getByLabel('输出 Token 预算', { exact: true });
+      await limit.fill('0');
+      await expect(limit).toBeFocused();
+      await expect(limit).toHaveAttribute('aria-invalid', 'true');
+      await expect(dialog.getByRole('alert').filter({ hasText: '请检查参数' })).toBeVisible();
+      await dialog.getByRole('tab', { name: '联网', exact: true }).click();
+      await expect(dialog.getByText('无法读取联网服务配置。', { exact: true })).toBeVisible();
+      await expect(
+        dialog.getByText('开启后可能增加搜索服务与模型费用。每个新对话默认关闭。', { exact: true }),
+      ).toBeVisible();
+      await dialog.getByRole('button', { name: '查看错误', exact: true }).click();
+      await expect(dialog.getByRole('tab', { name: '上下文', exact: true })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      );
+      await expect(limit).toBeFocused();
+      await limit.fill('64');
+      await dialog.getByLabel('自动压缩历史', { exact: true }).check();
+      await expect(dialog.getByRole('status')).toHaveText('已保存');
+      await dialog.getByLabel('自动压缩阈值（%）', { exact: true }).fill('70');
+      await expect(dialog.getByRole('status')).toHaveText('已保存');
+      await dialog.getByTestId('conversation-settings-scroll').evaluate((el) => {
+        el.scrollTop = el.scrollHeight;
+      });
+      await expect(
+        dialog.getByRole('button', { name: '关闭会话参数', exact: true }),
+      ).toBeInViewport();
+      await expect(dialog.getByRole('button', { name: '恢复继承', exact: true })).toBeInViewport();
+      await expect(
+        dialog.getByText('开启后会额外调用摘要模型，产生供应商费用。原始消息保留。', {
+          exact: true,
+        }),
+      ).toBeVisible();
+      await page.screenshot({
+        path: `test-results/conversation-context-tabs-${width}.png`,
+        animations: 'disabled',
+      });
+      await dialog.getByRole('tab', { name: '常规', exact: true }).click();
+      await expect(dialog.getByLabel('会话系统提示词', { exact: true })).toHaveValue(
+        '切换分类仍保留的提示词',
+      );
+      const general = dialog.getByRole('tab', { name: '常规', exact: true });
+      await general.focus();
+      await general.press('ArrowRight');
+      await expect(dialog.getByRole('tab', { name: '上下文', exact: true })).toBeFocused();
+      await expect(dialog.getByLabel('输出 Token 预算', { exact: true })).toHaveValue('64');
+      expect(await dialog.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+      await dialog.getByRole('button', { name: '关闭会话参数', exact: true }).click();
+      await openParameters(page);
+      await expect(dialog.getByRole('tab', { name: '常规', exact: true })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      );
+      await page.screenshot({
+        path: `test-results/conversation-general-tabs-${width}.png`,
+        animations: 'disabled',
+      });
+      await dialog.getByRole('button', { name: '关闭会话参数', exact: true }).click();
+      await openSpaceSettings(page);
+      await settingsTab(page, '对话');
+      const settings = page.getByRole('dialog', { name: '设置', exact: true });
+      const title = settings.getByRole('region', { name: '自动标题', exact: true });
+      await expect(title.getByLabel('标题模型', { exact: true })).toBeVisible();
+      await expect(title.locator('details, summary')).toHaveCount(0);
+      await page.screenshot({
+        path: `test-results/automatic-title-section-${width}.png`,
+        animations: 'disabled',
+      });
+    } finally {
+      await source.cleanup();
     }
-    const context = group(dialog, '上下文');
-    await context.locator('summary').click();
-    await dialog.getByLabel('输出预算方式', { exact: true }).selectOption('custom');
-    const limit = dialog.getByLabel('输出 Token 预算', { exact: true });
-    await limit.fill('0');
-    await expect(limit).toBeFocused();
-    await context.locator('summary').click();
-    await expect.poll(() => isOpen(context)).toBe(true);
-    await expect(limit).toHaveAttribute('aria-invalid', 'true');
-    await expect(dialog.getByRole('alert').filter({ hasText: '请检查参数' })).toBeVisible();
-    await limit.fill('64');
-    await expect(dialog.getByRole('status')).toHaveText('已保存');
-    await dialog.getByRole('button', { name: '关闭会话参数' }).click();
-    await page.getByRole('button', { name: '会话参数', exact: true }).click();
-    await group(dialog, '联网工具').locator('summary').click();
-    await expect.poll(() => isOpen(group(dialog, '联网工具'))).toBe(true);
-    await group(dialog, '联网工具').locator('summary').click();
-    await expect(dialog.getByText('无法读取联网服务配置。', { exact: true })).toBeVisible();
-    await expect.poll(() => isOpen(group(dialog, '联网工具'))).toBe(false);
-    await dialog.getByRole('button', { name: '关闭会话参数' }).click();
-
-    const settings = {
-      ...DEFAULT_CONVERSATION_SETTINGS,
-      tools: ['web_search'],
-      autoCompression: { ...DEFAULT_CONVERSATION_SETTINGS.autoCompression, enabled: true },
-    };
-    expect(
-      (
-        await page.request.put(`/api/conversations/${source.id}/settings`, {
-          headers,
-          data: settings,
-        })
-      ).ok(),
-    ).toBe(true);
-    await page.reload();
-    await page.getByRole('button', { name: '会话参数', exact: true }).click();
-    await expect.poll(() => isOpen(group(dialog, '联网工具'))).toBe(true);
-    await group(dialog, '联网工具').locator('summary').click();
-    await expect(
-      dialog.getByText('开启后可能增加搜索服务与模型费用。每个新对话默认关闭。', { exact: true }),
-    ).toBeVisible();
-    await expect.poll(() => isOpen(group(dialog, '上下文'))).toBe(false);
-    await expect(
-      dialog.getByText('开启后会额外调用摘要模型，产生供应商费用。原始消息保留。', { exact: true }),
-    ).toBeVisible();
-  } finally {
-    await source.cleanup();
-  }
-});
+  });

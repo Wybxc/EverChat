@@ -161,7 +161,7 @@ test('default-off naming makes no call, and settings enable the menu without cha
     await page.getByRole('button', { name: '空间设置', exact: true }).click();
     const settings = page.getByRole('dialog', { name: '设置', exact: true });
     await settings.getByRole('tab', { name: '对话', exact: true }).click();
-    await settings.locator('summary').filter({ hasText: '自动标题' }).click();
+    await expect(settings.getByRole('region', { name: '自动标题', exact: true })).toBeVisible();
     await expect(settings.getByLabel('标题模型', { exact: true })).toHaveValue(
       JSON.stringify([s.settings.activeProviderId, 'title-fixture-fast']),
     );

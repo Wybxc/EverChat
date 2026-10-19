@@ -17,7 +17,7 @@ import {
 import type { ProviderSettings } from '../../shared/providers/types';
 import { Switch } from '@/components/ui/switch';
 import { DEFAULT_TITLE_SETTINGS } from '../../shared/conversation/titles';
-import { Disclosure, DisclosureScope } from '../components/Disclosure';
+import { DisclosureScope } from '../components/Disclosure';
 import { PromptPresetsPanel } from '../features/presets/PromptPresets';
 import { ProviderEditor } from '../features/providers/ProviderEditor';
 import { availableModels, reconcile } from '../features/providers/selection';
@@ -341,7 +341,13 @@ function SettingsForm({
             ))}
           </NativeSelect>
         </div>
-        <Disclosure title="自动标题" stateKey="title-settings">
+        <section
+          aria-labelledby="title-settings-heading"
+          className="space-y-3 border-t border-border pt-4"
+        >
+          <h3 id="title-settings-heading" className="text-sm font-semibold">
+            自动标题
+          </h3>
           <div className="space-y-3">
             <label className="block space-y-1 text-sm">
               <span>标题模型</span>
@@ -409,7 +415,7 @@ function SettingsForm({
               每次命名会单独调用所选模型。未配置时保留首条消息标题。
             </p>
           </div>
-        </Disclosure>
+        </section>
       </section>
 
       <div className="sticky bottom-0 z-10 flex shrink-0 items-center justify-between gap-3 border-t border-border bg-background px-3 py-2 text-xs sm:px-4 text-muted-foreground">

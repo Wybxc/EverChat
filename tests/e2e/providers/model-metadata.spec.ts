@@ -136,7 +136,7 @@ test('unknown model metadata is visible, editable, automatically saved across de
       await other.close();
     }
     await page.getByRole('button', { name: '关闭设置', exact: true }).click();
-    await openParameters(page);
+    await openParameters(page, '上下文');
     await page.getByLabel('输出预算方式').selectOption('custom');
     await page.getByLabel('输出 Token 预算', { exact: true }).fill('2049');
     await page.getByRole('button', { name: '关闭会话参数', exact: true }).click();
