@@ -35,6 +35,7 @@ export function useConversationActions({
   stopTask,
   beforeDialog,
   restoreFocus,
+  share,
 }: {
   enabled: boolean;
   update: (id: string, patch: ConversationPatch) => Promise<void>;
@@ -50,6 +51,7 @@ export function useConversationActions({
   ) => Promise<void>;
   beforeDialog: () => void;
   restoreFocus: (preferComposer?: boolean) => void;
+  share?: (id: string) => void;
 }) {
   const locks = useRef(new Set<string>());
   const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
@@ -88,6 +90,7 @@ export function useConversationActions({
     }
   };
   return {
+    share,
     dialog,
     close: () => setDialog(null),
     open: (mode: DialogTarget['mode'], conversation: ConversationInfo) => {

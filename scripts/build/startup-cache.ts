@@ -20,7 +20,11 @@ export function startupCache() {
           for (const dependency of chunk.imports) visit(dependency);
         };
         for (const chunk of Object.values(bundle))
-          if (chunk.type === 'chunk' && chunk.isEntry) visit(chunk.fileName);
+          if (
+            chunk.type === 'chunk' &&
+            (chunk.isEntry || chunk.facadeModuleId?.endsWith('/src/private-bootstrap.tsx'))
+          )
+            visit(chunk.fileName);
         if (![...assets].some((name) => name.endsWith('.js')))
           this.error('The startup precache must include the client entry script');
       },

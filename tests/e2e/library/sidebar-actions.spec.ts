@@ -98,7 +98,7 @@ test('sidebar commands target B while A keeps its URL, branch and draft, includi
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await context.setOffline(true);
     await expect(page.getByRole('menuitem', { name: '重命名', exact: true })).toBeDisabled();
-    await page.getByRole('menuitem', { name: '复制链接', exact: true }).click();
+    await page.getByRole('menuitem', { name: '复制私有链接', exact: true }).click();
     await expect(page.getByRole('menuitem', { name: '链接已复制', exact: true })).toBeVisible();
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
       `${origin}/c/${b}?branch=${head}`,

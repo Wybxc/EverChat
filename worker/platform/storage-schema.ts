@@ -15,8 +15,7 @@ export function initializeStorageSchema(query: SqlQuery, expectedVersion = STORA
       ? query<{ version: number }>('SELECT version FROM storage_schema WHERE id = 1').toArray()[0]
           ?.version
       : undefined;
-    if (version !== expectedVersion)
-      throw new Error('数据库版本不匹配，请先运行本地运维迁移。');
+    if (version !== expectedVersion) throw new Error('数据库版本不匹配，请先运行本地运维迁移。');
     return;
   }
   query(STORAGE_SCHEMA);

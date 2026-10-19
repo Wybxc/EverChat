@@ -11,6 +11,7 @@ import {
   LocateFixed,
   Square,
   Sparkles,
+  Share2,
 } from 'lucide-react';
 import type { ConversationInfo } from '../../../shared/conversation/types';
 import type { ConversationActivity } from '../../../shared/conversation/activity';
@@ -114,6 +115,15 @@ export function ConversationActions({
             {conversation.pinned ? '取消置顶' : '置顶'}
           </ActionMenuItem>
           <ActionMenuLabel>复用</ActionMenuLabel>
+          {actions.share && (
+            <ActionMenuItem
+              disabled={disabled || busy}
+              onSelect={() => actions.share?.(conversation.id)}
+            >
+              <Share2 className="size-4" />
+              分享当前分支
+            </ActionMenuItem>
+          )}
           <ActionMenuItem
             keepOpen
             onSelect={() =>
@@ -124,7 +134,7 @@ export function ConversationActions({
             }
           >
             {copied ? <Check className="size-4" /> : <Link className="size-4" />}
-            {copied ? '链接已复制' : '复制链接'}
+            {copied ? '链接已复制' : '复制私有链接'}
           </ActionMenuItem>
           <ActionMenuItem
             disabled={disabled || busy}

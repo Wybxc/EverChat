@@ -265,6 +265,37 @@ test('explicit repricing only fills unknown terminal prices; manual correction k
     s.db.close();
   }
 });
+test('cancelled partial usage keeps known charges and bulk cursor pagination does not duplicate equal timestamps', () => {
+  const s = fixture();
+  try {
+    s.ledger.record(
+      attempt({
+        status: 'cancelled',
+        usage: { inputTokens: 1000 },
+        usageIsFinal: false,
+        price: { ...price, cacheRead: null },
+      }),
+    );
+    const cancelled = s.ledger.get('attempt1')!;
+    assert.equal(cancelled.cost.state, 'partial');
+    assert.equal(cancelled.cost.amount, '2000000000');
+    for (let i = 0; i < 237; i++) s.ledger.record(attempt({ id: `bulk-${i}` }));
+    let cursor: string | null = null;
+    const seen = new Set<string>();
+    do {
+      const page = s.ledger.page({ limit: 50, ...(cursor ? { cursor } : {}) });
+      for (const record of page.records) {
+        assert.equal(seen.has(record.id), false);
+        seen.add(record.id);
+      }
+      cursor = page.cursor;
+    } while (cursor);
+    assert.equal(seen.size, 238);
+    assert.equal(s.ledger.report({ status: 'cancelled' }).totals.requests, 1);
+  } finally {
+    s.db.close();
+  }
+});
 test('durable outbox survives failed delivery and concurrent finalization without dropping or duplicating usage', async () => {
   const s = fixture();
   try {

@@ -54,6 +54,9 @@ test('Cloudflare HTML canonicalization breaks precaching; the deployed routing s
         });
         expect(error).toBe('InvalidStateError');
       } else {
+        const publicDocument = await request.get(`${origin}/s/${'a'.repeat(22)}`);
+        expect(publicDocument.headers()['content-security-policy']).toContain("script-src 'self'");
+        expect(publicDocument.headers()['referrer-policy']).toBe('no-referrer');
         await expect
           .poll(() => page.evaluate(() => navigator.serviceWorker.controller?.state))
           .toBe('activated');

@@ -14,6 +14,7 @@ import {
 // Retain the existing Workflow binding/export during this temporary deployment.
 export { WebToolWorkflow } from '../../worker/web-tools/workflow';
 export { UsageStore } from '../../worker/usage/durable-object';
+export { ShareStore } from '../../worker/sharing/durable-object';
 
 export class Conversation extends DurableObject {
   // No application constructor, schema initialization or migration is run here.

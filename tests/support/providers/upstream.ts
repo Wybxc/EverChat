@@ -79,6 +79,33 @@ export function installMockUpstream() {
       }[];
     };
     const encoder = new TextEncoder();
+    if (requestBody.model === 'usage-partial-cancel') {
+      let cancelled = false;
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: '已报告部分用量' }, finish_reason: null }], usage: { prompt_tokens: 100, completion_tokens: 5, total_tokens: 105 } })}\n\n`,
+              ),
+            );
+          },
+          async pull(controller) {
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            if (!cancelled)
+              controller.enqueue(
+                encoder.encode(
+                  'data: {"choices":[{"index":0,"delta":{"content":"。"},"finish_reason":null}]}\n\n',
+                ),
+              );
+          },
+          cancel() {
+            cancelled = true;
+          },
+        }),
+        { headers: { 'Content-Type': 'text/event-stream' } },
+      );
+    }
     const modelId = requestBody.model ?? /\/models\/([^/:]+):/.exec(url.pathname)?.[1];
     if (modelId === 'alarm-free-tier-large') {
       let step = 0;

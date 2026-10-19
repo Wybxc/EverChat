@@ -17,7 +17,7 @@ const windows = async () =>
   (await self.clients.matchAll({ type: 'window', includeUncontrolled: true })).filter(
     (client) =>
       new URL(client.url).origin === self.location.origin &&
-      !/^\/(api|auth|cdn-cgi)(\/|$)/.test(new URL(client.url).pathname),
+      !/^\/(s|public|api|auth|cdn-cgi)(\/|$)/.test(new URL(client.url).pathname),
   );
 const options = (completion?: AnswerCompletion): NotificationOptions & { renotify: boolean } => ({
   body: completion ? '回答已完成' : '通知已启用',
@@ -63,6 +63,7 @@ export function registerAnswerNotifications() {
     )
       return;
     if (input.type !== 'local' && input.type !== 'test') return;
+    if (/^\/(s|public)(\/|$)/.test(new URL(event.source.url).pathname)) return;
     event.waitUntil(
       (async () => {
         try {

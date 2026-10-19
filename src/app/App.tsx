@@ -148,6 +148,7 @@ import {
 } from './commands';
 
 const UsageDialog = lazy(() => import('../features/usage/UsageDialog'));
+const ShareDialog = lazy(() => import('../features/sharing/ShareDialog'));
 
 export function App({
   initialSettings,
@@ -271,6 +272,7 @@ export function App({
     else setSidebarOpen((value) => !value);
   };
   const [usageOpen, setUsageOpen] = useState(false);
+  const [shareFor, setShareFor] = useState<string | null>(null);
   useEffect(() => {
     const open = () => {
       setUsageOpen(true);
@@ -1280,6 +1282,11 @@ export function App({
   };
 
   const conversationActions = useConversationActions({
+    share: (id) => {
+      if (id !== selected) select(id, false);
+      setShareFor(id);
+      setSidebarOpen(false);
+    },
     enabled: Boolean(session?.authenticated),
     update: updateConversation,
     remove: deleteConversation,
@@ -2257,6 +2264,52 @@ export function App({
           </dl>
         </div>
       </Modal>
+      {shareFor && session?.authenticated && (
+        <Suspense
+          fallback={
+            <Modal
+              open
+              onOpenChange={(open) => {
+                if (!open) setShareFor(null);
+              }}
+              showCloseButton
+            >
+              <div>
+                <ModalTitle>分享当前分支</ModalTitle>
+                <LoadingContent label="正在读取" />
+              </div>
+            </Modal>
+          }
+        >
+          {shareFor === selected && snapshotFor === selected && branches.head ? (
+            <ShareDialog
+              key={shareFor}
+              conversationId={shareFor}
+              headId={branches.head}
+              close={() => setShareFor(null)}
+            />
+          ) : (
+            <Modal
+              open
+              onOpenChange={(open) => {
+                if (!open) setShareFor(null);
+              }}
+              showCloseButton
+            >
+              <div>
+                <ModalTitle>分享当前分支</ModalTitle>
+                {syncError || invalidRoute ? (
+                  <p role="alert">无法读取这个对话。</p>
+                ) : snapshotFor === shareFor && !snapshot.messages.length ? (
+                  <p>当前对话没有可分享的消息。</p>
+                ) : (
+                  <LoadingContent label="正在读取当前分支" />
+                )}
+              </div>
+            </Modal>
+          )}
+        </Suspense>
+      )}
       {usageOpen && session?.authenticated && (
         <Suspense
           fallback={

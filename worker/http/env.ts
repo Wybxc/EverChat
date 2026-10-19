@@ -2,12 +2,15 @@ import type { Conversation } from '../conversation/durable-object';
 import type { Library } from '../library/durable-object';
 import type { ToolWorkflowParams } from '../web-tools/workflow';
 import type { UsageStore } from '../usage/durable-object';
+import type { ShareStore } from '../sharing/durable-object';
 
 export interface Env {
   ASSETS: Fetcher;
   CONVERSATIONS: DurableObjectNamespace<Conversation>;
   LIBRARY: DurableObjectNamespace<Library>;
   USAGE?: DurableObjectNamespace<UsageStore>;
+  SHARES?: DurableObjectNamespace<ShareStore>;
+  SHARE_LINK_KEY?: string;
   WEB_TOOLS: Workflow<ToolWorkflowParams>;
   ATTACHMENTS?: R2Bucket;
   ACCESS_TEAM_DOMAIN?: string;

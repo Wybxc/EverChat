@@ -1,62 +1,12 @@
-import React from 'react';
-import { createRoot } from 'react-dom/client';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { App } from './app/App';
-import { AccessGate } from './app/AccessGate';
-import type { SettingsTab } from './app/SettingsPanel';
-import { hydrateStorage } from './platform/storage';
-import { startPwa } from './platform/pwa/controller';
-import { PwaNotice } from './platform/pwa/PwaControls';
-
+import { isSharePage } from '../shared/sharing/types';
 import './style.css';
 
-const storageReady = hydrateStorage();
-function Bootstrap() {
-  const [ready, setReady] = React.useState(false);
-  const [settingsOpen, setSettingsOpen] = React.useState(false);
-  const [settingsTab, setSettingsTab] = React.useState<SettingsTab>();
-  React.useEffect(() => {
-    let active = true;
-    void storageReady.then(() => {
-      if (active) setReady(true);
-    });
-    return () => {
-      active = false;
-    };
-  }, []);
-  return ready ? (
-    <App initialSettings={{ open: settingsOpen, tab: settingsTab }} />
-  ) : (
-    <AccessGate
-      status="loading"
-      error=""
-      onRetry={() => {}}
-      logoutUrl="/cdn-cgi/access/logout"
-      settingsState={{
-        open: settingsOpen,
-        tab: settingsTab,
-        change: setSettingsOpen,
-        selectTab: setSettingsTab,
-      }}
-    />
-  );
-}
-
-function start() {
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: { retry: false, refetchOnWindowFocus: true, refetchOnReconnect: true },
-    },
-  });
-  createRoot(document.getElementById('root')!).render(
-    <React.StrictMode>
-      <QueryClientProvider client={queryClient}>
-        <Bootstrap />
-        <PwaNotice />
-      </QueryClientProvider>
-    </React.StrictMode>,
-  );
-  startPwa();
-}
-
-void start();
+// Select the public entry before private storage, identity, notifications or PWA startup.
+void (
+  isSharePage(location.pathname)
+    ? import('./features/sharing/PublicShare').then((module) => module.start())
+    : import('./private-bootstrap').then((module) => module.start())
+).catch(() => {
+  const root = document.getElementById('root');
+  if (root) root.textContent = '加载失败，请恢复连接后刷新页面。';
+});

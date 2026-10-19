@@ -9,7 +9,15 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { LogOut } from 'lucide-react';
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react';
 import type { ProviderSettings } from '../../shared/providers/types';
 import { Switch } from '@/components/ui/switch';
 import { DEFAULT_TITLE_SETTINGS } from '../../shared/conversation/titles';
@@ -41,8 +49,10 @@ const tabs = [
   { id: 'chat', label: '对话' },
   { id: 'presets', label: '预设' },
   { id: 'web-tools', label: '联网' },
+  { id: 'shares', label: '分享' },
 ] as const;
 export type SettingsTab = (typeof tabs)[number]['id'];
+const ShareManagement = lazy(() => import('../features/sharing/ShareManagement'));
 
 export function SettingsPanel(props: PanelProps) {
   const { open, requestedTab, authenticated = true } = props;
@@ -208,6 +218,17 @@ export function SettingsPanel(props: PanelProps) {
                 >
                   <PromptPresetsPanel open={open && tab === 'presets'} />
                 </section>
+                {open && tab === 'shares' && (
+                  <section
+                    id="settings-panel-shares"
+                    role="tabpanel"
+                    aria-labelledby="settings-tab-shares"
+                  >
+                    <Suspense fallback={<LoadingContent label="正在读取分享" />}>
+                      <ShareManagement active />
+                    </Suspense>
+                  </section>
+                )}
                 <section
                   id="settings-panel-web-tools"
                   role="tabpanel"

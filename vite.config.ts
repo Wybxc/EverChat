@@ -75,6 +75,8 @@ export default defineConfig(async ({ command, mode }) => {
                     : 'scripts/dev/worker.ts',
                 vars: {
                   ...local.vars,
+                  // Isolated development-only encryption key, never copied into production vars.
+                  SHARE_LINK_KEY: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
                   ...(process.env.EVERCHAT_GENERATION_METRICS === '1'
                     ? { GENERATION_METRICS: '1' }
                     : {}),

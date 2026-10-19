@@ -1,3 +1,4 @@
+import { SHARE_CSP } from '../../../shared/sharing/security';
 import { messageParts } from '../../../shared/conversation/content';
 import type { Snapshot } from '../../../shared/streaming/protocol';
 // Serve the production shell with read-only synthetic API data; DO behavior is covered by the main E2E suite.
@@ -95,6 +96,37 @@ const server = createServer(async (request, response) => {
       providerSettings = JSON.parse(Buffer.concat(chunks).toString()) as typeof providerSettings;
     }
     return json(providerSettings);
+  }
+  if (path === '/public/shares/aaaaaaaaaaaaaaaaaaaaaa') {
+    if (request.headers.authorization !== `Bearer ${'b'.repeat(43)}`) {
+      response.writeHead(404, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      response.end('{"error":"链接不可用。"}');
+      return;
+    }
+    return json({
+      share: {
+        id: 'a'.repeat(22),
+        title: '公开 PWA 快照',
+        createdAt: 1,
+        expiresAt: null,
+        includeReasoning: false,
+        messageCount: 1,
+        omittedAttachments: 0,
+        hash: 'fixture',
+      },
+      page: {
+        blocks: [
+          {
+            message: 0,
+            role: 'assistant',
+            channel: 'text',
+            text: '公开正文',
+            omittedAttachments: 0,
+          },
+        ],
+        cursor: null,
+      },
+    });
   }
   if (path.startsWith('/auth/') || path.startsWith('/cdn-cgi/access/')) {
     response.writeHead(401, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' });
@@ -209,6 +241,12 @@ const server = createServer(async (request, response) => {
     const body = await readFile(source);
     response.writeHead(200, {
       'Content-Type': types[extname(source)] ?? 'application/octet-stream',
+      ...(path.startsWith('/s/')
+        ? {
+            'Content-Security-Policy': SHARE_CSP,
+            'Referrer-Policy': 'no-referrer',
+          }
+        : {}),
     });
     response.end(body);
   } catch {

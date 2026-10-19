@@ -8,7 +8,7 @@
     "binding": "ASSETS",
     "html_handling": "none",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*", "/auth/*"],
+    "run_worker_first": ["/api", "/api/*", "/auth", "/auth/*", "/public", "/public/*"],
   },
   "workers_dev": false,
   "preview_urls": false,
@@ -28,6 +28,7 @@
       { "name": "CONVERSATIONS", "class_name": "Conversation" },
       { "name": "LIBRARY", "class_name": "Library" },
       { "name": "USAGE", "class_name": "UsageStore" },
+      { "name": "SHARES", "class_name": "ShareStore" },
     ],
   },
   "r2_buckets": [{ "binding": "ATTACHMENTS", "bucket_name": "everchat-attachments" }],
@@ -37,6 +38,7 @@
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["Conversation", "Library"] },
     { "tag": "v2-usage", "new_sqlite_classes": ["UsageStore"] },
+    { "tag": "v3-sharing", "new_sqlite_classes": ["ShareStore"] },
   ],
   "observability": { "enabled": true },
 }

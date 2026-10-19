@@ -9,7 +9,6 @@ import {
   type RefObject,
 } from 'react';
 import type { PluginConfig, StreamdownProps } from 'streamdown';
-import { recoverApplicationResources } from '../../../platform/pwa/controller';
 
 import 'katex/dist/katex.min.css';
 import 'streamdown/styles.css';
@@ -24,6 +23,50 @@ const markdownComponents: StreamdownProps['components'] = {
   ),
   img: ({ alt }) => <span className="text-muted-foreground">[图片：{alt ?? '附件'}]</span>,
   table: ({ node: _node, ...props }) => <table {...props} />,
+};
+function PublicImage({ src, alt }: { src?: string; alt?: string }) {
+  const [loaded, setLoaded] = useState(false);
+  let allowed = false;
+  try {
+    const url = new URL(src ?? '');
+    allowed = url.protocol === 'https:' && url.origin !== location.origin;
+  } catch {
+    /* No relative or executable image sources. */
+  }
+  if (loaded && allowed)
+    return (
+      <img
+        src={src}
+        alt={alt ?? ''}
+        referrerPolicy="no-referrer"
+        crossOrigin="anonymous"
+        loading="lazy"
+      />
+    );
+  return allowed ? (
+    <Button variant="secondary" type="button" onClick={() => setLoaded(true)}>
+      加载外部图片{alt ? `：${alt}` : ''}
+    </Button>
+  ) : (
+    <span className="text-muted-foreground">[图片已省略{alt ? `：${alt}` : ''}]</span>
+  );
+}
+const publicComponents: StreamdownProps['components'] = {
+  ...markdownComponents,
+  a: ({ href, children }) =>
+    typeof href === 'string' && /^(?:https?:\/\/|mailto:)/i.test(href) ? (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer nofollow"
+        referrerPolicy="no-referrer"
+      >
+        {children}
+      </a>
+    ) : (
+      <span>{children}</span>
+    ),
+  img: ({ src, alt }) => <PublicImage src={typeof src === 'string' ? src : undefined} alt={alt} />,
 };
 
 let markdownRenderer: MarkdownRenderer | null = null;
@@ -111,7 +154,15 @@ class MarkdownBoundary extends Component<MarkdownBoundaryProps, { failed: boolea
   }
 }
 
-function MarkdownFallback({ content, className }: { content: string; className: string }) {
+function MarkdownFallback({
+  content,
+  className,
+  publicContent,
+}: {
+  content: string;
+  className: string;
+  publicContent: boolean;
+}) {
   const [online, setOnline] = useState(navigator.onLine);
   useEffect(() => {
     const update = () => setOnline(navigator.onLine);
@@ -131,7 +182,13 @@ function MarkdownFallback({ content, className }: { content: string; className: 
         type="button"
         className="mt-2"
         disabled={!online}
-        onClick={() => void recoverApplicationResources()}
+        onClick={() =>
+          publicContent
+            ? location.reload()
+            : void import('../../../platform/pwa/controller').then((module) =>
+                module.recoverApplicationResources(),
+              )
+        }
       >
         重新加载
       </Button>
@@ -144,11 +201,13 @@ export function MarkdownContent({
   streaming,
   searchId,
   className = 'markdown',
+  publicContent = false,
 }: {
   content: string;
   streaming: boolean;
   searchId?: string;
   className?: string;
+  publicContent?: boolean;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const [Renderer, setRenderer] = useState<MarkdownRenderer | null>(() => markdownRenderer);
@@ -219,7 +278,9 @@ export function MarkdownContent({
       <MarkdownBoundary
         container={container}
         streaming={streaming}
-        fallback={<MarkdownFallback content={content} className={className} />}
+        fallback={
+          <MarkdownFallback content={content} className={className} publicContent={publicContent} />
+        }
       >
         {Renderer ? (
           <Renderer
@@ -227,7 +288,7 @@ export function MarkdownContent({
             mode={streaming ? 'streaming' : 'static'}
             isAnimating={streaming}
             remarkPlugins={markdownRemarkPlugins}
-            components={markdownComponents}
+            components={publicContent ? publicComponents : markdownComponents}
             plugins={plugins ?? undefined}
             controls={{
               code: { copy: true, download: false },

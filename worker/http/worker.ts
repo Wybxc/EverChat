@@ -3,6 +3,7 @@ import { createApi } from './app';
 import { authenticateAccess, type Authenticator } from './auth';
 import type { Env } from './env';
 import { HttpError, json } from './response';
+import { publicSharing } from '../sharing/public';
 
 export function createWorker(
   authenticate: Authenticator = authenticateAccess,
@@ -15,6 +16,7 @@ export function createWorker(
   return {
     async fetch(request: Request, env: Env, context: ExecutionContext): Promise<Response> {
       const url = new URL(request.url);
+      if (/^\/public(?:\/|$)/.test(url.pathname)) return publicSharing(request, env);
       if (url.pathname === '/auth/resume') {
         const target = authReturnTo(url.searchParams.get('returnTo'), url.origin);
         try {
@@ -37,7 +39,8 @@ export function createWorker(
           throw error;
         }
       }
-      if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(request);
+      if (/^\/auth(?:\/|$)/.test(url.pathname)) return json({ error: '找不到这个接口。' }, 404);
+      if (!/^\/api(?:\/|$)/.test(url.pathname)) return env.ASSETS.fetch(request);
       return app.fetch(request, env, context);
     },
   };

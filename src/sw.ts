@@ -1,5 +1,7 @@
 /// <reference lib="webworker" />
 import { registerAnswerNotifications } from './platform/notifications/service-worker';
+import { isSharePage } from '../shared/sharing/types';
+import { SHARE_CSP } from '../shared/sharing/security';
 import { cacheNames, clientsClaim, setCacheNameDetails } from 'workbox-core';
 import {
   addPlugins,
@@ -57,10 +59,22 @@ const modules = new CacheFirst({
   plugins: [validateResource, new ExpirationPlugin({ maxEntries: 192, purgeOnQuotaError: true })],
 });
 registerRoute(({ url }) => isBundledAsset(url, self.location.origin), modules);
+const navigation = createHandlerBoundToURL('/index.html');
 registerRoute(
-  new NavigationRoute(createHandlerBoundToURL('/index.html'), {
-    denylist: [/^\/api(?:\/|$)/, /^\/auth(?:\/|$)/, /^\/cdn-cgi(?:\/|$)/],
-  }),
+  new NavigationRoute(
+    async (options) => {
+      // Workbox replaces options.request with /index.html; retain the actual navigation path.
+      const publicPage = isSharePage(new URL(options.request.url).pathname);
+      const response = await navigation(options);
+      if (!publicPage) return response;
+      const headers = new Headers(response.headers);
+      headers.set('Content-Security-Policy', SHARE_CSP);
+      headers.set('Referrer-Policy', 'no-referrer');
+      headers.set('X-Robots-Tag', 'noindex, nofollow, noarchive');
+      return new Response(response.body, { status: response.status, headers });
+    },
+    { denylist: [/^\/api(?:\/|$)/, /^\/auth(?:\/|$)/, /^\/public(?:\/|$)/, /^\/cdn-cgi(?:\/|$)/] },
+  ),
 );
 clientsClaim();
 self.addEventListener('activate', (event) => {
@@ -82,7 +96,7 @@ self.addEventListener('activate', (event) => {
 
 const appClients = async () =>
   (await self.clients.matchAll({ type: 'window', includeUncontrolled: true })).filter(
-    (client) => !/^\/(?:api|auth|cdn-cgi)(?:\/|$)/.test(new URL(client.url).pathname),
+    (client) => !/^\/(?:s|public|api|auth|cdn-cgi)(?:\/|$)/.test(new URL(client.url).pathname),
   );
 const ask = (client: WindowClient, token: string) =>
   new Promise<Preparation>((resolve) => {

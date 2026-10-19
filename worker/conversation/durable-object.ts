@@ -91,6 +91,7 @@ import { databaseUsage } from './capacity';
 import { ConversationState, requestFingerprint } from './state';
 import { CompletionOutbox } from '../notifications/outbox';
 import { UsageAccounting, modelIdentity } from '../usage/accounting';
+import { projectShare } from '../../shared/sharing/projection';
 import { USAGE_OUTBOX_SCHEMA } from '../usage/schema';
 import { initializeStorageSchema } from '../platform/storage-schema';
 
@@ -326,6 +327,60 @@ export class Conversation extends DurableObject<Env> {
   backup(): BackupMessage[] {
     if (this.deletedAt) return [];
     return this.messages.all().map(backupMessage);
+  }
+  shareSourceVersion() {
+    if (this.deletedAt) return null;
+    return JSON.stringify(new ConversationState(this.query.bind(this)).current());
+  }
+  shareSourceResponse(headId: string, includeReasoning: boolean) {
+    if (this.deletedAt) return json({ error: '这个对话已删除。' }, 404);
+    try {
+      const projection = projectShare(this.messages.forHead(headId), headId, includeReasoning);
+      const version = this.shareSourceVersion();
+      const encoder = new TextEncoder(),
+        blocks = projection.blocks();
+      let header = false,
+        count = 0,
+        ended = false;
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          pull(controller) {
+            if (!header) {
+              header = true;
+              controller.enqueue(
+                encoder.encode(
+                  JSON.stringify({
+                    version,
+                    messageCount: projection.messageCount,
+                    omittedAttachments: projection.omittedAttachments,
+                  }) + '\n',
+                ),
+              );
+              return;
+            }
+            const next = blocks.next();
+            if (next.done) {
+              if (ended) controller.close();
+              else {
+                ended = true;
+                controller.enqueue(
+                  encoder.encode(JSON.stringify({ complete: true, blockCount: count }) + '\n'),
+                );
+              }
+            } else {
+              count++;
+              controller.enqueue(encoder.encode(JSON.stringify(next.value) + '\n'));
+            }
+          },
+          cancel() {
+            blocks.return(undefined);
+          },
+        }),
+        { headers: { 'Content-Type': 'application/x-ndjson', 'Cache-Control': 'no-store' } },
+      );
+    } catch {
+      return json({ error: '请选择已完成的消息分支。' }, 409);
+    }
   }
   copySource(
     headId?: string,

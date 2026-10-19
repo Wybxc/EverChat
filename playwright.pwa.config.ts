@@ -17,6 +17,7 @@ export default defineConfig({
         'cloudflare-assets.spec.ts',
         'caching.spec.ts',
         'math.spec.ts',
+        'sharing.spec.ts',
       ],
     },
   ],

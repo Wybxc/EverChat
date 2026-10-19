@@ -6,6 +6,7 @@ import { createWorker } from '../../worker/http/worker';
 export { Conversation } from '../../worker/conversation/durable-object';
 export { Library } from '../../worker/library/durable-object';
 export { UsageStore } from '../../worker/usage/durable-object';
+export { ShareStore } from '../../worker/sharing/durable-object';
 export { WebToolWorkflow } from '../../worker/web-tools/workflow';
 
 const verifiers = new Map<string, Authenticator>();

@@ -11,7 +11,8 @@ for (const mobile of [false, true])
     const original = await request.get('/api/settings/providers').then((r) => r.json());
     const providerId = crypto.randomUUID(),
       id = crypto.randomUUID(),
-      model = 'raw-openai-chat';
+      model = 'raw-openai-chat',
+      providerName = `UI 用量供应商-${mobile ? '手机' : '桌面'}`;
     try {
       expect(
         (
@@ -21,7 +22,7 @@ for (const mobile of [false, true])
               providers: [
                 {
                   id: providerId,
-                  name: 'UI 用量供应商',
+                  name: providerName,
                   provider: 'openai-chat',
                   baseUrl: 'https://provider.test/v1',
                   apiKey: 'integration-test-key',
@@ -63,11 +64,14 @@ for (const mobile of [false, true])
       await dialog.getByLabel('统计供应商', { exact: true }).selectOption(providerId);
       await expect(dialog.getByText('模型请求／回答', { exact: true })).toBeVisible();
       await dialog.getByRole('tab', { name: '请求', exact: true }).click();
-      await expect(dialog.locator('summary')).toContainText('UI 用量供应商');
+      await expect(dialog.locator('summary')).toContainText(providerName);
       await dialog.locator('summary').click();
       await expect(dialog.getByRole('link', { name: '定位回答' })).toBeVisible();
       await dialog.getByRole('tab', { name: '定价', exact: true }).click();
-      const row = dialog.locator('div.flex').filter({ hasText: 'UI 用量供应商 · 用量模型' }).last();
+      const row = dialog
+        .locator('div.flex')
+        .filter({ hasText: `${providerName} · 用量模型` })
+        .last();
       await row.getByRole('button', { name: '配置价格' }).click();
       const editor = page.getByRole('dialog', { name: '模型定价', exact: true });
       await expect(editor).toBeVisible();
@@ -80,12 +84,23 @@ for (const mobile of [false, true])
         await dialog.locator('summary').click();
       await dialog.getByRole('button', { name: '按当前价格补算' }).click();
       await expect(dialog.getByText('CNY 0.000060', { exact: true })).toBeVisible();
+      await dialog.getByLabel('修正金额', { exact: true }).fill('0.01');
+      await dialog.getByLabel('修正原因', { exact: true }).fill('测试供应商账单修正');
+      await dialog.getByRole('button', { name: '保存修正', exact: true }).click();
+      await expect(dialog.getByText(/CNY 0\.010000/)).toBeVisible();
       const downloaded = page.waitForEvent('download');
       await dialog.getByRole('button', { name: '导出 CSV', exact: true }).click();
       expect((await downloaded).suggestedFilename()).toMatch(/EverChat-usage.*csv/);
       await page.screenshot({ path: `/tmp/everchat-usage-${mobile ? 'phone' : 'desktop'}.png` });
-      await dialog.getByRole('button', { name: '关闭', exact: true }).click();
+      await page.evaluate(() => {
+        document.documentElement.dataset.usageNavigation = 'same-document';
+      });
+      await dialog.getByRole('link', { name: '定位回答', exact: true }).click();
       await expect(dialog).not.toBeVisible();
+      await expect(page).toHaveURL(new RegExp(`/c/${id}\\?branch=`));
+      expect(await page.evaluate(() => document.documentElement.dataset.usageNavigation)).toBe(
+        'same-document',
+      );
     } finally {
       await request.delete(`/api/conversations/${id}`, { headers });
       await request.put('/api/settings/providers', { headers, data: original });

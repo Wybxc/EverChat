@@ -1,0 +1,53 @@
+{
+  "workerName": "everchat-usage-sharing-validation",
+  "runtime": "cloudflare",
+  "startedAt": "2026-10-19T03:29:10.756Z",
+  "finishedAt": "2026-10-19T03:29:37.118Z",
+  "requests": 100,
+  "publicPageReads": 30,
+  "emptyBytes": {
+    "ledger": 53248,
+    "source": 16384,
+    "shares": 45056
+  },
+  "usage": {
+    "ledger": {
+      "statements": 1100,
+      "rowsRead": 696,
+      "rowsWritten": 1104,
+      "outgoingRpc": 0,
+      "allocatedBytes": 155648
+    },
+    "source": {
+      "statements": 1000,
+      "rowsRead": 1000,
+      "rowsWritten": 500,
+      "outgoingRpc": 300,
+      "allocatedBytes": 16384
+    }
+  },
+  "shares": {
+    "created": {
+      "statements": 20,
+      "rowsRead": 15,
+      "rowsWritten": 28,
+      "outgoingRpc": 0,
+      "allocatedBytes": 544768
+    },
+    "read": {
+      "statements": 80,
+      "rowsRead": 145,
+      "rowsWritten": 28,
+      "outgoingRpc": 0,
+      "allocatedBytes": 544768
+    },
+    "reclaimed": {
+      "statements": 84,
+      "rowsRead": 198,
+      "rowsWritten": 40,
+      "outgoingRpc": 0,
+      "allocatedBytes": 45056
+    }
+  },
+  "note": "Synthetic ledger/outbox and snapshot repository. Includes SQL cursor index accounting, but excludes generation/search/notification writes. Three source-to-ledger RPC per request. No AI calls; active duration does not model waiting for providers. API wrapper is measurement-only; functional private/public routes have separate integration tests."
+}

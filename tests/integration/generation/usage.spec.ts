@@ -4,6 +4,107 @@ import type { Snapshot } from '../../../shared/streaming/protocol';
 import type { UsageRecord, UsageReport } from '../../../shared/usage/types';
 
 const headers = { Origin: 'http://127.0.0.1:5174' };
+test('summary calls are independent and cancellation preserves already reported partial usage', async ({
+  request,
+}) => {
+  await request.post('/__dev/access/login', { headers });
+  const previous = await request.get('/api/settings/providers').then((r) => r.json());
+  const providerId = crypto.randomUUID(),
+    id = crypto.randomUUID();
+  const modelIds = ['raw-openai-chat', 'benchmark-summary-normal', 'usage-partial-cancel'];
+  try {
+    await request.put('/api/settings/providers', {
+      headers,
+      data: {
+        providers: [
+          {
+            id: providerId,
+            name: '摘要与取消供应商',
+            provider: 'openai-chat',
+            baseUrl: 'https://provider.test/v1',
+            apiKey: 'integration-test-key',
+            models: modelIds.map((id) => ({ id, name: id, enabled: true })),
+          },
+        ],
+        activeProviderId: providerId,
+        activeModel: modelIds[0],
+        systemPrompt: '',
+        maxOutputTokens: null,
+      },
+    });
+    await request.post('/api/conversations', { headers, data: { id, title: '辅助与取消记账' } });
+    const snapshot = () =>
+      request.get(`/api/conversations/${id}`).then((r) => r.json()) as Promise<Snapshot>;
+    const first = await request
+      .post(`/api/conversations/${id}/messages`, {
+        headers,
+        data: { requestId: crypto.randomUUID(), parentId: null, content: '摘要来源' },
+      })
+      .then((r) => r.json());
+    await expect.poll(async () => (await snapshot()).messages.at(-1)?.status).toBe('completed');
+    const summary = await request.post(`/api/conversations/${id}/messages`, {
+      headers,
+      data: {
+        requestId: crypto.randomUUID(),
+        summaryThrough: first.assistantId,
+        selection: { providerId, model: modelIds[1] },
+      },
+    });
+    expect(summary.status(), await summary.text()).toBe(202);
+    await expect
+      .poll(async () => (await snapshot()).messages.find((m) => m.summary)?.status)
+      .toBe('completed');
+    const cancelled = await request
+      .post(`/api/conversations/${id}/messages`, {
+        headers,
+        data: {
+          requestId: crypto.randomUUID(),
+          parentId: first.assistantId,
+          content: '取消',
+          selection: { providerId, model: modelIds[2] },
+        },
+      })
+      .then((r) => r.json());
+    await expect
+      .poll(
+        async () =>
+          (await snapshot()).messages.find((m) => m.id === cancelled.assistantId)?.streamState
+            ?.usage?.inputTokens,
+      )
+      .toBe(100);
+    expect(
+      (
+        await request.post(`/api/conversations/${id}/cancel`, {
+          headers,
+          data: { runId: cancelled.runId },
+        })
+      ).ok(),
+    ).toBe(true);
+    const records = () =>
+      request.get(`/api/usage/requests?providerId=${providerId}`).then((r) => r.json()) as Promise<{
+        records: UsageRecord[];
+      }>;
+    await expect
+      .poll(async () => (await records()).records.find((r) => r.model === modelIds[2])?.status)
+      .toBe('cancelled');
+    const rows = (await records()).records;
+    expect(rows).toHaveLength(3);
+    expect(rows.find((r) => r.kind === 'summary')).toMatchObject({
+      status: 'completed',
+      answer: false,
+      usageIsFinal: true,
+      usage: { inputTokens: 55, outputTokens: 19 },
+    });
+    expect(rows.find((r) => r.model === modelIds[2])).toMatchObject({
+      status: 'cancelled',
+      usageIsFinal: false,
+      usage: { inputTokens: 100, outputTokens: 5 },
+    });
+  } finally {
+    await request.delete(`/api/conversations/${id}`, { headers });
+    await request.put('/api/settings/providers', { headers, data: previous });
+  }
+});
 for (const protocol of ['openai-chat', 'anthropic', 'openai-responses', 'gemini'] as ProviderKind[])
   test(`${protocol}: actual model request is counted once and survives conversation deletion`, async ({
     request,
