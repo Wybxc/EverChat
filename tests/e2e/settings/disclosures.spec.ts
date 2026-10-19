@@ -162,21 +162,21 @@ test('conversation groups open by task, reveal invalid generation values, and ke
     await page.getByRole('button', { name: '会话参数', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: '会话参数', exact: true });
     for (const [name, expected] of [
-      ['系统提示词', true],
+      ['预设', true],
       ['生成参数', false],
       ['联网工具', false],
       ['上下文', false],
     ] as const) {
       await expect.poll(() => isOpen(group(dialog, name))).toBe(expected);
     }
-    const generation = group(dialog, '生成参数');
-    await generation.locator('summary').click();
-    await dialog.getByLabel('输出上限方式', { exact: true }).selectOption('custom');
-    const limit = dialog.getByLabel('输出 Token 上限', { exact: true });
+    const context = group(dialog, '上下文');
+    await context.locator('summary').click();
+    await dialog.getByLabel('输出预算方式', { exact: true }).selectOption('custom');
+    const limit = dialog.getByLabel('输出 Token 预算', { exact: true });
     await limit.fill('0');
     await expect(limit).toBeFocused();
-    await generation.locator('summary').click();
-    await expect.poll(() => isOpen(generation)).toBe(true);
+    await context.locator('summary').click();
+    await expect.poll(() => isOpen(context)).toBe(true);
     await expect(limit).toHaveAttribute('aria-invalid', 'true');
     await expect(dialog.getByRole('alert').filter({ hasText: '请检查参数' })).toBeVisible();
     await limit.fill('64');

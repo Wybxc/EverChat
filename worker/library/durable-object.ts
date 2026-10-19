@@ -30,7 +30,12 @@ import {
 import { messageAttachments, messageFiles, messageImages } from '../../shared/conversation/content';
 import type { ConversationInfo, ConversationSettings } from '../../shared/conversation/types';
 import type { ModelSelection, ReasoningEffort } from '../../shared/models/types';
-import type { PromptPreset, PromptPresetInput } from '../../shared/presets/types';
+import {
+  DEFAULT_PROMPT_PRESET_ID,
+  DEFAULT_PROMPT_PRESET_NAME,
+  type PromptPreset,
+  type PromptPresetInput,
+} from '../../shared/presets/types';
 import type {
   ProviderConfig,
   ProviderModelConfig,
@@ -1011,10 +1016,33 @@ export class Library extends DurableObject<Env> {
     return result;
   }
   promptPresets() {
-    return this.presets.list();
+    return [
+      {
+        id: DEFAULT_PROMPT_PRESET_ID,
+        name: DEFAULT_PROMPT_PRESET_NAME,
+        systemPrompt: this.providers.defaultSystemPrompt(),
+        updatedAt: 0,
+      },
+      ...this.presets.list(),
+    ];
   }
   savePromptPreset(id: string, input: PromptPresetInput) {
     try {
+      if (id === DEFAULT_PROMPT_PRESET_ID) {
+        if (input.name !== DEFAULT_PROMPT_PRESET_NAME)
+          return { error: '默认预设不能重命名。', status: 400 };
+        const result = this.providers.saveProviderSettings({
+          ...this.providers.providerSettingsData(),
+          systemPrompt: input.systemPrompt,
+        });
+        if ('error' in result) return { error: result.error, status: result.status ?? 400 };
+        return {
+          id,
+          name: DEFAULT_PROMPT_PRESET_NAME,
+          systemPrompt: result.settings.systemPrompt,
+          updatedAt: 0,
+        };
+      }
       return this.presets.save(id, input);
     } catch (error) {
       if (error instanceof PromptPresetError) return { error: error.message, status: error.status };
@@ -1022,6 +1050,7 @@ export class Library extends DurableObject<Env> {
     }
   }
   deletePromptPreset(id: string) {
+    if (id === DEFAULT_PROMPT_PRESET_ID) return { error: '默认预设不能删除。', status: 400 };
     return this.presets.remove(id);
   }
   backupSettings(): BackupSettings {

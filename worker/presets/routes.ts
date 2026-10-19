@@ -28,6 +28,8 @@ export function registerPresetsRoutes(app: ApiRouter) {
     await requireAuth(context);
     const id = context.req.param('id');
     if (!v.safeParse(uuidSchema, id).success) throw new HttpError(404, '找不到这个预设。');
-    return json(await context.env.LIBRARY.getByName('personal').deletePromptPreset(id));
+    const result = await context.env.LIBRARY.getByName('personal').deletePromptPreset(id);
+    if ('error' in result) throw new HttpError(result.status, result.error);
+    return json(result);
   });
 }

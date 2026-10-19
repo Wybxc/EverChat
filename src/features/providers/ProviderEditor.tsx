@@ -1,3 +1,4 @@
+import { ApiKeyInput } from '../../components/ApiKeyInput';
 import { ModelPriceButton } from '../usage/PriceEditor';
 import { MAX_PROVIDER_MODELS, MODEL_LIST_LIMIT_MESSAGE } from '../../../shared/providers/limits';
 import { Badge } from '@/components/ui/badge';
@@ -7,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Spinner } from '@/components/ui/spinner';
 import { useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Eye, EyeOff, Pencil, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
+import { ArrowLeft, Pencil, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useReloadBlocker } from '../../platform/pwa/useReloadBlocker';
 import * as v from 'valibot';
@@ -625,35 +626,16 @@ export function ProviderEditor({
                     <label htmlFor="provider-key" className="block text-sm font-medium">
                       API 密钥
                     </label>
-                    <div className="field-control flex w-full items-center gap-2 border-input pr-1">
-                      <input
-                        id="provider-key"
-                        type={showKey ? 'text' : 'password'}
-                        autoComplete="off"
-                        spellCheck={false}
-                        maxLength={4096}
-                        className="min-w-0 flex-1"
-                        value={selected.apiKey ?? ''}
-                        placeholder={selected.hasApiKey ? '已配置 · 留空保留' : '输入 API 密钥'}
-                        onChange={(event) =>
-                          changeProvider(selected.id, { apiKey: event.target.value })
-                        }
-                      />
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        type="button"
-                        aria-label={showKey ? '隐藏 API 密钥' : '显示 API 密钥'}
-                        aria-pressed={showKey}
-                        onClick={() => setShowKey((current) => !current)}
-                      >
-                        {showKey ? (
-                          <EyeOff className="h-[1.0625rem] w-[1.0625rem]" />
-                        ) : (
-                          <Eye className="h-[1.0625rem] w-[1.0625rem]" />
-                        )}
-                      </Button>
-                    </div>
+                    <ApiKeyInput
+                      id="provider-key"
+                      visible={showKey}
+                      onToggle={() => setShowKey((current) => !current)}
+                      value={selected.apiKey ?? ''}
+                      placeholder={selected.hasApiKey ? '已配置 · 留空保留' : '输入 API 密钥'}
+                      onChange={(event) =>
+                        changeProvider(selected.id, { apiKey: event.target.value })
+                      }
+                    />
                   </div>
                 </div>
                 <div className="space-y-2">

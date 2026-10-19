@@ -1,5 +1,9 @@
 import * as v from 'valibot';
-import type { PromptPreset, PromptPresetInput } from '../../shared/presets/types';
+import {
+  DEFAULT_PROMPT_PRESET_ID,
+  type PromptPreset,
+  type PromptPresetInput,
+} from '../../shared/presets/types';
 import {
   MAX_PRESET_TEXT_BYTES,
   MAX_PROMPT_PRESETS,
@@ -105,6 +109,7 @@ export class PromptPresets {
       )
         continue;
       const reserved =
+        source.id === DEFAULT_PROMPT_PRESET_ID ||
         ids.has(source.id) ||
         this.storage.sql.exec('SELECT id FROM prompt_presets WHERE id = ?', source.id).toArray()
           .length;

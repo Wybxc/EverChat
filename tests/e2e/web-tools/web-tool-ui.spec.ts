@@ -199,7 +199,7 @@ test('web settings autosave, validate ceilings, reveal explicitly, hide across t
     const field = page.getByLabel('联网服务 API 密钥', { exact: true });
     await expect(field).toHaveValue('');
     await expect(field).toHaveAttribute('type', 'password');
-    await expect(field).toHaveAttribute('placeholder', '已配置，输入可替换');
+    await expect(field).toHaveAttribute('placeholder', '已配置 · 留空保留');
     await page.screenshot({
       path: 'test-results/web-tool-settings-desktop.png',
       animations: 'disabled',

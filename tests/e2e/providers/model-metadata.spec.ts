@@ -137,8 +137,8 @@ test('unknown model metadata is visible, editable, automatically saved across de
     }
     await page.getByRole('button', { name: '关闭设置', exact: true }).click();
     await openParameters(page);
-    await page.getByLabel('输出上限方式').selectOption('custom');
-    await page.getByLabel('输出 Token 上限', { exact: true }).fill('2049');
+    await page.getByLabel('输出预算方式').selectOption('custom');
+    await page.getByLabel('输出 Token 预算', { exact: true }).fill('2049');
     await page.getByRole('button', { name: '关闭会话参数', exact: true }).click();
     await page.getByLabel('消息', { exact: true }).fill('保留无效上限的草稿');
     await page.getByRole('button', { name: '发送消息', exact: true }).click();

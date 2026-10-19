@@ -292,7 +292,7 @@ test('preset management autosaves and recovers drafts, applies copies, synchroni
     await expect(page.getByLabel('预设系统提示词', { exact: true })).toHaveValue('远端提示词');
     await page.unroute('**/api/settings/presets/*');
     await page.getByRole('button', { name: '确认删除预设', exact: true }).click();
-    await expect(panel.getByRole('button', { name: '添加预设' })).toBeFocused();
+    await expect(panel.getByLabel('编辑预设', { exact: true })).toBeFocused();
     await page.getByRole('button', { name: '关闭设置', exact: true }).click();
     await openParameters(page);
     await expect(parameters.getByLabel('会话系统提示词', { exact: true })).toHaveValue(

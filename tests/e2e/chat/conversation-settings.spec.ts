@@ -337,7 +337,7 @@ test('logging out cannot restore parameter drafts when an earlier autosave respo
     await page.goto('/');
     await openParameters(page);
     const local = page.getByRole('dialog', { name: '新对话参数', exact: true });
-    await local.getByLabel('自定义会话系统提示词').check();
+    await local.getByLabel('提示词预设', { exact: true }).selectOption('custom');
     await local.getByLabel('会话系统提示词', { exact: true }).fill('清除新对话本机参数');
     await expect(local.getByRole('status')).toHaveText('已保存到本机');
     await local.getByRole('button', { name: '关闭会话参数' }).click();
@@ -358,7 +358,7 @@ test('logging out cannot restore parameter drafts when an earlier autosave respo
     await page.goto(`/c/${fixture.id}`);
     await openParameters(page);
     const modal = page.getByRole('dialog', { name: '会话参数', exact: true });
-    await modal.getByLabel('自定义会话系统提示词').check();
+    await modal.getByLabel('提示词预设', { exact: true }).selectOption('custom');
     await modal.getByLabel('会话系统提示词', { exact: true }).fill(prompt);
     await reachedServer;
     await modal.getByRole('button', { name: '关闭会话参数' }).click();
@@ -374,7 +374,9 @@ test('logging out cannot restore parameter drafts when an earlier autosave respo
     await page.request.post('/__dev/access/login');
     await page.goto('/');
     await openParameters(page);
-    await expect(local.getByLabel('自定义会话系统提示词')).not.toBeChecked();
+    await expect(local.getByLabel('提示词预设', { exact: true })).toHaveValue(
+      '00000000-0000-4000-8000-000000000000',
+    );
   } finally {
     release();
     await page.unroute('**/api/conversations/*/settings');
@@ -410,7 +412,7 @@ test('conversation settings autosave, preserve failed and invalid drafts, sync d
         body: JSON.stringify({ error: '暂时无法保存参数' }),
       }),
     );
-    await modal.getByLabel('自定义会话系统提示词').check();
+    await modal.getByLabel('提示词预设', { exact: true }).selectOption('custom');
     await modal.getByLabel('会话系统提示词', { exact: true }).fill('保留未保存的会话提示');
     await expect(modal.getByRole('alert')).toContainText('暂时无法保存参数');
     await page.reload();
@@ -430,7 +432,7 @@ test('conversation settings autosave, preserve failed and invalid drafts, sync d
     expect((await fixture.snapshot()).settings?.temperature).toBeNull();
     await modal.getByLabel('Temperature', { exact: true }).fill('0.7');
     await modal.getByLabel('Top P', { exact: true }).fill('0.8');
-    await modal.getByLabel('输出上限方式').selectOption('unset');
+    await modal.getByLabel('输出预算方式').selectOption('unset');
     await expect
       .poll(async () => (await fixture.snapshot()).settings)
       .toEqual({
@@ -440,8 +442,8 @@ test('conversation settings autosave, preserve failed and invalid drafts, sync d
         topP: 0.8,
         useGlobalMaxOutputTokens: false,
       });
-    await modal.getByLabel('输出上限方式').selectOption('custom');
-    await modal.getByLabel('输出 Token 上限').fill('256');
+    await modal.getByLabel('输出预算方式').selectOption('custom');
+    await modal.getByLabel('输出 Token 预算').fill('256');
     await expect.poll(async () => (await fixture.snapshot()).settings?.maxOutputTokens).toBe(256);
     await expect(modal.getByRole('button', { name: '恢复继承' })).toBeInViewport();
     await modal.getByRole('button', { name: '关闭会话参数' }).click();
@@ -473,10 +475,10 @@ test('an offline new conversation pins its parameters without overwriting anothe
     await page.goto('/');
     await openParameters(page);
     const modal = page.getByRole('dialog', { name: '新对话参数', exact: true });
-    await modal.getByLabel('自定义会话系统提示词').check();
+    await modal.getByLabel('提示词预设', { exact: true }).selectOption('custom');
     await modal.getByLabel('会话系统提示词', { exact: true }).fill('OFFLINE');
     await modal.getByLabel('Temperature', { exact: true }).fill('0.3');
-    await modal.getByLabel('输出上限方式').selectOption('unset');
+    await modal.getByLabel('输出预算方式').selectOption('unset');
     await expect(modal.getByRole('status')).toHaveText('已保存到本机');
     await modal.getByRole('button', { name: '关闭会话参数' }).click();
     await context.setOffline(true);

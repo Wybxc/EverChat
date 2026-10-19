@@ -18,6 +18,12 @@ interface Position {
 }
 
 function reveal(range: Range, viewport: HTMLElement) {
+  const collapsed = range.startContainer.parentElement?.closest('[data-collapsed-message="true"]');
+  if (collapsed) {
+    collapsed.querySelector<HTMLButtonElement>('button[aria-expanded="false"]')?.click();
+    requestAnimationFrame(() => reveal(range, viewport));
+    return;
+  }
   for (let element = range.startContainer.parentElement; element; element = element.parentElement) {
     if (element instanceof HTMLDetailsElement) element.open = true;
     if (element === viewport) break;

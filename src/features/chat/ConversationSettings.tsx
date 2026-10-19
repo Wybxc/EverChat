@@ -105,6 +105,8 @@ export function ConversationSettingsDialog({
   manageWebTools,
   focusTools = false,
   toolsToggleRef,
+  presetChangeRef,
+  defaultOutputBudget,
 }: {
   id: string | null;
   initial: ConversationSettings;
@@ -118,6 +120,8 @@ export function ConversationSettingsDialog({
   manageWebTools: () => void;
   focusTools?: boolean;
   toolsToggleRef?: RefObject<(() => void) | null>;
+  presetChangeRef?: RefObject<((prompt: string | null) => void) | null>;
+  defaultOutputBudget?: number | null;
 }) {
   const titleId = useId();
   const service = useWebToolSettings(open);
@@ -193,6 +197,13 @@ export function ConversationSettingsDialog({
     store.update(settings);
   };
   useEffect(() => {
+    if (!presetChangeRef) return;
+    presetChangeRef.current = (systemPrompt) => update({ systemPrompt });
+    return () => {
+      presetChangeRef.current = null;
+    };
+  }, [store, presetChangeRef]);
+  useEffect(() => {
     if (!toolsToggleRef) return;
     toolsToggleRef.current = () =>
       update({ tools: store.getSnapshot().settings.tools.length ? [] : [...WEB_TOOL_NAMES] });
@@ -220,9 +231,7 @@ export function ConversationSettingsDialog({
   const invalidGroups = new Set<keyof typeof sections>(
     !validation.success
       ? validation.issues.map((issue) =>
-          ['temperature', 'topP', 'maxOutputTokens', 'useGlobalMaxOutputTokens'].includes(
-            String(issue.path?.[0]?.key),
-          )
+          ['temperature', 'topP'].includes(String(issue.path?.[0]?.key))
             ? 'generation'
             : issue.path?.[0]?.key === 'systemPrompt'
               ? 'prompt'
@@ -235,10 +244,7 @@ export function ConversationSettingsDialog({
     forceOpen: invalidGroups.has(name),
     onOpenChange: (value: boolean) => setSections((current) => ({ ...current, [name]: value })),
   });
-  const overrides =
-    Number(settings.temperature !== null) +
-    Number(settings.topP !== null) +
-    Number(limitMode !== 'inherit');
+  const overrides = Number(settings.temperature !== null) + Number(settings.topP !== null);
   return (
     <Modal
       open={open}
@@ -265,9 +271,9 @@ export function ConversationSettingsDialog({
           <Disclosure
             title={
               <>
-                系统提示词{' '}
+                预设{' '}
                 <span className="ml-2 text-xs font-normal text-muted-foreground">
-                  {settings.systemPrompt === null ? '继承' : '会话自定义'}
+                  {settings.systemPrompt === null ? '默认预设' : '会话快照'}
                 </span>
               </>
             }
@@ -276,21 +282,13 @@ export function ConversationSettingsDialog({
             <div className="space-y-3">
               <PromptPresetPicker
                 open={open}
+                prompt={settings.systemPrompt}
                 apply={(systemPrompt) => update({ systemPrompt })}
                 manage={() => {
                   close();
                   managePresets();
                 }}
               />
-              <label className="flex min-h-11 items-center gap-2 text-sm">
-                <Checkbox
-                  checked={settings.systemPrompt !== null}
-                  onCheckedChange={(checked) =>
-                    update({ systemPrompt: checked === true ? '' : null })
-                  }
-                />
-                自定义会话系统提示词
-              </label>
               {settings.systemPrompt !== null && (
                 <label className="block space-y-1 text-sm">
                   <span>会话系统提示词</span>
@@ -310,12 +308,7 @@ export function ConversationSettingsDialog({
               <>
                 生成参数{' '}
                 <span className="ml-2 text-xs font-normal text-muted-foreground">
-                  {overrides ? `${overrides} 项覆盖` : '默认'} · 输出
-                  {limitMode === 'inherit'
-                    ? '继承'
-                    : limitMode === 'unset'
-                      ? '未设置'
-                      : settings.maxOutputTokens}
+                  {overrides ? `${overrides} 项覆盖` : '默认'}
                 </span>
               </>
             }
@@ -353,37 +346,6 @@ export function ConversationSettingsDialog({
                     />
                   )}
                 </div>
-              )}
-              <label className="block space-y-1 text-sm">
-                <span>输出上限</span>
-                <NativeSelect
-                  className="w-full border-input"
-                  aria-label="输出上限方式"
-                  value={limitMode}
-                  onChange={(event) =>
-                    update({
-                      useGlobalMaxOutputTokens: event.currentTarget.value === 'inherit',
-                      maxOutputTokens:
-                        event.currentTarget.value === 'custom'
-                          ? (settings.maxOutputTokens ?? 4096)
-                          : null,
-                    })
-                  }
-                >
-                  <option value="inherit">继承全局设置</option>
-                  <option value="unset">未设置</option>
-                  <option value="custom">自定义</option>
-                </NativeSelect>
-              </label>
-              {limitMode === 'custom' && (
-                <NumberSetting
-                  label="输出 Token 上限"
-                  value={settings.maxOutputTokens}
-                  min={1}
-                  max={MAX_MODEL_TOKENS}
-                  integer
-                  change={(maxOutputTokens) => update({ maxOutputTokens })}
-                />
               )}
             </div>
           </Disclosure>
@@ -459,6 +421,42 @@ export function ConversationSettingsDialog({
               {...sectionProps('context')}
             >
               <div className="space-y-3">
+                <label className="block space-y-1 text-sm">
+                  <span>输出预算</span>
+                  <NativeSelect
+                    className="w-full border-input"
+                    aria-label="输出预算方式"
+                    value={limitMode}
+                    onChange={(event) =>
+                      update({
+                        useGlobalMaxOutputTokens: event.currentTarget.value === 'inherit',
+                        maxOutputTokens:
+                          event.currentTarget.value === 'custom'
+                            ? (settings.maxOutputTokens ?? 4096)
+                            : null,
+                      })
+                    }
+                  >
+                    <option value="inherit">
+                      默认
+                      {defaultOutputBudget
+                        ? `（${defaultOutputBudget.toLocaleString()} Tokens）`
+                        : '（不设置）'}
+                    </option>
+                    <option value="unset">不设置</option>
+                    <option value="custom">自定义</option>
+                  </NativeSelect>
+                </label>
+                {limitMode === 'custom' && (
+                  <NumberSetting
+                    label="输出 Token 预算"
+                    value={settings.maxOutputTokens}
+                    min={1}
+                    max={MAX_MODEL_TOKENS}
+                    integer
+                    change={(maxOutputTokens) => update({ maxOutputTokens })}
+                  />
+                )}
                 <label className="flex min-h-11 items-center gap-2 text-sm">
                   <Checkbox
                     checked={settings.useSummaries}

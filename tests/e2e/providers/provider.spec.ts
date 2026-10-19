@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import type { ProviderSettings } from '../../../shared/providers/types';
+import { DEFAULT_PROMPT_PRESET_ID } from '../../../shared/presets/types';
 import {
   editModel,
   openModelAdder,
@@ -40,56 +41,6 @@ test('provider settings and model discovery require a session and same-origin wr
   expect(
     (await request.get(`/api/settings/providers/${crypto.randomUUID()}/models`)).status(),
   ).toBe(401);
-});
-
-test('omitted output limits default to unset and can be configured or cleared with autosave', async ({
-  page,
-  context,
-}) => {
-  await login(page);
-  const getSettings = () =>
-    context.request
-      .get('/api/settings/providers')
-      .then((response) => response.json()) as Promise<ProviderSettings>;
-  const initial = await getSettings();
-  try {
-    // Other tests configure this shared server. Exercise the omitted-field default explicitly.
-    const { maxOutputTokens: _configuredLimit, ...withoutLimit } = initial;
-    expect(
-      (
-        await context.request.put('/api/settings/providers', { headers, data: withoutLimit })
-      ).status(),
-    ).toBe(200);
-    expect((await getSettings()).maxOutputTokens).toBeNull();
-    await page.reload();
-    await openSpaceSettings(page);
-    await tab(page, '对话');
-    const limit = page.getByLabel('输出上限（Tokens）');
-    await expect(limit).toHaveValue('');
-    await expect(limit).toHaveAttribute('placeholder', '不设置');
-    await limit.fill('512');
-    await saved(page);
-    expect((await getSettings()).maxOutputTokens).toBe(512);
-    await page.reload();
-    await openSpaceSettings(page);
-    await tab(page, '对话');
-    await expect(limit).toHaveValue('512');
-    await limit.fill('');
-    await saved(page);
-    expect((await getSettings()).maxOutputTokens).toBeNull();
-    expect(
-      await context.request.get('/api/session').then((response) => response.json()),
-    ).toMatchObject({ maxOutputTokens: null });
-    await page.reload();
-    await openSpaceSettings(page);
-    await tab(page, '对话');
-    await expect(limit).toHaveValue('');
-  } finally {
-    await page.close();
-    expect(
-      (await context.request.put('/api/settings/providers', { headers, data: initial })).status(),
-    ).toBe(200);
-  }
 });
 
 test('changing provider protocol and endpoint preserves other inputs, model drafts and saved configuration', async ({
@@ -374,8 +325,6 @@ test('tabbed settings autosave model names and enabled choices; the close button
     const profileId = (await getSettings()).providers[0].id;
     await expect(page.getByLabel('显示思考内容', { exact: true })).toHaveCount(0);
     await page.getByLabel('默认模型').selectOption(JSON.stringify([profileId, 'test-model']));
-    await page.getByLabel('系统提示词', { exact: true }).fill('自动保存的提示词');
-    await page.getByLabel('输出上限（Tokens）').fill('256');
     await saved(page);
     expect(
       await context.request.get('/api/session').then((response) => response.json()),
@@ -482,8 +431,9 @@ test('tabbed settings autosave model names and enabled choices; the close button
       ).status(),
     ).toBe(200);
     await openSpaceSettings(page);
-    await tab(page, '对话');
-    await expect(page.getByLabel('系统提示词', { exact: true })).toHaveValue('其他设备更新');
+    await tab(page, '预设');
+    await page.getByLabel('编辑预设', { exact: true }).selectOption(DEFAULT_PROMPT_PRESET_ID);
+    await expect(page.getByLabel('预设系统提示词', { exact: true })).toHaveValue('其他设备更新');
     await tab(page, '供应商');
 
     await page.getByRole('button', { name: '删除供应商 Gemini 备用' }).click();
@@ -528,48 +478,6 @@ test('tabbed settings autosave model names and enabled choices; the close button
     await openSpaceSettings(page);
     await tab(page, '供应商');
     await expect(page.getByLabel('名称', { exact: true })).toHaveValue('关闭窗口时保存');
-  } finally {
-    await page.close();
-    expect(
-      (await context.request.put('/api/settings/providers', { headers, data: initial })).status(),
-    ).toBe(200);
-  }
-});
-
-test('autosave validation and network failures preserve drafts and allow retry', async ({
-  page,
-  context,
-}) => {
-  await login(page);
-  const getSettings = () =>
-    context.request
-      .get('/api/settings/providers')
-      .then((response) => response.json()) as Promise<ProviderSettings>;
-  const initial = await getSettings();
-  try {
-    await openSpaceSettings(page);
-    await tab(page, '对话');
-    await page.getByLabel('输出上限（Tokens）').fill('0');
-    await expect(page.getByTestId('settings-save-status')).toHaveAttribute('role', 'alert');
-    expect((await getSettings()).maxOutputTokens).toBe(initial.maxOutputTokens);
-    await page.getByLabel('输出上限（Tokens）').fill('512');
-    await saved(page);
-    await page.route('**/api/settings/providers', async (route) => {
-      if (route.request().method() === 'PUT')
-        await route.fulfill({
-          status: 503,
-          contentType: 'application/json',
-          body: JSON.stringify({ error: '暂时无法保存' }),
-        });
-      else await route.continue();
-    });
-    await page.getByLabel('系统提示词', { exact: true }).fill('失败后保留的草稿');
-    await expect(page.getByTestId('settings-save-status')).toContainText('暂时无法保存');
-    await expect(page.getByLabel('系统提示词', { exact: true })).toHaveValue('失败后保留的草稿');
-    await page.unroute('**/api/settings/providers');
-    await page.getByRole('button', { name: '重试', exact: true }).click();
-    await saved(page);
-    expect((await getSettings()).systemPrompt).toBe('失败后保留的草稿');
   } finally {
     await page.close();
     expect(

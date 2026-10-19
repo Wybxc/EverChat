@@ -8,11 +8,11 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 import { useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2 } from 'lucide-react';
 import * as v from 'valibot';
-import type { PromptPreset } from '../../../shared/presets/types';
+import { DEFAULT_PROMPT_PRESET_ID, type PromptPreset } from '../../../shared/presets/types';
 import { MAX_PROMPT_PRESETS, promptPresetInputSchema } from '../../../shared/presets/schema';
 import { Autosave } from '../../platform/autosave';
 import { api } from '../../platform/api';
-import { storageEpoch } from '../../platform/storage';
+import { read, write, storageEpoch } from '../../platform/storage';
 
 import {
   discardPresetDraft,
@@ -27,44 +27,68 @@ export function PromptPresetPicker({
   open,
   apply,
   manage,
+  prompt,
+  compact = false,
 }: {
   open: boolean;
-  apply: (prompt: string) => void;
+  apply: (prompt: string | null) => void;
+  prompt: string | null;
+  compact?: boolean;
   manage: () => void;
 }) {
   const query = usePromptPresets(open);
+  const value =
+    prompt === null
+      ? DEFAULT_PROMPT_PRESET_ID
+      : (query.data?.find(
+          (preset) => preset.id !== DEFAULT_PROMPT_PRESET_ID && preset.systemPrompt === prompt,
+        )?.id ?? 'custom');
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-sm">提示词预设</span>
-        <Button variant="ghost" type="button" onClick={manage}>
-          管理预设
-        </Button>
-      </div>
+    <div className={compact ? 'min-w-0 max-w-40' : 'space-y-2'}>
+      {!compact && (
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-sm">提示词预设</span>
+          <Button variant="ghost" type="button" onClick={manage}>
+            管理预设
+          </Button>
+        </div>
+      )}
       <NativeSelect
         className="w-full"
-        aria-label="提示词预设"
-        value=""
+        selectClassName={
+          compact
+            ? 'h-11 sm:h-9 truncate border-transparent bg-transparent dark:bg-transparent dark:hover:bg-accent/50'
+            : undefined
+        }
+        aria-label={compact ? '新对话预设' : '提示词预设'}
+        value={value}
         disabled={!query.data?.length}
         onChange={(event) => {
-          const preset = query.data?.find((preset) => preset.id === event.currentTarget.value);
+          const id = event.currentTarget.value;
+          if (id === 'manage') {
+            manage();
+            return;
+          }
+          if (id === DEFAULT_PROMPT_PRESET_ID) {
+            apply(null);
+            return;
+          }
+          if (id === 'custom') {
+            if (!compact) apply(prompt ?? '');
+            return;
+          }
+          const preset = query.data?.find((preset) => preset.id === id);
           if (preset) apply(preset.systemPrompt);
         }}
       >
-        <option value="">
-          {query.data?.length
-            ? '选择并应用'
-            : query.isPending
-              ? '读取中…'
-              : query.isError
-                ? '读取失败'
-                : '暂无预设'}
-        </option>
+        {!query.data?.length && <option value={DEFAULT_PROMPT_PRESET_ID}>默认预设</option>}
         {query.data?.map((preset) => (
           <option key={preset.id} value={preset.id}>
             {preset.name}
           </option>
         ))}
+        {(!compact || value === 'custom') && <option value="custom">自定义提示词</option>}
+        {compact && <option value="manage">管理预设…</option>}
       </NativeSelect>
       {query.isError && (
         <div className="flex items-center gap-2 text-xs">
@@ -78,20 +102,38 @@ export function PromptPresetPicker({
   );
 }
 
-export function PromptPresetsPanel({ open }: { open: boolean }) {
+export function PromptPresetsPanel({
+  open,
+  beforeDefaultSave,
+  onDefaultSaved,
+}: {
+  open: boolean;
+  beforeDefaultSave?: () => Promise<unknown>;
+  onDefaultSaved?: () => Promise<void>;
+}) {
   const query = usePromptPresets(open);
-  const [selection, setSelection] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const [selection, setSelection] = useState<string | null>(() =>
+    read('prompt-preset-selection', null),
+  );
+  const selectPreset = useCallback((id: string | null) => {
+    setSelection(id);
+    write('prompt-preset-selection', id);
+  }, []);
   const select = useRef<HTMLSelectElement>(null);
   const addButton = useRef<HTMLButtonElement>(null);
   const [, setRevision] = useState(0);
   const changed = useCallback(() => setRevision((value) => value + 1), []);
   const removed = useCallback(() => {
-    setSelection(null);
+    const items = queryClient.getQueryData<PromptPreset[]>(PRESET_QUERY) ?? [];
+    selectPreset(
+      items.find((item) => item.id !== DEFAULT_PROMPT_PRESET_ID)?.id ?? DEFAULT_PROMPT_PRESET_ID,
+    );
     setRevision((value) => value + 1);
     requestAnimationFrame(() =>
       (select.current?.disabled ? addButton.current : select.current)?.focus(),
     );
-  }, []);
+  }, [queryClient, selectPreset]);
   const drafts = presetDrafts(),
     saved = query.data ?? [];
   const items = [
@@ -107,7 +149,7 @@ export function PromptPresetsPanel({ open }: { open: boolean }) {
       updatedAt: Date.now(),
     };
     savePresetDraft(preset);
-    setSelection(preset.id);
+    selectPreset(preset.id);
     changed();
   };
   const copy = (source: PromptPreset) => {
@@ -118,7 +160,7 @@ export function PromptPresetsPanel({ open }: { open: boolean }) {
       updatedAt: Date.now(),
     };
     savePresetDraft(preset);
-    setSelection(preset.id);
+    selectPreset(preset.id);
     changed();
   };
   return (
@@ -130,7 +172,7 @@ export function PromptPresetsPanel({ open }: { open: boolean }) {
           aria-label="编辑预设"
           value={selected?.id ?? ''}
           disabled={!items.length}
-          onChange={(event) => setSelection(event.currentTarget.value)}
+          onChange={(event) => selectPreset(event.currentTarget.value)}
         >
           {!items.length && (
             <option value="">
@@ -147,7 +189,10 @@ export function PromptPresetsPanel({ open }: { open: boolean }) {
           variant="secondary"
           ref={addButton}
           type="button"
-          disabled={items.length >= MAX_PROMPT_PRESETS || !query.data}
+          disabled={
+            items.filter((item) => item.id !== DEFAULT_PROMPT_PRESET_ID).length >=
+              MAX_PROMPT_PRESETS || !query.data
+          }
           onClick={add}
         >
           <Plus className="h-[0.9375rem] w-[0.9375rem]" />
@@ -170,7 +215,11 @@ export function PromptPresetsPanel({ open }: { open: boolean }) {
           changed={changed}
           removed={removed}
           copy={copy}
-          canCopy={items.length < MAX_PROMPT_PRESETS}
+          canCopy={
+            items.filter((item) => item.id !== DEFAULT_PROMPT_PRESET_ID).length < MAX_PROMPT_PRESETS
+          }
+          beforeDefaultSave={beforeDefaultSave}
+          onDefaultSaved={onDefaultSaved}
         />
       )}
     </div>
@@ -184,6 +233,8 @@ function PresetEditor({
   removed,
   copy,
   canCopy,
+  beforeDefaultSave,
+  onDefaultSaved,
 }: {
   preset: PromptPreset;
   open: boolean;
@@ -191,7 +242,12 @@ function PresetEditor({
   removed: () => void;
   copy: (preset: PromptPreset) => void;
   canCopy: boolean;
+  beforeDefaultSave?: () => Promise<unknown>;
+  onDefaultSaved?: () => Promise<void>;
 }) {
+  const isDefault = preset.id === DEFAULT_PROMPT_PRESET_ID;
+  const callbacks = useRef({ beforeDefaultSave, onDefaultSaved });
+  callbacks.current = { beforeDefaultSave, onDefaultSaved };
   const queryClient = useQueryClient(),
     deleting = useRef(false),
     epoch = useRef(storageEpoch()).current;
@@ -213,11 +269,13 @@ function PresetEditor({
             systemPrompt: draft.systemPrompt,
           });
           if (!parsed.success) throw new Error('预设名称为 1–100 字，系统提示词最多 20,000 字。');
+          if (isDefault) await callbacks.current.beforeDefaultSave?.();
           const saved = await api<PromptPreset>(
             `/settings/presets/${preset.id}`,
             'PUT',
             parsed.output,
           );
+          if (isDefault) await callbacks.current.onDefaultSaved?.();
           if (epoch === storageEpoch()) await queryClient.cancelQueries({ queryKey: PRESET_QUERY });
           return saved;
         },
@@ -315,7 +373,7 @@ function PresetEditor({
           className="w-full"
           maxLength={100}
           value={settings.name}
-          disabled={removing}
+          disabled={removing || isDefault}
           onChange={(event) => update({ name: event.currentTarget.value })}
         />
       </label>
@@ -375,19 +433,21 @@ function PresetEditor({
               </Button>
             </>
           )}
-          <Button
-            variant="ghost"
-            ref={deleteButton}
-            type="button"
-            disabled={removing}
-            onClick={() => {
-              store.dispose();
-              setConfirming(true);
-            }}
-          >
-            <Trash2 className="h-[0.875rem] w-[0.875rem]" />
-            删除预设
-          </Button>
+          {!isDefault && (
+            <Button
+              variant="ghost"
+              ref={deleteButton}
+              type="button"
+              disabled={removing}
+              onClick={() => {
+                store.dispose();
+                setConfirming(true);
+              }}
+            >
+              <Trash2 className="h-[0.875rem] w-[0.875rem]" />
+              删除预设
+            </Button>
+          )}
         </div>
       </div>
       <Modal

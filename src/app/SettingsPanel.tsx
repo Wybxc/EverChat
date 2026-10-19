@@ -1,12 +1,8 @@
-import { MAX_MODEL_TOKENS } from '../../shared/models/metadata';
-import { MAX_SYSTEM_PROMPT_LENGTH } from '../../shared/conversation/limits';
 import { storageEpoch } from '../platform/storage';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { NativeSelect } from '@/components/ui/native-select';
 import { LoadingContent } from './AppFrame';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Textarea } from '@/components/ui/textarea';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { LogOut } from 'lucide-react';
 import {
@@ -219,7 +215,17 @@ export function SettingsPanel(props: PanelProps) {
                   aria-labelledby="settings-tab-presets"
                   hidden={tab !== 'presets'}
                 >
-                  <PromptPresetsPanel open={open && tab === 'presets'} />
+                  <PromptPresetsPanel
+                    open={open && tab === 'presets'}
+                    beforeDefaultSave={() => store?.flush() ?? Promise.resolve()}
+                    onDefaultSaved={async () => {
+                      const config = await api<ProviderSettings>('/settings/providers');
+                      if (epoch !== storageEpoch()) return;
+                      store?.receive(config);
+                      queryClient.setQueryData(['provider-settings'], config);
+                      onSavedRef.current?.(config);
+                    }}
+                  />
                 </section>
                 {open && tab === 'shares' && (
                   <section
@@ -404,40 +410,6 @@ function SettingsForm({
             </p>
           </div>
         </Disclosure>
-        <div className="space-y-1">
-          <label htmlFor="provider-prompt" className="block text-sm font-medium">
-            系统提示词
-          </label>
-          <Textarea
-            id="provider-prompt"
-            rows={6}
-            maxLength={MAX_SYSTEM_PROMPT_LENGTH}
-            className="w-full border-input"
-            value={settings.systemPrompt}
-            onChange={(event) => update({ ...settings, systemPrompt: event.target.value })}
-          />
-        </div>
-        <div className="space-y-1">
-          <label htmlFor="provider-tokens" className="block text-sm font-medium">
-            输出上限（Tokens）
-          </label>
-          <Input
-            id="provider-tokens"
-            type="number"
-            min={1}
-            max={MAX_MODEL_TOKENS}
-            step={1}
-            placeholder="不设置"
-            className="w-full border-input sm:max-w-48"
-            value={settings.maxOutputTokens ?? ''}
-            onChange={(event) =>
-              update({
-                ...settings,
-                maxOutputTokens: event.target.value === '' ? null : Number(event.target.value),
-              })
-            }
-          />
-        </div>
       </section>
 
       <div className="sticky bottom-0 z-10 flex shrink-0 items-center justify-between gap-3 border-t border-border bg-background px-3 py-2 text-xs sm:px-4 text-muted-foreground">

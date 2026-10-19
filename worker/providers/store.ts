@@ -44,6 +44,15 @@ export class ProviderSettingsStore {
       .toArray()[0];
     return row ? (JSON.parse(row.payload) as TitleSettings) : DEFAULT_TITLE_SETTINGS;
   }
+  defaultSystemPrompt(): string {
+    return (
+      this.storage.sql
+        .exec<{ systemPrompt: string }>('SELECT systemPrompt FROM provider_preferences WHERE id=1')
+        .toArray()[0]?.systemPrompt ??
+      this.env.SYSTEM_PROMPT ??
+      '你是一位清晰、友善的助手。请默认使用中文回答。'
+    );
+  }
   titleConfig(automatic = false): ProviderConfig | null {
     const settings = this.titleSettings();
     if (!settings.model || (automatic && !settings.automatic)) return null;

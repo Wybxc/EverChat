@@ -130,6 +130,7 @@ import { api, ApiError } from '../platform/api';
 import { clearLocal, read, remove, storageEpoch, write } from '../platform/storage';
 import { useMediaQuery } from '../platform/useMediaQuery';
 import { AppFrame, LoadingContent, SidebarHeader, SpaceSettingsButton } from './AppFrame';
+import { PromptPresetPicker } from '../features/presets/PromptPresets';
 import { SettingsDialog } from './SettingsDialog';
 import { AccessGate } from './AccessGate';
 import { identityKey } from '../../shared/auth/types';
@@ -311,6 +312,7 @@ export function App({
   const [conversationSettingsOpen, setConversationSettingsOpen] = useState(false);
   const [focusWebTools, setFocusWebTools] = useState(false);
   const toolsToggleRef = useRef<(() => void) | null>(null);
+  const presetChangeRef = useRef<((prompt: string | null) => void) | null>(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [summaryTarget, setSummaryTarget] = useState<{
     throughId: string;
@@ -1502,6 +1504,18 @@ export function App({
                 ? '页面不可用'
                 : (currentConversation?.title ?? (selected ? '对话' : '新对话'))}
             </p>
+            {!selected && !invalidRoute && session?.authenticated && (
+              <PromptPresetPicker
+                compact
+                open
+                prompt={conversationSettings.systemPrompt}
+                apply={(prompt) => presetChangeRef.current?.(prompt)}
+                manage={() => {
+                  setRequestedSettingsTab('presets');
+                  openSettings();
+                }}
+              />
+            )}
             <div className="flex shrink-0 items-center gap-0 sm:gap-1">
               <span
                 aria-live="polite"
@@ -2367,6 +2381,8 @@ export function App({
           open={conversationSettingsOpen}
           focusTools={focusWebTools}
           toolsToggleRef={toolsToggleRef}
+          presetChangeRef={presetChangeRef}
+          defaultOutputBudget={session.maxOutputTokens}
           close={() => {
             setConversationSettingsOpen(false);
             setFocusWebTools(false);

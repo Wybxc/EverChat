@@ -1,9 +1,10 @@
+import { ApiKeyInput } from '../../components/ApiKeyInput';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Input } from '@/components/ui/input';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { Eye, EyeOff, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import * as v from 'valibot';
 import {
@@ -177,36 +178,20 @@ function ServiceEditor({ initial, active }: { initial: WebToolServiceSettings; a
         <label htmlFor="web-tool-key" className="block text-sm font-medium">
           API 密钥
         </label>
-        <div className="flex gap-2">
-          <Input
+        <div className="flex items-center gap-2">
+          <ApiKeyInput
             disabled={switching}
             id="web-tool-key"
             aria-label="联网服务 API 密钥"
-            type={revealed === null ? 'password' : 'text'}
-            autoComplete="new-password"
-            maxLength={4096}
-            className="min-w-0 flex-1 border-input"
-            placeholder={settings.hasApiKey ? '已配置，输入可替换' : '未配置'}
+            visible={revealed !== null}
+            loading={reading}
+            onToggle={() => void reveal()}
+            showLabel="查看联网服务密钥"
+            hideLabel="隐藏联网服务密钥"
+            placeholder={settings.hasApiKey ? '已配置 · 留空保留' : '输入 API 密钥'}
             value={settings.apiKey ?? revealed ?? ''}
             onChange={(event) => update({ apiKey: event.currentTarget.value })}
           />
-          <Button
-            variant="secondary"
-            size="icon"
-            type="button"
-            aria-label={revealed === null ? '查看联网服务密钥' : '隐藏联网服务密钥'}
-            aria-pressed={revealed !== null}
-            disabled={switching}
-            onClick={() => void reveal()}
-          >
-            {reading ? (
-              <Spinner />
-            ) : revealed === null ? (
-              <Eye className="h-[1.0625rem] w-[1.0625rem]" />
-            ) : (
-              <EyeOff className="h-[1.0625rem] w-[1.0625rem]" />
-            )}
-          </Button>
           <Button
             variant="secondary"
             type="button"
