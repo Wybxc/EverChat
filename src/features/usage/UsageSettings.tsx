@@ -213,7 +213,7 @@ export default function UsageSettings({
     client = useQueryClient();
   return (
     <div className="min-w-0 space-y-2">
-      <div className="sticky top-0 z-10 bg-background pb-2">
+      <div data-testid="usage-tab-header" className="sticky top-0 z-10 bg-popover pb-2">
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList
             variant="line"

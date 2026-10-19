@@ -36,6 +36,23 @@ test('nested usage tabs stay horizontal and transparent in both themes and viewp
         await expect
           .poll(() => element.evaluate((el) => getComputedStyle(el).backgroundColor))
           .toBe('rgba(0, 0, 0, 0)');
+      await expect
+        .poll(() =>
+          dialog.getByTestId('usage-tab-header').evaluate((header) => {
+            const panel = header.closest('[data-slot="dialog-content"]')!;
+            return (
+              getComputedStyle(header).backgroundColor === getComputedStyle(panel).backgroundColor
+            );
+          }),
+        )
+        .toBe(true);
+      for (const target of await list.getByRole('tab').all()) {
+        await target.click();
+        await expect(target).toHaveAttribute('aria-selected', 'true');
+        await expect
+          .poll(() => target.evaluate((tab) => getComputedStyle(tab).backgroundColor))
+          .toBe('rgba(0, 0, 0, 0)');
+      }
     }
   }
 });
