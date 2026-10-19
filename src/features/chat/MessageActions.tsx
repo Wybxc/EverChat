@@ -141,9 +141,7 @@ export function MessageActions({
           {t(($) => $.deleteMessage)}
         </ActionMenuItem>
       </ActionMenu>
-      {!user && !active && (
-        <GenerationMetadata generation={message.generation} messageId={message.id} />
-      )}
+      {!user && <GenerationMetadata message={message} />}
       {!user && message.revisionOf && !message.generation && (
         <span className="px-1 text-xs">{t(($) => $.manuallyEdited)}</span>
       )}

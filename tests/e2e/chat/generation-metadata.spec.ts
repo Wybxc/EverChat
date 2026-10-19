@@ -100,7 +100,10 @@ for (const protocol of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
         state.timing.firstTokenAt - state.timing.providerStartedAt,
       );
       const info = page.getByTestId('message-generation');
+      const bodyCharacters = [...messageText(message).replace(/\s/gu, '')].length,
+        reasoningCharacters = [...messageText(message, 'reasoning').replace(/\s/gu, '')].length;
       await expect(page.getByTestId('generation-summary')).toBeVisible();
+      await expect(page.getByTestId('generation-summary')).toContainText(`${bodyCharacters} 字`);
       await expect(page.getByTestId('generation-summary')).toContainText('Tokens');
       await expect(page.getByTestId('generation-summary')).not.toContainText('部分');
       await page
@@ -108,6 +111,15 @@ for (const protocol of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
         .getByRole('button', { name: '生成信息', exact: true })
         .click();
       await expect(info).toBeVisible();
+      await expect(info.getByTestId('generation-bodyCharacters')).toHaveText(
+        String(bodyCharacters),
+      );
+      await expect(info.getByTestId('generation-reasoningCharacters')).toHaveText(
+        String(reasoningCharacters),
+      );
+      await expect(info.getByTestId('generation-totalCharacters')).toHaveText(
+        String(bodyCharacters + reasoningCharacters),
+      );
       await expect(info.getByTestId('generation-inputTokens')).toHaveText(
         protocol === 'anthropic' ? '14' : '10',
       );
@@ -162,6 +174,9 @@ for (const protocol of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
         .getByRole('button', { name: '生成信息', exact: true })
         .click();
       await expect(page.getByTestId('generation-firstTokenMs')).toHaveText(/s$/);
+      await expect(page.getByTestId('generation-bodyCharacters')).toHaveText(
+        String(bodyCharacters),
+      );
     } finally {
       await second.close();
       await fixture.cleanup(extra);
@@ -176,6 +191,7 @@ test('returned thoughts are shown and determine first output before the answer, 
   try {
     await page.goto(`/c/${fixture.id}`);
     await fixture.send();
+    await expect(page.getByTestId('generation-summary')).toContainText('思考 4 字');
     await expect.poll(async () => (await fixture.snapshot()).messages[1]?.status).toBe('completed');
     const message = (await fixture.snapshot()).messages[1];
     expect(messageText(message, 'reasoning')).not.toBe('');
@@ -195,9 +211,43 @@ test('returned thoughts are shown and determine first output before the answer, 
       .getByRole('button', { name: '生成信息', exact: true })
       .click();
     await expect(page.getByTestId('generation-reasoningTokens')).toHaveText('2');
+    await expect(page.getByTestId('generation-bodyCharacters')).toHaveText('4');
+    await expect(page.getByTestId('generation-reasoningCharacters')).toHaveText('4');
+    await expect(page.getByTestId('generation-totalCharacters')).toHaveText('8');
     await expect(page.getByTestId('message-reasoning')).toContainText(
       messageText(message, 'reasoning'),
     );
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+test('character counts are available during a live answer and stay after cancellation', async ({
+  page,
+}) => {
+  const fixture = await setup(page.request, 'openai-chat', 'alarm-stall');
+  try {
+    await page.goto(`/c/${fixture.id}`);
+    const accepted = await fixture.send();
+    const answer = page.getByTestId('assistant-message');
+    await expect(answer).toHaveAttribute('data-status', 'running');
+    await expect(answer.getByTestId('generation-summary')).toContainText('7 字 · 思考 7 字');
+    await answer.getByTestId('generation-summary').click();
+    await expect(page.getByTestId('generation-bodyCharacters')).toHaveText('7');
+    await expect(page.getByTestId('generation-reasoningCharacters')).toHaveText('7');
+    await expect(page.getByTestId('generation-totalCharacters')).toHaveText('14');
+    await page.request.post(`/api/conversations/${fixture.id}/cancel`, {
+      headers,
+      data: { runId: accepted.runId },
+    });
+    await expect(answer).toHaveAttribute('data-status', 'cancelled');
+    await expect(page.getByTestId('generation-totalCharacters')).toHaveText('14');
+    await page
+      .getByRole('dialog', { name: '生成信息', exact: true })
+      .getByRole('button', { name: '关闭', exact: true })
+      .click();
+    await page.reload();
+    await expect(answer.getByTestId('generation-summary')).toContainText('7 字 · 思考 7 字');
   } finally {
     await fixture.cleanup();
   }
@@ -225,11 +275,14 @@ test('missing supplier usage stays unknown and output-free failures do not fabri
         await expect(page.getByText('供应商未返回', { exact: true })).toBeVisible();
         await expect(page.getByTestId('generation-inputTokens')).toHaveCount(0);
         await expect(page.getByTestId('generation-outputTokens')).toHaveCount(0);
+        await expect(page.getByTestId('generation-bodyCharacters')).toHaveText('4');
+        await expect(page.getByTestId('generation-reasoningCharacters')).toHaveText('4');
       } else {
         expect(generation.timing?.firstTokenMs).toBeUndefined();
         await expect(page.getByTestId('generation-firstTokenMs')).toHaveCount(0);
         await expect(page.getByTestId('generation-inputTokens')).toHaveText('0');
         await expect(page.getByTestId('generation-cachedInputTokens')).toHaveText('0');
+        await expect(page.getByTestId('generation-totalCharacters')).toHaveText('0');
       }
     } finally {
       await fixture.cleanup();

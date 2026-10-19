@@ -4,13 +4,16 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../../platform/api';
 import type { UsageTotals } from '../../../shared/usage/types';
 import { formatAmount } from '../../../shared/usage/pricing';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Modal, ModalTitle } from '../../components/Modal';
 import { Button } from '@/components/ui/button';
 import { formatNumber } from '../../platform/i18n/format';
 
-import type { GenerationResult } from '../../../shared/streaming/generation';
+import { messageText } from '../../../shared/conversation/content';
+import { isActive } from '../../../shared/conversation/message-state';
+import type { Message } from '../../../shared/conversation/types';
 import type { StreamUsage } from '../../../shared/streaming/provider-stream';
+import { countCharacters } from './character-count';
 
 const usageFields = [
   ['inputTokens', 'inputTokensLabel'],
@@ -35,21 +38,22 @@ const compact = {
 const duration = (ms: number) =>
   ms < 1000 ? `${number.format(ms)} ms` : `${(ms / 1000).toFixed(2)} s`;
 
-export function GenerationMetadata({
-  generation,
-  messageId,
-}: {
-  generation?: GenerationResult;
-  messageId?: string;
-}) {
+export function GenerationMetadata({ message }: { message: Message }) {
   const { t } = useTranslation('chat', { useSuspense: false });
-
+  const { generation } = message;
+  const text = messageText(message),
+    reasoning = messageText(message, 'reasoning');
+  const characters = useMemo(() => {
+    const body = countCharacters(text),
+      thought = countCharacters(reasoning);
+    return { body, thought, total: body + thought };
+  }, [text, reasoning]);
   const [open, setOpen] = useState(false);
   const cost = useQuery({
-    queryKey: ['usage', 'answer', messageId],
-    enabled: open && Boolean(messageId),
+    queryKey: ['usage', 'answer', message.id, isActive(message)],
+    enabled: open,
     queryFn: ({ signal }) =>
-      api<UsageTotals>(`/usage/answers/${messageId}`, 'GET', undefined, signal),
+      api<UsageTotals>(`/usage/answers/${message.id}`, 'GET', undefined, signal),
     refetchOnWindowFocus: false,
   });
   if (!generation) return null;
@@ -65,6 +69,16 @@ export function GenerationMetadata({
           : '';
   const elapsed = generation.timing?.durationMs;
   const summary = [
+    t(($) => $.characterSummary, {
+      count: characters.body,
+      characters: compact.format(characters.body),
+    }),
+    characters.thought
+      ? t(($) => $.reasoningCharacterSummary, {
+          count: characters.thought,
+          characters: compact.format(characters.thought),
+        })
+      : '',
     tokens && !generation.usageIsFinal ? t(($) => $.partial) : '',
     tokens,
     elapsed === undefined ? '' : `${(elapsed / 1000).toFixed(1)} s`,
@@ -81,7 +95,11 @@ export function GenerationMetadata({
         aria-description={summary || undefined}
         data-testid="generation-summary"
         title={summary || t(($) => $.generationInfo)}
-        onClick={() => setOpen(true)}
+        onClick={(event) => {
+          // Safari does not focus a button on pointer activation; remember this dialog's trigger.
+          event.currentTarget.focus({ preventScroll: true });
+          setOpen(true);
+        }}
       >
         <span className="truncate">{summary || t(($) => $.generationInfo)}</span>
       </Button>
@@ -90,6 +108,18 @@ export function GenerationMetadata({
           <ModalTitle>{t(($) => $.generationInfo)}</ModalTitle>
           <div className="py-2">
             <dl className="space-y-2">
+              {(
+                [
+                  ['totalCharacters', 'totalCharactersLabel', characters.total],
+                  ['bodyCharacters', 'bodyCharactersLabel', characters.body],
+                  ['reasoningCharacters', 'reasoningCharactersLabel', characters.thought],
+                ] as const
+              ).map(([key, label, count]) => (
+                <div key={key} className="flex items-baseline justify-between gap-4 sm:gap-6">
+                  <dt title={t(($) => $.characterCountHint)}>{t(($) => $[label])}</dt>
+                  <dd data-testid={`generation-${key}`}>{number.format(count)}</dd>
+                </div>
+              ))}
               <div className="flex items-baseline justify-between gap-4">
                 <dt>{t(($) => $.estimatedCost)}</dt>
                 <dd>
