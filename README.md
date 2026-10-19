@@ -238,6 +238,7 @@ PWA → Cloudflare Access → Worker（JWT 验证、API）→ Conversation Durab
 ## 文件
 
 - [功能实施路线图](docs/plans/serverless-feature-roadmap.md)：Serverless 约束下的 Chatbox 功能取舍、实施顺序及阶段验收。
+- [i18n 架构方案](docs/plans/i18n-architecture-plan.md)：翻译库选择、资源配置、语言偏好、加载边界及分阶段实施。
 - [对话阅读导航方案](docs/plans/conversation-message-navigation-plan.md)：顶部、底部与前后回答定位，及其与流式、分支和搜索的协调。
 - [对话文件](docs/features/attachments.md)：私有 R2 设置、上传确认、资源上限和清理行为。
 - [附件复制](docs/features/attachment-copies.md)：独立文件引用、固定请求、中断清理及复制资源边界。
