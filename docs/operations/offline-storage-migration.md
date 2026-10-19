@@ -111,3 +111,11 @@ pnpm exec wrangler rollback <previous-version-id>
 两轮私有备份保存在本机 `.wrangler/operations/storage-2026-10-18/{initial,supplement}`，目录权限 0700、文件权限 0600，复制后已核对 SHA-256，且被 Git 忽略。备份不含 Access 令牌和认证日志。若需撤回两轮迁移，先恢复补充批次，再恢复首轮批次，最后回滚业务版本。
 
 后续迁移排查验证：新增 3 项离线搜索测试覆盖规范内容分块、分支、删除／摘要排除、损坏和缺失清单回滚、FTS 备份恢复、CLI 完全离线及重试选项锁定。原生 workerd 验证本地补丁逐批导入后能全文检索；浏览器验证 Library 重启及读取不会补建历史索引。生产只读检查 `GET /api/search` 返回 200 且 `indexing: false`，没有待处理的旧回填任务；本次无需停机重建索引，也未执行生产数据转换。
+
+## 费用 outbox 生产迁移（2026-10-19）
+
+在维护窗口完成控制面与 Library 引用联合枚举，65 个 Conversation／Library 对象全部备份、本地转换 schema 1 → 2、写回和校验；转换只增加空的 `usage_outbox`，原业务行、消息 ID、分支及索引保持一致。未执行历史计费回填或搜索重建。`verify` 于 2026-10-19T03:44:30Z 通过全部对象的清单、表结构、索引／触发器及逐行值比较；随后清除临时批次回执并恢复业务。
+
+正式恢复版本 `8877e562-2bfe-49ab-8ffd-ba27aa079beb`。逐页读回 63 个可见对话的全部 282 条消息，ID 均与备份一致，快照与存储接口正常。统计和分享管理私有接口通过，临时 `/api/__operations/identity` 已返回 404。新增 UsageStore、ShareStore 是独立当前版本空库初始化，不在请求内转换历史数据。
+
+270 个运维 JSON／SQLite 文件保存在本机 `.wrangler/operations/storage-2026-10-19-usage`，目录 0700、文件 0600，复制后逐文件核对 SHA-256，且被 Git 忽略。备份不含 Access 令牌、认证日志或 R2 附件。维护前业务版本为 `bc04533e-03b9-4c8b-8b5f-b30b743b2dd3`；若必须回滚，需要先用此批次原始备份离线恢复 schema 1 并核验，不能直接让旧业务代码读取 schema 2。
