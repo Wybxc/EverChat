@@ -425,7 +425,7 @@ export class Library extends DurableObject<Env> {
   async beginDelete(id: string) {
     // A deletion tombstone also blocks an in-flight preview from being published later.
     // Abort deletion when revocation is unavailable; never acknowledge with a live public link.
-    await this.env.SHARES?.getByName('personal').revokeConversation(id);
+    await this.env.SHARES?.getByName('personal').deleteConversation(id);
     return this.ctx.storage.transaction(async () => {
       const existing = this.ctx.storage.sql
         .exec<Deletion>('SELECT * FROM conversation_deletions WHERE id = ?', id)

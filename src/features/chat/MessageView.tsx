@@ -12,6 +12,7 @@ import { MarkdownContent } from './rendering/MarkdownContent';
 import { ReasoningContent } from './ReasoningContent';
 import { ProviderFailureView } from '../providers/ProviderFailureView';
 import { MessageEditor } from './MessageEditor';
+import { UserMessageBubble } from './UserMessageBubble';
 
 export function MessageView({
   navigationRef,
@@ -135,12 +136,9 @@ export function MessageView({
           />
         ) : (
           messageText(message) && (
-            <div
-              data-search-content={`${message.id}:content`}
-              className="rounded-[1.375rem] bg-user-message text-user-message-foreground px-4 py-2.5 text-base leading-7 whitespace-pre-wrap break-words sm:px-4 sm:py-2.5"
-            >
+            <UserMessageBubble data-search-content={`${message.id}:content`}>
               {messageText(message)}
-            </div>
+            </UserMessageBubble>
           )
         )}
         {!editing && actions}

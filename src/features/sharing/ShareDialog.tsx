@@ -1,33 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { NativeSelect } from '@/components/ui/native-select';
-import { Switch } from '@/components/ui/switch';
 import { Modal, ModalTitle } from '../../components/Modal';
 import { api } from '../../platform/api';
 import {
   sharePath,
   type ManagedShare,
   type ShareBlock,
-  type ShareExpiry,
   type SharePage,
   type SharePreview,
 } from '../../../shared/sharing/types';
 import { ShareContent } from './ShareContent';
 
-export const expiryValue = (expiry: ShareExpiry) => (expiry === null ? 'never' : String(expiry));
-export const parseExpiry = (value: string): ShareExpiry =>
-  value === 'never' ? null : (Number(value) as 1 | 7 | 30);
-export function ExpiryOptions() {
-  return (
-    <>
-      <option value="1">1 天</option>
-      <option value="7">7 天</option>
-      <option value="30">30 天</option>
-      <option value="never">永久</option>
-    </>
-  );
-}
 export const shareUrl = (id: string, secret: string) =>
   `${location.origin}${sharePath(id)}#${secret}`;
 
@@ -40,8 +24,6 @@ export default function ShareDialog({
   headId: string;
   close: () => void;
 }) {
-  const [reasoning, setReasoning] = useState(false),
-    [expiry, setExpiry] = useState<ShareExpiry>(7);
   const [preview, setPreview] = useState<SharePreview>(),
     [blocks, setBlocks] = useState<ShareBlock[]>([]),
     [cursor, setCursor] = useState<number | null>(null);
@@ -51,15 +33,11 @@ export default function ShareDialog({
     [error, setError] = useState(''),
     [copied, setCopied] = useState(false),
     [retry, setRetry] = useState(0);
-  const operation = useRef<{ reasoning: boolean; headId: string; id: string } | null>(null);
+  const operation = useRef<{ headId: string; id: string } | null>(null);
   const titleEdited = useRef(false);
   useEffect(() => {
-    if (
-      !operation.current ||
-      operation.current.reasoning !== reasoning ||
-      operation.current.headId !== headId
-    )
-      operation.current = { reasoning, headId, id: crypto.randomUUID() };
+    if (!operation.current || operation.current.headId !== headId)
+      operation.current = { headId, id: crypto.randomUUID() };
     const controller = new AbortController();
     setBusy(true);
     setError('');
@@ -69,7 +47,7 @@ export default function ShareDialog({
     void api<SharePreview>(
       '/shares/preview',
       'POST',
-      { operationId: operation.current.id, conversationId, headId, includeReasoning: reasoning },
+      { operationId: operation.current.id, conversationId, headId },
       controller.signal,
       90_000,
     )
@@ -88,7 +66,7 @@ export default function ShareDialog({
         if (!controller.signal.aborted) setBusy(false);
       });
     return () => controller.abort();
-  }, [conversationId, headId, reasoning, retry]);
+  }, [conversationId, headId, retry]);
   const perform = async (action: () => Promise<void>) => {
     setBusy(true);
     setError('');
@@ -106,7 +84,7 @@ export default function ShareDialog({
       const result = await api<{ share: ManagedShare; secret: string }>(
         `/shares/${preview.share.id}/publish`,
         'POST',
-        { hash: preview.share.hash, title: title.trim(), expiry },
+        { hash: preview.share.hash, title: title.trim() },
       );
       setLink(shareUrl(result.share.id, result.secret));
       window.dispatchEvent(new Event('everchat:shares-changed'));
@@ -169,29 +147,10 @@ export default function ShareDialog({
                     }}
                   />
                 </label>
-                <label className="space-y-1 text-sm">
-                  有效期
-                  <NativeSelect
-                    aria-label="分享有效期"
-                    value={expiryValue(expiry)}
-                    onChange={(event) => setExpiry(parseExpiry(event.target.value))}
-                  >
-                    <ExpiryOptions />
-                  </NativeSelect>
-                </label>
               </div>
-              <label className="flex items-center gap-2 text-sm">
-                <Switch
-                  aria-label="包含思考内容"
-                  checked={reasoning}
-                  disabled={busy}
-                  onCheckedChange={setReasoning}
-                />
-                包含思考内容
-              </label>
               {preview && (
                 <p className="text-xs text-muted-foreground">
-                  {preview.share.messageCount} 条消息 · 固定快照
+                  {preview.share.messageCount} 条消息 · 包含思考内容 · 固定快照
                   {preview.share.omittedAttachments > 0
                     ? ` · 已省略 ${preview.share.omittedAttachments} 个附件`
                     : ''}

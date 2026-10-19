@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 const headers = { Origin: 'http://127.0.0.1:5174' };
 for (const mobile of [false, true])
-  test(`create and revoke share through compact ${mobile ? 'phone' : 'desktop'} dialogs`, async ({
+  test(`create and delete share through compact ${mobile ? 'phone' : 'desktop'} dialogs`, async ({
     page,
     context,
   }) => {
@@ -55,9 +55,15 @@ for (const mobile of [false, true])
       const publish = dialog.getByRole('button', { name: '生成只读链接', exact: true });
       await expect(publish).toBeEnabled();
       await dialog.getByLabel('分享标题', { exact: true }).fill('可撤销的分享');
-      await dialog.getByLabel('包含思考内容', { exact: true }).click();
+      await expect(dialog.getByRole('switch')).toHaveCount(0);
+      await expect(dialog.getByLabel('分享有效期', { exact: true })).toHaveCount(0);
       await expect(publish).toBeEnabled();
-      await dialog.getByLabel('分享有效期', { exact: true }).selectOption('30');
+      expect(
+        await dialog
+          .locator('details')
+          .first()
+          .evaluate((element: HTMLDetailsElement) => element.open),
+      ).toBe(false);
       await dialog.locator('details summary').first().click();
       await dialog.getByText('请检查分享', { exact: true }).scrollIntoViewIfNeeded();
       await expect(dialog.getByRole('button', { name: '关闭', exact: true })).toBeInViewport();
@@ -78,9 +84,16 @@ for (const mobile of [false, true])
       await expect(
         sharedRow.getByRole('heading', { name: '可撤销的分享', exact: true }),
       ).toBeVisible();
-      await sharedRow.getByText('链接操作', { exact: true }).click();
-      await sharedRow.getByRole('button', { name: '撤销分享', exact: true }).click();
-      await expect(sharedRow.getByText('已撤销', { exact: true })).toBeVisible();
+      await expect(sharedRow.getByRole('combobox')).toHaveCount(0);
+      await expect(sharedRow.getByText('链接操作', { exact: true })).toHaveCount(0);
+      await sharedRow.getByRole('button', { name: '删除分享', exact: true }).click();
+      const confirm = page.getByRole('alertdialog', { name: '删除分享', exact: true });
+      await expect(confirm).toBeVisible();
+      await expect(confirm.getByRole('button', { name: '取消', exact: true })).toBeFocused();
+      await confirm.getByRole('button', { name: '取消', exact: true }).click();
+      await expect(sharedRow).toBeVisible();
+      await sharedRow.getByRole('button', { name: '删除分享', exact: true }).click();
+      await confirm.getByRole('button', { name: '确认删除', exact: true }).click();
       expect(
         (
           await request.get(`/public/shares/${url.pathname.split('/')[2]}`, {
@@ -88,7 +101,6 @@ for (const mobile of [false, true])
           })
         ).status(),
       ).toBe(404);
-      await sharedRow.getByRole('button', { name: '清理快照', exact: true }).click();
       await expect(sharedRow).not.toBeVisible();
       await expect(page.getByRole('button', { name: '关闭设置', exact: true })).toBeInViewport();
       await page.getByRole('button', { name: '关闭设置', exact: true }).click();

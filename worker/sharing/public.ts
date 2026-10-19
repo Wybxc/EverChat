@@ -12,7 +12,7 @@ export const publicHeaders = {
 };
 export async function publicSharing(request: Request, env: Env) {
   const url = new URL(request.url),
-    match = /^\/public\/shares\/([^/]+)(\/messages)?$/.exec(url.pathname);
+    match = /^\/public\/shares\/([^/]+)$/.exec(url.pathname);
   const token = /^Bearer ([A-Za-z0-9_-]+)$/.exec(request.headers.get('Authorization') ?? '')?.[1];
   const unavailable = () => json({ error: '链接不可用。' }, 404, publicHeaders);
   if (
@@ -26,13 +26,12 @@ export async function publicSharing(request: Request, env: Env) {
   )
     return unavailable();
   if (!env.SHARES) return json({ error: '分享服务暂时不可用。' }, 503, publicHeaders);
-  let cursor: number | undefined;
-  if (match[2]) {
-    cursor = Number(url.searchParams.get('cursor') ?? 0);
-    if (!Number.isSafeInteger(cursor) || cursor < 0) return unavailable();
-  }
   try {
-    const result = await env.SHARES.getByName('personal').read(match[1], token, cursor);
+    const result = await env.SHARES.getByName('personal').read(
+      match[1],
+      token,
+      request.method === 'HEAD',
+    );
     const headers = new Headers(result.headers);
     for (const [name, value] of Object.entries(publicHeaders)) headers.set(name, value);
     // HEAD performs the same authorization. No conditional 304 can bypass revocation.

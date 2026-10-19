@@ -1,11 +1,5 @@
 import { createHash } from 'node:crypto';
-import type {
-  ManagedShare,
-  PublicShare,
-  ShareBlock,
-  SharePage,
-  ShareExpiry,
-} from '../../shared/sharing/types';
+import type { ManagedShare, PublicShare, ShareBlock, SharePage } from '../../shared/sharing/types';
 import type { SqlQuery } from '../generation/metrics';
 import { HttpError } from '../http/response';
 import { randomShareId, tokenMatches } from './crypto';
@@ -36,8 +30,6 @@ export function publicShare(row: ShareRow): PublicShare {
     id: row.id,
     title: row.title,
     createdAt: row.createdAt,
-    expiresAt: row.expiresAt,
-    includeReasoning: Boolean(row.includeReasoning),
     messageCount: row.messageCount,
     omittedAttachments: row.omittedAttachments,
     hash: row.hash,
@@ -71,24 +63,14 @@ export class ShareRepository {
           : row.status,
     };
   }
-  begin(input: {
-    operationId: string;
-    conversationId: string;
-    headId: string;
-    includeReasoning: boolean;
-    title: string;
-  }) {
+  begin(input: { operationId: string; conversationId: string; headId: string; title: string }) {
     if (this.deleted(input.conversationId)) throw new HttpError(410, '这个对话已删除。');
     const existing = this.query<ShareRow>(
       'SELECT * FROM shares WHERE operationId=?',
       input.operationId,
     ).toArray()[0];
     if (existing) {
-      if (
-        existing.conversationId !== input.conversationId ||
-        existing.headId !== input.headId ||
-        Boolean(existing.includeReasoning) !== input.includeReasoning
-      )
+      if (existing.conversationId !== input.conversationId || existing.headId !== input.headId)
         throw new HttpError(409, '预览操作已改变，请重新预览。');
       if (existing.draftUntil <= this.now() && existing.status === 'draft')
         throw new HttpError(410, '预览已过期，请重新预览。');
@@ -106,7 +88,7 @@ export class ShareRepository {
       now,
       now + 3_600_000,
       input.title,
-      Number(input.includeReasoning),
+      1,
     );
     return this.get(id)!;
   }
@@ -161,14 +143,19 @@ export class ShareRepository {
       cursor: next !== undefined && next + 1 < row.blockCount ? next + 1 : null,
     };
   }
-  publish(
-    id: string,
-    hash: string,
-    title: string,
-    expiry: ShareExpiry,
-    tokenHash: string,
-    tokenCipher: string,
-  ) {
+  *payloads(row: ShareRow): Generator<string> {
+    let count = 0;
+    // Iterate the SQL cursor without materializing the full snapshot in the DO.
+    for (const block of this.query<{ seq: number; payload: string }>(
+      'SELECT seq, payload FROM share_blocks WHERE shareId=? ORDER BY seq',
+      row.id,
+    )) {
+      if (block.seq !== count++) throw new Error('Incomplete share snapshot');
+      yield block.payload;
+    }
+    if (count !== row.blockCount) throw new Error('Incomplete share snapshot');
+  }
+  publish(id: string, hash: string, title: string, tokenHash: string, tokenCipher: string) {
     const row = this.get(id);
     if (!row || row.hash !== hash || !hash || this.deleted(row.conversationId)) throw unavailable();
     if (row.status === 'active') return row; // Lost response retries return the original link.
@@ -180,10 +167,9 @@ export class ShareRepository {
     if (!count || count !== row.blockCount)
       throw new HttpError(409, '快照尚未完整保存，请重新预览。');
     this.query(
-      "UPDATE shares SET status='active', title=?, updatedAt=?, expiresAt=?, tokenHash=?, tokenCipher=? WHERE id=?",
+      "UPDATE shares SET status='active', title=?, updatedAt=?, expiresAt=NULL, tokenHash=?, tokenCipher=? WHERE id=?",
       title,
       this.now(),
-      expiry === null ? null : this.now() + expiry * 86_400_000,
       tokenHash,
       tokenCipher,
       id,
@@ -205,49 +191,15 @@ export class ShareRepository {
           : null,
     };
   }
-  revoke(id: string) {
-    this.query(
-      "UPDATE shares SET status='revoked', tokenHash=NULL, tokenCipher=NULL, updatedAt=? WHERE id=?",
-      this.now(),
-      id,
-    );
-    const row = this.get(id);
-    if (!row) throw unavailable();
-    return this.managed(row);
-  }
-  revokeConversation(conversationId: string) {
+  deleteConversation(conversationId: string) {
     this.query('INSERT OR IGNORE INTO share_deletions VALUES (?)', conversationId);
     this.query(
-      "UPDATE shares SET status='revoked', tokenHash=NULL, tokenCipher=NULL, updatedAt=? WHERE conversationId=? AND status!='draft'",
-      this.now(),
+      'DELETE FROM share_blocks WHERE shareId IN (SELECT id FROM shares WHERE conversationId=?)',
       conversationId,
     );
-    this.query(
-      "UPDATE shares SET draftUntil=? WHERE conversationId=? AND status='draft'",
-      this.now(),
-      conversationId,
-    );
+    this.query('DELETE FROM shares WHERE conversationId=?', conversationId);
   }
-  update(id: string, input: { expiry?: ShareExpiry; rotate?: { hash: string; cipher: string } }) {
-    const row = this.get(id);
-    if (!row || this.managed(row).status !== 'active') throw unavailable();
-    this.query(
-      'UPDATE shares SET updatedAt=?, expiresAt=?, tokenHash=?, tokenCipher=? WHERE id=?',
-      this.now(),
-      input.expiry === undefined
-        ? row.expiresAt
-        : input.expiry === null
-          ? null
-          : this.now() + input.expiry * 86_400_000,
-      input.rotate?.hash ?? row.tokenHash,
-      input.rotate?.cipher ?? row.tokenCipher,
-      id,
-    );
-    return this.get(id)!;
-  }
-  purge(id: string) {
-    const row = this.get(id);
-    if (row && this.managed(row).status === 'active') throw new HttpError(409, '请先撤销链接。');
+  delete(id: string) {
     this.query('DELETE FROM share_blocks WHERE shareId=?', id);
     this.query('DELETE FROM shares WHERE id=?', id);
   }
@@ -262,7 +214,10 @@ export class ShareRepository {
       this.now(),
     );
     this.query(
-      "DELETE FROM shares WHERE status='draft' AND draftUntil<=? AND NOT EXISTS (SELECT 1 FROM share_blocks WHERE shareId=shares.id)",
+      `DELETE FROM shares WHERE (status='revoked' OR (status='draft' AND draftUntil<=?)
+      OR (status='active' AND expiresAt IS NOT NULL AND expiresAt<=?))
+      AND NOT EXISTS (SELECT 1 FROM share_blocks WHERE shareId=shares.id)`,
+      this.now(),
       this.now(),
     );
   }

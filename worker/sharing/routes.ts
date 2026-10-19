@@ -1,5 +1,5 @@
 import * as v from 'valibot';
-import { shareExpirySchema, shareIdPattern } from '../../shared/sharing/types';
+import { shareIdPattern } from '../../shared/sharing/types';
 import { requireAuth, requireConversation, uuidSchema } from '../http/access';
 import type { ApiRouter } from '../http/app';
 import { HttpError, parseBody, type AppContext } from '../http/response';
@@ -29,7 +29,6 @@ export function registerSharingRoutes(app: ApiRouter) {
         operationId: uuidSchema,
         conversationId: uuidSchema,
         headId: uuidSchema,
-        includeReasoning: v.boolean(),
       }),
     );
     const library = await requireConversation(context, input.conversationId),
@@ -44,7 +43,7 @@ export function registerSharingRoutes(app: ApiRouter) {
     await requireAuth(context);
     return store(context).publish(
       id(context),
-      await parseBody(context, v.strictObject({ hash, title, expiry: shareExpirySchema })),
+      await parseBody(context, v.strictObject({ hash, title })),
     );
   });
   app.get('/shares', async (context) => {
@@ -67,25 +66,8 @@ export function registerSharingRoutes(app: ApiRouter) {
     await requireAuth(context);
     return store(context).link(id(context));
   });
-  app.patch('/shares/:id', async (context) => {
-    await requireAuth(context);
-    const input = await parseBody(
-      context,
-      v.strictObject({
-        expiry: v.optional(shareExpirySchema),
-        rotate: v.optional(v.literal(true)),
-      }),
-    );
-    if (input.expiry === undefined && !input.rotate)
-      throw new HttpError(400, '请选择要修改的设置。');
-    return store(context).update(id(context), input);
-  });
-  app.post('/shares/:id/revoke', async (context) => {
-    await requireAuth(context);
-    return store(context).revoke(id(context));
-  });
   app.delete('/shares/:id', async (context) => {
     await requireAuth(context);
-    return store(context).purge(id(context));
+    return store(context).delete(id(context));
   });
 }

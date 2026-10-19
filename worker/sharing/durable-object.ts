@@ -2,16 +2,16 @@ import { DurableObject } from 'cloudflare:workers';
 import type { Env } from '../http/env';
 import { HttpError, json } from '../http/response';
 import { initializeStorageSchema } from '../platform/storage-schema';
-import type { ShareBlock, ShareExpiry, SharePreview } from '../../shared/sharing/types';
+import type { ShareBlock, SharePreview } from '../../shared/sharing/types';
 import { decryptToken, encryptToken, randomShareSecret, tokenHash } from './crypto';
 import { ShareRepository, publicShare, snapshotHasher, unavailable, type ShareRow } from './store';
 import { SHARING_SCHEMA } from './schema';
+import { snapshotResponse } from './response';
 
 interface PrepareInput {
   operationId: string;
   conversationId: string;
   headId: string;
-  includeReasoning: boolean;
   title: string;
 }
 
@@ -31,7 +31,8 @@ export class ShareStore extends DurableObject<Env> {
   }
   private async respond(action: () => unknown | Promise<unknown>) {
     try {
-      return json(await action());
+      const result = await action();
+      return result instanceof Response ? result : json(result);
     } catch (error) {
       if (error instanceof HttpError) return json({ error: error.message }, error.status);
       console.error('Share operation failed', error instanceof Error ? error.name : 'UnknownError');
@@ -66,7 +67,7 @@ export class ShareStore extends DurableObject<Env> {
   }
   prepare(input: PrepareInput) {
     return this.respond(async () => {
-      const identity = JSON.stringify([input.conversationId, input.headId, input.includeReasoning]);
+      const identity = JSON.stringify([input.conversationId, input.headId]);
       const pending = this.pendingPreviews.get(input.operationId);
       if (pending) {
         if (pending.identity !== identity) throw new HttpError(409, '预览操作已改变，请重新预览。');
@@ -87,7 +88,7 @@ export class ShareStore extends DurableObject<Env> {
     if (!row.hash) {
       const source = await this.env.CONVERSATIONS.getByName(
         input.conversationId,
-      ).shareSourceResponse(input.headId, input.includeReasoning);
+      ).shareSourceResponse(input.headId);
       if (!source.ok || !source.body) {
         await source.body?.cancel();
         throw new HttpError(
@@ -135,8 +136,7 @@ export class ShareStore extends DurableObject<Env> {
             !['user', 'assistant'].includes(block.role) ||
             !['text', 'reasoning'].includes(block.channel) ||
             typeof block.text !== 'string' ||
-            block.text.length > 16_384 ||
-            (!input.includeReasoning && block.channel === 'reasoning')
+            block.text.length > 16_384
           )
             throw new Error('Invalid share block');
           hash.update(value + '\n');
@@ -190,7 +190,7 @@ export class ShareStore extends DurableObject<Env> {
       return this.repository.page(row, cursor);
     });
   }
-  publish(id: string, input: { hash: string; title: string; expiry: ShareExpiry }) {
+  publish(id: string, input: { hash: string; title: string }) {
     return this.respond(async () => {
       const before = this.owner(id);
       if (before.status === 'active') return this.ownerResult(before);
@@ -201,14 +201,7 @@ export class ShareStore extends DurableObject<Env> {
         throw new HttpError(409, '对话已变化，请重新预览后分享。');
       const token = await this.credentials(id);
       const row = this.ctx.storage.transactionSync(() =>
-        this.repository.publish(
-          id,
-          input.hash,
-          input.title,
-          input.expiry,
-          token.hash,
-          token.cipher,
-        ),
+        this.repository.publish(id, input.hash, input.title, token.hash, token.cipher),
       );
       await this.scheduleCleanup();
       return this.ownerResult(row);
@@ -224,39 +217,23 @@ export class ShareStore extends DurableObject<Env> {
       return this.ownerResult(row);
     });
   }
-  update(id: string, input: { expiry?: ShareExpiry; rotate?: boolean }) {
-    return this.respond(async () => {
-      const rotate = input.rotate ? await this.credentials(id) : undefined;
-      const row = this.ctx.storage.transactionSync(() =>
-        this.repository.update(id, { expiry: input.expiry, rotate }),
-      );
-      await this.scheduleCleanup();
-      return this.ownerResult(row);
-    });
-  }
-  revoke(id: string) {
-    return this.respond(async () => {
-      const result = this.ctx.storage.transactionSync(() => this.repository.revoke(id));
-      await this.scheduleCleanup();
-      return result;
-    });
-  }
-  purge(id: string) {
+  delete(id: string) {
     return this.respond(() => {
-      this.ctx.storage.transactionSync(() => this.repository.purge(id));
+      this.ctx.storage.transactionSync(() => this.repository.delete(id));
+      this.ctx.waitUntil(this.scheduleCleanup());
       return { deleted: true };
     });
   }
-  revokeConversation(conversationId: string) {
-    this.ctx.storage.transactionSync(() => this.repository.revokeConversation(conversationId));
+  deleteConversation(conversationId: string) {
+    this.ctx.storage.transactionSync(() => this.repository.deleteConversation(conversationId));
     this.ctx.waitUntil(this.scheduleCleanup());
   }
-  read(id: string, token: string, cursor?: number) {
+  read(id: string, token: string, head = false) {
     return this.respond(() => {
       const row = this.repository.authorize(id, token);
-      return cursor === undefined
-        ? { share: publicShare(row), page: this.repository.page(row) }
-        : this.repository.page(row, cursor);
+      return head
+        ? new Response(null, { headers: json(null).headers })
+        : snapshotResponse(publicShare(row), this.repository.payloads(row));
     });
   }
   async alarm() {

@@ -332,10 +332,10 @@ export class Conversation extends DurableObject<Env> {
     if (this.deletedAt) return null;
     return JSON.stringify(new ConversationState(this.query.bind(this)).current());
   }
-  shareSourceResponse(headId: string, includeReasoning: boolean) {
+  shareSourceResponse(headId: string) {
     if (this.deletedAt) return json({ error: '这个对话已删除。' }, 404);
     try {
-      const projection = projectShare(this.messages.forHead(headId), headId, includeReasoning);
+      const projection = projectShare(this.messages.forHead(headId), headId);
       const version = this.shareSourceVersion();
       const encoder = new TextEncoder(),
         blocks = projection.blocks();

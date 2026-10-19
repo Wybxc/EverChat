@@ -1,19 +1,20 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { NativeSelect } from '@/components/ui/native-select';
 import type { ManagedShare } from '../../../shared/sharing/types';
 import { api } from '../../platform/api';
-import { ExpiryOptions, parseExpiry, shareUrl } from './ShareDialog';
+import { shareUrl } from './ShareDialog';
+import { Modal, ModalTitle } from '../../components/Modal';
 
-const labels = { active: '有效', revoked: '已撤销', expired: '已过期', draft: '草稿' };
 export default function ShareManagement({ active }: { active: boolean }) {
   const client = useQueryClient(),
     [busy, setBusy] = useState<string>(),
     [error, setError] = useState(''),
     [notice, setNotice] = useState(''),
-    [link, setLink] = useState('');
+    [link, setLink] = useState(''),
+    [deleting, setDeleting] = useState<ManagedShare>();
+  const cancel = useRef<HTMLButtonElement>(null);
   const query = useInfiniteQuery({
     queryKey: ['shares'],
     initialPageParam: null as string | null,
@@ -47,16 +48,12 @@ export default function ShareManagement({ active }: { active: boolean }) {
       setBusy(undefined);
     }
   };
-  const copy = async (id: string, rotate = false) => {
-    const result = await api<{ share: ManagedShare; secret: string }>(
-      `/shares/${id}${rotate ? '' : '/link'}`,
-      rotate ? 'PATCH' : 'GET',
-      rotate ? { rotate: true } : undefined,
-    );
+  const copy = async (id: string) => {
+    const result = await api<{ share: ManagedShare; secret: string }>(`/shares/${id}/link`);
     const url = shareUrl(result.share.id, result.secret);
     try {
       await navigator.clipboard.writeText(url);
-      setNotice(rotate ? '新链接已复制，旧链接已失效。' : '分享链接已复制。');
+      setNotice('分享链接已复制。');
     } catch {
       setLink(url);
     }
@@ -109,77 +106,23 @@ export default function ShareManagement({ active }: { active: boolean }) {
               <div className="flex items-start justify-between gap-3">
                 <h3 className="min-w-0 break-words text-sm font-medium">{share.title}</h3>
                 <span className="shrink-0 text-xs text-muted-foreground">
-                  {labels[share.status]}
+                  {share.status === 'active' ? '' : '已失效'}
                 </span>
               </div>
               <p className="text-xs text-muted-foreground">
-                {new Date(share.createdAt).toLocaleString()} · {share.messageCount} 条消息 ·{' '}
-                {share.expiresAt ? `${new Date(share.expiresAt).toLocaleString()} 到期` : '永久'}
+                {new Date(share.createdAt).toLocaleString()} · {share.messageCount} 条消息
               </p>
               <div className="flex flex-wrap items-center gap-1">
-                {share.status === 'active' ? (
-                  <>
-                    <Button
-                      variant="ghost"
-                      disabled={Boolean(busy)}
-                      onClick={() => void perform(share.id, () => copy(share.id))}
-                    >
-                      复制
-                    </Button>
-                    <NativeSelect
-                      aria-label={`${share.title}的有效期`}
-                      value=""
-                      disabled={Boolean(busy)}
-                      onChange={(event) =>
-                        void perform(share.id, async () => {
-                          await api(`/shares/${share.id}`, 'PATCH', {
-                            expiry: parseExpiry(event.target.value),
-                          });
-                        })
-                      }
-                    >
-                      <option value="" disabled>
-                        修改有效期
-                      </option>
-                      <ExpiryOptions />
-                    </NativeSelect>
-                    <details>
-                      <summary className="cursor-pointer px-2 py-1 text-sm">链接操作</summary>
-                      <div className="flex flex-wrap gap-1 py-1">
-                        <Button
-                          variant="secondary"
-                          disabled={Boolean(busy)}
-                          onClick={() => void perform(share.id, () => copy(share.id, true))}
-                        >
-                          轮换链接，旧链接失效
-                        </Button>
-                        <Button
-                          variant="destructive"
-                          disabled={Boolean(busy)}
-                          onClick={() =>
-                            void perform(share.id, async () => {
-                              await api(`/shares/${share.id}/revoke`, 'POST');
-                            })
-                          }
-                        >
-                          撤销分享
-                        </Button>
-                      </div>
-                    </details>
-                  </>
-                ) : (
-                  <Button
-                    variant="ghost"
-                    disabled={Boolean(busy)}
-                    onClick={() =>
-                      void perform(share.id, async () => {
-                        await api(`/shares/${share.id}`, 'DELETE');
-                      })
-                    }
-                  >
-                    清理快照
-                  </Button>
-                )}
+                <Button
+                  variant="ghost"
+                  disabled={Boolean(busy) || share.status !== 'active'}
+                  onClick={() => void perform(share.id, () => copy(share.id))}
+                >
+                  复制
+                </Button>
+                <Button variant="ghost" disabled={Boolean(busy)} onClick={() => setDeleting(share)}>
+                  删除分享
+                </Button>
               </div>
             </div>
           ))
@@ -193,9 +136,52 @@ export default function ShareManagement({ active }: { active: boolean }) {
           更多分享
         </Button>
       )}
-      <p className="text-xs text-muted-foreground">
-        撤销会停止后续读取；接收者已保存的内容无法收回。
-      </p>
+      {deleting && (
+        <Modal
+          open
+          alert
+          busy={Boolean(busy)}
+          initialFocus={cancel}
+          onOpenChange={(open) => {
+            if (!open) setDeleting(undefined);
+          }}
+        >
+          <div className="max-w-sm space-y-4 p-5">
+            <ModalTitle>删除分享</ModalTitle>
+            <p className="text-sm">
+              删除「{deleting.title}」？链接将立即失效，并清除分享快照。接收者已保存的内容无法收回。
+            </p>
+            {error && (
+              <p role="alert" className="text-sm">
+                {error}
+              </p>
+            )}
+            <div className="flex justify-end gap-2">
+              <Button
+                ref={cancel}
+                variant="secondary"
+                disabled={Boolean(busy)}
+                onClick={() => setDeleting(undefined)}
+              >
+                取消
+              </Button>
+              <Button
+                variant="destructive"
+                disabled={Boolean(busy)}
+                onClick={() =>
+                  void perform(deleting.id, async () => {
+                    await api(`/shares/${deleting.id}`, 'DELETE');
+                    setDeleting(undefined);
+                    setNotice('分享已删除。');
+                  })
+                }
+              >
+                确认删除
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

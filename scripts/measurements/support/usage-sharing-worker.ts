@@ -6,6 +6,8 @@ import { UsageOutbox } from '../../../worker/usage/outbox';
 import { USAGE_SCHEMA, USAGE_OUTBOX_SCHEMA } from '../../../worker/usage/schema';
 import { ShareRepository } from '../../../worker/sharing/store';
 import { SHARING_SCHEMA } from '../../../worker/sharing/schema';
+import { publicShare } from '../../../worker/sharing/store';
+import { snapshotResponse } from '../../../worker/sharing/response';
 import { tokenHash, encryptToken } from '../../../worker/sharing/crypto';
 import type { UsageAttempt } from '../../../shared/usage/types';
 
@@ -120,7 +122,6 @@ export class UsageSharingMeasurement extends DurableObject<MeasurementEnv> {
         conversationId: 'synthetic',
         headId: 'synthetic',
         title: 'Synthetic snapshot',
-        includeReasoning: false,
       });
     this.ctx.storage.transactionSync(() => {
       for (let i = 0; i < 10; i++)
@@ -143,22 +144,19 @@ export class UsageSharingMeasurement extends DurableObject<MeasurementEnv> {
         row.id,
         'synthetic',
         'Synthetic snapshot',
-        1,
         tokenHash(this.env.MEASUREMENT_TOKEN),
         cipher,
       ),
     );
     return row.id;
   }
-  readShare(id: string, cursor: number) {
-    const row = this.shares().authorize(id, this.env.MEASUREMENT_TOKEN);
-    return Response.json(this.shares().page(row, cursor), {
-      headers: { 'Cache-Control': 'no-store' },
-    });
+  readShare(id: string) {
+    const store = this.shares(),
+      row = store.authorize(id, this.env.MEASUREMENT_TOKEN);
+    return snapshotResponse(publicShare(row), store.payloads(row));
   }
   closeShare(id: string) {
-    this.shares().revoke(id);
-    this.shares().cleanup();
+    this.ctx.storage.transactionSync(() => this.shares().delete(id));
   }
   metrics() {
     return { ...this.counts, allocatedBytes: this.ctx.storage.sql.databaseSize };
@@ -195,11 +193,8 @@ export default {
     if (url.pathname === '/create' && request.method === 'POST' && mode === 'shares')
       return Response.json({ id: await stub.createShare() });
     if (url.pathname === '/read' && mode === 'shares')
-      return stub.readShare(
-        url.searchParams.get('id')!,
-        Number(url.searchParams.get('cursor') ?? 0),
-      );
-    if (url.pathname === '/revoke' && request.method === 'POST' && mode === 'shares') {
+      return stub.readShare(url.searchParams.get('id')!);
+    if (url.pathname === '/delete' && request.method === 'POST' && mode === 'shares') {
       await stub.closeShare(url.searchParams.get('id')!);
       return Response.json({ revoked: true });
     }

@@ -6,6 +6,8 @@ import { messageParts } from '../../../shared/conversation/content';
 import { projectShare } from '../../../shared/sharing/projection';
 import { SHARING_SCHEMA } from '../../../worker/sharing/schema';
 import { ShareRepository } from '../../../worker/sharing/store';
+import { publicShare } from '../../../worker/sharing/store';
+import { snapshotResponse } from '../../../worker/sharing/response';
 import {
   encryptToken,
   decryptToken,
@@ -54,7 +56,6 @@ function fixture() {
       conversationId: 'conversation',
       headId: 'a',
       title: '分享',
-      includeReasoning: false,
     });
     store.append(row.id, 0, {
       message: 0,
@@ -75,27 +76,30 @@ function fixture() {
     },
   };
 }
-test('share projection exposes only the selected completed branch and explicitly opted-in reasoning', () => {
+test('share projection exposes only the selected completed branch, always including reasoning', () => {
   const a = message('a'),
     b = message('b', 'a'),
     c = message('other-branch', 'a');
   const summary = { ...message('summary', 'a'), summary: { sourceIds: ['a'] } } as Message;
-  const projected = projectShare([a, b, c, summary], 'b', false);
+  const projected = projectShare([a, b, c, summary], 'b');
   const blocks = [...projected.blocks()];
   assert.equal(projected.messageCount, 2);
   assert.deepEqual(
-    blocks.map((b) => b.text),
+    blocks.filter((b) => b.channel === 'text').map((b) => b.text),
     ['正文 a', '正文 b'],
   );
-  assert.doesNotMatch(JSON.stringify(blocks), /private|other-branch|sourceIds|思考/);
-  assert.ok([...projectShare([a, b], 'b', true).blocks()].some((b) => b.channel === 'reasoning'));
-  assert.throws(() => projectShare([a, { ...b, status: 'running' }], 'b', false));
-  assert.throws(() => projectShare([{ ...a, deletedAt: 10 }, b], 'b', false));
+  assert.doesNotMatch(JSON.stringify(blocks), /private|other-branch|sourceIds/);
+  assert.deepEqual(
+    blocks.filter((b) => b.channel === 'reasoning').map((b) => b.text),
+    ['思考 a', '思考 b'],
+  );
+  assert.throws(() => projectShare([a, { ...b, status: 'running' }], 'b'));
+  assert.throws(() => projectShare([{ ...a, deletedAt: 10 }, b], 'b'));
 });
 test('large public messages split below SQLite/RPC limits without corrupting surrogate pairs', () => {
   const text = '😀'.repeat(40_000),
     a = { ...message('a'), parts: messageParts(text) };
-  const blocks = [...projectShare([a], 'a', false).blocks()];
+  const blocks = [...projectShare([a], 'a').blocks()];
   assert.ok(blocks.length > 4);
   assert.equal(blocks.map((b) => b.text).join(''), text);
   for (const block of blocks)
@@ -110,50 +114,53 @@ test('link secrets are encrypted with record binding and wrong keys or swapped c
   await assert.rejects(decryptToken(encrypted, key, 'share2'));
   await assert.rejects(decryptToken(encrypted, randomShareSecret(), 'share1'));
 });
-test('drafts never authorize; publication is idempotent and every page rechecks revocation and token rotation', () => {
+test('publication is idempotent, has no expiry, and deletion removes both credentials and blocks', () => {
   const s = fixture();
   try {
     const row = s.draft();
     assert.throws(() => s.store.authorize(row.id, 'token'));
-    s.store.publish(row.id, 'hash', '公开标题', 7, tokenHash('token'), 'cipher');
+    s.store.publish(row.id, 'hash', '公开标题', tokenHash('token'), 'cipher');
     assert.equal(s.store.authorize(row.id, 'token').title, '公开标题');
-    s.store.publish(row.id, 'hash', 'changed-on-retry', 1, tokenHash('new'), 'newcipher');
+    s.store.publish(row.id, 'hash', 'changed-on-retry', tokenHash('new'), 'newcipher');
     assert.equal(s.store.authorize(row.id, 'token').title, '公开标题');
-    s.store.update(row.id, { rotate: { hash: tokenHash('new'), cipher: 'newcipher' } });
-    assert.throws(() => s.store.authorize(row.id, 'token'));
-    assert.equal(s.store.page(s.store.authorize(row.id, 'new')).blocks[0].text, 'hello');
-    s.store.revoke(row.id);
+    s.tick(1000 + 365 * 86_400_000);
+    assert.equal(s.store.authorize(row.id, 'token').expiresAt, null);
     assert.throws(() => s.store.authorize(row.id, 'new'));
+    s.store.delete(row.id);
+    assert.throws(() => s.store.authorize(row.id, 'token'));
+    assert.equal(s.store.get(row.id), undefined);
+    assert.equal(s.db.prepare('SELECT COUNT(*) AS n FROM share_blocks').get()!.n, 0);
+    assert.equal(s.store.list().shares.length, 0);
+    s.store.delete(row.id); // Retrying a successful deletion is safe.
     assert.doesNotMatch(JSON.stringify(s.store.list()), /tokenHash|tokenCipher|cipher/);
   } finally {
     s.db.close();
   }
 });
-test('expiry is checked without cleanup or per-visit writes and deleted conversations cannot publish an in-flight preview', () => {
+test('legacy expired links never revive and conversation deletion removes all snapshots and in-flight drafts', () => {
   const s = fixture();
   try {
     const row = s.draft();
-    s.store.publish(row.id, 'hash', '标题', 1, tokenHash('token'), 'cipher');
+    s.store.publish(row.id, 'hash', '标题', tokenHash('token'), 'cipher');
+    s.db.prepare('UPDATE shares SET expiresAt=? WHERE id=?').run(1000 + 86_400_000, row.id);
     s.tick(1000 + 86_400_000);
     assert.equal(s.store.list().shares[0].status, 'expired');
     assert.throws(() => s.store.authorize(row.id, 'token'));
-    assert.throws(() => s.store.update(row.id, { expiry: null }));
     const pending = s.draft('operation2');
-    s.store.revokeConversation('conversation');
-    assert.throws(() =>
-      s.store.publish(pending.id, 'hash', '标题', null, tokenHash('token'), 'cipher'),
-    );
+    s.store.deleteConversation('conversation');
+    assert.throws(() => s.store.publish(pending.id, 'hash', '标题', tokenHash('token'), 'cipher'));
     assert.throws(() =>
       s.store.begin({
         operationId: 'new',
         conversationId: 'conversation',
         headId: 'a',
         title: '标题',
-        includeReasoning: false,
       }),
     );
     s.store.cleanup();
-    assert.equal(s.store.page(s.store.get(row.id)!).blocks.length, 0);
+    assert.equal(s.store.get(row.id), undefined);
+    assert.equal(s.store.get(pending.id), undefined);
+    assert.equal(s.db.prepare('SELECT COUNT(*) AS n FROM share_blocks').get()!.n, 0);
   } finally {
     s.db.close();
   }
@@ -163,9 +170,7 @@ test('incomplete snapshots cannot publish; paging and cleanup preserve active im
   try {
     const row = s.draft();
     s.store.finishDraft(row.id, 'v', 1, 9, 0, 'hash');
-    assert.throws(() =>
-      s.store.publish(row.id, 'hash', '标题', null, tokenHash('token'), 'cipher'),
-    );
+    assert.throws(() => s.store.publish(row.id, 'hash', '标题', tokenHash('token'), 'cipher'));
     for (let seq = 1; seq < 9; seq++)
       s.store.append(row.id, seq, {
         message: 0,
@@ -174,18 +179,80 @@ test('incomplete snapshots cannot publish; paging and cleanup preserve active im
         text: String(seq),
         omittedAttachments: 0,
       });
-    s.store.publish(row.id, 'hash', '标题', null, tokenHash('token'), 'cipher');
+    s.store.publish(row.id, 'hash', '标题', tokenHash('token'), 'cipher');
     s.store.cleanup();
     const first = s.store.page(s.store.authorize(row.id, 'token'));
     assert.equal(first.blocks.length, 4);
     assert.equal(first.cursor, 4);
     assert.equal(s.store.page(s.store.authorize(row.id, 'token'), 8).cursor, null);
     assert.throws(() => s.store.page(row, 9));
-    assert.throws(() => s.store.purge(row.id));
-    s.store.revoke(row.id);
-    s.store.purge(row.id);
+    s.store.delete(row.id);
     assert.equal(s.store.get(row.id), undefined);
   } finally {
     s.db.close();
   }
+});
+
+test('full snapshots stream all ordered blocks as one JSON response and reject missing blocks', async () => {
+  const s = fixture();
+  try {
+    const row = s.draft();
+    for (let seq = 1; seq < 10; seq++)
+      s.store.append(row.id, seq, {
+        message: 0,
+        role: 'assistant',
+        channel: 'text',
+        text: `🙂${seq}`.repeat(8000),
+        omittedAttachments: 0,
+      });
+    s.store.finishDraft(row.id, 'v', 1, 10, 0, 'hash');
+    const ready = s.store.publish(row.id, 'hash', '全文', tokenHash('token'), 'cipher');
+    const response = snapshotResponse(publicShare(ready), s.store.payloads(ready));
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    const result = (await response.json()) as {
+      page: { blocks: { text: string }[]; cursor: null };
+    };
+    assert.equal(result.page.blocks.length, 10);
+    assert.equal(result.page.cursor, null);
+    assert.equal(result.page.blocks[9].text, '🙂9'.repeat(8000));
+    s.db.prepare('DELETE FROM share_blocks WHERE shareId=? AND seq=5').run(row.id);
+    await assert.rejects(
+      snapshotResponse(publicShare(ready), s.store.payloads(ready)).text(),
+      /Incomplete/,
+    );
+  } finally {
+    s.db.close();
+  }
+});
+
+test('cancelling a full response stops reading blocks instead of buffering the full snapshot', async () => {
+  let reads = 0,
+    closed = false;
+  const payloads = function* () {
+    try {
+      for (let i = 0; i < 10000; i++) {
+        reads++;
+        yield JSON.stringify({ text: String(i) });
+      }
+    } finally {
+      closed = true;
+    }
+  };
+  const response = snapshotResponse(
+    {
+      id: 'id',
+      title: 'title',
+      createdAt: 0,
+      messageCount: 1,
+      omittedAttachments: 0,
+      hash: 'hash',
+    },
+    payloads(),
+  );
+  const reader = response.body!.getReader();
+  await reader.read(); // JSON header.
+  await reader.read(); // Only the first block is requested.
+  await reader.cancel();
+  assert.ok(reads < 3);
+  assert.equal(closed, true);
 });

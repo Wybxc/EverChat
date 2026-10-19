@@ -88,17 +88,16 @@ if (positionals[0] === 'prepare') {
     };
     const { id } = await call<{ id: string }>('/create', 'shares', 'POST');
     const created = await call('/metrics', 'shares');
-    for (let index = 0; index < 30; index++)
-      await call(`/read?id=${id}&cursor=${(index % 3) * 4}`, 'shares');
+    for (let index = 0; index < 30; index++) await call(`/read?id=${id}`, 'shares');
     const read = await call('/metrics', 'shares');
-    await call(`/revoke?id=${id}`, 'shares', 'POST');
+    await call(`/delete?id=${id}`, 'shares', 'POST');
     const report = {
       workerName,
       runtime: 'cloudflare',
       startedAt,
       finishedAt: new Date().toISOString(),
       requests: 100,
-      publicPageReads: 30,
+      publicFullReads: 30,
       emptyBytes,
       usage,
       shares: { created, read, reclaimed: await call('/metrics', 'shares') },

@@ -14,9 +14,11 @@ test('controlled public shares stay network-only, skip private startup and do no
     .poll(() => page.evaluate(() => navigator.serviceWorker.controller?.state))
     .toBe('activated');
   const shared = await context.newPage(),
-    privateCalls: string[] = [];
+    privateCalls: string[] = [],
+    publicCalls: string[] = [];
   shared.on('request', (req) => {
     if (new URL(req.url()).pathname.startsWith('/api')) privateCalls.push(req.url());
+    if (new URL(req.url()).pathname.startsWith('/public/')) publicCalls.push(req.url());
   });
   await shared.addInitScript(() => {
     navigator.serviceWorker.register = () => {
@@ -30,11 +32,31 @@ test('controlled public shares stay network-only, skip private startup and do no
   await expect
     .poll(() => shared.evaluate(() => navigator.serviceWorker.controller?.state))
     .toBe('activated');
+  const previousCalls = publicCalls.length;
   const response = await shared.reload();
   expect(response?.fromServiceWorker()).toBe(true);
   expect(response?.headers()['content-security-policy']).toContain("script-src 'self'");
   await expect(shared.getByRole('heading', { name: '公开 PWA 快照', exact: true })).toBeVisible();
   await expect(shared.getByText('公开正文', { exact: true })).toBeVisible();
+  await expect(shared.getByText('全文末尾', { exact: true })).toBeVisible();
+  await expect(shared.locator('article')).toHaveCount(4);
+  expect(publicCalls.length - previousCalls).toBe(1);
+  await expect(shared.getByRole('button', { name: '继续阅读' })).toHaveCount(0);
+  const user = shared.getByTestId('user-message').first(),
+    thought = shared.getByTestId('assistant-message').first().locator('details');
+  await expect(user.locator('.bg-user-message')).toHaveText('公开提问\n第二行');
+  expect(await thought.evaluate((element: HTMLDetailsElement) => element.open)).toBe(false);
+  await thought.locator('summary').click();
+  await expect(thought.getByText('公开思考', { exact: true })).toBeVisible();
+  await shared.setViewportSize({ width: 390, height: 740 });
+  await shared.getByLabel('颜色模式').selectOption('dark');
+  expect(await shared.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+    true,
+  );
+  await shared.screenshot({
+    path: `/tmp/everchat-sharing-full-${test.info().project.name}.png`,
+    fullPage: true,
+  });
   expect(privateCalls).toEqual([]);
   expect(
     await shared.evaluate(async () => {

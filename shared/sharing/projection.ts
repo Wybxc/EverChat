@@ -4,7 +4,7 @@ import type { Message } from '../conversation/types';
 import type { ShareBlock } from './types';
 
 /** Construct a whitelist projection. No original IDs, model settings or tool payloads cross it. */
-export function projectShare(messages: Message[], headId: string, includeReasoning: boolean) {
+export function projectShare(messages: Message[], headId: string) {
   const path = branchPath(messages, headId);
   if (path.some((m) => m.deletedAt || m.status !== 'completed'))
     throw new Error('请等待当前分支完成，或选择已完成的回答。');
@@ -13,7 +13,7 @@ export function projectShare(messages: Message[], headId: string, includeReasoni
   const projected = visible.map((message) => ({
     role: message.role,
     text: messageText(message),
-    reasoning: includeReasoning ? messageText(message, 'reasoning') : '',
+    reasoning: messageText(message, 'reasoning'),
     omittedAttachments: messageAttachments(message).length,
   }));
   return {
