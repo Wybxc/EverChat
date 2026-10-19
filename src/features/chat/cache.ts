@@ -21,7 +21,12 @@ export const deletedAt = (id: string) => read<number | null>(`deleted:${id}`, nu
 export function markConversationDeleted(id: string, time: number) {
   write(`deleted:${id}`, time);
   write(`snapshot:parts-v1:${id}`, { messages: [], seq: 0, deletedAt: time });
-  remove([`draft:${id}`, `message-edit:${id}`, `conversation-settings-draft:${id}`]);
+  remove([
+    `draft:${id}`,
+    `message-edit:${id}`,
+    `conversation-settings-draft:${id}`,
+    `chat-model:${id}`,
+  ]);
 }
 
 export function writePending(items: Pending[]): boolean {
@@ -46,6 +51,7 @@ export function writeChatCache(key: string, value: unknown) {
     !(key.startsWith('snapshot:') && deletedAt(key.slice(9)) && !(value as Snapshot).deletedAt) &&
     !(key.startsWith('draft:') && deletedAt(key.slice(6))) &&
     !(key.startsWith('message-edit:') && deletedAt(key.slice(13))) &&
+    !(key.startsWith('chat-model:') && deletedAt(key.slice(11))) &&
     !(key.startsWith('conversation-settings-draft:') && deletedAt(key.slice(28)));
   write(key.startsWith('snapshot:') ? `snapshot:parts-v1:${key.slice(9)}` : key, value, valid);
 }

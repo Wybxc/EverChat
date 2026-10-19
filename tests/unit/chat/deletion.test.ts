@@ -51,6 +51,7 @@ test('a deletion marker prevents a delayed cache write or draft from restoring a
     const id = crypto.randomUUID();
     write(`draft:${id}`, { text: 'old draft' });
     write(`message-edit:${id}`, { content: 'old edit' });
+    write(`chat-model:${id}`, '["provider","old-model"]');
     write(`conversation-settings-draft:${id}`, {
       settings: { systemPrompt: 'old private prompt' },
       dirty: true,
@@ -59,6 +60,7 @@ test('a deletion marker prevents a delayed cache write or draft from restoring a
     write(`snapshot:${id}`, { messages: ['stale body'], seq: 5 });
     write(`draft:${id}`, { text: 'stale draft' });
     write(`message-edit:${id}`, { content: 'stale edit' });
+    write(`chat-model:${id}`, '["provider","stale-model"]');
     write(`conversation-settings-draft:${id}`, {
       settings: { systemPrompt: 'stale private prompt' },
       dirty: true,
@@ -69,6 +71,8 @@ test('a deletion marker prevents a delayed cache write or draft from restoring a
     assert.equal(fallback.has(`everchat:draft:${id}`), false);
     assert.equal(read(`message-edit:${id}`, null), null);
     assert.equal(fallback.has(`everchat:message-edit:${id}`), false);
+    assert.equal(read(`chat-model:${id}`, null), null);
+    assert.equal(fallback.has(`everchat:chat-model:${id}`), false);
     assert.equal(read(`conversation-settings-draft:${id}`, null), null);
     assert.equal(fallback.has(`everchat:conversation-settings-draft:${id}`), false);
   } finally {

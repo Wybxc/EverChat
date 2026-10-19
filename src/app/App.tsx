@@ -98,6 +98,7 @@ import { SummaryDialog } from '../features/chat/SummaryDialog';
 import { SummaryView } from '../features/chat/SummaryView';
 import { useBranchScrollAnchor } from '../features/chat/useBranchScrollAnchor';
 import { useChatDraft } from '../features/chat/useChatDraft';
+import { useChatModel } from '../features/chat/useChatModel';
 import { useComposerLayout } from '../features/chat/useComposerLayout';
 import { useComposerSize } from '../features/chat/useComposerSize';
 import { useContextPreview } from '../features/chat/useContextPreview';
@@ -301,7 +302,6 @@ export function App({
   );
   const returnToConversationSettings = useRef(false);
   const [requestedProviderId, setRequestedProviderId] = useState<string | undefined>();
-  const [modelChoice, setModelChoice] = useState<string>(() => read('chat-model', ''));
   const [branchAnnouncement, setBranchAnnouncement] = useState('');
   const [backgroundTask, setBackgroundTask] = useState<{
     conversationId: string;
@@ -349,12 +349,6 @@ export function App({
     [selected],
   );
   const models = session?.models ?? [];
-  const selectedModel =
-    models.find((model) => modelSelectionKey(model) === modelChoice) ??
-    models.find(
-      (model) => model.providerId === session?.activeProviderId && model.model === session?.model,
-    ) ??
-    models[0];
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort | ''>('');
   const settingsTrigger = useRef<HTMLElement | null>(null);
   const openSettings = () => {
@@ -418,6 +412,16 @@ export function App({
     rememberDeletion,
     selected ? deletedAt(selected) : null,
   );
+  const { selectedModel, chooseModel } = useChatModel({
+    id: selected,
+    models,
+    defaultSelection: session?.activeProviderId
+      ? { providerId: session.activeProviderId, model: session.model }
+      : undefined,
+    messages: snapshot.messages,
+    ready: snapshotFor === selected,
+    pending: currentPending,
+  });
   useEffect(() => {
     if (
       selected &&
@@ -998,6 +1002,8 @@ export function App({
     };
     if (!commitPending([...pendingRef.current, item]))
       return reject(uiMessage('app', 'storageFull'));
+    if (!selected && input.selection)
+      writeChatCache(`chat-model:${conversation.id}`, modelSelectionKey(input.selection));
     if (!conversations.some((item) => item.id === conversation.id)) {
       rememberConversation(conversation);
     }
@@ -2221,10 +2227,7 @@ export function App({
                       focusComposer={() => editor.current?.focus({ preventScroll: true })}
                       models={models}
                       selected={selectedModel}
-                      choose={(value) => {
-                        setModelChoice(value);
-                        write('chat-model', value);
-                      }}
+                      choose={chooseModel}
                     />
                   ) : (
                     <Button
