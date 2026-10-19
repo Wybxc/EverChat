@@ -1,4 +1,9 @@
 import { UsageAccounting, modelIdentity } from '../usage/accounting';
+import * as v from 'valibot';
+import { MAX_SQL_PAYLOAD_BYTES } from '../../shared/conversation/limits';
+import { readPdfUpload } from '../attachments/pdf-upload';
+import type { DocumentRange } from '../../shared/attachments/documents';
+import { MAX_PDF_TEXT_BYTES, pdfExtractionSchema } from '../../shared/attachments/pdf';
 import { USAGE_OUTBOX_SCHEMA } from '../usage/schema';
 import { probeModelCapability } from '../providers/probe';
 import type { ProbeCapability } from '../../shared/models/probe';
@@ -39,7 +44,7 @@ import { CopyJobs, type CopyResult } from '../backup/copies';
 import { ArchiveImports, type ImportResult } from '../backup/imports';
 import { ArchiveRestorer } from '../backup/restore';
 import type { Env } from '../http/env';
-import { HttpError, json } from '../http/response';
+import { HttpError, json, readJsonStream } from '../http/response';
 import { MAX_CONVERSATIONS } from '../platform/resource-limits';
 import { PromptPresetError, PromptPresets } from '../presets/store';
 import { ProviderSettingsStore } from '../providers/store';
@@ -913,8 +918,53 @@ export class Library extends DurableObject<Env> {
       this.attachments.pinAttachments(conversationId, images, files),
     );
   }
-  documentReferences(conversationId: string, ids: string[]) {
-    return this.attachmentAction(() => this.attachments.documents.references(conversationId, ids));
+  documentReferences(
+    conversationId: string,
+    ids: string[],
+    selections?: Record<string, DocumentRange[]>,
+  ) {
+    return this.attachmentAction(() =>
+      this.attachments.documents.references(conversationId, ids, selections),
+    );
+  }
+  async parseDocumentBody(
+    conversationId: string,
+    id: string,
+    body: ReadableStream<Uint8Array>,
+    format: string,
+  ) {
+    const action = this.attachmentAction(async () => {
+      const raw =
+        format === 'json'
+          ? await readJsonStream(
+              body,
+              MAX_PDF_TEXT_BYTES + MAX_SQL_PAYLOAD_BYTES,
+              'PDF 提取结果超过附件容量，请使用全文流上传。',
+            )
+          : await readPdfUpload(body);
+      const parsed = v.safeParse(pdfExtractionSchema, raw);
+      if (!parsed.success) throw new HttpError(400, 'PDF 提取结果无效。');
+      const input = parsed.output;
+      return this.attachments.documents.parse(conversationId, id, input);
+    });
+    await this.scheduleMaintenance();
+    try {
+      const result = await action;
+      return 'error' in result ? json({ error: result.error }, result.status) : json(result.value);
+    } finally {
+      await this.scheduleMaintenance();
+    }
+  }
+  async selectDocument(conversationId: string, id: string, ranges: DocumentRange[]) {
+    return this.attachmentAction(() =>
+      this.attachments.documents.select(conversationId, id, ranges),
+    );
+  }
+  async documentResponse(conversationId: string, id: string, ranges?: DocumentRange[]) {
+    const result = await this.attachmentAction(() =>
+      this.attachments.documents.response(conversationId, id, ranges),
+    );
+    return 'error' in result ? json({ error: result.error }, result.status) : result.value;
   }
   async parseDocument(conversationId: string, id: string, input?: PDFExtraction) {
     const action = this.attachmentAction(() =>

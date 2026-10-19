@@ -3,7 +3,7 @@ import type { ImagePart } from '../../shared/attachments/images';
 import type { Library } from '../library/durable-object';
 import { ProviderError } from './errors';
 
-type AttachmentSource = Pick<DurableObjectStub<Library>, 'attachmentResponse' | 'documentText'>;
+type AttachmentSource = Pick<DurableObjectStub<Library>, 'attachmentResponse' | 'documentResponse'>;
 
 export async function loadGenerationImage(
   library: AttachmentSource,
@@ -27,7 +27,12 @@ export async function loadGenerationDocument(
   conversationId: string,
   file: DocumentPart,
 ) {
-  const result = await library.documentText(conversationId, file.attachmentId);
-  if ('error' in result) throw new ProviderError(result.error);
-  return result.value.text;
+  const response = await library.documentResponse(
+    conversationId,
+    file.attachmentId,
+    file.selection?.ranges,
+  );
+  if (!response.ok) throw new ProviderError('文件解析内容不可用，回答未调用模型。');
+  const result = (await response.json()) as { text: string };
+  return result.text;
 }

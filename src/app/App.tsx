@@ -222,6 +222,7 @@ export function App({
     updateDraft,
     removeImage,
     removeDocument,
+    updateDocument,
   } = chatDraft;
   const fileInput = useRef<HTMLInputElement>(null),
     imageInput = useRef<HTMLInputElement>(null);
@@ -1002,7 +1003,16 @@ export function App({
       await queue({
         requestId: crypto.randomUUID(),
         content: draft.trim(),
-        ...(draftFiles.length ? { fileIds: draftFiles.map((file) => file.attachmentId) } : {}),
+        ...(draftFiles.length
+          ? {
+              fileIds: draftFiles.map((file) => file.attachmentId),
+              fileSelections: Object.fromEntries(
+                draftFiles
+                  .filter((file) => file.selection)
+                  .map((file) => [file.attachmentId, file.selection!.ranges]),
+              ),
+            }
+          : {}),
         ...(draftImages.length ? { imageIds: draftImages.map((image) => image.attachmentId) } : {}),
       });
     } finally {
@@ -1111,6 +1121,11 @@ export function App({
               revisionOf: messageMutation.id,
               imageIds: messageImages(mutationMessage).map((image) => image.attachmentId),
               fileIds: messageFiles(mutationMessage).map((file) => file.attachmentId),
+              fileSelections: Object.fromEntries(
+                messageFiles(mutationMessage)
+                  .filter((file) => file.selection)
+                  .map((file) => [file.attachmentId, file.selection!.ranges]),
+              ),
             },
             true,
           ))
@@ -1995,6 +2010,17 @@ export function App({
                     <DocumentPreviews
                       conversationId={selected}
                       files={draftFiles}
+                      onChange={imageProgress ? undefined : updateDocument}
+                      budgetFor={(file) =>
+                        contextPreview?.estimate
+                          ? Math.max(
+                              0,
+                              file.tokens +
+                                contextPreview.estimate.inputBudget -
+                                contextPreview.estimate.totalTokens,
+                            )
+                          : undefined
+                      }
                       remove={imageProgress ? undefined : removeDocument}
                     />
                     <ImagePreviews

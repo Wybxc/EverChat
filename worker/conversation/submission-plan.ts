@@ -48,7 +48,12 @@ export function planSubmissionParent(
   if (messages.length + (parent ? 1 : 2) > MAX_MESSAGES)
     return { error: '此对话已达到消息数量保护上限，请新建对话。', status: 507 };
   const content = parent ? messageText(parent) : (input.content?.trim() ?? '');
-  if (input.retryOf && (input.imageIds !== undefined || input.fileIds !== undefined))
+  if (
+    input.retryOf &&
+    (input.imageIds !== undefined ||
+      input.fileIds !== undefined ||
+      input.fileSelections !== undefined)
+  )
     return { error: '重新生成不能更换原提问的附件。', status: 400 };
   const userParentId = original ? original.parentId : (requestedParent?.id ?? null);
   return { parent, previous, original, content, userParentId };

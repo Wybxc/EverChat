@@ -14,7 +14,7 @@ import {
 } from './archive';
 import { MAX_ATTACHMENT_BYTES } from '../attachments/files';
 import { MAX_BACKUP_BYTES, validateBackup } from './backup';
-import { MAX_DOCUMENT_BYTES } from '../attachments/documents';
+import { MAX_PDF_TEXT_BYTES, validatePdfText } from '../attachments/pdf';
 
 const allowed = /^(manifest\.json|files\/[0-9a-f-]{36}|documents\/[0-9a-f-]{36}\.txt)$/;
 type ArchiveData = { manifest: ArchiveManifest; entries: Record<string, Uint8Array> };
@@ -105,6 +105,13 @@ async function validateArchiveData(manifest: ArchiveManifest, entries: Record<st
         /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text)
       )
         throw new Error('备份提取文本无效。');
+      if (ref.pdf)
+        validatePdfText({
+          sourceSha256: ref.sha256,
+          text,
+          pdf: ref.pdf,
+          pageOffsets: file.parsed.pageOffsets,
+        });
     }
   }
 }
@@ -138,7 +145,7 @@ export async function decodeArchive(bytes: Uint8Array): Promise<ArchiveData> {
         file.name === ARCHIVE_MANIFEST
           ? MAX_BACKUP_BYTES
           : file.name.startsWith('documents/')
-            ? MAX_DOCUMENT_BYTES
+            ? MAX_PDF_TEXT_BYTES
             : MAX_ATTACHMENT_BYTES;
       if (
         !allowed.test(file.name) ||

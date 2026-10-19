@@ -7,20 +7,49 @@ import {
   documentPrompt,
   estimateDocumentTokens,
 } from '../../../shared/attachments/documents';
-import { PDF_PARSER_VERSION, pdfExtractionSchema } from '../../../shared/attachments/pdf';
+import {
+  PDF_PARSER_VERSION,
+  pdfExtractionSchema,
+  validatePdfText,
+} from '../../../shared/attachments/pdf';
+import { pageRanges } from '../../../shared/attachments/pdf-selection';
 import { abortable } from '../../../src/platform/abort';
 
 const text = '[第 1 页]\n文件预算：42 元。',
   hash = createHash('sha256').update(text).digest('hex');
-const metadata = { pages: 1, parserVersion: PDF_PARSER_VERSION };
+const metadata = { pages: 1, parserVersion: PDF_PARSER_VERSION } as const;
+test('page selections normalize order, duplicates and adjacent pages while preserving original offsets', () => {
+  assert.deepEqual(pageRanges('3, 1-2, 2', [0, 10, 20], 30), [{ start: 0, end: 30 }]);
+  assert.deepEqual(pageRanges('1,3', [0, 10, 20], 30), [
+    { start: 0, end: 10 },
+    { start: 20, end: 30 },
+  ]);
+  for (const value of ['0', '4', '2-1', '1,,2', '1.5', ''])
+    assert.throws(() => pageRanges(value, [0, 10, 20], 30));
+  assert.throws(
+    () =>
+      validatePdfText({
+        sourceSha256: 'a'.repeat(64),
+        text: 'hello',
+        pdf: { ...metadata, pages: 2 },
+        pageOffsets: [0, 0],
+      }),
+    /索引/,
+  );
+});
 test('PDF extraction and immutable references validate page, parser, original size and text boundaries separately', () => {
   const extraction = { sourceSha256: 'a'.repeat(64), text, pdf: metadata };
   assert.ok(v.safeParse(pdfExtractionSchema, extraction).success);
+  assert.ok(
+    v.safeParse(pdfExtractionSchema, {
+      ...extraction,
+      text: 'a'.repeat(64001),
+      pdf: { ...metadata, pages: 51 },
+    }).success,
+  );
   for (const patch of [
     { sourceSha256: 'bad' },
-    { text: 'a'.repeat(64001) },
     { pdf: { ...metadata, pages: 0 } },
-    { pdf: { ...metadata, pages: 51 } },
     { pdf: { ...metadata, parserVersion: 'other' } },
     { original: 'base64' },
   ])

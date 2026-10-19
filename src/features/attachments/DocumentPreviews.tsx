@@ -2,7 +2,8 @@ import { Modal, ModalTitle } from '../../components/Modal';
 import { Button } from '@/components/ui/button';
 import { useEffect, useId, useState } from 'react';
 import { Download, FileText, X } from 'lucide-react';
-import type { DocumentPart } from '../../../shared/attachments/documents';
+import { selectedDocumentText, type DocumentPart } from '../../../shared/attachments/documents';
+import { PdfSelection } from './PdfSelection';
 import { attachmentUrl } from '../../../shared/attachments/files';
 import { api } from '../../platform/api';
 
@@ -10,15 +11,21 @@ export function DocumentPreviews({
   conversationId,
   files,
   remove,
+  onChange,
+  budgetFor,
 }: {
   conversationId: string;
   files: DocumentPart[];
   remove?: (id: string) => void;
+  onChange?: (file: DocumentPart) => void;
+  budgetFor?: (file: DocumentPart) => number | undefined;
 }) {
   const [preview, setPreview] = useState<DocumentPart | null>(null),
     [text, setText] = useState(''),
     [error, setError] = useState(''),
     [loading, setLoading] = useState(false);
+  const [original, setOriginal] = useState<DocumentPart | null>(null),
+    [pageOffsets, setPageOffsets] = useState<number[] | undefined>();
   const title = useId();
   useEffect(() => {
     setPreview(null);
@@ -27,17 +34,24 @@ export function DocumentPreviews({
     if (!preview) return;
     const abort = new AbortController();
     setLoading(true);
+    setOriginal(null);
+    setPageOffsets(undefined);
     setText('');
     setError('');
-    void api<{ file: DocumentPart; text: string }>(
+    void api<{ file: DocumentPart; text: string; pageOffsets?: number[] }>(
       `/conversations/${conversationId}/attachments/${preview.attachmentId}/document`,
       'GET',
       undefined,
       abort.signal,
+      60_000,
     )
       .then(
         (saved) => {
-          if (!abort.signal.aborted) setText(saved.text);
+          if (!abort.signal.aborted) {
+            setText(saved.text);
+            setOriginal(saved.file);
+            setPageOffsets(saved.pageOffsets);
+          }
         },
         (error) => {
           if (!abort.signal.aborted)
@@ -67,6 +81,11 @@ export function DocumentPreviews({
               onClick={() => setPreview(file)}
             >
               <span className="truncate">{file.name}</span>
+              {file.pdf && (
+                <span className="text-xs text-muted-foreground">
+                  {file.selection ? '已选片段' : '全文'} · ≈{file.tokens.toLocaleString()}
+                </span>
+              )}
             </Button>
             {remove && (
               <Button
@@ -115,15 +134,32 @@ export function DocumentPreviews({
                 <X className="h-[1.125rem] w-[1.125rem]" />
               </Button>
             </div>
-            <div className="min-h-0 overflow-auto p-4">
-              {loading ? (
-                <p role="status">正在读取…</p>
-              ) : error ? (
-                <p role="alert">{error}</p>
-              ) : (
-                <pre className="font-mono text-sm whitespace-pre-wrap break-words">{text}</pre>
-              )}
-            </div>
+            {!loading && !error && original && preview.pdf && onChange ? (
+              <PdfSelection
+                conversationId={conversationId}
+                file={preview}
+                original={original}
+                text={text}
+                pageOffsets={pageOffsets}
+                budget={budgetFor?.(preview)}
+                onApply={(file) => {
+                  onChange(file);
+                  setPreview(null);
+                }}
+              />
+            ) : (
+              <div className="min-h-0 overflow-auto p-4">
+                {loading ? (
+                  <p role="status">正在读取…</p>
+                ) : error ? (
+                  <p role="alert">{error}</p>
+                ) : (
+                  <pre className="font-mono text-sm whitespace-pre-wrap break-words">
+                    {selectedDocumentText(text, preview.selection?.ranges)}
+                  </pre>
+                )}
+              </div>
+            )}
           </div>
         </Modal>
       )}

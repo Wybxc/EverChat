@@ -1,5 +1,5 @@
 import { DocumentStore } from './documents';
-import type { DocumentPart } from '../../shared/attachments/documents';
+import { documentKey, type DocumentPart } from '../../shared/attachments/documents';
 import {
   ATTACHMENT_LEASE,
   ATTACHMENT_UPLOAD_TIMEOUT,
@@ -54,6 +54,23 @@ export class AttachmentStore {
         const row = this.row(id);
         if (row?.removed && row.status !== 'uploading')
           this.storage.sql.exec('UPDATE attachments SET lease = ? WHERE id = ?', Date.now(), id);
+      },
+      (conversationId, bytes) => {
+        const total = this.storage.sql
+          .exec<{ bytes: number }>(
+            'SELECT COALESCE(SUM(a.size + COALESCE(d.bytes, 0)), 0) AS bytes FROM attachments a LEFT JOIN attachment_documents d ON d.id=a.id',
+          )
+          .one().bytes;
+        const local = this.storage.sql
+          .exec<{ bytes: number }>(
+            'SELECT COALESCE(SUM(a.size + COALESCE(d.bytes, 0)), 0) AS bytes FROM attachments a LEFT JOIN attachment_documents d ON d.id=a.id WHERE a.conversationId=?',
+            conversationId,
+          )
+          .one().bytes;
+        if (total + bytes > MAX_SPACE_ATTACHMENT_BYTES)
+          throw new HttpError(507, '空间附件容量已满，全文提取结果也计入容量。');
+        if (local + bytes > MAX_CONVERSATION_ATTACHMENT_BYTES)
+          throw new HttpError(507, '此对话附件容量已满，全文提取结果也计入 32 MiB 容量。');
       },
     );
   }
@@ -146,7 +163,7 @@ export class AttachmentStore {
         throw new HttpError(415, error instanceof Error ? error.message : '图片无效。');
       }
     }
-    const documents = new Map(files.map((file) => [file.attachmentId, file]));
+    const documents = new Map(files.map((file) => [documentKey(file), file]));
     for (const file of documents.values()) await this.documents.validate(conversationId, file);
     const references = [...unique.values(), ...documents.values()];
     // Recheck every row after the last R2 await. A concurrent deletion must win before acceptance.
@@ -191,7 +208,12 @@ export class AttachmentStore {
         targetId,
         cloneId,
         document.file.pdf
-          ? { sourceSha256: source.sha256, text: document.text, pdf: document.file.pdf }
+          ? {
+              sourceSha256: source.sha256,
+              text: document.text,
+              pdf: document.file.pdf,
+              ...(document.pageOffsets ? { pageOffsets: document.pageOffsets } : {}),
+            }
           : undefined,
       );
       if (JSON.stringify({ ...result, attachmentId: id }) !== JSON.stringify(document.file))
@@ -218,12 +240,12 @@ export class AttachmentStore {
       }
       const space = this.storage.sql
         .exec<{ count: number; bytes: number }>(
-          'SELECT COUNT(*) AS count, COALESCE(SUM(size), 0) AS bytes FROM attachments',
+          'SELECT COUNT(*) AS count, COALESCE(SUM(a.size + COALESCE(d.bytes, 0)), 0) AS bytes FROM attachments a LEFT JOIN attachment_documents d ON d.id=a.id',
         )
         .one();
       const local = this.storage.sql
         .exec<{ count: number; bytes: number }>(
-          'SELECT COUNT(*) AS count, COALESCE(SUM(size), 0) AS bytes FROM attachments WHERE conversationId = ?',
+          'SELECT COUNT(*) AS count, COALESCE(SUM(a.size + COALESCE(d.bytes, 0)), 0) AS bytes FROM attachments a LEFT JOIN attachment_documents d ON d.id=a.id WHERE a.conversationId = ?',
           conversationId,
         )
         .one();

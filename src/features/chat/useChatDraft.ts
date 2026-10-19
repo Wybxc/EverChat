@@ -39,6 +39,11 @@ export function useChatDraft(selected: string | null) {
     setDraftFiles(files);
     write(`draft:${selected ?? 'new'}`, { text: draft, images: draftImages, files });
   };
+  const updateDocument = (file: DocumentPart) => {
+    const files = draftFiles.map((item) => (item.attachmentId === file.attachmentId ? file : item));
+    setDraftFiles(files);
+    write(`draft:${selected ?? 'new'}`, { text: draft, images: draftImages, files });
+  };
   return {
     draft,
     setDraft,
@@ -49,5 +54,6 @@ export function useChatDraft(selected: string | null) {
     updateDraft,
     removeImage,
     removeDocument,
+    updateDocument,
   };
 }

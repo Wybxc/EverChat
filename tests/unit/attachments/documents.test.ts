@@ -6,6 +6,8 @@ import {
   assertDocumentContext,
   documentPartSchema,
   documentPrompt,
+  documentSource,
+  documentKey,
   estimateDocumentTokens,
   type DocumentPart,
 } from '../../../shared/attachments/documents';
@@ -176,9 +178,8 @@ test('context bounds count repeated file occurrences even when storage loads are
   assert.doesNotThrow(() =>
     assertDocumentContext([{ role: 'user', content: '', files: [long, long] }]),
   );
-  assert.throws(
-    () => assertDocumentContext([{ role: 'user', content: '', files: [long, long, file] }]),
-    /128,000/,
+  assert.doesNotThrow(() =>
+    assertDocumentContext([{ role: 'user', content: '', files: [long, long, file] }]),
   );
 });
 for (const [provider, native] of [
@@ -222,6 +223,81 @@ for (const [provider, native] of [
     );
     await stream.cancel();
     assert.equal(reads, 1);
+    assert.equal(calls, 1);
+  });
+}
+for (const provider of [
+  'openai-chat',
+  'openai-responses',
+  'anthropic',
+  'gemini',
+] as ProviderKind[]) {
+  test(`${provider}: separate selections of one PDF keep distinct text and budgets across history`, async (t) => {
+    const source: DocumentPart = {
+      ...file,
+      mediaType: 'application/pdf',
+      pdf: { pages: 2, parserVersion: '6.4.299' },
+    };
+    const selections = [
+      { start: 0, end: 9 },
+      { start: 10, end: text.length },
+    ];
+    const selected = selections.map((range) => {
+      const fragment = text.slice(range.start, range.end);
+      return {
+        ...source,
+        characters: fragment.length,
+        textSha256: hash(fragment),
+        tokens: estimateDocumentTokens(source, fragment),
+        selection: {
+          ranges: [range],
+          sourceTextSha256: source.textSha256,
+          sourceCharacters: source.characters,
+          sourceTokens: source.tokens,
+        },
+      };
+    });
+    for (const part of selected) {
+      assert.ok(v.safeParse(documentPartSchema, part).success);
+      assert.deepEqual(documentSource(part), source);
+    }
+    assert.notEqual(documentKey(selected[0]), documentKey(selected[1]));
+    let reads = 0,
+      calls = 0;
+    t.mock.method(globalThis, 'fetch', async (_input: unknown, init: RequestInit) => {
+      calls++;
+      const body = JSON.parse(init.body as string);
+      const messages =
+        provider === 'openai-responses'
+          ? body.input
+          : provider === 'gemini'
+            ? body.contents
+            : body.messages;
+      const texts = (
+        messages as { content?: string | { text?: string }[]; parts?: { text?: string }[] }[]
+      ).flatMap((message) => {
+        const content = provider === 'gemini' ? message.parts : message.content;
+        return typeof content === 'string' ? [content] : (content ?? []).map((part) => part.text);
+      });
+      assert.deepEqual(
+        texts,
+        selections.map((range) => documentPrompt(source, text.slice(range.start, range.end))),
+      );
+      return new Response('data: [DONE]\n\n', { headers: { 'Content-Type': 'text/event-stream' } });
+    });
+    const stream = await openProviderStream(
+      { ...config, provider },
+      selected.map((part) => ({ role: 'user', content: '', files: [part] })),
+      new AbortController().signal,
+      undefined,
+      async (part) => {
+        reads++;
+        const range = part.selection!.ranges[0];
+        return text.slice(range.start, range.end);
+      },
+    );
+    await stream.cancel();
+    assert.equal(reads, 2);
     assert.equal(calls, 1);
   });
 }

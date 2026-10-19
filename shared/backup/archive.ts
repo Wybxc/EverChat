@@ -1,3 +1,4 @@
+import { MAX_PDF_TEXT_BYTES, pdfExtractionSchema } from '../attachments/pdf';
 import * as v from 'valibot';
 import {
   attachmentInputSchema,
@@ -5,7 +6,7 @@ import {
   MAX_CONVERSATION_ATTACHMENT_BYTES,
 } from '../attachments/files';
 import { MAX_BACKUP_BYTES, validateBackup, type EverChatBackup } from './backup';
-import { documentPartSchema, MAX_DOCUMENT_BYTES } from '../attachments/documents';
+import { documentPartSchema, documentSource, MAX_DOCUMENT_BYTES } from '../attachments/documents';
 import { messageAttachments } from '../conversation/content';
 import { branchPath } from '../conversation/branch-path';
 import { type Message } from '../conversation/types';
@@ -27,7 +28,8 @@ const fileSchema = v.strictObject({
   parsed: v.optional(
     v.strictObject({
       reference: documentPartSchema,
-      bytes: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(MAX_DOCUMENT_BYTES)),
+      bytes: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(MAX_PDF_TEXT_BYTES)),
+      pageOffsets: pdfExtractionSchema.entries.pageOffsets,
     }),
   ),
 });
@@ -70,13 +72,17 @@ export function validateArchiveManifest(value: unknown): ArchiveManifest {
     ids = new Set(files.map((file) => file.id));
   if (
     ids.size !== files.length ||
-    files.reduce((sum, file) => sum + file.size, 0) > MAX_CONVERSATION_ATTACHMENT_BYTES
+    files.reduce((sum, file) => sum + file.size + (file.parsed?.bytes ?? 0), 0) >
+      MAX_CONVERSATION_ATTACHMENT_BYTES
   )
     throw new Error('备份中的文件重复或超出容量。');
   for (const file of files)
     if (file.parsed) {
       const ref = file.parsed.reference;
       if (
+        ref.selection ||
+        (ref.mediaType !== 'application/pdf' &&
+          (file.parsed.bytes > MAX_DOCUMENT_BYTES || file.parsed.pageOffsets)) ||
         ref.attachmentId !== file.id ||
         ['name', 'mediaType', 'size', 'sha256'].some(
           (field) => ref[field as keyof typeof ref] !== file[field as keyof ArchiveFile],
@@ -94,7 +100,7 @@ export function validateArchiveManifest(value: unknown): ArchiveManifest {
             reference[field as keyof typeof reference] !== file[field as keyof ArchiveFile],
         ) ||
         (reference.type === 'file' &&
-          JSON.stringify(reference) !== JSON.stringify(file.parsed?.reference))
+          JSON.stringify(documentSource(reference)) !== JSON.stringify(file.parsed?.reference))
       )
         throw new Error('备份缺少消息引用的原文件或解析资料。');
     }

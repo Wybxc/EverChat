@@ -15,6 +15,7 @@ export async function preparePdf(
   );
   try {
     const parser = await abortable(() => import('./chat-pdf'), bounded);
+    clearTimeout(timer);
     return await parser.prepareChatPdf(file, sourceSha256, bounded, progress);
   } finally {
     clearTimeout(timer);

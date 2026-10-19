@@ -48,7 +48,13 @@ test('production assets load the real PDF worker and bundled Chinese CMaps and f
       });
     }
     if (request.method() === 'POST' && path.endsWith('/document')) {
-      extracted = request.postDataJSON() as PDFExtraction;
+      expect(request.headers()['content-type']).toBe('application/vnd.everchat.pdf-text');
+      const body = request.postDataBuffer()!.toString('utf8'),
+        newline = body.indexOf('\n');
+      extracted = {
+        ...JSON.parse(body.slice(0, newline)),
+        text: body.slice(newline + 1),
+      } as PDFExtraction;
       expect(extracted.sourceSha256).toBe(createHash('sha256').update(bytes).digest('hex'));
       part = {
         type: 'file',
@@ -70,7 +76,7 @@ test('production assets load the real PDF worker and bundled Chinese CMaps and f
     }
     if (request.method() === 'GET' && path.endsWith('/document'))
       return route.fulfill({
-        json: { file: part, text: extracted!.text },
+        json: { file: part, text: extracted!.text, pageOffsets: extracted!.pageOffsets },
         headers: { 'Cache-Control': 'no-store' },
       });
     return route.fulfill({ json: [] });

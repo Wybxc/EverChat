@@ -25,14 +25,21 @@ export async function api<T>(
   const finishWrite = method === 'GET' ? undefined : beginWrite(`${method}:${path}`);
   let confirmed = false;
   try {
+    const rawBody = typeof Blob !== 'undefined' && body instanceof Blob;
     const response = await fetch(`/api${path}`, {
       method,
       credentials: 'same-origin',
       headers: {
         'X-Requested-With': 'XMLHttpRequest',
-        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        ...(body === undefined
+          ? {}
+          : {
+              'Content-Type': rawBody
+                ? body.type || 'application/octet-stream'
+                : 'application/json',
+            }),
       },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined ? undefined : rawBody ? body : JSON.stringify(body),
       signal: AbortSignal.any([
         ...(signal ? [signal] : []),
         AbortSignal.timeout(timeoutMs),

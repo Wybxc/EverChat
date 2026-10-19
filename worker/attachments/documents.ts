@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import { createHash } from 'node:crypto';
 import type { Attachment } from '../../shared/attachments/files';
 import { ATTACHMENT_LEASE } from '../../shared/attachments/files';
 import {
@@ -9,12 +10,17 @@ import {
   MAX_DOCUMENT_BYTES,
   MAX_MESSAGE_DOCUMENTS,
   type DocumentPart,
+  type DocumentRange,
+  documentRangesSchema,
+  documentSource,
+  selectedDocumentText,
 } from '../../shared/attachments/documents';
 import { extractDocument } from './parser';
 import {
   pdfExtractionSchema,
   type PDFExtraction,
   type PDFMetadata,
+  validatePdfText,
 } from '../../shared/attachments/pdf';
 import { HttpError } from '../http/response';
 
@@ -33,11 +39,7 @@ type Row = {
   error: string | null;
   errorStatus: number | null;
 } & Record<string, SqlStorageValue>;
-const digest = async (bytes: Uint8Array) =>
-  Array.from(
-    new Uint8Array(await crypto.subtle.digest('SHA-256', new Uint8Array(bytes).buffer)),
-    (byte) => byte.toString(16).padStart(2, '0'),
-  ).join('');
+const digest = async (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
 export class DocumentStore {
   private parsing = new Map<string, Promise<DocumentPart>>();
   constructor(
@@ -46,6 +48,7 @@ export class DocumentStore {
     private source: (conversationId: string, id: string) => Source,
     private original: (conversationId: string, id: string, head?: boolean) => Promise<Response>,
     private settled: (id: string) => void,
+    private reserve: (conversationId: string, bytes: number) => void = () => {},
   ) {
     storage.sql
       .exec(`CREATE TABLE IF NOT EXISTS attachment_documents (id TEXT PRIMARY KEY, status TEXT NOT NULL, key TEXT NOT NULL,
@@ -55,11 +58,15 @@ export class DocumentStore {
       'CREATE TABLE IF NOT EXISTS attachment_pdf_metadata (id TEXT PRIMARY KEY, payload TEXT NOT NULL)',
     );
   }
-  private pdf(id: string): PDFMetadata | undefined {
+  private pdfData(id: string): (PDFMetadata & { pageOffsets?: number[] }) | undefined {
     const row = this.storage.sql
       .exec<{ payload: string }>('SELECT payload FROM attachment_pdf_metadata WHERE id = ?', id)
       .toArray()[0];
-    return row ? (JSON.parse(row.payload) as PDFMetadata) : undefined;
+    return row ? JSON.parse(row.payload) : undefined;
+  }
+  private pdf(id: string): PDFMetadata | undefined {
+    const value = this.pdfData(id);
+    return value ? { pages: value.pages, parserVersion: value.parserVersion } : undefined;
   }
   private row(id: string) {
     return this.storage.sql
@@ -71,7 +78,10 @@ export class DocumentStore {
   }
   archiveReference(conversationId: string, id: string) {
     const reference = this.parsedReference(conversationId, id);
-    return reference ? { reference, bytes: this.row(id)!.bytes } : undefined;
+    const pageOffsets = this.pdfData(id)?.pageOffsets;
+    return reference
+      ? { reference, bytes: this.row(id)!.bytes, ...(pageOffsets ? { pageOffsets } : {}) }
+      : undefined;
   }
   unconfirmed(id: string) {
     const row = this.row(id);
@@ -109,14 +119,27 @@ export class DocumentStore {
     if (!part.success) throw new HttpError(409, '文件解析引用无效，请重新上传。');
     return part.output;
   }
-  references(conversationId: string, ids: string[]) {
+  async references(
+    conversationId: string,
+    ids: string[],
+    selections: Record<string, DocumentRange[]> = {},
+  ) {
     if (ids.length > MAX_MESSAGE_DOCUMENTS || new Set(ids).size !== ids.length)
       throw new HttpError(400, '每条消息最多添加 4 个不同的文本文件。');
-    return ids.map((id) => this.reference(conversationId, id));
+    if (Object.keys(selections).some((id) => !ids.includes(id)))
+      throw new HttpError(400, '文件选区缺少对应附件。');
+    const files: DocumentPart[] = [];
+    for (const id of ids)
+      files.push(
+        selections[id]
+          ? await this.select(conversationId, id, selections[id])
+          : this.reference(conversationId, id),
+      );
+    return files;
   }
   async parse(conversationId: string, id: string, input?: PDFExtraction) {
     const source = this.requireSource(conversationId, id);
-    let prepared: { text: string; pdf: PDFMetadata } | undefined,
+    let prepared: { text: string; pdf: PDFMetadata; pageOffsets?: number[] } | undefined,
       expectedHash: string | null = null;
     if (input !== undefined) {
       if (source.mediaType !== 'application/pdf')
@@ -125,17 +148,29 @@ export class DocumentStore {
       if (!parsed.success) throw new HttpError(400, 'PDF 提取结果无效，请重新选择文件。');
       if (parsed.output.sourceSha256 !== source.sha256)
         throw new HttpError(409, 'PDF 原文件与提取结果不符。');
-      const checked = extractDocument(new TextEncoder().encode(parsed.output.text), 'text/plain');
-      if (checked.text !== parsed.output.text) throw new HttpError(415, 'PDF 提取文本的编码无效。');
-      prepared = { text: checked.text, pdf: parsed.output.pdf };
-      expectedHash = await digest(new TextEncoder().encode(checked.text));
+      try {
+        validatePdfText(parsed.output);
+      } catch (error) {
+        throw new HttpError(415, (error as Error).message);
+      }
+      prepared = {
+        text: parsed.output.text,
+        pdf: parsed.output.pdf,
+        ...(parsed.output.pageOffsets ? { pageOffsets: parsed.output.pageOffsets } : {}),
+      };
+      expectedHash = await digest(new TextEncoder().encode(prepared.text));
       this.requireSource(conversationId, id);
     }
     const row = this.row(id);
     if (
       prepared &&
       row &&
-      (row.sha256 !== expectedHash || JSON.stringify(this.pdf(id)) !== JSON.stringify(prepared.pdf))
+      (row.sha256 !== expectedHash ||
+        JSON.stringify(this.pdfData(id)) !==
+          JSON.stringify({
+            ...prepared.pdf,
+            ...(prepared.pageOffsets ? { pageOffsets: prepared.pageOffsets } : {}),
+          }))
     )
       throw new HttpError(409, '此 PDF 已绑定另一份提取结果，请重新选择文件。');
     if (row?.status === 'ready') return this.reference(conversationId, id);
@@ -161,7 +196,10 @@ export class DocumentStore {
         this.storage.sql.exec(
           'INSERT INTO attachment_pdf_metadata VALUES (?, ?)',
           id,
-          JSON.stringify(prepared.pdf),
+          JSON.stringify({
+            ...prepared.pdf,
+            ...(prepared.pageOffsets ? { pageOffsets: prepared.pageOffsets } : {}),
+          }),
         );
     });
     const promise = this.parseSource(conversationId, source, key, token, prepared);
@@ -178,7 +216,7 @@ export class DocumentStore {
     source: Source,
     key: string,
     token: string,
-    prepared?: { text: string; pdf: PDFMetadata },
+    prepared?: { text: string; pdf: PDFMetadata; pageOffsets?: number[] },
   ) {
     let putStarted = false;
     try {
@@ -193,6 +231,15 @@ export class DocumentStore {
       const bytes = new TextEncoder().encode(extracted.text),
         sha256 = await digest(bytes);
       this.requireSource(conversationId, source.id);
+      this.storage.transactionSync(() => {
+        this.reserve(conversationId, bytes.length - this.row(source.id)!.bytes);
+        this.storage.sql.exec(
+          'UPDATE attachment_documents SET bytes = ? WHERE id = ?',
+          bytes.length,
+          source.id,
+        );
+      });
+      await this.storage.sync();
       putStarted = true;
       const saved = await this.bucket!.put(key, bytes, {
         sha256,
@@ -250,7 +297,10 @@ export class DocumentStore {
       throw failure;
     }
   }
-  async read(conversationId: string, id: string): Promise<{ file: DocumentPart; text: string }> {
+  async read(
+    conversationId: string,
+    id: string,
+  ): Promise<{ file: DocumentPart; text: string; pageOffsets?: number[] }> {
     const file = this.reference(conversationId, id),
       row = this.row(id)!;
     const object = await this.bucket!.get(row.key);
@@ -273,11 +323,61 @@ export class DocumentStore {
       throw new HttpError(409, '解析结果长度或预算不符。');
     if (file.pdf) await this.original(conversationId, id, true);
     this.requireSource(conversationId, id);
-    return { file, text };
+    const pageOffsets = this.pdfData(id)?.pageOffsets;
+    return { file, text, ...(pageOffsets ? { pageOffsets } : {}) };
+  }
+  async select(conversationId: string, id: string, ranges: DocumentRange[]): Promise<DocumentPart> {
+    const saved = await this.read(conversationId, id);
+    return this.selectFrom(saved, ranges);
+  }
+  private async selectFrom(
+    saved: { file: DocumentPart; text: string },
+    ranges: DocumentRange[],
+  ): Promise<DocumentPart> {
+    if (
+      !saved.file.pdf ||
+      !v.safeParse(documentRangesSchema, ranges).success ||
+      ranges.at(-1)!.end > saved.text.length
+    )
+      throw new HttpError(400, 'PDF 选区无效。');
+    if (ranges.length === 1 && ranges[0].start === 0 && ranges[0].end === saved.text.length)
+      return saved.file;
+    const text = selectedDocumentText(saved.text, ranges);
+    if (!text.trim()) throw new HttpError(400, '选区没有可发送的文本。');
+    return v.parse(documentPartSchema, {
+      ...saved.file,
+      textSha256: await digest(new TextEncoder().encode(text)),
+      characters: text.length,
+      tokens: estimateDocumentTokens(saved.file, text),
+      selection: {
+        ranges,
+        sourceTextSha256: saved.file.textSha256,
+        sourceCharacters: saved.file.characters,
+        sourceTokens: saved.file.tokens,
+      },
+    });
+  }
+  async response(conversationId: string, id: string, ranges?: DocumentRange[]) {
+    const saved = await this.read(conversationId, id);
+    return Response.json(
+      ranges
+        ? {
+            file: await this.selectFrom(saved, ranges),
+            text: selectedDocumentText(saved.text, ranges),
+          }
+        : saved,
+      { headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } },
+    );
   }
   async validate(conversationId: string, file: DocumentPart) {
     const saved = await this.read(conversationId, file.attachmentId);
-    if (JSON.stringify(v.parse(documentPartSchema, file)) !== JSON.stringify(saved.file))
+    if (
+      JSON.stringify(v.parse(documentPartSchema, documentSource(file))) !==
+        JSON.stringify(saved.file) ||
+      (file.selection &&
+        JSON.stringify(v.parse(documentPartSchema, file)) !==
+          JSON.stringify(await this.selectFrom(saved, file.selection.ranges)))
+    )
       throw new HttpError(409, '文件引用与解析结果不符。');
   }
   isActive(id: string) {

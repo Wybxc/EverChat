@@ -1,7 +1,6 @@
 import { MAX_ATTACHMENT_BYTES } from '../../../shared/attachments/files';
-import { MAX_DOCUMENT_BYTES, MAX_DOCUMENT_CHARACTERS } from '../../../shared/attachments/documents';
 import {
-  MAX_PDF_PAGES,
+  MAX_PDF_TEXT_BYTES,
   PDF_PARSER_VERSION,
   PDF_PARSE_TIMEOUT,
   type PDFExtraction,
@@ -52,10 +51,15 @@ export async function prepareChatPdf(
     onAbort = () => abort.abort(signal.reason);
   signal.addEventListener('abort', onAbort, { once: true });
   if (signal.aborted) onAbort();
-  const timer = setTimeout(
-    () => abort.abort(new Error('PDF 解析超过 30 秒，请拆分文件后重试。')),
-    PDF_PARSE_TIMEOUT,
-  );
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const heartbeat = () => {
+    clearTimeout(timer);
+    timer = setTimeout(
+      () => abort.abort(new Error('PDF 解析已停滞 30 秒，请重试。')),
+      PDF_PARSE_TIMEOUT,
+    );
+  };
+  heartbeat();
   let worker: Worker | undefined,
     task: PDFDocumentLoadingTask | undefined,
     parser: PDFWorker | undefined;
@@ -92,26 +96,36 @@ export async function prepareChatPdf(
     });
     const document = await task.promise;
     abort.signal.throwIfAborted();
-    if (document.numPages > MAX_PDF_PAGES) throw new Error('PDF 最多 50 页，请拆分文件。');
-    let text = '',
+    const chunks: string[] = [],
+      pageOffsets: number[] = [],
+      encoder = new TextEncoder();
+    let characters = 0,
+      bytes = 0,
       hasText = false;
+    const append = (value: string) => {
+      bytes += encoder.encode(value).length;
+      if (bytes > MAX_PDF_TEXT_BYTES) throw new Error('PDF 全文超过此对话 32 MiB 的附件存储容量。');
+      chunks.push(value);
+      characters += value.length;
+    };
     for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber++) {
       abort.signal.throwIfAborted();
+      heartbeat();
       progress(pageNumber, document.numPages);
+      pageOffsets.push(characters);
       const page = await document.getPage(pageNumber),
         reader = page.streamTextContent().getReader();
-      text += `${pageNumber === 1 ? '' : '\n\n'}[第 ${pageNumber} 页]\n`;
+      append(`${pageNumber === 1 ? '' : '\n\n'}[第 ${pageNumber} 页]\n`);
       try {
         while (true) {
           const { done, value } = await reader.read();
           abort.signal.throwIfAborted();
+          heartbeat();
           if (done) break;
           for (const item of (value as TextContent).items)
             if ('str' in item) {
               hasText ||= Boolean(item.str.trim());
-              text += item.str + (item.hasEOL ? '\n' : ' ');
-              if (text.length > MAX_DOCUMENT_CHARACTERS)
-                throw new Error('PDF 提取文本最多 64,000 字符，请拆分文件。');
+              append(item.str + (item.hasEOL ? '\n' : ' '));
             }
         }
       } finally {
@@ -119,13 +133,12 @@ export async function prepareChatPdf(
         reader.releaseLock();
         page.cleanup();
       }
-      if (new TextEncoder().encode(text).length > MAX_DOCUMENT_BYTES)
-        throw new Error('PDF 提取文本最多 128 KiB，请拆分文件。');
     }
     if (!hasText) throw new Error('PDF 没有可提取的文本，请选择含文字的 PDF。');
     return {
       sourceSha256,
-      text,
+      text: chunks.join(''),
+      pageOffsets,
       pdf: { pages: document.numPages, parserVersion: PDF_PARSER_VERSION },
     };
   })();

@@ -203,8 +203,21 @@ export function useChatAttachments({
               await api<DocumentPart>(
                 `/conversations/${conversation.id}/attachments/${saved.id}/document`,
                 'POST',
-                pdf,
+                pdf
+                  ? new Blob(
+                      [
+                        JSON.stringify({
+                          sourceSha256: pdf.sourceSha256,
+                          pdf: pdf.pdf,
+                          pageOffsets: pdf.pageOffsets,
+                        }) + '\n',
+                        pdf.text,
+                      ],
+                      { type: 'application/vnd.everchat.pdf-text' },
+                    )
+                  : undefined,
                 controller.signal,
+                60_000,
               ),
             );
           }

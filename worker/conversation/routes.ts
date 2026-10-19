@@ -4,7 +4,7 @@ import {
   MESSAGE_TEXT_LIMIT_MESSAGE,
 } from '../../shared/conversation/limits';
 import * as v from 'valibot';
-import { MAX_MESSAGE_DOCUMENTS } from '../../shared/attachments/documents';
+import { documentRangesSchema, MAX_MESSAGE_DOCUMENTS } from '../../shared/attachments/documents';
 import { MAX_MESSAGE_IMAGES } from '../../shared/attachments/images';
 import { conversationSettingsSchema } from '../../shared/conversation/settings';
 import type { SubmitInput } from '../../shared/conversation/types';
@@ -15,6 +15,7 @@ import { HttpError, json, parseBody } from '../http/response';
 const submitSchema = v.object({
   requestId: uuidSchema,
   content: v.optional(v.string()),
+  fileSelections: v.optional(v.record(uuidSchema, documentRangesSchema)),
   fileIds: v.optional(
     v.pipe(
       v.array(uuidSchema),
@@ -124,6 +125,11 @@ export function registerConversationRoutes(app: ApiRouter) {
       tooLarge: '消息或会话参数太长。',
     })) as SubmitInput;
     if (
+      input.fileSelections &&
+      Object.keys(input.fileSelections).some((id) => !input.fileIds?.includes(id))
+    )
+      throw new HttpError(400, '文件选区缺少对应附件。');
+    if (
       input.summaryThrough &&
       (input.content !== undefined ||
         input.retryOf ||
@@ -133,6 +139,7 @@ export function registerConversationRoutes(app: ApiRouter) {
         input.reasoningEffort ||
         input.imageIds !== undefined ||
         input.fileIds !== undefined ||
+        input.fileSelections !== undefined ||
         input.tools !== undefined)
     )
       throw new HttpError(400, '摘要请求不能同时指定聊天内容或会话参数。');
@@ -141,7 +148,8 @@ export function registerConversationRoutes(app: ApiRouter) {
       (input.content !== undefined ||
         input.revisionOf !== undefined ||
         input.imageIds !== undefined ||
-        input.fileIds !== undefined)
+        input.fileIds !== undefined ||
+        input.fileSelections !== undefined)
     )
       throw new HttpError(400, '消息参数无效。');
     if (input.parentId !== undefined && (input.revisionOf || input.retryOf))

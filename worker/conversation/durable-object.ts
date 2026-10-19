@@ -792,6 +792,7 @@ export class Conversation extends DurableObject<Env> {
         input.summaryThrough ?? null,
         input.imageIds ?? null,
         input.fileIds ?? null,
+        input.fileSelections ?? null,
         input.tools ?? null,
       ]);
       const duplicate = () => {
@@ -816,6 +817,7 @@ export class Conversation extends DurableObject<Env> {
           input.reasoningEffort ||
           input.imageIds !== undefined ||
           input.fileIds !== undefined ||
+          input.fileSelections !== undefined ||
           input.tools !== undefined)
       )
         return { error: '摘要请求不能同时指定聊天内容或会话参数。', status: 400 };
@@ -934,10 +936,11 @@ export class Conversation extends DurableObject<Env> {
       const images = references.value;
       const documents = parent
         ? { value: messageFiles(parent) }
-        : input.fileIds?.length
+        : input.fileIds?.length || input.fileSelections
           ? await this.env.LIBRARY.getByName('personal').documentReferences(
               conversationId,
-              input.fileIds,
+              input.fileIds ?? [],
+              input.fileSelections,
             )
           : { value: [] as DocumentPart[] };
       if ('error' in documents) return documents;

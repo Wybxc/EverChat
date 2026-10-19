@@ -1,3 +1,4 @@
+import { documentKey } from '../../shared/attachments/documents';
 import {
   assertDocumentContext,
   DocumentError,
@@ -54,7 +55,7 @@ export async function openProviderStream(
     const documentData = new Map<string, string>();
     for (const message of context)
       for (const file of message.files ?? []) {
-        if (documentData.has(file.attachmentId)) continue;
+        if (documentData.has(documentKey(file))) continue;
         if (!loadDocument) throw new DocumentError('无法读取已保存的文件解析结果。');
         signal.throwIfAborted();
         const text = await loadDocument(file);
@@ -68,7 +69,7 @@ export async function openProviderStream(
           sha256 !== file.textSha256
         )
           throw new DocumentError('文件解析内容与已保存的引用不符。');
-        documentData.set(file.attachmentId, documentPrompt(file, text));
+        documentData.set(documentKey(file), documentPrompt(file, text));
         secrets.push(text);
       }
     const imageData = new Map<string, Uint8Array>();
@@ -94,7 +95,7 @@ export async function openProviderStream(
                 ...(message.content ? [{ type: 'text' as const, text: message.content }] : []),
                 ...(message.files ?? []).map((file) => ({
                   type: 'text' as const,
-                  text: documentData.get(file.attachmentId)!,
+                  text: documentData.get(documentKey(file))!,
                 })),
                 ...(message.images ?? []).map((image) => ({
                   type: 'file' as const,

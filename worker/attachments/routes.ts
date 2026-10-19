@@ -1,6 +1,6 @@
 import * as v from 'valibot';
 import { attachmentInputSchema } from '../../shared/attachments/files';
-import { pdfExtractionSchema } from '../../shared/attachments/pdf';
+import { documentRangesSchema } from '../../shared/attachments/documents';
 import { conversationId, requireAuth, requireConversation, uuidSchema } from '../http/access';
 import type { ApiRouter } from '../http/app';
 import { HttpError, json, parseBody, type AppContext } from '../http/response';
@@ -56,13 +56,18 @@ export function registerAttachmentsRoutes(app: ApiRouter) {
     await requireAuth(context);
     const id = conversationId(context),
       library = await requireConversation(context, id);
-    const input = context.req.header('Content-Type')?.includes('application/json')
-      ? await parseBody(context, pdfExtractionSchema, {
-          maxBytes: 264192,
-          tooLarge: 'PDF 提取结果过大，请拆分文件。',
-        })
-      : undefined;
-    const result = await library.parseDocument(id, attachmentId(context), input);
+    const type = context.req.header('Content-Type') ?? '';
+    if (
+      context.req.raw.body &&
+      (type.includes('application/json') || type.includes('application/vnd.everchat.pdf-text'))
+    )
+      return library.parseDocumentBody(
+        id,
+        attachmentId(context),
+        context.req.raw.body,
+        type.includes('application/json') ? 'json' : 'text',
+      );
+    const result = await library.parseDocument(id, attachmentId(context));
     return 'error' in result ? json({ error: result.error }, result.status) : json(result.value);
   });
 
@@ -70,7 +75,15 @@ export function registerAttachmentsRoutes(app: ApiRouter) {
     await requireAuth(context);
     const id = conversationId(context),
       library = await requireConversation(context, id);
-    const result = await library.documentText(id, attachmentId(context));
+    return library.documentResponse(id, attachmentId(context));
+  });
+
+  app.post('/conversations/:id/attachments/:attachmentId/document/selection', async (context) => {
+    await requireAuth(context);
+    const id = conversationId(context),
+      library = await requireConversation(context, id);
+    const input = await parseBody(context, v.strictObject({ ranges: documentRangesSchema }));
+    const result = await library.selectDocument(id, attachmentId(context), input.ranges);
     return 'error' in result ? json({ error: result.error }, result.status) : json(result.value);
   });
 

@@ -1,8 +1,11 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { encodeArchive, decodeArchive } from '../../../shared/backup/codec';
+import { originalPath, extractedPath, type ArchiveManifest } from '../../../shared/backup/archive';
 import { attachmentUrl } from '../../../shared/attachments/files';
 import { PDF_PARSER_VERSION, type PDFExtraction } from '../../../shared/attachments/pdf';
+import { estimateDocumentTokens } from '../../../shared/attachments/documents';
 import { messageFiles, messageText } from '../../../shared/conversation/content';
 import type { Submission } from '../../../shared/conversation/types';
 import type { ProviderKind } from '../../../shared/providers/types';
@@ -15,7 +18,11 @@ const control = (request: APIRequestContext, data: object = {}) =>
   request
     .post('/api/__test/library/attachments', { headers, data })
     .then((response) => response.json());
-async function setup(request: APIRequestContext, provider: ProviderKind = 'openai-chat') {
+async function setup(
+  request: APIRequestContext,
+  provider: ProviderKind = 'openai-chat',
+  contextWindow = 200000,
+) {
   await request.post('/__dev/access/login', { headers });
   await control(request, { count: 0 });
   expect(
@@ -35,7 +42,7 @@ async function setup(request: APIRequestContext, provider: ProviderKind = 'opena
                   id: `documents-${provider}`,
                   name: 'PDF 文本模型',
                   enabled: true,
-                  metadataOverrides: { imageInput: false, contextWindow: 200000 },
+                  metadataOverrides: { imageInput: false, contextWindow },
                 },
               ],
             },
@@ -61,9 +68,8 @@ async function setup(request: APIRequestContext, provider: ProviderKind = 'opena
   };
 }
 async function login(page: Page, id: string) {
+  await page.request.post('/__dev/access/login', { headers });
   await page.goto(`/c/${id}`);
-  await page.request.post('/__dev/access/login');
-  await page.reload();
   await expect(page.getByRole('button', { name: '添加附件', exact: true })).toBeEnabled();
 }
 async function finish(fixture: Awaited<ReturnType<typeof setup>>, submission: Submission) {
@@ -96,6 +102,263 @@ async function upload(request: APIRequestContext, id: string, bytes = textPdf())
 }
 const docUrl = (id: string, fileId: string) =>
   `/api/conversations/${id}/attachments/${fileId}/document`;
+test('complete extraction exceeds the old page and character caps, preserves draft selections and sends only chosen pages', async ({
+  page,
+  request,
+}) => {
+  const fixture = await setup(request);
+  try {
+    await login(page, fixture.id);
+    const bytes = textPdf(
+      Array.from({ length: 51 }, (_, i) => [i ? `Page ${i + 1}: Budget 42.` : 'a'.repeat(65000)]),
+      { fontSize: 0.01 },
+    );
+    await page
+      .getByLabel('选择聊天文件')
+      .setInputFiles({ name: 'complete.pdf', mimeType: 'application/pdf', buffer: bytes });
+    await page.getByRole('button', { name: '预览 complete.pdf' }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.locator('pre')).toContainText('[第 51 页]');
+    await dialog.getByLabel('PDF 发送范围').selectOption('pages');
+    await dialog.getByLabel('发送页码').fill('2-3,51');
+    await expect(dialog.locator('pre')).toContainText('Page 51:');
+    await expect(dialog.locator('pre')).not.toContainText('a'.repeat(100));
+    await dialog.getByRole('button', { name: '使用选区', exact: true }).click();
+    await expect(dialog).not.toBeVisible();
+    await page.reload();
+    await expect(page.getByTestId('draft-previews')).toContainText('已选片段');
+    const accepted = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/conversations/${fixture.id}/messages`) &&
+        response.request().method() === 'POST',
+    );
+    await page.getByRole('button', { name: '发送消息', exact: true }).click();
+    const response = await accepted;
+    expect(response.status(), await response.text()).toBe(202);
+    const submission = (await response.json()) as Submission;
+    await finish(fixture, submission);
+    const part = messageFiles(
+      (await fixture.snapshot()).messages.find((message) => message.id === submission.userId)!,
+    )[0];
+    expect(part.pdf?.pages).toBe(51);
+    expect(part.characters).toBeLessThan(500);
+    expect(part.selection!.sourceCharacters).toBeGreaterThan(65000);
+    const full = await request.get(docUrl(fixture.id, part.attachmentId)).then((r) => r.json());
+    expect(full.text.length).toBe(part.selection!.sourceCharacters);
+    expect(full.pageOffsets).toHaveLength(51);
+    expect(JSON.stringify(await fixture.snapshot())).not.toContain('a'.repeat(100));
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+test('native full-text storage and previews exceed RPC object size while excerpt references, copying and backups remain small', async ({
+  request,
+}) => {
+  const fixture = await setup(request),
+    file = await upload(request, fixture.id);
+  const text = 'Budget: 42.\n' + 'private full document\n'.repeat(65000);
+  let copyId: string | undefined, restoredId: string | undefined;
+  try {
+    const saved = await request.post(docUrl(fixture.id, file.id), {
+      headers: { ...headers, 'Content-Type': 'application/vnd.everchat.pdf-text' },
+      data:
+        JSON.stringify({
+          sourceSha256: file.sha256,
+          pdf: { pages: 1, parserVersion: PDF_PARSER_VERSION },
+          pageOffsets: [0],
+        }) +
+        '\n' +
+        text,
+    });
+    expect(saved.status(), await saved.text()).toBe(200);
+    const original = await saved.json();
+    expect(original.characters).toBeGreaterThan(1_048_576);
+    expect((await request.get(docUrl(fixture.id, file.id)).then((r) => r.json())).text).toBe(text);
+    const ranges = [{ start: 0, end: 11 }];
+    const selected = await request.post(docUrl(fixture.id, file.id) + '/selection', {
+      headers,
+      data: { ranges },
+    });
+    expect(selected.status()).toBe(200);
+    const excerpt = await selected.json();
+    expect(excerpt.characters).toBe(11);
+    const response = await request.post(`/api/conversations/${fixture.id}/messages`, {
+      headers,
+      data: {
+        requestId: crypto.randomUUID(),
+        parentId: null,
+        fileIds: [file.id],
+        fileSelections: { [file.id]: ranges },
+      },
+    });
+    expect(response.status(), await response.text()).toBe(202);
+    await finish(fixture, await response.json());
+    const copy = await request.post(`/api/conversations/${fixture.id}/duplicate`, {
+      headers,
+      data: { requestId: crypto.randomUUID() },
+    });
+    expect(copy.status(), await copy.text()).toBe(201);
+    copyId = (await copy.json()).id;
+    const copied = (await request
+      .get(`/api/conversations/${copyId}`)
+      .then((r) => r.json())) as Snapshot;
+    expect(messageFiles(copied.messages[0])[0].selection).toEqual(excerpt.selection);
+    const manifest = await request
+      .get(`/api/conversations/${fixture.id}/backup/manifest`)
+      .then((r) => r.json());
+    expect(manifest.files[0].parsed.reference.characters).toBe(text.length);
+    expect(manifest.files[0].parsed.pageOffsets).toEqual([0]);
+    expect(manifest.backup.conversation.messages[0].parts[0].selection).toEqual(excerpt.selection);
+    const archived = await encodeArchive(manifest as ArchiveManifest, {
+      [originalPath(file.id)]: new Uint8Array(
+        await (await request.get(attachmentUrl(fixture.id, file.id))).body(),
+      ),
+      [extractedPath(file.id)]: Buffer.from(text),
+    });
+    const decoded = await decodeArchive(archived);
+    restoredId = crypto.randomUUID();
+    const started = await request.post(`/api/backup/imports/${restoredId}`, {
+      headers,
+      data: decoded.manifest,
+    });
+    expect(started.status(), await started.text()).toBe(200);
+    const restoredFile = (await started.json()).files[0].id;
+    for (const [kind, key] of [
+      ['content', originalPath(file.id)],
+      ['text', extractedPath(file.id)],
+    ]) {
+      const uploaded = await request.put(
+        `/api/backup/imports/${restoredId}/files/${file.id}/${kind}`,
+        { headers, data: Buffer.from(decoded.entries[key]) },
+      );
+      expect(uploaded.status(), await uploaded.text()).toBe(200);
+    }
+    const completed = await request.post(`/api/backup/imports/${restoredId}/complete`, { headers });
+    expect(completed.status(), await completed.text()).toBe(201);
+    const restored = (await request
+      .get(`/api/conversations/${restoredId}`)
+      .then((r) => r.json())) as Snapshot;
+    expect(messageFiles(restored.messages[0])[0].selection).toEqual(excerpt.selection);
+    const restoredText = await request.get(docUrl(restoredId, restoredFile)).then((r) => r.json());
+    expect(restoredText.text).toBe(text);
+    expect(restoredText.pageOffsets).toEqual([0]);
+  } finally {
+    if (restoredId) await request.delete(`/api/conversations/${restoredId}`, { headers });
+    if (copyId) await request.delete(`/api/conversations/${copyId}`, { headers });
+    await fixture.cleanup();
+  }
+});
+test('large PDF text uses the real storage allowance and prevents later originals from exceeding the shared conversation quota', async ({
+  request,
+}) => {
+  test.setTimeout(120_000);
+  const fixture = await setup(request),
+    file = await upload(request, fixture.id);
+  const text = 'Budget: 42.\n' + 'a'.repeat(31 * 1024 * 1024 - 12);
+  try {
+    const saved = await request.post(docUrl(fixture.id, file.id), {
+      headers: { ...headers, 'Content-Type': 'application/vnd.everchat.pdf-text' },
+      data:
+        JSON.stringify({
+          sourceSha256: file.sha256,
+          pdf: { pages: 1, parserVersion: PDF_PARSER_VERSION },
+          pageOffsets: [0],
+        }) +
+        '\n' +
+        text,
+    });
+    expect(saved.status(), await saved.text()).toBe(200);
+    const loaded = await request.get(docUrl(fixture.id, file.id));
+    expect(loaded.status(), (await loaded.text()).slice(0, 200)).toBe(200);
+    const content = await loaded.json();
+    expect(content.text.length).toBe(text.length);
+    expect(createHash('sha256').update(content.text).digest('hex')).toBe(
+      createHash('sha256').update(text).digest('hex'),
+    );
+    const selected = await request.post(docUrl(fixture.id, file.id) + '/selection', {
+      headers,
+      data: { ranges: [{ start: 0, end: 11 }] },
+    });
+    expect(selected.status(), await selected.text()).toBe(200);
+    expect((await selected.json()).characters).toBe(11);
+    const tooMuch = await request.post(`/api/conversations/${fixture.id}/attachments`, {
+      headers,
+      data: { ...file, id: crypto.randomUUID(), size: 2 * 1024 * 1024 },
+    });
+    expect(tooMuch.status(), await tooMuch.text()).toBe(507);
+    expect(
+      (await request.get(`/api/conversations/${fixture.id}/attachments`).then((r) => r.json())).map(
+        (item: { id: string }) => item.id,
+      ),
+    ).toEqual([file.id]);
+  } finally {
+    await fixture.cleanup();
+  }
+});
+test('model capacity guides page selection and an original-text excerpt can be selected on mobile without losing the full PDF', async ({
+  page,
+  request,
+}) => {
+  const fixture = await setup(request, 'openai-chat', 4096);
+  try {
+    await login(page, fixture.id);
+    const bytes = textPdf(
+      Array.from({ length: 3 }, (_, i) => [`Page ${i + 1}: Budget 42. ` + 'a'.repeat(5000)]),
+      { fontSize: 0.01 },
+    );
+    await page
+      .getByLabel('选择聊天文件')
+      .setInputFiles({ name: 'capacity.pdf', mimeType: 'application/pdf', buffer: bytes });
+    const send = page.getByRole('button', { name: '发送消息', exact: true });
+    await expect(send).toBeDisabled();
+    await page.getByRole('button', { name: '预览 capacity.pdf' }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByRole('button', { name: '按容量选择前几页' }).click();
+    await expect(dialog.getByLabel('发送页码')).toHaveValue('1-1');
+    await expect(dialog.locator('pre')).toContainText('Page 1:');
+    await expect(dialog.locator('pre')).not.toContainText('Page 2:');
+    await dialog.getByRole('button', { name: '使用选区', exact: true }).click();
+    await expect(send).toBeEnabled();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole('button', { name: '预览 capacity.pdf' }).click();
+    await dialog.getByLabel('PDF 发送范围').selectOption('fragment');
+    const source = dialog.getByLabel('PDF 原文');
+    await source.focus();
+    await source.evaluate((node: HTMLTextAreaElement) => {
+      const start = node.value.indexOf('Page 2: Budget 42.');
+      node.setSelectionRange(start, start + 'Page 2: Budget 42.'.length);
+      node.dispatchEvent(new Event('select'));
+    });
+    const tokens = estimateDocumentTokens(
+      { name: 'capacity.pdf', mediaType: 'application/pdf' },
+      'Page 2: Budget 42.',
+    );
+    await expect(dialog.getByRole('status')).toContainText(`当前约 ${tokens.toLocaleString()}`);
+    await page.screenshot({ path: '/tmp/everchat-pdf-selection-phone.png' });
+    await dialog.getByRole('button', { name: '使用选区', exact: true }).click();
+    await page.getByRole('button', { name: '预览 capacity.pdf' }).click();
+    await expect(dialog.getByLabel('PDF 原文')).toContainText('Page 3:');
+    await dialog.getByRole('button', { name: '关闭文件预览' }).click();
+    const acceptance = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/conversations/${fixture.id}/messages`) &&
+        response.request().method() === 'POST',
+    );
+    await send.click();
+    const response = await acceptance;
+    expect(response.status(), await response.text()).toBe(202);
+    const submission = (await response.json()) as Submission;
+    await finish(fixture, submission);
+    const file = messageFiles(
+      (await fixture.snapshot()).messages.find((message) => message.id === submission.userId)!,
+    )[0];
+    expect(file.characters).toBe('Page 2: Budget 42.'.length);
+    expect(file.selection!.sourceCharacters).toBeGreaterThan(15000);
+  } finally {
+    await fixture.cleanup();
+  }
+});
 for (const provider of [
   'openai-chat',
   'openai-responses',
@@ -190,7 +453,7 @@ test('PDF extraction supports bundled CMaps and originals larger than the text-f
     await fixture.cleanup();
   }
 });
-test('malformed, textless, oversized-page and oversized-text PDFs preserve the draft and make no task or upload', async ({
+test('malformed, textless and password-protected PDFs preserve the draft and make no task or upload', async ({
   page,
   request,
 }) => {
@@ -202,8 +465,6 @@ test('malformed, textless, oversized-page and oversized-text PDFs preserve the d
     for (const [bytes, error] of [
       [textPdf(undefined, { malformed: true }), '无法读取'],
       [textPdf(undefined, { blank: true }), '没有可提取'],
-      [textPdf(Array.from({ length: 51 }, () => ['page'])), '50 页'],
-      [textPdf([['a'.repeat(65000)]], { fontSize: 0.01 }), '64,000'],
       [readFileSync(new URL('../../support/assets/password.pdf', import.meta.url)), '口令'],
     ] as const) {
       await page
@@ -233,13 +494,7 @@ test('server binds extracted text to immutable PDF source and rejects missing, c
   };
   try {
     expect((await request.post(docUrl(fixture.id, file.id), { headers })).status()).toBe(400);
-    for (const patch of [
-      { sourceSha256: 'a'.repeat(64) },
-      { text: '  ' },
-      { text: 'text\u0000' },
-      { text: 'x'.repeat(64001) },
-      { pdf: { pages: 51, parserVersion: PDF_PARSER_VERSION } },
-    ])
+    for (const patch of [{ sourceSha256: 'a'.repeat(64) }, { text: '  ' }, { text: 'text\u0000' }])
       expect(
         (
           await request.post(docUrl(fixture.id, file.id), {

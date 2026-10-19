@@ -162,7 +162,14 @@ export class ArchiveRestorer {
       const result = await this.attachments.documents.parse(
         id,
         mapped.id,
-        reference.pdf ? { text, pdf: reference.pdf, sourceSha256: mapped.file.sha256 } : undefined,
+        reference.pdf
+          ? {
+              text,
+              pdf: reference.pdf,
+              sourceSha256: mapped.file.sha256,
+              pageOffsets: mapped.file.parsed.pageOffsets,
+            }
+          : undefined,
       );
       this.checkImport(id, 'uploading');
       if (JSON.stringify({ ...result, attachmentId: sourceId }) !== JSON.stringify(reference))
