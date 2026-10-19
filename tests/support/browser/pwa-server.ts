@@ -108,6 +108,7 @@ const server = createServer(async (request, response) => {
         id: 'a'.repeat(22),
         title: '公开 PWA 快照',
         createdAt: 1,
+        expiresAt: null,
         messageCount: 4,
         omittedAttachments: 0,
         hash: 'fixture',

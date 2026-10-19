@@ -14,6 +14,7 @@ export interface PublicShare {
   id: string;
   title: string;
   createdAt: number;
+  expiresAt: number | null;
   messageCount: number;
   omittedAttachments: number;
   hash: string;

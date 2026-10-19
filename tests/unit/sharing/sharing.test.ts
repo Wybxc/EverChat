@@ -187,6 +187,83 @@ test('legacy expired links never revive and conversation deletion removes all sn
     s.db.close();
   }
 });
+test('optional expiry rejects reads and retries at the deadline and physically removes the snapshot', () => {
+  const s = fixture();
+  try {
+    const row = s.draft();
+    const published = s.store.publish(
+      row.id,
+      'hash',
+      '限时分享',
+      tokenHash('token'),
+      'cipher',
+      2000,
+    );
+    assert.equal(publicShare(published).expiresAt, 2000);
+    assert.equal(s.store.nextCleanup(), 2000);
+    s.store.publish(row.id, 'hash', '重复请求', tokenHash('new'), 'newcipher', null);
+    assert.equal(s.store.authorize(row.id, 'token').expiresAt, 2000);
+    s.tick(1999);
+    assert.equal(s.store.authorize(row.id, 'token').id, row.id);
+    s.tick(2000);
+    assert.throws(() => s.store.authorize(row.id, 'token'));
+    assert.throws(() =>
+      s.store.publish(row.id, 'hash', '重试', tokenHash('token'), 'cipher', 3000),
+    );
+    s.store.cleanup();
+    assert.equal(s.store.get(row.id), undefined);
+    assert.equal(s.store.list().shares.length, 0);
+    assert.equal(s.db.prepare('SELECT COUNT(*) AS n FROM share_blocks').get()!.n, 0);
+    assert.equal(s.store.nextCleanup(), null);
+  } finally {
+    s.db.close();
+  }
+});
+test('expired large snapshots are reclaimed in bounded alarm batches without removing permanent shares', () => {
+  const s = fixture();
+  try {
+    const row = s.draft();
+    for (let seq = 1; seq < 129; seq++)
+      s.store.append(row.id, seq, {
+        message: 0,
+        role: 'user',
+        channel: 'text',
+        text: '内容',
+        omittedAttachments: 0,
+      });
+    s.store.finishDraft(row.id, 'version1', 1, 129, 0, 'hash');
+    s.store.publish(row.id, 'hash', '大快照', tokenHash('token'), 'cipher', 2000);
+    const permanent = s.draft('permanent');
+    s.store.publish(permanent.id, 'hash', '永久分享', tokenHash('keep'), 'cipher');
+    s.tick(2000);
+    s.store.cleanup();
+    assert.equal(
+      s.db.prepare('SELECT COUNT(*) AS n FROM share_blocks WHERE shareId=?').get(row.id)!.n,
+      1,
+    );
+    assert.equal(s.store.nextCleanup(), 3000);
+    s.store.cleanup();
+    assert.equal(s.store.get(row.id), undefined);
+    assert.equal(s.store.authorize(permanent.id, 'keep').id, permanent.id);
+    assert.equal(s.store.nextCleanup(), null);
+  } finally {
+    s.db.close();
+  }
+});
+test('publication rejects invalid or past expiry without changing the draft', () => {
+  const s = fixture();
+  try {
+    const row = s.draft();
+    for (const expiresAt of [NaN, Infinity, -1, 0, 1000, 1000.5, 8_640_000_000_000_001]) {
+      assert.throws(() =>
+        s.store.publish(row.id, 'hash', '标题', tokenHash('token'), 'cipher', expiresAt),
+      );
+      assert.equal(s.store.get(row.id)!.status, 'draft');
+    }
+  } finally {
+    s.db.close();
+  }
+});
 test('incomplete snapshots cannot publish; paging and cleanup preserve active immutable content', () => {
   const s = fixture();
   try {
@@ -265,6 +342,7 @@ test('cancelling a full response stops reading blocks instead of buffering the f
       id: 'id',
       title: 'title',
       createdAt: 0,
+      expiresAt: null,
       messageCount: 1,
       omittedAttachments: 0,
       hash: 'hash',

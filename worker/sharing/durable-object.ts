@@ -192,10 +192,13 @@ export class ShareStore extends DurableObject<Env> {
       return this.repository.page(row, cursor);
     });
   }
-  publish(id: string, input: { hash: string; title: string }) {
+  publish(id: string, input: { hash: string; title: string; expiresAt: number | null }) {
     return this.respond(async () => {
       const before = this.owner(id);
-      if (before.status === 'active') return this.ownerResult(before);
+      if (before.status === 'active') {
+        if (this.repository.managed(before).status !== 'active') throw unavailable();
+        return this.ownerResult(before);
+      }
       if (
         (await this.env.CONVERSATIONS.getByName(before.conversationId).shareSourceVersion()) !==
         before.sourceVersion
@@ -203,7 +206,14 @@ export class ShareStore extends DurableObject<Env> {
         throw new HttpError(409, '对话已变化，请重新预览后分享。');
       const token = await this.credentials(id);
       const row = this.ctx.storage.transactionSync(() =>
-        this.repository.publish(id, input.hash, input.title, token.hash, token.cipher),
+        this.repository.publish(
+          id,
+          input.hash,
+          input.title,
+          token.hash,
+          token.cipher,
+          input.expiresAt,
+        ),
       );
       await this.scheduleCleanup();
       return this.ownerResult(row);

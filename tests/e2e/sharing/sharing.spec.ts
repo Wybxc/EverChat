@@ -56,7 +56,17 @@ for (const mobile of [false, true])
       await expect(publish).toBeEnabled();
       await dialog.getByLabel('分享标题', { exact: true }).fill('可撤销的分享');
       await expect(dialog.getByRole('switch')).toHaveCount(0);
-      await expect(dialog.getByLabel('分享有效期', { exact: true })).toHaveCount(0);
+      await expect(dialog.getByLabel('分享有效期', { exact: true })).toHaveValue('never');
+      await dialog.getByLabel('分享有效期', { exact: true }).selectOption('custom');
+      await expect(publish).toBeDisabled();
+      await dialog.getByLabel('到期时间', { exact: true }).fill('2000-01-01T12:00');
+      await expect(publish).toBeDisabled();
+      await expect(dialog.getByText('请选择未来的时间。', { exact: true })).toBeVisible();
+      const expiresAt = new Date(Date.now() + 3_600_000);
+      const localExpiry = new Date(expiresAt.getTime() - expiresAt.getTimezoneOffset() * 60_000)
+        .toISOString()
+        .slice(0, 16);
+      await dialog.getByLabel('到期时间', { exact: true }).fill(localExpiry);
       await expect(publish).toBeEnabled();
       expect(
         await dialog
@@ -75,6 +85,8 @@ for (const mobile of [false, true])
       await expect(link).toHaveValue(/\/s\/[A-Za-z0-9_-]{22}#[A-Za-z0-9_-]{43}$/);
       const url = new URL(await link.inputValue());
       const shareId = url.pathname.split('/')[2];
+      const stored = await request.get(`/api/shares/${shareId}/link`).then((r) => r.json());
+      expect(stored.share.expiresAt).toBe(new Date(localExpiry).getTime());
       await dialog.getByRole('button', { name: '关闭', exact: true }).click();
       await expect(dialog).not.toBeVisible();
       if (mobile) await page.getByRole('button', { name: '打开对话列表', exact: true }).click();
@@ -84,6 +96,7 @@ for (const mobile of [false, true])
       await expect(
         sharedRow.getByRole('heading', { name: '可撤销的分享', exact: true }),
       ).toBeVisible();
+      await expect(sharedRow).toContainText('到期自动删除');
       await expect(sharedRow.getByRole('combobox')).toHaveCount(0);
       await expect(sharedRow.getByText('链接操作', { exact: true })).toHaveCount(0);
       await sharedRow.getByRole('button', { name: '删除分享', exact: true }).click();

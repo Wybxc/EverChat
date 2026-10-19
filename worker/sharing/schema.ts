@@ -1,6 +1,5 @@
-// Keep the persisted schema unchanged: new shares always include reasoning and
-// have no expiry. Legacy expiry/status only prevent old invalid links reviving;
-// no existing snapshot is rewritten or backfilled at application startup.
+// Optional expiry reuses the existing column and alarm cleanup; no schema migration
+// or snapshot rewriting is performed at application startup.
 export const SHARING_SCHEMA = `
 CREATE TABLE IF NOT EXISTS shares (
   id TEXT PRIMARY KEY, operationId TEXT UNIQUE NOT NULL, conversationId TEXT NOT NULL,

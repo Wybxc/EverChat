@@ -210,6 +210,50 @@ test('immutable selected-branch sharing stays anonymous, fully readable and dele
     expect(await thought.evaluate((element: HTMLDetailsElement) => element.open)).toBe(false);
     await thought.locator('summary').click();
     await expect(thought).toContainText('思考🙂');
+    const timed = await preview(first.assistantId);
+    expect(
+      (
+        await request.post(`/api/shares/${timed.share.id}/publish`, {
+          headers,
+          data: { hash: timed.share.hash, title: '到期验证', expiresAt: Date.now() - 1 },
+        })
+      ).status(),
+    ).toBe(400);
+    expect(
+      (
+        await request.post(`/api/shares/${timed.share.id}/publish`, {
+          headers,
+          data: { hash: timed.share.hash, title: '到期验证', expiresAt: 'invalid' },
+        })
+      ).status(),
+    ).toBe(400);
+    const expiresAt = Date.now() + 2500;
+    const timedPublication = await request
+      .post(`/api/shares/${timed.share.id}/publish`, {
+        headers,
+        data: { hash: timed.share.hash, title: '到期验证', expiresAt },
+      })
+      .then((r) => r.json());
+    expect(timedPublication.share.expiresAt).toBe(expiresAt);
+    const timedPath = `/public/shares/${timed.share.id}`,
+      timedBearer = { Authorization: `Bearer ${timedPublication.secret}` };
+    expect((await anonymous.request.get(timedPath, { headers: timedBearer })).status()).toBe(200);
+    await page.goto(`/s/${timed.share.id}#${timedPublication.secret}`);
+    await expect(page.getByRole('heading', { name: '到期验证', exact: true })).toBeVisible();
+    await expect(page.getByRole('alert')).toContainText('链接不可用');
+    await expect(page.getByTestId('assistant-message')).toHaveCount(0);
+    expect((await anonymous.request.get(timedPath, { headers: timedBearer })).status()).toBe(404);
+    expect((await anonymous.request.head(timedPath, { headers: timedBearer })).status()).toBe(404);
+    expect((await request.get(`/api/shares/${timed.share.id}/link`)).status()).toBe(404);
+    // The real local DO alarm must remove metadata without a visitor-triggered write.
+    await expect
+      .poll(async () =>
+        request
+          .get('/api/shares')
+          .then((r) => r.json())
+          .then((r) => r.shares.some((share: { id: string }) => share.id === timed.share.id)),
+      )
+      .toBe(false);
     expect((await request.delete(`/api/shares/${published.share.id}`, { headers })).ok()).toBe(
       true,
     );

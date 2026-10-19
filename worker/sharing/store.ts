@@ -30,6 +30,7 @@ export function publicShare(row: ShareRow): PublicShare {
     id: row.id,
     title: row.title,
     createdAt: row.createdAt,
+    expiresAt: row.expiresAt,
     messageCount: row.messageCount,
     omittedAttachments: row.omittedAttachments,
     hash: row.hash,
@@ -155,11 +156,28 @@ export class ShareRepository {
     }
     if (count !== row.blockCount) throw new Error('Incomplete share snapshot');
   }
-  publish(id: string, hash: string, title: string, tokenHash: string, tokenCipher: string) {
+  publish(
+    id: string,
+    hash: string,
+    title: string,
+    tokenHash: string,
+    tokenCipher: string,
+    expiresAt: number | null = null,
+  ) {
     const row = this.get(id);
     if (!row || row.hash !== hash || !hash || this.deleted(row.conversationId)) throw unavailable();
-    if (row.status === 'active') return row; // Lost response retries return the original link.
+    if (row.status === 'active') {
+      if (this.managed(row).status !== 'active') throw unavailable();
+      return row; // Lost response retries preserve the original link and expiration.
+    }
     if (row.status !== 'draft' || row.draftUntil <= this.now()) throw unavailable();
+    if (
+      expiresAt !== null &&
+      (!Number.isSafeInteger(expiresAt) ||
+        expiresAt <= this.now() ||
+        expiresAt > 8_640_000_000_000_000)
+    )
+      throw new HttpError(400, '请选择未来的有效到期时间。');
     const count = this.query<{ count: number }>(
       'SELECT COUNT(*) AS count FROM share_blocks WHERE shareId=?',
       id,
@@ -167,9 +185,10 @@ export class ShareRepository {
     if (!count || count !== row.blockCount)
       throw new HttpError(409, '快照尚未完整保存，请重新预览。');
     this.query(
-      "UPDATE shares SET status='active', title=?, updatedAt=?, expiresAt=NULL, tokenHash=?, tokenCipher=? WHERE id=?",
+      "UPDATE shares SET status='active', title=?, updatedAt=?, expiresAt=?, tokenHash=?, tokenCipher=? WHERE id=?",
       title,
       this.now(),
+      expiresAt,
       tokenHash,
       tokenCipher,
       id,

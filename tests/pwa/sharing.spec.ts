@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import type { SharedSnapshot } from '../../shared/sharing/types';
 const headers = { Origin: 'http://127.0.0.1:5175' };
 test('controlled public shares stay network-only, skip private startup and do not block PWA updates', async ({
   page,
@@ -100,4 +101,115 @@ test('controlled public shares stay network-only, skip private startup and do no
   await expect(shared.getByText('公开正文', { exact: true })).not.toBeVisible();
   await context.setOffline(false);
   await request.post('/__test/pwa/build', { headers, data: { version: 'a' } });
+});
+
+test('shared pages use one document scrollbar and follow content height on desktop and phone', async ({
+  page,
+}) => {
+  const snapshot: SharedSnapshot = {
+    share: {
+      id: 'a'.repeat(22),
+      title: '滚动布局验证',
+      createdAt: 1,
+      expiresAt: null,
+      messageCount: 2,
+      omittedAttachments: 0,
+      hash: 'fixture',
+    },
+    page: {
+      cursor: null,
+      blocks: [
+        { message: 0, role: 'user', channel: 'text', text: '请检查长内容', omittedAttachments: 0 },
+        {
+          message: 1,
+          role: 'assistant',
+          channel: 'text',
+          modelName: '布局模型',
+          text: Array.from(
+            { length: 60 },
+            (_, i) => `段落 ${i + 1}。用于检查文档滚动和页面高度。`,
+          ).join('\n\n'),
+          omittedAttachments: 0,
+        },
+      ],
+    },
+  };
+  await page.route('**/public/shares/**', (route) => route.fulfill({ json: snapshot }));
+  await page.goto(`/s/${snapshot.share.id}#${'b'.repeat(43)}`);
+  await expect(
+    page.getByText('段落 60。用于检查文档滚动和页面高度。', { exact: true }),
+  ).toBeVisible();
+  for (const viewport of [
+    { width: 1280, height: 720 },
+    { width: 390, height: 740 },
+  ]) {
+    await page.setViewportSize(viewport);
+    const layout = await page.evaluate(() => ({
+      viewport: innerHeight,
+      documentHeight: document.scrollingElement!.scrollHeight,
+      rootHeight: document.getElementById('root')!.getBoundingClientRect().height,
+      nestedScrollers: [...document.querySelectorAll('#root *')].filter(
+        (element) =>
+          /auto|scroll/.test(getComputedStyle(element).overflowY) &&
+          element.scrollHeight > element.clientHeight + 1,
+      ).length,
+    }));
+    expect(layout.documentHeight).toBeGreaterThan(layout.viewport * 2);
+    expect(Math.abs(layout.documentHeight - layout.rootHeight)).toBeLessThanOrEqual(1);
+    expect(layout.nestedScrollers).toBe(0);
+    await page
+      .getByText('段落 60。用于检查文档滚动和页面高度。', { exact: true })
+      .scrollIntoViewIfNeeded();
+    expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+    await expect(page.locator('header')).toBeInViewport();
+  }
+  snapshot.page.blocks[1].text = '简短回答';
+  await page.reload();
+  await expect(page.getByText('简短回答', { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.scrollingElement!.scrollHeight)).toBe(740);
+  await page.screenshot({
+    path: `/tmp/everchat-sharing-layout-${test.info().project.name}.png`,
+    fullPage: true,
+  });
+});
+
+test('a visible shared snapshot disappears at expiry without extra network requests', async ({
+  page,
+}) => {
+  await page.clock.install();
+  const expiresAt = Date.now() + 60 * 86_400_000;
+  const snapshot: SharedSnapshot = {
+    share: {
+      id: 'a'.repeat(22),
+      title: '到期清除',
+      createdAt: Date.now(),
+      expiresAt,
+      messageCount: 1,
+      omittedAttachments: 0,
+      hash: 'fixture',
+    },
+    page: {
+      cursor: null,
+      blocks: [
+        { message: 0, role: 'assistant', channel: 'text', text: '限时内容', omittedAttachments: 0 },
+      ],
+    },
+  };
+  let reads = 0;
+  await page.route('**/public/shares/**', (route) => {
+    reads++;
+    return route.fulfill({ json: snapshot });
+  });
+  await page.goto(`/s/${snapshot.share.id}#${'b'.repeat(43)}`);
+  await expect(page.getByText('限时内容', { exact: true })).toBeVisible();
+  const initialReads = reads;
+  // Long expirations must not overflow the browser's 32-bit timeout delay.
+  await page.clock.fastForward(2_147_483_647);
+  await expect(page.getByText('限时内容', { exact: true })).toBeVisible();
+  await page.clock.fastForward(2_147_483_647);
+  await expect(page.getByText('限时内容', { exact: true })).toBeVisible();
+  await page.clock.fastForward(60 * 86_400_000 - 2 * 2_147_483_647 + 1000);
+  await expect(page.getByRole('alert')).toContainText('链接不可用');
+  await expect(page.locator('article')).toHaveCount(0);
+  expect(reads).toBe(initialReads);
 });

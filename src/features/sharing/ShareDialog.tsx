@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { NativeSelect } from '@/components/ui/native-select';
 import { Modal, ModalTitle } from '../../components/Modal';
 import { api } from '../../platform/api';
 import {
@@ -28,6 +29,8 @@ export default function ShareDialog({
     [blocks, setBlocks] = useState<ShareBlock[]>([]),
     [cursor, setCursor] = useState<number | null>(null);
   const [title, setTitle] = useState(''),
+    [expiry, setExpiry] = useState('never'),
+    [customExpiry, setCustomExpiry] = useState(''),
     [link, setLink] = useState(''),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
@@ -35,6 +38,9 @@ export default function ShareDialog({
     [retry, setRetry] = useState(0);
   const operation = useRef<{ headId: string; id: string } | null>(null);
   const titleEdited = useRef(false);
+  const customExpiryTime = new Date(customExpiry).getTime();
+  const invalidExpiry =
+    expiry === 'custom' && (!Number.isFinite(customExpiryTime) || customExpiryTime <= Date.now());
   useEffect(() => {
     if (!operation.current || operation.current.headId !== headId)
       operation.current = { headId, id: crypto.randomUUID() };
@@ -81,10 +87,18 @@ export default function ShareDialog({
   const publish = () =>
     preview &&
     perform(async () => {
+      const expiresAt =
+        expiry === 'never'
+          ? null
+          : expiry === 'custom'
+            ? customExpiryTime
+            : Date.now() + Number(expiry) * 1000;
+      if (expiresAt !== null && (!Number.isSafeInteger(expiresAt) || expiresAt <= Date.now()))
+        throw new Error('请选择未来的有效到期时间。');
       const result = await api<{ share: ManagedShare; secret: string }>(
         `/shares/${preview.share.id}/publish`,
         'POST',
-        { hash: preview.share.hash, title: title.trim() },
+        { hash: preview.share.hash, title: title.trim(), expiresAt },
       );
       setLink(shareUrl(result.share.id, result.secret));
       window.dispatchEvent(new Event('everchat:shares-changed'));
@@ -147,7 +161,41 @@ export default function ShareDialog({
                     }}
                   />
                 </label>
+                <label className="space-y-1 text-sm">
+                  分享有效期
+                  <NativeSelect
+                    aria-label="分享有效期"
+                    value={expiry}
+                    disabled={busy}
+                    onChange={(event) => setExpiry(event.target.value)}
+                  >
+                    <option value="never">永久</option>
+                    <option value="3600">1 小时</option>
+                    <option value="86400">1 天</option>
+                    <option value="604800">7 天</option>
+                    <option value="2592000">30 天</option>
+                    <option value="custom">指定时间</option>
+                  </NativeSelect>
+                </label>
+                {expiry === 'custom' && (
+                  <label className="space-y-1 text-sm">
+                    到期时间（本地时间）
+                    <Input
+                      aria-label="到期时间"
+                      type="datetime-local"
+                      value={customExpiry}
+                      disabled={busy}
+                      onChange={(event) => setCustomExpiry(event.target.value)}
+                    />
+                    {customExpiry && invalidExpiry && (
+                      <span className="text-xs text-destructive">请选择未来的时间。</span>
+                    )}
+                  </label>
+                )}
               </div>
+              {expiry !== 'never' && (
+                <p className="text-xs text-muted-foreground">到期后自动删除链接和分享快照。</p>
+              )}
               {preview && (
                 <p className="text-xs text-muted-foreground">
                   {preview.share.messageCount} 条消息 · 包含思考内容 · 固定快照
@@ -204,7 +252,10 @@ export default function ShareDialog({
         </div>
         {!link && (
           <footer className="flex shrink-0 justify-end gap-2 px-4 py-3">
-            <Button disabled={busy || !preview || !title.trim()} onClick={() => void publish()}>
+            <Button
+              disabled={busy || !preview || !title.trim() || invalidExpiry}
+              onClick={() => void publish()}
+            >
               生成只读链接
             </Button>
           </footer>

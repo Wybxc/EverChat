@@ -50,6 +50,8 @@ function PublicSharePage() {
     void request(controller.signal)
       .then((result) => {
         if (current !== version.current) return;
+        if (result.share.expiresAt && result.share.expiresAt <= Date.now())
+          throw new Error('链接不可用。');
         setShare(result.share);
         setBlocks(result.page.blocks);
         document.title = `${result.share.title} · EverChat`;
@@ -66,6 +68,23 @@ function PublicSharePage() {
       controller.abort();
     };
   }, [reload, id, token]);
+  useEffect(() => {
+    if (!share?.expiresAt) return;
+    const expiresAt = share.expiresAt;
+    let timer: ReturnType<typeof setTimeout>;
+    const check = () => {
+      const remaining = expiresAt - Date.now();
+      if (remaining > 0) timer = setTimeout(check, Math.min(remaining, 2_147_483_647));
+      else {
+        setShare(undefined);
+        setBlocks([]);
+        setError('链接不可用。');
+        document.title = 'EverChat';
+      }
+    };
+    check();
+    return () => clearTimeout(timer);
+  }, [share]);
   useEffect(() => {
     const check = () => {
       if (document.visibilityState === 'visible') setReload((value) => value + 1);
@@ -84,7 +103,7 @@ function PublicSharePage() {
     };
   }, []);
   return (
-    <div className="h-dvh overflow-y-auto bg-background text-foreground">
+    <div className="min-h-dvh bg-background text-foreground">
       <header className="sticky top-0 z-10 flex items-center justify-between gap-3 bg-background/95 px-4 py-3 backdrop-blur">
         <span className="font-semibold">EverChat</span>
         <NativeSelect
@@ -128,6 +147,7 @@ function PublicSharePage() {
   );
 }
 export function start() {
+  document.documentElement.classList.add('public-share-document');
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <PublicSharePage />

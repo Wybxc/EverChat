@@ -111,6 +111,9 @@ export default function ShareManagement({ active }: { active: boolean }) {
               </div>
               <p className="text-xs text-muted-foreground">
                 {new Date(share.createdAt).toLocaleString()} · {share.messageCount} 条消息
+                {share.expiresAt
+                  ? ` · ${new Date(share.expiresAt).toLocaleString()} 到期自动删除`
+                  : ' · 永久'}
               </p>
               <div className="flex flex-wrap items-center gap-1">
                 <Button

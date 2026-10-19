@@ -175,6 +175,12 @@
   --space-fields: 0.75rem;
   --space-sections: 1rem;
 }
+html.public-share-document,
+.public-share-document body,
+.public-share-document #root {
+  height: auto;
+  min-height: 100dvh;
+}
 @media (any-pointer: coarse), (max-width: 40rem) {
   :root {
     --control-target: max(2.75rem, 44px);

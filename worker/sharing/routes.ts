@@ -43,7 +43,19 @@ export function registerSharingRoutes(app: ApiRouter) {
     await requireAuth(context);
     return store(context).publish(
       id(context),
-      await parseBody(context, v.strictObject({ hash, title })),
+      await parseBody(
+        context,
+        v.strictObject({
+          hash,
+          title,
+          expiresAt: v.optional(
+            v.nullable(
+              v.pipe(v.number(), v.safeInteger(), v.minValue(1), v.maxValue(8_640_000_000_000_000)),
+            ),
+            null,
+          ),
+        }),
+      ),
     );
   });
   app.get('/shares', async (context) => {
