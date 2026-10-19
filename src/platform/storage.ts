@@ -1,5 +1,6 @@
-import { clearNotificationStorage } from './notifications/store';
 import { delMany, entries, set, setMany } from 'idb-keyval';
+import { UiError, uiMessage } from './i18n/messages';
+import { clearNotificationStorage } from './notifications/store';
 
 let notificationCleanup = clearNotificationStorage;
 export function registerNotificationCleanup(cleanup: () => Promise<void>) {
@@ -148,7 +149,7 @@ export async function clearLocal() {
   } catch (error) {
     failure ??= error;
   }
-  if (failure) throw new Error('本地记录未能完全清除，请重试。');
+  if (failure) throw new UiError(uiMessage('errors', 'LOCAL_CLEAR_FAILED'));
 }
 
 /** Explicit update barrier: pending cache writers run first; both storage backends may fail. */

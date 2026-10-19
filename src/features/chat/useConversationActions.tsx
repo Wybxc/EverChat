@@ -1,14 +1,20 @@
-import { useTranslation } from 'react-i18next';
-import './locales';
-import { useEffect, useRef, useState, type SubmitEvent } from 'react';
-import type { ConversationInfo } from '../../../shared/conversation/types';
-import type { ConversationActivity } from '../../../shared/conversation/activity';
-import { storageEpoch } from '../../platform/storage';
-import { Modal, ModalTitle } from '../../components/Modal';
-import { Input } from '@/components/ui/input';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
+import { useEffect, useRef, useState, type SubmitEvent } from 'react';
+import { useTranslation } from 'react-i18next';
+import type { ConversationActivity } from '../../../shared/conversation/activity';
+import type { ConversationInfo } from '../../../shared/conversation/types';
+import { Modal, ModalTitle } from '../../components/Modal';
+import {
+  errorMessage,
+  renderUiMessage,
+  uiMessage,
+  type UiMessage,
+} from '../../platform/i18n/messages';
+import { storageEpoch } from '../../platform/storage';
+import './locales';
 
 export type ConversationPatch = { title?: string; pinned?: boolean };
 type DialogTarget = {
@@ -139,7 +145,7 @@ function ConversationActionDialog({
 
   const { mode, conversation, fallback, returnTarget } = actions.dialog!;
   const [title, setTitle] = useState(conversation.title),
-    [error, setError] = useState('');
+    [error, setError] = useState<UiMessage>('');
   const titleInput = useRef<HTMLInputElement>(null),
     cancelButton = useRef<HTMLButtonElement>(null),
     deletedCurrent = useRef(false);
@@ -156,7 +162,7 @@ function ConversationActionDialog({
       });
       if (epoch === storageEpoch()) actions.close();
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : t(($) => $.updateFailed));
+      setError(errorMessage(failure, uiMessage('chat', 'updateFailed')));
     }
   };
   return (
@@ -226,7 +232,7 @@ function ConversationActionDialog({
           )}
           {error && (
             <Alert variant="destructive" role="alert" className="mt-4 text-sm">
-              {error}
+              {renderUiMessage(error)}
             </Alert>
           )}
           <div className="dialog-actions">

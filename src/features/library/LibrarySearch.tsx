@@ -1,15 +1,16 @@
-import { useTranslation } from 'react-i18next';
-import './locales';
-import { Spinner } from '@/components/ui/spinner';
 import { Button } from '@/components/ui/button';
-import { useEffect, useState } from 'react';
+import { Spinner } from '@/components/ui/spinner';
 import { useInfiniteQuery } from '@tanstack/react-query';
-import { api } from '../../platform/api';
-import { conversationUrl } from '../../app/useConversationRoute';
+import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { LibrarySearch as SearchPage, SearchResult } from '../../../shared/search/query';
+import { conversationUrl } from '../../app/useConversationRoute';
+import { api } from '../../platform/api';
+import { errorMessage, renderUiMessage } from '../../platform/i18n/messages';
 import { deletedAt } from '../chat/cache';
-import { SearchResultItem } from './SearchResultItem';
+import './locales';
 import { SearchHighlight } from './SearchHighlight';
+import { SearchResultItem } from './SearchResultItem';
 
 export function LibrarySearch({
   query,
@@ -108,7 +109,7 @@ export function LibrarySearch({
       )}
       {search.error && ready && (
         <div role="alert" className="space-y-2 px-3 text-xs">
-          <p>{search.error.message}</p>
+          <p>{renderUiMessage(errorMessage(search.error))}</p>
           <Button
             variant="secondary"
             onClick={() => {

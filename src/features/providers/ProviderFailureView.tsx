@@ -1,10 +1,11 @@
-import { useTranslation } from 'react-i18next';
-import './locales';
-import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Disclosure } from '../../components/Disclosure';
+import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { ProviderFailure } from '../../../shared/providers/failure';
+import { Disclosure } from '../../components/Disclosure';
+import { type UiMessage, renderUiMessage, uiMessage } from '../../platform/i18n/messages';
 import { failureDiagnosticText, failureEntries } from './failure-details';
+import './locales';
 
 export function ProviderFailureView({
   summary,
@@ -13,7 +14,7 @@ export function ProviderFailureView({
   showSummary = true,
   onSettings,
 }: {
-  summary: string;
+  summary: UiMessage;
   failure?: ProviderFailure;
   stateKey: string;
   showSummary?: boolean;
@@ -22,7 +23,7 @@ export function ProviderFailureView({
   const { t } = useTranslation('providers', { useSuspense: false });
 
   const [copied, setCopied] = useState(false),
-    [copyError, setCopyError] = useState('');
+    [copyError, setCopyError] = useState<UiMessage>('');
   return (
     <div
       data-testid="provider-failure"
@@ -30,7 +31,7 @@ export function ProviderFailureView({
     >
       {showSummary && (
         <p role="alert" className="font-medium">
-          {summary}
+          {renderUiMessage(summary)}
         </p>
       )}
       {failure && (
@@ -51,10 +52,12 @@ export function ProviderFailureView({
               onClick={async () => {
                 setCopyError('');
                 try {
-                  await navigator.clipboard.writeText(failureDiagnosticText(summary, failure));
+                  await navigator.clipboard.writeText(
+                    failureDiagnosticText(renderUiMessage(summary), failure),
+                  );
                   setCopied(true);
                 } catch {
-                  setCopyError(t(($) => $.copyFailed));
+                  setCopyError(uiMessage('providers', 'copyFailed'));
                 }
               }}
             >
@@ -66,7 +69,7 @@ export function ProviderFailureView({
               </Button>
             )}
           </div>
-          {copyError && <p role="alert">{copyError}</p>}
+          {copyError && <p role="alert">{renderUiMessage(copyError)}</p>}
         </Disclosure>
       )}
     </div>

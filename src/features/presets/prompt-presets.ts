@@ -1,7 +1,7 @@
-import { t } from './locales';
 import { useQuery, type QueryClient } from '@tanstack/react-query';
 import type { PromptPreset } from '../../../shared/presets/types';
 import { api } from '../../platform/api';
+import { UiError, uiMessage } from '../../platform/i18n/messages';
 import { read, storageEpoch, write } from '../../platform/storage';
 
 export const PRESET_QUERY = ['prompt-presets'] as const;
@@ -14,7 +14,7 @@ export function usePromptPresets(enabled: boolean) {
       const epoch = storageEpoch();
       const presets = await api<PromptPreset[]>('/settings/presets', 'GET', undefined, signal);
       if (signal.aborted) throw signal.reason;
-      if (epoch !== storageEpoch()) throw new Error(t(($) => $.sessionChanged));
+      if (epoch !== storageEpoch()) throw new UiError(uiMessage('presets', 'sessionChanged'));
       write('prompt-presets', presets);
       return presets;
     },

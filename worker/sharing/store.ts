@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { problem } from '../../shared/errors/descriptor';
 import type { ManagedShare, PublicShare, ShareBlock, SharePage } from '../../shared/sharing/types';
 import type { SqlQuery } from '../generation/metrics';
 import { HttpError } from '../http/response';
@@ -24,7 +25,8 @@ export interface ShareRow extends Record<string, SqlStorageValue> {
   tokenCipher: string | null;
   expiresAt: number | null;
 }
-export const unavailable = () => new HttpError(404, '链接不可用。');
+export const unavailable = () =>
+  new HttpError(404, '链接不可用。', undefined, problem('SHARE_UNAVAILABLE'));
 export function publicShare(row: ShareRow): PublicShare {
   return {
     id: row.id,
@@ -65,16 +67,27 @@ export class ShareRepository {
     };
   }
   begin(input: { operationId: string; conversationId: string; headId: string; title: string }) {
-    if (this.deleted(input.conversationId)) throw new HttpError(410, '这个对话已删除。');
+    if (this.deleted(input.conversationId))
+      throw new HttpError(410, '这个对话已删除。', undefined, problem('CONVERSATION_DELETED'));
     const existing = this.query<ShareRow>(
       'SELECT * FROM shares WHERE operationId=?',
       input.operationId,
     ).toArray()[0];
     if (existing) {
       if (existing.conversationId !== input.conversationId || existing.headId !== input.headId)
-        throw new HttpError(409, '预览操作已改变，请重新预览。');
+        throw new HttpError(
+          409,
+          '预览操作已改变，请重新预览。',
+          undefined,
+          problem('SHARE_PREVIEW_STALE'),
+        );
       if (existing.draftUntil <= this.now() && existing.status === 'draft')
-        throw new HttpError(410, '预览已过期，请重新预览。');
+        throw new HttpError(
+          410,
+          '预览已过期，请重新预览。',
+          undefined,
+          problem('SHARE_PREVIEW_STALE'),
+        );
       return existing;
     }
     const id = randomShareId(),
@@ -177,13 +190,23 @@ export class ShareRepository {
         expiresAt <= this.now() ||
         expiresAt > 8_640_000_000_000_000)
     )
-      throw new HttpError(400, '请选择未来的有效到期时间。');
+      throw new HttpError(
+        400,
+        '请选择未来的有效到期时间。',
+        undefined,
+        problem('SHARE_EXPIRY_INVALID'),
+      );
     const count = this.query<{ count: number }>(
       'SELECT COUNT(*) AS count FROM share_blocks WHERE shareId=?',
       id,
     ).one().count;
     if (!count || count !== row.blockCount)
-      throw new HttpError(409, '快照尚未完整保存，请重新预览。');
+      throw new HttpError(
+        409,
+        '快照尚未完整保存，请重新预览。',
+        undefined,
+        problem('SHARE_PREVIEW_STALE'),
+      );
     this.query(
       "UPDATE shares SET status='active', title=?, updatedAt=?, expiresAt=?, tokenHash=?, tokenCipher=? WHERE id=?",
       title,

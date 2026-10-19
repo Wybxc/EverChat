@@ -1,4 +1,3 @@
-import { MESSAGE_TEXT_LIMIT_MESSAGE, messageTextFits } from '../../shared/conversation/limits';
 import { DurableObject } from 'cloudflare:workers';
 import { DocumentError, type DocumentPart } from '../../shared/attachments/documents';
 import {
@@ -20,6 +19,7 @@ import {
   ContextBudgetError,
   historyCountWithinLimit,
 } from '../../shared/conversation/context-budget';
+import { MESSAGE_TEXT_LIMIT_MESSAGE, messageTextFits } from '../../shared/conversation/limits';
 import { isActive } from '../../shared/conversation/message-state';
 import { applyConversationSettings } from '../../shared/conversation/settings';
 import {
@@ -37,14 +37,12 @@ import type {
   Submission,
   SubmitInput,
 } from '../../shared/conversation/types';
+import type { ErrorIssue } from '../../shared/errors/descriptor';
+import { AppError, issueOf, problem } from '../../shared/errors/descriptor';
 import type { ChatInput, ProviderConfig } from '../../shared/providers/types';
 import type { SearchPage } from '../../shared/search/query';
-import {
-  commitAck,
-  payloadBytes,
-  STREAM_VERSION,
-  validateCommit,
-} from '../../shared/streaming/batches';
+import { projectShare } from '../../shared/sharing/projection';
+import { commitAck, STREAM_VERSION, validateCommit } from '../../shared/streaming/batches';
 import type { GenerationMeasurements } from '../../shared/streaming/metrics';
 import type {
   Change,
@@ -60,11 +58,12 @@ import { planConversationRestore } from '../backup/restore-plan';
 import { loadGenerationDocument, loadGenerationImage } from '../generation/attachments';
 import { GenerationBuffer } from '../generation/buffer';
 import { consumeModelStream, type ActiveGeneration } from '../generation/consume-stream';
-import { GenerationCancelled, ProviderError } from '../generation/errors';
+import { GenerationCancelled, ProviderError, providerIssue } from '../generation/errors';
 import { GenerationMeter, measuredQuery } from '../generation/metrics';
 import { FirstTokenProbe, generationTiming } from '../generation/timing';
 import type { Env } from '../http/env';
 import { json } from '../http/response';
+import { CompletionOutbox } from '../notifications/outbox';
 import {
   DATABASE_LIMIT_MESSAGE,
   MAX_DATABASE_BYTES,
@@ -73,35 +72,32 @@ import {
   MAX_MESSAGES,
   storageErrorMessage,
 } from '../platform/resource-limits';
+import { initializeStorageSchema } from '../platform/storage-schema';
 import { openProviderStream } from '../providers/stream';
 import { searchRetryDelay } from '../search/index';
-import { StreamJournal } from '../streaming/journal';
 import { GenerationCheckpoints } from '../streaming/checkpoints';
+import { StreamJournal } from '../streaming/journal';
 import {
   ConversationSubscribers,
   validSubscription,
   type Attachment,
 } from '../streaming/subscribers';
+import { modelIdentity, UsageAccounting } from '../usage/accounting';
+import { USAGE_OUTBOX_SCHEMA } from '../usage/schema';
+import { ConversationActivityJournal } from './activity';
+import { databaseUsage } from './capacity';
 import { ConversationMessages, type Row } from './messages';
 import { DELETION_SCHEMA, initializeConversation } from './schema';
-import { planSubmissionParent } from './submission-plan';
-import { ConversationActivityJournal } from './activity';
-import { ConversationTitles, TITLE_JOBS_SCHEMA } from './titles';
-import { databaseUsage } from './capacity';
 import { ConversationState, requestFingerprint } from './state';
-import { CompletionOutbox } from '../notifications/outbox';
-import { UsageAccounting, modelIdentity } from '../usage/accounting';
-import { projectShare } from '../../shared/sharing/projection';
-import { USAGE_OUTBOX_SCHEMA } from '../usage/schema';
-import { initializeStorageSchema } from '../platform/storage-schema';
+import { planSubmissionParent } from './submission-plan';
+import { ConversationTitles, TITLE_JOBS_SCHEMA } from './titles';
 
 import { createHash } from 'node:crypto';
 import { ImageContextError, type ImagePart } from '../../shared/attachments/images';
-import { addGenerationUsage } from '../../shared/streaming/generation';
 import type { ProviderFailure } from '../../shared/providers/failure';
-import { providerFailure } from '../providers/failure';
-import type { WebToolServiceConfig } from '../../shared/web-tools/service';
+import { addGenerationUsage } from '../../shared/streaming/generation';
 import { updateToolTask } from '../../shared/web-tools/reasoning-flow';
+import type { WebToolServiceConfig } from '../../shared/web-tools/service';
 import {
   assertWebToolSupport,
   type PublicToolTask,
@@ -110,6 +106,7 @@ import {
   type WebToolName,
   type WebToolOutcome,
 } from '../../shared/web-tools/tasks';
+import { providerFailure } from '../providers/failure';
 import { collectProviderToolTurn, type ProviderToolTurn } from '../providers/tool-turn';
 import { executeWebTool, terminalWebToolError, type WebToolFetch } from '../web-tools/service';
 import { WEB_TOOL_QUOTA_ERROR } from '../web-tools/settings';
@@ -136,7 +133,7 @@ type Dependency = {
   summaryId: string;
   payload: string;
 } & Record<string, SqlStorageValue>;
-type Failure = { error: string; status: number; code?: string; stage?: string };
+type Failure = { error: string; issue?: ErrorIssue; status: number; code?: string; stage?: string };
 const capacityError = (phase: 'write' | 'terminal') =>
   new ProviderError(DATABASE_LIMIT_MESSAGE, {
     stage: 'storage',
@@ -333,7 +330,8 @@ export class Conversation extends DurableObject<Env> {
     return JSON.stringify(new ConversationState(this.query.bind(this)).current());
   }
   shareSourceResponse(headId: string) {
-    if (this.deletedAt) return json({ error: '这个对话已删除。' }, 404);
+    if (this.deletedAt)
+      return json({ error: '这个对话已删除。', issue: problem('CONVERSATION_DELETED') }, 404);
     try {
       const projection = projectShare(this.messages.forHead(headId), headId);
       const version = this.shareSourceVersion();
@@ -379,17 +377,19 @@ export class Conversation extends DurableObject<Env> {
         { headers: { 'Content-Type': 'application/x-ndjson', 'Cache-Control': 'no-store' } },
       );
     } catch {
-      return json({ error: '请选择已完成的消息分支。' }, 409);
+      return json({ error: '请选择已完成的消息分支。', issue: problem('INVALID_REQUEST') }, 409);
     }
   }
   copySource(
     headId?: string,
   ): { messages: BackupMessage[]; settings: ConversationSettings } | Failure {
-    if (this.deletedAt) return { error: '这个对话已删除。', status: 410 };
+    if (this.deletedAt)
+      return { error: '这个对话已删除。', issue: problem('CONVERSATION_DELETED'), status: 410 };
     let messages = Array.from(this.messages.rows(), (row) => this.messages.decorate(row));
     if (headId !== undefined) {
       const head = messages.find((message) => message.id === headId);
-      if (!head || head.deletedAt) return { error: '找不到这条消息。', status: 404 };
+      if (!head || head.deletedAt)
+        return { error: '找不到这条消息。', issue: problem('NOT_FOUND'), status: 404 };
       try {
         const path = branchPath(messages, headId),
           ids = new Set(path.map(({ id }) => id));
@@ -403,7 +403,11 @@ export class Conversation extends DurableObject<Env> {
           ),
         ];
       } catch {
-        return { error: '消息分支关系无效，无法复制。', status: 409 };
+        return {
+          error: '消息分支关系无效，无法复制。',
+          issue: problem('INVALID_REQUEST'),
+          status: 409,
+        };
       }
     }
     // Read settings and the durable prefix together; never copy browser-only previews or start a generation.
@@ -424,9 +428,10 @@ export class Conversation extends DurableObject<Env> {
     settings: ConversationSettings,
   ): Promise<ConversationSettings | Failure> {
     if (this.deletedAt || (await this.env.LIBRARY.getByName('personal').deletedAt(conversationId)))
-      return { error: '这个对话已删除。', status: 410 };
+      return { error: '这个对话已删除。', issue: problem('CONVERSATION_DELETED'), status: 410 };
     const result = this.ctx.storage.transactionSync(() => {
-      if (this.deletedAt) return { error: '这个对话已删除。', status: 410 };
+      if (this.deletedAt)
+        return { error: '这个对话已删除。', issue: problem('CONVERSATION_DELETED'), status: 410 };
       if (JSON.stringify(this.messages.settings()) === JSON.stringify(settings)) {
         // An explicit choice of inherited defaults still counts as configured.
         if (!this.query('SELECT id FROM conversation_settings WHERE id = 1').toArray().length)
@@ -441,9 +446,10 @@ export class Conversation extends DurableObject<Env> {
     return settings;
   }
   restore(conversationId: string, backup: ConversationBackup): Snapshot | Failure {
-    if (this.deletedAt) return { error: '这个对话已删除。', status: 410 };
+    if (this.deletedAt)
+      return { error: '这个对话已删除。', issue: problem('CONVERSATION_DELETED'), status: 410 };
     if (this.query('SELECT id FROM messages LIMIT 1').toArray().length)
-      return { error: '目标对话已有消息。', status: 409 };
+      return { error: '目标对话已有消息。', issue: problem('INVALID_REQUEST'), status: 409 };
     const plan = planConversationRestore(backup);
     if ('error' in plan) return plan;
     const { messages, settings, batches } = plan;
@@ -469,7 +475,8 @@ export class Conversation extends DurableObject<Env> {
     return this.query<Run>('SELECT * FROM runs WHERE id = ?', id).toArray()[0];
   }
   snapshotPageResponse(after: number): Response {
-    if (this.deletedAt) return json({ error: '这个对话已删除。' }, 410);
+    if (this.deletedAt)
+      return json({ error: '这个对话已删除。', issue: problem('CONVERSATION_DELETED') }, 410);
     return json(this.messages.page(after));
   }
   private capacityBytes(threshold: number) {
@@ -508,7 +515,8 @@ export class Conversation extends DurableObject<Env> {
     };
   }
   snapshotResponse(): Response {
-    if (this.deletedAt) return json({ error: '这个对话已删除。' }, 410);
+    if (this.deletedAt)
+      return json({ error: '这个对话已删除。', issue: problem('CONVERSATION_DELETED') }, 410);
     // RPC transfers a Response body as a stream, keeping history decoding and JSON work out of the Free Worker.
     return json(this.messages.snapshot());
   }
@@ -630,11 +638,12 @@ export class Conversation extends DurableObject<Env> {
     content: string,
   ): Promise<{ messageId: string } | Failure> {
     if (this.deletedAt || (await this.env.LIBRARY.getByName('personal').deletedAt(conversationId)))
-      return { error: '这个对话已删除。', status: 410 };
+      return { error: '这个对话已删除。', issue: problem('CONVERSATION_DELETED'), status: 410 };
     const accepted = this.ctx.storage.transactionSync<
       { messageId: string; change: Change } | { messageId: string } | Failure
     >(() => {
-      if (this.deletedAt) return { error: '这个对话已删除。', status: 410 };
+      if (this.deletedAt)
+        return { error: '这个对话已删除。', issue: problem('CONVERSATION_DELETED'), status: 410 };
       const fingerprint = requestFingerprint(['assistant-edit', messageId, content.trim()]);
       const existing = this.query<{ fingerprint: string; result: string }>(
         'SELECT fingerprint, result FROM submissions WHERE id = ?',
@@ -643,27 +652,40 @@ export class Conversation extends DurableObject<Env> {
       if (existing)
         return existing.fingerprint === fingerprint
           ? (JSON.parse(existing.result) as { messageId: string })
-          : { error: '此请求 ID 已用于另一条消息。', status: 409 };
+          : {
+              error: '此请求 ID 已用于另一条消息。',
+              issue: problem('INVALID_REQUEST'),
+              status: 409,
+            };
       const original = this.messages.rawMessage(messageId);
       if (!original || original.deletedAt || original.role !== 'assistant' || original.summary)
-        return { error: '找不到要编辑的回答。', status: 404 };
+        return { error: '找不到要编辑的回答。', issue: problem('NOT_FOUND'), status: 404 };
       if (
         this.query(
           "SELECT id FROM messages WHERE status IN ('queued', 'running') LIMIT 1",
         ).toArray().length
       )
-        return { error: '请等待生成完成或先停止，再编辑消息。', status: 409 };
+        return {
+          error: '请等待生成完成或先停止，再编辑消息。',
+          issue: problem('CONVERSATION_BUSY'),
+          status: 409,
+        };
       if (!content.trim() || !messageTextFits(content.trim()))
-        return { error: MESSAGE_TEXT_LIMIT_MESSAGE, status: 400 };
+        return { error: MESSAGE_TEXT_LIMIT_MESSAGE, issue: problem('MESSAGE_LIMIT'), status: 400 };
       if (this.capacityBytes(MAX_DATABASE_START_BYTES) > MAX_DATABASE_START_BYTES)
         return {
           error: DATABASE_LIMIT_MESSAGE,
+          issue: problem('STORAGE_FULL'),
           status: 507,
           code: 'CONVERSATION_STORAGE_CAPACITY',
           stage: 'admission',
         };
       if (this.messages.count() >= MAX_MESSAGES)
-        return { error: '此对话已达到消息数量保护上限，请新建对话。', status: 507 };
+        return {
+          error: '此对话已达到消息数量保护上限，请新建对话。',
+          issue: problem('OPERATION_BUSY'),
+          status: 507,
+        };
       const revision: Message = {
         id: crypto.randomUUID(),
         role: 'assistant',
@@ -703,20 +725,26 @@ export class Conversation extends DurableObject<Env> {
     messageId: string,
   ): Promise<{ deletedAt: number } | Failure> {
     if (this.deletedAt || (await this.env.LIBRARY.getByName('personal').deletedAt(conversationId)))
-      return { error: '这个对话已删除。', status: 410 };
+      return { error: '这个对话已删除。', issue: problem('CONVERSATION_DELETED'), status: 410 };
     const accepted = this.ctx.storage.transactionSync<
       { deletedAt: number; change: Change } | { deletedAt: number } | Failure
     >(() => {
-      if (this.deletedAt) return { error: '这个对话已删除。', status: 410 };
+      if (this.deletedAt)
+        return { error: '这个对话已删除。', issue: problem('CONVERSATION_DELETED'), status: 410 };
       const original = this.messages.rawMessage(messageId);
-      if (!original) return { error: '找不到要删除的消息。', status: 404 };
+      if (!original)
+        return { error: '找不到要删除的消息。', issue: problem('NOT_FOUND'), status: 404 };
       if (original.deletedAt) return { deletedAt: original.deletedAt };
       if (
         this.query(
           "SELECT id FROM messages WHERE status IN ('queued', 'running') LIMIT 1",
         ).toArray().length
       )
-        return { error: '请等待生成完成或先停止，再删除消息。', status: 409 };
+        return {
+          error: '请等待生成完成或先停止，再删除消息。',
+          issue: problem('CONVERSATION_BUSY'),
+          status: 409,
+        };
       const deletedAt = Date.now();
       const affected = [
         original,
@@ -775,11 +803,12 @@ export class Conversation extends DurableObject<Env> {
     automaticTitle: ProviderConfig | null = null,
   ): Promise<Submission | Failure> {
     if (this.deletedAt || (await this.env.LIBRARY.getByName('personal').deletedAt(conversationId)))
-      return { error: '这个对话已删除。', status: 410 };
+      return { error: '这个对话已删除。', issue: problem('CONVERSATION_DELETED'), status: 410 };
     const accepted = await this.ctx.storage.transaction<
       Submission | Failure | { result: Submission; change: Change }
     >(async () => {
-      if (this.deletedAt) return { error: '这个对话已删除。', status: 410 };
+      if (this.deletedAt)
+        return { error: '这个对话已删除。', issue: problem('CONVERSATION_DELETED'), status: 410 };
       const fingerprint = requestFingerprint([
         input.content ?? null,
         input.retryOf ?? null,
@@ -803,7 +832,11 @@ export class Conversation extends DurableObject<Env> {
         if (!existing) return null;
         return existing.fingerprint === fingerprint
           ? (JSON.parse(existing.result) as Submission)
-          : { error: '此请求 ID 已用于另一条消息。', status: 409 };
+          : {
+              error: '此请求 ID 已用于另一条消息。',
+              issue: problem('INVALID_REQUEST'),
+              status: 409,
+            };
       };
       const existing = duplicate();
       if (existing) return existing;
@@ -820,16 +853,33 @@ export class Conversation extends DurableObject<Env> {
           input.fileSelections !== undefined ||
           input.tools !== undefined)
       )
-        return { error: '摘要请求不能同时指定聊天内容或会话参数。', status: 400 };
-      if (!config) return { error: '所选模型不可用，请配置供应商并启用模型。', status: 400 };
+        return {
+          error: '摘要请求不能同时指定聊天内容或会话参数。',
+          issue: problem('INVALID_REQUEST'),
+          status: 400,
+        };
+      if (!config)
+        return {
+          error: '所选模型不可用，请配置供应商并启用模型。',
+          issue: problem('MODEL_UNAVAILABLE'),
+          status: 400,
+        };
       if (input.tools) {
         try {
           assertWebToolSupport(config.modelMetadata, input.tools);
         } catch (error) {
-          return { error: error instanceof Error ? error.message : '工具配置无效。', status: 400 };
+          return {
+            issue: issueOf(error),
+            error: error instanceof Error ? error.message : '工具配置无效。',
+            status: 400,
+          };
         }
         if (!this.webToolsConfigured(input.tools, config.webTools))
-          return { error: '尚未配置联网工具服务。', status: 400 };
+          return {
+            error: '尚未配置联网工具服务。',
+            issue: problem('TOOL_NOT_CONFIGURED'),
+            status: 400,
+          };
         if (config.webTools) {
           const quota = await this.env.LIBRARY.getByName('personal').webToolSettings();
           if (quota.usedToday >= Math.min(quota.dailyLimit, config.webTools.dailyLimit))
@@ -841,10 +891,15 @@ export class Conversation extends DurableObject<Env> {
           `SELECT id FROM messages WHERE status IN ('queued', 'running') LIMIT 1`,
         ).toArray().length
       )
-        return { error: '这个对话正在生成回答，请等待完成或先停止。', status: 409 };
+        return {
+          error: '这个对话正在生成回答，请等待完成或先停止。',
+          issue: problem('CONVERSATION_BUSY'),
+          status: 409,
+        };
       if (this.capacityBytes(MAX_DATABASE_START_BYTES) > MAX_DATABASE_START_BYTES)
         return {
           error: DATABASE_LIMIT_MESSAGE,
+          issue: problem('STORAGE_FULL'),
           status: 507,
           code: 'CONVERSATION_STORAGE_CAPACITY',
           stage: 'admission',
@@ -854,17 +909,26 @@ export class Conversation extends DurableObject<Env> {
       );
       if (input.summaryThrough) {
         if (messages.length >= MAX_MESSAGES)
-          return { error: '此对话已达到消息数量保护上限，请新建对话。', status: 507 };
+          return {
+            error: '此对话已达到消息数量保护上限，请新建对话。',
+            issue: problem('OPERATION_BUSY'),
+            status: 507,
+          };
         if (
           messages.filter((message) => message.summary && !message.deletedAt).length >=
           MAX_SUMMARIES
         )
-          return { error: '摘要数量已达到容量上限，请删除旧摘要或新建对话。', status: 507 };
+          return {
+            error: '摘要数量已达到容量上限，请删除旧摘要或新建对话。',
+            issue: problem('OPERATION_BUSY'),
+            status: 507,
+          };
         let prepared;
         try {
           prepared = summaryGeneration(messages, input.summaryThrough, config);
         } catch (error) {
           return {
+            issue: issueOf(error),
             error: error instanceof Error ? error.message : '无法构建摘要输入。',
             status: error instanceof ContextBudgetError ? 400 : 409,
           };
@@ -946,13 +1010,21 @@ export class Conversation extends DurableObject<Env> {
       if ('error' in documents) return documents;
       const files = documents.value;
       if ((!content && !images.length && !files.length) || !messageTextFits(content))
-        return { error: '请输入消息，正文须在 768 KiB 的存储保护大小以内。', status: 400 };
+        return {
+          error: '请输入消息，正文须在 768 KiB 的存储保护大小以内。',
+          issue: problem('REQUEST_TOO_LARGE'),
+          status: 400,
+        };
       const settings = input.settings ?? this.messages.settings();
       let generationConfig: ProviderConfig;
       try {
         generationConfig = applyConversationSettings(config, settings);
       } catch (error) {
-        return { error: error instanceof Error ? error.message : '会话参数无效。', status: 400 };
+        return {
+          issue: issueOf(error),
+          error: error instanceof Error ? error.message : '会话参数无效。',
+          status: 400,
+        };
       }
       const runId = crypto.randomUUID();
       let context: ChatInput[];
@@ -972,27 +1044,43 @@ export class Conversation extends DurableObject<Env> {
         contextEstimate = built.estimate;
         if (built.automatic) {
           if (messages.length + (parent ? 2 : 3) > MAX_MESSAGES)
-            return { error: '此对话已达到消息数量保护上限，请新建对话。', status: 507 };
+            return {
+              error: '此对话已达到消息数量保护上限，请新建对话。',
+              issue: problem('OPERATION_BUSY'),
+              status: 507,
+            };
           if (
             messages.filter((message) => message.summary && !message.deletedAt).length >=
             MAX_SUMMARIES
           )
-            return { error: '摘要数量已达到容量上限，请删除旧摘要或关闭自动压缩。', status: 507 };
+            return {
+              error: '摘要数量已达到容量上限，请删除旧摘要或关闭自动压缩。',
+              issue: problem('OPERATION_BUSY'),
+              status: 507,
+            };
           const summaryConfig = settings.autoCompression.model
             ? await this.env.LIBRARY.getByName('personal').providerConfig(
                 settings.autoCompression.model,
               )
             : config;
           if (!summaryConfig)
-            return { error: '自动压缩模型不可用，请启用所选模型或关闭自动压缩。', status: 400 };
+            return {
+              error: '自动压缩模型不可用，请启用所选模型或关闭自动压缩。',
+              issue: problem('COMPRESSION_MODEL_UNAVAILABLE'),
+              status: 400,
+            };
           automatic = summaryGeneration(messages, built.automatic.throughId, summaryConfig);
         }
       } catch (error) {
         return error instanceof ContextBudgetError ||
           error instanceof ImageContextError ||
           error instanceof DocumentError
-          ? { error: error.message, status: 400 }
-          : { error: '消息分支关系无效，无法构建上下文。', status: 409 };
+          ? { issue: issueOf(error), error: error.message, status: 400 }
+          : {
+              error: '消息分支关系无效，无法构建上下文。',
+              issue: problem('INVALID_REQUEST'),
+              status: 409,
+            };
       }
       const pinned = await this.pinContextAttachments(conversationId, [
         ...context,
@@ -1171,7 +1259,13 @@ export class Conversation extends DurableObject<Env> {
           await beforeRequest?.();
           return this.fetchWebTool(request);
         })
-      : { id: call.id, name: call.name, status: 'failed', error: '尚未配置联网工具服务。' };
+      : {
+          id: call.id,
+          name: call.name,
+          status: 'failed',
+          error: '尚未配置联网工具服务。',
+          issue: problem('TOOL_NOT_CONFIGURED'),
+        };
   }
   protected createWebToolWorkflow(params: ToolWorkflowParams) {
     return this.env.WEB_TOOLS.create({
@@ -1404,6 +1498,7 @@ export class Conversation extends DurableObject<Env> {
         phase: 'cancelled',
         calls: [],
         error: '这个工具任务已删除。',
+        issue: problem('INVALID_REQUEST'),
       };
     this.expireToolTasks();
     return this.tools.state(taskId);
@@ -1547,6 +1642,7 @@ export class Conversation extends DurableObject<Env> {
             name: call.name,
             status: 'failed',
             error: '联网工具执行失败或超时。',
+            issue: problem('REQUEST_TIMEOUT'),
           };
         }
         this.ctx.storage.transactionSync(() =>
@@ -1573,6 +1669,7 @@ export class Conversation extends DurableObject<Env> {
               name: call.name,
               status: 'failed',
               error: '联网工具返回无效结果。',
+              issue: problem('INVALID_REQUEST'),
             });
           }
           if (stopError) this.tools.stop(taskId, 'failed', stopError);
@@ -1681,18 +1778,30 @@ export class Conversation extends DurableObject<Env> {
     );
   }
   async generateTitle(conversationId: string, requestId: string) {
-    if (this.deletedAt) return { error: '这个对话已删除。', status: 410 };
+    if (this.deletedAt)
+      return { error: '这个对话已删除。', issue: problem('CONVERSATION_DELETED'), status: 410 };
     if (this.titles?.get(requestId)) return { id: requestId };
     const target = await this.env.LIBRARY.getByName('personal').titleTarget(conversationId);
-    if (this.deletedAt || !target) return { error: '这个对话已删除。', status: 410 };
-    if (!target.config) return { error: '请在设置中选择可用的标题模型。', status: 400 };
+    if (this.deletedAt || !target)
+      return { error: '这个对话已删除。', issue: problem('CONVERSATION_DELETED'), status: 410 };
+    if (!target.config)
+      return {
+        error: '请在设置中选择可用的标题模型。',
+        issue: problem('INVALID_REQUEST'),
+        status: 400,
+      };
     const question = this.query<{ id: string }>(
       "SELECT id FROM messages WHERE role='user' AND NOT EXISTS (SELECT 1 FROM message_deletions WHERE id=messages.id) ORDER BY rowid LIMIT 1",
     ).toArray()[0];
     const answer = this.query<{ id: string }>(
       "SELECT id FROM messages WHERE role='assistant' AND status='completed' AND NOT EXISTS (SELECT 1 FROM message_summaries WHERE messageId=messages.id) AND NOT EXISTS (SELECT 1 FROM message_deletions WHERE id=messages.id) ORDER BY rowid LIMIT 1",
     ).toArray()[0];
-    if (!question || !answer) return { error: '完成一条回答后再生成标题。', status: 409 };
+    if (!question || !answer)
+      return {
+        error: '完成一条回答后再生成标题。',
+        issue: problem('INVALID_REQUEST'),
+        status: 409,
+      };
     const result = this.ctx.storage.transactionSync(() =>
       this.titles!.enqueue(
         conversationId,
@@ -1955,6 +2064,7 @@ export class Conversation extends DurableObject<Env> {
                   : undefined,
                 { secrets: claim.context.map((message) => message.content) },
               ),
+        cancelled ? undefined : issueOf(failure, 'GENERATION_INTERRUPTED'),
       );
     } finally {
       if (active.timer) clearInterval(active.timer);
@@ -2054,6 +2164,7 @@ export class Conversation extends DurableObject<Env> {
     error: string | null = null,
     toolTurn?: ProviderToolTurn,
     failureDetails?: ProviderFailure,
+    failureIssue?: ErrorIssue,
   ) {
     if (this.deletedAt) return;
     const run = this.run(runId);
@@ -2205,6 +2316,17 @@ export class Conversation extends DurableObject<Env> {
       if (message.streamVersion === STREAM_VERSION) this.journal.compact(message);
       if (toolRequest) this.privateToolStreams.purge(runId);
       if (finalStatus === 'failed') {
+        message.generation!.issue =
+          failureIssue ??
+          (failureDetails
+            ? providerIssue(failureDetails)
+            : problem(
+                message.summary
+                  ? 'SUMMARY_FAILED'
+                  : toolModel || toolRequest
+                    ? 'TOOL_FAILED'
+                    : 'GENERATION_INTERRUPTED',
+              ));
         message.generation!.failure =
           failureDetails ??
           providerFailure(
@@ -2311,10 +2433,10 @@ export class Conversation extends DurableObject<Env> {
             images: ImagePart[];
             files: DocumentPart[];
           };
-          if (!run.config) throw new Error('回答配置已丢失。');
+          if (!run.config) throw new AppError(problem('INVALID_REQUEST'), '回答配置已丢失。');
           const prepared = summaryContext(this.messages.forHead(parentId), parentId, true);
           if (prepared.summary?.id !== dependency.summaryId)
-            throw new Error('自动摘要覆盖范围不匹配。');
+            throw new AppError(problem('INVALID_REQUEST'), '自动摘要覆盖范围不匹配。');
           const built = buildContext(
             prepared.history,
             content,
@@ -2458,7 +2580,8 @@ export class Conversation extends DurableObject<Env> {
     }
   }
   async fetch(request: Request) {
-    if (this.deletedAt) return json({ error: '这个对话已删除。' }, 410);
+    if (this.deletedAt)
+      return json({ error: '这个对话已删除。', issue: problem('CONVERSATION_DELETED') }, 410);
     if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket')
       return new Response('WebSocket required', { status: 426 });
     const expires = Number(request.headers.get('X-Session-Expires'));
@@ -2469,7 +2592,10 @@ export class Conversation extends DurableObject<Env> {
       Math.min(expires, revalidate) <= Date.now() / 1000 ||
       revalidate > expires
     )
-      return json({ error: '请重新登录。', code: 'AUTH_REQUIRED' }, 401);
+      return json(
+        { error: '请重新登录。', issue: problem('AUTH_REQUIRED'), code: 'AUTH_REQUIRED' },
+        401,
+      );
     const [client, server] = Object.values(new WebSocketPair());
     this.ctx.acceptWebSocket(server);
     server.serializeAttachment({ expires, revalidate } satisfies Attachment);

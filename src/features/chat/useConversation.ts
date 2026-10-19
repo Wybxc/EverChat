@@ -1,16 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import ReconnectingWebSocket from 'reconnecting-websocket';
-import { StreamSync } from '../../../shared/streaming/sync';
 import { isActive } from '../../../shared/conversation/message-state';
 import {
   type Snapshot,
   type SnapshotPage,
   type SyncPacket,
 } from '../../../shared/streaming/protocol';
+import { StreamSync } from '../../../shared/streaming/sync';
 import { api, ApiError } from '../../platform/api';
-import { SnapshotWriter } from './snapshot-writer';
+import { errorMessage, UiError, uiMessage, type UiMessage } from '../../platform/i18n/messages';
 import { storageEpoch } from '../../platform/storage';
 import { cachedSnapshot, writeChatCache as write } from './cache';
+import { SnapshotWriter } from './snapshot-writer';
 
 type Connection = 'connected' | 'connecting' | 'offline' | 'unavailable';
 export function useConversation(
@@ -31,8 +32,8 @@ export function useConversation(
   const [loading, setLoading] = useState(false);
   const [snapshotFor, setSnapshotFor] = useState<string | null>(null);
   const [authoritativeFor, setAuthoritativeFor] = useState<string | null>(null);
-  const [syncError, setSyncError] = useState('');
-  const [connectionError, setConnectionError] = useState('');
+  const [syncError, setSyncError] = useState<UiMessage>('');
+  const [connectionError, setConnectionError] = useState<UiMessage>('');
   const [retryVersion, setRetryVersion] = useState(0);
   const unauthorized = useRef(onUnauthorized);
   unauthorized.current = onUnauthorized;
@@ -88,7 +89,7 @@ export function useConversation(
       stopHeartbeat();
       socket?.close();
       receive({ type: 'deleted', deletedAt });
-      setSyncError('这个对话已删除。');
+      setSyncError(uiMessage('chat', 'chatDeleted'));
       setConnection('unavailable');
       setLoading(false);
       if (id) deletionNotice.current?.(id, deletedAt);
@@ -160,7 +161,7 @@ export function useConversation(
             request.signal,
           );
           if (next.after <= page.after || next.snapshot.epoch !== cloud.epoch)
-            throw new Error('对话分页状态已变化，请重新同步。');
+            throw new UiError(uiMessage('chat', 'paginationChanged'));
           cloud.messages.push(...next.snapshot.messages);
           page = next;
         }
@@ -255,11 +256,11 @@ export function useConversation(
           (error.status === 507 ||
             (error.status >= 400 && error.status < 500 && ![408, 429].includes(error.status)))
         ) {
-          setSyncError(error.message);
+          setSyncError(errorMessage(error));
           setConnection('unavailable');
           return;
         }
-        setConnectionError(error instanceof Error ? error.message : '暂时无法更新对话。');
+        setConnectionError(errorMessage(error, uiMessage('chat', 'syncFailed')));
         setConnection(navigator.onLine ? 'connecting' : 'offline');
         if (navigator.onLine)
           retry = setTimeout(

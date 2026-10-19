@@ -1,19 +1,25 @@
-import { formatDateTime } from '../../platform/i18n/format';
-import { useTranslation } from 'react-i18next';
-import './locales';
-import { useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import * as v from 'valibot';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { NativeSelect } from '@/components/ui/native-select';
-import { Modal, ModalTitle } from '../../components/Modal';
-import { api } from '../../platform/api';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import * as v from 'valibot';
 import {
   priceInputSchema,
   type UsagePrice,
   type UsagePriceInput,
 } from '../../../shared/usage/types';
+import { Modal, ModalTitle } from '../../components/Modal';
+import { api } from '../../platform/api';
+import { formatDateTime } from '../../platform/i18n/format';
+import {
+  errorMessage,
+  renderUiMessage,
+  uiMessage,
+  type UiMessage,
+} from '../../platform/i18n/messages';
+import './locales';
 
 const rates = [
   ['input', 'rateInput'],
@@ -42,7 +48,7 @@ export function ModelPriceButton({ providerId, model }: { providerId: string; mo
             {query.isPending ? (
               <p role="status">{t(($) => $.loading)}</p>
             ) : query.error ? (
-              <p role="alert">{query.error.message}</p>
+              <p role="alert">{renderUiMessage(errorMessage(query.error))}</p>
             ) : (
               <PriceEditor
                 key={`${providerId}:${model}`}
@@ -85,9 +91,9 @@ export function PriceEditor({
     perRequest: saved?.perRequest ?? null,
     source: saved?.source ?? '',
   }));
-  const [error, setError] = useState(''),
+  const [error, setError] = useState<UiMessage>(''),
     [busy, setBusy] = useState(false),
-    [notice, setNotice] = useState('');
+    [notice, setNotice] = useState<UiMessage>('');
   const client = useQueryClient();
   const copies = prices.filter((p) => p.providerId === providerId && p.model !== model);
   return (
@@ -99,17 +105,17 @@ export function PriceEditor({
         setNotice('');
         const result = v.safeParse(priceInputSchema, draft);
         if (!result.success) {
-          setError(t(($) => $.invalidPrice));
+          setError(uiMessage('usage', 'invalidPrice'));
           return;
         }
         setBusy(true);
         try {
           await api('/usage/prices', 'PUT', result.output);
           await client.invalidateQueries({ queryKey: ['usage'] });
-          setNotice(t(($) => $.priceSaved));
+          setNotice(uiMessage('usage', 'priceSaved'));
           onSaved?.();
         } catch (failure) {
-          setError(failure instanceof Error ? failure.message : t(($) => $.saveFailed));
+          setError(errorMessage(failure, uiMessage('usage', 'saveFailed')));
         } finally {
           setBusy(false);
         }
@@ -187,12 +193,12 @@ export function PriceEditor({
       )}
       {error && (
         <p role="alert" className="text-sm text-destructive">
-          {error}
+          {renderUiMessage(error)}
         </p>
       )}
       {notice && (
         <p role="status" className="text-xs">
-          {notice}
+          {renderUiMessage(notice)}
         </p>
       )}
       <Button type="submit" disabled={busy}>

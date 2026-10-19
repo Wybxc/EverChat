@@ -1,20 +1,11 @@
-import { UsageAccounting, modelIdentity } from '../usage/accounting';
-import * as v from 'valibot';
-import { MAX_SQL_PAYLOAD_BYTES } from '../../shared/conversation/limits';
-import { readPdfUpload } from '../attachments/pdf-upload';
-import type { DocumentRange } from '../../shared/attachments/documents';
-import { MAX_PDF_TEXT_BYTES, pdfExtractionSchema } from '../../shared/attachments/pdf';
-import { USAGE_OUTBOX_SCHEMA } from '../usage/schema';
-import { probeModelCapability } from '../providers/probe';
-import type { ProbeCapability } from '../../shared/models/probe';
 import { DurableObject } from 'cloudflare:workers';
-import { initializeConversationMetadata } from './metadata';
-import { initializeStorageSchema } from '../platform/storage-schema';
-import type { AccessIdentity } from '../../shared/auth/types';
-import type { DocumentPart } from '../../shared/attachments/documents';
+import * as v from 'valibot';
+import type { DocumentPart, DocumentRange } from '../../shared/attachments/documents';
 import type { AttachmentInput } from '../../shared/attachments/files';
 import type { ImagePart } from '../../shared/attachments/images';
 import type { PDFExtraction } from '../../shared/attachments/pdf';
+import { MAX_PDF_TEXT_BYTES, pdfExtractionSchema } from '../../shared/attachments/pdf';
+import type { AccessIdentity } from '../../shared/auth/types';
 import {
   ARCHIVE_FORMAT,
   ARCHIVE_VERSION,
@@ -27,9 +18,16 @@ import {
   MAX_BACKUP_BYTES,
   type BackupSettings,
 } from '../../shared/backup/backup';
+import type { ConversationActivity } from '../../shared/conversation/activity';
 import { messageAttachments, messageFiles, messageImages } from '../../shared/conversation/content';
+import { MAX_SQL_PAYLOAD_BYTES } from '../../shared/conversation/limits';
+import type { TitleSource } from '../../shared/conversation/titles';
 import type { ConversationInfo, ConversationSettings } from '../../shared/conversation/types';
+import type { ErrorIssue } from '../../shared/errors/descriptor';
+import { issueOf, problem } from '../../shared/errors/descriptor';
+import type { ProbeCapability } from '../../shared/models/probe';
 import type { ModelSelection, ReasoningEffort } from '../../shared/models/types';
+import type { AnswerCompletion, NotificationDevice } from '../../shared/notifications/protocol';
 import {
   DEFAULT_PROMPT_PRESET_ID,
   DEFAULT_PROMPT_PRESET_NAME,
@@ -44,14 +42,19 @@ import type {
 } from '../../shared/providers/types';
 import type { SearchDocument } from '../../shared/search/query';
 import type { Snapshot } from '../../shared/streaming/protocol';
+import { readPdfUpload } from '../attachments/pdf-upload';
 import { AttachmentStore } from '../attachments/store';
 import { CopyJobs, type CopyResult } from '../backup/copies';
 import { ArchiveImports, type ImportResult } from '../backup/imports';
 import { ArchiveRestorer } from '../backup/restore';
 import type { Env } from '../http/env';
 import { HttpError, json, readJsonStream } from '../http/response';
+import { sendWebPush } from '../notifications/push';
+import { NotificationRegistry } from '../notifications/registry';
 import { MAX_CONVERSATIONS } from '../platform/resource-limits';
+import { initializeStorageSchema } from '../platform/storage-schema';
 import { PromptPresetError, PromptPresets } from '../presets/store';
+import { probeModelCapability } from '../providers/probe';
 import { ProviderSettingsStore } from '../providers/store';
 import {
   SEARCH_CAPACITY_MESSAGE,
@@ -59,14 +62,12 @@ import {
   SearchIndex,
   searchRetryDelay,
 } from '../search/index';
+import { UsageAccounting, modelIdentity } from '../usage/accounting';
+import { USAGE_OUTBOX_SCHEMA } from '../usage/schema';
 import { WebToolSettings } from '../web-tools/settings';
-import type { ConversationActivity } from '../../shared/conversation/activity';
-import { LibraryTitles, TITLE_INDEX_SCHEMA } from './titles';
-import type { TitleSource } from '../../shared/conversation/titles';
 import { LIBRARY_ACTIVITY_SCHEMA, LibraryActivityIndex } from './activity';
-import { NotificationRegistry } from '../notifications/registry';
-import { sendWebPush } from '../notifications/push';
-import type { AnswerCompletion, NotificationDevice } from '../../shared/notifications/protocol';
+import { initializeConversationMetadata } from './metadata';
+import { LibraryTitles, TITLE_INDEX_SCHEMA } from './titles';
 
 type Deletion = { id: string; deletedAt: number; completed: number } & Record<
   string,
@@ -228,7 +229,8 @@ export class Library extends DurableObject<Env> {
     try {
       return this.searchIndex.search(query, cursor);
     } catch (error) {
-      if (error instanceof SearchChanged) return { error: error.message, status: 409 };
+      if (error instanceof SearchChanged)
+        return { issue: issueOf(error), error: error.message, status: 409 };
       throw error;
     }
   }
@@ -263,8 +265,9 @@ export class Library extends DurableObject<Env> {
   async probeProviderModel(id: string, model: string, capability: ProbeCapability) {
     const profile = await this.providerForModelList(id, model);
     if (!profile || !profile.models.some((item) => item.id === model))
-      return json({ error: '找不到这个模型。' }, 404);
-    if (!profile.apiKey) return json({ error: '请先配置 API 密钥。' }, 400);
+      return json({ error: '找不到这个模型。', issue: problem('NOT_FOUND') }, 404);
+    if (!profile.apiKey)
+      return json({ error: '请先配置 API 密钥。', issue: problem('PROVIDER_KEY_REQUIRED') }, 400);
     const config: ProviderConfig = {
       ...profile,
       providerId: profile.id,
@@ -312,7 +315,8 @@ export class Library extends DurableObject<Env> {
       await this.scheduleMaintenance();
       return json(result);
     } catch (error) {
-      if (error instanceof HttpError) return json({ error: error.message }, error.status);
+      if (error instanceof HttpError)
+        return json({ issue: issueOf(error), error: error.message }, error.status);
       throw error;
     }
   }
@@ -324,11 +328,14 @@ export class Library extends DurableObject<Env> {
   async fetch(request: Request) {
     const url = new URL(request.url);
     if (request.method !== 'GET' || url.pathname !== '/api/notifications/sync')
-      return json({ error: '找不到这个接口。' }, 404);
+      return json({ error: '找不到这个接口。', issue: problem('NOT_FOUND') }, 404);
     const owner = request.headers.get('X-Notification-Owner'),
       expires = Number(request.headers.get('X-Session-Expires'));
     if (!owner || !Number.isSafeInteger(expires) || expires <= Date.now() / 1000)
-      return json({ error: '请重新登录。', code: 'AUTH_REQUIRED' }, 401);
+      return json(
+        { error: '请重新登录。', issue: problem('AUTH_REQUIRED'), code: 'AUTH_REQUIRED' },
+        401,
+      );
     try {
       return this.notifications.connect(
         request,
@@ -337,7 +344,8 @@ export class Library extends DurableObject<Env> {
         url.searchParams.get('instance') ?? '',
       );
     } catch (error) {
-      if (error instanceof HttpError) return json({ error: error.message }, error.status);
+      if (error instanceof HttpError)
+        return json({ issue: issueOf(error), error: error.message }, error.status);
       throw error;
     }
   }
@@ -372,11 +380,12 @@ export class Library extends DurableObject<Env> {
     );
   }
   create(id: string, title: string, source: TitleSource = 'manual') {
-    if (this.deletedAt(id)) return { error: '这个对话已删除。', status: 410 };
+    if (this.deletedAt(id))
+      return { error: '这个对话已删除。', issue: problem('CONVERSATION_DELETED'), status: 410 };
     if (this.copies.get(id)?.status !== undefined && this.copies.get(id)?.status !== 'completed')
-      return { error: '此对话正在复制或已停止。', status: 409 };
+      return { error: '此对话正在复制或已停止。', issue: problem('INVALID_REQUEST'), status: 409 };
     if (this.imports.get(id)?.status !== undefined && this.imports.get(id)?.status !== 'completed')
-      return { error: '此对话正在恢复或已停止。', status: 409 };
+      return { error: '此对话正在恢复或已停止。', issue: problem('INVALID_REQUEST'), status: 409 };
     const existing = this.get(id);
     if (existing) return existing;
     if (
@@ -409,9 +418,10 @@ export class Library extends DurableObject<Env> {
       );
   }
   update(id: string, patch: { title?: string; pinned?: boolean }) {
-    if (this.deletedAt(id)) return { error: '这个对话已删除。', status: 410 };
+    if (this.deletedAt(id))
+      return { error: '这个对话已删除。', issue: problem('CONVERSATION_DELETED'), status: 410 };
     const current = this.get(id);
-    if (!current) return { error: '找不到这个对话。', status: 404 };
+    if (!current) return { error: '找不到这个对话。', issue: problem('NOT_FOUND'), status: 404 };
     this.ctx.storage.transactionSync(() => {
       if (patch.title !== undefined) {
         this.titles.manual(id);
@@ -450,7 +460,10 @@ export class Library extends DurableObject<Env> {
         );
       for (const copy of this.copies.pending())
         if (copy.sourceId === id || copy.id === id) {
-          this.copies.fail(copy.id, new HttpError(410, '复制来源或目标对话已删除。'));
+          this.copies.fail(
+            copy.id,
+            new HttpError(410, '复制来源或目标对话已删除。', undefined, problem('INVALID_REQUEST')),
+          );
           this.ctx.storage.sql.exec(
             'INSERT OR IGNORE INTO conversation_deletions VALUES (?, ?, 0)',
             copy.id,
@@ -460,7 +473,10 @@ export class Library extends DurableObject<Env> {
           this.searchIndex.remove(copy.id);
         }
       this.searchIndex.remove(id);
-      this.imports.fail(id, new HttpError(410, '恢复目标对话已删除。'));
+      this.imports.fail(
+        id,
+        new HttpError(410, '恢复目标对话已删除。', undefined, problem('INVALID_REQUEST')),
+      );
       this.attachments.removeConversation(id);
       await this.ctx.storage.setAlarm(Date.now() + 1000);
       return deletion;
@@ -484,7 +500,15 @@ export class Library extends DurableObject<Env> {
         job.status === 'uploading' &&
         this.imports.files(job.id).some((file) => this.interruptedImportFiles.has(file.id))
       ) {
-        this.imports.fail(job.id, new HttpError(409, '恢复文件写入因实例中断而停止，请重新导入。'));
+        this.imports.fail(
+          job.id,
+          new HttpError(
+            409,
+            '恢复文件写入因实例中断而停止，请重新导入。',
+            undefined,
+            problem('INVALID_REQUEST'),
+          ),
+        );
         await this.beginDelete(job.id);
       }
     for (const job of this.imports.pending())
@@ -499,6 +523,8 @@ export class Library extends DurableObject<Env> {
             job.lease <= Date.now()
               ? '恢复超过等待期限，请重新导入。'
               : '恢复因实例中断而停止，请重新导入。',
+            undefined,
+            problem('INVALID_REQUEST'),
           ),
         );
         await this.beginDelete(job.id);
@@ -512,6 +538,8 @@ export class Library extends DurableObject<Env> {
             copy.lease <= Date.now()
               ? '复制超过 10 分钟，请重新尝试。'
               : '复制因实例中断而停止，请重新尝试。',
+            undefined,
+            problem('INVALID_REQUEST'),
           ),
         );
         await this.beginDelete(copy.id);
@@ -597,27 +625,58 @@ export class Library extends DurableObject<Env> {
           existing.messageId !== (messageId ?? null) ||
           existing.viewHeadId !== (viewHeadId ?? null)
         )
-          throw new HttpError(409, '此复制请求已用于其他来源。');
+          throw new HttpError(
+            409,
+            '此复制请求已用于其他来源。',
+            undefined,
+            problem('INVALID_REQUEST'),
+          );
         if (existing.status === 'completed') {
-          if (!this.get(id)) throw new HttpError(410, '这个副本已删除。');
+          if (!this.get(id))
+            throw new HttpError(410, '这个副本已删除。', undefined, problem('INVALID_REQUEST'));
           return { id, viewHeadId: existing.copiedHeadId };
         }
         if (existing.status === 'failed')
           throw new HttpError(
             existing.errorStatus ?? 409,
             existing.error ?? '复制已停止，请重新尝试。',
+            undefined,
+            problem('INVALID_REQUEST'),
           );
         const active = this.copies.active.get(id);
         if (active) return await active;
-        this.copies.fail(id, new HttpError(409, '复制因实例中断而停止，请重新尝试。'));
+        this.copies.fail(
+          id,
+          new HttpError(
+            409,
+            '复制因实例中断而停止，请重新尝试。',
+            undefined,
+            problem('INVALID_REQUEST'),
+          ),
+        );
         await this.beginDelete(id);
-        throw new HttpError(409, '复制因实例中断而停止，请重新尝试。');
+        throw new HttpError(
+          409,
+          '复制因实例中断而停止，请重新尝试。',
+          undefined,
+          problem('INVALID_REQUEST'),
+        );
       }
       const source = this.get(sourceId);
       if (!source)
-        throw new HttpError(this.deletedAt(sourceId) ? 410 : 404, '找不到复制来源对话。');
+        throw new HttpError(
+          this.deletedAt(sourceId) ? 410 : 404,
+          '找不到复制来源对话。',
+          undefined,
+          problem('NOT_FOUND'),
+        );
       if (this.internalConversation(id) || this.deletedAt(id))
-        throw new HttpError(409, '目标对话 ID 已被使用。');
+        throw new HttpError(
+          409,
+          '目标对话 ID 已被使用。',
+          undefined,
+          problem('CONVERSATION_ID_CONFLICT'),
+        );
       if (
         this.ctx.storage.sql
           .exec<{ count: number }>('SELECT COUNT(*) AS count FROM conversations')
@@ -626,6 +685,8 @@ export class Library extends DurableObject<Env> {
         throw new HttpError(
           507,
           `空间最多保存 ${MAX_CONVERSATIONS} 个对话，请整理已有对话后再创建。`,
+          undefined,
+          problem('INVALID_REQUEST'),
         );
       this.ctx.storage.transactionSync(() => {
         this.copies.begin(id, sourceId, messageId, viewHeadId);
@@ -647,6 +708,7 @@ export class Library extends DurableObject<Env> {
       return await promise;
     } catch (error) {
       return {
+        issue: issueOf(error),
         error: error instanceof HttpError ? error.message : '复制暂时无法完成，请重新尝试。',
         status: error instanceof HttpError ? error.status : 503,
       };
@@ -661,7 +723,12 @@ export class Library extends DurableObject<Env> {
     const check = () => {
       this.copies.requireActive(id);
       if (!this.get(source.id) || !this.internalConversation(id))
-        throw new HttpError(410, '复制来源或目标对话已删除。');
+        throw new HttpError(
+          410,
+          '复制来源或目标对话已删除。',
+          undefined,
+          problem('INVALID_REQUEST'),
+        );
     };
     try {
       await this.ctx.storage.sync();
@@ -673,7 +740,7 @@ export class Library extends DurableObject<Env> {
       check();
       if (!response.ok) {
         const failure = (await response.json()) as { error: string };
-        throw new HttpError(response.status, failure.error);
+        throw new HttpError(response.status, failure.error, undefined, problem('INVALID_REQUEST'));
       }
       const saved = (await response.json()) as {
         messages: BackupMessage[];
@@ -684,7 +751,8 @@ export class Library extends DurableObject<Env> {
       const headPosition = requestedHead
         ? saved.messages.findIndex((message) => message.id === requestedHead && !message.summary)
         : -1;
-      if (requestedHead && headPosition < 0) throw new HttpError(404, '找不到待复制的显示分支。');
+      if (requestedHead && headPosition < 0)
+        throw new HttpError(404, '找不到待复制的显示分支。', undefined, problem('NOT_FOUND'));
       const images = saved.messages.flatMap(messageImages),
         files = saved.messages.flatMap(messageFiles);
       if (images.length || files.length) {
@@ -701,7 +769,7 @@ export class Library extends DurableObject<Env> {
               .filter((file) => file.status === 'ready' && (!messageId || required.has(file.id)))
           : [];
       if ([...required].some((fileId) => !originals.some((file) => file.id === fileId)))
-        throw new HttpError(409, '待复制附件不完整。');
+        throw new HttpError(409, '待复制附件不完整。', undefined, problem('INVALID_REQUEST'));
       const mapped = new Map<string, string>();
       for (const file of originals) {
         check();
@@ -733,7 +801,12 @@ export class Library extends DurableObject<Env> {
         settings: saved.settings,
       });
       if (new TextEncoder().encode(payload).byteLength > MAX_BACKUP_BYTES)
-        throw new HttpError(413, '复制资料超过 12 MiB，请选择较短的分支。');
+        throw new HttpError(
+          413,
+          '复制资料超过 12 MiB，请选择较短的分支。',
+          undefined,
+          problem('REQUEST_TOO_LARGE'),
+        );
       const restored = await this.env.CONVERSATIONS.getByName(id).restoreResponse(
         id,
         new Response(payload).body!,
@@ -741,7 +814,7 @@ export class Library extends DurableObject<Env> {
       check();
       if (!restored.ok) {
         const failure = (await restored.json()) as { error: string };
-        throw new HttpError(restored.status, failure.error);
+        throw new HttpError(restored.status, failure.error, undefined, problem('INVALID_REQUEST'));
       }
       const copiedSnapshot = (await restored.json()) as Snapshot;
       const copiedHeadId =
@@ -761,13 +834,23 @@ export class Library extends DurableObject<Env> {
       const stopped = this.copies.get(id);
       const failure =
         stopped?.status === 'failed'
-          ? new HttpError(stopped.errorStatus ?? 409, stopped.error ?? '复制已停止。')
+          ? new HttpError(
+              stopped.errorStatus ?? 409,
+              stopped.error ?? '复制已停止。',
+              undefined,
+              problem('INVALID_REQUEST'),
+            )
           : error instanceof HttpError
             ? error
-            : new HttpError(503, '复制暂时无法完成，请重新尝试。');
+            : new HttpError(
+                503,
+                '复制暂时无法完成，请重新尝试。',
+                undefined,
+                problem('INVALID_REQUEST'),
+              );
       this.copies.fail(id, failure);
       await this.beginDelete(id);
-      return { error: failure.message, status: failure.status };
+      return { issue: failure.issue, error: failure.message, status: failure.status };
     }
   }
   copyStopped(id: string) {
@@ -776,14 +859,16 @@ export class Library extends DurableObject<Env> {
   async archiveManifestResponse(id: string, textOnly = false) {
     try {
       const conversation = this.get(id);
-      if (!conversation) throw new HttpError(404, '找不到这个对话。');
+      if (!conversation)
+        throw new HttpError(404, '找不到这个对话。', undefined, problem('NOT_FOUND'));
       const source = await this.env.CONVERSATIONS.getByName(id).copySourceResponse();
       if (!source.ok) return source;
       const saved = (await source.json()) as {
         messages: BackupMessage[];
         settings: ConversationSettings;
       };
-      if (!this.get(id)) throw new HttpError(410, '对话已删除。');
+      if (!this.get(id))
+        throw new HttpError(410, '对话已删除。', undefined, problem('CONVERSATION_DELETED'));
       const files =
         this.env.ATTACHMENTS || this.attachments.hasSaved(id)
           ? this.attachments.archiveFiles(id)
@@ -800,14 +885,23 @@ export class Library extends DurableObject<Env> {
         },
         files,
       });
-      if (textOnly && files.length) throw new HttpError(409, '此对话包含文件，请下载 ZIP 备份。');
+      if (textOnly && files.length)
+        throw new HttpError(
+          409,
+          '此对话包含文件，请下载 ZIP 备份。',
+          undefined,
+          problem('INVALID_REQUEST'),
+        );
       const response = json(textOnly ? manifest.backup : manifest);
       if (new TextEncoder().encode(JSON.stringify(manifest)).byteLength > MAX_BACKUP_BYTES)
-        throw new HttpError(413, '备份清单超过 12 MiB。');
+        throw new HttpError(413, '备份清单超过 12 MiB。', undefined, problem('REQUEST_TOO_LARGE'));
       return response;
     } catch (error) {
       return json(
-        { error: error instanceof Error ? error.message : '备份清单无法读取。' },
+        {
+          issue: issueOf(error),
+          error: error instanceof Error ? error.message : '备份清单无法读取。',
+        },
         error instanceof HttpError ? error.status : 409,
       );
     }
@@ -902,11 +996,12 @@ export class Library extends DurableObject<Env> {
   }
   private async attachmentAction<T>(
     action: () => T | Promise<T>,
-  ): Promise<{ value: T } | { error: string; status: number }> {
+  ): Promise<{ value: T } | { error: string; issue?: ErrorIssue; status: number }> {
     try {
       return { value: await action() };
     } catch (error) {
       return {
+        issue: issueOf(error),
         error: error instanceof HttpError ? error.message : '附件存储暂时不可用，请稍后重试。',
         status: error instanceof HttpError ? error.status : 503,
       };
@@ -948,14 +1043,17 @@ export class Library extends DurableObject<Env> {
             )
           : await readPdfUpload(body);
       const parsed = v.safeParse(pdfExtractionSchema, raw);
-      if (!parsed.success) throw new HttpError(400, 'PDF 提取结果无效。');
+      if (!parsed.success)
+        throw new HttpError(400, 'PDF 提取结果无效。', undefined, problem('INVALID_REQUEST'));
       const input = parsed.output;
       return this.attachments.documents.parse(conversationId, id, input);
     });
     await this.scheduleMaintenance();
     try {
       const result = await action;
-      return 'error' in result ? json({ error: result.error }, result.status) : json(result.value);
+      return 'error' in result
+        ? json({ error: result.error, issue: result.issue }, result.status)
+        : json(result.value);
     } finally {
       await this.scheduleMaintenance();
     }
@@ -969,7 +1067,9 @@ export class Library extends DurableObject<Env> {
     const result = await this.attachmentAction(() =>
       this.attachments.documents.response(conversationId, id, ranges),
     );
-    return 'error' in result ? json({ error: result.error }, result.status) : result.value;
+    return 'error' in result
+      ? json({ error: result.error, issue: result.issue }, result.status)
+      : result.value;
   }
   async parseDocument(conversationId: string, id: string, input?: PDFExtraction) {
     const action = this.attachmentAction(() =>
@@ -1003,13 +1103,20 @@ export class Library extends DurableObject<Env> {
     const result = await this.attachmentAction(() =>
       this.attachments.response(conversationId, id, head),
     );
-    return 'error' in result ? json({ error: result.error }, result.status) : result.value;
+    return 'error' in result
+      ? json({ error: result.error, issue: result.issue }, result.status)
+      : result.value;
   }
   async removeAttachment(conversationId: string, id: string) {
     const result = await this.attachmentAction(async () => {
       const usage = this.attachments.usage(id);
       if (usage && (await this.env.CONVERSATIONS.getByName(conversationId).usesAttachment(id)))
-        throw new HttpError(409, '文件仍被消息或生成任务使用，请先删除相关消息。');
+        throw new HttpError(
+          409,
+          '文件仍被消息或生成任务使用，请先删除相关消息。',
+          undefined,
+          problem('ATTACHMENT_IN_USE'),
+        );
       this.attachments.remove(conversationId, id, usage);
     });
     await this.scheduleMaintenance();
@@ -1030,12 +1137,17 @@ export class Library extends DurableObject<Env> {
     try {
       if (id === DEFAULT_PROMPT_PRESET_ID) {
         if (input.name !== DEFAULT_PROMPT_PRESET_NAME)
-          return { error: '默认预设不能重命名。', status: 400 };
+          return {
+            error: '默认预设不能重命名。',
+            issue: problem('DEFAULT_PRESET_IMMUTABLE'),
+            status: 400,
+          };
         const result = this.providers.saveProviderSettings({
           ...this.providers.providerSettingsData(),
           systemPrompt: input.systemPrompt,
         });
-        if ('error' in result) return { error: result.error, status: result.status ?? 400 };
+        if ('error' in result)
+          return { error: result.error, issue: result.issue, status: result.status ?? 400 };
         return {
           id,
           name: DEFAULT_PROMPT_PRESET_NAME,
@@ -1045,12 +1157,18 @@ export class Library extends DurableObject<Env> {
       }
       return this.presets.save(id, input);
     } catch (error) {
-      if (error instanceof PromptPresetError) return { error: error.message, status: error.status };
+      if (error instanceof PromptPresetError)
+        return { issue: issueOf(error), error: error.message, status: error.status };
       throw error;
     }
   }
   deletePromptPreset(id: string) {
-    if (id === DEFAULT_PROMPT_PRESET_ID) return { error: '默认预设不能删除。', status: 400 };
+    if (id === DEFAULT_PROMPT_PRESET_ID)
+      return {
+        error: '默认预设不能删除。',
+        issue: problem('DEFAULT_PRESET_IMMUTABLE'),
+        status: 400,
+      };
     return this.presets.remove(id);
   }
   backupSettings(): BackupSettings {
@@ -1066,7 +1184,7 @@ export class Library extends DurableObject<Env> {
     input: ProviderSettingsInput,
     importedPresets?: PromptPreset[],
     options: { restoreModelMetadata?: boolean; preserveKeysAcrossConnections?: boolean } = {},
-  ): { settings: ProviderSettings } | { error: string; status?: number } {
+  ): { settings: ProviderSettings } | { error: string; issue?: ErrorIssue; status?: number } {
     return this.providers.saveProviderSettings(input, importedPresets, options);
   }
 }

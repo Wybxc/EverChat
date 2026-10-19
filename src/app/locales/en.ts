@@ -1,4 +1,8 @@
 export default {
+  invalidSession: 'The session response is invalid.',
+  spaceUnavailable: 'Could not connect to your workspace.',
+  localClearFailed: 'Some local records could not be cleared.',
+
   general: 'General',
   providers: 'Providers',
   chat: 'Chat',

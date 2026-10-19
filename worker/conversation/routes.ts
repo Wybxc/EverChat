@@ -1,13 +1,14 @@
+import * as v from 'valibot';
+import { documentRangesSchema, MAX_MESSAGE_DOCUMENTS } from '../../shared/attachments/documents';
+import { MAX_MESSAGE_IMAGES } from '../../shared/attachments/images';
 import {
   MAX_MESSAGE_TEXT_BYTES,
   MAX_SYSTEM_PROMPT_LENGTH,
   MESSAGE_TEXT_LIMIT_MESSAGE,
 } from '../../shared/conversation/limits';
-import * as v from 'valibot';
-import { documentRangesSchema, MAX_MESSAGE_DOCUMENTS } from '../../shared/attachments/documents';
-import { MAX_MESSAGE_IMAGES } from '../../shared/attachments/images';
 import { conversationSettingsSchema } from '../../shared/conversation/settings';
 import type { SubmitInput } from '../../shared/conversation/types';
+import { problem } from '../../shared/errors/descriptor';
 import { conversationId, requireAuth, requireConversation, uuidSchema } from '../http/access';
 import type { ApiRouter } from '../http/app';
 import { HttpError, json, parseBody } from '../http/response';
@@ -91,7 +92,8 @@ export function registerConversationRoutes(app: ApiRouter) {
   });
 
   app.get('/conversations/:id/measurements', async (context) => {
-    if (context.env.GENERATION_METRICS !== '1') throw new HttpError(404, '找不到这个接口。');
+    if (context.env.GENERATION_METRICS !== '1')
+      throw new HttpError(404, '找不到这个接口。', undefined, problem('NOT_FOUND'));
     await requireAuth(context);
     const id = conversationId(context);
     await requireConversation(context, id);
@@ -128,7 +130,7 @@ export function registerConversationRoutes(app: ApiRouter) {
       input.fileSelections &&
       Object.keys(input.fileSelections).some((id) => !input.fileIds?.includes(id))
     )
-      throw new HttpError(400, '文件选区缺少对应附件。');
+      throw new HttpError(400, '文件选区缺少对应附件。', undefined, problem('INVALID_REQUEST'));
     if (
       input.summaryThrough &&
       (input.content !== undefined ||
@@ -142,7 +144,12 @@ export function registerConversationRoutes(app: ApiRouter) {
         input.fileSelections !== undefined ||
         input.tools !== undefined)
     )
-      throw new HttpError(400, '摘要请求不能同时指定聊天内容或会话参数。');
+      throw new HttpError(
+        400,
+        '摘要请求不能同时指定聊天内容或会话参数。',
+        undefined,
+        problem('INVALID_REQUEST'),
+      );
     if (
       input.retryOf &&
       (input.content !== undefined ||
@@ -151,16 +158,21 @@ export function registerConversationRoutes(app: ApiRouter) {
         input.fileIds !== undefined ||
         input.fileSelections !== undefined)
     )
-      throw new HttpError(400, '消息参数无效。');
+      throw new HttpError(400, '消息参数无效。', undefined, problem('INVALID_REQUEST'));
     if (input.parentId !== undefined && (input.revisionOf || input.retryOf))
-      throw new HttpError(400, '修订或重新生成不能同时指定父消息。');
+      throw new HttpError(
+        400,
+        '修订或重新生成不能同时指定父消息。',
+        undefined,
+        problem('INVALID_REQUEST'),
+      );
     if (
       !input.summaryThrough &&
       !input.revisionOf &&
       !input.retryOf &&
       input.parentId === undefined
     )
-      throw new HttpError(400, '发送消息必须指定父消息。');
+      throw new HttpError(400, '发送消息必须指定父消息。', undefined, problem('INVALID_REQUEST'));
     const baseConfig = await library.providerConfig(input.selection);
     if (!baseConfig) {
       const result = await context.env.CONVERSATIONS.getByName(id).submit(id, input, null);
@@ -171,7 +183,8 @@ export function registerConversationRoutes(app: ApiRouter) {
     const config = input.reasoningEffort
       ? await library.providerConfig(input.selection, input.reasoningEffort)
       : baseConfig;
-    if (!config) throw new HttpError(400, '所选模型不支持此思维强度。');
+    if (!config)
+      throw new HttpError(400, '所选模型不支持此思维强度。', undefined, problem('INVALID_REQUEST'));
     if (input.tools) config.webTools = await library.webToolConfig();
     const result = await context.env.CONVERSATIONS.getByName(id).submit(
       id,
@@ -188,7 +201,8 @@ export function registerConversationRoutes(app: ApiRouter) {
     await requireAuth(context);
     const id = conversationId(context),
       messageId = context.req.param('messageId');
-    if (!v.safeParse(uuidSchema, messageId).success) throw new HttpError(404, '找不到这条消息。');
+    if (!v.safeParse(uuidSchema, messageId).success)
+      throw new HttpError(404, '找不到这条消息。', undefined, problem('NOT_FOUND'));
     const library = await requireConversation(context, id);
     const input = await parseBody(context, assistantEditSchema, {
       maxBytes: MAX_MESSAGE_TEXT_BYTES + 4096,
@@ -209,7 +223,8 @@ export function registerConversationRoutes(app: ApiRouter) {
     await requireAuth(context);
     const id = conversationId(context),
       messageId = context.req.param('messageId');
-    if (!v.safeParse(uuidSchema, messageId).success) throw new HttpError(404, '找不到这条消息。');
+    if (!v.safeParse(uuidSchema, messageId).success)
+      throw new HttpError(404, '找不到这条消息。', undefined, problem('NOT_FOUND'));
     await requireConversation(context, id);
     const result = await context.env.CONVERSATIONS.getByName(id).deleteMessage(id, messageId);
     if ('error' in result) return json(result, result.status);

@@ -1,11 +1,9 @@
-import { formatNumber } from '../../platform/i18n/format';
-import { useTranslation } from 'react-i18next';
-import './locales';
-import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Textarea } from '@/components/ui/textarea';
+import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   estimateDocumentTokens,
   selectedDocumentText,
@@ -14,6 +12,14 @@ import {
 } from '../../../shared/attachments/documents';
 import { pageRanges } from '../../../shared/attachments/pdf-selection';
 import { api } from '../../platform/api';
+import { formatNumber } from '../../platform/i18n/format';
+import {
+  errorMessage,
+  renderUiMessage,
+  uiMessage,
+  type UiMessage,
+} from '../../platform/i18n/messages';
+import './locales';
 
 export function PdfSelection({
   conversationId,
@@ -61,15 +67,15 @@ export function PdfSelection({
       document.removeEventListener('selectionchange', update);
     };
   }, [mode]);
-  const [error, setError] = useState(''),
+  const [error, setError] = useState<UiMessage>(''),
     [busy, setBusy] = useState(false);
-  let ranges = mode === 'all' ? [{ start: 0, end: text.length }] : fragment,
-    invalid = '';
+  let ranges = mode === 'all' ? [{ start: 0, end: text.length }] : fragment;
+  let invalid: UiMessage = '';
   if (mode === 'pages') {
     try {
       ranges = pageRanges(pages, pageOffsets ?? [], text.length);
     } catch (failure) {
-      invalid = (failure as Error).message;
+      invalid = errorMessage(failure);
     }
   }
   const selected = selectedDocumentText(text, ranges),
@@ -122,7 +128,7 @@ export function PdfSelection({
                 }
                 if (!low) {
                   setMode('fragment');
-                  setError(t(($) => $.firstPageOver));
+                  setError(uiMessage('attachments', 'firstPageOver'));
                   return;
                 }
                 setPages(`1-${low}`);
@@ -148,7 +154,7 @@ export function PdfSelection({
         )}
         {(invalid || error) && (
           <p className="text-xs text-destructive" role="alert">
-            {invalid || error}
+            {renderUiMessage(invalid || error)}
           </p>
         )}
       </div>
@@ -186,7 +192,7 @@ export function PdfSelection({
               );
               onApply(result);
             } catch (failure) {
-              setError((failure as Error).message);
+              setError(errorMessage(failure));
             } finally {
               setBusy(false);
             }

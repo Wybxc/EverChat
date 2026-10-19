@@ -1,3 +1,4 @@
+import { AppError, problem } from '../../shared/errors/descriptor';
 import type { UsageAttempt, UsagePrice } from '../../shared/usage/types';
 import type { SqlQuery } from '../generation/metrics';
 
@@ -19,7 +20,8 @@ export class UsageOutbox {
     >,
     price: UsagePrice | null,
   ) {
-    if (this.get(attempt.id)) throw new Error('不能重复发出已登记的供应商请求。');
+    if (this.get(attempt.id))
+      throw new AppError(problem('USAGE_INVALID'), '不能重复发出已登记的供应商请求。');
     const record: UsageAttempt = {
       ...attempt,
       version: 0,

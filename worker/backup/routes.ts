@@ -1,5 +1,6 @@
 import * as v from 'valibot';
 import { ARCHIVE_FORMAT, ARCHIVE_VERSION } from '../../shared/backup/archive';
+import { problem } from '../../shared/errors/descriptor';
 import { conversationId, requireAuth, requireConversation, uuidSchema } from '../http/access';
 import type { ApiRouter } from '../http/app';
 import { HttpError, json, jsonWithStream, parseBody, type AppContext } from '../http/response';
@@ -7,8 +8,9 @@ import type { ImportResult } from './imports';
 
 const importBody = (context: AppContext, jsonBody: boolean) => {
   if (jsonBody && !context.req.header('Content-Type')?.includes('application/json'))
-    throw new HttpError(415, '请使用 JSON 清单。');
-  if (!context.req.raw.body) throw new HttpError(400, '请求内容为空。');
+    throw new HttpError(415, '请使用 JSON 清单。', undefined, problem('BACKUP_INVALID'));
+  if (!context.req.raw.body)
+    throw new HttpError(400, '请求内容为空。', undefined, problem('BACKUP_INVALID'));
   return context.req.raw.body;
 };
 
@@ -23,6 +25,7 @@ async function importResponse(
     return json(
       {
         error: result.error,
+        issue: result.issue,
         ...((await library.importStopped(id)) ? { code: 'import-stopped' } : {}),
       },
       result.status,
@@ -40,7 +43,7 @@ async function duplicateConversation(context: AppContext, messageId?: string) {
   await requireAuth(context);
   const id = conversationId(context);
   if (messageId !== undefined && !v.safeParse(uuidSchema, messageId).success)
-    throw new HttpError(404, '找不到这条消息。');
+    throw new HttpError(404, '找不到这条消息。', undefined, problem('NOT_FOUND'));
   const { requestId, viewHeadId } = await parseBody(
     context,
     v.strictObject({ requestId: uuidSchema, viewHeadId: v.optional(uuidSchema) }),
@@ -51,6 +54,7 @@ async function duplicateConversation(context: AppContext, messageId?: string) {
     return json(
       {
         error: result.error,
+        issue: result.issue,
         ...((await library.copyStopped(requestId)) ? { code: 'copy-stopped' } : {}),
       },
       result.status,
@@ -115,7 +119,7 @@ export function registerBackupRoutes(app: ApiRouter) {
       conversationId(context),
     );
     return 'error' in result
-      ? json({ error: result.error }, result.status)
+      ? json({ error: result.error, issue: result.issue }, result.status)
       : json({ cancelled: true });
   });
 
@@ -125,7 +129,7 @@ export function registerBackupRoutes(app: ApiRouter) {
       sourceId = context.req.param('sourceId'),
       kind = context.req.param('kind');
     if (!v.safeParse(uuidSchema, sourceId).success || !['content', 'text'].includes(kind))
-      throw new HttpError(404, '找不到存档中的文件。');
+      throw new HttpError(404, '找不到存档中的文件。', undefined, problem('NOT_FOUND'));
     const result = await context.env.LIBRARY.getByName('personal').uploadImportFile(
       id,
       sourceId,
@@ -136,6 +140,7 @@ export function registerBackupRoutes(app: ApiRouter) {
       ? json(
           {
             error: result.error,
+            issue: result.issue,
             ...((await context.env.LIBRARY.getByName('personal').importStopped(id))
               ? { code: 'import-stopped' }
               : {}),

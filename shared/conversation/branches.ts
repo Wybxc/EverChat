@@ -1,3 +1,4 @@
+import { AppError, problem } from '../errors/descriptor';
 import type { Message } from './types';
 
 type BranchNode = Pick<Message, 'id' | 'parentId' | 'role' | 'deletedAt'>;
@@ -107,7 +108,7 @@ export function branchIndexer() {
 export function branchIds(index: BranchIndex, head: string | null): string[] {
   if (head === null) return [];
   if (!index.nodes.has(head) || index.invalid.has(head))
-    throw new Error('消息分支关系无效，无法显示或发送。');
+    throw new AppError(problem('BRANCH_INVALID'), '消息分支关系无效，无法显示或发送。');
   const path: string[] = [];
   let current = index.nodes.get(head);
   while (current) {
@@ -127,7 +128,7 @@ export function descendBranch(
   start: string,
   preferences: BranchPreferences,
 ): string {
-  if (!index.browsable.has(start)) throw new Error('找不到可浏览的分支。');
+  if (!index.browsable.has(start)) throw new AppError(problem('NOT_FOUND'), '找不到可浏览的分支。');
   let head = start;
   while (true) {
     const children = index.choices.get(head) ?? [];
@@ -157,7 +158,8 @@ export function recoverBranch(
   head: string | null,
   preferences: BranchPreferences,
 ): string | null {
-  if (head && index.invalid.has(head)) throw new Error('消息分支关系无效，无法显示或发送。');
+  if (head && index.invalid.has(head))
+    throw new AppError(problem('BRANCH_INVALID'), '消息分支关系无效，无法显示或发送。');
   if (head && index.browsable.has(head)) return head;
   let node = head ? index.nodes.get(head) : undefined;
   while (node) {
@@ -174,7 +176,8 @@ export function recoverBranch(
     if (node && index.browsable.has(node.id)) return node.id;
   }
   const fallback = [...index.order].reverse().find((id) => index.browsable.has(id));
-  if (!fallback && index.invalid.size) throw new Error('消息分支关系无效，无法显示或发送。');
+  if (!fallback && index.invalid.size)
+    throw new AppError(problem('BRANCH_INVALID'), '消息分支关系无效，无法显示或发送。');
   return fallback ?? null;
 }
 

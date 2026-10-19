@@ -1,6 +1,7 @@
+import { problem } from '../../shared/errors/descriptor';
+import { shareIdPattern, shareSecretPattern } from '../../shared/sharing/types';
 import type { Env } from '../http/env';
 import { json } from '../http/response';
-import { shareIdPattern, shareSecretPattern } from '../../shared/sharing/types';
 
 export const publicHeaders = {
   'Cache-Control': 'no-store',
@@ -14,7 +15,8 @@ export async function publicSharing(request: Request, env: Env) {
   const url = new URL(request.url),
     match = /^\/public\/shares\/([^/]+)$/.exec(url.pathname);
   const token = /^Bearer ([A-Za-z0-9_-]+)$/.exec(request.headers.get('Authorization') ?? '')?.[1];
-  const unavailable = () => json({ error: '链接不可用。' }, 404, publicHeaders);
+  const unavailable = () =>
+    json({ error: '链接不可用。', issue: problem('SHARE_UNAVAILABLE') }, 404, publicHeaders);
   if (
     !['GET', 'HEAD'].includes(request.method) ||
     !match ||
@@ -25,7 +27,12 @@ export async function publicSharing(request: Request, env: Env) {
     request.headers.get('Sec-Fetch-Site') === 'cross-site'
   )
     return unavailable();
-  if (!env.SHARES) return json({ error: '分享服务暂时不可用。' }, 503, publicHeaders);
+  if (!env.SHARES)
+    return json(
+      { error: '分享服务暂时不可用。', issue: problem('SHARE_INCOMPLETE') },
+      503,
+      publicHeaders,
+    );
   try {
     const result = await env.SHARES.getByName('personal').read(
       match[1],
@@ -40,6 +47,10 @@ export async function publicSharing(request: Request, env: Env) {
       headers,
     });
   } catch {
-    return json({ error: '分享服务暂时不可用。' }, 503, publicHeaders);
+    return json(
+      { error: '分享服务暂时不可用。', issue: problem('SHARE_INCOMPLETE') },
+      503,
+      publicHeaders,
+    );
   }
 }

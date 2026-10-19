@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import { AppError, problem } from '../../shared/errors/descriptor';
 import {
   DEFAULT_WEB_TOOL_DAILY_LIMIT,
   webToolServiceInputSchema,
@@ -71,7 +72,7 @@ export class WebToolSettings {
   }
   save(value: unknown) {
     const parsed = v.safeParse(webToolServiceInputSchema, value);
-    if (!parsed.success) throw new Error('联网工具设置无效。');
+    if (!parsed.success) throw new AppError(problem('TOOL_INVALID'), '联网工具设置无效。');
     const input = parsed.output,
       apiKey = input.apiKey ?? this.key(input.provider);
     this.query(
@@ -93,7 +94,7 @@ export class WebToolSettings {
       acceptedLimit < 1 ||
       acceptedLimit > 1000
     )
-      throw new Error('无效的工具请求预算。');
+      throw new AppError(problem('TOOL_INVALID'), '无效的工具请求预算。');
     const day = this.day();
     this.query('DELETE FROM web_tool_requests WHERE day < ?', this.day(-86_400_000));
     if (this.query('SELECT id FROM web_tool_requests WHERE id = ?', id).toArray().length)

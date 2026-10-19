@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { identityKey, type SessionInfo } from '../../shared/auth/types';
 import { chatModels } from '../../shared/models/selection';
 import type { ProviderSettings } from '../../shared/providers/types';
-import { identityKey, type SessionInfo } from '../../shared/auth/types';
 import { api, ApiError } from '../platform/api';
 import { authorizeNetwork, beginSignOut, pendingLogout } from '../platform/auth';
+import { errorMessage, UiError, uiMessage, type UiMessage } from '../platform/i18n/messages';
 import {
   clearLocal,
   lockStorageWrites,
-  resumeStorageWrites,
   read,
+  resumeStorageWrites,
   storageEpoch,
   write,
 } from '../platform/storage';
@@ -24,7 +25,7 @@ export type SessionStatus =
 export function useSession() {
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [status, setStatus] = useState<SessionStatus>('loading');
-  const [bootError, setBootError] = useState('');
+  const [bootError, setBootError] = useState<UiMessage>('');
   const version = useRef(0);
   const stopped = useRef(false);
   const inFlight = useRef<Promise<void> | null>(null);
@@ -67,7 +68,7 @@ export function useSession() {
           !current.identity.sub ||
           !['/cdn-cgi/access/logout', '/__dev/access/logout'].includes(current.logoutUrl)
         )
-          throw new Error('无效的会话响应。');
+          throw new UiError(uiMessage('app', 'invalidSession'));
         const cached = read<SessionInfo | null>('access-session', null);
         if (cached?.identity && identityKey(cached.identity) !== identityKey(current.identity)) {
           await clearLocal();
@@ -96,7 +97,7 @@ export function useSession() {
           setStatus('offline');
         } else {
           setStatus('unavailable');
-          setBootError(error instanceof Error ? error.message : '暂时无法连接你的空间。');
+          setBootError(errorMessage(error, uiMessage('app', 'spaceUnavailable')));
         }
       }
     })();
@@ -167,7 +168,7 @@ export function useSession() {
         if (event.data === 'sign-out') {
           signOut();
           void clearLocal().catch((error: unknown) =>
-            setBootError(error instanceof Error ? error.message : '本地记录未能完全清除。'),
+            setBootError(errorMessage(error, uiMessage('app', 'localClearFailed'))),
           );
         }
       };

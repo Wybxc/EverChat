@@ -475,3 +475,83 @@ test('revoked notification permission disables delivery on resume without prompt
     ),
   ).toBe(1);
 });
+
+test('notification language changes without a new subscription and remains available after every app page closes', async ({
+  page,
+  context,
+}) => {
+  const f = await fixture(context, page);
+  await f.panel.getByRole('button', { name: '启用系统通知', exact: true }).click();
+  await expect(f.panel.getByRole('status')).toHaveText('页面通知可用');
+  const revision = f.device!.revision;
+  let deviceWrites = 0;
+  page.on('request', (request) => {
+    if (
+      new URL(request.url()).pathname === '/api/notifications/device' &&
+      request.method() !== 'GET'
+    )
+      deviceWrites++;
+  });
+  await page.getByRole('combobox', { name: '语言', exact: true }).selectOption('en');
+  await expect(
+    page.getByRole('region', { name: 'Answer notifications', exact: true }),
+  ).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          new Promise<unknown>((resolve, reject) => {
+            const open = indexedDB.open('everchat-notifications');
+            open.onerror = () => reject(open.error);
+            open.onsuccess = () => {
+              const db = open.result;
+              const get = db.transaction('state').objectStore('state').get('locale');
+              get.onsuccess = () => {
+                resolve(get.result);
+                db.close();
+              };
+              get.onerror = () => {
+                reject(get.error);
+                db.close();
+              };
+            };
+          }),
+      ),
+    )
+    .toBe('en');
+  expect(f.device!.revision).toBe(revision);
+  expect(deviceWrites).toBe(0);
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { permissionRequests: number }).permissionRequests,
+    ),
+  ).toBe(1);
+  const worker = context.serviceWorkers()[0];
+  const completion = {
+    conversationId: crypto.randomUUID(),
+    messageId: crypto.randomUUID(),
+    completedAt: Date.now(),
+  };
+  await page.close();
+  expect(context.pages()).toHaveLength(0);
+  const bodies = await worker.evaluate(
+    async (payload) => {
+      const scope = globalThis as Probe;
+      const Push = (
+        globalThis as unknown as { PushEvent: new (type: string, init: { data: string }) => Event }
+      ).PushEvent;
+      const event = new Push('push', { data: JSON.stringify(payload) });
+      let handled: Promise<unknown> | undefined;
+      Object.defineProperty(event, 'waitUntil', {
+        value: (work: Promise<unknown>) => {
+          handled = work;
+        },
+      });
+      globalThis.dispatchEvent(event);
+      await handled;
+      return (await scope.registration.getNotifications()).map((notification) => notification.body);
+    },
+    { channel: NOTIFICATION_CHANNEL, ...completion },
+  );
+  expect(bodies).toEqual(['Answer completed']);
+});

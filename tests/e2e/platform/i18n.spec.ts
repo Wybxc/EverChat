@@ -167,6 +167,17 @@ test('anonymous shares localize bubbles and Markdown controls without loading pr
   await expect(page.getByRole('heading', { name: 'Model 原名', exact: true })).toBeVisible();
   await expect(page.getByText('Read-only snapshot · 2 messages', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Copy code', exact: true })).toBeVisible();
+  for (const size of [16, 32]) {
+    await page.setViewportSize({ width: 320, height: 568 });
+    await page.evaluate((value) => {
+      document.documentElement.style.fontSize = `${value}px`;
+    }, size);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
+    await expect(page.getByRole('combobox', { name: 'Language', exact: true })).toBeInViewport();
+  }
+  await page.evaluate(() => {
+    document.documentElement.style.fontSize = '';
+  });
   await page.getByRole('combobox', { name: 'Language', exact: true }).selectOption('zh-CN');
   await expect(page.getByRole('button', { name: '复制代码', exact: true })).toBeVisible();
   await expect(page.getByRole('article', { name: '提问 1', exact: true })).toContainText(
@@ -175,4 +186,102 @@ test('anonymous shares localize bubbles and Markdown controls without loading pr
   await expect(page).toHaveURL(`/s/${id}#${secret}`);
   expect(requests.filter((path) => /^\/(api|auth)(\/|$)/.test(path))).toEqual([]);
   expect(requests.filter((path) => /private-bootstrap|notifications/.test(path))).toEqual([]);
+});
+
+test('an existing provider save error is translated when language changes, without resaving the draft', async ({
+  page,
+}) => {
+  await page.request.post('/__dev/access/login', { headers });
+  await page.goto('/');
+  await page.getByRole('button', { name: '空间设置', exact: true }).click();
+  await page.getByRole('tab', { name: '供应商', exact: true }).click();
+  await page.getByRole('button', { name: '添加供应商', exact: true }).click();
+  await page.getByLabel('名称', { exact: true }).fill('Unchanged provider 原名');
+  await page.getByLabel('API 端点', { exact: true }).fill('http://invalid.example');
+  await expect(page.getByTestId('settings-save-status')).toContainText('HTTPS');
+  let writes = 0;
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname.startsWith('/api/settings') && request.method() !== 'GET')
+      writes++;
+  });
+  await page.getByRole('tab', { name: '通用', exact: true }).click();
+  await page.getByRole('combobox', { name: '语言', exact: true }).selectOption('en');
+  await page.getByRole('tab', { name: 'Providers', exact: true }).click();
+  await expect(page.getByTestId('settings-save-status')).toContainText('valid HTTPS API base URL');
+  await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Unchanged provider 原名');
+  await expect(page.getByLabel('API endpoint', { exact: true })).toHaveValue(
+    'http://invalid.example',
+  );
+  expect(writes).toBe(0);
+});
+
+test('switching language during a streamed answer preserves its run, draft, URL and content', async ({
+  page,
+}) => {
+  await page.request.post('/__dev/access/login', { headers });
+  const original = await page.request
+    .get('/api/settings/providers')
+    .then((response) => response.json());
+  const providerId = crypto.randomUUID(),
+    model = 'benchmark-reasoning-60-150-20';
+  let id: string | undefined;
+  try {
+    expect(
+      (
+        await page.request.put('/api/settings/providers', {
+          headers,
+          data: {
+            ...original,
+            providers: [
+              {
+                id: providerId,
+                name: 'Provider 原名',
+                provider: 'openai-chat',
+                baseUrl: 'https://provider.test/v1',
+                apiKey: 'integration-test-key',
+                models: [
+                  { id: model, name: 'Model 原名', enabled: true, reasoningSupport: 'supported' },
+                ],
+              },
+            ],
+            activeProviderId: providerId,
+            activeModel: model,
+            systemPrompt: '',
+            maxOutputTokens: null,
+          },
+        })
+      ).ok(),
+    ).toBe(true);
+    await page.goto('/');
+    await page.getByRole('textbox', { name: '消息', exact: true }).fill('Original question 原文');
+    await page.getByRole('button', { name: '发送消息', exact: true }).click();
+    const answer = page.getByTestId('assistant-message');
+    await expect(answer).toContainText('正文');
+    await expect(answer).toHaveAttribute('data-status', 'running');
+    const url = page.url();
+    id = new URL(url).pathname.split('/')[2];
+    await page.getByRole('textbox', { name: '消息', exact: true }).fill('Next draft 草稿');
+    await page.getByRole('button', { name: '空间设置', exact: true }).click();
+    await page.getByRole('combobox', { name: '语言', exact: true }).selectOption('en');
+    await page.getByRole('button', { name: 'Close settings', exact: true }).click();
+    await expect(page).toHaveURL(url);
+    await expect(page.getByRole('textbox', { name: 'Message', exact: true })).toHaveValue(
+      'Next draft 草稿',
+    );
+    await expect(answer).toHaveAttribute('data-status', 'completed');
+    await expect(answer).toContainText('Model 原名');
+    const snapshot = await page.request
+      .get(`/api/conversations/${id}`)
+      .then((response) => response.json());
+    expect(snapshot.messages).toHaveLength(2);
+    expect(
+      snapshot.messages[1].parts.find((part: { type: string }) => part.type === 'text').text,
+    ).toContain('正文🙂');
+    expect(
+      snapshot.messages[1].parts.find((part: { type: string }) => part.type === 'reasoning').text,
+    ).toContain('思考🙂');
+  } finally {
+    if (id) await page.request.delete(`/api/conversations/${id}`, { headers });
+    await page.request.put('/api/settings/providers', { headers, data: original });
+  }
 });

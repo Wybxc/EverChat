@@ -1,17 +1,18 @@
-import { useTranslation } from 'react-i18next';
-import './locales';
-import { useRef, useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Command, CommandGroup, CommandInput, CommandList } from '@/components/ui/command';
 import { X } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { ConversationInfo } from '../../../shared/conversation/types';
 import type { SearchResult } from '../../../shared/search/query';
+import { normalizeSearch } from '../../../shared/search/query';
 import { conversationUrl } from '../../app/useConversationRoute';
 import { Modal, ModalTitle } from '../../components/Modal';
-import { Button } from '@/components/ui/button';
-import { Command, CommandInput, CommandList, CommandGroup } from '@/components/ui/command';
+import { type UiMessage, renderUiMessage } from '../../platform/i18n/messages';
 import { LibrarySearch } from './LibrarySearch';
-import { SearchResultItem } from './SearchResultItem';
+import './locales';
 import { SearchHighlight } from './SearchHighlight';
-import { normalizeSearch } from '../../../shared/search/query';
+import { SearchResultItem } from './SearchResultItem';
 
 export function GlobalSearch({
   conversations,
@@ -25,7 +26,7 @@ export function GlobalSearch({
 }: {
   conversations: ConversationInfo[];
   loading: boolean;
-  error: string;
+  error: UiMessage;
   retry: () => void;
   close: () => void;
   restoreFocus: () => void;
@@ -125,7 +126,7 @@ export function GlobalSearch({
                 )}
                 {error && (
                   <div role="alert" className="flex items-center gap-2 px-3 py-2 text-xs">
-                    <span>{error}</span>
+                    <span>{renderUiMessage(error)}</span>
                     <Button variant="ghost" onClick={retry}>
                       {t(($) => $.retry)}
                     </Button>

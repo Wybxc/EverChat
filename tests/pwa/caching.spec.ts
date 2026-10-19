@@ -1,4 +1,4 @@
-import { expect, test, type Page, type BrowserContext } from '@playwright/test';
+import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 
 const id = '00000000-0000-4000-8000-000000000101';
 async function control(page: Page, data: unknown) {
@@ -68,6 +68,12 @@ test('cold installation only requires the application shell and opens offline wh
   await expect(page.getByLabel('消息', { exact: true })).toHaveValue('冷启动离线草稿');
   await page.getByRole('button', { name: '空间设置', exact: true }).click();
   await expect(page.getByRole('dialog', { name: '设置', exact: true })).toBeVisible();
+  await page.getByRole('combobox', { name: '语言', exact: true }).selectOption('en');
+  await expect(page.getByRole('dialog', { name: 'Settings', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Close settings', exact: true }).click();
+  await expect(page.getByLabel('Message', { exact: true })).toHaveValue('冷启动离线草稿');
+  await page.reload();
+  await expect(page.getByLabel('Message', { exact: true })).toHaveValue('冷启动离线草稿');
 });
 
 test('used math, syntax highlighting and diagrams survive an offline reload through the module cache', async ({

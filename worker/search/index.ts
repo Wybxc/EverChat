@@ -1,10 +1,11 @@
 import { fromMarkdown } from 'mdast-util-from-markdown';
 import { gfmFromMarkdown } from 'mdast-util-gfm';
 import { gfm } from 'micromark-extension-gfm';
+import { AppError, problem } from '../../shared/errors/descriptor';
 import {
-  searchCandidateGlob,
   normalizeSearch,
   SEARCH_PAGE_SIZE,
+  searchCandidateGlob,
   type LibrarySearch,
   type SearchDocument,
 } from '../../shared/search/query';
@@ -27,7 +28,11 @@ export function searchableMarkdown(markdown: string): string {
 
 export const MAX_SEARCH_DATABASE_BYTES = 256 * 1024 * 1024;
 export const SEARCH_CAPACITY_MESSAGE = '搜索索引已达到容量限制，请删除不需要的对话后重试。';
-export class SearchChanged extends Error {}
+export class SearchChanged extends AppError {
+  constructor(message: string) {
+    super(problem('SEARCH_STALE'), message);
+  }
+}
 export const searchRetryDelay = (attempts: number) =>
   Math.min(30 * 60_000, 30_000 * 2 ** Math.min(6, Math.max(0, attempts - 1)));
 type FieldRow = {

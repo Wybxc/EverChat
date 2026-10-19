@@ -1,10 +1,12 @@
 import { messageFiles, messageImages, messageText } from '../../../shared/conversation/content';
 import type { Message } from '../../../shared/conversation/types';
+import { problem } from '../../../shared/errors/descriptor';
 import type { Locale } from '../../../shared/i18n/locale';
+import { renderIssue } from '../../platform/i18n/messages';
 import { getLocaleSnapshot } from '../../platform/i18n/preference';
 import { pageI18n } from '../../platform/i18n/react';
-import './locales';
 import { downloadFile, escapeHtml } from './download';
+import './locales';
 
 export function exportChatFile(
   selected: string,
@@ -37,7 +39,9 @@ export function exportChatFile(
     message.status === 'completed'
       ? ''
       : t(($) => $.status, { status: t(($) => $[statuses[message.status]]) }) +
-        (message.error ? ` (${message.error})` : '');
+        (message.error
+          ? ` (${renderIssue(message.generation?.issue ?? problem('GENERATION_INTERRUPTED'), locale)})`
+          : '');
   const attachments = (message: Message) =>
     [
       ...messageImages(message).map((image) => t(($) => $.image, { name: image.name })),

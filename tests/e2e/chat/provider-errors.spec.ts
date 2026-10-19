@@ -180,8 +180,9 @@ test('a provider model-list 401 keeps the Access session and exposes diagnostics
     await page.getByRole('tab', { name: '供应商', exact: true }).click();
     await page.getByRole('button', { name: '获取', exact: true }).click();
     const failure = page.getByTestId('provider-failure');
-    await expect(failure).toContainText('HTTP 401');
+    await expect(failure).toContainText('模型供应商拒绝访问');
     await failure.locator('summary').click();
+    await expect(failure.locator('dd').filter({ hasText: /^401$/ })).toBeVisible();
     await expect(failure).toContainText('Unauthorized');
     expect((await page.request.get('/api/session')).ok()).toBe(true);
     await expect(page.getByRole('dialog', { name: '设置', exact: true })).toBeVisible();

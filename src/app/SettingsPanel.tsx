@@ -1,9 +1,6 @@
-import { useTranslation } from 'react-i18next';
-import './locales';
-import { storageEpoch } from '../platform/storage';
 import { Button } from '@/components/ui/button';
 import { NativeSelect } from '@/components/ui/native-select';
-import { LoadingContent } from './AppFrame';
+import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { LogOut } from 'lucide-react';
@@ -16,20 +13,24 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
-import type { ProviderSettings } from '../../shared/providers/types';
-import { Switch } from '@/components/ui/switch';
+import { useTranslation } from 'react-i18next';
 import { DEFAULT_TITLE_SETTINGS } from '../../shared/conversation/titles';
+import type { ProviderSettings } from '../../shared/providers/types';
 import { DisclosureScope } from '../components/Disclosure';
+import { NotificationSettings } from '../features/notifications/NotificationSettings';
 import { PromptPresetsPanel } from '../features/presets/PromptPresets';
 import { ProviderEditor } from '../features/providers/ProviderEditor';
 import { availableModels, reconcile } from '../features/providers/selection';
 import { SettingsAutosave } from '../features/providers/settings-autosave';
 import { WebToolSettingsPanel } from '../features/web-tools/WebToolSettings';
 import { api } from '../platform/api';
-import { useMediaQuery } from '../platform/useMediaQuery';
-import { NotificationSettings } from '../features/notifications/NotificationSettings';
-import { PwaSettings } from '../platform/pwa/PwaControls';
 import { LanguageControl } from '../platform/i18n/LanguageControl';
+import { errorMessage, renderUiMessage, UiError, uiMessage } from '../platform/i18n/messages';
+import { PwaSettings } from '../platform/pwa/PwaControls';
+import { storageEpoch } from '../platform/storage';
+import { useMediaQuery } from '../platform/useMediaQuery';
+import { LoadingContent } from './AppFrame';
+import './locales';
 
 type PanelProps = {
   render: (content: ReactNode) => ReactNode;
@@ -85,7 +86,7 @@ export function SettingsPanel(props: PanelProps) {
       new SettingsAutosave(
         query.data,
         (input) => {
-          if (epoch !== storageEpoch()) throw new Error(t(($) => $.sessionChanged));
+          if (epoch !== storageEpoch()) throw new UiError(uiMessage('app', 'sessionChanged'));
           return api<ProviderSettings>('/settings/providers', 'PUT', input);
         },
         (result) => {
@@ -201,7 +202,7 @@ export function SettingsPanel(props: PanelProps) {
                       {query.isError ? (
                         <div className="space-y-3 py-4">
                           <p role="alert" className="text-sm">
-                            {query.error.message}
+                            {renderUiMessage(errorMessage(query.error))}
                           </p>
                           <Button variant="secondary" onClick={() => void query.refetch()}>
                             {t(($) => $.reload)}
@@ -425,7 +426,7 @@ function SettingsForm({
       <div className="sticky bottom-0 z-10 flex shrink-0 items-center justify-between gap-3 border-t border-border bg-background px-3 py-2 text-xs sm:px-4 text-muted-foreground">
         <p data-testid="settings-save-status" role={status === 'error' ? 'alert' : 'status'}>
           {status === 'error'
-            ? t(($) => $.notSaved, { error })
+            ? t(($) => $.notSaved, { error: renderUiMessage(error) })
             : status === 'saving'
               ? t(($) => $.saving)
               : status === 'waiting'

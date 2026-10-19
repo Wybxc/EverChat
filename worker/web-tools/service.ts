@@ -1,3 +1,4 @@
+import { AppError, problem } from '../../shared/errors/descriptor';
 import type { WebToolServiceConfig } from '../../shared/web-tools/service';
 import {
   MAX_TOOL_SOURCE_CHARACTERS,
@@ -7,8 +8,8 @@ import {
   validateWebToolOutcome,
   WEB_TOOL_NAMES,
   type WebToolCall,
-  type WebToolOutcome,
   type WebToolFailure,
+  type WebToolOutcome,
 } from '../../shared/web-tools/tasks';
 
 export const WEB_TOOL_RESPONSE_BYTES = 512 * 1024;
@@ -20,7 +21,7 @@ const timeoutError = '联网工具执行已停止或超过 15 秒期限。';
 export function terminalWebToolError(outcome: WebToolOutcome): string | undefined {
   return outcome.status === 'failed' && outcome.failure?.terminal ? outcome.error : undefined;
 }
-const invalid = () => new Error('联网服务返回了无效或超限的结果。');
+const invalid = () => new AppError(problem('TOOL_INVALID'), '联网服务返回了无效或超限的结果。');
 const object = (value: unknown): Record<string, unknown> => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw invalid();
   return value as Record<string, unknown>;
@@ -86,6 +87,17 @@ export async function executeWebTool(
     id: call.id,
     name: call.name,
     status: 'failed',
+    issue: problem(
+      code === 'CONFIGURATION'
+        ? 'TOOL_NOT_CONFIGURED'
+        : code === 'AUTHENTICATION'
+          ? 'TOOL_UNAUTHORIZED'
+          : code === 'RATE_LIMIT' || code === 'BALANCE'
+            ? 'TOOL_RATE_LIMITED'
+            : code === 'TIMEOUT'
+              ? 'TOOL_TIMEOUT'
+              : 'TOOL_FAILED',
+    ),
     error: `${config.provider === 'deepseek' ? 'DeepSeek' : 'Tavily'}${httpStatus ? ` · HTTP ${httpStatus}` : ''}：${error}`,
     failure: { provider: config.provider, code, terminal, ...(httpStatus ? { httpStatus } : {}) },
   });

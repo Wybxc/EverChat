@@ -1,4 +1,8 @@
 export default {
+  messageLimit: '消息正文与思考内容合计超过 768 KiB 的存储保护大小。',
+  modelLimit: '模型列表超过 {{count}} 个，请按供应商拆分配置或手动添加需要的模型。',
+
+  saveFailed: '保存失败，请重试。',
   language: '语言',
   system: '跟随系统',
   close: '关闭',

@@ -1,8 +1,3 @@
-import { useTranslation } from 'react-i18next';
-import './locales';
-import { ApiKeyInput } from '../../components/ApiKeyInput';
-import { ModelPriceButton } from '../usage/PriceEditor';
-import { MAX_PROVIDER_MODELS, MODEL_LIST_LIMIT_MESSAGE } from '../../../shared/providers/limits';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -12,7 +7,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Pencil, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { useReloadBlocker } from '../../platform/pwa/useReloadBlocker';
+import { useTranslation } from 'react-i18next';
 import * as v from 'valibot';
 import { enrichModelCatalog } from '../../../shared/models/catalog';
 import {
@@ -22,16 +17,28 @@ import {
 } from '../../../shared/models/probe';
 import type { DiscoveredModel, ProviderModel } from '../../../shared/models/types';
 import { providerOptions } from '../../../shared/providers/endpoints';
+import type { ProviderFailure } from '../../../shared/providers/failure';
+import { MAX_PROVIDER_MODELS } from '../../../shared/providers/limits';
 import type {
   ProviderApiKind,
   ProviderProfile,
   ProviderSettings,
 } from '../../../shared/providers/types';
+import { ApiKeyInput } from '../../components/ApiKeyInput';
 import { Disclosure, DisclosureScope } from '../../components/Disclosure';
 import { Modal, ModalTitle } from '../../components/Modal';
 import { api, ApiError } from '../../platform/api';
-import type { ProviderFailure } from '../../../shared/providers/failure';
+import {
+  errorMessage,
+  renderUiMessage,
+  UiError,
+  uiMessage,
+  type UiMessage,
+} from '../../platform/i18n/messages';
+import { useReloadBlocker } from '../../platform/pwa/useReloadBlocker';
+import { ModelPriceButton } from '../usage/PriceEditor';
 import { ProviderFailureView } from './ProviderFailureView';
+import './locales';
 import { loadModelCatalog } from './model-catalog';
 import { SettingsAutosave } from './settings-autosave';
 
@@ -119,10 +126,10 @@ export function ProviderEditor({
   const newModelInput = useRef<HTMLInputElement>(null),
     providerNameInput = useRef<HTMLInputElement>(null);
   const [fetchingId, setFetchingId] = useState<string | null>(null);
-  const [notice, setNotice] = useState('');
+  const [notice, setNotice] = useState<UiMessage>('');
   const [noticeFailure, setNoticeFailure] = useState<{
     providerId: string;
-    summary: string;
+    summary: UiMessage;
     failure: ProviderFailure;
   } | null>(null);
   const [mobileDetail, setMobileDetail] = useState(false);
@@ -140,7 +147,7 @@ export function ProviderEditor({
   const [editingModel, setEditingModel] = useState<number | null>(null);
   const [testing, setTesting] = useState(false),
     [testResults, setTestResults] = useState<ModelProbeResult[]>([]),
-    [testError, setTestError] = useState('');
+    [testError, setTestError] = useState<UiMessage>('');
   const probeController = useRef<AbortController | null>(null);
   const [modelListRevision, setModelListRevision] = useState(0);
   const [modelFilter, setModelFilter] = useState('');
@@ -340,7 +347,8 @@ export function ProviderEditor({
           .filter((model) => !existing.has(model.id))
           .map((model) => ({ ...model, enabled: false })),
       ];
-      if (models.length > MAX_PROVIDER_MODELS) throw new Error(MODEL_LIST_LIMIT_MESSAGE);
+      if (models.length > MAX_PROVIDER_MODELS)
+        throw new UiError(uiMessage('common', 'modelLimit', { count: MAX_PROVIDER_MODELS }));
       update({
         ...current,
         providers: current.providers.map((profile) =>
@@ -348,11 +356,15 @@ export function ProviderEditor({
         ),
       });
       await store.flush();
-      setNotice(t(($) => $.fetchedModels, { count: result.models.length }));
+      setNotice(uiMessage('providers', 'fetchedModels', { count: result.models.length }));
     } catch (error) {
       if (error instanceof ApiError && error.failure)
-        setNoticeFailure({ providerId: target.id, summary: error.message, failure: error.failure });
-      else setNotice(error instanceof Error ? error.message : t(($) => $.fetchFailed));
+        setNoticeFailure({
+          providerId: target.id,
+          summary: errorMessage(error),
+          failure: error.failure,
+        });
+      else setNotice(errorMessage(error, uiMessage('providers', 'fetchFailed')));
     } finally {
       setFetchingId(null);
     }
@@ -361,11 +373,11 @@ export function ProviderEditor({
     if (!selected || !newModel.trim()) return;
     const id = newModel.trim();
     if (selected.models.some((model) => model.id === id)) {
-      setNotice(t(($) => $.modelIdExists));
+      setNotice(uiMessage('providers', 'modelIdExists'));
       return;
     }
     if (selected.models.length >= MAX_PROVIDER_MODELS) {
-      setNotice(MODEL_LIST_LIMIT_MESSAGE);
+      setNotice(uiMessage('common', 'modelLimit', { count: MAX_PROVIDER_MODELS }));
       return;
     }
     update(
@@ -419,7 +431,8 @@ export function ProviderEditor({
         );
         const latest = currentTarget();
         if (!latest) return;
-        if (result.capability !== capability) throw new Error(t(($) => $.invalidProbeResult));
+        if (result.capability !== capability)
+          throw new UiError(uiMessage('providers', 'invalidProbeResult'));
         setTestResults((results) => [...results, result]);
         if (result.status === 'confirmed' && capability !== 'text') {
           const testedCapabilities = {
@@ -446,7 +459,7 @@ export function ProviderEditor({
       await store.flush();
     } catch (error) {
       if (!controller.signal.aborted && currentTarget())
-        setTestError(error instanceof Error ? error.message : t(($) => $.probeFailed));
+        setTestError(errorMessage(error, uiMessage('providers', 'probeFailed')));
     } finally {
       if (probeController.current === controller) {
         probeController.current = null;
@@ -877,7 +890,7 @@ export function ProviderEditor({
         </fieldset>
         {notice && (
           <p role="status" className="mt-4 text-sm">
-            {notice}
+            {renderUiMessage(notice)}
           </p>
         )}
         {noticeFailure?.providerId === selectedId && (

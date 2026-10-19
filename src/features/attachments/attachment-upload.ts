@@ -1,21 +1,22 @@
-import { t } from './locales';
 import * as v from 'valibot';
 import {
+  ATTACHMENT_UPLOAD_TIMEOUT,
   attachmentInputSchema,
   attachmentUrl,
   fileMediaType,
-  ATTACHMENT_UPLOAD_TIMEOUT,
   MAX_ATTACHMENT_BYTES,
   type Attachment,
   type AttachmentInput,
 } from '../../../shared/attachments/files';
 import { api } from '../../platform/api';
+import { UiError, uiMessage } from '../../platform/i18n/messages';
 import { authenticatedUploadSignal, xhrJson } from '../../platform/xhr';
+import { t } from './locales';
 
 export async function prepareAttachment(file: File, signal: AbortSignal): Promise<AttachmentInput> {
   const mediaType = fileMediaType(file.name);
   if (!mediaType || file.size > MAX_ATTACHMENT_BYTES || !file.size)
-    throw new Error(t(($) => $.invalidUpload));
+    throw new UiError(uiMessage('attachments', 'invalidUpload'));
   const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
   signal.throwIfAborted();
   const input = {
@@ -27,7 +28,8 @@ export async function prepareAttachment(file: File, signal: AbortSignal): Promis
       '',
     ),
   };
-  if (!v.safeParse(attachmentInputSchema, input).success) throw new Error(t(($) => $.invalidName));
+  if (!v.safeParse(attachmentInputSchema, input).success)
+    throw new UiError(uiMessage('attachments', 'invalidName'));
   return input;
 }
 export async function uploadAttachment(
@@ -58,11 +60,15 @@ export async function uploadAttachment(
           );
           resolve(body as Attachment);
         } catch (error) {
-          reject(error instanceof Error ? error : new Error(t(($) => $.invalidResponse)));
+          reject(
+            error instanceof Error
+              ? error
+              : new UiError(uiMessage('attachments', 'invalidResponse')),
+          );
         }
       };
-      xhr.onerror = () => reject(new Error(t(($) => $.interrupted)));
-      xhr.ontimeout = () => reject(new Error(t(($) => $.timeout)));
+      xhr.onerror = () => reject(new UiError(uiMessage('attachments', 'interrupted')));
+      xhr.ontimeout = () => reject(new UiError(uiMessage('attachments', 'timeout')));
       xhr.onabort = () =>
         reject(
           new DOMException(

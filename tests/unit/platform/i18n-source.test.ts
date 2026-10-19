@@ -1,15 +1,15 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
 import { globSync, readFileSync } from 'node:fs';
+import { test } from 'node:test';
 import ts from 'typescript';
 
 // Extend this boundary when a feature is migrated. Resources and user content are excluded.
 const migrated = [
-  'src/app/*.tsx',
+  'src/app/*.{ts,tsx}',
   'src/components/*.tsx',
   'src/components/ui/*.tsx',
-  'src/features/chat/*.tsx',
-  'src/features/library/*.tsx',
+  'src/features/chat/*.{ts,tsx}',
+  'src/features/library/*.{ts,tsx}',
   'src/features/providers/*.tsx',
   'src/features/presets/*.tsx',
   'src/features/web-tools/*.tsx',
@@ -20,6 +20,7 @@ const migrated = [
   'src/features/backup/*.tsx',
   'src/features/notifications/*.tsx',
   'src/platform/pwa/*.tsx',
+  'src/platform/{api,xhr,storage,autosave}.ts',
 ];
 const literalTerms = new Set([
   'EverChat',

@@ -408,7 +408,7 @@ test('a failed tool has one visible error while collapsed and can reveal and foc
     await expect(activity).not.toHaveAttribute('open');
     await expect(answer.getByRole('alert')).toHaveCount(1);
     const error = answer.getByRole('alert');
-    await expect(error).toContainText('联网服务密钥无效或没有访问权限。');
+    await expect(error).toContainText('联网服务拒绝访问，请检查密钥与权限。');
     await expect(error).toBeVisible();
     await expect(answer.getByText('生成失败', { exact: true })).toBeVisible();
     await answer.getByRole('button', { name: /^查看失败调用/ }).click();

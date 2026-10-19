@@ -1,4 +1,5 @@
 import { cleanTitle } from '../../shared/conversation/titles';
+import { problem } from '../../shared/errors/descriptor';
 import type { ChatInput, ProviderConfig } from '../../shared/providers/types';
 import { ProviderStream, type StreamState } from '../../shared/streaming/provider-stream';
 import type { SqlQuery } from '../generation/metrics';
@@ -91,7 +92,8 @@ export class ConversationTitles {
     expectedVersion = 0,
   ) {
     if (this.get(id)) return { id };
-    if (this.active()) return { error: '标题正在生成，请稍后重试。', status: 409 };
+    if (this.active())
+      return { error: '标题正在生成，请稍后重试。', issue: problem('TITLE_FAILED'), status: 409 };
     const input: ChatInput[] = [
       {
         role: 'user',

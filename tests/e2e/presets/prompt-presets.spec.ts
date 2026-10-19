@@ -223,12 +223,12 @@ test('preset management autosaves and recovers drafts, applies copies, synchroni
     await expect(panel.getByLabel('预设名称', { exact: true })).toBeFocused();
     await panel.getByLabel('预设名称', { exact: true }).fill('写作助手');
     await panel.getByLabel('预设系统提示词', { exact: true }).fill('你是写作助手。');
-    await expect(panel.getByRole('alert')).toContainText('暂时无法保存预设');
+    await expect(panel.getByRole('alert')).toContainText('服务暂时不可用');
     await page.reload();
     await openSpaceSettings(page);
     panel = await presetsTab(page);
     await expect(panel.getByLabel('预设系统提示词', { exact: true })).toHaveValue('你是写作助手。');
-    await expect(panel.getByRole('alert')).toContainText('暂时无法保存预设');
+    await expect(panel.getByRole('alert')).toContainText('服务暂时不可用');
     await page.unroute('**/api/settings/presets/*');
     await panel.getByRole('button', { name: '重试保存预设' }).click();
     await expect(panel.getByTestId('preset-save-status')).toHaveText('已保存');
@@ -285,9 +285,7 @@ test('preset management autosaves and recovers drafts, applies copies, synchroni
     await panel.getByRole('button', { name: '删除预设', exact: true }).click();
     await expect(page.getByRole('button', { name: '取消删除预设' })).toBeFocused();
     await page.getByRole('button', { name: '确认删除预设', exact: true }).click();
-    await expect(page.getByRole('alertdialog').getByRole('alert')).toContainText(
-      '暂时无法删除预设',
-    );
+    await expect(page.getByRole('alertdialog').getByRole('alert')).toContainText('服务暂时不可用');
     // AlertDialog hides the underlying settings panel from the accessibility tree.
     await expect(page.getByLabel('预设系统提示词', { exact: true })).toHaveValue('远端提示词');
     await page.unroute('**/api/settings/presets/*');
@@ -457,7 +455,7 @@ test('a dirty draft whose preset was deleted remotely can be saved under a new I
         : route.continue(),
     );
     await panel.getByLabel('预设系统提示词', { exact: true }).fill('待恢复的内容');
-    await expect(panel.getByRole('alert')).toContainText('暂时无法保存预设');
+    await expect(panel.getByRole('alert')).toContainText('服务暂时不可用');
     await second.request.delete(`/api/settings/presets/${id}`, { headers });
     await page.unroute(`**/api/settings/presets/${id}`);
     await panel.getByRole('button', { name: '重试保存预设' }).click();

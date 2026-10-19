@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { UiError, renderUiMessage } from '../../../src/platform/i18n/messages';
 import { clearLocal, registerNotificationCleanup } from '../../../src/platform/storage';
 
 test('notification cleanup failure does not prevent clearing private drafts on logout', async (t) => {
@@ -24,7 +25,10 @@ test('notification cleanup failure does not prevent clearing private drafts on l
   registerNotificationCleanup(async () => {
     throw new Error('Notification DB unavailable');
   });
-  await assert.rejects(clearLocal(), /未能完全清除/);
+  await assert.rejects(
+    clearLocal(),
+    (error: unknown) => error instanceof UiError && renderUiMessage(error.uiMessage).length > 0,
+  );
   assert.equal(Reflect.get(localStorage, 'everchat:draft'), undefined);
   assert.equal(Reflect.get(localStorage, 'unrelated'), 'keep');
 });

@@ -1,9 +1,5 @@
 import * as v from 'valibot';
-import {
-  DEFAULT_PROMPT_PRESET_ID,
-  type PromptPreset,
-  type PromptPresetInput,
-} from '../../shared/presets/types';
+import { AppError, problem } from '../../shared/errors/descriptor';
 import {
   MAX_PRESET_TEXT_BYTES,
   MAX_PROMPT_PRESETS,
@@ -12,14 +8,28 @@ import {
   promptPresetInputSchema,
   promptPresetListSchema,
 } from '../../shared/presets/schema';
+import {
+  DEFAULT_PROMPT_PRESET_ID,
+  type PromptPreset,
+  type PromptPresetInput,
+} from '../../shared/presets/types';
 
 type Row = PromptPreset & { deletedAt: number | null } & Record<string, SqlStorageValue>;
-export class PromptPresetError extends Error {
+export class PromptPresetError extends AppError {
   constructor(
     public status: number,
     message: string,
   ) {
-    super(message);
+    super(
+      problem(
+        status === 507
+          ? 'PRESET_LIMIT'
+          : status === 410 || status === 404
+            ? 'NOT_FOUND'
+            : 'PRESET_INVALID',
+      ),
+      message,
+    );
   }
 }
 export class PromptPresets {

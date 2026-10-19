@@ -1,9 +1,10 @@
+import { type UiMessage, errorMessage, uiMessage } from './i18n/messages';
 import { setReloadBlocker } from './pwa/reload-guard';
 
 type SaveState<T> = {
   settings: T;
   status: 'saved' | 'waiting' | 'saving' | 'error';
-  error: string;
+  error: UiMessage;
 };
 
 // Serialize requests and keep edits made while a response is in flight.
@@ -78,7 +79,7 @@ export class Autosave<T, Input = T> {
       this.emit({
         ...this.snapshot,
         status: 'error',
-        error: error instanceof Error ? error.message : '保存失败，请重试。',
+        error: errorMessage(error, uiMessage('common', 'saveFailed')),
       });
       throw error;
     }

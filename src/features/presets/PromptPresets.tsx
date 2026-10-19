@@ -1,20 +1,27 @@
-import { useTranslation } from 'react-i18next';
-import './locales';
-import { MAX_SYSTEM_PROMPT_LENGTH } from '../../../shared/conversation/limits';
-import { Modal, ModalTitle } from '../../components/Modal';
 import { Button } from '@/components/ui/button';
-import { NativeSelect } from '@/components/ui/native-select';
 import { Input } from '@/components/ui/input';
+import { NativeSelect } from '@/components/ui/native-select';
 import { Textarea } from '@/components/ui/textarea';
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2 } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useTranslation } from 'react-i18next';
 import * as v from 'valibot';
-import { DEFAULT_PROMPT_PRESET_ID, type PromptPreset } from '../../../shared/presets/types';
+import { MAX_SYSTEM_PROMPT_LENGTH } from '../../../shared/conversation/limits';
 import { MAX_PROMPT_PRESETS, promptPresetInputSchema } from '../../../shared/presets/schema';
-import { Autosave } from '../../platform/autosave';
+import { DEFAULT_PROMPT_PRESET_ID, type PromptPreset } from '../../../shared/presets/types';
+import { Modal, ModalTitle } from '../../components/Modal';
 import { api } from '../../platform/api';
-import { read, write, storageEpoch } from '../../platform/storage';
+import { Autosave } from '../../platform/autosave';
+import {
+  errorMessage,
+  renderUiMessage,
+  UiError,
+  uiMessage,
+  type UiMessage,
+} from '../../platform/i18n/messages';
+import { read, storageEpoch, write } from '../../platform/storage';
+import './locales';
 
 import {
   discardPresetDraft,
@@ -90,7 +97,7 @@ export function PromptPresetPicker({
         )}
         {query.data?.map((preset) => (
           <option key={preset.id} value={preset.id}>
-            {preset.name}
+            {preset.id === DEFAULT_PROMPT_PRESET_ID ? t(($) => $.defaultPreset) : preset.name}
           </option>
         ))}
         {(!compact || value === 'custom') && <option value="custom">{t(($) => $.custom)}</option>}
@@ -164,7 +171,10 @@ export function PromptPresetsPanel({
     const preset = {
       ...source,
       id: crypto.randomUUID(),
-      name: source.name.trim() || t(($) => $.newPreset),
+      name:
+        source.id === DEFAULT_PROMPT_PRESET_ID
+          ? t(($) => $.defaultPreset)
+          : source.name.trim() || t(($) => $.newPreset),
       updatedAt: Date.now(),
     };
     savePresetDraft(preset);
@@ -193,7 +203,7 @@ export function PromptPresetsPanel({
           )}
           {items.map((preset) => (
             <option key={preset.id} value={preset.id}>
-              {preset.name}
+              {preset.id === DEFAULT_PROMPT_PRESET_ID ? t(($) => $.defaultPreset) : preset.name}
             </option>
           ))}
         </NativeSelect>
@@ -213,7 +223,7 @@ export function PromptPresetsPanel({
       </div>
       {query.isError && (
         <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span role="alert">{query.error.message}</span>
+          <span role="alert">{renderUiMessage(errorMessage(query.error))}</span>
           <Button variant="secondary" type="button" onClick={() => void query.refetch()}>
             {t(($) => $.reload)}
           </Button>
@@ -269,7 +279,7 @@ function PresetEditor({
     cancel = useRef<HTMLButtonElement>(null),
     deleteButton = useRef<HTMLButtonElement>(null);
   const [confirming, setConfirming] = useState(false),
-    [removeError, setRemoveError] = useState(''),
+    [removeError, setRemoveError] = useState<UiMessage>(''),
     [removing, setRemoving] = useState(false);
   const [cached] = useState(() => presetDrafts()[preset.id]);
   const [store] = useState(
@@ -277,12 +287,13 @@ function PresetEditor({
       new Autosave(
         preset,
         async (draft: PromptPreset) => {
-          if (epoch !== storageEpoch() || deleting.current) throw new Error(t(($) => $.closed));
+          if (epoch !== storageEpoch() || deleting.current)
+            throw new UiError(uiMessage('presets', 'closed'));
           const parsed = v.safeParse(promptPresetInputSchema, {
             name: draft.name,
             systemPrompt: draft.systemPrompt,
           });
-          if (!parsed.success) throw new Error(t(($) => $.invalid));
+          if (!parsed.success) throw new UiError(uiMessage('presets', 'invalid'));
           if (isDefault) await callbacks.current.beforeDefaultSave?.();
           const saved = await api<PromptPreset>(
             `/settings/presets/${preset.id}`,
@@ -363,7 +374,7 @@ function PresetEditor({
       removed();
     } catch (error) {
       deleting.current = false;
-      setRemoveError(error instanceof Error ? error.message : t(($) => $.deleteFailed));
+      setRemoveError(errorMessage(error, uiMessage('presets', 'deleteFailed')));
     } finally {
       setRemoving(false);
     }
@@ -386,7 +397,7 @@ function PresetEditor({
           aria-label={t(($) => $.name)}
           className="w-full"
           maxLength={100}
-          value={settings.name}
+          value={isDefault ? t(($) => $.defaultPreset) : settings.name}
           disabled={removing || isDefault}
           onChange={(event) => update({ name: event.currentTarget.value })}
         />
@@ -405,12 +416,12 @@ function PresetEditor({
       </label>
       {error && (
         <p role="alert" className="text-sm">
-          {error}
+          {renderUiMessage(error)}
         </p>
       )}
       {removeError && !confirming && (
         <p role="alert" className="text-sm">
-          {removeError}
+          {renderUiMessage(removeError)}
         </p>
       )}
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -476,7 +487,7 @@ function PresetEditor({
           <p className="text-sm">{t(($) => $.deleteConfirmation, { name: settings.name })}</p>
           {removeError && (
             <p role="alert" className="text-sm">
-              {removeError}
+              {renderUiMessage(removeError)}
             </p>
           )}
           <div className="flex flex-wrap gap-2">

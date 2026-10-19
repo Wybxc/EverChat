@@ -1,14 +1,15 @@
 import * as v from 'valibot';
+import { AppError, problem } from '../../shared/errors/descriptor';
 import { estimateCost } from '../../shared/usage/pricing';
 import {
   priceInputSchema,
   type UsageAttempt,
   type UsageFilter,
-  type UsagePriceInput,
+  type UsageGroup,
   type UsagePrice,
+  type UsagePriceInput,
   type UsageRecord,
   type UsageReport,
-  type UsageGroup,
   type UsageTotals,
 } from '../../shared/usage/types';
 import type { SqlQuery } from '../generation/metrics';
@@ -98,7 +99,7 @@ export class UsageLedger {
         previous.kind !== attempt.kind ||
         previous.protocol !== attempt.protocol)
     )
-      throw new Error('用量请求身份冲突。');
+      throw new AppError(problem('USAGE_INVALID'), '用量请求身份冲突。');
     if (previous && previous.version >= attempt.version) return;
     if (previous && previous.status !== 'running' && attempt.status === 'running') return;
     const record: UsageRecord = {
@@ -175,7 +176,7 @@ export class UsageLedger {
       try {
         cursor = JSON.parse(atob(filter.cursor));
       } catch {
-        throw new Error('无效的分页位置。');
+        throw new AppError(problem('USAGE_INVALID'), '无效的分页位置。');
       }
       if (
         !Array.isArray(cursor) ||
@@ -183,7 +184,7 @@ export class UsageLedger {
         !Number.isSafeInteger(cursor[0]) ||
         typeof cursor[1] !== 'string'
       )
-        throw new Error('无效的分页位置。');
+        throw new AppError(problem('USAGE_INVALID'), '无效的分页位置。');
       query.clause += `${query.clause ? ' AND' : ' WHERE'} (startedAt<? OR (startedAt=? AND id<?))`;
       query.args.push(cursor[0], cursor[0], cursor[1]);
     }

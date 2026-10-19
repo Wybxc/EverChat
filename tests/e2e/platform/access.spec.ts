@@ -58,6 +58,8 @@ test('offline sign-out clears private records, locks other tabs and offers edge 
   await expect(other.getByLabel('消息', { exact: true })).toBeVisible();
   await openSpaceSettings(page);
   await context.setOffline(true);
+  for (const tab of [page, other])
+    await expect.poll(() => tab.evaluate(() => navigator.onLine)).toBe(false);
   await page.getByRole('button', { name: '退出并清除本地记录' }).click();
   for (const tab of [page, other]) {
     await expect(tab.getByRole('button', { name: '完成退出' })).toBeVisible();

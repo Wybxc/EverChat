@@ -1,7 +1,8 @@
 import * as v from 'valibot';
-import type { StreamState, StreamUsage } from './provider-stream';
 import { contextEstimateSchema, type ContextEstimate } from '../conversation/context-budget';
+import { errorIssueSchema, type ErrorIssue } from '../errors/descriptor';
 import { providerFailureSchema, type ProviderFailure } from '../providers/failure';
+import type { StreamState, StreamUsage } from './provider-stream';
 
 export interface GenerationTiming {
   queueMs?: number;
@@ -15,6 +16,7 @@ export interface GenerationResult {
   timing?: GenerationTiming;
   context?: ContextEstimate;
   failure?: ProviderFailure;
+  issue?: ErrorIssue;
 }
 export function addGenerationUsage(
   previous: Pick<GenerationResult, 'usage' | 'usageIsFinal'> | undefined,
@@ -62,4 +64,5 @@ export const generationSchema = v.strictObject({
   timing: v.optional(v.strictObject({ queueMs: count, firstTokenMs: count, durationMs: count })),
   context: v.optional(contextEstimateSchema),
   failure: v.optional(providerFailureSchema),
+  issue: v.optional(errorIssueSchema),
 });

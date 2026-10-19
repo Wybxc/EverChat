@@ -321,7 +321,7 @@ test('the management menu preserves failed edits, syncs metadata to another devi
     await expect(input).toBeFocused();
     await input.fill('重命名的对话');
     await dialog.getByRole('button', { name: '保存', exact: true }).click();
-    await expect(dialog.getByRole('alert')).toContainText('保存失败');
+    await expect(dialog.getByRole('alert')).toContainText('服务暂时不可用');
     await expect(input).toHaveValue('重命名的对话');
     failing = false;
     await dialog.getByRole('button', { name: '保存', exact: true }).click();

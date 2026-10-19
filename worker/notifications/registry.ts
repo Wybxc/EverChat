@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import { problem } from '../../shared/errors/descriptor';
 import {
   allowedPushEndpoint,
   completionId,
@@ -67,9 +68,20 @@ export class NotificationRegistry {
   save(owner: string, input: NotificationDevice) {
     const device = v.parse(notificationDeviceSchema, input);
     if (device.subscription && !allowedPushEndpoint(device.subscription.endpoint))
-      throw new HttpError(400, '不支持此推送服务地址。');
+      throw new HttpError(
+        400,
+        '不支持此推送服务地址。',
+        undefined,
+        problem('NOTIFICATION_INVALID'),
+      );
     const old = this.row(device.instanceId);
-    if (old && old.owner !== owner) throw new HttpError(403, '通知实例不属于此账号。');
+    if (old && old.owner !== owner)
+      throw new HttpError(
+        403,
+        '通知实例不属于此账号。',
+        undefined,
+        problem('NOTIFICATION_INVALID'),
+      );
     if (old && old.revision >= device.revision)
       return JSON.parse(old.payload) as NotificationDevice;
     const enabledAt =
@@ -94,11 +106,17 @@ export class NotificationRegistry {
   }
   connect(request: Request, owner: string, expires: number, instanceId: string) {
     if (!v.is(notificationDeviceSchema.entries.instanceId, instanceId))
-      throw new HttpError(400, '通知实例格式无效。');
+      throw new HttpError(400, '通知实例格式无效。', undefined, problem('NOTIFICATION_INVALID'));
     const device = this.row(instanceId);
-    if (device && device.owner !== owner) throw new HttpError(403, '通知实例不属于此账号。');
+    if (device && device.owner !== owner)
+      throw new HttpError(
+        403,
+        '通知实例不属于此账号。',
+        undefined,
+        problem('NOTIFICATION_INVALID'),
+      );
     if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket')
-      throw new HttpError(426, '需要实时连接。');
+      throw new HttpError(426, '需要实时连接。', undefined, problem('NOTIFICATION_INVALID'));
     const pair = new WebSocketPair();
     this.ctx.acceptWebSocket(pair[1], [instanceId]);
     pair[1].serializeAttachment({

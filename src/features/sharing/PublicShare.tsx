@@ -1,15 +1,21 @@
-import { LanguageControl } from '../../platform/i18n/LanguageControl';
-import { useTranslation } from 'react-i18next';
-import './locales';
-import { StrictMode, useEffect, useRef, useState } from 'react';
-import { createRoot } from 'react-dom/client';
-import { I18nextProvider } from 'react-i18next';
-import { pageI18n } from '../../platform/i18n/react';
 import { Button } from '@/components/ui/button';
 import { NativeSelect } from '@/components/ui/native-select';
+import { StrictMode, useEffect, useRef, useState } from 'react';
+import { createRoot } from 'react-dom/client';
+import { I18nextProvider, useTranslation } from 'react-i18next';
 import type { PublicShare, ShareBlock, SharedSnapshot } from '../../../shared/sharing/types';
 import { shareIdPattern, shareSecretPattern } from '../../../shared/sharing/types';
+import { LanguageControl } from '../../platform/i18n/LanguageControl';
+import {
+  UiError,
+  type UiMessage,
+  errorMessage,
+  renderUiMessage,
+  uiMessage,
+} from '../../platform/i18n/messages';
+import { pageI18n } from '../../platform/i18n/react';
 import { useThemeMode } from '../../platform/theme';
+import './locales';
 import { ShareContent } from './ShareContent';
 
 function PublicSharePage() {
@@ -19,14 +25,14 @@ function PublicSharePage() {
   const [share, setShare] = useState<PublicShare>();
   const [blocks, setBlocks] = useState<ShareBlock[]>([]);
   const [busy, setBusy] = useState(true),
-    [error, setError] = useState('');
+    [error, setError] = useState<UiMessage>('');
   const [reload, setReload] = useState(0),
     version = useRef(0);
   const id = location.pathname.split('/')[2] ?? '',
     token = location.hash.slice(1);
   const request = async (signal: AbortSignal): Promise<SharedSnapshot> => {
     if (!shareIdPattern.test(id) || !shareSecretPattern.test(token))
-      throw new Error(t(($) => $.unavailable));
+      throw new UiError(uiMessage('sharing', 'unavailable'));
     let response: Response;
     try {
       response = await fetch(`/public/shares/${id}`, {
@@ -37,14 +43,16 @@ function PublicSharePage() {
         redirect: 'error',
       });
     } catch {
-      throw new Error(t(($) => $.connectionFailed));
+      throw new UiError(uiMessage('sharing', 'connectionFailed'));
     }
     if (!response.ok)
-      throw new Error(response.status === 404 ? t(($) => $.unavailable) : t(($) => $.readFailed));
+      throw new UiError(
+        uiMessage('sharing', response.status === 404 ? 'unavailable' : 'readFailed'),
+      );
     try {
       return (await response.json()) as SharedSnapshot;
     } catch {
-      throw new Error(t(($) => $.readFailed));
+      throw new UiError(uiMessage('sharing', 'readFailed'));
     }
   };
   useEffect(() => {
@@ -58,14 +66,14 @@ function PublicSharePage() {
       .then((result) => {
         if (current !== version.current) return;
         if (result.share.expiresAt && result.share.expiresAt <= Date.now())
-          throw new Error(t(($) => $.unavailable));
+          throw new UiError(uiMessage('sharing', 'unavailable'));
         setShare(result.share);
         setBlocks(result.page.blocks);
         document.title = `${result.share.title} · EverChat`;
       })
       .catch((failure) => {
         if (!controller.signal.aborted && current === version.current)
-          setError(failure instanceof Error ? failure.message : t(($) => $.readFailedShort));
+          setError(errorMessage(failure, uiMessage('sharing', 'readFailedShort')));
       })
       .finally(() => {
         if (current === version.current) setBusy(false);
@@ -85,7 +93,7 @@ function PublicSharePage() {
       else {
         setShare(undefined);
         setBlocks([]);
-        setError(t(($) => $.unavailable));
+        setError(uiMessage('sharing', 'unavailable'));
         document.title = 'EverChat';
       }
     };
@@ -111,9 +119,9 @@ function PublicSharePage() {
   }, []);
   return (
     <div className="min-h-dvh bg-background text-foreground">
-      <header className="sticky top-0 z-10 flex items-center justify-between gap-3 bg-background/95 px-4 py-3 backdrop-blur">
+      <header className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-2 bg-background/95 px-4 py-3 backdrop-blur">
         <span className="font-semibold">EverChat</span>
-        <div className="flex min-w-0 items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <LanguageControl compact />
           <NativeSelect
             aria-label={t(($) => $.theme)}
@@ -141,7 +149,7 @@ function PublicSharePage() {
         )}
         {error && (
           <div role="alert" className="space-y-3">
-            <p>{error}</p>
+            <p>{renderUiMessage(error)}</p>
             <Button variant="secondary" onClick={() => setReload((value) => value + 1)}>
               {t(($) => $.reload)}
             </Button>

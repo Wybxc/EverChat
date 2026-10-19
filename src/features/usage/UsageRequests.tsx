@@ -1,14 +1,20 @@
-import { formatNumber, formatDateTime } from '../../platform/i18n/format';
-import { useTranslation } from 'react-i18next';
-import './locales';
-import { useEffect, useRef, useState } from 'react';
-import { useInfiniteQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
-import { api } from '../../platform/api';
+import { useInfiniteQuery } from '@tanstack/react-query';
+import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { formatAmount } from '../../../shared/usage/pricing';
-import { usageCsvHeader, usageCsvRow, csvLabels } from './csv';
 import type { UsageRecord } from '../../../shared/usage/types';
+import { api } from '../../platform/api';
+import { formatDateTime, formatNumber } from '../../platform/i18n/format';
+import {
+  type UiMessage,
+  errorMessage,
+  renderUiMessage,
+  uiMessage,
+} from '../../platform/i18n/messages';
+import { csvLabels, usageCsvHeader, usageCsvRow } from './csv';
 import { usageKindLabel, usageStatusLabel } from './labels';
+import './locales';
 
 type Page = { records: UsageRecord[]; cursor: string | null };
 export const money = (currencies: Record<string, string>) =>
@@ -141,7 +147,7 @@ export function UsageRequests({ params, onLocate }: { params: string; onLocate: 
   });
   const exportAbort = useRef<AbortController | null>(null),
     [exported, setExported] = useState<number | null>(null),
-    [error, setError] = useState('');
+    [error, setError] = useState<UiMessage>('');
   useEffect(() => () => exportAbort.current?.abort(), [params]);
   const download = async () => {
     const abort = new AbortController();
@@ -174,7 +180,7 @@ export function UsageRequests({ params, onLocate }: { params: string; onLocate: 
       setTimeout(() => URL.revokeObjectURL(url), 30_000);
     } catch (failure) {
       if (!abort.signal.aborted)
-        setError(failure instanceof Error ? failure.message : t(($) => $.exportFailed));
+        setError(errorMessage(failure, uiMessage('usage', 'exportFailed')));
     } finally {
       if (exportAbort.current === abort) {
         exportAbort.current = null;
@@ -201,7 +207,7 @@ export function UsageRequests({ params, onLocate }: { params: string; onLocate: 
       </div>
       {(query.error || error) && (
         <p role="alert" className="text-sm text-destructive">
-          {error || query.error?.message}
+          {renderUiMessage(error || errorMessage(query.error))}
         </p>
       )}
       {query.isPending && (

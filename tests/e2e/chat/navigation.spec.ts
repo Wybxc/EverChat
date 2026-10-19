@@ -172,7 +172,7 @@ for (const invalid of [false, true])
       const id = invalid ? 'not-a-conversation-id' : crypto.randomUUID();
       await page.goto(`/c/${id}`);
       await expect(page.getByRole('alert')).toContainText(
-        invalid ? '找不到这个页面' : '找不到这个对话',
+        invalid ? '找不到这个页面' : '此项目不可用或已删除',
       );
       await page.getByRole('textbox', { name: '消息', exact: true }).fill('不应创建对话');
       await expect(page.getByRole('button', { name: '发送消息', exact: true })).toBeDisabled();

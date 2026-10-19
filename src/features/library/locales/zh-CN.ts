@@ -1,4 +1,6 @@
 export default {
+  updateFailed: '无法更新对话列表',
+
   generationUnconfirmed: '生成状态待同步',
   generating: '生成中',
   stopping: '停止中',

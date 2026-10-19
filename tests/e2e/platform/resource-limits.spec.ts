@@ -239,7 +239,10 @@ test('a native storage error crosses RPC as a sanitized 507 response', async ({ 
     expect((await action(request, fixture.id, 'storage-error')).ok()).toBe(true);
     const response = await request.get(`/api/conversations/${fixture.id}`);
     expect(response.status()).toBe(507);
-    expect(await response.json()).toEqual({ error: STORAGE_QUOTA_MESSAGE });
+    expect(await response.json()).toEqual({
+      error: STORAGE_QUOTA_MESSAGE,
+      issue: { code: 'STORAGE_FULL' },
+    });
   } finally {
     await fixture.restore();
   }
@@ -271,7 +274,7 @@ test('a storage sync error is visible, pauses automatic retries and supports man
       .getByRole('link', { name: 'Capacity test', exact: true })
       .first()
       .click();
-    await expect(page.getByRole('alert')).toContainText(STORAGE_QUOTA_MESSAGE);
+    await expect(page.getByRole('alert')).toContainText('云端存储容量不足');
     await page.getByRole('textbox', { name: '消息', exact: true }).fill('保留草稿');
     await expect(page.getByRole('button', { name: '发送消息', exact: true })).toBeDisabled();
     const stopped = reads;

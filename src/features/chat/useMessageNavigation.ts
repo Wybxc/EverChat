@@ -1,5 +1,6 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Message } from '../../../shared/conversation/types';
+import { uiMessage, type UiMessage } from '../../platform/i18n/messages';
 import { answerTargets, POSITION_TOLERANCE, type AnswerAnchor } from './message-navigation';
 import { isScrollKey, SCROLL_INTENT_EVENT, SCROLL_LAYOUT_EVENT } from './scroll-intent';
 
@@ -40,7 +41,7 @@ export function useMessageNavigation({
   const schedule = useRef<() => void>(() => {});
   const perform = useRef<(action: ReadingAction) => void>(() => {});
   const [state, setState] = useState<NavigationState>(empty);
-  const [announcement, setAnnouncement] = useState('');
+  const [announcement, setAnnouncement] = useState<UiMessage>('');
   const refFor = useCallback((id: string) => {
     let callback = callbacks.current.get(id);
     if (!callback) {
@@ -154,16 +155,19 @@ export function useMessageNavigation({
         viewport.scrollTop = Math.max(0, anchor.top - inset());
         landed = { id: anchor.id, top: viewport.scrollTop };
         setAnnouncement(
-          `已定位第 ${answers.indexOf(anchor.id) + 1} 条回答，共 ${answers.length} 条`,
+          uiMessage('chat', 'navigationPosition', {
+            position: answers.indexOf(anchor.id) + 1,
+            count: answers.length,
+          }),
         );
       } else if (action === 'top') {
         pauseFollowing();
         topLocked = true;
         viewport.scrollTop = 0;
-        setAnnouncement('已跳到对话顶部');
+        setAnnouncement(uiMessage('chat', 'navigationTop'));
       } else {
         scrollToBottom();
-        setAnnouncement('已跳到对话底部');
+        setAnnouncement(uiMessage('chat', 'navigationBottom'));
       }
       measure();
     };

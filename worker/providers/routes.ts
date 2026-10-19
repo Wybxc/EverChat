@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import { problem } from '../../shared/errors/descriptor';
 import { modelProbeInputSchema } from '../../shared/models/probe';
 import { requireAuth, uuidSchema } from '../http/access';
 import type { ApiRouter } from '../http/app';
@@ -13,8 +14,9 @@ export function registerProvidersRoutes(app: ApiRouter) {
   app.put('/settings/providers', async (context) => {
     await requireAuth(context);
     if (!context.req.header('Content-Type')?.includes('application/json'))
-      throw new HttpError(415, '请使用 JSON 请求。');
-    if (!context.req.raw.body) throw new HttpError(400, '请求内容为空。');
+      throw new HttpError(415, '请使用 JSON 请求。', undefined, problem('PROVIDER_FAILED'));
+    if (!context.req.raw.body)
+      throw new HttpError(400, '请求内容为空。', undefined, problem('PROVIDER_FAILED'));
     return context.env.LIBRARY.getByName('personal').saveProviderSettingsResponse(
       context.req.raw.body,
     );
@@ -23,14 +25,16 @@ export function registerProvidersRoutes(app: ApiRouter) {
   app.get('/settings/providers/:id/models', async (context) => {
     await requireAuth(context);
     const id = context.req.param('id');
-    if (!v.safeParse(uuidSchema, id).success) throw new HttpError(404, '找不到这个供应商。');
+    if (!v.safeParse(uuidSchema, id).success)
+      throw new HttpError(404, '找不到这个供应商。', undefined, problem('NOT_FOUND'));
     return context.env.LIBRARY.getByName('personal').providerModelsResponse(id);
   });
 
   app.post('/settings/providers/:id/models/test', async (context) => {
     await requireAuth(context);
     const id = context.req.param('id');
-    if (!v.safeParse(uuidSchema, id).success) throw new HttpError(404, '找不到这个供应商。');
+    if (!v.safeParse(uuidSchema, id).success)
+      throw new HttpError(404, '找不到这个供应商。', undefined, problem('NOT_FOUND'));
     const input = await parseBody(context, modelProbeInputSchema, {
       maxBytes: 2048,
       tooLarge: '测试请求过大。',

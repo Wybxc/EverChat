@@ -1,22 +1,29 @@
-import { useTranslation } from 'react-i18next';
-import './locales';
-import { ApiKeyInput } from '../../components/ApiKeyInput';
 import { Button } from '@/components/ui/button';
-import { Spinner } from '@/components/ui/spinner';
-import { NativeSelect } from '@/components/ui/native-select';
 import { Input } from '@/components/ui/input';
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { NativeSelect } from '@/components/ui/native-select';
+import { Spinner } from '@/components/ui/spinner';
 import { useQueryClient } from '@tanstack/react-query';
+import { RefreshCw } from 'lucide-react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useTranslation } from 'react-i18next';
 import * as v from 'valibot';
 import {
   webToolServiceInputSchema,
   type WebToolServiceInput,
   type WebToolServiceSettings,
 } from '../../../shared/web-tools/service';
-import { Autosave } from '../../platform/autosave';
+import { ApiKeyInput } from '../../components/ApiKeyInput';
 import { api } from '../../platform/api';
+import { Autosave } from '../../platform/autosave';
+import {
+  errorMessage,
+  renderUiMessage,
+  UiError,
+  uiMessage,
+  type UiMessage,
+} from '../../platform/i18n/messages';
 import { storageEpoch, write } from '../../platform/storage';
+import './locales';
 
 import {
   loadWebToolSettings,
@@ -32,7 +39,7 @@ export function WebToolSettingsPanel({ active }: { active: boolean }) {
   if (!query.data)
     return query.isError ? (
       <div className="space-y-3">
-        <p role="alert">{query.error.message}</p>
+        <p role="alert">{renderUiMessage(errorMessage(query.error))}</p>
         <Button variant="secondary" type="button" onClick={() => void query.refetch()}>
           {t(($) => $.reload)}
         </Button>
@@ -53,7 +60,7 @@ function ServiceEditor({ initial, active }: { initial: WebToolServiceSettings; a
       new Autosave<Draft, WebToolServiceInput>(
         initial,
         async (input) => {
-          if (storageEpoch() !== epoch) throw new Error(t(($) => $.sessionChanged));
+          if (storageEpoch() !== epoch) throw new UiError(uiMessage('web-tools', 'sessionChanged'));
           return api<WebToolServiceSettings>('/settings/web-tools', 'PUT', input);
         },
         (result) => {
@@ -67,7 +74,7 @@ function ServiceEditor({ initial, active }: { initial: WebToolServiceSettings; a
             dailyLimit: draft.dailyLimit,
             ...(draft.apiKey === undefined ? {} : { apiKey: draft.apiKey }),
           });
-          if (!parsed.success) throw new Error(t(($) => $.invalid));
+          if (!parsed.success) throw new UiError(uiMessage('web-tools', 'invalid'));
           return parsed.output;
         },
       ),
@@ -76,7 +83,7 @@ function ServiceEditor({ initial, active }: { initial: WebToolServiceSettings; a
   const [switching, setSwitching] = useState(false);
   const [revealed, setRevealed] = useState<string | null>(null),
     [reading, setReading] = useState(false),
-    [readError, setReadError] = useState('');
+    [readError, setReadError] = useState<UiMessage>('');
   const revealRequest = useRef<AbortController | null>(null),
     activeRef = useRef(active);
   activeRef.current = active;
@@ -122,13 +129,13 @@ function ServiceEditor({ initial, active }: { initial: WebToolServiceSettings; a
           provider,
           dailyLimit: store.getSnapshot().settings.dailyLimit,
         });
-        if (storageEpoch() !== epoch) throw new Error(t(($) => $.sessionChanged));
+        if (storageEpoch() !== epoch) throw new UiError(uiMessage('web-tools', 'sessionChanged'));
         queryClient.setQueryData(WEB_TOOL_SETTINGS_KEY, result);
         write('web-tool-settings', result);
         return result;
       });
     } catch (error) {
-      setReadError(error instanceof Error ? error.message : t(($) => $.switchFailed));
+      setReadError(errorMessage(error, uiMessage('web-tools', 'switchFailed')));
     } finally {
       setSwitching(false);
     }
@@ -155,7 +162,7 @@ function ServiceEditor({ initial, active }: { initial: WebToolServiceSettings; a
         setRevealed(result.apiKey);
     } catch (error) {
       if (!controller.signal.aborted && activeRef.current && storageEpoch() === epoch)
-        setReadError(error instanceof Error ? error.message : t(($) => $.keyFailed));
+        setReadError(errorMessage(error, uiMessage('web-tools', 'keyFailed')));
     } finally {
       if (revealRequest.current === controller) {
         revealRequest.current = null;
@@ -241,7 +248,7 @@ function ServiceEditor({ initial, active }: { initial: WebToolServiceSettings; a
       <div className="flex items-center gap-3 text-xs text-muted-foreground">
         <span data-testid="web-tool-save-status" role={status === 'error' ? 'alert' : 'status'}>
           {status === 'error'
-            ? error
+            ? renderUiMessage(error)
             : status === 'saving'
               ? t(($) => $.saving)
               : status === 'waiting'
@@ -260,7 +267,7 @@ function ServiceEditor({ initial, active }: { initial: WebToolServiceSettings; a
       </div>
       {readError && (
         <p role="alert" className="text-sm">
-          {readError}
+          {renderUiMessage(readError)}
         </p>
       )}
     </div>

@@ -1,9 +1,9 @@
 import * as v from 'valibot';
-import { attachmentInputSchema } from './files';
-import { MAX_PDF_TEXT_BYTES } from './pdf';
-import { pdfMetadataSchema } from './pdf';
 import { estimateTextTokens } from '../conversation/token-estimate';
+import { AppError, problem, type ErrorIssue } from '../errors/descriptor';
 import type { ChatInput } from '../providers/types';
+import { attachmentInputSchema } from './files';
+import { MAX_PDF_TEXT_BYTES, pdfMetadataSchema } from './pdf';
 
 export const MAX_MESSAGE_DOCUMENTS = 4,
   MAX_CONTEXT_DOCUMENTS = 8;
@@ -91,7 +91,11 @@ export function documentSource(file: DocumentPart): DocumentPart {
 }
 export const selectedDocumentText = (text: string, ranges?: DocumentRange[]) =>
   ranges ? ranges.map((range) => text.slice(range.start, range.end)).join('\n\n') : text;
-export class DocumentError extends Error {}
+export class DocumentError extends AppError {
+  constructor(message: string, issue: ErrorIssue = problem('ATTACHMENT_INVALID')) {
+    super(issue, message);
+  }
+}
 export const documentTokens = (files: readonly DocumentPart[] = []) =>
   files.reduce((sum, file) => sum + file.tokens, 0);
 export function documentPrompt(file: Pick<DocumentPart, 'name' | 'mediaType'>, text: string) {

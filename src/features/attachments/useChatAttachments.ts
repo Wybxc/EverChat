@@ -1,4 +1,3 @@
-import { t } from './locales';
 import type { RefObject } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import * as v from 'valibot';
@@ -11,6 +10,7 @@ import {
 import { fileMediaType } from '../../../shared/attachments/files';
 import { MAX_MESSAGE_IMAGES, type ImagePart } from '../../../shared/attachments/images';
 import type { PDFExtraction } from '../../../shared/attachments/pdf';
+import type { SessionInfo } from '../../../shared/auth/types';
 import { conversationSettingsSchema } from '../../../shared/conversation/settings';
 import {
   type ConversationInfo,
@@ -18,14 +18,15 @@ import {
 } from '../../../shared/conversation/types';
 import { canAttemptCapability } from '../../../shared/models/metadata';
 import type { ChatModel } from '../../../shared/models/types';
-import type { SessionInfo } from '../../../shared/auth/types';
 import { api } from '../../platform/api';
+import { errorMessage, UiError, uiMessage, type UiMessage } from '../../platform/i18n/messages';
 import { read } from '../../platform/storage';
-import { prepareAttachment, uploadAttachment } from './attachment-upload';
-import { prepareChatImage } from './chat-image';
-import { preparePdf } from './pdf-loader';
 import { writeChatCache } from '../chat/cache';
 import type { useChatDraft } from '../chat/useChatDraft';
+import { prepareAttachment, uploadAttachment } from './attachment-upload';
+import { prepareChatImage } from './chat-image';
+import { t } from './locales';
+import { preparePdf } from './pdf-loader';
 
 export function useChatAttachments({
   selected,
@@ -52,11 +53,11 @@ export function useChatAttachments({
   resetNewTools: () => void;
   select: (id: string) => void;
   refreshLibrary: () => void;
-  setError: (error: string) => void;
+  setError: (error: UiMessage) => void;
 }) {
   const { draft, draftImages, draftFiles, setDraftImages, setDraftFiles } = chatDraft;
   const imageUpload = useRef<{ origin: string | null; controller: AbortController } | null>(null);
-  const [failure, setFailure] = useState<{ id: string | null; message: string } | null>(null);
+  const [failure, setFailure] = useState<{ id: string | null; message: UiMessage } | null>(null);
   useEffect(() => {
     setFailure((value) => (value?.id === selected ? value : null));
   }, [selected]);
@@ -73,11 +74,11 @@ export function useChatAttachments({
   const addUploads = async (inputFiles: File[], forcedKind?: 'image' | 'file') => {
     if (!inputFiles.length || isBusy() || imageUpload.current) return;
     if (!navigator.onLine || !session?.attachmentsConfigured) {
-      setError(t(($) => $.storageRequired));
+      setError(uiMessage('attachments', 'storageRequired'));
       return;
     }
     if (selected && !currentConversation) {
-      setError(t(($) => $.waitSync));
+      setError(uiMessage('attachments', 'waitSync'));
       return;
     }
     const origin = selected,
@@ -95,7 +96,7 @@ export function useChatAttachments({
     const uploadedImages: ImagePart[] = [],
       uploadedFiles: DocumentPart[] = [],
       registered: string[] = [],
-      errors: string[] = [];
+      errors: UiMessage[] = [];
     const cleanup = async (id: string) => {
       if (conversation)
         await api(
@@ -112,14 +113,16 @@ export function useChatAttachments({
         try {
           controller.signal.throwIfAborted();
           if (kind === 'image' && !canAttemptCapability(selectedModel?.metadata, 'imageInput'))
-            throw new Error(t(($) => $.visionRequired));
+            throw new UiError(uiMessage('attachments', 'visionRequired'));
           if (
             (kind === 'image'
               ? draftImages.length + uploadedImages.length
               : draftFiles.length + uploadedFiles.length) >=
             (kind === 'image' ? MAX_MESSAGE_IMAGES : MAX_MESSAGE_DOCUMENTS)
           )
-            throw new Error(kind === 'image' ? t(($) => $.imageLimit) : t(($) => $.documentLimit));
+            throw new UiError(
+              uiMessage('attachments', kind === 'image' ? 'imageLimit' : 'documentLimit'),
+            );
           setImageProgress({ name: file.name, percent: 0, kind });
           const mediaType = fileMediaType(file.name);
           if (
@@ -128,7 +131,7 @@ export function useChatAttachments({
               !file.size ||
               (mediaType !== 'application/pdf' && file.size > MAX_DOCUMENT_BYTES))
           )
-            throw new Error(t(($) => $.invalidDocument));
+            throw new UiError(uiMessage('attachments', 'invalidDocument'));
           const prepared =
             kind === 'image' ? await prepareChatImage(file, controller.signal) : file;
           const input = await prepareAttachment(prepared, controller.signal);
@@ -150,7 +153,8 @@ export function useChatAttachments({
             );
           if (!conversation) {
             const parameters = v.safeParse(conversationSettingsSchema, conversationSettings);
-            if (!parameters.success) throw new Error(t(($) => $.settingsRequired));
+            if (!parameters.success)
+              throw new UiError(uiMessage('attachments', 'settingsRequired'));
             const created: ConversationInfo = {
               id: crypto.randomUUID(),
               title: (draft.trim() || file.name).slice(0, 26),
@@ -168,7 +172,8 @@ export function useChatAttachments({
           }
           if (!settingsSaved) {
             const parameters = v.safeParse(conversationSettingsSchema, conversationSettings);
-            if (!parameters.success) throw new Error(t(($) => $.settingsRequired));
+            if (!parameters.success)
+              throw new UiError(uiMessage('attachments', 'settingsRequired'));
             await api(
               `/conversations/${conversation.id}/settings`,
               'PUT',
@@ -235,9 +240,9 @@ export function useChatAttachments({
             registered.splice(registered.indexOf(registeredId), 1);
           }
           errors.push(
-            t(($) => $.fileFailure, {
+            uiMessage('attachments', 'fileFailure', {
               name: file.name,
-              error: error instanceof Error ? error.message : t(($) => $.uploadFailed),
+              error: errorMessage(error, uiMessage('attachments', 'uploadFailed')),
             }),
           );
         }
@@ -271,12 +276,12 @@ export function useChatAttachments({
             conversation && (uploadedImages.length || uploadedFiles.length)
               ? conversation.id
               : origin,
-          message: errors.join('\n'),
+          message: { join: errors, separator: '\n' },
         });
     } catch (error) {
       for (const id of registered) await cleanup(id);
       if (selectedRef.current === origin && !controller.signal.aborted)
-        setError(error instanceof Error ? error.message : t(($) => $.uploadFailed));
+        setError(errorMessage(error, uiMessage('attachments', 'uploadFailed')));
     } finally {
       if (imageUpload.current === operation) {
         imageUpload.current = null;

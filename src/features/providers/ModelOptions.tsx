@@ -1,19 +1,20 @@
-import { useTranslation } from 'react-i18next';
-import './locales';
-import { MAX_SYSTEM_PROMPT_LENGTH } from '../../../shared/conversation/limits';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { useTranslation } from 'react-i18next';
+import { MAX_SYSTEM_PROMPT_LENGTH } from '../../../shared/conversation/limits';
 import { type ModelProbeResult } from '../../../shared/models/probe';
 import type { ProviderModel } from '../../../shared/models/types';
 import type { ProviderApiKind } from '../../../shared/providers/types';
+import { type UiMessage } from '../../platform/i18n/messages';
+import './locales';
 import { ModelMetadataFields } from './ModelMetadataFields';
 
 type ProbeControls = {
   onTest: () => void;
   testing: boolean;
   results: ModelProbeResult[];
-  testError: string;
+  testError: UiMessage;
 };
 export function ModelOptions({
   model,

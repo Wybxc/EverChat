@@ -1,4 +1,8 @@
 export default {
+  invalidSession: '无效的会话响应。',
+  spaceUnavailable: '暂时无法连接你的空间。',
+  localClearFailed: '本地记录未能完全清除。',
+
   general: '通用',
   providers: '供应商',
   chat: '对话',

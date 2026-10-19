@@ -1,4 +1,9 @@
 export default {
+  messageLimit: 'The message and reasoning exceed the 768 KiB storage safety limit.',
+  modelLimit:
+    'The model list exceeds {{count}} models. Split it across providers or add the models you need manually.',
+
+  saveFailed: 'Could not save. Try again.',
   language: 'Language',
   system: 'Follow system',
   close: 'Close',

@@ -1,5 +1,6 @@
 import * as v from 'valibot';
 import { identityKey } from '../../shared/auth/types';
+import { problem } from '../../shared/errors/descriptor';
 import { notificationDeviceSchema } from '../../shared/notifications/protocol';
 import { requireAuth } from '../http/access';
 import type { ApiRouter } from '../http/app';
@@ -39,6 +40,7 @@ export function registerNotificationRoutes(app: ApiRouter) {
         400,
         `通知订阅格式无效${fields.length ? `（${fields.join('、')}）` : ''}，请更新应用后重新启用。`,
         'INVALID_NOTIFICATION_DEVICE',
+        problem('NOTIFICATION_INVALID'),
       );
     }
     const input = parsed.output;

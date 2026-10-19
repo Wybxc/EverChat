@@ -1,28 +1,29 @@
-import * as v from 'valibot';
 import { createHash } from 'node:crypto';
-import type { Attachment } from '../../shared/attachments/files';
-import { ATTACHMENT_LEASE } from '../../shared/attachments/files';
+import * as v from 'valibot';
 import {
   DOCUMENT_VERSION,
   documentMediaTypeSchema,
   documentPartSchema,
+  documentRangesSchema,
+  documentSource,
   estimateDocumentTokens,
   MAX_DOCUMENT_BYTES,
   MAX_MESSAGE_DOCUMENTS,
+  selectedDocumentText,
   type DocumentPart,
   type DocumentRange,
-  documentRangesSchema,
-  documentSource,
-  selectedDocumentText,
 } from '../../shared/attachments/documents';
-import { extractDocument } from './parser';
+import type { Attachment } from '../../shared/attachments/files';
+import { ATTACHMENT_LEASE } from '../../shared/attachments/files';
 import {
   pdfExtractionSchema,
+  validatePdfText,
   type PDFExtraction,
   type PDFMetadata,
-  validatePdfText,
 } from '../../shared/attachments/pdf';
+import { problem } from '../../shared/errors/descriptor';
 import { HttpError } from '../http/response';
+import { extractDocument } from './parser';
 
 type Source = Attachment & { key: string };
 type Row = {
@@ -88,20 +89,37 @@ export class DocumentStore {
     return Boolean(row && row.status !== 'ready' && !this.parsing.has(id));
   }
   private requireSource(conversationId: string, id: string) {
-    if (!this.bucket) throw new HttpError(503, '文件存储未配置，请先绑定私有 R2 桶。');
+    if (!this.bucket)
+      throw new HttpError(
+        503,
+        '文件存储未配置，请先绑定私有 R2 桶。',
+        undefined,
+        problem('ATTACHMENT_STORAGE_REQUIRED'),
+      );
     const source = this.source(conversationId, id);
-    if (source.status !== 'ready') throw new HttpError(409, '文件尚未上传完成。');
+    if (source.status !== 'ready')
+      throw new HttpError(409, '文件尚未上传完成。', undefined, problem('ATTACHMENT_INVALID'));
     if (!v.safeParse(documentMediaTypeSchema, source.mediaType).success)
-      throw new HttpError(415, '请选择文本文件或 PDF。');
+      throw new HttpError(415, '请选择文本文件或 PDF。', undefined, problem('ATTACHMENT_INVALID'));
     if (source.mediaType !== 'application/pdf' && source.size > MAX_DOCUMENT_BYTES)
-      throw new HttpError(413, '文本文件最多 128 KiB，请拆分文件或选择片段。');
+      throw new HttpError(
+        413,
+        '文本文件最多 128 KiB，请拆分文件或选择片段。',
+        undefined,
+        problem('ATTACHMENT_INVALID'),
+      );
     return source;
   }
   reference(conversationId: string, id: string): DocumentPart {
     const source = this.requireSource(conversationId, id),
       row = this.row(id);
     if (!row || row.status !== 'ready')
-      throw new HttpError(409, '文件尚未解析完成，请重新选择文件。');
+      throw new HttpError(
+        409,
+        '文件尚未解析完成，请重新选择文件。',
+        undefined,
+        problem('ATTACHMENT_INVALID'),
+      );
     const part = v.safeParse(documentPartSchema, {
       type: 'file',
       attachmentId: id,
@@ -116,7 +134,13 @@ export class DocumentStore {
       ...(row.csv ? { csv: JSON.parse(row.csv) } : {}),
       ...(this.pdf(id) ? { pdf: this.pdf(id) } : {}),
     });
-    if (!part.success) throw new HttpError(409, '文件解析引用无效，请重新上传。');
+    if (!part.success)
+      throw new HttpError(
+        409,
+        '文件解析引用无效，请重新上传。',
+        undefined,
+        problem('ATTACHMENT_INVALID'),
+      );
     return part.output;
   }
   async references(
@@ -125,9 +149,14 @@ export class DocumentStore {
     selections: Record<string, DocumentRange[]> = {},
   ) {
     if (ids.length > MAX_MESSAGE_DOCUMENTS || new Set(ids).size !== ids.length)
-      throw new HttpError(400, '每条消息最多添加 4 个不同的文本文件。');
+      throw new HttpError(
+        400,
+        '每条消息最多添加 4 个不同的文本文件。',
+        undefined,
+        problem('ATTACHMENT_INVALID'),
+      );
     if (Object.keys(selections).some((id) => !ids.includes(id)))
-      throw new HttpError(400, '文件选区缺少对应附件。');
+      throw new HttpError(400, '文件选区缺少对应附件。', undefined, problem('ATTACHMENT_INVALID'));
     const files: DocumentPart[] = [];
     for (const id of ids)
       files.push(
@@ -143,15 +172,36 @@ export class DocumentStore {
       expectedHash: string | null = null;
     if (input !== undefined) {
       if (source.mediaType !== 'application/pdf')
-        throw new HttpError(415, '只有 PDF 使用客户端提取结果。');
+        throw new HttpError(
+          415,
+          '只有 PDF 使用客户端提取结果。',
+          undefined,
+          problem('ATTACHMENT_INVALID'),
+        );
       const parsed = v.safeParse(pdfExtractionSchema, input);
-      if (!parsed.success) throw new HttpError(400, 'PDF 提取结果无效，请重新选择文件。');
+      if (!parsed.success)
+        throw new HttpError(
+          400,
+          'PDF 提取结果无效，请重新选择文件。',
+          undefined,
+          problem('ATTACHMENT_INVALID'),
+        );
       if (parsed.output.sourceSha256 !== source.sha256)
-        throw new HttpError(409, 'PDF 原文件与提取结果不符。');
+        throw new HttpError(
+          409,
+          'PDF 原文件与提取结果不符。',
+          undefined,
+          problem('ATTACHMENT_INVALID'),
+        );
       try {
         validatePdfText(parsed.output);
       } catch (error) {
-        throw new HttpError(415, (error as Error).message);
+        throw new HttpError(
+          415,
+          (error as Error).message,
+          undefined,
+          problem('ATTACHMENT_INVALID'),
+        );
       }
       prepared = {
         text: parsed.output.text,
@@ -172,15 +222,36 @@ export class DocumentStore {
             ...(prepared.pageOffsets ? { pageOffsets: prepared.pageOffsets } : {}),
           }))
     )
-      throw new HttpError(409, '此 PDF 已绑定另一份提取结果，请重新选择文件。');
+      throw new HttpError(
+        409,
+        '此 PDF 已绑定另一份提取结果，请重新选择文件。',
+        undefined,
+        problem('ATTACHMENT_INVALID'),
+      );
     if (row?.status === 'ready') return this.reference(conversationId, id);
     if (source.mediaType === 'application/pdf' && !prepared)
-      throw new HttpError(400, '请先在浏览器提取并保存 PDF 文本。');
+      throw new HttpError(
+        400,
+        '请先在浏览器提取并保存 PDF 文本。',
+        undefined,
+        problem('ATTACHMENT_INVALID'),
+      );
     if (row?.status === 'failed')
-      throw new HttpError(row.errorStatus ?? 415, row.error ?? '解析失败，请重新选择文件。');
+      throw new HttpError(
+        row.errorStatus ?? 415,
+        row.error ?? '解析失败，请重新选择文件。',
+        undefined,
+        problem('ATTACHMENT_INVALID'),
+      );
     const active = this.parsing.get(id);
     if (active) return active;
-    if (row) throw new HttpError(409, '文件解析尚未确认或正在清理，请稍后重新选择。');
+    if (row)
+      throw new HttpError(
+        409,
+        '文件解析尚未确认或正在清理，请稍后重新选择。',
+        undefined,
+        problem('ATTACHMENT_INVALID'),
+      );
     const token = crypto.randomUUID(),
       key = `${source.key}/text-v1`;
     this.storage.transactionSync(() => {
@@ -247,9 +318,15 @@ export class DocumentStore {
         httpMetadata: { contentType: 'text/plain; charset=utf-8' },
       });
       if (!saved || saved.size !== bytes.length)
-        throw new HttpError(503, '解析结果未完整保存，请重新选择文件。');
+        throw new HttpError(
+          503,
+          '解析结果未完整保存，请重新选择文件。',
+          undefined,
+          problem('ATTACHMENT_INVALID'),
+        );
       this.requireSource(conversationId, source.id);
-      if (this.row(source.id)?.token !== token) throw new HttpError(409, '文件解析认领已失效。');
+      if (this.row(source.id)?.token !== token)
+        throw new HttpError(409, '文件解析认领已失效。', undefined, problem('ATTACHMENT_INVALID'));
       this.storage.sql.exec(
         "UPDATE attachment_documents SET status = 'ready', lease = 0, sha256 = ?, characters = ?, tokens = ?, bytes = ?, csv = ? WHERE id = ?",
         sha256,
@@ -268,7 +345,12 @@ export class DocumentStore {
       const failure =
         error instanceof HttpError
           ? error
-          : new HttpError(503, '解析结果暂时无法保存，请重新选择文件。');
+          : new HttpError(
+              503,
+              '解析结果暂时无法保存，请重新选择文件。',
+              undefined,
+              problem('ATTACHMENT_INVALID'),
+            );
       if (this.row(source.id)?.token === token) {
         if (putStarted) {
           this.storage.sql.exec(
@@ -304,7 +386,13 @@ export class DocumentStore {
     const file = this.reference(conversationId, id),
       row = this.row(id)!;
     const object = await this.bucket!.get(row.key);
-    if (!object) throw new HttpError(404, '文件解析结果不存在，请重新上传。');
+    if (!object)
+      throw new HttpError(
+        404,
+        '文件解析结果不存在，请重新上传。',
+        undefined,
+        problem('ATTACHMENT_INVALID'),
+      );
     const checksum = object.checksums.sha256
       ? Array.from(new Uint8Array(object.checksums.sha256), (byte) =>
           byte.toString(16).padStart(2, '0'),
@@ -312,15 +400,30 @@ export class DocumentStore {
       : null;
     if (object.size !== row.bytes || checksum !== row.sha256) {
       await object.body.cancel().catch(() => {});
-      throw new HttpError(409, '解析结果完整性校验失败。');
+      throw new HttpError(
+        409,
+        '解析结果完整性校验失败。',
+        undefined,
+        problem('ATTACHMENT_INVALID'),
+      );
     }
     const bytes = new Uint8Array(await object.arrayBuffer());
     this.requireSource(conversationId, id);
     if ((await digest(bytes)) !== file.textSha256)
-      throw new HttpError(409, '解析结果完整性校验失败。');
+      throw new HttpError(
+        409,
+        '解析结果完整性校验失败。',
+        undefined,
+        problem('ATTACHMENT_INVALID'),
+      );
     const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes);
     if (text.length !== file.characters || estimateDocumentTokens(file, text) !== file.tokens)
-      throw new HttpError(409, '解析结果长度或预算不符。');
+      throw new HttpError(
+        409,
+        '解析结果长度或预算不符。',
+        undefined,
+        problem('ATTACHMENT_INVALID'),
+      );
     if (file.pdf) await this.original(conversationId, id, true);
     this.requireSource(conversationId, id);
     const pageOffsets = this.pdfData(id)?.pageOffsets;
@@ -339,11 +442,12 @@ export class DocumentStore {
       !v.safeParse(documentRangesSchema, ranges).success ||
       ranges.at(-1)!.end > saved.text.length
     )
-      throw new HttpError(400, 'PDF 选区无效。');
+      throw new HttpError(400, 'PDF 选区无效。', undefined, problem('ATTACHMENT_INVALID'));
     if (ranges.length === 1 && ranges[0].start === 0 && ranges[0].end === saved.text.length)
       return saved.file;
     const text = selectedDocumentText(saved.text, ranges);
-    if (!text.trim()) throw new HttpError(400, '选区没有可发送的文本。');
+    if (!text.trim())
+      throw new HttpError(400, '选区没有可发送的文本。', undefined, problem('ATTACHMENT_INVALID'));
     return v.parse(documentPartSchema, {
       ...saved.file,
       textSha256: await digest(new TextEncoder().encode(text)),
@@ -378,7 +482,12 @@ export class DocumentStore {
         JSON.stringify(v.parse(documentPartSchema, file)) !==
           JSON.stringify(await this.selectFrom(saved, file.selection.ranges)))
     )
-      throw new HttpError(409, '文件引用与解析结果不符。');
+      throw new HttpError(
+        409,
+        '文件引用与解析结果不符。',
+        undefined,
+        problem('ATTACHMENT_INVALID'),
+      );
   }
   isActive(id: string) {
     return this.parsing.has(id);

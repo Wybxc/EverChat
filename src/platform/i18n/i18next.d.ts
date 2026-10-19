@@ -1,10 +1,11 @@
 import 'i18next';
-import type common from './locales/en/common';
-import type system from './locales/en/system';
 import type app from '../../app/locales/en';
-import type library from '../../features/library/locales/en';
 import type chat from '../../features/chat/locales/en';
+import type library from '../../features/library/locales/en';
 import type providers from '../../features/providers/locales/en';
+import type common from './locales/en/common';
+import type errors from './locales/en/errors';
+import type system from './locales/en/system';
 
 import type presets from '../../features/presets/locales/en';
 
@@ -29,6 +30,7 @@ declare module 'i18next' {
     enableSelector: true;
     strictKeyChecks: true;
     resources: {
+      errors: typeof errors;
       presets: typeof presets;
       'web-tools': typeof webtools;
       usage: typeof usage;

@@ -1,12 +1,13 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ConversationInfo, LibrarySnapshot } from '../../../shared/conversation/types';
 import {
   mergeActivity,
   type ActivityIndex,
   type ConversationActivity,
 } from '../../../shared/conversation/activity';
+import type { ConversationInfo, LibrarySnapshot } from '../../../shared/conversation/types';
 import { api, ApiError } from '../../platform/api';
+import { uiMessage } from '../../platform/i18n/messages';
 import { read, storageEpoch, write } from '../../platform/storage';
 import type { Pending } from '../chat/cache';
 import { deletedAt } from '../chat/cache';
@@ -144,7 +145,7 @@ export function useLibraryIndex({
       online && !libraryQuery.isError && clock - (seenAt.current[id] ?? 0) < 25_000,
     savedIds: new Set((libraryQuery.data ?? []).map((item) => item.id)),
     libraryLoading: !conversations.length && libraryQuery.isLoading,
-    libraryError: libraryQuery.isError ? '无法更新对话列表' : '',
+    libraryError: libraryQuery.isError ? uiMessage('library', 'updateFailed') : '',
     setLocalConversations,
     rememberConversation,
     refreshLibrary,

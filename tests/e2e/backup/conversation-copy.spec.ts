@@ -643,12 +643,15 @@ test('copy actions handle offline and errors, block double clicks, and respect n
         route.fulfill({
           status: 503,
           contentType: 'application/json',
-          body: JSON.stringify({ error: '暂时无法复制，请重试。' }),
+          body: JSON.stringify({
+            error: 'Diagnostic: copy failed',
+            issue: { code: 'COPY_FAILED' },
+          }),
         }),
       { times: 1 },
     );
     await action.click();
-    await expect(message.getByRole('alert')).toHaveText('暂时无法复制，请重试。');
+    await expect(message.getByRole('alert')).toHaveText('无法复制对话，请检查分支和附件后重试。');
     await expect(page).toHaveURL((url) => url.pathname === `/c/${source.id}`);
     await expect(composer).toHaveValue('保留草稿');
     let requests = 0;

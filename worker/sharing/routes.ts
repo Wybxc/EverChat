@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import { problem } from '../../shared/errors/descriptor';
 import { shareIdPattern } from '../../shared/sharing/types';
 import { requireAuth, requireConversation, uuidSchema } from '../http/access';
 import type { ApiRouter } from '../http/app';
@@ -7,17 +8,20 @@ import { HttpError, parseBody, type AppContext } from '../http/response';
 const title = v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(120));
 const hash = v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/));
 function store(context: AppContext) {
-  if (!context.env.SHARES) throw new HttpError(503, '分享服务尚未配置。');
+  if (!context.env.SHARES)
+    throw new HttpError(503, '分享服务尚未配置。', undefined, problem('SHARE_INCOMPLETE'));
   return context.env.SHARES.getByName('personal');
 }
 function id(context: AppContext) {
   const value = context.req.param('id');
-  if (!shareIdPattern.test(value ?? '')) throw new HttpError(404, '找不到这个分享。');
+  if (!shareIdPattern.test(value ?? ''))
+    throw new HttpError(404, '找不到这个分享。', undefined, problem('NOT_FOUND'));
   return value!;
 }
 function cursor(context: AppContext) {
   const value = Number(context.req.query('cursor') ?? 0);
-  if (!Number.isSafeInteger(value) || value < 0) throw new HttpError(400, '分页位置无效。');
+  if (!Number.isSafeInteger(value) || value < 0)
+    throw new HttpError(400, '分页位置无效。', undefined, problem('SHARE_INCOMPLETE'));
   return value;
 }
 export function registerSharingRoutes(app: ApiRouter) {
@@ -69,7 +73,7 @@ export function registerSharingRoutes(app: ApiRouter) {
         if (!next || !Number.isSafeInteger(next.createdAt) || !shareIdPattern.test(next.id))
           throw new Error();
       } catch {
-        throw new HttpError(400, '分页位置无效。');
+        throw new HttpError(400, '分页位置无效。', undefined, problem('SHARE_INCOMPLETE'));
       }
     }
     return store(context).list(next);

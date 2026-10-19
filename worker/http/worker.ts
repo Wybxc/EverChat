@@ -1,9 +1,10 @@
 import { authReturnTo } from '../../shared/auth/navigation';
+import { problem } from '../../shared/errors/descriptor';
+import { publicSharing } from '../sharing/public';
 import { createApi } from './app';
 import { authenticateAccess, type Authenticator } from './auth';
 import type { Env } from './env';
 import { HttpError, json } from './response';
-import { publicSharing } from '../sharing/public';
 
 export function createWorker(
   authenticate: Authenticator = authenticateAccess,
@@ -35,11 +36,15 @@ export function createWorker(
               },
             });
           if (error instanceof HttpError)
-            return json({ error: error.message, code: error.code }, error.status);
+            return json(
+              { error: error.message, code: error.code, issue: error.issue },
+              error.status,
+            );
           throw error;
         }
       }
-      if (/^\/auth(?:\/|$)/.test(url.pathname)) return json({ error: '找不到这个接口。' }, 404);
+      if (/^\/auth(?:\/|$)/.test(url.pathname))
+        return json({ error: '找不到这个接口。', issue: problem('NOT_FOUND') }, 404);
       if (!/^\/api(?:\/|$)/.test(url.pathname)) return env.ASSETS.fetch(request);
       return app.fetch(request, env, context);
     },

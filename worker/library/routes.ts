@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import { problem } from '../../shared/errors/descriptor';
 import { conversationId, requireAuth, requireConversation, uuidSchema } from '../http/access';
 import type { ApiRouter } from '../http/app';
 import { HttpError, json, parseBody } from '../http/response';
@@ -18,17 +19,19 @@ export function registerLibraryRoutes(app: ApiRouter) {
   app.get('/conversations', async (context) => {
     await requireAuth(context);
     const after = Number(context.req.query('after') ?? 0);
-    if (!Number.isSafeInteger(after) || after < 0) throw new HttpError(400, '对话同步游标无效。');
+    if (!Number.isSafeInteger(after) || after < 0)
+      throw new HttpError(400, '对话同步游标无效。', undefined, problem('INVALID_REQUEST'));
     return json(await context.env.LIBRARY.getByName('personal').indexSnapshot(after));
   });
 
   app.post('/conversations', async (context) => {
     await requireAuth(context);
     const { id, title, titleSource } = await parseBody(context, conversationSchema);
-    if (!title.trim()) throw new HttpError(400, '对话 ID 或标题无效。');
+    if (!title.trim())
+      throw new HttpError(400, '对话 ID 或标题无效。', undefined, problem('INVALID_REQUEST'));
     const library = context.env.LIBRARY.getByName('personal');
     const result = await library.create(id, title.trim(), titleSource);
-    if ('error' in result) return json({ error: result.error }, result.status);
+    if ('error' in result) return json({ error: result.error, issue: result.issue }, result.status);
     return json(result, 201);
   });
 
@@ -40,7 +43,7 @@ export function registerLibraryRoutes(app: ApiRouter) {
     if (after !== undefined) {
       const cursor = Number(after);
       if (!Number.isSafeInteger(cursor) || cursor < 0)
-        throw new HttpError(400, '对话分页游标无效。');
+        throw new HttpError(400, '对话分页游标无效。', undefined, problem('INVALID_REQUEST'));
       return context.env.CONVERSATIONS.getByName(id).snapshotPageResponse(cursor);
     }
     return context.env.CONVERSATIONS.getByName(id).snapshotResponse();
@@ -50,13 +53,15 @@ export function registerLibraryRoutes(app: ApiRouter) {
     await requireAuth(context);
     const id = conversationId(context);
     const patch = await parseBody(context, conversationPatchSchema);
-    if (!Object.keys(patch).length) throw new HttpError(400, '请选择要修改的对话信息。');
+    if (!Object.keys(patch).length)
+      throw new HttpError(400, '请选择要修改的对话信息。', undefined, problem('INVALID_REQUEST'));
     if (patch.title !== undefined) {
       patch.title = patch.title.trim();
-      if (!patch.title) throw new HttpError(400, '标题应为 1 到 80 字。');
+      if (!patch.title)
+        throw new HttpError(400, '标题应为 1 到 80 字。', undefined, problem('INVALID_REQUEST'));
     }
     const result = await context.env.LIBRARY.getByName('personal').update(id, patch);
-    if ('error' in result) return json({ error: result.error }, result.status);
+    if ('error' in result) return json({ error: result.error, issue: result.issue }, result.status);
     return json(result);
   });
 

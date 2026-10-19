@@ -1,14 +1,20 @@
-import { useTranslation } from 'react-i18next';
-import './locales';
-import { Modal, ModalTitle } from '../../components/Modal';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { useEffect, useId, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { File, Trash2, X } from 'lucide-react';
+import { useEffect, useId, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { attachmentUrl, bytesLabel, type Attachment } from '../../../shared/attachments/files';
+import { Modal, ModalTitle } from '../../components/Modal';
 import { api } from '../../platform/api';
+import {
+  errorMessage,
+  renderUiMessage,
+  uiMessage,
+  type UiMessage,
+} from '../../platform/i18n/messages';
 import { prepareAttachment, uploadAttachment } from './attachment-upload';
+import './locales';
 
 export function AttachmentDialog({
   id,
@@ -26,7 +32,7 @@ export function AttachmentDialog({
   const controller = useRef<AbortController | null>(null),
     client = useQueryClient();
   const [upload, setUpload] = useState<{ name: string; size: number; sent: number } | null>(null);
-  const [error, setError] = useState(''),
+  const [error, setError] = useState<UiMessage>(''),
     [removing, setRemoving] = useState<string | null>(null);
   const key = ['attachments', id];
   const files = useQuery({
@@ -53,7 +59,7 @@ export function AttachmentDialog({
       }
     } catch (failure) {
       if (!abort.signal.aborted)
-        setError(failure instanceof Error ? failure.message : t(($) => $.simpleUploadFailed));
+        setError(errorMessage(failure, uiMessage('attachments', 'simpleUploadFailed')));
     } finally {
       controller.current = null;
       setUpload(null);
@@ -68,7 +74,7 @@ export function AttachmentDialog({
       await api(`/conversations/${id}/attachments/${file.id}`, 'DELETE');
       await client.invalidateQueries({ queryKey: key });
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : t(($) => $.deleteFailed));
+      setError(errorMessage(failure, uiMessage('attachments', 'deleteFailed')));
     } finally {
       setRemoving(null);
     }
@@ -135,7 +141,7 @@ export function AttachmentDialog({
           )}
           {(error || files.error) && (
             <p role="alert" className="mt-4 text-sm">
-              {error || files.error?.message}
+              {renderUiMessage(error || errorMessage(files.error))}
             </p>
           )}
           {files.isPending ? (

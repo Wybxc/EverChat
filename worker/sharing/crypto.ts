@@ -1,4 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { AppError, problem } from '../../shared/errors/descriptor';
 
 export const randomShareId = () => randomBytes(16).toString('base64url');
 export const randomShareSecret = () => randomBytes(32).toString('base64url');
@@ -10,7 +11,8 @@ export function tokenMatches(token: string, hash: string) {
 }
 async function key(secret: string) {
   const bytes = Buffer.from(secret, 'base64url');
-  if (bytes.length !== 32) throw new Error('分享链接密钥尚未配置。');
+  if (bytes.length !== 32)
+    throw new AppError(problem('SHARE_INCOMPLETE'), '分享链接密钥尚未配置。');
   return crypto.subtle.importKey('raw', bytes, 'AES-GCM', false, ['encrypt', 'decrypt']);
 }
 // Binding the share ID as additional data prevents ciphertext swaps between records.

@@ -1,6 +1,7 @@
-import { ProviderModelError, fetchProviderModels } from './models';
 import { MAX_BACKUP_BYTES, type BackupSettings } from '../../shared/backup/backup';
 import { DEFAULT_TITLE_SETTINGS, type TitleSettings } from '../../shared/conversation/titles';
+import type { ErrorIssue } from '../../shared/errors/descriptor';
+import { issueOf, problem } from '../../shared/errors/descriptor';
 import { chatModels } from '../../shared/models/selection';
 import type { ModelSelection, ReasoningEffort } from '../../shared/models/types';
 import type { PromptPreset } from '../../shared/presets/types';
@@ -19,6 +20,7 @@ import {
   publicProviderSettings,
   runtimeProviderConfig,
 } from '../providers/config';
+import { ProviderModelError, fetchProviderModels } from './models';
 
 export class ProviderSettingsStore {
   constructor(
@@ -131,11 +133,14 @@ export class ProviderSettingsStore {
       const input = await readJsonStream(body, MAX_BACKUP_BYTES, '供应商配置超过 12 MiB。');
       const result = this.saveProviderSettings(input as ProviderSettingsInput);
       return 'error' in result
-        ? json({ error: result.error }, result.status ?? 400)
+        ? json({ error: result.error, issue: result.issue }, result.status ?? 400)
         : json(result.settings);
     } catch (error) {
       return json(
-        { error: error instanceof HttpError ? error.message : '供应商配置暂时无法保存。' },
+        {
+          error: error instanceof HttpError ? error.message : '供应商配置暂时无法保存。',
+          issue: issueOf(error, 'PROVIDER_INVALID'),
+        },
         error instanceof HttpError ? error.status : 503,
       );
     }
@@ -189,17 +194,22 @@ export class ProviderSettingsStore {
 
   async providerModelsResponse(id: string): Promise<Response> {
     const profile = this.providerForModelList(id);
-    if (!profile) return json({ error: '找不到这个供应商。' }, 404);
+    if (!profile) return json({ error: '找不到这个供应商。', issue: problem('NOT_FOUND') }, 404);
     try {
       // Parse directories in the owning DO rather than the 10 ms Free HTTP Worker.
       return json({ models: await fetchProviderModels(profile) });
     } catch (error) {
       return error instanceof ProviderModelError
         ? json(
-            { error: error.message, code: 'PROVIDER_ERROR', failure: error.details },
+            {
+              error: error.message,
+              code: 'PROVIDER_ERROR',
+              failure: error.details,
+              issue: error.issue,
+            },
             error.status,
           )
-        : json({ error: '获取模型列表失败。' }, 502);
+        : json({ error: '获取模型列表失败。', issue: problem('PROVIDER_FAILED') }, 502);
     }
   }
 
@@ -207,7 +217,7 @@ export class ProviderSettingsStore {
     input: ProviderSettingsInput,
     importedPresets?: PromptPreset[],
     options: { restoreModelMetadata?: boolean; preserveKeysAcrossConnections?: boolean } = {},
-  ): { settings: ProviderSettings } | { error: string; status?: number } {
+  ): { settings: ProviderSettings } | { error: string; issue?: ErrorIssue; status?: number } {
     let settings: ProviderSettingsInput;
     let presets: PromptPreset[] = [];
     try {
@@ -216,6 +226,7 @@ export class ProviderSettingsStore {
     } catch (error) {
       return {
         error: error instanceof Error ? error.message : '供应商配置无效。',
+        issue: issueOf(error, 'PROVIDER_INVALID'),
         ...(error instanceof PromptPresetError ? { status: error.status } : {}),
       };
     }

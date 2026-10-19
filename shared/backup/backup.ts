@@ -1,24 +1,25 @@
-import { MAX_PROVIDER_MODELS } from '../providers/limits';
-import { MAX_MODEL_TOKENS } from '../models/metadata';
-import { MAX_SYSTEM_PROMPT_LENGTH } from '../conversation/limits';
 import * as v from 'valibot';
-import { conversationSettingsSchema } from '../conversation/settings';
-import { addGenerationUsage, generationSchema } from '../streaming/generation';
+import { branchPath } from '../conversation/branch-path';
 import { messagePartsSchema, messageText } from '../conversation/content';
-import { promptPresetListSchema } from '../presets/schema';
-import { modelSchema } from '../providers/settings';
+import { MAX_SYSTEM_PROMPT_LENGTH } from '../conversation/limits';
+import { conversationSettingsSchema } from '../conversation/settings';
 import {
   MAX_SUMMARIES,
   MAX_SUMMARY_CHARACTERS,
   summaryCoverageSchema,
 } from '../conversation/summaries';
-import type { ConversationSettings, Message } from '../conversation/types';
-import type { PromptPreset } from '../presets/types';
-import type { ProviderApiKind } from '../providers/types';
-import type { ProviderModel } from '../models/types';
-import { branchPath } from '../conversation/branch-path';
-import { publicToolTaskSchema, validReasoningBreaks } from '../web-tools/tasks';
 import { titleSettingsSchema, type TitleSettings } from '../conversation/titles';
+import type { ConversationSettings, Message } from '../conversation/types';
+import { AppError, problem } from '../errors/descriptor';
+import { MAX_MODEL_TOKENS } from '../models/metadata';
+import type { ProviderModel } from '../models/types';
+import { promptPresetListSchema } from '../presets/schema';
+import type { PromptPreset } from '../presets/types';
+import { MAX_PROVIDER_MODELS } from '../providers/limits';
+import { modelSchema } from '../providers/settings';
+import type { ProviderApiKind } from '../providers/types';
+import { addGenerationUsage, generationSchema } from '../streaming/generation';
+import { publicToolTaskSchema, validReasoningBreaks } from '../web-tools/tasks';
 
 export const BACKUP_FORMAT = 'everchat-backup';
 export const BACKUP_VERSION = 1 as const;
@@ -131,7 +132,8 @@ const isUuid = (value: unknown): value is string =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value);
 
 export function validateBackup(value: unknown): EverChatBackup {
-  if (!value || typeof value !== 'object') throw new Error('备份文件格式无效。');
+  if (!value || typeof value !== 'object')
+    throw new AppError(problem('BACKUP_INVALID'), '备份文件格式无效。');
   const input = value as Record<string, unknown>,
     conversation = input.conversation as Record<string, unknown>;
   if (
@@ -140,8 +142,9 @@ export function validateBackup(value: unknown): EverChatBackup {
     !conversation ||
     typeof conversation !== 'object'
   )
-    throw new Error('备份文件版本不受支持。');
-  if (!Number.isSafeInteger(input.exportedAt)) throw new Error('备份导出时间无效。');
+    throw new AppError(problem('BACKUP_INVALID'), '备份文件版本不受支持。');
+  if (!Number.isSafeInteger(input.exportedAt))
+    throw new AppError(problem('BACKUP_INVALID'), '备份导出时间无效。');
   if (
     !isUuid(conversation.id) ||
     !isString(conversation.title, 80) ||
@@ -149,17 +152,18 @@ export function validateBackup(value: unknown): EverChatBackup {
     !Number.isSafeInteger(conversation.createdAt) ||
     !Number.isSafeInteger(conversation.updatedAt)
   )
-    throw new Error('备份中的对话信息无效。');
+    throw new AppError(problem('BACKUP_INVALID'), '备份中的对话信息无效。');
   if (!Array.isArray(conversation.messages) || conversation.messages.length > MAX_BACKUP_MESSAGES)
-    throw new Error('备份中的消息数量无效。');
+    throw new AppError(problem('BACKUP_INVALID'), '备份中的消息数量无效。');
   const conversationSettings =
     conversation.settings === undefined
       ? undefined
       : v.safeParse(conversationSettingsSchema, conversation.settings);
   if (conversationSettings && !conversationSettings.success)
-    throw new Error('备份中的会话参数无效。');
+    throw new AppError(problem('BACKUP_INVALID'), '备份中的会话参数无效。');
   const messages = conversation.messages.map((raw) => {
-    if (!raw || typeof raw !== 'object') throw new Error('备份中的消息无效。');
+    if (!raw || typeof raw !== 'object')
+      throw new AppError(problem('BACKUP_INVALID'), '备份中的消息无效。');
     const message = raw as Record<string, unknown>;
     const parts = v.safeParse(messagePartsSchema, message.parts);
     const summary =
@@ -167,7 +171,7 @@ export function validateBackup(value: unknown): EverChatBackup {
         ? undefined
         : v.safeParse(summaryCoverageSchema, message.summary);
     if (summary && (!summary.success || message.role !== 'assistant'))
-      throw new Error('备份中的摘要覆盖范围无效。');
+      throw new AppError(problem('BACKUP_INVALID'), '备份中的摘要覆盖范围无效。');
     if (
       !isUuid(message.id) ||
       !['user', 'assistant'].includes(String(message.role)) ||
@@ -191,7 +195,7 @@ export function validateBackup(value: unknown): EverChatBackup {
         (Number.isSafeInteger(message.deletedAt) && Number(message.deletedAt) > 0)
       )
     )
-      throw new Error('备份中的消息字段无效。');
+      throw new AppError(problem('BACKUP_INVALID'), '备份中的消息字段无效。');
     const fields = {
       id: message.id,
       role: message.role,
@@ -212,7 +216,7 @@ export function validateBackup(value: unknown): EverChatBackup {
     const generation =
       rawGeneration === undefined ? undefined : v.safeParse(generationSchema, rawGeneration);
     if (generation && (!generation.success || message.role !== 'assistant'))
-      throw new Error('备份中的生成元数据无效。');
+      throw new AppError(problem('BACKUP_INVALID'), '备份中的生成元数据无效。');
     const tools =
       message.tools === undefined ? undefined : v.safeParse(publicToolTaskSchema, message.tools);
     if (
@@ -222,7 +226,7 @@ export function validateBackup(value: unknown): EverChatBackup {
         tools.output.status !== message.status ||
         !validReasoningBreaks(tools.output, messageText({ parts: parts.output }, 'reasoning')))
     )
-      throw new Error('备份中的工具过程无效。');
+      throw new AppError(problem('BACKUP_INVALID'), '备份中的工具过程无效。');
     return {
       ...fields,
       ...(generation?.success ? { generation: generation.output } : {}),
@@ -230,14 +234,14 @@ export function validateBackup(value: unknown): EverChatBackup {
     } as unknown as BackupMessage;
   });
   if (messages.filter((message) => message.summary && !message.deletedAt).length > MAX_SUMMARIES)
-    throw new Error('备份中的摘要数量超过上限。');
+    throw new AppError(problem('BACKUP_INVALID'), '备份中的摘要数量超过上限。');
   for (const message of messages)
     if (message.summary) {
       let path;
       try {
         path = branchPath(messages as Message[], message.summary.throughId);
       } catch {
-        throw new Error('备份中的摘要父链无效。');
+        throw new AppError(problem('BACKUP_INVALID'), '备份中的摘要父链无效。');
       }
       if (
         message.parentId !== message.summary.throughId ||
@@ -247,7 +251,7 @@ export function validateBackup(value: unknown): EverChatBackup {
         path.length !== message.summary.sourceIds.length ||
         !path.every((source, index) => source.id === message.summary!.sourceIds[index])
       )
-        throw new Error('备份中的摘要父链无效。');
+        throw new AppError(problem('BACKUP_INVALID'), '备份中的摘要父链无效。');
       if (
         !message.deletedAt &&
         message.status === 'completed' &&
@@ -257,13 +261,15 @@ export function validateBackup(value: unknown): EverChatBackup {
           ) ||
           message.generation?.finishReason === 'length')
       )
-        throw new Error('备份中的已完成摘要无效。');
+        throw new AppError(problem('BACKUP_INVALID'), '备份中的已完成摘要无效。');
     }
   const settings = input.settings as Record<string, unknown>;
   const titleSettings = v.safeParse(v.optional(titleSettingsSchema), settings?.title);
-  if (!titleSettings.success) throw new Error('备份中的标题模型配置无效。');
+  if (!titleSettings.success)
+    throw new AppError(problem('BACKUP_INVALID'), '备份中的标题模型配置无效。');
   const promptPresets = v.safeParse(promptPresetListSchema, settings?.promptPresets);
-  if (!promptPresets.success) throw new Error('备份中的提示词预设无效。');
+  if (!promptPresets.success)
+    throw new AppError(problem('BACKUP_INVALID'), '备份中的提示词预设无效。');
   if (
     !settings ||
     typeof settings !== 'object' ||
@@ -279,9 +285,10 @@ export function validateBackup(value: unknown): EverChatBackup {
         Number(settings.maxOutputTokens) <= MAX_MODEL_TOKENS)
     )
   )
-    throw new Error('备份中的配置无效。');
+    throw new AppError(problem('BACKUP_INVALID'), '备份中的配置无效。');
   const providers = settings.providers.map((raw) => {
-    if (!raw || typeof raw !== 'object') throw new Error('备份中的供应商配置无效。');
+    if (!raw || typeof raw !== 'object')
+      throw new AppError(problem('BACKUP_INVALID'), '备份中的供应商配置无效。');
     const provider = raw as Record<string, unknown>;
     if (
       !isUuid(provider.id) ||
@@ -293,11 +300,13 @@ export function validateBackup(value: unknown): EverChatBackup {
       !Array.isArray(provider.models) ||
       provider.models.length > MAX_PROVIDER_MODELS
     )
-      throw new Error('备份中的供应商配置无效。');
+      throw new AppError(problem('BACKUP_INVALID'), '备份中的供应商配置无效。');
     const models = provider.models.map((model) => {
-      if (!model || typeof model !== 'object') throw new Error('备份中的模型配置无效。');
+      if (!model || typeof model !== 'object')
+        throw new AppError(problem('BACKUP_INVALID'), '备份中的模型配置无效。');
       const candidate = v.safeParse(modelSchema, model);
-      if (!candidate.success) throw new Error('备份中的模型配置无效。');
+      if (!candidate.success)
+        throw new AppError(problem('BACKUP_INVALID'), '备份中的模型配置无效。');
       return candidate.output;
     });
     return {

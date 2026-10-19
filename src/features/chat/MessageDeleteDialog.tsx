@@ -1,11 +1,17 @@
-import { useTranslation } from 'react-i18next';
-import './locales';
-import { Modal, ModalTitle } from '../../components/Modal';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
-import { useId, useRef, useState, type SubmitEvent } from 'react';
 import { X } from 'lucide-react';
+import { useId, useRef, useState, type SubmitEvent } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { Message } from '../../../shared/conversation/types';
+import { Modal, ModalTitle } from '../../components/Modal';
+import {
+  errorMessage,
+  renderUiMessage,
+  uiMessage,
+  type UiMessage,
+} from '../../platform/i18n/messages';
+import './locales';
 
 export function MessageDeleteDialog({
   message,
@@ -25,7 +31,7 @@ export function MessageDeleteDialog({
   const titleId = useId(),
     cancel = useRef<HTMLButtonElement>(null);
   const [busy, setBusy] = useState(false),
-    [error, setError] = useState('');
+    [error, setError] = useState<UiMessage>('');
   const confirmed = useRef(false);
   const submit = async (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -37,7 +43,7 @@ export function MessageDeleteDialog({
       confirmed.current = true;
       close();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : t(($) => $.operationFailed));
+      setError(errorMessage(cause, uiMessage('chat', 'operationFailed')));
     } finally {
       setBusy(false);
     }
@@ -87,7 +93,7 @@ export function MessageDeleteDialog({
           </p>
           {error && (
             <p role="alert" className="mt-3 shrink-0 text-sm">
-              {error}
+              {renderUiMessage(error)}
             </p>
           )}
           <div className="dialog-actions shrink-0">

@@ -382,9 +382,9 @@ export class Conversation extends ProductionConversation {
       runs: this.fixtureCount('runs'),
       dependencies: this.fixtureCount('run_dependencies'),
       retainedContexts: this.fixtureCount('runs', "WHERE context != '[]'"),
-      notificationOutbox: sql
-        .exec('SELECT id, payload, attempts, nextAt FROM answer_notification_outbox')
-        .toArray(),
+      notificationOutbox: this.fixtureCount('answer_notification_outbox')
+        ? sql.exec('SELECT id, payload, attempts, nextAt FROM answer_notification_outbox').toArray()
+        : [],
       journalRows: this.fixtureCount('generation_checkpoints'),
       calls: hasCalls
         ? sql

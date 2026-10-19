@@ -1,12 +1,13 @@
-import { MAX_SQL_PAYLOAD_BYTES } from './limits';
-import { assertDocumentContext, documentTokens, type DocumentPart } from '../attachments/documents';
 import * as v from 'valibot';
-import { branchPath } from './branch-path';
-import { type ChatInput, type ProviderConfig } from '../providers/types';
-import { type ConversationSettings, type Message, type SubmitInput } from './types';
-import { messageFiles, messageImages, messageText } from './content';
+import { assertDocumentContext, documentTokens, type DocumentPart } from '../attachments/documents';
 import { assertImageContext, imageTokens, type ImagePart } from '../attachments/images';
+import { AppError, problem, type ErrorIssue } from '../errors/descriptor';
 import { FALLBACK_MODEL_METADATA } from '../models/metadata';
+import { type ChatInput, type ProviderConfig } from '../providers/types';
+import { branchPath } from './branch-path';
+import { messageFiles, messageImages, messageText } from './content';
+import { MAX_SQL_PAYLOAD_BYTES } from './limits';
+import { type ConversationSettings, type Message, type SubmitInput } from './types';
 
 import { estimateTextTokens } from './token-estimate';
 export { estimateTextTokens, TOKEN_SAMPLE_UNITS } from './token-estimate';
@@ -42,7 +43,11 @@ export const contextEstimateSchema = v.strictObject({
   toolTokens: v.optional(count),
 });
 export type ContextEstimate = v.InferOutput<typeof contextEstimateSchema>;
-export class ContextBudgetError extends Error {}
+export class ContextBudgetError extends AppError {
+  constructor(message: string, issue: ErrorIssue = problem('CONTEXT_INVALID')) {
+    super(issue, message);
+  }
+}
 
 export function contextSource(
   messages: Message[],
@@ -223,6 +228,10 @@ export function assertContextFits(estimate: ContextEstimate) {
   if (estimate.totalTokens > estimate.inputBudget)
     throw new ContextBudgetError(
       `${estimate.summaryTokens ? '系统提示词、摘要与本次输入' : '系统提示词与本次输入'}约需 ${estimate.totalTokens.toLocaleString('zh-CN')} Tokens，超过上下文预算 ${estimate.inputBudget.toLocaleString('zh-CN')}。请缩短输入${estimate.summaryTokens ? '、停用历史摘要' : ''}或调整预算／输出预留。`,
+      problem('CONTEXT_BUDGET_EXCEEDED', {
+        estimatedTokens: estimate.totalTokens,
+        budgetTokens: estimate.inputBudget,
+      }),
     );
 }
 

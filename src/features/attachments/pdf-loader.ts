@@ -1,6 +1,6 @@
-import { t } from './locales';
 import { PDF_PARSE_TIMEOUT, type PDFExtraction } from '../../../shared/attachments/pdf';
 import { abortable } from '../../platform/abort';
+import { UiError, uiMessage } from '../../platform/i18n/messages';
 
 export async function preparePdf(
   file: File,
@@ -11,7 +11,7 @@ export async function preparePdf(
   const timeout = new AbortController(),
     bounded = AbortSignal.any([signal, timeout.signal]);
   const timer = setTimeout(
-    () => timeout.abort(new Error(t(($) => $.pdfTimeout))),
+    () => timeout.abort(new UiError(uiMessage('attachments', 'pdfTimeout'))),
     PDF_PARSE_TIMEOUT,
   );
   try {

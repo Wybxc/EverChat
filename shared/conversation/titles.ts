@@ -1,4 +1,6 @@
 import * as v from 'valibot';
+import type { ErrorIssue } from '../errors/descriptor';
+import { AppError, problem } from '../errors/descriptor';
 
 export const titleSettingsSchema = v.object({
   automatic: v.boolean(),
@@ -16,6 +18,7 @@ export type TitleTaskInfo = {
   id: string;
   status: 'queued' | 'running' | 'completed' | 'failed' | 'superseded';
   error?: string;
+  issue?: ErrorIssue;
 };
 
 export function cleanTitle(value: string): string {
@@ -37,6 +40,6 @@ export function cleanTitle(value: string): string {
     if (title.length + char.length > 80) break;
     title += char;
   }
-  if (!title.trim()) throw new Error('标题模型返回了空标题，请重试。');
+  if (!title.trim()) throw new AppError(problem('TITLE_FAILED'), '标题模型返回了空标题，请重试。');
   return title;
 }

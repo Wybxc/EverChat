@@ -137,11 +137,12 @@ test('line trend supports tooltips, keyboard inspection, metric switching and ra
   await expect(chart.locator('.recharts-tooltip-wrapper')).toContainText('USD');
   const travellers = chart.locator('.recharts-brush-traveller');
   await expect(travellers).toHaveCount(2);
+  await travellers.last().scrollIntoViewIfNeeded();
   const handle = await travellers.last().boundingBox();
   expect(handle).toBeTruthy();
   await page.mouse.move(handle!.x + handle!.width / 2, handle!.y + handle!.height / 2);
   await page.mouse.down();
-  await page.mouse.move(handle!.x - 90, handle!.y + handle!.height / 2);
+  await page.mouse.move(handle!.x - 90, handle!.y + handle!.height / 2, { steps: 8 });
   await page.mouse.up();
   await expect
     .poll(() =>

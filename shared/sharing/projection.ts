@@ -1,15 +1,17 @@
 import { branchPath } from '../conversation/branch-path';
 import { messageAttachments, messageText } from '../conversation/content';
 import type { Message } from '../conversation/types';
+import { AppError, problem } from '../errors/descriptor';
 import type { ShareBlock } from './types';
 
 /** Construct a whitelist projection. No original IDs, model settings or tool payloads cross it. */
 export function projectShare(messages: Message[], headId: string) {
   const path = branchPath(messages, headId);
   if (path.some((m) => m.deletedAt || m.status !== 'completed'))
-    throw new Error('请等待当前分支完成，或选择已完成的回答。');
+    throw new AppError(problem('SHARE_INCOMPLETE'), '请等待当前分支完成，或选择已完成的回答。');
   const visible = path.filter((m) => !m.summary);
-  if (!visible.length) throw new Error('当前分支没有可分享的消息。');
+  if (!visible.length)
+    throw new AppError(problem('SHARE_INCOMPLETE'), '当前分支没有可分享的消息。');
   const projected = visible.map((message) => ({
     role: message.role,
     modelName: message.role === 'assistant' ? message.modelName || message.model : undefined,

@@ -1,5 +1,7 @@
 import { messageText } from '../../shared/conversation/content';
 import type { Message, SubmitInput } from '../../shared/conversation/types';
+import type { ErrorIssue } from '../../shared/errors/descriptor';
+import { problem } from '../../shared/errors/descriptor';
 import { MAX_MESSAGES } from '../platform/resource-limits';
 
 export function planSubmissionParent(
@@ -13,12 +15,16 @@ export function planSubmissionParent(
       content: string;
       userParentId: string | null;
     }
-  | { error: string; status: number } {
+  | { error: string; issue?: ErrorIssue; status: number } {
   const ordinary = !input.retryOf && !input.revisionOf;
   if (input.parentId !== undefined && !ordinary)
-    return { error: '修订或重新生成不能同时指定父消息。', status: 400 };
+    return {
+      error: '修订或重新生成不能同时指定父消息。',
+      issue: problem('INVALID_REQUEST'),
+      status: 400,
+    };
   if (ordinary && input.parentId === undefined)
-    return { error: '发送消息必须指定父消息。', status: 400 };
+    return { error: '发送消息必须指定父消息。', issue: problem('INVALID_REQUEST'), status: 400 };
   const requestedParent = input.parentId
     ? messages.find(
         (message) =>
@@ -28,9 +34,14 @@ export function planSubmissionParent(
           !message.summary,
       )
     : undefined;
-  if (input.parentId && !requestedParent) return { error: '找不到可继续的父消息。', status: 404 };
+  if (input.parentId && !requestedParent)
+    return { error: '找不到可继续的父消息。', issue: problem('PARENT_UNAVAILABLE'), status: 404 };
   if (ordinary && input.parentId === null && messages.some((message) => !message.summary))
-    return { error: '请指定当前分支的父消息，或新建对话。', status: 409 };
+    return {
+      error: '请指定当前分支的父消息，或新建对话。',
+      issue: problem('INVALID_REQUEST'),
+      status: 409,
+    };
   let parent: Message | undefined;
   let previous: Message | undefined;
   if (input.retryOf) {
@@ -39,14 +50,19 @@ export function planSubmissionParent(
     );
     parent = messages.find((m) => m.id === previous?.parentId);
     if (!previous || !parent || parent.deletedAt)
-      return { error: '找不到要重新生成的消息。', status: 404 };
+      return { error: '找不到要重新生成的消息。', issue: problem('NOT_FOUND'), status: 404 };
   }
   const original = input.revisionOf
     ? messages.find((m) => m.id === input.revisionOf && m.role === 'user' && !m.deletedAt)
     : undefined;
-  if (input.revisionOf && !original) return { error: '找不到要编辑的消息。', status: 404 };
+  if (input.revisionOf && !original)
+    return { error: '找不到要编辑的消息。', issue: problem('NOT_FOUND'), status: 404 };
   if (messages.length + (parent ? 1 : 2) > MAX_MESSAGES)
-    return { error: '此对话已达到消息数量保护上限，请新建对话。', status: 507 };
+    return {
+      error: '此对话已达到消息数量保护上限，请新建对话。',
+      issue: problem('OPERATION_BUSY'),
+      status: 507,
+    };
   const content = parent ? messageText(parent) : (input.content?.trim() ?? '');
   if (
     input.retryOf &&
@@ -54,7 +70,11 @@ export function planSubmissionParent(
       input.fileIds !== undefined ||
       input.fileSelections !== undefined)
   )
-    return { error: '重新生成不能更换原提问的附件。', status: 400 };
+    return {
+      error: '重新生成不能更换原提问的附件。',
+      issue: problem('INVALID_REQUEST'),
+      status: 400,
+    };
   const userParentId = original ? original.parentId : (requestedParent?.id ?? null);
   return { parent, previous, original, content, userParentId };
 }

@@ -5,6 +5,7 @@ import {
   jsonTextBytes,
   textWithinBytes,
 } from '../conversation/limits';
+import { AppError, problem } from '../errors/descriptor';
 import type { ProviderKind } from '../providers/types';
 
 export const MAX_EVENT_CHARACTERS = 1024 * 1024;
@@ -55,7 +56,11 @@ export const encodeBytes = (bytes: Uint8Array): string => {
 export const decodeBytes = (base64: string): Uint8Array =>
   Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
 
-export class StreamParseError extends Error {}
+export class StreamParseError extends AppError {
+  constructor(message: string) {
+    super(problem('STREAM_INVALID'), message);
+  }
+}
 
 function unfinishedSseTail(text: string) {
   let lineStart = 0,

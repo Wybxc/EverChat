@@ -1,5 +1,6 @@
 import { createRemoteJWKSet, errors, jwtVerify, type JWTVerifyGetKey } from 'jose';
 import type { AccessIdentity } from '../../shared/auth/types';
+import { problem } from '../../shared/errors/descriptor';
 import type { Env } from './env';
 import { HttpError } from './response';
 
@@ -22,9 +23,15 @@ export function createAccessVerifier(trust: AccessTrust): Authenticator {
     if (previous) return previous;
     const result = (async () => {
       if (new URL(request.url).origin !== trust.origin)
-        throw new HttpError(403, '此应用地址未获准访问。', 'ACCESS_DENIED');
+        throw new HttpError(
+          403,
+          '此应用地址未获准访问。',
+          'ACCESS_DENIED',
+          problem('ACCESS_INVALID'),
+        );
       const token = request.headers.get('Cf-Access-Jwt-Assertion');
-      if (!token) throw new HttpError(401, '请重新登录。', 'AUTH_REQUIRED');
+      if (!token)
+        throw new HttpError(401, '请重新登录。', 'AUTH_REQUIRED', problem('AUTH_REQUIRED'));
       let payload;
       try {
         ({ payload } = await jwtVerify(token, trust.jwks, {
@@ -40,13 +47,23 @@ export function createAccessVerifier(trust: AccessTrust): Authenticator {
           !(error instanceof errors.JWKSInvalid) &&
           !(error instanceof errors.JWKInvalid)
         )
-          throw new HttpError(401, '请重新登录。', 'AUTH_REQUIRED');
-        throw new HttpError(503, '暂时无法验证访问身份，请稍后重试。', 'AUTH_UNAVAILABLE');
+          throw new HttpError(401, '请重新登录。', 'AUTH_REQUIRED', problem('AUTH_REQUIRED'));
+        throw new HttpError(
+          503,
+          '暂时无法验证访问身份，请稍后重试。',
+          'AUTH_UNAVAILABLE',
+          problem('ACCESS_INVALID'),
+        );
       }
       const email = typeof payload.email === 'string' ? payload.email.toLowerCase() : '';
       const service = typeof payload.common_name === 'string' ? payload.common_name : '';
       if (payload.type !== 'app')
-        throw new HttpError(403, '此身份无法访问这个空间。', 'ACCESS_DENIED');
+        throw new HttpError(
+          403,
+          '此身份无法访问这个空间。',
+          'ACCESS_DENIED',
+          problem('ACCESS_DENIED'),
+        );
       if (service && trust.serviceIds?.includes(service))
         return {
           issuer: trust.issuer,
@@ -55,7 +72,12 @@ export function createAccessVerifier(trust: AccessTrust): Authenticator {
           expires: payload.exp!,
         };
       if (!payload.sub || !email || !trust.emails.includes(email))
-        throw new HttpError(403, '此身份无法访问这个空间。', 'ACCESS_DENIED');
+        throw new HttpError(
+          403,
+          '此身份无法访问这个空间。',
+          'ACCESS_DENIED',
+          problem('ACCESS_DENIED'),
+        );
       return { issuer: trust.issuer, sub: payload.sub, email, expires: payload.exp! };
     })();
     verified.set(request, result);
@@ -75,7 +97,12 @@ export function accessAuthenticator(env: Env, serviceIds?: string[]): Authentica
     if (url.protocol !== 'https:' || url.href !== `${url.origin}/`) throw new Error();
     origin = url.origin;
   } catch {
-    throw new HttpError(503, '请配置 Access 应用地址。', 'AUTH_CONFIGURATION');
+    throw new HttpError(
+      503,
+      '请配置 Access 应用地址。',
+      'AUTH_CONFIGURATION',
+      problem('ACCESS_INVALID'),
+    );
   }
   if (
     !domain ||
@@ -83,7 +110,12 @@ export function accessAuthenticator(env: Env, serviceIds?: string[]): Authentica
     !env.ACCESS_AUD ||
     (!emails.length && !serviceIds?.length)
   )
-    throw new HttpError(503, '请配置 Access 团队域名、AUD 和允许的身份。', 'AUTH_CONFIGURATION');
+    throw new HttpError(
+      503,
+      '请配置 Access 团队域名、AUD 和允许的身份。',
+      'AUTH_CONFIGURATION',
+      problem('ACCESS_INVALID'),
+    );
   const key = JSON.stringify([domain, env.ACCESS_AUD, origin, emails, serviceIds]);
   let verifier = verifiers.get(key);
   if (!verifier) {

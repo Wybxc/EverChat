@@ -1,4 +1,19 @@
 export default {
+  defaultOutputBudget: 'Default ({{tokens}} tokens)',
+  outboxFull:
+    'Browser storage is full. Free up space before sending so your message can be saved reliably.',
+  chatDeleted: 'This chat was deleted.',
+  paginationChanged: 'The chat changed while loading. Sync again.',
+  syncFailed: 'Could not update this chat.',
+  compressionUnavailable:
+    'The automatic compression model is unavailable. Enable it or turn off automatic compression.',
+  previewFailed: 'Could not preview the context.',
+  branchUnavailable: 'This branch is unavailable. An available branch is shown.',
+  branchInvalid: 'The message branch is invalid.',
+  navigationPosition: 'Answer {{position}} of {{count}}',
+  navigationTop: 'Moved to the top of the chat',
+  navigationBottom: 'Moved to the bottom of the chat',
+
   default: 'Default',
   reasoningEffort: 'Reasoning effort',
   reasoning: 'Reasoning',

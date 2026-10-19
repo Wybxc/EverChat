@@ -1,5 +1,6 @@
 import { sha256, type ArchiveManifest } from '../../shared/backup/archive';
 import { messageAttachments, messageFiles, messageImages } from '../../shared/conversation/content';
+import { issueOf, problem, type ErrorIssue } from '../../shared/errors/descriptor';
 import { AttachmentStore } from '../attachments/store';
 import { CopyJobs } from '../backup/copies';
 import { ArchiveImports, readArchiveManifest, type ImportResult } from '../backup/imports';
@@ -24,13 +25,15 @@ export class ArchiveRestorer {
   ) {}
   private checkImport(id: string, status?: string) {
     const row = this.imports.require(id, status);
-    if (!this.exists(id)) throw new HttpError(410, '恢复目标对话已删除。');
+    if (!this.exists(id))
+      throw new HttpError(410, '恢复目标对话已删除。', undefined, problem('BACKUP_INVALID'));
     return row;
   }
 
-  private importFailure(error: unknown): { error: string; status: number } {
+  private importFailure(error: unknown): { error: string; issue?: ErrorIssue; status: number } {
     return {
       error: error instanceof HttpError ? error.message : '恢复暂时无法完成，请重试查看结果。',
+      issue: issueOf(error, 'IMPORT_FAILED'),
       status: error instanceof HttpError ? error.status : 503,
     };
   }
@@ -42,19 +45,30 @@ export class ArchiveRestorer {
         hash = await sha256(bytes);
       const existing = this.imports.get(id);
       if (existing) {
-        if (existing.sha256 !== hash) throw new HttpError(409, '此恢复 ID 已绑定另一份存档。');
+        if (existing.sha256 !== hash)
+          throw new HttpError(
+            409,
+            '此恢复 ID 已绑定另一份存档。',
+            undefined,
+            problem('BACKUP_INVALID'),
+          );
         if (this.library.deletedAt(id) && existing.status === 'completed')
-          throw new HttpError(410, '此恢复副本已删除。');
+          throw new HttpError(410, '此恢复副本已删除。', undefined, problem('BACKUP_INVALID'));
         return this.imports.active.get(id) ?? this.imports.result(id);
       }
       if (this.exists(id) || this.library.deletedAt(id) || this.copies.get(id))
-        throw new HttpError(409, '目标对话 ID 已被使用。');
+        throw new HttpError(
+          409,
+          '目标对话 ID 已被使用。',
+          undefined,
+          problem('CONVERSATION_ID_CONFLICT'),
+        );
       if (
         this.ctx.storage.sql
           .exec<{ count: number }>('SELECT COUNT(*) AS count FROM conversations')
           .one().count >= MAX_CONVERSATIONS
       )
-        throw new HttpError(507, '空间对话容量已满。');
+        throw new HttpError(507, '空间对话容量已满。', undefined, problem('STORAGE_FULL'));
       this.ctx.storage.transactionSync(() => {
         this.imports.begin(id, hash, bytes.byteLength, manifest.files);
         this.ctx.storage.sql.exec(
@@ -115,7 +129,10 @@ export class ArchiveRestorer {
   private async stopImport(id: string, error: unknown): Promise<ImportResult> {
     if (this.imports.get(id)?.status === 'completed') return this.imports.result(id);
     const failure = this.importFailure(error);
-    this.imports.fail(id, new HttpError(failure.status, failure.error));
+    this.imports.fail(
+      id,
+      new HttpError(failure.status, failure.error, undefined, problem('BACKUP_INVALID')),
+    );
     await this.library.beginDelete(id);
     await this.schedule();
     return this.imports.result(id);
@@ -123,7 +140,7 @@ export class ArchiveRestorer {
 
   importStatus(id: string) {
     if (this.library.deletedAt(id) && this.imports.get(id)?.status === 'completed')
-      return { error: '此恢复副本已删除。', status: 410 };
+      return { error: '此恢复副本已删除。', issue: problem('BACKUP_INVALID'), status: 410 };
     return this.imports.result(id);
   }
 
@@ -142,7 +159,7 @@ export class ArchiveRestorer {
       const mapped = this.imports.files(id).find((file) => file.sourceId === sourceId);
       if (!mapped) {
         await body.cancel();
-        throw new HttpError(404, '找不到存档中的文件。');
+        throw new HttpError(404, '找不到存档中的文件。', undefined, problem('NOT_FOUND'));
       }
       if (!extracted) {
         const result = await this.attachments.upload(id, mapped.id, body);
@@ -151,12 +168,12 @@ export class ArchiveRestorer {
       }
       if (!mapped.file.parsed) {
         await body.cancel();
-        throw new HttpError(400, '此原文件没有提取文本。');
+        throw new HttpError(400, '此原文件没有提取文本。', undefined, problem('BACKUP_INVALID'));
       }
       const reference = mapped.file.parsed.reference;
       const bytes = await this.readImportText(body, mapped.file.parsed.bytes);
       if ((await sha256(bytes)) !== reference.textSha256)
-        throw new HttpError(409, '提取文本的校验和不符。');
+        throw new HttpError(409, '提取文本的校验和不符。', undefined, problem('BACKUP_INVALID'));
       const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes);
       this.checkImport(id, 'uploading');
       const result = await this.attachments.documents.parse(
@@ -173,7 +190,12 @@ export class ArchiveRestorer {
       );
       this.checkImport(id, 'uploading');
       if (JSON.stringify({ ...result, attachmentId: sourceId }) !== JSON.stringify(reference))
-        throw new HttpError(409, '恢复后的解析资料与备份不符。');
+        throw new HttpError(
+          409,
+          '恢复后的解析资料与备份不符。',
+          undefined,
+          problem('BACKUP_INVALID'),
+        );
       return { value: result };
     } catch (error) {
       await body.cancel().catch(() => {});
@@ -207,13 +229,16 @@ export class ArchiveRestorer {
     try {
       while (true) {
         const next = await reader.read();
-        if (expired) throw new HttpError(408, '提取文本上传超时。');
+        if (expired)
+          throw new HttpError(408, '提取文本上传超时。', undefined, problem('REQUEST_TIMEOUT'));
         if (next.done) break;
         size += next.value.byteLength;
-        if (size > expected) throw new HttpError(413, '提取文本过长。');
+        if (size > expected)
+          throw new HttpError(413, '提取文本过长。', undefined, problem('BACKUP_INVALID'));
         chunks.push(next.value);
       }
-      if (size !== expected) throw new HttpError(400, '提取文本不完整。');
+      if (size !== expected)
+        throw new HttpError(400, '提取文本不完整。', undefined, problem('BACKUP_INVALID'));
       const bytes = new Uint8Array(size);
       let at = 0;
       for (const chunk of chunks) {
@@ -242,9 +267,19 @@ export class ArchiveRestorer {
         if (
           !this.attachments.list(id).some((item) => item.id === fileId && item.status === 'ready')
         )
-          throw new HttpError(409, '仍有原文件尚未保存完成。');
+          throw new HttpError(
+            409,
+            '仍有原文件尚未保存完成。',
+            undefined,
+            problem('BACKUP_INVALID'),
+          );
         if (file.parsed && !this.attachments.documents.parsedReference(id, fileId))
-          throw new HttpError(409, '仍有提取文本尚未保存完成。');
+          throw new HttpError(
+            409,
+            '仍有提取文本尚未保存完成。',
+            undefined,
+            problem('BACKUP_INVALID'),
+          );
       }
       this.imports.finalize(id);
       const promise = this.restoreImport(id).finally(async () => {
@@ -286,7 +321,12 @@ export class ArchiveRestorer {
             JSON.stringify({ ...text.file, attachmentId: file.id }) !==
             JSON.stringify(file.parsed.reference)
           )
-            throw new HttpError(409, '恢复后的解析引用不符。');
+            throw new HttpError(
+              409,
+              '恢复后的解析引用不符。',
+              undefined,
+              problem('BACKUP_INVALID'),
+            );
         }
       }
       if (messages.some((message) => messageAttachments(message).length)) {
@@ -304,7 +344,7 @@ export class ArchiveRestorer {
       this.checkImport(id, 'finalizing');
       if (!result.ok) {
         const failure = (await result.json()) as { error: string };
-        throw new HttpError(result.status, failure.error);
+        throw new HttpError(result.status, failure.error, undefined, problem('BACKUP_INVALID'));
       }
       await result.body?.cancel();
       this.ctx.storage.transactionSync(() => {
@@ -325,7 +365,13 @@ export class ArchiveRestorer {
           manifest.backup.settings.promptPresets,
           { restoreModelMetadata: true, preserveKeysAcrossConnections: false },
         );
-        if ('error' in settings) throw new HttpError(settings.status ?? 400, settings.error);
+        if ('error' in settings)
+          throw new HttpError(
+            settings.status ?? 400,
+            settings.error,
+            undefined,
+            problem('BACKUP_INVALID'),
+          );
         this.imports.complete(id);
         this.library.touch(id);
         this.ctx.storage.sql.exec(
@@ -342,9 +388,10 @@ export class ArchiveRestorer {
 
   async cancelImport(id: string) {
     const row = this.imports.get(id);
-    if (!row) return { error: '找不到这项恢复。', status: 404 };
-    if (row.status === 'completed') return { error: '恢复已完成。', status: 409 };
-    this.imports.fail(id, new HttpError(409, '恢复已取消。'));
+    if (!row) return { error: '找不到这项恢复。', issue: problem('NOT_FOUND'), status: 404 };
+    if (row.status === 'completed')
+      return { error: '恢复已完成。', issue: problem('BACKUP_INVALID'), status: 409 };
+    this.imports.fail(id, new HttpError(409, '恢复已取消。', undefined, problem('BACKUP_INVALID')));
     await this.library.beginDelete(id);
     return { value: true };
   }

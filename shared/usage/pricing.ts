@@ -1,9 +1,11 @@
+import { AppError, problem } from '../errors/descriptor';
 import type { StreamUsage } from '../streaming/provider-stream';
 import type { CostEstimate, UsageKind, UsagePrice } from './types';
 
 export const CURRENCY_SCALE = 1_000_000_000_000n;
 export function decimalMicros(value: string): bigint {
-  if (!/^(?:0|[1-9]\d{0,8})(?:\.\d{1,6})?$/.test(value)) throw new Error('无效的价格。');
+  if (!/^(?:0|[1-9]\d{0,8})(?:\.\d{1,6})?$/.test(value))
+    throw new AppError(problem('PRICING_INVALID'), '无效的价格。');
   const [whole, fraction = ''] = value.split('.');
   return BigInt(whole) * 1_000_000n + BigInt(fraction.padEnd(6, '0'));
 }

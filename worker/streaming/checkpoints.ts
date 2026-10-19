@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
 import { messageText } from '../../shared/conversation/content';
-import type { Message } from '../../shared/conversation/types';
 import { MAX_SQL_PAYLOAD_BYTES } from '../../shared/conversation/limits';
+import type { Message } from '../../shared/conversation/types';
+import { AppError, problem } from '../../shared/errors/descriptor';
 import type { ProviderKind } from '../../shared/providers/types';
 import { payloadBytes, validateBatch, validateCommit } from '../../shared/streaming/batches';
-import { ProviderStream, type StreamState } from '../../shared/streaming/provider-stream';
 import type { StreamCommit } from '../../shared/streaming/protocol';
+import { ProviderStream, type StreamState } from '../../shared/streaming/provider-stream';
 import type { SqlQuery } from '../generation/metrics';
 import { StreamJournal } from './journal';
 
@@ -104,7 +105,7 @@ export class GenerationCheckpoints extends StreamJournal {
       }
       const state = JSON.stringify(cached.parser.checkpoint());
       if (payloadBytes(state) > MAX_SQL_PAYLOAD_BYTES - 4096)
-        throw new Error('生成解析检查点超过存储保护大小。');
+        throw new AppError(problem('REQUEST_TOO_LARGE'), '生成解析检查点超过存储保护大小。');
       const fromChunks =
         this.store(
           'SELECT 1 FROM message_content_chunks WHERE messageId = ? LIMIT 1',

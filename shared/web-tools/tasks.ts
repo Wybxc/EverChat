@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import { AppError, errorIssueSchema, problem } from '../errors/descriptor';
 import { canAttemptCapability } from '../models/metadata';
 import type { ResolvedModelMetadata } from '../models/types';
 
@@ -64,7 +65,7 @@ export function validateWebToolIdentity(
   enabled: readonly WebToolName[],
 ) {
   if (!v.is(callId, id) || !v.is(name, toolName) || !enabled.includes(toolName))
-    throw new Error('模型返回了未启用的工具或无效调用标识。');
+    throw new AppError(problem('TOOL_INVALID'), '模型返回了未启用的工具或无效调用标识。');
 }
 const webToolCallSchema = v.variant('name', [
   v.strictObject({
@@ -100,6 +101,7 @@ const webToolOutcomeSchema = v.variant('status', [
     name,
     status: v.literal('failed'),
     error: safeText(500),
+    issue: v.optional(errorIssueSchema),
     failure: v.optional(
       v.strictObject({
         provider: v.picklist(['tavily', 'deepseek']),
@@ -228,7 +230,7 @@ export function validateWebToolCall(value: unknown, enabled: readonly WebToolNam
     !enabled.includes(result.output.name) ||
     new TextEncoder().encode(JSON.stringify(result.output.input)).byteLength > MAX_TOOL_INPUT_BYTES
   ) {
-    throw new Error('模型返回了未启用的工具或无效参数。');
+    throw new AppError(problem('TOOL_INVALID'), '模型返回了未启用的工具或无效参数。');
   }
   return result.output;
 }
@@ -238,7 +240,7 @@ export function validateWebToolOutcome(value: unknown): WebToolOutcome {
     !result.success ||
     new TextEncoder().encode(JSON.stringify(result.output)).byteLength > MAX_TOOL_RESULT_BYTES
   )
-    throw new Error('工具结果无效或超过大小限制。');
+    throw new AppError(problem('REQUEST_TOO_LARGE'), '工具结果无效或超过大小限制。');
   return result.output;
 }
 export function assertWebToolSupport(
@@ -251,6 +253,7 @@ export function assertWebToolSupport(
     new Set(enabled).size !== enabled.length ||
     enabled.some((name) => !WEB_TOOL_NAMES.includes(name))
   )
-    throw new Error('工具选择无效。');
-  if (!canAttemptCapability(metadata, 'toolCalls')) throw new Error('当前模型不支持工具调用。');
+    throw new AppError(problem('TOOL_INVALID'), '工具选择无效。');
+  if (!canAttemptCapability(metadata, 'toolCalls'))
+    throw new AppError(problem('MODEL_TOOLS_UNSUPPORTED'), '当前模型不支持工具调用。');
 }

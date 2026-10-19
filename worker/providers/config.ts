@@ -1,7 +1,8 @@
+import { AppError, problem } from '../../shared/errors/descriptor';
 import { resolveModelMetadata } from '../../shared/models/metadata';
-import { providerTypes } from '../../shared/providers/settings';
-import { providerOptions } from '../../shared/providers/endpoints';
 import type { ModelSelection } from '../../shared/models/types';
+import { providerOptions } from '../../shared/providers/endpoints';
+import { providerTypes } from '../../shared/providers/settings';
 import type {
   ProviderApiKind,
   ProviderConfig,
@@ -19,7 +20,7 @@ export {
 
 function normalizeProvider(value: string | undefined): ProviderKind {
   if (providerTypes.includes(value as ProviderApiKind)) return value as ProviderKind;
-  throw new Error('AI_PROVIDER 配置无效。');
+  throw new AppError(problem('PROVIDER_FAILED'), 'AI_PROVIDER 配置无效。');
 }
 
 export function providerConfigFromEnv(env: Env): ProviderConfig | null {
@@ -31,7 +32,9 @@ export function providerConfigFromEnv(env: Env): ProviderConfig | null {
     provider,
     baseUrl: env.AI_BASE_URL?.trim().replace(/\/+$/, '') || defaults?.baseUrl || '',
     model: env.AI_MODEL?.trim() || '',
-    systemPrompt: env.SYSTEM_PROMPT ?? '你是一位清晰、友善的助手。请默认使用中文回答。',
+    systemPrompt:
+      env.SYSTEM_PROMPT ??
+      'You are a clear, helpful assistant. Respond in the language of the user’s request.',
     maxOutputTokens:
       Number.isInteger(maxOutputTokens) && maxOutputTokens > 0 ? maxOutputTokens : null,
     apiKey: env.AI_API_KEY?.trim() || undefined,
@@ -47,7 +50,9 @@ export function defaultProviderSettings(env: Env): ProviderSettingsInput {
       providers: [],
       activeProviderId: null,
       activeModel: '',
-      systemPrompt: env.SYSTEM_PROMPT ?? '你是一位清晰、友善的助手。请默认使用中文回答。',
+      systemPrompt:
+        env.SYSTEM_PROMPT ??
+        'You are a clear, helpful assistant. Respond in the language of the user’s request.',
       maxOutputTokens: Number.isInteger(limit) && limit > 0 ? limit : null,
     };
   }

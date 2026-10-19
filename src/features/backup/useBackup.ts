@@ -1,9 +1,9 @@
-import { t } from './locales';
 import { useQueryClient } from '@tanstack/react-query';
 import type { RefObject } from 'react';
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { type ProviderSettings } from '../../../shared/providers/types';
 import { api } from '../../platform/api';
+import { errorMessage, uiMessage, type UiMessage } from '../../platform/i18n/messages';
 import { storageEpoch } from '../../platform/storage';
 
 import { createArchive, restoreArchive, type BackupProgress } from '../backup/archive-client';
@@ -19,7 +19,7 @@ export function useBackup({
 }: {
   selected: string | null;
   selectedRef: RefObject<string | null>;
-  setError: (error: string) => void;
+  setError: (error: UiMessage) => void;
   providerSaved: (settings: ProviderSettings) => void;
   refreshLibrary: () => void;
   navigate: (id: string) => void;
@@ -53,7 +53,7 @@ export function useBackup({
         downloadFile(`EverChat-${id}.everchat.zip`, blob, 'application/zip');
     } catch (cause) {
       if (!controller.signal.aborted && epoch === storageEpoch())
-        setError(cause instanceof Error ? cause.message : t(($) => $.exportFailed));
+        setError(errorMessage(cause, uiMessage('backup', 'exportFailed')));
     } finally {
       if (backupOperation.current === controller) {
         backupOperation.current = null;
@@ -91,7 +91,7 @@ export function useBackup({
       if (selectedRef.current === sourceId) navigate(result.id);
     } catch (cause) {
       if (!controller.signal.aborted && epoch === storageEpoch())
-        setError(cause instanceof Error ? cause.message : t(($) => $.importFailed));
+        setError(errorMessage(cause, uiMessage('backup', 'importFailed')));
     } finally {
       if (backupOperation.current === controller) {
         backupOperation.current = null;

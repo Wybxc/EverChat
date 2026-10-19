@@ -1,18 +1,24 @@
-import { useTranslation } from 'react-i18next';
-import './locales';
-import { formatNumber } from '../../platform/i18n/format';
-import { Modal, ModalTitle } from '../../components/Modal';
 import { Button } from '@/components/ui/button';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Spinner } from '@/components/ui/spinner';
-import { useId, useRef, useState, type SubmitEvent } from 'react';
 import { X } from 'lucide-react';
+import { useId, useRef, useState, type SubmitEvent } from 'react';
+import { useTranslation } from 'react-i18next';
 import { branchPath } from '../../../shared/conversation/branch-path';
-import { type ChatModel, type ModelSelection } from '../../../shared/models/types';
-import { type Message, type SubmitInput } from '../../../shared/conversation/types';
 import { messageText } from '../../../shared/conversation/content';
-import { modelSelectionKey } from '../../../shared/models/selection';
 import { summaryGeneration } from '../../../shared/conversation/summaries';
+import { type Message, type SubmitInput } from '../../../shared/conversation/types';
+import { modelSelectionKey } from '../../../shared/models/selection';
+import { type ChatModel, type ModelSelection } from '../../../shared/models/types';
+import { Modal, ModalTitle } from '../../components/Modal';
+import { formatNumber } from '../../platform/i18n/format';
+import {
+  errorMessage,
+  renderUiMessage,
+  uiMessage,
+  type UiMessage,
+} from '../../platform/i18n/messages';
+import './locales';
 
 export function SummaryDialog({
   messages,
@@ -65,11 +71,11 @@ export function SummaryDialog({
         : '',
   );
   const [sending, setSending] = useState(false),
-    [error, setError] = useState('');
+    [error, setError] = useState<UiMessage>('');
   const model =
     models.find((model) => modelSelectionKey(model) === modelKey) ?? preferred ?? models[0];
-  let estimate,
-    preparationError = '';
+  let estimate;
+  let preparationError: UiMessage = '';
   try {
     if (model && throughId)
       estimate = summaryGeneration(messages, throughId, {
@@ -79,7 +85,7 @@ export function SummaryDialog({
         modelMetadata: model.metadata,
       }).estimate;
   } catch (error) {
-    preparationError = error instanceof Error ? error.message : t(($) => $.summaryInputFailed);
+    preparationError = errorMessage(error, uiMessage('chat', 'summaryInputFailed'));
   }
   const create = async (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -96,7 +102,7 @@ export function SummaryDialog({
       submitted.current = true;
       close();
     } catch (error) {
-      setError(error instanceof Error ? error.message : t(($) => $.summarySubmitFailed));
+      setError(errorMessage(error, uiMessage('chat', 'summarySubmitFailed')));
     } finally {
       lock.current = false;
       setSending(false);
@@ -184,7 +190,7 @@ export function SummaryDialog({
             )}
             {(error || preparationError) && (
               <p role="alert" className="text-sm">
-                {error || preparationError}
+                {renderUiMessage(error || preparationError)}
               </p>
             )}
             {!boundaries.length && <p className="text-sm">{t(($) => $.noSummarizableAnswers)}</p>}

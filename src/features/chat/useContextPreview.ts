@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import * as v from 'valibot';
 import { type DocumentPart } from '../../../shared/attachments/documents';
 import { type ImagePart } from '../../../shared/attachments/images';
+import type { SessionInfo } from '../../../shared/auth/types';
 import { buildContext, contextSource } from '../../../shared/conversation/context-budget';
 import {
   applyConversationSettings,
@@ -17,7 +18,7 @@ import { type ConversationSettings, type Message } from '../../../shared/convers
 import { modelSelectionKey } from '../../../shared/models/selection';
 import type { ChatModel } from '../../../shared/models/types';
 import { type ReasoningEffort } from '../../../shared/models/types';
-import type { SessionInfo } from '../../../shared/auth/types';
+import { UiError, errorMessage, uiMessage } from '../../platform/i18n/messages';
 
 export function useContextPreview({
   messages,
@@ -90,7 +91,7 @@ export function useContextPreview({
         const model = selection
           ? models.find((item) => modelSelectionKey(item) === modelSelectionKey(selection))
           : selectedModel;
-        if (!model) throw new Error('自动压缩模型不可用，请启用所选模型或关闭自动压缩。');
+        if (!model) throw new UiError(uiMessage('chat', 'compressionUnavailable'));
         summaryGeneration(messages, prepared.automatic.throughId, {
           ...model,
           systemPrompt: '',
@@ -104,7 +105,7 @@ export function useContextPreview({
         error: '',
       };
     } catch (error) {
-      return { estimate, error: error instanceof Error ? error.message : '无法预览上下文。' };
+      return { estimate, error: errorMessage(error, uiMessage('chat', 'previewFailed')) };
     }
   }, [
     selectedModel,

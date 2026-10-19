@@ -1,12 +1,13 @@
 import { DurableObject } from 'cloudflare:workers';
+import { problem } from '../../shared/errors/descriptor';
+import type { ShareBlock, SharePreview } from '../../shared/sharing/types';
 import type { Env } from '../http/env';
 import { HttpError, json } from '../http/response';
 import { initializeStorageSchema } from '../platform/storage-schema';
-import type { ShareBlock, SharePreview } from '../../shared/sharing/types';
 import { decryptToken, encryptToken, randomShareSecret, tokenHash } from './crypto';
-import { ShareRepository, publicShare, snapshotHasher, unavailable, type ShareRow } from './store';
-import { SHARING_SCHEMA } from './schema';
 import { snapshotResponse } from './response';
+import { SHARING_SCHEMA } from './schema';
+import { ShareRepository, publicShare, snapshotHasher, unavailable, type ShareRow } from './store';
 
 interface PrepareInput {
   operationId: string;
@@ -34,9 +35,10 @@ export class ShareStore extends DurableObject<Env> {
       const result = await action();
       return result instanceof Response ? result : json(result);
     } catch (error) {
-      if (error instanceof HttpError) return json({ error: error.message }, error.status);
+      if (error instanceof HttpError)
+        return json({ error: error.message, issue: error.issue }, error.status);
       console.error('Share operation failed', error instanceof Error ? error.name : 'UnknownError');
-      return json({ error: '分享服务暂时不可用。' }, 503);
+      return json({ error: '分享服务暂时不可用。', issue: problem('SHARE_INCOMPLETE') }, 503);
     }
   }
   private owner(id: string) {
@@ -47,7 +49,7 @@ export class ShareStore extends DurableObject<Env> {
   private secret() {
     const secret = this.env.SHARE_LINK_KEY;
     if (!secret || !/^[A-Za-z0-9_-]{43}$/.test(secret))
-      throw new HttpError(503, '分享链接密钥尚未配置。');
+      throw new HttpError(503, '分享链接密钥尚未配置。', undefined, problem('SHARE_INCOMPLETE'));
     return secret;
   }
   private async credentials(id: string) {
@@ -70,7 +72,13 @@ export class ShareStore extends DurableObject<Env> {
       const identity = JSON.stringify([input.conversationId, input.headId]);
       const pending = this.pendingPreviews.get(input.operationId);
       if (pending) {
-        if (pending.identity !== identity) throw new HttpError(409, '预览操作已改变，请重新预览。');
+        if (pending.identity !== identity)
+          throw new HttpError(
+            409,
+            '预览操作已改变，请重新预览。',
+            undefined,
+            problem('SHARE_PREVIEW_STALE'),
+          );
         return pending.promise;
       }
       const promise = this.prepareSnapshot(input).finally(() => {
@@ -94,6 +102,8 @@ export class ShareStore extends DurableObject<Env> {
         throw new HttpError(
           source.status === 404 ? 404 : 409,
           '当前分支无法分享，请等待回答完成后重新预览。',
+          undefined,
+          problem('SHARE_PREVIEW_STALE'),
         );
       }
       this.repository.resetDraft(row.id);
@@ -157,7 +167,12 @@ export class ShareStore extends DurableObject<Env> {
             current.draftUntil <= Date.now() ||
             this.repository.deleted(input.conversationId)
           )
-            throw new HttpError(410, '预览已失效，请重新预览。');
+            throw new HttpError(
+              410,
+              '预览已失效，请重新预览。',
+              undefined,
+              problem('SHARE_PREVIEW_STALE'),
+            );
           buffer += decoder.decode(result.value, { stream: true });
           let end: number;
           while ((end = buffer.indexOf('\n')) >= 0) {
@@ -203,7 +218,12 @@ export class ShareStore extends DurableObject<Env> {
         (await this.env.CONVERSATIONS.getByName(before.conversationId).shareSourceVersion()) !==
         before.sourceVersion
       )
-        throw new HttpError(409, '对话已变化，请重新预览后分享。');
+        throw new HttpError(
+          409,
+          '对话已变化，请重新预览后分享。',
+          undefined,
+          problem('SHARE_PREVIEW_STALE'),
+        );
       const token = await this.credentials(id);
       const row = this.ctx.storage.transactionSync(() =>
         this.repository.publish(

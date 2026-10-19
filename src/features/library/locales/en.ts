@@ -1,4 +1,6 @@
 export default {
+  updateFailed: 'Could not update the chat list',
+
   generationUnconfirmed: 'Generation status awaiting sync',
   generating: 'Generating',
   stopping: 'Stopping',

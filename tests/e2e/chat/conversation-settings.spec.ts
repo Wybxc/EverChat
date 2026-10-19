@@ -414,13 +414,13 @@ test('conversation settings autosave, preserve failed and invalid drafts, sync d
     );
     await modal.getByLabel('提示词预设', { exact: true }).selectOption('custom');
     await modal.getByLabel('会话系统提示词', { exact: true }).fill('保留未保存的会话提示');
-    await expect(modal.getByRole('alert')).toContainText('暂时无法保存参数');
+    await expect(modal.getByRole('alert')).toContainText('服务暂时不可用');
     await page.reload();
     await openParameters(page);
     await expect(modal.getByLabel('会话系统提示词', { exact: true })).toHaveValue(
       '保留未保存的会话提示',
     );
-    await expect(modal.getByRole('alert')).toContainText('暂时无法保存参数');
+    await expect(modal.getByRole('alert')).toContainText('服务暂时不可用');
     await page.unroute('**/api/conversations/*/settings');
     await modal.getByRole('button', { name: '重试保存' }).click();
     await expect(modal.getByRole('status')).toHaveText('已保存');

@@ -1,9 +1,10 @@
-import { MAX_SYSTEM_PROMPT_LENGTH } from './limits';
 import * as v from 'valibot';
-import type { ConversationSettings } from './types';
-import type { ProviderConfig } from '../providers/types';
+import { AppError, problem } from '../errors/descriptor';
 import { MAX_MODEL_TOKENS, validateOutputLimit } from '../models/metadata';
+import type { ProviderConfig } from '../providers/types';
 import { WEB_TOOL_NAMES } from '../web-tools/tasks';
+import { MAX_SYSTEM_PROMPT_LENGTH } from './limits';
+import type { ConversationSettings } from './types';
 
 export const DEFAULT_CONVERSATION_SETTINGS: ConversationSettings = {
   systemPrompt: null,
@@ -122,11 +123,20 @@ export function applyConversationSettings(
     support.temperatureMax === null ? undefined : (settings.temperature ?? undefined);
   const topP = support.topPMin === null ? undefined : (settings.topP ?? undefined);
   if (temperature !== undefined && temperature > support.temperatureMax!)
-    throw new Error(`当前模型的 Temperature 不能超过 ${support.temperatureMax}。`);
+    throw new AppError(
+      problem('TEMPERATURE_EXCEEDED', { limit: support.temperatureMax! }),
+      `当前模型的 Temperature 不能超过 ${support.temperatureMax}。`,
+    );
   if (topP !== undefined && topP < support.topPMin!)
-    throw new Error(`当前模型的 Top P 不能低于 ${support.topPMin}。`);
+    throw new AppError(
+      problem('TOP_P_BELOW_MINIMUM', { limit: support.topPMin! }),
+      `当前模型的 Top P 不能低于 ${support.topPMin}。`,
+    );
   if (support.exclusive && temperature !== undefined && topP !== undefined)
-    throw new Error('当前模型的 Temperature 和 Top P 只能设置一项。');
+    throw new AppError(
+      problem('SAMPLING_CONFLICT'),
+      '当前模型的 Temperature 和 Top P 只能设置一项。',
+    );
   return {
     ...config,
     systemPrompt: settings.systemPrompt ?? config.systemPrompt,

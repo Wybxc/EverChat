@@ -1,10 +1,12 @@
-import { MAX_PROVIDER_MODELS, MODEL_LIST_LIMIT_MESSAGE } from '../../shared/providers/limits';
-import type { DiscoveredModel, ModelMetadata } from '../../shared/models/types';
-import type { ProviderModelConfig } from '../../shared/providers/types';
-import { normalizeBaseUrl } from './config';
+import { AppError, problem } from '../../shared/errors/descriptor';
 import { MAX_MODEL_TOKENS, reasoningEfforts } from '../../shared/models/metadata';
-import { httpProviderError, providerFailure } from './failure';
+import type { DiscoveredModel, ModelMetadata } from '../../shared/models/types';
 import type { ProviderFailure } from '../../shared/providers/failure';
+import { MAX_PROVIDER_MODELS, MODEL_LIST_LIMIT_MESSAGE } from '../../shared/providers/limits';
+import type { ProviderModelConfig } from '../../shared/providers/types';
+import { providerIssue } from '../generation/errors';
+import { normalizeBaseUrl } from './config';
+import { httpProviderError, providerFailure } from './failure';
 
 const diagnosticConfig = (profile: ProviderModelConfig) => ({
   ...profile,
@@ -15,13 +17,13 @@ const diagnosticConfig = (profile: ProviderModelConfig) => ({
   maxOutputTokens: null,
 });
 
-export class ProviderModelError extends Error {
+export class ProviderModelError extends AppError {
   constructor(
     message: string,
     public status = 400,
     readonly details?: ProviderFailure,
   ) {
-    super(message);
+    super(details ? providerIssue(details) : problem('PROVIDER_CATALOG_INVALID'), message);
   }
 }
 

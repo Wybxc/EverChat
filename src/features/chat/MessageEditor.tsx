@@ -1,14 +1,16 @@
-import { useTranslation } from 'react-i18next';
-import './locales';
-import { useLayoutEffect, useRef, useState, type SubmitEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
+import { useLayoutEffect, useRef, useState, type SubmitEvent } from 'react';
+import { useTranslation } from 'react-i18next';
+import { MAX_MESSAGE_TEXT_BYTES, messageTextFits } from '../../../shared/conversation/limits';
 import {
-  MAX_MESSAGE_TEXT_BYTES,
-  MESSAGE_TEXT_LIMIT_MESSAGE,
-  messageTextFits,
-} from '../../../shared/conversation/limits';
+  errorMessage,
+  renderUiMessage,
+  uiMessage,
+  type UiMessage,
+} from '../../platform/i18n/messages';
+import './locales';
 import { useComposerSize } from './useComposerSize';
 
 export function MessageEditor({
@@ -31,7 +33,7 @@ export function MessageEditor({
   const input = useRef<HTMLTextAreaElement>(null);
   const lock = useRef(false);
   const [busy, setBusy] = useState(false),
-    [error, setError] = useState('');
+    [error, setError] = useState<UiMessage>('');
   useComposerSize(input, content);
   useLayoutEffect(() => {
     input.current?.focus({ preventScroll: true });
@@ -41,7 +43,7 @@ export function MessageEditor({
     event?.preventDefault();
     if (lock.current || (!content.trim() && !hasAttachments)) return;
     if (!messageTextFits(content.trim())) {
-      setError(MESSAGE_TEXT_LIMIT_MESSAGE);
+      setError(uiMessage('common', 'messageLimit'));
       return;
     }
     lock.current = true;
@@ -50,7 +52,7 @@ export function MessageEditor({
     try {
       await save();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : t(($) => $.saveFailed));
+      setError(errorMessage(cause, uiMessage('chat', 'saveFailed')));
     } finally {
       lock.current = false;
       setBusy(false);
@@ -89,7 +91,7 @@ export function MessageEditor({
       />
       {error && (
         <p role="alert" className="text-sm text-destructive">
-          {error}
+          {renderUiMessage(error)}
         </p>
       )}
       <div className="sticky bottom-0 flex flex-wrap justify-end gap-2 bg-background py-1">

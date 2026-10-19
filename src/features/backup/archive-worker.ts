@@ -1,5 +1,4 @@
-import type { BackupStage } from './archive-client';
-import { decodeBackup, encodeArchive } from '../../../shared/backup/codec';
+import { attachmentUrl } from '../../../shared/attachments/files';
 import {
   extractedPath,
   MAX_ARCHIVE_BYTES,
@@ -7,18 +6,22 @@ import {
   sha256,
   validateArchiveManifest,
 } from '../../../shared/backup/archive';
-import { attachmentUrl } from '../../../shared/attachments/files';
+import { decodeBackup, encodeArchive } from '../../../shared/backup/codec';
+import {
+  AppError,
+  type ErrorIssue,
+  issueOf,
+  problem,
+  readErrorIssue,
+} from '../../../shared/errors/descriptor';
+import type { BackupStage } from './archive-client';
 
-class ArchiveError extends Error {
-  constructor(readonly key: 'invalidSize') {
-    super(key);
-  }
-}
 class PrivateReadError extends Error {
   constructor(
     message: string,
     readonly status: number,
     readonly code?: string,
+    readonly issue?: ErrorIssue,
   ) {
     super(message);
   }
@@ -34,14 +37,16 @@ async function privateGet(url: string) {
   if (!response.ok) {
     let message = 'Could not read backup data.',
       code: string | undefined;
+    let issue: ErrorIssue | undefined;
     try {
-      const body = (await response.json()) as { error?: string; code?: string };
+      const body = (await response.json()) as { error?: string; code?: string; issue?: unknown };
       if (body.error) message = body.error;
       code = body.code;
+      issue = readErrorIssue(body.issue);
     } catch {
       /* Keep the readable fallback. */
     }
-    throw new PrivateReadError(message, response.status, code);
+    throw new PrivateReadError(message, response.status, code, issue);
   }
   return response;
 }
@@ -77,7 +82,7 @@ self.onmessage = async (
       });
     } else {
       if (!request.file.size || request.file.size > MAX_ARCHIVE_BYTES)
-        throw new ArchiveError('invalidSize');
+        throw new AppError(problem('BACKUP_INVALID_SIZE'));
       progress(0, 'checking');
       const bytes = new Uint8Array(await request.file.arrayBuffer()),
         hash = await sha256(bytes);
@@ -107,11 +112,10 @@ self.onmessage = async (
   } catch (error) {
     self.postMessage({
       error: error instanceof Error ? error.message : 'Backup processing failed.',
-      ...(error instanceof ArchiveError
-        ? { errorKey: error.key }
-        : !(error instanceof Error)
-          ? { errorKey: 'processingFailed' }
-          : {}),
+      issue:
+        error instanceof PrivateReadError
+          ? error.issue
+          : issueOf(error, event.data.operation === 'import' ? 'BACKUP_INVALID' : 'REQUEST_FAILED'),
       ...(error instanceof PrivateReadError ? { status: error.status, code: error.code } : {}),
     });
   }

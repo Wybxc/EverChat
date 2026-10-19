@@ -1,4 +1,6 @@
-import { t } from './locales';
+import type { PDFDocumentLoadingTask, PDFWorker } from 'pdfjs-dist';
+import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import type { TextContent } from 'pdfjs-dist/types/src/display/api';
 import { MAX_ATTACHMENT_BYTES } from '../../../shared/attachments/files';
 import {
   MAX_PDF_TEXT_BYTES,
@@ -6,9 +8,7 @@ import {
   PDF_PARSE_TIMEOUT,
   type PDFExtraction,
 } from '../../../shared/attachments/pdf';
-import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-import type { PDFDocumentLoadingTask, PDFWorker } from 'pdfjs-dist';
-import type { TextContent } from 'pdfjs-dist/types/src/display/api';
+import { UiError, uiMessage } from '../../platform/i18n/messages';
 
 const assets = {
   cMapUrl: import.meta.glob<string>('/node_modules/pdfjs-dist/cmaps/*.bcmap', {
@@ -33,9 +33,9 @@ function binaryFactory(signal: AbortSignal) {
   return class {
     async fetch({ kind, filename }: { kind: string; filename: string }) {
       const url = resource[kind]?.get(filename);
-      if (!url) throw new Error(t(($) => $.fontMissing));
+      if (!url) throw new UiError(uiMessage('attachments', 'fontMissing'));
       const response = await fetch(url, { signal, credentials: 'same-origin' });
-      if (!response.ok) throw new Error(t(($) => $.fontFailed));
+      if (!response.ok) throw new UiError(uiMessage('attachments', 'fontFailed'));
       return new Uint8Array(await response.arrayBuffer());
     }
   };
@@ -46,7 +46,8 @@ export async function prepareChatPdf(
   signal: AbortSignal,
   progress: (page: number, pages: number) => void = () => {},
 ): Promise<PDFExtraction> {
-  if (!file.size || file.size > MAX_ATTACHMENT_BYTES) throw new Error(t(($) => $.pdfTooLarge));
+  if (!file.size || file.size > MAX_ATTACHMENT_BYTES)
+    throw new UiError(uiMessage('attachments', 'pdfTooLarge'));
   const abort = new AbortController(),
     onAbort = () => abort.abort(signal.reason);
   signal.addEventListener('abort', onAbort, { once: true });
@@ -54,7 +55,10 @@ export async function prepareChatPdf(
   let timer: ReturnType<typeof setTimeout> | undefined;
   const heartbeat = () => {
     clearTimeout(timer);
-    timer = setTimeout(() => abort.abort(new Error(t(($) => $.pdfStalled))), PDF_PARSE_TIMEOUT);
+    timer = setTimeout(
+      () => abort.abort(new UiError(uiMessage('attachments', 'pdfStalled'))),
+      PDF_PARSE_TIMEOUT,
+    );
   };
   heartbeat();
   let worker: Worker | undefined,
@@ -74,7 +78,8 @@ export async function prepareChatPdf(
     abort.signal.throwIfAborted();
     const pdfjs = await import('pdfjs-dist');
     abort.signal.throwIfAborted();
-    if (pdfjs.version !== PDF_PARSER_VERSION) throw new Error(t(($) => $.pdfVersionMismatch));
+    if (pdfjs.version !== PDF_PARSER_VERSION)
+      throw new UiError(uiMessage('attachments', 'pdfVersionMismatch'));
     const data = new Uint8Array(await file.arrayBuffer());
     abort.signal.throwIfAborted();
     worker = new Worker(workerUrl, { type: 'module' });
@@ -100,7 +105,7 @@ export async function prepareChatPdf(
       hasText = false;
     const append = (value: string) => {
       bytes += encoder.encode(value).length;
-      if (bytes > MAX_PDF_TEXT_BYTES) throw new Error(t(($) => $.pdfCapacity));
+      if (bytes > MAX_PDF_TEXT_BYTES) throw new UiError(uiMessage('attachments', 'pdfCapacity'));
       chunks.push(value);
       characters += value.length;
     };
@@ -130,7 +135,7 @@ export async function prepareChatPdf(
         page.cleanup();
       }
     }
-    if (!hasText) throw new Error(t(($) => $.pdfNoText));
+    if (!hasText) throw new UiError(uiMessage('attachments', 'pdfNoText'));
     return {
       sourceSha256,
       text: chunks.join(''),
@@ -142,10 +147,10 @@ export async function prepareChatPdf(
     return await Promise.race([extracting, aborted]);
   } catch (error) {
     if (error instanceof Error && error.name === 'PasswordException')
-      throw new Error(t(($) => $.pdfPassword));
+      throw new UiError(uiMessage('attachments', 'pdfPassword'));
     if (abort.signal.aborted) throw abort.signal.reason;
-    if (error instanceof Error && /[\u4e00-\u9fff]/u.test(error.message)) throw error;
-    throw new Error(t(($) => $.pdfInvalid));
+    if (error instanceof UiError) throw error;
+    throw new UiError(uiMessage('attachments', 'pdfInvalid'));
   } finally {
     clearTimeout(timer);
     signal.removeEventListener('abort', onAbort);

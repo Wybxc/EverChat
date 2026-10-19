@@ -1,3 +1,4 @@
+import { AppError, problem } from '../errors/descriptor';
 import {
   validReasoningBreaks,
   type PublicToolCall,
@@ -18,11 +19,12 @@ export function updateToolTask(
   if (boundary) {
     const existing = breaks.find((item) => item.round === boundary.round);
     if (existing && existing.reasoningEnd !== boundary.reasoningEnd)
-      throw new Error('工具思考位置已确定，不能覆盖。');
+      throw new AppError(problem('TOOL_INVALID'), '工具思考位置已确定，不能覆盖。');
     if (!existing) breaks.push(boundary);
   }
   const task = { ...current, reasoningBreaks: breaks };
-  if (!validReasoningBreaks(task, reasoning)) throw new Error('工具思考位置与已保存内容不一致。');
+  if (!validReasoningBreaks(task, reasoning))
+    throw new AppError(problem('TOOL_INVALID'), '工具思考位置与已保存内容不一致。');
   return task;
 }
 
@@ -31,7 +33,8 @@ export type ReasoningBlock =
   | { type: 'tools'; round: number; calls: PublicToolCall[] };
 
 export function reasoningBlocks(reasoning: string, task?: PublicToolTask): ReasoningBlock[] {
-  if (task && !validReasoningBreaks(task, reasoning)) throw new Error('工具思考位置无效。');
+  if (task && !validReasoningBreaks(task, reasoning))
+    throw new AppError(problem('TOOL_INVALID'), '工具思考位置无效。');
   const blocks: ReasoningBlock[] = [];
   let start = 0;
   if (task?.reasoningBreaks) {

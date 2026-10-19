@@ -1,4 +1,17 @@
 export default {
+  defaultOutputBudget: '默认（{{tokens}} Tokens）',
+  outboxFull: '浏览器存储已满，无法可靠保存待发送消息。请释放空间后重试。',
+  chatDeleted: '这个对话已删除。',
+  paginationChanged: '对话分页状态已变化，请重新同步。',
+  syncFailed: '暂时无法更新对话。',
+  compressionUnavailable: '自动压缩模型不可用，请启用所选模型或关闭自动压缩。',
+  previewFailed: '无法预览上下文。',
+  branchUnavailable: '该分支已不可用，已显示可用分支。',
+  branchInvalid: '消息分支关系无效。',
+  navigationPosition: '已定位第 {{position}} 条回答，共 {{count}} 条',
+  navigationTop: '已跳到对话顶部',
+  navigationBottom: '已跳到对话底部',
+
   default: '默认',
   reasoningEffort: '思维强度',
   reasoning: '思考',

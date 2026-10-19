@@ -1,16 +1,17 @@
-import { MAX_PDF_TEXT_BYTES, pdfExtractionSchema } from '../attachments/pdf';
 import * as v from 'valibot';
+import { documentPartSchema, documentSource, MAX_DOCUMENT_BYTES } from '../attachments/documents';
 import {
   attachmentInputSchema,
-  MAX_CONVERSATION_ATTACHMENTS,
   MAX_CONVERSATION_ATTACHMENT_BYTES,
+  MAX_CONVERSATION_ATTACHMENTS,
 } from '../attachments/files';
-import { MAX_BACKUP_BYTES, validateBackup, type EverChatBackup } from './backup';
-import { documentPartSchema, documentSource, MAX_DOCUMENT_BYTES } from '../attachments/documents';
-import { messageAttachments } from '../conversation/content';
+import { MAX_PDF_TEXT_BYTES, pdfExtractionSchema } from '../attachments/pdf';
 import { branchPath } from '../conversation/branch-path';
+import { messageAttachments } from '../conversation/content';
 import { type Message } from '../conversation/types';
+import { AppError, problem } from '../errors/descriptor';
 import { mergeProviderSettings } from '../providers/settings';
+import { MAX_BACKUP_BYTES, validateBackup, type EverChatBackup } from './backup';
 
 export const ARCHIVE_FORMAT = 'everchat-archive',
   ARCHIVE_VERSION = 1;
@@ -42,32 +43,33 @@ export interface ArchiveManifest {
 }
 
 export function validateArchiveManifest(value: unknown): ArchiveManifest {
-  if (!value || typeof value !== 'object') throw new Error('备份清单无效。');
+  if (!value || typeof value !== 'object')
+    throw new AppError(problem('BACKUP_INVALID'), '备份清单无效。');
   const input = value as Record<string, unknown>;
   if (input.format !== ARCHIVE_FORMAT || input.version !== ARCHIVE_VERSION)
-    throw new Error('备份存档版本不受支持。');
+    throw new AppError(problem('BACKUP_INVALID'), '备份存档版本不受支持。');
   const backup = validateBackup(input.backup),
     parsed = v.safeParse(v.array(fileSchema), input.files);
   const settings = { ...backup.settings, activeProviderId: null, activeModel: '' };
   mergeProviderSettings(settings, settings, { restoreModelMetadata: true });
   const messageIds = new Set(backup.conversation.messages.map((message) => message.id));
   if (messageIds.size !== backup.conversation.messages.length)
-    throw new Error('备份中存在重复消息 ID。');
+    throw new AppError(problem('BACKUP_INVALID'), '备份中存在重复消息 ID。');
   for (const message of backup.conversation.messages) {
     if (
       (message.parentId && !messageIds.has(message.parentId)) ||
       (message.revisionOf &&
         (!messageIds.has(message.revisionOf) || message.revisionOf === message.id))
     )
-      throw new Error('备份中的消息关系不完整。');
+      throw new AppError(problem('BACKUP_INVALID'), '备份中的消息关系不完整。');
     try {
       branchPath(backup.conversation.messages as unknown as Message[], message.id);
     } catch {
-      throw new Error('备份中的消息父链无效。');
+      throw new AppError(problem('BACKUP_INVALID'), '备份中的消息父链无效。');
     }
   }
   if (!parsed.success || parsed.output.length > MAX_CONVERSATION_ATTACHMENTS)
-    throw new Error('备份中的文件列表无效。');
+    throw new AppError(problem('BACKUP_INVALID'), '备份中的文件列表无效。');
   const files = parsed.output,
     ids = new Set(files.map((file) => file.id));
   if (
@@ -75,7 +77,7 @@ export function validateArchiveManifest(value: unknown): ArchiveManifest {
     files.reduce((sum, file) => sum + file.size + (file.parsed?.bytes ?? 0), 0) >
       MAX_CONVERSATION_ATTACHMENT_BYTES
   )
-    throw new Error('备份中的文件重复或超出容量。');
+    throw new AppError(problem('BACKUP_INVALID'), '备份中的文件重复或超出容量。');
   for (const file of files)
     if (file.parsed) {
       const ref = file.parsed.reference;
@@ -88,7 +90,7 @@ export function validateArchiveManifest(value: unknown): ArchiveManifest {
           (field) => ref[field as keyof typeof ref] !== file[field as keyof ArchiveFile],
         )
       )
-        throw new Error('备份中的解析文件引用不符。');
+        throw new AppError(problem('BACKUP_INVALID'), '备份中的解析文件引用不符。');
     }
   for (const message of backup.conversation.messages)
     for (const reference of messageAttachments(message)) {
@@ -102,7 +104,7 @@ export function validateArchiveManifest(value: unknown): ArchiveManifest {
         (reference.type === 'file' &&
           JSON.stringify(documentSource(reference)) !== JSON.stringify(file.parsed?.reference))
       )
-        throw new Error('备份缺少消息引用的原文件或解析资料。');
+        throw new AppError(problem('BACKUP_INVALID'), '备份缺少消息引用的原文件或解析资料。');
     }
   return { format: ARCHIVE_FORMAT, version: ARCHIVE_VERSION, backup, files };
 }

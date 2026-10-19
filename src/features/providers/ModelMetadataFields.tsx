@@ -1,32 +1,33 @@
-import { useTranslation } from 'react-i18next';
-import './locales';
-import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Spinner } from '@/components/ui/spinner';
-import { NativeSelect } from '@/components/ui/native-select';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { NativeSelect } from '@/components/ui/native-select';
+import { Spinner } from '@/components/ui/spinner';
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import * as v from 'valibot';
 import {
   MAX_MODEL_TOKENS,
   reasoningEfforts,
   resolveModelMetadata,
 } from '../../../shared/models/metadata';
-import {
-  metadataSourceLabel,
-  effortLabel,
-  probeCapabilityLabel,
-  probeReasonLabel,
-} from './model-labels';
+import { type ModelProbeResult } from '../../../shared/models/probe';
 import type {
   ModelMetadata,
   ModelMetadataOverrides,
   ProviderModel,
 } from '../../../shared/models/types';
-import type { ProviderApiKind } from '../../../shared/providers/types';
-import * as v from 'valibot';
 import { modelSchema } from '../../../shared/providers/settings';
+import type { ProviderApiKind } from '../../../shared/providers/types';
 import { Disclosure } from '../../components/Disclosure';
-import { type ModelProbeResult } from '../../../shared/models/probe';
+import { type UiMessage, renderUiMessage } from '../../platform/i18n/messages';
+import './locales';
+import {
+  effortLabel,
+  metadataSourceLabel,
+  probeCapabilityLabel,
+  probeReasonLabel,
+} from './model-labels';
 import { ProviderFailureView } from './ProviderFailureView';
 
 function TokenLimitInput({
@@ -95,7 +96,7 @@ export function ModelMetadataFields({
   onTest: () => void;
   testing: boolean;
   results: ModelProbeResult[];
-  testError: string;
+  testError: UiMessage;
 }) {
   const { t } = useTranslation('providers', { useSuspense: false });
 
@@ -196,7 +197,7 @@ export function ModelMetadataFields({
         )}
         {testError && (
           <p role="alert" className="text-xs">
-            {testError}
+            {renderUiMessage(testError)}
           </p>
         )}
         <div className="grid gap-3 sm:grid-cols-2">

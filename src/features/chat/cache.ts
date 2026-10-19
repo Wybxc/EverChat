@@ -1,15 +1,16 @@
-import { read, remove, write } from '../../platform/storage';
 import type { DocumentPart } from '../../../shared/attachments/documents';
 import type { ImagePart } from '../../../shared/attachments/images';
 import type { ConversationInfo, SubmitInput } from '../../../shared/conversation/types';
 import type { Snapshot } from '../../../shared/streaming/protocol';
+import { type UiMessage } from '../../platform/i18n/messages';
+import { read, remove, write } from '../../platform/storage';
 
 export interface Pending {
   owner: string;
   conversation: ConversationInfo;
   input: SubmitInput;
   viewHeadId?: string | null;
-  error?: string;
+  error?: UiMessage;
   images?: ImagePart[];
   files?: DocumentPart[];
   modelLabel?: string;

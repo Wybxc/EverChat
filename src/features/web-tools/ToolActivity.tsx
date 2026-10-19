@@ -1,12 +1,14 @@
-import { useTranslation } from 'react-i18next';
-import './locales';
 import { Badge } from '@/components/ui/badge';
-import { Spinner } from '@/components/ui/spinner';
 import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
 import { Globe, Search } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { problem } from '../../../shared/errors/descriptor';
 import type { PublicToolCall } from '../../../shared/web-tools/tasks';
 import { Disclosure } from '../../components/Disclosure';
+import { issueMessage, renderUiMessage } from '../../platform/i18n/messages';
 import { PAUSE_FOLLOW_EVENT } from '../chat/useFollowScroll';
+import './locales';
 
 const labels = {
   queued: 'queued',
@@ -87,7 +89,11 @@ export function ToolActivity({ calls, messageId }: { calls: PublicToolCall[]; me
                   <p>{t(($) => $.noSources)}</p>
                 )
               ) : (
-                <p>{result?.status === 'failed' ? result.error : t(($) => $[labels[state]])}</p>
+                <p>
+                  {result?.status === 'failed'
+                    ? renderUiMessage(issueMessage(result.issue ?? problem('TOOL_FAILED')))
+                    : t(($) => $[labels[state]])}
+                </p>
               )}
             </Disclosure>
           </div>
@@ -129,7 +135,9 @@ export function ToolFailures({ calls, messageId }: { calls: PublicToolCall[]; me
               tool: item.call.name === 'web_search' ? t(($) => $.search) : t(($) => $.fetchLabel),
             })}
           </span>
-          {item.result?.status === 'failed' ? item.result.error : ''}
+          {item.result?.status === 'failed'
+            ? renderUiMessage(issueMessage(item.result.issue ?? problem('TOOL_FAILED')))
+            : ''}
         </p>
         <Button
           variant="ghost"

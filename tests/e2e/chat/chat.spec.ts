@@ -335,7 +335,7 @@ test('the composer uses the selected model and always shows returned provider th
   const retry = page.getByTestId('assistant-message').last();
   await expect(retry).toHaveAttribute('data-status', 'completed', { timeout: 30_000 });
   await expect(retry).toContainText('集成测试回答。');
-  await expect(retry.getByText('test-model', { exact: true })).toBeVisible();
+  await expect(retry.getByText('Integration · test-model', { exact: true })).toBeVisible();
   const retried = await context.request
     .get(`/api/conversations/${id}`)
     .then((response) => response.json());

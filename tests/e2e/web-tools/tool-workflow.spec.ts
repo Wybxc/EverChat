@@ -172,7 +172,11 @@ for (const provider of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
         },
       });
       expect(rejected.status()).toBe(400);
-      expect(await rejected.json()).toEqual({ error: '当前模型不支持工具调用。', status: 400 });
+      expect(await rejected.json()).toEqual({
+        error: '当前模型不支持工具调用。',
+        status: 400,
+        issue: { code: 'MODEL_TOOLS_UNSUPPORTED' },
+      });
       expect(await f.snapshot()).toEqual(snapshot);
       expect((await f.state()).modelCalls).toBe(2);
     } finally {

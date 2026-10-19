@@ -1,25 +1,26 @@
-import { DocumentStore } from './documents';
+import * as v from 'valibot';
 import { documentKey, type DocumentPart } from '../../shared/attachments/documents';
 import {
   ATTACHMENT_LEASE,
   ATTACHMENT_UPLOAD_TIMEOUT,
   attachmentSignatureMatches,
-  MAX_DAILY_ATTACHMENT_UPLOADS,
-  MAX_CONVERSATION_ATTACHMENTS,
   MAX_CONVERSATION_ATTACHMENT_BYTES,
-  MAX_SPACE_ATTACHMENTS,
+  MAX_CONVERSATION_ATTACHMENTS,
+  MAX_DAILY_ATTACHMENT_UPLOADS,
   MAX_SPACE_ATTACHMENT_BYTES,
+  MAX_SPACE_ATTACHMENTS,
   type Attachment,
   type AttachmentInput,
 } from '../../shared/attachments/files';
-import { HttpError } from '../http/response';
 import {
   assertChatImage,
   imageMediaTypeSchema,
   MAX_MESSAGE_IMAGES,
   type ImagePart,
 } from '../../shared/attachments/images';
-import * as v from 'valibot';
+import { issueOf, problem } from '../../shared/errors/descriptor';
+import { HttpError } from '../http/response';
+import { DocumentStore } from './documents';
 
 type Row = Attachment & {
   key: string;
@@ -68,14 +69,30 @@ export class AttachmentStore {
           )
           .one().bytes;
         if (total + bytes > MAX_SPACE_ATTACHMENT_BYTES)
-          throw new HttpError(507, '空间附件容量已满，全文提取结果也计入容量。');
+          throw new HttpError(
+            507,
+            '空间附件容量已满，全文提取结果也计入容量。',
+            undefined,
+            problem('STORAGE_FULL'),
+          );
         if (local + bytes > MAX_CONVERSATION_ATTACHMENT_BYTES)
-          throw new HttpError(507, '此对话附件容量已满，全文提取结果也计入 32 MiB 容量。');
+          throw new HttpError(
+            507,
+            '此对话附件容量已满，全文提取结果也计入 32 MiB 容量。',
+            undefined,
+            problem('ATTACHMENT_INVALID'),
+          );
       },
     );
   }
   private configuredBucket() {
-    if (!this.bucket) throw new HttpError(503, '文件存储未配置，请先绑定私有 R2 桶。');
+    if (!this.bucket)
+      throw new HttpError(
+        503,
+        '文件存储未配置，请先绑定私有 R2 桶。',
+        undefined,
+        problem('ATTACHMENT_STORAGE_REQUIRED'),
+      );
     return this.bucket;
   }
   private row(id: string) {
@@ -86,15 +103,17 @@ export class AttachmentStore {
     return { id, conversationId, name, size, mediaType, sha256, status, createdAt, error };
   }
   private require(conversationId: string, id: string) {
-    if (!this.exists(conversationId)) throw new HttpError(410, '对话不存在或已删除。');
+    if (!this.exists(conversationId))
+      throw new HttpError(410, '对话不存在或已删除。', undefined, problem('ATTACHMENT_INVALID'));
     const row = this.row(id);
     if (!row || row.conversationId !== conversationId || row.removed)
-      throw new HttpError(404, '找不到附件。');
+      throw new HttpError(404, '找不到附件。', undefined, problem('NOT_FOUND'));
     return row;
   }
   list(conversationId: string) {
     this.configuredBucket();
-    if (!this.exists(conversationId)) throw new HttpError(410, '对话不存在或已删除。');
+    if (!this.exists(conversationId))
+      throw new HttpError(410, '对话不存在或已删除。', undefined, problem('ATTACHMENT_INVALID'));
     return this.storage.sql
       .exec<Row>(
         'SELECT * FROM attachments WHERE conversationId = ? AND removed = 0 ORDER BY createdAt, id',
@@ -128,12 +147,24 @@ export class AttachmentStore {
   images(conversationId: string, ids: string[]): ImagePart[] {
     this.configuredBucket();
     if (ids.length > MAX_MESSAGE_IMAGES || new Set(ids).size !== ids.length)
-      throw new HttpError(400, '每条消息最多添加 4 张不同的图片。');
+      throw new HttpError(
+        400,
+        '每条消息最多添加 4 张不同的图片。',
+        undefined,
+        problem('ATTACHMENT_INVALID'),
+      );
     return ids.map((id) => {
       const row = this.require(conversationId, id);
-      if (row.status !== 'ready') throw new HttpError(409, '图片尚未上传完成。');
+      if (row.status !== 'ready')
+        throw new HttpError(409, '图片尚未上传完成。', undefined, problem('ATTACHMENT_INVALID'));
       const type = v.safeParse(imageMediaTypeSchema, row.mediaType);
-      if (!type.success) throw new HttpError(415, '此附件不是支持的图片格式。');
+      if (!type.success)
+        throw new HttpError(
+          415,
+          '此附件不是支持的图片格式。',
+          undefined,
+          problem('ATTACHMENT_INVALID'),
+        );
       return {
         type: 'image',
         attachmentId: row.id,
@@ -155,12 +186,22 @@ export class AttachmentStore {
         row.sha256 !== image.sha256 ||
         row.mediaType !== image.mediaType
       )
-        throw new HttpError(409, '图片引用与文件不符，请重新上传。');
+        throw new HttpError(
+          409,
+          '图片引用与文件不符，请重新上传。',
+          undefined,
+          problem('ATTACHMENT_INVALID'),
+        );
       const response = await this.response(conversationId, image.attachmentId);
       try {
         assertChatImage(new Uint8Array(await response.arrayBuffer()), image.mediaType);
       } catch (error) {
-        throw new HttpError(415, error instanceof Error ? error.message : '图片无效。');
+        throw new HttpError(
+          415,
+          error instanceof Error ? error.message : '图片无效。',
+          undefined,
+          issueOf(error, 'ATTACHMENT_INVALID'),
+        );
       }
     }
     const documents = new Map(files.map((file) => [documentKey(file), file]));
@@ -185,7 +226,13 @@ export class AttachmentStore {
   }
   async clone(sourceId: string, targetId: string, id: string, cloneId: string) {
     const source = this.require(sourceId, id);
-    if (source.status !== 'ready') throw new HttpError(409, '待复制文件尚未保存完成。');
+    if (source.status !== 'ready')
+      throw new HttpError(
+        409,
+        '待复制文件尚未保存完成。',
+        undefined,
+        problem('ATTACHMENT_INVALID'),
+      );
     const parsed = this.documents.parsedReference(sourceId, id);
     const document = parsed ? await this.documents.read(sourceId, id) : undefined;
     this.register(targetId, {
@@ -196,7 +243,8 @@ export class AttachmentStore {
       sha256: source.sha256,
     });
     const response = await this.response(sourceId, id);
-    if (!response.body) throw new HttpError(503, '待复制文件内容不可用。');
+    if (!response.body)
+      throw new HttpError(503, '待复制文件内容不可用。', undefined, problem('ATTACHMENT_INVALID'));
     try {
       await this.upload(targetId, cloneId, response.body);
     } finally {
@@ -217,14 +265,20 @@ export class AttachmentStore {
           : undefined,
       );
       if (JSON.stringify({ ...result, attachmentId: id }) !== JSON.stringify(document.file))
-        throw new HttpError(409, '复制后的解析资料与原文件不符。');
+        throw new HttpError(
+          409,
+          '复制后的解析资料与原文件不符。',
+          undefined,
+          problem('ATTACHMENT_INVALID'),
+        );
     }
     this.require(sourceId, id);
     this.require(targetId, cloneId);
   }
   register(conversationId: string, input: AttachmentInput): Attachment {
     this.configuredBucket();
-    if (!this.exists(conversationId)) throw new HttpError(410, '对话不存在或已删除。');
+    if (!this.exists(conversationId))
+      throw new HttpError(410, '对话不存在或已删除。', undefined, problem('ATTACHMENT_INVALID'));
     return this.storage.transactionSync(() => {
       const existing = this.row(input.id);
       if (existing) {
@@ -235,7 +289,12 @@ export class AttachmentStore {
             (field) => existing[field] !== input[field as keyof AttachmentInput],
           )
         )
-          throw new HttpError(409, '此附件 ID 已被使用，请重新选择文件。');
+          throw new HttpError(
+            409,
+            '此附件 ID 已被使用，请重新选择文件。',
+            undefined,
+            problem('ATTACHMENT_INVALID'),
+          );
         return this.public(existing);
       }
       const space = this.storage.sql
@@ -253,12 +312,22 @@ export class AttachmentStore {
         space.count >= MAX_SPACE_ATTACHMENTS ||
         space.bytes + input.size > MAX_SPACE_ATTACHMENT_BYTES
       )
-        throw new HttpError(507, '空间附件容量已满，请删除附件后重试。');
+        throw new HttpError(
+          507,
+          '空间附件容量已满，请删除附件后重试。',
+          undefined,
+          problem('STORAGE_FULL'),
+        );
       if (
         local.count >= MAX_CONVERSATION_ATTACHMENTS ||
         local.bytes + input.size > MAX_CONVERSATION_ATTACHMENT_BYTES
       )
-        throw new HttpError(507, '此对话附件容量已满，请删除附件后重试。');
+        throw new HttpError(
+          507,
+          '此对话附件容量已满，请删除附件后重试。',
+          undefined,
+          problem('ATTACHMENT_INVALID'),
+        );
       const createdAt = Date.now();
       this.storage.sql.exec(
         'INSERT INTO attachments VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, NULL, 0)',
@@ -285,7 +354,12 @@ export class AttachmentStore {
     }
     if (row.status === 'uploading' || row.status === 'failed') {
       await body.cancel().catch(() => {});
-      throw new HttpError(409, '附件正在上传或已失败，请删除后重新选择。');
+      throw new HttpError(
+        409,
+        '附件正在上传或已失败，请删除后重新选择。',
+        undefined,
+        problem('ATTACHMENT_INVALID'),
+      );
     }
     const token = crypto.randomUUID();
     this.storage.transactionSync(() => {
@@ -298,7 +372,12 @@ export class AttachmentStore {
           )
           .toArray()[0]?.count ?? 0;
       if (attempts >= MAX_DAILY_ATTACHMENT_UPLOADS)
-        throw new HttpError(429, '今日附件上传次数已达上限，请明天重试。');
+        throw new HttpError(
+          429,
+          '今日附件上传次数已达上限，请明天重试。',
+          undefined,
+          problem('ATTACHMENT_INVALID'),
+        );
       this.storage.sql.exec('DELETE FROM attachment_daily_uploads WHERE date < ?', date);
       this.storage.sql.exec(
         'INSERT INTO attachment_daily_uploads VALUES (?, 1) ON CONFLICT(date) DO UPDATE SET count = count + 1',
@@ -320,7 +399,12 @@ export class AttachmentStore {
       prefix = new Uint8Array(),
       failure: unknown;
     const timer = setTimeout(() => {
-      failure = new HttpError(408, '附件上传超时，请重新选择文件。');
+      failure = new HttpError(
+        408,
+        '附件上传超时，请重新选择文件。',
+        undefined,
+        problem('REQUEST_TIMEOUT'),
+      );
       void reader.cancel().catch(() => {});
       void writer.abort(failure).catch(() => {});
     }, ATTACHMENT_UPLOAD_TIMEOUT);
@@ -331,7 +415,13 @@ export class AttachmentStore {
           if (failure) throw failure;
           if (done) break;
           received += value.byteLength;
-          if (received > row.size) throw new HttpError(413, '附件实际大小超过声明大小。');
+          if (received > row.size)
+            throw new HttpError(
+              413,
+              '附件实际大小超过声明大小。',
+              undefined,
+              problem('ATTACHMENT_INVALID'),
+            );
           if (prefix.length < Math.min(12, row.size)) {
             const joined = new Uint8Array(Math.min(12, prefix.length + value.length));
             joined.set(prefix);
@@ -341,11 +431,17 @@ export class AttachmentStore {
               prefix.length === Math.min(12, row.size) &&
               !attachmentSignatureMatches(prefix, row.mediaType)
             )
-              throw new HttpError(415, '文件内容与类型不符。');
+              throw new HttpError(
+                415,
+                '文件内容与类型不符。',
+                undefined,
+                problem('ATTACHMENT_INVALID'),
+              );
           }
           await writer.write(value);
         }
-        if (received !== row.size) throw new HttpError(400, '附件未完整上传。');
+        if (received !== row.size)
+          throw new HttpError(400, '附件未完整上传。', undefined, problem('ATTACHMENT_INVALID'));
         await writer.close();
       } catch (error) {
         failure = error;
@@ -366,10 +462,11 @@ export class AttachmentStore {
     try {
       const [object] = await Promise.all([put, feeding]);
       if (failure) throw failure;
-      if (!object || object.size !== row.size) throw new HttpError(400, '附件未完整保存。');
+      if (!object || object.size !== row.size)
+        throw new HttpError(400, '附件未完整保存。', undefined, problem('ATTACHMENT_INVALID'));
       const current = this.row(id);
       if (!current || current.removed || current.token !== token || !this.exists(conversationId))
-        throw new HttpError(410, '附件或对话已删除。');
+        throw new HttpError(410, '附件或对话已删除。', undefined, problem('ATTACHMENT_INVALID'));
       this.storage.sql.exec(
         "UPDATE attachments SET status = 'ready', token = NULL, lease = 0 WHERE id = ?",
         id,
@@ -395,7 +492,12 @@ export class AttachmentStore {
         /* The durable cleanup queue retries. */
       }
       if (error instanceof HttpError) throw error;
-      throw new HttpError(400, '附件上传或校验失败，请重新选择文件。');
+      throw new HttpError(
+        400,
+        '附件上传或校验失败，请重新选择文件。',
+        undefined,
+        problem('ATTACHMENT_INVALID'),
+      );
     } finally {
       clearTimeout(timer);
       reader.releaseLock();
@@ -406,9 +508,11 @@ export class AttachmentStore {
   async response(conversationId: string, id: string, head = false): Promise<Response> {
     const bucket = this.configuredBucket();
     const row = this.require(conversationId, id);
-    if (row.status !== 'ready') throw new HttpError(409, '附件尚未上传完成。');
+    if (row.status !== 'ready')
+      throw new HttpError(409, '附件尚未上传完成。', undefined, problem('ATTACHMENT_INVALID'));
     const object = head ? await bucket.head(row.key) : await bucket.get(row.key);
-    if (!object) throw new HttpError(404, '附件文件不存在。');
+    if (!object)
+      throw new HttpError(404, '附件文件不存在。', undefined, problem('ATTACHMENT_INVALID'));
     try {
       const digest = object.checksums.sha256
         ? Array.from(new Uint8Array(object.checksums.sha256), (byte) =>
@@ -416,7 +520,12 @@ export class AttachmentStore {
           ).join('')
         : null;
       if (object.size !== row.size || digest !== row.sha256)
-        throw new HttpError(409, '附件完整性校验失败，请重新上传。');
+        throw new HttpError(
+          409,
+          '附件完整性校验失败，请重新上传。',
+          undefined,
+          problem('ATTACHMENT_INVALID'),
+        );
       this.require(conversationId, id); // Deletion can interleave with the R2 read.
     } catch (error) {
       if ('body' in object) await (object as R2ObjectBody).body.cancel().catch(() => {});
@@ -435,7 +544,13 @@ export class AttachmentStore {
   }
   remove(conversationId: string, id: string, usage = this.usage(id)) {
     const row = this.require(conversationId, id);
-    if (usage !== this.usage(id)) throw new HttpError(409, '文件刚被对话使用，请稍后重试。');
+    if (usage !== this.usage(id))
+      throw new HttpError(
+        409,
+        '文件刚被对话使用，请稍后重试。',
+        undefined,
+        problem('ATTACHMENT_IN_USE'),
+      );
     this.storage.sql.exec(
       'UPDATE attachments SET removed = 1, lease = ? WHERE id = ?',
       Math.max(row.status === 'uploading' ? row.lease : Date.now(), this.documents.lease(id)),

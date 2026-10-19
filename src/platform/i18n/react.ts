@@ -1,18 +1,20 @@
 import { useSyncExternalStore } from 'react';
 import { initReactI18next } from 'react-i18next';
 import type { Locale } from '../../../shared/i18n/locale';
-import { createI18n } from './runtime';
-import { getLocaleSnapshot, subscribeLocale } from './preference';
 import commonEn from './locales/en/common';
-import commonZh from './locales/zh-CN/common';
+import errorsEn from './locales/en/errors';
 import systemEn from './locales/en/system';
+import commonZh from './locales/zh-CN/common';
+import errorsZh from './locales/zh-CN/errors';
 import systemZh from './locales/zh-CN/system';
+import { getLocaleSnapshot, subscribeLocale } from './preference';
+import { createI18n } from './runtime';
 
 export const pageI18n = createI18n(
   getLocaleSnapshot().locale,
   {
-    en: { common: commonEn, system: systemEn },
-    'zh-CN': { common: commonZh, system: systemZh },
+    en: { common: commonEn, system: systemEn, errors: errorsEn },
+    'zh-CN': { common: commonZh, system: systemZh, errors: errorsZh },
   },
   [initReactI18next],
 );

@@ -1,7 +1,6 @@
-import { useTranslation } from 'react-i18next';
-import './locales';
 import { ArrowDownToLine, ArrowUpToLine, ChevronDown, ChevronUp } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../../components/ui/button';
 import {
   Tooltip,
@@ -9,6 +8,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '../../components/ui/tooltip';
+import { type UiMessage, renderUiMessage } from '../../platform/i18n/messages';
+import './locales';
 import type { ReadingAction } from './useMessageNavigation';
 import { useNavigationVisibility } from './useNavigationVisibility';
 
@@ -30,7 +31,7 @@ export function ConversationNavigation({
   atBottom: boolean;
   previous?: string;
   next?: string;
-  announcement: string;
+  announcement: UiMessage;
   navigate: (action: ReadingAction) => void;
 }) {
   const { t } = useTranslation('chat', { useSuspense: false });
@@ -117,7 +118,7 @@ export function ConversationNavigation({
           </Tooltip>
         ))}
         <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
-          {announcement}
+          {renderUiMessage(announcement)}
         </span>
       </div>
     </TooltipProvider>

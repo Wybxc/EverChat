@@ -93,6 +93,14 @@ test('public catalog enrichment preserves manual values and drafts, persists acr
     );
     await expect(page.getByLabel('图片输入 1')).toHaveValue('unsupported');
     await expect(page.getByText('模型目录', { exact: true }).first()).toBeVisible();
+    await expect
+      .poll(
+        async () => (await getSettings(context.request)).providers[0].models[0].directoryMetadata,
+      )
+      .toMatchObject({
+        match: 'exact',
+        values: { contextWindow: 131072, imageInput: true, toolCalls: true },
+      });
     const enriched = await getSettings(context.request),
       model = enriched.providers[0].models[0];
     expect(model).toMatchObject({
@@ -302,7 +310,7 @@ test('unknown image capability can send actual native image bytes; confirmed fal
     await page
       .locator('input[type="file"][accept*="image"]')
       .setInputFiles({ name: 'test.png', mimeType: 'image/png', buffer: png });
-    await expect(page.getByRole('alert')).toContainText('请先选择支持图片的视觉模型');
+    await expect(page.getByRole('alert')).toContainText('当前模型不支持图片，请选择视觉模型');
     await expect(page.getByLabel('消息', { exact: true })).toHaveValue('保留不支持时的草稿');
   } finally {
     await page.close();

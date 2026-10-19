@@ -198,8 +198,8 @@ test.describe('touch input typography', () => {
         await expect(composer).toHaveValue('触屏字号检查保留草稿');
       }
       await openSpaceSettings(page);
-      await settingsTab(page, '对话');
-      await readable(page.getByLabel('系统提示词', { exact: true }), 20);
+      await settingsTab(page, '预设');
+      await readable(page.getByLabel('预设系统提示词', { exact: true }), 20);
       await settingsTab(page, '供应商');
       await providerDetails(page);
       await readable(page.getByLabel('名称', { exact: true }), 20);

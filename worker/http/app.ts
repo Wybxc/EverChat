@@ -1,19 +1,20 @@
 import { Hono } from 'hono';
+import { AppError, problem } from '../../shared/errors/descriptor';
 import { registerAttachmentsRoutes } from '../attachments/routes';
 import { registerBackupRoutes } from '../backup/routes';
 import { registerConversationRoutes } from '../conversation/routes';
 import { registerLibraryRoutes } from '../library/routes';
+import { registerNotificationRoutes } from '../notifications/routes';
 import { storageErrorMessage } from '../platform/resource-limits';
 import { registerPresetsRoutes } from '../presets/routes';
 import { registerProvidersRoutes } from '../providers/routes';
 import { registerSearchRoutes } from '../search/routes';
+import { registerSharingRoutes } from '../sharing/routes';
+import { registerUsageRoutes } from '../usage/routes';
 import { registerWebToolsRoutes } from '../web-tools/routes';
-import { registerNotificationRoutes } from '../notifications/routes';
 import { authenticateAccess, type Authenticator } from './auth';
 import { HttpError, json, type AppEnv } from './response';
 import { registerSessionRoutes } from './session-routes';
-import { registerUsageRoutes } from '../usage/routes';
-import { registerSharingRoutes } from '../sharing/routes';
 
 export type ApiRouter = Hono<AppEnv, Record<never, never>, '/api'>;
 export function createApi(
@@ -28,7 +29,7 @@ export function createApi(
     const mutation = !['GET', 'HEAD'].includes(request.method);
     const upgrade = request.headers.get('Upgrade')?.toLowerCase() === 'websocket';
     if ((mutation || upgrade) && request.headers.get('Origin') !== url.origin)
-      throw new HttpError(403, '此请求来源不受信任。');
+      throw new HttpError(403, '此请求来源不受信任。', undefined, problem('UNTRUSTED_ORIGIN'));
     context.set('principal', await authenticate(request, context.env));
     await next();
   });
@@ -46,15 +47,19 @@ export function createApi(
   registerAttachmentsRoutes(app);
   registerConversationRoutes(app);
 
-  app.notFound(() => json({ error: '找不到这个接口。' }, 404));
+  app.notFound(() => json({ error: '找不到这个接口。', issue: problem('NOT_FOUND') }, 404));
 
   app.onError((error) => {
     if (error instanceof HttpError)
-      return json({ error: error.message, code: error.code }, error.status);
+      return json({ error: error.message, code: error.code, issue: error.issue }, error.status);
     const storage = storageErrorMessage(error);
     if (storage) return json({ error: storage }, 507);
+    if (error instanceof AppError) return json({ error: error.message, issue: error.issue }, 500);
     console.error('EverChat request failed', error instanceof Error ? error.name : 'UnknownError');
-    return json({ error: '服务暂时不可用，请稍后重试。' }, 500);
+    return json(
+      { error: '服务暂时不可用，请稍后重试。', issue: problem('SERVICE_UNAVAILABLE') },
+      500,
+    );
   });
 
   return app;

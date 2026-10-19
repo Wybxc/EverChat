@@ -125,7 +125,7 @@ test('pending identity keeps a private-free frame, usable settings and one share
     await page.getByRole('tab', { name: '联网', exact: true }).click();
     await expect(page.getByText('身份确认后可用')).toBeVisible();
     request.release();
-    await expect(page.getByRole('heading', { name: 'Tavily', exact: true })).toBeVisible();
+    await expect(page.getByRole('combobox', { name: '联网服务', exact: true })).toBeVisible();
     await expect(page.getByRole('tab', { name: '联网', exact: true })).toHaveAttribute(
       'data-state',
       'active',
@@ -161,7 +161,7 @@ test('slow provider settings do not block tabs, local controls or independent se
       animations: 'disabled',
     });
     await page.getByRole('tab', { name: '联网', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Tavily', exact: true })).toBeVisible();
+    await expect(page.getByRole('combobox', { name: '联网服务', exact: true })).toBeVisible();
     await page.getByRole('tab', { name: '预设', exact: true }).click();
     await expect(page.getByRole('button', { name: '添加预设', exact: true })).toBeVisible();
     await page.getByRole('tab', { name: '通用', exact: true }).click();
@@ -169,7 +169,7 @@ test('slow provider settings do not block tabs, local controls or independent se
     await page.getByRole('radio', { name: '深色', exact: true }).press('Space');
     request.release();
     await page.getByRole('tab', { name: '供应商', exact: true }).click();
-    await expect(page.getByRole('alert')).toContainText('测试：读取暂时失败');
+    await expect(page.getByRole('alert')).toContainText('服务暂时不可用');
     await request.remove();
     await page.getByRole('button', { name: '重新读取', exact: true }).click();
     await expect(page.getByLabel('名称', { exact: true })).toHaveValue('慢连接测试');
@@ -359,7 +359,7 @@ test('cached history remains readable through a failed refresh and a late respon
       await expect(page.getByRole('button', { name: '复制消息' }).first()).toBeEnabled();
       request.release();
       await expect(page.getByRole('banner')).toContainText('连接中');
-      await expect(page.getByRole('alert')).toContainText('测试：读取暂时失败');
+      await expect(page.getByRole('alert')).toContainText('服务暂时不可用');
       await expect(page.getByTestId('assistant-message').first()).toBeVisible();
       await request.remove();
     } finally {
@@ -518,7 +518,7 @@ test('startup remains visible before scripts and while IndexedDB is delayed', as
     await page.evaluate(() =>
       (window as unknown as { releaseStorage: () => void }).releaseStorage(),
     );
-    await expect(page.getByRole('heading', { name: 'Tavily', exact: true })).toBeVisible();
+    await expect(page.getByRole('combobox', { name: '联网服务', exact: true })).toBeVisible();
     await page.getByRole('button', { name: '关闭设置' }).click();
     await expect(composer(page)).toBeVisible();
   } finally {

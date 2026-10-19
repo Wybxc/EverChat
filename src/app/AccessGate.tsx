@@ -1,16 +1,17 @@
-import { useTranslation } from 'react-i18next';
-import './locales';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Menu } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Sidebar } from '../features/library/Sidebar';
 import { completeSignOut, resumeAccess } from '../platform/auth';
+import { type UiMessage, renderUiMessage } from '../platform/i18n/messages';
+import { AppFrame, LoadingContent, SidebarHeader, SpaceSettingsButton } from './AppFrame';
+import './locales';
+import { SettingsDialog } from './SettingsDialog';
+import { SettingsPanel, type SettingsTab } from './SettingsPanel';
 import { ThemeControl } from './ThemeControl';
 import type { SessionStatus } from './useSession';
-import { AppFrame, LoadingContent, SidebarHeader, SpaceSettingsButton } from './AppFrame';
-import { Sidebar } from '../features/library/Sidebar';
 import { useSidebar } from './useSidebar';
-import { SettingsPanel, type SettingsTab } from './SettingsPanel';
-import { SettingsDialog } from './SettingsDialog';
 
 export function AccessGate({
   status,
@@ -21,7 +22,7 @@ export function AccessGate({
 }: {
   logoutUrl: string;
   status: SessionStatus;
-  error: string;
+  error: UiMessage;
   onRetry: () => void;
   settingsState?: {
     open: boolean;
@@ -109,9 +110,9 @@ export function AccessGate({
                 {status === 'denied'
                   ? t(($) => $.accessDenied)
                   : status === 'unavailable'
-                    ? error || t(($) => $.connectionUnavailable)
+                    ? renderUiMessage(error) || t(($) => $.connectionUnavailable)
                     : status === 'signed-out'
-                      ? error || t(($) => $.signedOutOffline)
+                      ? renderUiMessage(error) || t(($) => $.signedOutOffline)
                       : t(($) => $.signInRequired)}
               </p>
               {status === 'unavailable' && (

@@ -1,21 +1,3 @@
-import { useTranslation } from 'react-i18next';
-import './locales';
-import { formatDateTime } from '../platform/i18n/format';
-import { useLocale } from '../platform/i18n/react';
-import { lazy, Suspense } from 'react';
-import {
-  MAX_MESSAGE_TEXT_BYTES,
-  MESSAGE_TEXT_LIMIT_MESSAGE,
-  messageTextFits,
-  jsonTextBytes,
-  textWithinBytes,
-} from '../../shared/conversation/limits';
-import {
-  disableNotificationsForLogout,
-  startNotifications,
-} from '../platform/notifications/controller';
-import { completeSignOut, pendingLogout } from '../platform/auth';
-import { useMutationFocus } from '../features/chat/useMutationFocus';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
@@ -40,6 +22,8 @@ import {
 } from 'lucide-react';
 import {
   Fragment,
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -47,12 +31,20 @@ import {
   useState,
   type SubmitEvent,
 } from 'react';
+import { useTranslation } from 'react-i18next';
 import * as v from 'valibot';
 import { MAX_MESSAGE_DOCUMENTS } from '../../shared/attachments/documents';
 import { MAX_MESSAGE_IMAGES } from '../../shared/attachments/images';
+import { identityKey } from '../../shared/auth/types';
 import { parentKey, summariesOnBranch } from '../../shared/conversation/branches';
 import { messageFiles, messageImages, messageText } from '../../shared/conversation/content';
 import { contextSource } from '../../shared/conversation/context-budget';
+import {
+  jsonTextBytes,
+  MAX_MESSAGE_TEXT_BYTES,
+  messageTextFits,
+  textWithinBytes,
+} from '../../shared/conversation/limits';
 import { isActive } from '../../shared/conversation/message-state';
 import {
   applyConversationSettings,
@@ -81,8 +73,8 @@ import { hasOpenModal, Modal, ModalTitle } from '../components/Modal';
 import { AttachmentDialog } from '../features/attachments/AttachmentDialog';
 import { DocumentPreviews } from '../features/attachments/DocumentPreviews';
 import { ImagePreviews } from '../features/attachments/ImagePreviews';
-import { useFileDrop } from '../features/attachments/useFileDrop';
 import { useChatAttachments } from '../features/attachments/useChatAttachments';
+import { useFileDrop } from '../features/attachments/useFileDrop';
 import { BackupProgressDialog } from '../features/backup/BackupProgressDialog';
 import { exportChatFile } from '../features/backup/export-chat';
 import { useBackup } from '../features/backup/useBackup';
@@ -94,9 +86,10 @@ import {
   writePending,
   type Pending,
 } from '../features/chat/cache';
-import { ContextEstimateNotices } from '../features/chat/ContextEstimate';
 import { ComposerParameters } from '../features/chat/ComposerParameters';
+import { ContextEstimateNotices } from '../features/chat/ContextEstimate';
 import { ConversationActions } from '../features/chat/ConversationActions';
+import { ConversationNavigation } from '../features/chat/ConversationNavigation';
 import { ConversationSearch } from '../features/chat/ConversationSearch';
 import { ConversationSettingsDialog } from '../features/chat/ConversationSettings';
 import { MessageDeleteDialog } from '../features/chat/MessageDeleteDialog';
@@ -105,25 +98,25 @@ import { SummaryDialog } from '../features/chat/SummaryDialog';
 import { SummaryView } from '../features/chat/SummaryView';
 import { useBranchScrollAnchor } from '../features/chat/useBranchScrollAnchor';
 import { useChatDraft } from '../features/chat/useChatDraft';
-import { useComposerSize } from '../features/chat/useComposerSize';
 import { useComposerLayout } from '../features/chat/useComposerLayout';
+import { useComposerSize } from '../features/chat/useComposerSize';
+import { useContextPreview } from '../features/chat/useContextPreview';
+import { useConversation } from '../features/chat/useConversation';
 import {
   ConversationActionDialogs,
   useConversationActions,
 } from '../features/chat/useConversationActions';
-import { useContextPreview } from '../features/chat/useContextPreview';
-import { useConversation } from '../features/chat/useConversation';
 import { useConversationBranches } from '../features/chat/useConversationBranches';
 import { useFollowScroll } from '../features/chat/useFollowScroll';
 import { useMessageNavigation } from '../features/chat/useMessageNavigation';
-import { ConversationNavigation } from '../features/chat/ConversationNavigation';
+import { useMutationFocus } from '../features/chat/useMutationFocus';
 import { useOutbox } from '../features/chat/useOutbox';
-import { conversationGroup, conversationGroupLabel } from '../features/library/group-conversations';
-import { GlobalSearch } from '../features/library/GlobalSearch';
-import { Sidebar } from '../features/library/Sidebar';
 import { ConversationListItem } from '../features/library/ConversationListItem';
+import { GlobalSearch } from '../features/library/GlobalSearch';
+import { conversationGroup, conversationGroupLabel } from '../features/library/group-conversations';
+import { Sidebar } from '../features/library/Sidebar';
 import { useLibraryIndex } from '../features/library/useLibraryIndex';
-import { useReloadBlocker } from '../platform/pwa/useReloadBlocker';
+import { PromptPresetPicker } from '../features/presets/PromptPresets';
 import { ModelPicker } from '../features/providers/ModelPicker';
 import {
   loadWebToolSettings,
@@ -131,18 +124,25 @@ import {
   WEB_TOOL_SETTINGS_KEY,
 } from '../features/web-tools/web-tool-settings';
 import { api, ApiError } from '../platform/api';
+import { completeSignOut, pendingLogout } from '../platform/auth';
+import { formatDateTime } from '../platform/i18n/format';
+import {
+  errorMessage,
+  renderUiMessage,
+  UiError,
+  uiMessage,
+  type UiMessage,
+} from '../platform/i18n/messages';
+import { useLocale } from '../platform/i18n/react';
+import {
+  disableNotificationsForLogout,
+  startNotifications,
+} from '../platform/notifications/controller';
+import { useReloadBlocker } from '../platform/pwa/useReloadBlocker';
 import { clearLocal, read, remove, storageEpoch, write } from '../platform/storage';
 import { useMediaQuery } from '../platform/useMediaQuery';
-import { AppFrame, LoadingContent, SidebarHeader, SpaceSettingsButton } from './AppFrame';
-import { PromptPresetPicker } from '../features/presets/PromptPresets';
-import { SettingsDialog } from './SettingsDialog';
 import { AccessGate } from './AccessGate';
-import { identityKey } from '../../shared/auth/types';
-import { SettingsPanel, type SettingsTab } from './SettingsPanel';
-import { ThemeControl } from './ThemeControl';
-import { conversationUrl, useConversationRoute } from './useConversationRoute';
-import { useSession } from './useSession';
-import { useSidebar } from './useSidebar';
+import { AppFrame, LoadingContent, SidebarHeader, SpaceSettingsButton } from './AppFrame';
 import {
   ariaShortcut,
   commandDefinitions,
@@ -150,6 +150,13 @@ import {
   useAppCommands,
   type CommandId,
 } from './commands';
+import './locales';
+import { SettingsDialog } from './SettingsDialog';
+import { SettingsPanel, type SettingsTab } from './SettingsPanel';
+import { ThemeControl } from './ThemeControl';
+import { conversationUrl, useConversationRoute } from './useConversationRoute';
+import { useSession } from './useSession';
+import { useSidebar } from './useSidebar';
 
 const ShareDialog = lazy(() => import('../features/sharing/ShareDialog'));
 
@@ -237,7 +244,7 @@ export function App({
   useEffect(() => {
     setError('');
   }, [selected]);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<UiMessage>('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
@@ -841,19 +848,19 @@ export function App({
   };
 
   const queue = async (input: SubmitInput, inline = false) => {
-    const reject = (message: string) => {
-      if (inline) throw new Error(message);
+    const reject = (message: UiMessage) => {
+      if (inline) throw new UiError(message);
       setError(message);
       return false;
     };
     if (input.content !== undefined && !messageTextFits(input.content.trim())) {
-      return reject(MESSAGE_TEXT_LIMIT_MESSAGE);
+      return reject(uiMessage('common', 'messageLimit'));
     }
     const origin = selected,
       epoch = storageEpoch();
     const settings = v.safeParse(conversationSettingsSchema, conversationSettings);
     if (!settings.success) {
-      return reject(t(($) => $.fixParameters));
+      return reject(uiMessage('app', 'fixParameters'));
     }
     input = {
       ...input,
@@ -870,7 +877,7 @@ export function App({
       };
     if (input.content !== undefined && !input.revisionOf && input.parentId === undefined) {
       if (branches.index.order.length && !branches.continuationParentId) {
-        return reject(t(($) => $.chooseBranch));
+        return reject(uiMessage('app', 'chooseBranch'));
       }
       input = { ...input, parentId: branches.continuationParentId };
     }
@@ -914,10 +921,10 @@ export function App({
               staleTime: 0,
             })
           : webToolSettings.data;
-        if (!service?.hasApiKey) throw new Error(t(($) => $.configureWebTools));
+        if (!service?.hasApiKey) throw new UiError(uiMessage('app', 'configureWebTools'));
       } catch (error) {
         if (selectedRef.current === origin && storageEpoch() === epoch)
-          return reject(error instanceof Error ? error.message : t(($) => $.webSettingsFailed));
+          return reject(errorMessage(error, uiMessage('app', 'webSettingsFailed')));
         return false;
       }
       if (
@@ -954,7 +961,7 @@ export function App({
           const model = selection
             ? models.find((item) => modelSelectionKey(item) === modelSelectionKey(selection))
             : generationModel;
-          if (!model) throw new Error(t(($) => $.compressionModelUnavailable));
+          if (!model) throw new UiError(uiMessage('app', 'compressionModelUnavailable'));
           summaryGeneration(snapshot.messages, prepared.automatic.throughId, {
             ...model,
             systemPrompt: '',
@@ -963,7 +970,7 @@ export function App({
           });
         }
       } catch (error) {
-        return reject(error instanceof Error ? error.message : t(($) => $.invalidParameters));
+        return reject(errorMessage(error, uiMessage('app', 'invalidParameters')));
       }
     }
     const conversation: ConversationInfo = currentConversation ?? {
@@ -989,7 +996,8 @@ export function App({
       images: input.retryOf ? undefined : images,
       files: input.retryOf ? undefined : files,
     };
-    if (!commitPending([...pendingRef.current, item])) return reject(t(($) => $.storageFull));
+    if (!commitPending([...pendingRef.current, item]))
+      return reject(uiMessage('app', 'storageFull'));
     if (!conversations.some((item) => item.id === conversation.id)) {
       rememberConversation(conversation);
     }
@@ -1045,12 +1053,12 @@ export function App({
   };
   const queueSummary = async (input: SubmitInput) => {
     if (!selected || !currentConversation || generationBlocked || !input.summaryThrough)
-      throw new Error(t(($) => $.compactionNotReady));
+      throw new UiError(uiMessage('app', 'compactionNotReady'));
     const model = models.find(
       (model) =>
         model.providerId === input.selection?.providerId && model.model === input.selection?.model,
     );
-    if (!model) throw new Error(t(($) => $.summaryModelUnavailable));
+    if (!model) throw new UiError(uiMessage('app', 'summaryModelUnavailable'));
     summaryGeneration(snapshot.messages, input.summaryThrough, {
       ...model,
       systemPrompt: '',
@@ -1064,7 +1072,7 @@ export function App({
       viewHeadId: branches.head,
     };
     if (!commitPending([...pendingRef.current, item]))
-      throw new Error(t(($) => $.pendingSaveFailed));
+      throw new UiError(uiMessage('app', 'pendingSaveFailed'));
     await deliver(item);
   };
   const cancel = async () => {
@@ -1072,7 +1080,7 @@ export function App({
     try {
       await api(`/conversations/${selected}/cancel`, 'POST', { runId: active.runId });
     } catch (error) {
-      setError(error instanceof Error ? error.message : t(($) => $.stopFailed));
+      setError(errorMessage(error, uiMessage('app', 'stopFailed')));
     }
   };
   const retry = async (message: Message) => {
@@ -1136,7 +1144,8 @@ export function App({
     if (!selected || !messageMutation) return;
     if (messageMutation.mode === 'edit') {
       if (mutationMessage?.role === 'user') {
-        if (messageBlocked || !selectedModel) throw new Error(t(($) => $.waitForSyncAndModel));
+        if (messageBlocked || !selectedModel)
+          throw new UiError(uiMessage('app', 'waitForSyncAndModel'));
         if (
           !(await queue(
             {
@@ -1154,7 +1163,7 @@ export function App({
             true,
           ))
         )
-          throw new Error(t(($) => $.conversationChanged));
+          throw new UiError(uiMessage('app', 'conversationChanged'));
         return;
       }
       const version = branches.navigationVersion.current;
@@ -1237,7 +1246,7 @@ export function App({
       setSettingsOpen(false);
       if (navigator.onLine) completeSignOut(target);
     } catch (error) {
-      reportSignOutError(error instanceof Error ? error.message : t(($) => $.clearDataFailed));
+      reportSignOutError(errorMessage(error, uiMessage('app', 'clearDataFailed')));
       setSettingsOpen(false);
     }
   };
@@ -1306,7 +1315,7 @@ export function App({
         (error.code === 'copy-stopped' || (error.status >= 400 && error.status < 500))
       )
         write(key, null);
-      throw error instanceof ApiError ? error : new Error(t(($) => $.copyUnconfirmed));
+      throw error instanceof ApiError ? error : new UiError(uiMessage('app', 'copyUnconfirmed'));
     }
     if (epoch !== storageEpoch()) return;
     write(key, null);
@@ -1496,7 +1505,7 @@ export function App({
               )}
               {libraryError && (
                 <div className="flex items-center gap-2 px-3 text-xs">
-                  <span role="alert">{libraryError}</span>
+                  <span role="alert">{renderUiMessage(libraryError)}</span>
                   <Button variant="ghost" onClick={refreshLibrary}>
                     {t(($) => $.retry)}
                   </Button>
@@ -1885,7 +1894,7 @@ export function App({
                         </div>
                         {currentPending.error && (
                           <p className="mt-2 text-xs font-medium leading-5 text-foreground">
-                            {currentPending.error}
+                            {renderUiMessage(currentPending.error)}
                           </p>
                         )}
                         <div className="mt-2 flex gap-1">
@@ -1944,7 +1953,7 @@ export function App({
               )}
               {syncError && (
                 <Alert variant="destructive" role="alert" className="mb-3 text-xs">
-                  <span>{syncError}</span>
+                  <span>{renderUiMessage(syncError)}</span>
                   <Button variant="secondary" type="button" onClick={reconnect}>
                     {t(($) => $.resync)}
                   </Button>
@@ -1952,7 +1961,7 @@ export function App({
               )}
               {connectionError && !syncError && connection !== 'offline' && (
                 <div className="mb-2 flex items-center gap-2 text-xs">
-                  <span role="alert">{connectionError}</span>
+                  <span role="alert">{renderUiMessage(connectionError)}</span>
                   <Button variant="ghost" onClick={reconnect}>
                     {t(($) => $.resync)}
                   </Button>
@@ -1963,12 +1972,12 @@ export function App({
               </span>
               {branches.error && (
                 <Alert variant="destructive" role="alert" className="mb-2 text-xs">
-                  {branches.error}
+                  {renderUiMessage(branches.error)}
                 </Alert>
               )}
               {branches.notice && (
                 <div role="status" className="mb-2 flex items-center gap-2 text-xs">
-                  <span>{branches.notice}</span>
+                  <span>{renderUiMessage(branches.notice)}</span>
                   <Button
                     variant="ghost"
                     size="icon"
@@ -1984,7 +1993,9 @@ export function App({
                   <span>
                     {hiddenPending
                       ? currentPending.error
-                        ? t(($) => $.sendFailedDetail, { error: currentPending.error })
+                        ? t(($) => $.sendFailedDetail, {
+                            error: renderUiMessage(currentPending.error),
+                          })
                         : currentPending.viewHeadId == null
                           ? t(($) => $.sendUnconfirmed)
                           : t(($) => $.otherBranchPending)
@@ -2038,7 +2049,7 @@ export function App({
               )}
               {(error || attachmentError) && (
                 <p role="alert" className="mb-3 text-xs font-medium text-foreground">
-                  {error || attachmentError}
+                  {renderUiMessage(error || attachmentError)}
                 </p>
               )}
               {messageMutation?.mode === 'edit' &&
@@ -2279,7 +2290,9 @@ export function App({
                   />
                 )}
                 {contextPreview?.error && (
-                  <p className="mt-2 text-xs text-muted-foreground">{contextPreview.error}</p>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {renderUiMessage(contextPreview.error)}
+                  </p>
                 )}
               </form>
             </div>

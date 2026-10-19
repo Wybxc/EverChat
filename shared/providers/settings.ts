@@ -1,10 +1,11 @@
-import { MAX_PROVIDER_MODELS } from './limits';
-import { MAX_SYSTEM_PROMPT_LENGTH } from '../conversation/limits';
 import * as v from 'valibot';
+import { MAX_SYSTEM_PROMPT_LENGTH } from '../conversation/limits';
+import { titleSettingsSchema } from '../conversation/titles';
+import { AppError, problem } from '../errors/descriptor';
 import { MAX_MODEL_TOKENS, reasoningEfforts } from '../models/metadata';
 import { providerOptions } from './endpoints';
+import { MAX_PROVIDER_MODELS } from './limits';
 import type { ProviderApiKind, ProviderSettingsInput } from './types';
-import { titleSettingsSchema } from '../conversation/titles';
 
 export const providerTypes = providerOptions.map((option) => option.value) as [
   ProviderApiKind,
@@ -86,16 +87,20 @@ export function normalizeBaseUrl(value: string): string {
   try {
     url = new URL(baseUrl);
   } catch {
-    throw new Error('供应商地址无效。');
+    throw new AppError(problem('PROVIDER_URL_INVALID'), '供应商地址无效。');
   }
-  if (url.protocol !== 'https:') throw new Error('供应商地址必须使用 HTTPS。');
+  if (url.protocol !== 'https:')
+    throw new AppError(problem('PROVIDER_URL_INVALID'), '供应商地址必须使用 HTTPS。');
   if (url.username || url.password || url.search || url.hash)
-    throw new Error('供应商地址不能包含账号、查询参数或片段。');
+    throw new AppError(problem('PROVIDER_URL_INVALID'), '供应商地址不能包含账号、查询参数或片段。');
   if (
     /\/(chat\/completions|responses|messages|models)$/.test(url.pathname) ||
     url.pathname.includes(':streamGenerateContent')
   ) {
-    throw new Error('请填写 API 基础地址，不包含具体接口路径。');
+    throw new AppError(
+      problem('PROVIDER_URL_INVALID'),
+      '请填写 API 基础地址，不包含具体接口路径。',
+    );
   }
   return baseUrl;
 }
@@ -116,13 +121,17 @@ export function mergeProviderSettings(
           !issue.input.trim(),
       )
     ) {
-      throw new Error('请填写供应商名称。');
+      throw new AppError(problem('PROVIDER_NAME_REQUIRED'), '请填写供应商名称。');
     }
-    throw new Error('请检查名称、模型 ID 和 Token 限制（正整数）；模型能力配置无效。');
+    throw new AppError(
+      problem('PROVIDER_INVALID'),
+      '请检查名称、模型 ID 和 Token 限制（正整数）；模型能力配置无效。',
+    );
   }
   const seenIds = new Set<string>();
   const providers = parsed.output.providers.map((profile) => {
-    if (seenIds.has(profile.id)) throw new Error('供应商 ID 不能重复。');
+    if (seenIds.has(profile.id))
+      throw new AppError(problem('PROVIDER_INVALID'), '供应商 ID 不能重复。');
     seenIds.add(profile.id);
     const baseUrl = normalizeBaseUrl(profile.baseUrl);
     const existing = current.providers.find((item) => item.id === profile.id);
@@ -133,9 +142,10 @@ export function mergeProviderSettings(
       (sameConnection || options.preserveKeysAcrossConnections !== false
         ? existing?.apiKey
         : undefined);
-    if (apiKey && /[\r\n]/.test(apiKey)) throw new Error('API 密钥不能包含换行。');
+    if (apiKey && /[\r\n]/.test(apiKey))
+      throw new AppError(problem('PROVIDER_KEY_INVALID'), 'API 密钥不能包含换行。');
     if (new Set(profile.models.map((model) => model.id)).size !== profile.models.length)
-      throw new Error('模型 ID 不能重复。');
+      throw new AppError(problem('PROVIDER_INVALID'), '模型 ID 不能重复。');
     const models =
       existing && !options.restoreModelMetadata
         ? profile.models.map((model) =>
@@ -153,7 +163,10 @@ export function mergeProviderSettings(
         : profile.models;
     const merged = { ...profile, models, baseUrl, apiKey };
     if (new TextEncoder().encode(JSON.stringify(merged)).byteLength > MAX_PROVIDER_PROFILE_BYTES)
-      throw new Error('单个供应商配置超过云端存储上限，请减少模型或系统提示词。');
+      throw new AppError(
+        problem('PROVIDER_INVALID'),
+        '单个供应商配置超过云端存储上限，请减少模型或系统提示词。',
+      );
     return merged;
   });
   const settings = {
@@ -166,8 +179,12 @@ export function mergeProviderSettings(
       !active?.apiKey ||
       !active.models.some((model) => model.id === settings.activeModel && model.enabled)
     ) {
-      throw new Error('默认模型必须已启用，且供应商已配置 API 密钥。');
+      throw new AppError(
+        problem('PROVIDER_INVALID'),
+        '默认模型必须已启用，且供应商已配置 API 密钥。',
+      );
     }
-  } else if (settings.activeModel) throw new Error('请先选择默认供应商。');
+  } else if (settings.activeModel)
+    throw new AppError(problem('PROVIDER_INVALID'), '请先选择默认供应商。');
   return settings;
 }

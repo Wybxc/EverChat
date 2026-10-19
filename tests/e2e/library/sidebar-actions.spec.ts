@@ -84,7 +84,7 @@ test('sidebar commands target B while A keeps its URL, branch and draft, includi
       { times: 1 },
     );
     await dialog.getByRole('button', { name: '保存', exact: true }).click();
-    await expect(dialog.getByRole('alert')).toContainText('保存失败');
+    await expect(dialog.getByRole('alert')).toContainText('服务暂时不可用');
     await expect(input).toHaveValue('已修改的 B');
     await dialog.getByRole('button', { name: '保存', exact: true }).click();
     await expect(row(page, b).getByRole('link')).toHaveText('已修改的 B');

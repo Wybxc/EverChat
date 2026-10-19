@@ -1,11 +1,13 @@
+import { MAX_DAILY_ATTACHMENT_UPLOADS } from '../../shared/attachments/files';
 import {
   sha256,
   validateArchiveManifest,
   type ArchiveFile,
   type ArchiveManifest,
 } from '../../shared/backup/archive';
-import { MAX_DAILY_ATTACHMENT_UPLOADS } from '../../shared/attachments/files';
 import { MAX_BACKUP_BYTES } from '../../shared/backup/backup';
+import type { ErrorIssue } from '../../shared/errors/descriptor';
+import { issueOf, problem } from '../../shared/errors/descriptor';
 import { HttpError, readJsonStream } from '../http/response';
 
 const IMPORT_LEASE = 10 * 60_000;
@@ -25,7 +27,7 @@ type Row = {
 type FileRow = { sourceId: string; id: string; payload: string } & Record<string, SqlStorageValue>;
 export type ImportResult =
   | { id: string; status: string; files: { sourceId: string; id: string }[] }
-  | { error: string; status: number };
+  | { error: string; issue?: ErrorIssue; status: number };
 
 export async function readArchiveManifest(body: ReadableStream<Uint8Array>) {
   try {
@@ -35,7 +37,12 @@ export async function readArchiveManifest(body: ReadableStream<Uint8Array>) {
   } catch (error) {
     throw error instanceof HttpError
       ? error
-      : new HttpError(400, error instanceof Error ? error.message : '备份清单无效。');
+      : new HttpError(
+          400,
+          error instanceof Error ? error.message : '备份清单无效。',
+          undefined,
+          issueOf(error, 'BACKUP_INVALID'),
+        );
   }
 }
 
@@ -73,9 +80,13 @@ export class ArchiveImports {
   }
   result(id: string): ImportResult {
     const row = this.get(id);
-    if (!row) return { error: '找不到这项恢复。', status: 404 };
+    if (!row) return { error: '找不到这项恢复。', issue: problem('NOT_FOUND'), status: 404 };
     return row.status === 'failed'
-      ? { error: row.error ?? '恢复已停止。', status: row.errorStatus ?? 409 }
+      ? {
+          error: row.error ?? '恢复已停止。',
+          issue: problem('IMPORT_FAILED'),
+          status: row.errorStatus ?? 409,
+        }
       : {
           id,
           status: row.status,
@@ -84,7 +95,12 @@ export class ArchiveImports {
   }
   begin(id: string, hash: string, size: number, files: ArchiveFile[]) {
     if (files.length && !this.bucket)
-      throw new HttpError(503, '含附件的恢复需要配置私有 R2 存储。');
+      throw new HttpError(
+        503,
+        '含附件的恢复需要配置私有 R2 存储。',
+        undefined,
+        problem('ATTACHMENT_STORAGE_REQUIRED'),
+      );
     const expired = this.storage.sql
       .exec<Row>(
         "SELECT * FROM archive_imports WHERE status IN ('completed', 'failed') AND removed = 1 AND createdAt < ?",
@@ -103,13 +119,18 @@ export class ArchiveImports {
         .exec<{ count: number }>(`SELECT COUNT(*) AS count FROM archive_imports WHERE ${occupancy}`)
         .one().count >= 2
     )
-      throw new HttpError(429, '同时最多恢复 2 个存档，请等待恢复或清理完成。');
+      throw new HttpError(
+        429,
+        '同时最多恢复 2 个存档，请等待恢复或清理完成。',
+        undefined,
+        problem('OPERATION_BUSY'),
+      );
     if (
       this.storage.sql
         .exec<{ count: number }>('SELECT COUNT(*) AS count FROM archive_imports')
         .one().count >= 1000
     )
-      throw new HttpError(429, '近期恢复次数已达上限。');
+      throw new HttpError(429, '近期恢复次数已达上限。', undefined, problem('OPERATION_BUSY'));
     const date = new Date().toISOString().slice(0, 10);
     const count =
       this.storage.sql
@@ -117,7 +138,12 @@ export class ArchiveImports {
         .toArray()[0]?.count ?? 0;
     if (files.length) {
       if (count + files.length + 1 > MAX_DAILY_ATTACHMENT_UPLOADS)
-        throw new HttpError(429, '今日剩余附件写入次数不足以恢复此存档，请明天重试。');
+        throw new HttpError(
+          429,
+          '今日剩余附件写入次数不足以恢复此存档，请明天重试。',
+          undefined,
+          problem('BACKUP_INVALID'),
+        );
       this.storage.sql.exec('DELETE FROM attachment_daily_uploads WHERE date < ?', date);
       this.storage.sql.exec(
         'INSERT INTO attachment_daily_uploads VALUES (?, 1) ON CONFLICT(date) DO UPDATE SET count = count + 1',
@@ -152,9 +178,19 @@ export class ArchiveImports {
   require(id: string, status?: string) {
     const row = this.get(id);
     if (!row || row.status === 'failed' || (status && row.status !== status))
-      throw new HttpError(row?.errorStatus ?? 409, row?.error ?? '恢复已停止或处于另一阶段。');
+      throw new HttpError(
+        row?.errorStatus ?? 409,
+        row?.error ?? '恢复已停止或处于另一阶段。',
+        undefined,
+        problem('BACKUP_INVALID'),
+      );
     if (row.status !== 'completed' && row.lease <= Date.now())
-      throw new HttpError(408, '恢复超过等待期限，请重新导入。');
+      throw new HttpError(
+        408,
+        '恢复超过等待期限，请重新导入。',
+        undefined,
+        problem('BACKUP_INVALID'),
+      );
     return row;
   }
   async save(id: string, bytes: Uint8Array) {
@@ -166,7 +202,8 @@ export class ArchiveImports {
       httpMetadata: { contentType: 'application/json' },
     });
     this.require(id, 'preparing');
-    if (!saved || saved.size !== row.bytes) throw new HttpError(503, '恢复清单未完整保存。');
+    if (!saved || saved.size !== row.bytes)
+      throw new HttpError(503, '恢复清单未完整保存。', undefined, problem('BACKUP_INVALID'));
     this.storage.sql.exec(
       "UPDATE archive_imports SET status = 'uploading', cleanupAt = 0 WHERE id = ?",
       id,
@@ -176,13 +213,14 @@ export class ArchiveImports {
   async manifest(id: string): Promise<ArchiveManifest> {
     const row = this.require(id),
       object = await this.bucket!.get(row.key);
-    if (!object) throw new HttpError(409, '恢复清单不存在。');
+    if (!object) throw new HttpError(409, '恢复清单不存在。', undefined, problem('BACKUP_INVALID'));
     if (object.size !== row.bytes) {
       await object.body.cancel();
-      throw new HttpError(409, '恢复清单大小不符。');
+      throw new HttpError(409, '恢复清单大小不符。', undefined, problem('BACKUP_INVALID'));
     }
     const bytes = new Uint8Array(await object.arrayBuffer());
-    if ((await sha256(bytes)) !== row.sha256) throw new HttpError(409, '恢复清单校验失败。');
+    if ((await sha256(bytes)) !== row.sha256)
+      throw new HttpError(409, '恢复清单校验失败。', undefined, problem('BACKUP_INVALID'));
     this.require(id);
     return readArchiveManifest(new Response(bytes).body!);
   }

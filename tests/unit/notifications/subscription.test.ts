@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import * as v from 'valibot';
-import { serializePushSubscription, InvalidPushSubscriptionError } from '../../../src/platform/notifications/subscription';
 import { subscriptionSchema } from '../../../shared/notifications/protocol';
+import {
+  InvalidPushSubscriptionError,
+  serializePushSubscription,
+} from '../../../src/platform/notifications/subscription';
 
 test('subscriptions with an omitted expiry produce a canonical, validated wire format without browser JSON extensions', () => {
   const auth = new Uint8Array(16).fill(255),

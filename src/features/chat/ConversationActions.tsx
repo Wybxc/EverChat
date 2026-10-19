@@ -1,28 +1,36 @@
-import { useTranslation } from 'react-i18next';
-import { t } from './locales';
-import { useState, type ReactNode } from 'react';
 import {
   Check,
   Copy,
   Link,
+  LocateFixed,
   MoreHorizontal,
   Pencil,
   Pin,
   PinOff,
-  Trash2,
-  LocateFixed,
-  Square,
-  Sparkles,
   Share2,
+  Sparkles,
+  Square,
+  Trash2,
 } from 'lucide-react';
-import type { ConversationInfo } from '../../../shared/conversation/types';
+import { useState, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { ConversationActivity } from '../../../shared/conversation/activity';
+import type { ConversationInfo } from '../../../shared/conversation/types';
+import { problem } from '../../../shared/errors/descriptor';
 import {
   ActionMenu,
   ActionMenuItem,
   ActionMenuLabel,
   ActionMenuSeparator,
 } from '../../components/ActionMenu';
+import {
+  errorMessage,
+  issueMessage,
+  renderUiMessage,
+  uiMessage,
+  type UiMessage,
+} from '../../platform/i18n/messages';
+import { t } from './locales';
 import type { ConversationActionController } from './useConversationActions';
 
 export function ConversationActions({
@@ -47,7 +55,7 @@ export function ConversationActions({
   const { t } = useTranslation('chat', { useSuspense: false });
 
   const [menuOpen, setMenuOpen] = useState(false),
-    [error, setError] = useState(''),
+    [error, setError] = useState<UiMessage>(''),
     [copied, setCopied] = useState(false);
   const [task, setTask] = useState<Exclude<ConversationActivity, { status: 'idle' }>>();
   const busy = Boolean(conversation && actions.busy.has(conversation.id));
@@ -58,7 +66,7 @@ export function ConversationActions({
       if (cloud) await actions.perform(conversation.id, action);
       else await action();
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : t(($) => $.updateFailed));
+      setError(errorMessage(failure, uiMessage('chat', 'updateFailed')));
       setMenuOpen(true);
     }
   };
@@ -106,7 +114,9 @@ export function ConversationActions({
           )}
           {conversation.titleTask?.status === 'failed' && (
             <div role="status" className="max-w-64 px-2 py-1 text-xs text-muted-foreground">
-              {conversation.titleTask.error}
+              {renderUiMessage(
+                issueMessage(conversation.titleTask.issue ?? problem('TITLE_FAILED')),
+              )}
             </div>
           )}
           <ActionMenuItem
@@ -189,7 +199,7 @@ export function ConversationActions({
       )}
       {error && (
         <div role="alert" className="px-2 py-1 text-xs">
-          {error}
+          {renderUiMessage(error)}
         </div>
       )}
     </ActionMenu>

@@ -1,15 +1,17 @@
 import type { Context } from 'hono';
 import * as v from 'valibot';
-import type { Env } from './env';
+import { AppError, problem, readErrorIssue, type ErrorIssue } from '../../shared/errors/descriptor';
 import type { AccessPrincipal } from './auth';
+import type { Env } from './env';
 
-export class HttpError extends Error {
+export class HttpError extends AppError {
   constructor(
     public status: number,
     message: string,
     public code?: string,
+    issue?: ErrorIssue,
   ) {
-    super(message);
+    super(issue ?? problem('REQUEST_FAILED'), message);
   }
 }
 export function json(body: unknown, status = 200, headers?: HeadersInit) {
@@ -17,6 +19,29 @@ export function json(body: unknown, status = 200, headers?: HeadersInit) {
   result.set('Content-Type', 'application/json; charset=utf-8');
   result.set('Cache-Control', 'no-store');
   result.set('X-Content-Type-Options', 'nosniff');
+  if (status >= 400 && body && typeof body === 'object' && 'error' in body) {
+    const value = body as Record<string, unknown>;
+    body = {
+      ...value,
+      issue:
+        readErrorIssue(value.issue) ??
+        problem(
+          status === 401
+            ? 'AUTH_REQUIRED'
+            : status === 403
+              ? 'ACCESS_DENIED'
+              : status === 404
+                ? 'NOT_FOUND'
+                : status === 413
+                  ? 'REQUEST_TOO_LARGE'
+                  : status === 507
+                    ? 'STORAGE_FULL'
+                    : status >= 500
+                      ? 'SERVICE_UNAVAILABLE'
+                      : 'REQUEST_FAILED',
+        ),
+    };
+  }
   return new Response(JSON.stringify(body), { status, headers: result });
 }
 
@@ -89,16 +114,20 @@ export async function readJsonStream(
   try {
     while (true) {
       const next = await reader.read();
-      if (expired) throw new HttpError(408, '请求上传超时。');
+      if (expired)
+        throw new HttpError(408, '请求上传超时。', undefined, problem('REQUEST_TIMEOUT'));
       if (next.done) break;
       size += next.value.byteLength;
-      if (size > maxBytes) throw new HttpError(413, tooLarge);
+      if (size > maxBytes)
+        throw new HttpError(413, tooLarge, undefined, problem('INVALID_REQUEST'));
       text += decoder.decode(next.value, { stream: true });
     }
     return JSON.parse(text + decoder.decode());
   } catch (error) {
     await reader.cancel().catch(() => {});
-    throw error instanceof HttpError ? error : new HttpError(400, '请求内容不是有效的 JSON 对象。');
+    throw error instanceof HttpError
+      ? error
+      : new HttpError(400, '请求内容不是有效的 JSON 对象。', undefined, problem('INVALID_REQUEST'));
   } finally {
     clearTimeout(timeout);
     reader.releaseLock();
@@ -112,9 +141,9 @@ export async function parseBody<TSchema extends v.GenericSchema>(
 ): Promise<v.InferOutput<TSchema>> {
   const request = context.req.raw;
   if (!request.headers.get('Content-Type')?.includes('application/json'))
-    throw new HttpError(415, '请使用 JSON 请求。');
+    throw new HttpError(415, '请使用 JSON 请求。', undefined, problem('INVALID_REQUEST'));
   const reader = request.body?.getReader();
-  if (!reader) throw new HttpError(400, '请求内容为空。');
+  if (!reader) throw new HttpError(400, '请求内容为空。', undefined, problem('INVALID_REQUEST'));
   const decoder = new TextDecoder();
   let text = '';
   let size = 0;
@@ -124,7 +153,12 @@ export async function parseBody<TSchema extends v.GenericSchema>(
     size += value.byteLength;
     if (size > (options.maxBytes ?? 64_000)) {
       await reader.cancel();
-      throw new HttpError(413, options.tooLarge ?? '请求超过此接口的大小保护限制。');
+      throw new HttpError(
+        413,
+        options.tooLarge ?? '请求超过此接口的大小保护限制。',
+        undefined,
+        problem('INVALID_REQUEST'),
+      );
     }
     text += decoder.decode(value, { stream: true });
   }
@@ -133,6 +167,11 @@ export async function parseBody<TSchema extends v.GenericSchema>(
     if (!result.success) throw new Error();
     return result.output;
   } catch {
-    throw new HttpError(400, '请求内容不是有效的 JSON 对象。');
+    throw new HttpError(
+      400,
+      '请求内容不是有效的 JSON 对象。',
+      undefined,
+      problem('INVALID_REQUEST'),
+    );
   }
 }

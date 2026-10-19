@@ -1,14 +1,20 @@
-import { formatNumber } from '../../platform/i18n/format';
-import { useTranslation } from 'react-i18next';
-import './locales';
-import { Modal, ModalTitle } from '../../components/Modal';
 import { Button } from '@/components/ui/button';
-import { useEffect, useId, useState } from 'react';
 import { Download, FileText, X } from 'lucide-react';
+import { useEffect, useId, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { selectedDocumentText, type DocumentPart } from '../../../shared/attachments/documents';
-import { PdfSelection } from './PdfSelection';
 import { attachmentUrl } from '../../../shared/attachments/files';
+import { Modal, ModalTitle } from '../../components/Modal';
 import { api } from '../../platform/api';
+import { formatNumber } from '../../platform/i18n/format';
+import {
+  errorMessage,
+  renderUiMessage,
+  uiMessage,
+  type UiMessage,
+} from '../../platform/i18n/messages';
+import './locales';
+import { PdfSelection } from './PdfSelection';
 
 export function DocumentPreviews({
   conversationId,
@@ -27,7 +33,7 @@ export function DocumentPreviews({
 
   const [preview, setPreview] = useState<DocumentPart | null>(null),
     [text, setText] = useState(''),
-    [error, setError] = useState(''),
+    [error, setError] = useState<UiMessage>(''),
     [loading, setLoading] = useState(false);
   const [original, setOriginal] = useState<DocumentPart | null>(null),
     [pageOffsets, setPageOffsets] = useState<number[] | undefined>();
@@ -60,7 +66,7 @@ export function DocumentPreviews({
         },
         (error) => {
           if (!abort.signal.aborted)
-            setError(error instanceof Error ? error.message : t(($) => $.readFailed));
+            setError(errorMessage(error, uiMessage('attachments', 'readFailed')));
         },
       )
       .finally(() => {
@@ -158,7 +164,7 @@ export function DocumentPreviews({
                 {loading ? (
                   <p role="status">{t(($) => $.loading)}</p>
                 ) : error ? (
-                  <p role="alert">{error}</p>
+                  <p role="alert">{renderUiMessage(error)}</p>
                 ) : (
                   <pre className="font-mono text-sm whitespace-pre-wrap break-words">
                     {selectedDocumentText(text, preview.selection?.ranges)}

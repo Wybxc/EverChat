@@ -1,25 +1,26 @@
-import { usageKindLabel, usageStatusLabel } from './labels';
-import { formatNumber, formatDateTime } from '../../platform/i18n/format';
-import { useTranslation } from 'react-i18next';
-import './locales';
-import { useMemo, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { api } from '../../platform/api';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { ProviderSettings } from '../../../shared/providers/types';
+import { formatAmount } from '../../../shared/usage/pricing';
 import {
   usageKinds,
   usageStatuses,
   type UsageGroup,
   type UsageReport,
 } from '../../../shared/usage/types';
+import { api } from '../../platform/api';
+import { formatDateTime, formatNumber } from '../../platform/i18n/format';
+import { errorMessage, renderUiMessage } from '../../platform/i18n/messages';
+import { usageKindLabel, usageStatusLabel } from './labels';
+import './locales';
+import { ModelPriceButton } from './PriceEditor';
 import { UsageChart } from './UsageChart';
 import { money, UsageRequests } from './UsageRequests';
-import { ModelPriceButton } from './PriceEditor';
-import { formatAmount } from '../../../shared/usage/pricing';
 
 type Dimension = { providerId: string; providerName: string; model: string; modelName: string };
 const localDate = (date: Date) =>
@@ -145,7 +146,7 @@ function Pricing({ dimensions }: { dimensions: Dimension[] }) {
       });
   return (
     <div className="divide-y divide-border">
-      {query.error && <p role="alert">{query.error.message}</p>}
+      {query.error && <p role="alert">{renderUiMessage(errorMessage(query.error))}</p>}
       {[...rows.values()].map((row) => (
         <div
           key={`${row.providerId}:${row.model}`}
@@ -353,7 +354,7 @@ export default function UsageSettings({
         )}
         {(report.error || dimensions.error) && (
           <p role="alert" className="py-2 text-sm text-destructive">
-            {report.error?.message || dimensions.error?.message}
+            {renderUiMessage(errorMessage(report.error || dimensions.error))}
           </p>
         )}
         {tab === 'overview' && totals && (

@@ -1,4 +1,7 @@
 import { unzipSync, zipSync, type Zippable } from 'fflate';
+import { MAX_ATTACHMENT_BYTES } from '../attachments/files';
+import { MAX_PDF_TEXT_BYTES, validatePdfText } from '../attachments/pdf';
+import { AppError, problem } from '../errors/descriptor';
 import {
   ARCHIVE_FORMAT,
   ARCHIVE_MANIFEST,
@@ -12,9 +15,7 @@ import {
   validateArchiveManifest,
   type ArchiveManifest,
 } from './archive';
-import { MAX_ATTACHMENT_BYTES } from '../attachments/files';
 import { MAX_BACKUP_BYTES, validateBackup } from './backup';
-import { MAX_PDF_TEXT_BYTES, validatePdfText } from '../attachments/pdf';
 
 const allowed = /^(manifest\.json|files\/[0-9a-f-]{36}|documents\/[0-9a-f-]{36}\.txt)$/;
 type ArchiveData = { manifest: ArchiveManifest; entries: Record<string, Uint8Array> };
@@ -25,7 +26,10 @@ function checkStoredZip(bytes: Uint8Array) {
   const u16 = (at: number) => view.getUint16(at, true),
     u32 = (at: number) => view.getUint32(at, true);
   const invalid = () => {
-    throw new Error('仅支持完整、未加密、未压缩的 EverChat ZIP 存档。');
+    throw new AppError(
+      problem('BACKUP_INVALID'),
+      '仅支持完整、未加密、未压缩的 EverChat ZIP 存档。',
+    );
   };
   if (u32(end) !== 0x06054b50 || u16(end + 4) || u16(end + 6) || u16(end + 20)) invalid();
   const count = u16(end + 10),
@@ -84,11 +88,11 @@ async function validateArchiveData(manifest: ArchiveManifest, entries: Record<st
     Object.keys(entries).length !== expected.size ||
     Object.keys(entries).some((path) => !expected.has(path))
   )
-    throw new Error('备份存档包含多余文件或缺少文件。');
+    throw new AppError(problem('BACKUP_INVALID'), '备份存档包含多余文件或缺少文件。');
   for (const file of manifest.files) {
     const original = entries[originalPath(file.id)];
     if (!original || original.byteLength !== file.size || (await sha256(original)) !== file.sha256)
-      throw new Error('备份原文件大小或校验和不符。');
+      throw new AppError(problem('BACKUP_INVALID'), '备份原文件大小或校验和不符。');
     if (file.parsed) {
       const bytes = entries[extractedPath(file.id)],
         ref = file.parsed.reference;
@@ -97,14 +101,14 @@ async function validateArchiveData(manifest: ArchiveManifest, entries: Record<st
         bytes.byteLength !== file.parsed.bytes ||
         (await sha256(bytes)) !== ref.textSha256
       )
-        throw new Error('备份提取文本大小或校验和不符。');
+        throw new AppError(problem('BACKUP_INVALID'), '备份提取文本大小或校验和不符。');
       const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes);
       if (
         text.length !== ref.characters ||
         !text.trim() ||
         /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text)
       )
-        throw new Error('备份提取文本无效。');
+        throw new AppError(problem('BACKUP_INVALID'), '备份提取文本无效。');
       if (ref.pdf)
         validatePdfText({
           sourceSha256: ref.sha256,
@@ -122,19 +126,21 @@ export async function encodeArchive(
 ) {
   const safe = validateArchiveManifest(manifest),
     metadata = new TextEncoder().encode(JSON.stringify(safe));
-  if (metadata.byteLength > MAX_BACKUP_BYTES) throw new Error('备份清单超过 12 MiB。');
+  if (metadata.byteLength > MAX_BACKUP_BYTES)
+    throw new AppError(problem('BACKUP_LIMIT'), '备份清单超过 12 MiB。');
   const all = { ...entries, [ARCHIVE_MANIFEST]: metadata };
   await validateArchiveData(safe, all);
   const files: Zippable = {};
   for (const [path, bytes] of Object.entries(all)) files[path] = [bytes, { level: 0 }];
   const archive = zipSync(files);
-  if (archive.byteLength > MAX_ARCHIVE_BYTES) throw new Error('备份存档过大。');
+  if (archive.byteLength > MAX_ARCHIVE_BYTES)
+    throw new AppError(problem('BACKUP_LIMIT'), '备份存档过大。');
   return archive;
 }
 
 export async function decodeArchive(bytes: Uint8Array): Promise<ArchiveData> {
   if (bytes.byteLength < 22 || bytes.byteLength > MAX_ARCHIVE_BYTES)
-    throw new Error('备份存档大小无效。');
+    throw new AppError(problem('BACKUP_INVALID_SIZE'), '备份存档大小无效。');
   checkStoredZip(bytes);
   let total = 0;
   const seen = new Set<string>();
@@ -157,14 +163,14 @@ export async function decodeArchive(bytes: Uint8Array): Promise<ArchiveData> {
         file.size > limit ||
         (total += file.size) > MAX_ARCHIVE_BYTES
       )
-        throw new Error('备份 ZIP 的路径、压缩方法或文件大小无效。');
+        throw new AppError(problem('BACKUP_INVALID'), '备份 ZIP 的路径、压缩方法或文件大小无效。');
       seen.add(file.name);
       return true;
     },
   });
   const raw = entries[ARCHIVE_MANIFEST];
   if (!raw || Object.values(entries).some((entry) => entry.byteLength < 1))
-    throw new Error('备份清单缺失或 ZIP 不完整。');
+    throw new AppError(problem('BACKUP_INVALID'), '备份清单缺失或 ZIP 不完整。');
   const manifest = validateArchiveManifest(
     JSON.parse(new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(raw)),
   );
@@ -176,7 +182,8 @@ export async function decodeBackup(bytes: Uint8Array): Promise<ArchiveData> {
   let start = bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf ? 3 : 0;
   while (start < bytes.length && [0x20, 0x09, 0x0a, 0x0d].includes(bytes[start])) start++;
   if (bytes[start] !== 0x7b) return decodeArchive(bytes);
-  if (bytes.byteLength > MAX_BACKUP_BYTES) throw new Error('JSON 备份超过 12 MiB。');
+  if (bytes.byteLength > MAX_BACKUP_BYTES)
+    throw new AppError(problem('BACKUP_LIMIT'), 'JSON 备份超过 12 MiB。');
   const backup = validateBackup(
     JSON.parse(new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes)),
   );

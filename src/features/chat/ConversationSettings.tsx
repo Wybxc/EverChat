@@ -1,34 +1,35 @@
-import { useTranslation } from 'react-i18next';
-import './locales';
-import { MAX_MODEL_TOKENS } from '../../../shared/models/metadata';
-import { MAX_SYSTEM_PROMPT_LENGTH } from '../../../shared/conversation/limits';
-import { Modal, ModalTitle } from '../../components/Modal';
-import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useEffect, useId, useRef, useState, useSyncExternalStore, type RefObject } from 'react';
+import { Textarea } from '@/components/ui/textarea';
 import { X } from 'lucide-react';
+import { useEffect, useId, useRef, useState, useSyncExternalStore, type RefObject } from 'react';
+import { useTranslation } from 'react-i18next';
 import * as v from 'valibot';
-import type { ChatModel, ReasoningEffort } from '../../../shared/models/types';
-import type { ConversationSettings } from '../../../shared/conversation/types';
+import { MAX_SYSTEM_PROMPT_LENGTH } from '../../../shared/conversation/limits';
 import {
   conversationSettingsSchema,
   DEFAULT_CONVERSATION_SETTINGS,
   samplingSupport,
 } from '../../../shared/conversation/settings';
-import { Autosave } from '../../platform/autosave';
-import { api } from '../../platform/api';
-import { read, storageEpoch } from '../../platform/storage';
-import { writeChatCache as write } from './cache';
-import { PromptPresetPicker } from '../presets/PromptPresets';
+import type { ConversationSettings } from '../../../shared/conversation/types';
+import { canAttemptCapability, MAX_MODEL_TOKENS } from '../../../shared/models/metadata';
 import { modelSelectionKey } from '../../../shared/models/selection';
+import type { ChatModel, ReasoningEffort } from '../../../shared/models/types';
 import { WEB_TOOL_NAMES } from '../../../shared/web-tools/tasks';
+import { Modal, ModalTitle } from '../../components/Modal';
+import { api } from '../../platform/api';
+import { Autosave } from '../../platform/autosave';
+import { formatNumber } from '../../platform/i18n/format';
+import { renderUiMessage, UiError, uiMessage } from '../../platform/i18n/messages';
+import { read, storageEpoch } from '../../platform/storage';
+import { PromptPresetPicker } from '../presets/PromptPresets';
 import { useWebToolSettings } from '../web-tools/web-tool-settings';
-import { canAttemptCapability } from '../../../shared/models/metadata';
+import { writeChatCache as write } from './cache';
+import './locales';
 
 const withContextDefaults = (settings: ConversationSettings) =>
   settings.recentMessages === undefined ||
@@ -153,7 +154,7 @@ export function ConversationSettingsDialog({
     const autosave = new Autosave(
       withContextDefaults(cached?.dirty ? cached.settings : initial),
       async (settings: ConversationSettings) => {
-        if (epoch !== storageEpoch()) throw new Error(t(($) => $.sessionChanged));
+        if (epoch !== storageEpoch()) throw new UiError(uiMessage('chat', 'sessionChanged'));
         if (id) return api<ConversationSettings>(`/conversations/${id}/settings`, 'PUT', settings);
         write('conversation-settings:new', settings);
         return settings;
@@ -164,7 +165,7 @@ export function ConversationSettingsDialog({
       },
       (_saved, draft) => {
         const result = v.safeParse(conversationSettingsSchema, draft);
-        if (!result.success) throw new Error(t(($) => $.invalidParameters));
+        if (!result.success) throw new UiError(uiMessage('chat', 'invalidParameters'));
         return result.output;
       },
     );
@@ -394,10 +395,11 @@ export function ConversationSettingsDialog({
                   }
                 >
                   <option value="inherit">
-                    {t(($) => $.default)}
                     {defaultOutputBudget
-                      ? `（${defaultOutputBudget.toLocaleString()} Tokens）`
-                      : t(($) => $.notSetParenthetical)}
+                      ? t(($) => $.defaultOutputBudget, {
+                          tokens: formatNumber(defaultOutputBudget),
+                        })
+                      : t(($) => $.default)}
                   </option>
                   <option value="unset">{t(($) => $.unset)}</option>
                   <option value="custom">{t(($) => $.custom)}</option>
@@ -566,7 +568,7 @@ export function ConversationSettingsDialog({
           {error && (
             <div className="flex items-center justify-between gap-2">
               <p role="alert" className="text-sm">
-                {error}
+                {renderUiMessage(error)}
               </p>
               {invalidTab && invalidTab !== tab && (
                 <Button

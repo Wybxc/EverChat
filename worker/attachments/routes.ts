@@ -1,13 +1,15 @@
 import * as v from 'valibot';
-import { attachmentInputSchema } from '../../shared/attachments/files';
 import { documentRangesSchema } from '../../shared/attachments/documents';
+import { attachmentInputSchema } from '../../shared/attachments/files';
+import { problem } from '../../shared/errors/descriptor';
 import { conversationId, requireAuth, requireConversation, uuidSchema } from '../http/access';
 import type { ApiRouter } from '../http/app';
 import { HttpError, json, parseBody, type AppContext } from '../http/response';
 
 const attachmentId = (context: AppContext) => {
   const id = context.req.param('attachmentId');
-  if (!id || !v.safeParse(uuidSchema, id).success) throw new HttpError(404, '找不到附件。');
+  if (!id || !v.safeParse(uuidSchema, id).success)
+    throw new HttpError(404, '找不到附件。', undefined, problem('NOT_FOUND'));
   return id;
 };
 
@@ -17,7 +19,9 @@ export function registerAttachmentsRoutes(app: ApiRouter) {
     const id = conversationId(context),
       library = await requireConversation(context, id);
     const result = await library.listAttachments(id);
-    return 'error' in result ? json({ error: result.error }, result.status) : json(result.value);
+    return 'error' in result
+      ? json({ error: result.error, issue: result.issue }, result.status)
+      : json(result.value);
   });
 
   app.post('/conversations/:id/attachments', async (context) => {
@@ -27,7 +31,7 @@ export function registerAttachmentsRoutes(app: ApiRouter) {
     const input = await parseBody(context, attachmentInputSchema, { maxBytes: 2000 });
     const result = await library.registerAttachment(id, input);
     return 'error' in result
-      ? json({ error: result.error }, result.status)
+      ? json({ error: result.error, issue: result.issue }, result.status)
       : json(result.value, 201);
   });
 
@@ -36,9 +40,12 @@ export function registerAttachmentsRoutes(app: ApiRouter) {
     const id = conversationId(context),
       library = await requireConversation(context, id),
       fileId = attachmentId(context);
-    if (!context.req.raw.body) throw new HttpError(400, '附件内容为空。');
+    if (!context.req.raw.body)
+      throw new HttpError(400, '附件内容为空。', undefined, problem('ATTACHMENT_INVALID'));
     const result = await library.uploadAttachment(id, fileId, context.req.raw.body);
-    return 'error' in result ? json({ error: result.error }, result.status) : json(result.value);
+    return 'error' in result
+      ? json({ error: result.error, issue: result.issue }, result.status)
+      : json(result.value);
   });
 
   app.on(
@@ -68,7 +75,9 @@ export function registerAttachmentsRoutes(app: ApiRouter) {
         type.includes('application/json') ? 'json' : 'text',
       );
     const result = await library.parseDocument(id, attachmentId(context));
-    return 'error' in result ? json({ error: result.error }, result.status) : json(result.value);
+    return 'error' in result
+      ? json({ error: result.error, issue: result.issue }, result.status)
+      : json(result.value);
   });
 
   app.get('/conversations/:id/attachments/:attachmentId/document', async (context) => {
@@ -84,7 +93,9 @@ export function registerAttachmentsRoutes(app: ApiRouter) {
       library = await requireConversation(context, id);
     const input = await parseBody(context, v.strictObject({ ranges: documentRangesSchema }));
     const result = await library.selectDocument(id, attachmentId(context), input.ranges);
-    return 'error' in result ? json({ error: result.error }, result.status) : json(result.value);
+    return 'error' in result
+      ? json({ error: result.error, issue: result.issue }, result.status)
+      : json(result.value);
   });
 
   app.delete('/conversations/:id/attachments/:attachmentId', async (context) => {
@@ -92,6 +103,8 @@ export function registerAttachmentsRoutes(app: ApiRouter) {
     const id = conversationId(context),
       library = await requireConversation(context, id);
     const result = await library.removeAttachment(id, attachmentId(context));
-    return 'error' in result ? json({ error: result.error }, result.status) : json({ ok: true });
+    return 'error' in result
+      ? json({ error: result.error, issue: result.issue }, result.status)
+      : json({ ok: true });
   });
 }

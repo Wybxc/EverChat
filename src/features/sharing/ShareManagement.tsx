@@ -1,22 +1,28 @@
-import { formatDateTime } from '../../platform/i18n/format';
-import { useTranslation } from 'react-i18next';
-import './locales';
-import { useEffect, useRef, useState } from 'react';
-import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { ManagedShare } from '../../../shared/sharing/types';
-import { api } from '../../platform/api';
-import { shareUrl } from './ShareDialog';
 import { Modal, ModalTitle } from '../../components/Modal';
+import { api } from '../../platform/api';
+import { formatDateTime } from '../../platform/i18n/format';
+import {
+  type UiMessage,
+  errorMessage,
+  renderUiMessage,
+  uiMessage,
+} from '../../platform/i18n/messages';
+import './locales';
+import { shareUrl } from './ShareDialog';
 
 export default function ShareManagement({ active }: { active: boolean }) {
   const { t } = useTranslation('sharing', { useSuspense: false });
 
   const client = useQueryClient(),
     [busy, setBusy] = useState<string>(),
-    [error, setError] = useState(''),
-    [notice, setNotice] = useState(''),
+    [error, setError] = useState<UiMessage>(''),
+    [notice, setNotice] = useState<UiMessage>(''),
     [link, setLink] = useState(''),
     [deleting, setDeleting] = useState<ManagedShare>();
   const cancel = useRef<HTMLButtonElement>(null);
@@ -48,7 +54,7 @@ export default function ShareManagement({ active }: { active: boolean }) {
       await action();
       await client.invalidateQueries({ queryKey: ['shares'] });
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : t(($) => $.operationFailed));
+      setError(errorMessage(failure, uiMessage('sharing', 'operationFailed')));
     } finally {
       setBusy(undefined);
     }
@@ -58,7 +64,7 @@ export default function ShareManagement({ active }: { active: boolean }) {
     const url = shareUrl(result.share.id, result.secret);
     try {
       await navigator.clipboard.writeText(url);
-      setNotice(t(($) => $.linkCopied));
+      setNotice(uiMessage('sharing', 'linkCopied'));
     } catch {
       setLink(url);
     }
@@ -77,12 +83,12 @@ export default function ShareManagement({ active }: { active: boolean }) {
       </div>
       {(error || query.error) && (
         <p role="alert" className="text-sm">
-          {error || query.error?.message}
+          {renderUiMessage(error || errorMessage(query.error))}
         </p>
       )}
       {notice && (
         <p role="status" className="text-sm">
-          {notice}
+          {renderUiMessage(notice)}
         </p>
       )}
       {link && (
@@ -165,7 +171,7 @@ export default function ShareManagement({ active }: { active: boolean }) {
             <p className="text-sm">{t(($) => $.deleteConfirmation, { title: deleting.title })}</p>
             {error && (
               <p role="alert" className="text-sm">
-                {error}
+                {renderUiMessage(error)}
               </p>
             )}
             <div className="flex justify-end gap-2">
@@ -184,7 +190,7 @@ export default function ShareManagement({ active }: { active: boolean }) {
                   void perform(deleting.id, async () => {
                     await api(`/shares/${deleting.id}`, 'DELETE');
                     setDeleting(undefined);
-                    setNotice(t(($) => $.deleted));
+                    setNotice(uiMessage('sharing', 'deleted'));
                   })
                 }
               >

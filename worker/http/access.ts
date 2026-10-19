@@ -1,25 +1,29 @@
 import * as v from 'valibot';
+import { problem } from '../../shared/errors/descriptor';
 import { HttpError, type AppContext } from './response';
 
 export const uuidSchema = v.pipe(v.string(), v.uuid());
 
 export const requireAuth = async (context: AppContext) => {
   const principal = context.get('principal');
-  if (!principal) throw new HttpError(401, '请重新登录。', 'AUTH_REQUIRED');
+  if (!principal)
+    throw new HttpError(401, '请重新登录。', 'AUTH_REQUIRED', problem('AUTH_REQUIRED'));
   return principal;
 };
 
 export const conversationId = (context: AppContext) => {
   const id = context.req.param('id');
-  if (!id || !v.safeParse(uuidSchema, id).success) throw new HttpError(404, '找不到这个接口。');
+  if (!id || !v.safeParse(uuidSchema, id).success)
+    throw new HttpError(404, '找不到这个接口。', undefined, problem('NOT_FOUND'));
   return id;
 };
 
 export const requireConversation = async (context: AppContext, id: string) => {
   const library = context.env.LIBRARY.getByName('personal');
   if (!(await library.get(id))) {
-    if (await library.deletedAt(id)) throw new HttpError(410, '这个对话已删除。');
-    throw new HttpError(404, '找不到这个对话。');
+    if (await library.deletedAt(id))
+      throw new HttpError(410, '这个对话已删除。', undefined, problem('CONVERSATION_DELETED'));
+    throw new HttpError(404, '找不到这个对话。', undefined, problem('NOT_FOUND'));
   }
   return library;
 };

@@ -1,8 +1,10 @@
-import { t } from './locales';
-import { notifyAuthFailure } from '../../platform/auth';
-import { authenticatedUploadSignal, xhrJson } from '../../platform/xhr';
+import { type ErrorIssue, readErrorIssue } from '../../../shared/errors/descriptor';
 import { api, ApiError } from '../../platform/api';
+import { notifyAuthFailure } from '../../platform/auth';
+import { issueMessage, UiError, uiMessage } from '../../platform/i18n/messages';
 import { read, storageEpoch, write } from '../../platform/storage';
+import { authenticatedUploadSignal, xhrJson } from '../../platform/xhr';
+import { t } from './locales';
 
 export type BackupStage =
   | 'readingData'
@@ -37,13 +39,13 @@ function archiveWorker<T>(
       else resolve(value!);
     };
     const abort = () => finish(signal.reason),
-      timeout = setTimeout(() => finish(new Error(t(($) => $.timeout))), 5 * 60_000);
+      timeout = setTimeout(() => finish(new UiError(uiMessage('backup', 'timeout'))), 5 * 60_000);
     signal.addEventListener('abort', abort, { once: true });
     worker.onmessage = (
       event: MessageEvent<{
         progress?: BackupProgress;
         error?: string;
-        errorKey?: 'readFailed' | 'invalidSize' | 'processingFailed';
+        issue?: ErrorIssue;
         status?: number;
         code?: string;
         result?: T;
@@ -51,13 +53,14 @@ function archiveWorker<T>(
     ) => {
       if (event.data.progress) progress(event.data.progress);
       else if (event.data.error) {
-        const { error, status, code, errorKey } = event.data;
-        const message = errorKey ? t(($) => $[errorKey]) : error;
-        finish(status ? new ApiError(status, message, code) : new Error(message));
+        const { error, status, code, issue: rawIssue } = event.data;
+        const issue = readErrorIssue(rawIssue);
+        const message = issue ? issueMessage(issue) : uiMessage('backup', 'processingFailed');
+        finish(status ? new ApiError(status, error, code, undefined, issue) : new UiError(message));
         if (status) notifyAuthFailure(status, code);
       } else if (event.data.result) finish(undefined, event.data.result);
     };
-    worker.onerror = () => finish(new Error(t(($) => $.workerFailed)));
+    worker.onerror = () => finish(new UiError(uiMessage('backup', 'workerFailed')));
     worker.postMessage(request);
   });
 }
@@ -103,8 +106,8 @@ function uploadBlob(
         reject(error);
       }
     };
-    xhr.onerror = () => reject(new Error(t(($) => $.unconfirmed)));
-    xhr.ontimeout = () => reject(new Error(t(($) => $.restoreTimeout)));
+    xhr.onerror = () => reject(new UiError(uiMessage('backup', 'unconfirmed')));
+    xhr.ontimeout = () => reject(new UiError(uiMessage('backup', 'restoreTimeout')));
     xhr.onabort = () =>
       reject(
         signal.reason ??

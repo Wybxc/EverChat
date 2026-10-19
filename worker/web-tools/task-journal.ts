@@ -1,8 +1,9 @@
-import { MAX_MESSAGES } from '../platform/resource-limits';
-import { MAX_MESSAGE_TEXT_BYTES, jsonTextBytes } from '../../shared/conversation/limits';
 import { createHash } from 'node:crypto';
 import * as v from 'valibot';
+import { MAX_MESSAGE_TEXT_BYTES, jsonTextBytes } from '../../shared/conversation/limits';
 import { estimateTextTokens } from '../../shared/conversation/token-estimate';
+import type { ErrorIssue } from '../../shared/errors/descriptor';
+import { AppError, problem } from '../../shared/errors/descriptor';
 import type { ProviderConfig } from '../../shared/providers/types';
 import {
   assertWebToolSupport,
@@ -13,6 +14,7 @@ import {
   type WebToolOutcome,
 } from '../../shared/web-tools/tasks';
 import type { SqlQuery } from '../generation/metrics';
+import { MAX_MESSAGES } from '../platform/resource-limits';
 import {
   providerToolIdentity,
   providerToolPrompt,
@@ -42,6 +44,7 @@ type Root = {
   textCharacters: number;
   reasoningCharacters: number;
   error: string | null;
+  issue?: ErrorIssue;
 } & Record<string, SqlStorageValue>;
 type Model = {
   runId: string;
@@ -74,6 +77,7 @@ export interface ToolTaskState {
   phase: Model['phase'];
   calls: string[];
   error: string | null;
+  issue?: ErrorIssue;
 }
 interface ToolCallView {
   call: WebToolCall;
@@ -104,7 +108,7 @@ const errorText = (value: string) =>
     .trim()
     .slice(0, 500) || '工具任务已停止。';
 const taskError = (message: string): never => {
-  throw new Error(message);
+  throw new AppError(problem('TOOL_INVALID'), message);
 };
 
 /** All mutations run inside the caller's storage transaction, together with its messages and Alarm. */
@@ -549,6 +553,7 @@ export class ToolTaskJournal {
         name: original.name,
         status: 'failed',
         error: '工具执行被中断，未自动重复请求。',
+        issue: problem('TOOL_INVALID'),
       });
     }
   }

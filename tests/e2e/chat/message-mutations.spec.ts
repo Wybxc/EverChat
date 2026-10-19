@@ -413,7 +413,7 @@ test('editing and deleting an answer preserves drafts and focus while another de
       else await route.continue();
     });
     await editor.getByRole('button', { name: '保存新版本' }).click();
-    await expect(editor.getByRole('alert')).toContainText('暂时无法保存');
+    await expect(editor.getByRole('alert')).toContainText('服务暂时不可用');
     await expect(editor.getByLabel('回答内容')).toHaveValue('手动修改后的回答');
     await page.unroute('**/api/conversations/*/messages/*');
     await editor.getByRole('button', { name: '保存新版本' }).click();

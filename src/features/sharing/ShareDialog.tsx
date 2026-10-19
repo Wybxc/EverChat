@@ -1,11 +1,8 @@
-import { useTranslation } from 'react-i18next';
-import './locales';
-import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { NativeSelect } from '@/components/ui/native-select';
-import { Modal, ModalTitle } from '../../components/Modal';
-import { api } from '../../platform/api';
+import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   sharePath,
   type ManagedShare,
@@ -13,6 +10,16 @@ import {
   type SharePage,
   type SharePreview,
 } from '../../../shared/sharing/types';
+import { Modal, ModalTitle } from '../../components/Modal';
+import { api } from '../../platform/api';
+import {
+  errorMessage,
+  renderUiMessage,
+  UiError,
+  uiMessage,
+  type UiMessage,
+} from '../../platform/i18n/messages';
+import './locales';
 import { ShareContent } from './ShareContent';
 
 export const shareUrl = (id: string, secret: string) =>
@@ -37,7 +44,7 @@ export default function ShareDialog({
     [customExpiry, setCustomExpiry] = useState(''),
     [link, setLink] = useState(''),
     [busy, setBusy] = useState(false),
-    [error, setError] = useState(''),
+    [error, setError] = useState<UiMessage>(''),
     [copied, setCopied] = useState(false),
     [retry, setRetry] = useState(0);
   const operation = useRef<{ headId: string; id: string } | null>(null);
@@ -70,7 +77,7 @@ export default function ShareDialog({
       })
       .catch((failure) => {
         if (!controller.signal.aborted)
-          setError(failure instanceof Error ? failure.message : t(($) => $.previewFailed));
+          setError(errorMessage(failure, uiMessage('sharing', 'previewFailed')));
       })
       .finally(() => {
         if (!controller.signal.aborted) setBusy(false);
@@ -83,7 +90,7 @@ export default function ShareDialog({
     try {
       await action();
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : t(($) => $.operationFailed));
+      setError(errorMessage(failure, uiMessage('sharing', 'operationFailed')));
     } finally {
       setBusy(false);
     }
@@ -98,7 +105,7 @@ export default function ShareDialog({
             ? customExpiryTime
             : Date.now() + Number(expiry) * 1000;
       if (expiresAt !== null && (!Number.isSafeInteger(expiresAt) || expiresAt <= Date.now()))
-        throw new Error(t(($) => $.invalidExpiry));
+        throw new UiError(uiMessage('sharing', 'invalidExpiry'));
       const result = await api<{ share: ManagedShare; secret: string }>(
         `/shares/${preview.share.id}/publish`,
         'POST',
@@ -232,7 +239,7 @@ export default function ShareDialog({
           {error && (
             <div className="space-y-2">
               <p role="alert" className="text-sm">
-                {error}
+                {renderUiMessage(error)}
               </p>
               {!link && (
                 <Button

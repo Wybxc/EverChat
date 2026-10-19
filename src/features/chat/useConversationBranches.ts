@@ -10,14 +10,18 @@ import {
   type BranchPreferences,
 } from '../../../shared/conversation/branches';
 import type { Message } from '../../../shared/conversation/types';
+import type { UiMessage } from '../../platform/i18n/messages';
+import { errorMessage, uiMessage } from '../../platform/i18n/messages';
 import { read, write } from '../../platform/storage';
+
+const unavailableNotice = uiMessage('chat', 'branchUnavailable');
 
 interface ViewState {
   id: string | null;
   head: string | null;
   preferences: BranchPreferences;
   target?: string;
-  notice: string;
+  notice: UiMessage;
 }
 const load = (id: string | null): ViewState => ({
   id,
@@ -48,8 +52,8 @@ export function useConversationBranches({
   const indexer = useRef(branchIndexer());
   const index = indexer.current(ready && id ? messages : []);
   const requested = routeHead ?? currentState.head;
-  let head: string | null = null,
-    error = '',
+  let head: string | null = null;
+  let error: UiMessage = '',
     notice = currentState.notice;
   const waiting = Boolean(
     id &&
@@ -68,10 +72,10 @@ export function useConversationBranches({
         missing ? currentState.head : requested,
         currentState.preferences,
       );
-      if (missing && routeHead) notice = '该分支已不可用，已显示可用分支。';
+      if (missing && routeHead) notice = unavailableNotice;
     }
   } catch (failure) {
-    error = failure instanceof Error ? failure.message : '消息分支关系无效。';
+    error = errorMessage(failure, uiMessage('chat', 'branchInvalid'));
   }
   const ids = useMemo(() => (error ? [] : branchIds(index, head)), [index, head, error]);
   const byId = new Map(messages.map((message) => [message.id, message]));

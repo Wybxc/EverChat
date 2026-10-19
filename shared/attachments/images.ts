@@ -1,8 +1,9 @@
 import { imageSize } from 'image-size';
 import * as v from 'valibot';
-import { attachmentInputSchema, attachmentSignatureMatches } from './files';
+import { AppError, problem, type ErrorIssue } from '../errors/descriptor';
 import { canAttemptCapability } from '../models/metadata';
 import type { ChatInput, ProviderConfig } from '../providers/types';
+import { attachmentInputSchema, attachmentSignatureMatches } from './files';
 
 export const MAX_MESSAGE_IMAGES = 4,
   MAX_CONTEXT_IMAGES = 8;
@@ -21,7 +22,11 @@ export const imagePartSchema = v.strictObject({
   mediaType: imageMediaTypeSchema,
 });
 export type ImagePart = v.InferOutput<typeof imagePartSchema>;
-export class ImageContextError extends Error {}
+export class ImageContextError extends AppError {
+  constructor(message: string, issue: ErrorIssue = problem('ATTACHMENT_INVALID')) {
+    super(issue, message);
+  }
+}
 export const imageTokens = (images: readonly ImagePart[] = []) =>
   images.length * IMAGE_TOKEN_ALLOWANCE;
 export function assertImageContext(
@@ -41,7 +46,10 @@ export function assertImageContext(
     }
   }
   if (count && !canAttemptCapability(config.modelMetadata, 'imageInput'))
-    throw new ImageContextError('所选模型不支持图片，请选择视觉模型或调整模型能力设置。');
+    throw new ImageContextError(
+      '所选模型不支持图片，请选择视觉模型或调整模型能力设置。',
+      problem('IMAGE_UNSUPPORTED'),
+    );
   if (count > MAX_CONTEXT_IMAGES || bytes > MAX_CONTEXT_IMAGES * MAX_CHAT_IMAGE_BYTES)
     throw new ImageContextError('本次上下文最多包含 8 张图片，请缩短历史或新建对话。');
 }

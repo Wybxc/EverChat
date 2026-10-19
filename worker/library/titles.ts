@@ -1,4 +1,5 @@
 import { cleanTitle, type TitleSource, type TitleTaskInfo } from '../../shared/conversation/titles';
+import { problem } from '../../shared/errors/descriptor';
 import type { SqlQuery } from '../generation/metrics';
 
 export const TITLE_INDEX_SCHEMA = `CREATE TABLE IF NOT EXISTS conversation_titles (
@@ -100,6 +101,7 @@ export class LibraryTitles {
     const task: TitleTaskInfo = {
       id: taskId,
       status: title ? 'completed' : 'failed',
+      ...(!title ? { issue: problem('TITLE_FAILED') } : {}),
       ...(error ? { error } : {}),
     };
     if (title) {

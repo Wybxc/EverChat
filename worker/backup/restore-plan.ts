@@ -1,14 +1,16 @@
-import { MAX_SQL_PAYLOAD_BYTES } from '../../shared/conversation/limits';
 import type { BackupMessage, ConversationBackup } from '../../shared/backup/backup';
+import { MAX_SQL_PAYLOAD_BYTES } from '../../shared/conversation/limits';
 import { DEFAULT_CONVERSATION_SETTINGS } from '../../shared/conversation/settings';
 import type { ConversationSettings, Message } from '../../shared/conversation/types';
+import type { ErrorIssue } from '../../shared/errors/descriptor';
+import { problem } from '../../shared/errors/descriptor';
 import { payloadBytes } from '../../shared/streaming/batches';
 
 export function planConversationRestore(
   backup: ConversationBackup,
 ):
   | { messages: Message[]; settings: ConversationSettings; batches: Message[][] }
-  | { error: string; status: number } {
+  | { error: string; issue?: ErrorIssue; status: number } {
   const ids = new Map(backup.messages.map((message) => [message.id, crypto.randomUUID()]));
   const copiedGeneration = (source: BackupMessage) => {
     const generation = source.generation;
@@ -57,7 +59,7 @@ export function planConversationRestore(
   for (const message of messages) {
     const size = payloadBytes(JSON.stringify(message)) + 1;
     if (size + overhead > MAX_SQL_PAYLOAD_BYTES)
-      return { error: '单条恢复消息过大。', status: 413 };
+      return { error: '单条恢复消息过大。', issue: problem('BACKUP_LIMIT'), status: 413 };
     if (batch.length && bytes + size > MAX_SQL_PAYLOAD_BYTES) {
       batches.push(batch);
       batch = [];

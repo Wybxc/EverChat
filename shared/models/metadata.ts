@@ -1,6 +1,7 @@
-import type { ModelMetadata, ProviderModel, ResolvedModelMetadata } from './types';
+import { AppError, problem } from '../errors/descriptor';
 import type { ProviderApiKind } from '../providers/types';
 import { matchModelCatalog } from './catalog';
+import type { ModelMetadata, ProviderModel, ResolvedModelMetadata } from './types';
 
 export const MAX_MODEL_TOKENS = 10_000_000;
 export const reasoningEfforts = [
@@ -256,7 +257,8 @@ export function validateOutputLimit(
   if (!metadata || limit === null) return;
   // A fallback is a planning estimate, not an authoritative supplier rejection threshold.
   if (metadata.sources.maxOutputTokens !== 'fallback' && limit > metadata.maxOutputTokens) {
-    throw new Error(
+    throw new AppError(
+      problem('OUTPUT_BUDGET_EXCEEDED', { limit: metadata.maxOutputTokens }),
       `当前模型的输出上限不能超过 ${metadata.maxOutputTokens.toLocaleString('en-US')} Tokens。`,
     );
   }
@@ -265,7 +267,8 @@ export function validateOutputLimit(
     metadata.sources.contextWindow !== 'fallback' &&
     limit > metadata.contextWindow
   ) {
-    throw new Error(
+    throw new AppError(
+      problem('OUTPUT_BUDGET_EXCEEDED', { limit: metadata.contextWindow }),
       `输出上限不能超过当前模型的上下文窗口（${metadata.contextWindow.toLocaleString('en-US')} Tokens）。`,
     );
   }

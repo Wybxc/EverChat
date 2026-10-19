@@ -735,7 +735,10 @@ test('the browser rejects a damaged archive locally and replaces an identifier a
         return route.fulfill({
           status: 409,
           contentType: 'application/json',
-          body: JSON.stringify({ error: '目标对话 ID 已被使用。' }),
+          body: JSON.stringify({
+            error: '目标对话 ID 已被使用。',
+            issue: { code: 'CONVERSATION_ID_CONFLICT' },
+          }),
         });
       fixture.restored.push(attempted.at(-1)!);
       await route.continue();

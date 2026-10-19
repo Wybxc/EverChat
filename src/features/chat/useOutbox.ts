@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
-import type { Submission } from '../../../shared/conversation/types';
-import type { ConversationActivity } from '../../../shared/conversation/activity';
 import type { SessionInfo } from '../../../shared/auth/types';
-import { api, ApiError } from '../../platform/api';
-import { read, storageEpoch } from '../../platform/storage';
-import { networkIdentity } from '../../platform/auth';
 import { identityKey } from '../../../shared/auth/types';
+import type { ConversationActivity } from '../../../shared/conversation/activity';
+import type { Submission } from '../../../shared/conversation/types';
+import { api, ApiError } from '../../platform/api';
+import { networkIdentity } from '../../platform/auth';
+import { errorMessage, uiMessage, type UiMessage } from '../../platform/i18n/messages';
+import { read, storageEpoch } from '../../platform/storage';
 import { deletedAt, writePending, type Pending } from './cache';
 
 type OutboxOptions = {
@@ -18,7 +19,7 @@ type OutboxOptions = {
   onUnauthorized: () => void;
   onDeleted: (id: string, time: number) => void;
   refreshLibrary: () => void;
-  setError: (error: string) => void;
+  setError: (error: UiMessage) => void;
 };
 
 export function useOutbox(options: OutboxOptions) {
@@ -33,7 +34,7 @@ export function useOutbox(options: OutboxOptions) {
   const commitPending = (items: Pending[]) => {
     items = items.filter((item) => !deletedAt(item.conversation.id));
     if (!writePending(items)) {
-      latest.current.setError('浏览器存储已满，无法可靠保存待发送消息。请释放空间后重试。');
+      latest.current.setError(uiMessage('chat', 'outboxFull'));
       return false;
     }
     pendingRef.current = items;
@@ -97,7 +98,7 @@ export function useOutbox(options: OutboxOptions) {
       )
         commitPending(
           pendingRef.current.map((next) =>
-            next.input.requestId === key ? { ...next, error: error.message } : next,
+            next.input.requestId === key ? { ...next, error: errorMessage(error) } : next,
           ),
         );
       // A network error has an unknown outcome: keep the same request ID for retry.

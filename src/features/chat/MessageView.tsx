@@ -1,19 +1,27 @@
-import { useTranslation } from 'react-i18next';
-import './locales';
 import { Spinner } from '@/components/ui/spinner';
 import { Infinity as InfinityIcon } from 'lucide-react';
 import { useRef, useState, type Ref } from 'react';
+import { useTranslation } from 'react-i18next';
 import { messageFiles, messageImages, messageText } from '../../../shared/conversation/content';
 import { isActive } from '../../../shared/conversation/message-state';
 import { type Message } from '../../../shared/conversation/types';
+import { problem } from '../../../shared/errors/descriptor';
+import {
+  errorMessage,
+  issueMessage,
+  renderUiMessage,
+  uiMessage,
+  type UiMessage,
+} from '../../platform/i18n/messages';
 import { DocumentPreviews } from '../attachments/DocumentPreviews';
 import { ImagePreviews } from '../attachments/ImagePreviews';
-import { BranchSwitcher, type BranchNavigation } from './BranchSwitcher';
-import { MessageActions } from './MessageActions';
-import { MarkdownContent } from './rendering/MarkdownContent';
-import { ReasoningContent } from './ReasoningContent';
 import { ProviderFailureView } from '../providers/ProviderFailureView';
+import { BranchSwitcher, type BranchNavigation } from './BranchSwitcher';
+import './locales';
+import { MessageActions } from './MessageActions';
 import { MessageEditor } from './MessageEditor';
+import { ReasoningContent } from './ReasoningContent';
+import { MarkdownContent } from './rendering/MarkdownContent';
 import { UserMessageBubble } from './UserMessageBubble';
 
 export function MessageView({
@@ -64,7 +72,7 @@ export function MessageView({
 
   const [copied, setCopied] = useState(false);
   const [forking, setForking] = useState(false),
-    [forkError, setForkError] = useState('');
+    [forkError, setForkError] = useState<UiMessage>('');
   const forkLock = useRef(false);
   const copy = async () => {
     try {
@@ -83,7 +91,7 @@ export function MessageView({
     try {
       await onFork();
     } catch (failure) {
-      setForkError(failure instanceof Error ? failure.message : t(($) => $.copyFailed));
+      setForkError(errorMessage(failure, uiMessage('chat', 'copyFailed')));
     } finally {
       forkLock.current = false;
       setForking(false);
@@ -148,7 +156,7 @@ export function MessageView({
         {!editing && actions}
         {forkError && (
           <p role="alert" className="mt-1 text-xs">
-            {forkError}
+            {renderUiMessage(forkError)}
           </p>
         )}
       </article>
@@ -205,7 +213,7 @@ export function MessageView({
       ) : null}
       {message.status === 'failed' && (!toolErrorVisible || message.generation?.failure) && (
         <ProviderFailureView
-          summary={message.error ?? t(($) => $.partialAnswerSaved)}
+          summary={issueMessage(message.generation?.issue ?? problem('GENERATION_INTERRUPTED'))}
           failure={message.generation?.failure}
           showSummary={!toolErrorVisible}
           stateKey={`failure:${message.id}`}
@@ -218,7 +226,7 @@ export function MessageView({
       {!editing && actions}
       {forkError && (
         <p role="alert" className="mt-1 text-xs">
-          {forkError}
+          {renderUiMessage(forkError)}
         </p>
       )}
     </article>
