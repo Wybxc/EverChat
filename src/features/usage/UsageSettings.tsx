@@ -193,7 +193,11 @@ export default function UsageSettings({
     <div className="min-w-0 space-y-2">
       <div className="sticky top-0 z-10 bg-background pb-2">
         <Tabs value={tab} onValueChange={setTab}>
-          <TabsList className="max-w-full justify-start overflow-x-auto" aria-label="统计分类">
+          <TabsList
+            variant="line"
+            className="max-w-full justify-start overflow-x-auto"
+            aria-label="统计分类"
+          >
             {[
               ['overview', '概览'],
               ['providers', '供应商'],

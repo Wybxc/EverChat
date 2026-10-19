@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { api } from '../../platform/api';
 import { formatAmount } from '../../../shared/usage/pricing';
 import { usageCsvHeader, usageCsvRow } from '../../../shared/usage/csv';
@@ -13,39 +12,20 @@ export const money = (currencies: Record<string, string>) =>
     .map(([currency, amount]) => `${currency} ${formatAmount(amount)}`)
     .join(' · ') || '—';
 export function RecordCost({ record }: { record: UsageRecord }) {
-  const amount = record.correction?.amount ?? record.cost.amount;
+  const amount = record.cost.amount;
   return (
     <span>
       {amount === null ? '未定价' : `${record.cost.currency} ${formatAmount(amount)}`}
-      {record.correction
-        ? '（已修正）'
-        : record.cost.state === 'partial'
-          ? '（部分）'
-          : record.cost.state === 'invalid'
-            ? '（用量异常）'
-            : ''}
+      {record.cost.state === 'partial'
+        ? '（部分）'
+        : record.cost.state === 'invalid'
+          ? '（用量异常）'
+          : ''}
     </span>
   );
 }
 type Locate = ((conversationId: string, messageId: string) => void) | undefined;
 function RequestDetails({ record, onLocate }: { record: UsageRecord; onLocate: Locate }) {
-  const client = useQueryClient(),
-    [error, setError] = useState(''),
-    [busy, setBusy] = useState(false);
-  const [amount, setAmount] = useState(''),
-    [reason, setReason] = useState('');
-  const mutate = async (path: string, body?: unknown, method = 'POST') => {
-    setError('');
-    setBusy(true);
-    try {
-      await api(`/usage/requests/${encodeURIComponent(record.id)}/${path}`, method, body);
-      await client.invalidateQueries({ queryKey: ['usage'] });
-    } catch (failure) {
-      setError(failure instanceof Error ? failure.message : '操作失败。');
-    } finally {
-      setBusy(false);
-    }
-  };
   return (
     <details className="py-2">
       <summary className="cursor-pointer text-xs">
@@ -75,13 +55,8 @@ function RequestDetails({ record, onLocate }: { record: UsageRecord; onLocate: L
         )}
         {record.price && (
           <p>
-            采用价格：{new Date(record.price.effectiveFrom).toLocaleString()} · 原估算{' '}
+            采用价格：{new Date(record.price.effectiveFrom).toLocaleString()} · 估算{' '}
             {record.cost.amount === null ? '未知' : formatAmount(record.cost.amount)}
-          </p>
-        )}
-        {record.correction && (
-          <p>
-            修正原因：{record.correction.reason} · {new Date(record.correction.at).toLocaleString()}
           </p>
         )}
         {record.conversationId && record.messageId && (
@@ -104,50 +79,6 @@ function RequestDetails({ record, onLocate }: { record: UsageRecord; onLocate: L
           >
             定位回答
           </a>
-        )}
-        {!record.price && record.status !== 'running' && (
-          <Button variant="secondary" disabled={busy} onClick={() => void mutate('reprice')}>
-            按当前价格补算
-          </Button>
-        )}
-        {record.cost.currency && record.status !== 'running' && (
-          <form
-            className="flex flex-wrap items-end gap-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void mutate('correction', { amount, reason }, 'PUT');
-            }}
-          >
-            <label>
-              修正金额（{record.cost.currency}）
-              <Input
-                aria-label="修正金额"
-                required
-                inputMode="decimal"
-                pattern="(?:0|[1-9][0-9]{0,8})(?:\.[0-9]{1,6})?"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-              />
-            </label>
-            <label className="min-w-40 flex-1">
-              原因
-              <Input
-                aria-label="修正原因"
-                required
-                maxLength={500}
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-              />
-            </label>
-            <Button variant="secondary" disabled={busy} type="submit">
-              保存修正
-            </Button>
-          </form>
-        )}
-        {error && (
-          <p role="alert" className="text-destructive">
-            {error}
-          </p>
         )}
       </div>
     </details>

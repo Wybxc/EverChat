@@ -13,6 +13,7 @@ import { USAGE_OUTBOX_SCHEMA } from '../../worker/usage/schema';
 // The returned patch contains values already converted locally, never a parser
 // or a migration callback to execute while serving production traffic.
 export function migrateStorage(db: DatabaseSync, kind: StoreKind): Statement[] {
+  if (kind === 'usage') throw new Error('Usage cleanup requires cleanIncompleteUsage');
   const patch: Statement[] = [];
   const query: SqlQuery = <T extends Record<string, SqlStorageValue>>(
     sql: string,

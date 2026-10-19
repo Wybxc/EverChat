@@ -162,8 +162,7 @@ export function PriceEditor({
         />
       </label>
       <p className="text-xs text-muted-foreground">
-        留空表示未知，0
-        表示免费。缓存单价留空时继承输入单价，思考单价留空时继承输出单价。阶梯、套餐等复杂计费请在请求详情中修正。
+        留空表示未知，0 表示免费。缓存单价留空时继承输入单价，思考单价留空时继承输出单价。
       </p>
       {saved?.id.startsWith('models.dev:') ? (
         <p className="text-xs text-muted-foreground">

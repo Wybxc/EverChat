@@ -50,17 +50,4 @@ export class UsageStore extends DurableObject<Env> {
   report(filter: UsageFilter, timeZone: string, hourly: boolean) {
     return json(this.ledger.report(filter, timeZone, hourly));
   }
-  correct(id: string, amount: string, reason: string) {
-    return this.ctx.storage.transactionSync(() => this.ledger.correct(id, amount, reason));
-  }
-  async reprice(id: string) {
-    const record = this.ledger.get(id);
-    let fallback = null;
-    if (record && !record.price && !this.ledger.price(record.providerId, record.model)) {
-      const settings = await this.env.LIBRARY.getByName('personal').providerSettings();
-      const provider = settings.providers.find((p) => p.id === record.providerId);
-      if (provider) fallback = catalogPrice(record.providerId, record.model, provider.baseUrl);
-    }
-    return this.ctx.storage.transactionSync(() => this.ledger.reprice(id, fallback));
-  }
 }

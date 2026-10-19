@@ -104,29 +104,4 @@ export function registerUsageRoutes(app: ApiRouter) {
     }
     return store(context).report(query, zone, context.req.query('interval') === 'hour');
   });
-  app.put('/usage/requests/:id/correction', async (context) => {
-    await requireAuth(context);
-    const input = await parseBody(
-      context,
-      v.strictObject({
-        amount: v.pipe(v.string(), v.regex(/^(?:0|[1-9]\d{0,8})(?:\.\d{1,6})?$/)),
-        reason: v.pipe(v.string(), v.minLength(1), v.maxLength(500)),
-      }),
-    );
-    try {
-      return json(
-        await store(context).correct(context.req.param('id'), input.amount, input.reason),
-      );
-    } catch {
-      throw new HttpError(400, '无法修正此请求，请检查币种、金额和原因。');
-    }
-  });
-  app.post('/usage/requests/:id/reprice', async (context) => {
-    await requireAuth(context);
-    try {
-      return json(await store(context).reprice(context.req.param('id')));
-    } catch {
-      throw new HttpError(400, '请先配置价格，仅可补算此前未定价的已结束请求。');
-    }
-  });
 }

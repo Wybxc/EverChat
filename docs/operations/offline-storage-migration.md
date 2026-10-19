@@ -119,3 +119,17 @@ pnpm exec wrangler rollback <previous-version-id>
 正式恢复版本 `8877e562-2bfe-49ab-8ffd-ba27aa079beb`。逐页读回 63 个可见对话的全部 282 条消息，ID 均与备份一致，快照与存储接口正常。统计和分享管理私有接口通过，临时 `/api/__operations/identity` 已返回 404。新增 UsageStore、ShareStore 是独立当前版本空库初始化，不在请求内转换历史数据。
 
 270 个运维 JSON／SQLite 文件保存在本机 `.wrangler/operations/storage-2026-10-19-usage`，目录 0700、文件 0600，复制后逐文件核对 SHA-256，且被 Git 忽略。备份不含 Access 令牌、认证日志或 R2 附件。维护前业务版本为 `bc04533e-03b9-4c8b-8b5f-b30b743b2dd3`；若必须回滚，需要先用此批次原始备份离线恢复 schema 1 并核验，不能直接让旧业务代码读取 schema 2。
+
+## 历史用量统计清理
+
+仅维护统计库时，使用新的私有目录执行 `prepare --usage-only`；后续命令继续使用该目录。清单结合 USAGE 命名空间和规范的 personal 对象，备份只含 storage_schema、usage_attempts、usage_prices、usage_rollups。临时 UsageStore 同样只搬运 SQL，不运行业务构造函数。
+
+```sh
+pnpm ops:storage prepare --usage-only --directory /private/tmp/everchat-usage-cleanup --account <account-id>
+```
+
+其余预检、维护部署、backup → convert → apply → verify → cleanup、恢复正式部署的顺序与上文一致。在本地 convert 时删除备份中已结束且没有最终用量、价格快照或完整估算的请求，保留进行中请求；完整记录移除已取消的手动修正字段，按原始估算重新构建全部小时聚合。价格配置不变，不访问对话或分享表。每个对象生成仅含数量的 `.cleanup.json` 审计文件；先检查该文件再 apply。
+
+不增加线上清理、补算入口或启动扫描。清理后的新失败／取消请求仍按实际情况保留部分或未知用量。出错时本地转换整批回滚；线上导入失败沿用批次重试及原始备份恢复机制。
+
+2026-10-19 已在生产执行本次统计清理：原 23 条请求中删除 22 条已结束但用量或计价不完整的历史记录，保留 1 条完整记录；没有价格配置或修正字段需要处理。小时汇总已离线重建，线上与本地结构、索引及逐行值验证通过，临时回执已清除。私有备份保存在 `.wrangler/operations/usage-cleanup-2026-10-19`，目录 0700、文件 0600，已核对 SHA-256，不含 Access 会话令牌。正式恢复版本 `22382d94-e569-4ed5-a410-e4adbf1d7b09`。445 项单元测试、原生 workerd 运维测试、12 项相关浏览器场景、类型检查与构建通过；生产恢复后统计、根页面和临时入口移除均已只读验收。

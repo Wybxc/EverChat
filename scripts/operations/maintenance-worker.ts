@@ -13,7 +13,6 @@ import {
 } from './storage-protocol';
 // Retain the existing Workflow binding/export during this temporary deployment.
 export { WebToolWorkflow } from '../../worker/web-tools/workflow';
-export { UsageStore } from '../../worker/usage/durable-object';
 export { ShareStore } from '../../worker/sharing/durable-object';
 
 export class Conversation extends DurableObject {
@@ -160,12 +159,14 @@ export class Conversation extends DurableObject {
   }
 }
 export class Library extends Conversation {}
+export class UsageStore extends Conversation {}
 
 type OperationsEnv = {
   OPS_RUN_ID: string;
   OPS_ADMIN_EMAIL?: string;
   CONVERSATIONS: DurableObjectNamespace<Conversation>;
   LIBRARY: DurableObjectNamespace<Library>;
+  USAGE: DurableObjectNamespace<UsageStore>;
 };
 // Private service-binding transport used by the native integration harness.
 // The temporary HTTP route below separately verifies the operator's Access JWT.
@@ -180,6 +181,12 @@ async function dispatch(request: Request, env: OperationsEnv) {
   if (url.pathname === '/catalog') {
     const offset = Number(url.searchParams.get('offset') ?? 0);
     if (!Number.isSafeInteger(offset) || offset < 0) throw new Error('Invalid catalog offset');
+    if (url.searchParams.get('kind') === 'usage')
+      return Response.json(
+        offset
+          ? []
+          : [{ kind: 'usage', id: env.USAGE.idFromName('personal').toString(), name: 'personal' }],
+      );
     const response = await env.LIBRARY.getByName('personal').fetch(
       new Request('https://maintenance.invalid/', {
         method: 'POST',
@@ -202,7 +209,12 @@ async function dispatch(request: Request, env: OperationsEnv) {
     !/^[a-f0-9]{64}$/.test(input.id)
   )
     throw new Error('Invalid maintenance target');
-  const namespace = input.kind === 'conversation' ? env.CONVERSATIONS : env.LIBRARY;
+  const namespace =
+    input.kind === 'conversation'
+      ? env.CONVERSATIONS
+      : input.kind === 'usage'
+        ? env.USAGE
+        : env.LIBRARY;
   return namespace.get(namespace.idFromString(input.id)).fetch(
     new Request('https://maintenance.invalid/', {
       method: 'POST',

@@ -25,7 +25,7 @@ export function addRecord(totals: UsageTotals, record: UsageRecord, direction = 
     totals.modelRequests += direction;
   if (record.status === 'completed') totals.completed += direction;
   if (!record.usageIsFinal) totals.incomplete += direction;
-  if (!record.correction && record.cost.state !== 'priced') totals.unpriced += direction;
+  if (record.cost.state !== 'priced') totals.unpriced += direction;
   if (record.usage.inputTokens !== undefined && record.usage.cachedInputTokens !== undefined) {
     totals.cacheEligibleInputTokens += record.usage.inputTokens * direction;
     totals.cacheReportedReadTokens += record.usage.cachedInputTokens * direction;
@@ -37,7 +37,7 @@ export function addRecord(totals: UsageTotals, record: UsageRecord, direction = 
     'cacheWriteInputTokens',
   ] as const)
     totals[field] += (record.usage[field] ?? 0) * direction;
-  const amount = record.correction?.amount ?? record.cost.amount;
+  const amount = record.cost.amount;
   if (amount !== null && record.cost.currency)
     totals.currencies[record.cost.currency] = (
       BigInt(totals.currencies[record.cost.currency] ?? '0') +

@@ -10,6 +10,9 @@ import { UsageOutbox } from '../../../worker/usage/outbox';
 import { UsageAccounting, modelIdentity } from '../../../worker/usage/accounting';
 import type { Env } from '../../../worker/http/env';
 import type { SqlQuery } from '../../../worker/generation/metrics';
+import { cleanIncompleteUsage } from '../../../scripts/operations/clean-usage';
+import { localSnapshot, restoreSnapshot } from '../../../scripts/operations/storage-snapshot';
+import { decodeValue } from '../../../scripts/operations/storage-protocol';
 
 const price: UsagePrice = {
   id: 'price1',
@@ -295,21 +298,79 @@ test('hourly trends distinguish repeated DST hours and retain gaps between reque
     s.db.close();
   }
 });
-test('explicit repricing only fills unknown terminal prices; manual correction keeps original estimate and aggregate integrity', () => {
+test('offline usage cleanup preserves complete records, running requests and prices, and rebuilds reproducible aggregates', () => {
+  const s = fixture(),
+    copy = new DatabaseSync(':memory:');
+  try {
+    s.db.exec(
+      'CREATE TABLE storage_schema(id INTEGER PRIMARY KEY,version INTEGER); INSERT INTO storage_schema VALUES(1,1)',
+    );
+    const { id: _id, effectiveFrom: _time, ...input } = price;
+    s.ledger.savePrice(input);
+    s.ledger.record(attempt());
+    s.ledger.record(attempt({ id: 'corrected' }));
+    const corrected = {
+      ...s.ledger.get('corrected')!,
+      correction: { amount: '999', reason: 'old', at: 1 },
+    };
+    s.query(
+      'UPDATE usage_attempts SET payload=? WHERE id=?',
+      JSON.stringify(corrected),
+      'corrected',
+    );
+    s.ledger.record(attempt({ id: 'unpriced', price: null }));
+    s.ledger.record(attempt({ id: 'unfinished', usageIsFinal: false }));
+    s.ledger.record(attempt({ id: 'partial', usage: { inputTokens: 1000 } }));
+    s.ledger.record(
+      attempt({ id: 'invalid', usage: { inputTokens: 1, cachedInputTokens: 2, outputTokens: 1 } }),
+    );
+    s.ledger.record(
+      attempt({
+        id: 'running',
+        status: 'running',
+        endedAt: null,
+        usage: {},
+        usageIsFinal: false,
+        price: null,
+      }),
+    );
+    const before = localSnapshot(s.db, 'usage'),
+      prices = s.ledger.prices();
+    restoreSnapshot(copy, before);
+    const result = cleanIncompleteUsage(s.db);
+    assert.deepEqual(result.counts, { before: 7, removed: 4, retained: 3, correctionsRemoved: 1 });
+    assert.deepEqual(s.ledger.prices(), prices);
+    assert.equal(s.ledger.get('attempt1')?.cost.amount, '3060000000');
+    assert.equal(Object.hasOwn(s.ledger.get('corrected')!, 'correction'), false);
+    assert.equal(s.ledger.get('running')?.status, 'running');
+    assert.deepEqual(s.ledger.report({}).totals, {
+      ...s.ledger.report({}).totals,
+      requests: 3,
+      incomplete: 1,
+      unpriced: 1,
+      currencies: { CNY: '6120000000' },
+    });
+    for (const { sql, args } of result.statements)
+      copy.prepare(sql).run(...(args.map(decodeValue) as (string | number | null)[]));
+    assert.deepEqual(localSnapshot(copy, 'usage'), localSnapshot(s.db, 'usage'));
+    assert.equal(cleanIncompleteUsage(s.db).counts.removed, 0);
+  } finally {
+    s.db.close();
+    copy.close();
+  }
+});
+test('offline usage cleanup rolls back deletions and rollups on corrupt historical data', () => {
   const s = fixture();
   try {
-    s.ledger.record(attempt({ price: null }));
-    const { id: _id, effectiveFrom: _at, ...input } = price;
-    s.ledger.savePrice(input);
-    s.ledger.reprice('attempt1');
-    assert.throws(() => s.ledger.reprice('attempt1'));
-    assert.equal(s.ledger.get('attempt1')?.cost.amount, '3060000000');
-    s.ledger.correct('attempt1', '0.01', '套餐结算');
-    assert.equal(s.ledger.report({}).totals.currencies.CNY, '10000000000');
-    assert.equal(s.ledger.get('attempt1')?.cost.amount, '3060000000');
-    assert.equal(s.ledger.get('attempt1')?.correction?.reason, '套餐结算');
-    s.ledger.record(attempt());
-    assert.equal(s.ledger.report({}).totals.currencies.CNY, '10000000000');
+    s.db.exec(
+      'CREATE TABLE storage_schema(id INTEGER PRIMARY KEY,version INTEGER); INSERT INTO storage_schema VALUES(1,1)',
+    );
+    s.ledger.record(attempt({ id: 'a-unpriced', price: null }));
+    s.ledger.record(attempt({ id: 'z-corrupt' }));
+    s.query('UPDATE usage_attempts SET payload=? WHERE id=?', '{', 'z-corrupt');
+    const before = localSnapshot(s.db, 'usage');
+    assert.throws(() => cleanIncompleteUsage(s.db));
+    assert.deepEqual(localSnapshot(s.db, 'usage'), before);
   } finally {
     s.db.close();
   }

@@ -61,7 +61,6 @@ export interface UsageAttempt {
 }
 export interface UsageRecord extends UsageAttempt {
   cost: CostEstimate;
-  correction?: { amount: string; reason: string; at: number };
 }
 export interface UsageFilter {
   from?: number;

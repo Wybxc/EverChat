@@ -2,6 +2,43 @@ import { expect, test } from '@playwright/test';
 import { emptyTotals } from '../../../worker/usage/aggregate';
 test.use({ hasTouch: true });
 const headers = { Origin: 'http://127.0.0.1:5174' };
+test('nested usage tabs stay horizontal and transparent in both themes and viewport sizes', async ({
+  page,
+}) => {
+  await page.request.post('/__dev/access/login', { headers });
+  await page.goto('/');
+  await page.getByRole('button', { name: '空间设置', exact: true }).click();
+  await page.getByRole('tab', { name: '用量统计', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: '设置', exact: true });
+  const list = dialog.getByRole('tablist', { name: '统计分类', exact: true });
+  const outer = dialog.getByRole('tablist', { name: '设置分类', exact: true });
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 800 });
+    await expect(outer).toHaveAttribute(
+      'aria-orientation',
+      width === 390 ? 'horizontal' : 'vertical',
+    );
+    for (const dark of [true, false]) {
+      await page.evaluate((dark) => document.documentElement.classList.toggle('dark', dark), dark);
+      await expect(list).toHaveAttribute('aria-orientation', 'horizontal');
+      await expect
+        .poll(() => list.evaluate((el) => getComputedStyle(el).flexDirection))
+        .toBe('row');
+      const boxes = await list.getByRole('tab').evaluateAll((tabs) =>
+        tabs.map((tab) => {
+          const { x, y } = tab.getBoundingClientRect();
+          return { x, y };
+        }),
+      );
+      expect(new Set(boxes.map(({ y }) => Math.round(y))).size).toBe(1);
+      expect(boxes.every((box, index) => index === 0 || box.x > boxes[index - 1].x)).toBe(true);
+      for (const element of [list, ...(await list.getByRole('tab').all())])
+        await expect
+          .poll(() => element.evaluate((el) => getComputedStyle(el).backgroundColor))
+          .toBe('rgba(0, 0, 0, 0)');
+    }
+  }
+});
 test('configured official models receive catalog defaults and explicit custom zero pricing overrides them', async ({
   request,
 }) => {
@@ -236,14 +273,10 @@ for (const mobile of [false, true])
       await editor.getByRole('button', { name: '保存价格', exact: true }).click();
       await expect(editor).not.toBeVisible();
       await dialog.getByRole('tab', { name: '请求', exact: true }).click();
-      if (!(await dialog.getByRole('button', { name: '按当前价格补算' }).isVisible()))
-        await dialog.locator('#usage-panel-requests summary').click();
-      await dialog.getByRole('button', { name: '按当前价格补算' }).click();
-      await expect(dialog.getByText('CNY 0.000060', { exact: true })).toBeVisible();
-      await dialog.getByLabel('修正金额', { exact: true }).fill('0.01');
-      await dialog.getByLabel('修正原因', { exact: true }).fill('测试供应商账单修正');
-      await dialog.getByRole('button', { name: '保存修正', exact: true }).click();
-      await expect(dialog.getByText(/CNY 0\.010000/)).toBeVisible();
+      await dialog.locator('#usage-panel-requests summary').click();
+      await expect(dialog.getByRole('button', { name: '按当前价格补算' })).toHaveCount(0);
+      await expect(dialog.getByLabel('修正金额', { exact: true })).toHaveCount(0);
+      await expect(dialog.getByRole('button', { name: '保存修正', exact: true })).toHaveCount(0);
       const downloaded = page.waitForEvent('download');
       await dialog.getByRole('button', { name: '导出 CSV', exact: true }).click();
       expect((await downloaded).suggestedFilename()).toMatch(/EverChat-usage.*csv/);

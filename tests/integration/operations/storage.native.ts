@@ -41,9 +41,12 @@ test('native maintenance transport rejects anonymous HTTP, preserves unrelated s
             bindings: [
               { name: 'CONVERSATIONS', class_name: 'Conversation' },
               { name: 'LIBRARY', class_name: 'Library' },
+              { name: 'USAGE', class_name: 'UsageStore' },
             ],
           },
-          migrations: [{ tag: 'v1', new_sqlite_classes: ['Conversation', 'Library'] }],
+          migrations: [
+            { tag: 'v1', new_sqlite_classes: ['Conversation', 'Library', 'UsageStore'] },
+          ],
         },
       },
     ],
@@ -98,6 +101,37 @@ test('native maintenance transport rejects anonymous HTTP, preserves unrelated s
       await (await client.fetch('https://operations.invalid/catalog?offset=3')).json(),
       [],
     );
+    const usage = (await worker.getEnv()) as { USAGE: DurableObjectNamespace };
+    const usageId = usage.USAGE.idFromName('personal').toString();
+    assert.deepEqual(
+      await (await client.fetch('https://operations.invalid/catalog?kind=usage')).json(),
+      [{ kind: 'usage', id: usageId, name: 'personal' }],
+    );
+    const usageRequest = async (action: string, more: Record<string, unknown> = {}) =>
+      client.fetch('https://operations.invalid/', {
+        method: 'POST',
+        body: JSON.stringify({ runId, kind: 'usage', id: usageId, action, ...more }),
+      });
+    // The temporary UsageStore is a raw transport, never the business constructor.
+    assert.deepEqual(await (await usageRequest('schema')).json(), []);
+    await usageRequest('apply', {
+      job: 'usage-transport',
+      page: 0,
+      statements: [
+        { sql: 'CREATE TABLE usage_attempts(id TEXT PRIMARY KEY,payload TEXT)', args: [] },
+        { sql: 'INSERT INTO usage_attempts VALUES (?,?)', args: ['valid', 'preserved'] },
+        { sql: 'INSERT INTO usage_attempts VALUES (?,?)', args: ['incomplete', 'old'] },
+      ],
+    });
+    await usageRequest('apply', {
+      job: 'usage-transport',
+      page: 1,
+      statements: [{ sql: 'DELETE FROM usage_attempts WHERE id=?', args: ['incomplete'] }],
+    });
+    assert.deepEqual(await (await usageRequest('rows', { table: 'usage_attempts' })).json(), [
+      { id: 'valid', payload: 'preserved' },
+    ]);
+    assert.equal((await usageRequest('cleanup')).status, 200);
     const request = async (action: string, more: Record<string, unknown> = {}) =>
       client.fetch('https://operations.invalid/', {
         method: 'POST',

@@ -1,5 +1,5 @@
 import * as v from 'valibot';
-import { estimateCost, decimalMicros } from '../../shared/usage/pricing';
+import { estimateCost } from '../../shared/usage/pricing';
 import {
   priceInputSchema,
   type UsageAttempt,
@@ -104,7 +104,6 @@ export class UsageLedger {
     const record: UsageRecord = {
       ...attempt,
       cost: estimateCost(attempt.usage, attempt.usageIsFinal, attempt.price, attempt.kind),
-      ...(previous?.correction ? { correction: previous.correction } : {}),
     };
     if (previous) this.rollup(previous, -1);
     this.query(
@@ -201,30 +200,6 @@ export class UsageLedger {
       records,
       cursor: rows.length > limit && last ? btoa(JSON.stringify([last.startedAt, last.id])) : null,
     };
-  }
-  correct(id: string, amount: string, reason: string) {
-    const record = this.get(id);
-    if (!record || !record.cost.currency) throw new Error('请先为请求配置计价币种。');
-    if (!reason.trim() || reason.length > 500) throw new Error('请填写修正原因。');
-    const corrected = decimalMicros(amount) * 1_000_000n;
-    this.rollup(record, -1);
-    record.correction = { amount: corrected.toString(), reason: reason.trim(), at: this.now() };
-    this.query('UPDATE usage_attempts SET payload=? WHERE id=?', JSON.stringify(record), id);
-    this.rollup(record, 1);
-    return record;
-  }
-  reprice(id: string, fallback: UsagePrice | null = null) {
-    const record = this.get(id);
-    if (!record || record.price || record.status === 'running')
-      throw new Error('只能为此前未定价的已结束请求补充价格。');
-    const price = this.price(record.providerId, record.model) ?? fallback;
-    if (!price) throw new Error('请先配置模型价格。');
-    this.rollup(record, -1);
-    record.price = price;
-    record.cost = estimateCost(record.usage, record.usageIsFinal, price, record.kind);
-    this.query('UPDATE usage_attempts SET payload=? WHERE id=?', JSON.stringify(record), id);
-    this.rollup(record, 1);
-    return this.get(id)!;
   }
   report(filter: UsageFilter, timeZone = 'UTC', hourly = false): UsageReport {
     const formatter = new Intl.DateTimeFormat('sv-SE', {

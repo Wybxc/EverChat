@@ -8,6 +8,7 @@ import { unstable_readConfig } from 'wrangler';
 import { cloudflareRead } from '../measurements/support/cloudflare-api';
 import { migrateStorage } from './migrate-storage';
 import { rebuildSearch } from './rebuild-search';
+import { cleanIncompleteUsage } from './clean-usage';
 import { localSnapshot, restoreSnapshot, snapshotStatements } from './storage-snapshot';
 import {
   MIGRATION_TABLES,
@@ -20,7 +21,13 @@ import {
 } from './storage-protocol';
 
 type Target = { kind: StoreKind; id: string; name?: string };
-type Manifest = { runId: string; account: string; worker: string; objects: Target[] };
+type Manifest = {
+  runId: string;
+  account: string;
+  worker: string;
+  objects: Target[];
+  usageOnly?: boolean;
+};
 const { positionals, values } = parseArgs({
   allowPositionals: true,
   options: {
@@ -29,6 +36,7 @@ const { positionals, values } = parseArgs({
     config: { type: 'string', default: 'wrangler.jsonc' },
     'access-token-file': { type: 'string' },
     'rebuild-search': { type: 'boolean', default: false },
+    'usage-only': { type: 'boolean', default: false },
   },
 });
 const action = positionals[0];
@@ -66,8 +74,14 @@ if (action === 'prepare') {
     .map((value) => value.trim())
     .filter(Boolean);
   assert.equal(emails.length, 1, 'Maintenance requires one explicit administrator email');
-  const objects = await listTargets(values.account, worker);
-  const manifest: Manifest = { runId: randomUUID(), account: values.account, worker, objects };
+  const objects = await listTargets(values.account, worker, values['usage-only']);
+  const manifest: Manifest = {
+    runId: randomUUID(),
+    account: values.account,
+    worker,
+    objects,
+    usageOnly: values['usage-only'],
+  };
   await save('manifest.json', manifest);
   await save('maintenance.json', {
     name: worker,
@@ -131,7 +145,9 @@ if (action === 'prepare') {
       const db = new DatabaseSync(path);
       try {
         restoreSnapshot(db, snapshot);
-        const patch = migrateStorage(db, target.kind);
+        const cleanup = target.kind === 'usage' ? cleanIncompleteUsage(db) : null;
+        const patch = cleanup?.statements ?? migrateStorage(db, target.kind);
+        if (cleanup) await save(`${prefix}.cleanup.json`, cleanup.counts);
         if (target.kind === 'library' && values['rebuild-search']) {
           assert.equal(
             manifest.objects.filter(({ kind }) => kind === 'library').length,
@@ -203,10 +219,12 @@ if (action === 'prepare') {
         return response.json() as Promise<T>;
       };
       const discoverTargets = async () => {
-        const targets = await listTargets(manifest.account, manifest.worker);
+        const targets = await listTargets(manifest.account, manifest.worker, manifest.usageOnly);
         let offset = 0;
         while (true) {
-          const response = await send(`/catalog?offset=${offset}`);
+          const response = await send(
+            `/catalog?offset=${offset}${manifest.usageOnly ? '&kind=usage' : ''}`,
+          );
           assert.equal(response.status, 200, 'Cannot inspect canonical conversation catalog');
           const page = (await response.json()) as Target[];
           if (!page.length) break;
@@ -341,7 +359,7 @@ function patchPages(statements: Statement[]) {
   return pages;
 }
 
-async function listTargets(account: string, worker: string): Promise<Target[]> {
+async function listTargets(account: string, worker: string, usageOnly = false): Promise<Target[]> {
   const response = await cloudflareRead<{
     bindings: { name: string; namespace_id?: string; type: string }[];
   }>(`/accounts/${account}/workers/scripts/${worker}/settings`);
@@ -350,10 +368,13 @@ async function listTargets(account: string, worker: string): Promise<Target[]> {
     `Cannot inspect production bindings: HTTP ${response.status}`,
   );
   const objects: Target[] = [];
-  for (const [name, kind] of [
-    ['CONVERSATIONS', 'conversation'],
-    ['LIBRARY', 'library'],
-  ] as const) {
+  const bindings = usageOnly
+    ? ([['USAGE', 'usage']] as const)
+    : ([
+        ['CONVERSATIONS', 'conversation'],
+        ['LIBRARY', 'library'],
+      ] as const);
+  for (const [name, kind] of bindings) {
     const namespace: string | undefined = response.result.bindings.find(
       (binding) => binding.name === name && binding.type === 'durable_object_namespace',
     )?.namespace_id;
@@ -381,8 +402,8 @@ async function listTargets(account: string, worker: string): Promise<Target[]> {
     } while (cursor);
   }
   assert.ok(
-    objects.some(({ kind }) => kind === 'library'),
-    'No stored Library object found',
+    objects.some(({ kind }) => kind === (usageOnly ? 'usage' : 'library')),
+    'No stored target object found',
   );
   return objects.sort((a, b) => a.kind.localeCompare(b.kind) || a.id.localeCompare(b.id));
 }

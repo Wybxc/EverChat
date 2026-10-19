@@ -2,7 +2,7 @@ import { formatAmount } from './pricing';
 import { usageKindLabels, usageStatusLabels, type UsageRecord } from './types';
 
 export const usageCsvHeader =
-  '时间,类型,供应商,模型,状态,输入 Token,输出 Token,缓存读取 Token,用量完整,币种,原估算,修正金额,修正原因\r\n';
+  '时间,类型,供应商,模型,状态,输入 Token,输出 Token,缓存读取 Token,用量完整,币种,估算费用\r\n';
 export function csvCell(value: string | number | undefined) {
   const text = String(value ?? '');
   // Spreadsheet applications also interpret formulas after whitespace/control characters.
@@ -24,8 +24,6 @@ export function usageCsvRow(record: UsageRecord) {
       record.usageIsFinal ? '是' : '否',
       record.cost.currency ?? '',
       record.cost.amount === null ? '' : formatAmount(record.cost.amount, 12),
-      record.correction ? formatAmount(record.correction.amount, 12) : '',
-      record.correction?.reason,
     ]
       .map(csvCell)
       .join(',') + '\r\n'
