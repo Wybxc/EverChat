@@ -407,7 +407,7 @@ test('tabbed settings autosave model names and enabled choices; the close button
       animations: 'disabled',
     });
     settings = await getSettings();
-    const second = await browser.newContext();
+    const second = await browser.newContext({ locale: 'zh-CN' });
     try {
       expect((await second.request.post('/__dev/access/login', { headers })).status()).toBe(200);
       expect(

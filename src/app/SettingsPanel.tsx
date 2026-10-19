@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import './locales';
 import { storageEpoch } from '../platform/storage';
 import { Button } from '@/components/ui/button';
 import { NativeSelect } from '@/components/ui/native-select';
@@ -27,6 +29,7 @@ import { api } from '../platform/api';
 import { useMediaQuery } from '../platform/useMediaQuery';
 import { NotificationSettings } from '../features/notifications/NotificationSettings';
 import { PwaSettings } from '../platform/pwa/PwaControls';
+import { LanguageControl } from '../platform/i18n/LanguageControl';
 
 type PanelProps = {
   render: (content: ReactNode) => ReactNode;
@@ -41,19 +44,21 @@ type PanelProps = {
   onLocate?: (conversationId: string, messageId: string) => void;
 };
 const tabs = [
-  { id: 'general', label: '通用' },
-  { id: 'providers', label: '供应商' },
-  { id: 'chat', label: '对话' },
-  { id: 'presets', label: '预设' },
-  { id: 'web-tools', label: '联网' },
-  { id: 'usage', label: '用量统计' },
-  { id: 'shares', label: '分享' },
+  { id: 'general', label: 'general' },
+  { id: 'providers', label: 'providers' },
+  { id: 'chat', label: 'chat' },
+  { id: 'presets', label: 'presets' },
+  { id: 'web-tools', label: 'webTools' },
+  { id: 'usage', label: 'usage' },
+  { id: 'shares', label: 'sharing' },
 ] as const;
 export type SettingsTab = (typeof tabs)[number]['id'];
 const ShareManagement = lazy(() => import('../features/sharing/ShareManagement'));
 const UsageSettings = lazy(() => import('../features/usage/UsageSettings'));
 
 export function SettingsPanel(props: PanelProps) {
+  const { t } = useTranslation('app', { useSuspense: false });
+
   const { open, requestedTab, authenticated = true } = props;
   const verticalTabs = useMediaQuery('(min-width: 40rem)');
   const [tab, setTab] = useState<SettingsTab>(requestedTab ?? 'general');
@@ -80,7 +85,7 @@ export function SettingsPanel(props: PanelProps) {
       new SettingsAutosave(
         query.data,
         (input) => {
-          if (epoch !== storageEpoch()) throw new Error('登录状态已改变。');
+          if (epoch !== storageEpoch()) throw new Error(t(($) => $.sessionChanged));
           return api<ProviderSettings>('/settings/providers', 'PUT', input);
         },
         (result) => {
@@ -120,7 +125,7 @@ export function SettingsPanel(props: PanelProps) {
           }}
           className="settings-tabs"
         >
-          <TabsList aria-label="设置分类" className="settings-tab-list">
+          <TabsList aria-label={t(($) => $.settingsCategories)} className="settings-tab-list">
             {tabs.map((item) => (
               <TabsTrigger
                 key={item.id}
@@ -131,7 +136,7 @@ export function SettingsPanel(props: PanelProps) {
                   event.currentTarget.scrollIntoView({ block: 'nearest', inline: 'nearest' })
                 }
               >
-                {item.label}
+                {t(($) => $[item.label])}
               </TabsTrigger>
             ))}
           </TabsList>
@@ -146,6 +151,7 @@ export function SettingsPanel(props: PanelProps) {
               hidden={tab !== 'general'}
               className="space-y-4"
             >
+              <LanguageControl />
               {props.themeControl}
               <NotificationSettings />
               <PwaSettings />
@@ -158,11 +164,9 @@ export function SettingsPanel(props: PanelProps) {
                     onClick={props.onLogout}
                   >
                     <LogOut className="size-4" />
-                    退出并清除本地记录
+                    {t(($) => $.signOut)}
                   </Button>
-                  <p className="text-xs text-muted-foreground">
-                    同时退出此账号的其他 Cloudflare Access 应用。
-                  </p>
+                  <p className="text-xs text-muted-foreground">{t(($) => $.accessSignOutHint)}</p>
                 </>
               )}
             </section>
@@ -174,7 +178,7 @@ export function SettingsPanel(props: PanelProps) {
                   aria-labelledby={`settings-tab-${tab}`}
                 >
                   <p role="status" className="py-4 text-sm text-muted-foreground">
-                    身份确认后可用
+                    {t(($) => $.availableAfterSignIn)}
                   </p>
                 </section>
               )
@@ -200,11 +204,11 @@ export function SettingsPanel(props: PanelProps) {
                             {query.error.message}
                           </p>
                           <Button variant="secondary" onClick={() => void query.refetch()}>
-                            重新读取
+                            {t(($) => $.reload)}
                           </Button>
                         </div>
                       ) : (
-                        <LoadingContent label="正在读取设置" />
+                        <LoadingContent label={t(($) => $.loadingSettings)} />
                       )}
                     </section>
                   )}
@@ -233,7 +237,7 @@ export function SettingsPanel(props: PanelProps) {
                     role="tabpanel"
                     aria-labelledby="settings-tab-shares"
                   >
-                    <Suspense fallback={<LoadingContent label="正在读取分享" />}>
+                    <Suspense fallback={<LoadingContent label={t(($) => $.loadingShares)} />}>
                       <ShareManagement active />
                     </Suspense>
                   </section>
@@ -244,7 +248,7 @@ export function SettingsPanel(props: PanelProps) {
                     role="tabpanel"
                     aria-labelledby="settings-tab-usage"
                   >
-                    <Suspense fallback={<LoadingContent label="正在读取用量统计" />}>
+                    <Suspense fallback={<LoadingContent label={t(($) => $.loadingUsage)} />}>
                       <UsageSettings onLocate={props.onLocate} />
                     </Suspense>
                   </section>
@@ -277,6 +281,8 @@ function SettingsForm({
   tab: SettingsTab;
   requestedProviderId?: string;
 }) {
+  const { t } = useTranslation('app', { useSuspense: false });
+
   const { settings, status, error } = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const update = (next: ProviderSettings) => store.update(reconcile(next));
   const enabled = availableModels(settings);
@@ -310,7 +316,7 @@ function SettingsForm({
       >
         <div className="space-y-1">
           <label htmlFor="default-model" className="block text-sm font-medium">
-            默认模型
+            {t(($) => $.defaultModel)}
           </label>
           <NativeSelect
             id="default-model"
@@ -327,7 +333,7 @@ function SettingsForm({
               update({ ...settings, activeProviderId, activeModel });
             }}
           >
-            <option value="">未选择模型</option>
+            <option value="">{t(($) => $.noModel)}</option>
             {settings.providers.map((profile) => (
               <optgroup key={profile.id} label={profile.name}>
                 {enabled
@@ -346,13 +352,13 @@ function SettingsForm({
           className="space-y-3 border-t border-border pt-4"
         >
           <h3 id="title-settings-heading" className="text-sm font-semibold">
-            自动标题
+            {t(($) => $.automaticTitle)}
           </h3>
           <div className="space-y-3">
             <label className="block space-y-1 text-sm">
-              <span>标题模型</span>
+              <span>{t(($) => $.titleModel)}</span>
               <NativeSelect
-                aria-label="标题模型"
+                aria-label={t(($) => $.titleModel)}
                 className="w-full"
                 value={
                   settings.title?.model
@@ -372,7 +378,7 @@ function SettingsForm({
                   });
                 }}
               >
-                <option value="">未选择模型</option>
+                <option value="">{t(($) => $.noModel)}</option>
                 {settings.title?.model &&
                   !enabled.some(
                     ({ profile, model }) =>
@@ -385,7 +391,7 @@ function SettingsForm({
                         settings.title.model.model,
                       ])}
                     >
-                      所选模型不可用，请重新选择
+                      {t(($) => $.modelUnavailable)}
                     </option>
                   )}
                 {enabled.map(({ profile, model }) => (
@@ -399,7 +405,7 @@ function SettingsForm({
               </NativeSelect>
             </label>
             <label className="flex min-h-11 items-center justify-between gap-3 text-sm">
-              首条回答完成后自动命名
+              {t(($) => $.titleAfterFirstAnswer)}
               <Switch
                 checked={settings.title?.automatic ?? false}
                 disabled={!settings.title?.model}
@@ -411,9 +417,7 @@ function SettingsForm({
                 }
               />
             </label>
-            <p className="text-xs text-muted-foreground">
-              每次命名会单独调用所选模型。未配置时保留首条消息标题。
-            </p>
+            <p className="text-xs text-muted-foreground">{t(($) => $.titleModelHint)}</p>
           </div>
         </section>
       </section>
@@ -421,12 +425,12 @@ function SettingsForm({
       <div className="sticky bottom-0 z-10 flex shrink-0 items-center justify-between gap-3 border-t border-border bg-background px-3 py-2 text-xs sm:px-4 text-muted-foreground">
         <p data-testid="settings-save-status" role={status === 'error' ? 'alert' : 'status'}>
           {status === 'error'
-            ? `未保存 · ${error}`
+            ? t(($) => $.notSaved, { error })
             : status === 'saving'
-              ? '保存中…'
+              ? t(($) => $.saving)
               : status === 'waiting'
-                ? '保存中…'
-                : '已保存'}
+                ? t(($) => $.saving)
+                : t(($) => $.saved)}
         </p>
         {status === 'error' && (
           <Button
@@ -436,7 +440,7 @@ function SettingsForm({
               void store.flush().catch(() => {});
             }}
           >
-            重试
+            {t(($) => $.retry)}
           </Button>
         )}
       </div>

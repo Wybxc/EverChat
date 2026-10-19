@@ -217,7 +217,7 @@ test('activity is visible on another branch and device, goes static offline, and
 }) => {
   const fixture = await setup(page.request),
     id = await fixture.create('多分支生成');
-  const other = await browser.newContext();
+  const other = await browser.newContext({ locale: 'zh-CN' });
   try {
     const old = await fixture.submit(id, quick);
     await expect

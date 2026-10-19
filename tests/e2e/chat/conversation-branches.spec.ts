@@ -543,7 +543,7 @@ test('deleted leaves recover locally while deleted connectors keep old descendan
 }) => {
   const f = await branchingFixture(page.request),
     m = f.messages,
-    device = await browser.newContext();
+    device = await browser.newContext({ locale: 'zh-CN' });
   try {
     await device.request.post('/__dev/access/login', { headers });
     const other = await device.newPage();

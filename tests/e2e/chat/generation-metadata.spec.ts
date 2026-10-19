@@ -68,7 +68,7 @@ for (const protocol of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
   }) => {
     const fixture = await setup(page.request, protocol, `raw-${protocol}`),
       extra: string[] = [],
-      second = await browser.newContext();
+      second = await browser.newContext({ locale: 'zh-CN' });
     try {
       await page.goto(`/c/${fixture.id}`);
       const accepted = await fixture.send();

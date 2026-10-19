@@ -1,4 +1,5 @@
 import type { ComponentProps } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
@@ -7,8 +8,8 @@ export function ApiKeyInput({
   visible,
   onToggle,
   loading = false,
-  showLabel = '显示 API 密钥',
-  hideLabel = '隐藏 API 密钥',
+  showLabel,
+  hideLabel,
   ...props
 }: Omit<ComponentProps<'input'>, 'type'> & {
   visible: boolean;
@@ -17,6 +18,7 @@ export function ApiKeyInput({
   showLabel?: string;
   hideLabel?: string;
 }) {
+  const { t } = useTranslation('common');
   return (
     <div className="field-control flex min-w-0 w-full items-center gap-2 border-input pr-1">
       <input
@@ -32,7 +34,9 @@ export function ApiKeyInput({
         size="icon"
         type="button"
         disabled={props.disabled || loading}
-        aria-label={visible ? hideLabel : showLabel}
+        aria-label={
+          visible ? (hideLabel ?? t(($) => $.hideApiKey)) : (showLabel ?? t(($) => $.showApiKey))
+        }
         aria-pressed={visible}
         aria-busy={loading || undefined}
         onClick={onToggle}

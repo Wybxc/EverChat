@@ -113,8 +113,8 @@ for (const provider of [
   }) => {
     const fixture = await setup(request, provider),
       image = await upload(request, fixture.id);
-    const first = await browser.newContext(),
-      second = await browser.newContext();
+    const first = await browser.newContext({ locale: 'zh-CN' }),
+      second = await browser.newContext({ locale: 'zh-CN' });
     try {
       await first.request.post('/__dev/access/login', { headers });
       const page = await first.newPage();

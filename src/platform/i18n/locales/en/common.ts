@@ -1,0 +1,18 @@
+export default {
+  language: 'Language',
+  system: 'Follow system',
+  close: 'Close',
+  cancel: 'Cancel',
+  save: 'Save',
+  edit: 'Edit',
+  delete: 'Delete',
+  retry: 'Retry',
+  loading: 'Loading',
+  copy: 'Copy',
+  copied: 'Copied',
+  copyFailed: 'Copy failed. Try again.',
+  showApiKey: 'Show API key',
+  hideApiKey: 'Hide API key',
+  collapseMessage: 'Collapse message',
+  expandMessage: 'Expand message',
+} as const;

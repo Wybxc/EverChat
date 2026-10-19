@@ -13,7 +13,7 @@ test('immutable selected-branch sharing stays anonymous, fully readable and dele
   const previous = await request.get('/api/settings/providers').then((r) => r.json());
   const conversationId = crypto.randomUUID(),
     providerId = crypto.randomUUID();
-  const anonymous = await browser.newContext();
+  const anonymous = await browser.newContext({ locale: 'zh-CN' });
   const secretText = 'private-system-must-not-leak',
     modelName = '公开模型显示名',
     providerName = 'private-provider-must-not-leak';
@@ -365,7 +365,7 @@ test('large snapshots load completely in one response and deletion invalidates a
       .map((b) => b.text)
       .join('');
     expect(content).toBe(text);
-    const anonymous = await browser.newContext();
+    const anonymous = await browser.newContext({ locale: 'zh-CN' });
     try {
       const page = await anonymous.newPage(),
         calls: string[] = [];

@@ -1,0 +1,18 @@
+export default {
+  language: '语言',
+  system: '跟随系统',
+  close: '关闭',
+  cancel: '取消',
+  save: '保存',
+  edit: '编辑',
+  delete: '删除',
+  retry: '重试',
+  loading: '读取中',
+  copy: '复制',
+  copied: '已复制',
+  copyFailed: '复制失败，请重试',
+  showApiKey: '显示 API 密钥',
+  hideApiKey: '隐藏 API 密钥',
+  collapseMessage: '收起消息',
+  expandMessage: '展开消息',
+} as const;

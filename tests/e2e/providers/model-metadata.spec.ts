@@ -121,6 +121,7 @@ test('unknown model metadata is visible, editable, automatically saved across de
     await expect(window).toHaveValue('65536');
     await expect(maximum).toHaveValue('2048');
     const other = await browser.newContext({
+      locale: 'zh-CN',
       baseURL: 'http://127.0.0.1:5174',
       storageState: await context.storageState(),
     });

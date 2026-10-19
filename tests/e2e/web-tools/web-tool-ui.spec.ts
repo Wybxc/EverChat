@@ -222,6 +222,7 @@ test('web settings autosave, validate ceilings, reveal explicitly, hide across t
     await space(page);
     await expect(field).toHaveValue('');
     const second = await browser.newContext({
+      locale: 'zh-CN',
       baseURL: origin,
       storageState: await context.storageState(),
       viewport: { width: 390, height: 700 },

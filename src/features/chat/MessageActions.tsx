@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import './locales';
 import { IconButton } from '../../components/IconButton';
 import { ActionMenuItem, ActionMenuSeparator } from '../../components/ActionMenu';
 import { Spinner } from '@/components/ui/spinner';
@@ -52,6 +54,8 @@ export function MessageActions({
   selectBranch: () => void;
   showFollowing: () => void;
 }) {
+  const { t } = useTranslation('chat', { useSuspense: false });
+
   const active = isActive(message),
     user = message.role === 'user';
   return (
@@ -65,10 +69,10 @@ export function MessageActions({
           className="message-following rounded-md px-2 text-xs text-foreground hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
           onClick={showFollowing}
         >
-          查看后续
+          {t(($) => $.viewContinuation)}
         </button>
       )}
-      <IconButton type="button" onClick={copy} label="复制消息">
+      <IconButton type="button" onClick={copy} label={t(($) => $.copyMessage)}>
         {copied ? (
           <Check className="h-[0.875rem] w-[0.875rem]" />
         ) : (
@@ -76,13 +80,13 @@ export function MessageActions({
         )}
       </IconButton>
       {user ? (
-        <IconButton type="button" onClick={quote} label="引用消息">
+        <IconButton type="button" onClick={quote} label={t(($) => $.quoteMessage)}>
           <Quote className="h-[0.875rem] w-[0.875rem]" />
         </IconButton>
       ) : (
         <IconButton
           type="button"
-          label="重新生成"
+          label={t(($) => $.regenerate)}
           disabled={active || busy || !canRetry}
           onClick={retry}
         >
@@ -93,31 +97,36 @@ export function MessageActions({
         type="button"
         onClick={edit}
         data-message-edit=""
-        label={user ? '编辑提问' : '编辑回答'}
+        label={user ? t(($) => $.editQuestion) : t(($) => $.editAnswer)}
         disabled={active || busy || (!user && !navigator.onLine)}
       >
         <Pencil className="size-3.5" />
       </IconButton>
       <ActionMenu
-        label="更多消息操作"
+        label={t(($) => $.moreMessageActions)}
         icon={<MoreHorizontal className="h-[1.0625rem] w-[1.0625rem]" />}
         placement="dropdown-top dropdown-end"
       >
         {!user && (
-          <ActionMenuItem onSelect={quote} aria-label="引用消息">
+          <ActionMenuItem onSelect={quote} aria-label={t(($) => $.quoteMessage)}>
             <Quote className="h-[0.9375rem] w-[0.9375rem]" />
-            引用
+            {t(($) => $.quote)}
           </ActionMenuItem>
         )}
-        <ActionMenuItem disabled={!canFork || forking} onSelect={fork} aria-label="复制到新对话">
-          {forking ? <Spinner /> : <Copy className="h-[0.9375rem] w-[0.9375rem]" />}复制到新对话
+        <ActionMenuItem
+          disabled={!canFork || forking}
+          onSelect={fork}
+          aria-label={t(($) => $.copyToNewChat)}
+        >
+          {forking ? <Spinner /> : <Copy className="h-[0.9375rem] w-[0.9375rem]" />}
+          {t(($) => $.copyToNewChat)}
         </ActionMenuItem>
         {!user && message.status === 'completed' && (
           <>
             <ActionMenuSeparator />
             <ActionMenuItem onSelect={selectBranch}>
               <GitBranch className="size-4" />
-              从这里继续
+              {t(($) => $.continueHere)}
             </ActionMenuItem>
           </>
         )}
@@ -125,17 +134,17 @@ export function MessageActions({
         <ActionMenuItem
           disabled={active || busy || !navigator.onLine}
           onSelect={remove}
-          aria-label="删除消息"
+          aria-label={t(($) => $.deleteMessage)}
         >
           <Trash2 className="h-[0.9375rem] w-[0.9375rem]" />
-          删除消息
+          {t(($) => $.deleteMessage)}
         </ActionMenuItem>
       </ActionMenu>
       {!user && !active && (
         <GenerationMetadata generation={message.generation} messageId={message.id} />
       )}
       {!user && message.revisionOf && !message.generation && (
-        <span className="px-1 text-xs">手动编辑</span>
+        <span className="px-1 text-xs">{t(($) => $.manuallyEdited)}</span>
       )}
     </div>
   );

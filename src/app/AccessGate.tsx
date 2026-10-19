@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import './locales';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -28,6 +30,8 @@ export function AccessGate({
     selectTab: (tab: SettingsTab) => void;
   };
 }) {
+  const { t } = useTranslation('app', { useSuspense: false });
+
   const [online, setOnline] = useState(navigator.onLine);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
@@ -64,7 +68,7 @@ export function AccessGate({
           >
             <SidebarHeader toggle={toggle} />
             <div className="min-h-0 flex-1 overflow-y-auto px-4">
-              {status === 'loading' && <LoadingContent label="正在读取对话列表" />}
+              {status === 'loading' && <LoadingContent label={t(($) => $.loadingConversations)} />}
             </div>
             <SpaceSettingsButton
               open={() => {
@@ -82,14 +86,14 @@ export function AccessGate({
               ref={trigger}
               className={`h-11 w-11 ${desktop && !collapsed ? 'hidden' : ''}`}
               onClick={toggle}
-              aria-label="打开对话列表"
+              aria-label={t(($) => $.openSidebar)}
               aria-expanded={desktop ? !collapsed : sidebarOpen}
             >
               <Menu className="size-5" />
             </Button>
             <p className="min-w-0 flex-1 text-sm font-medium">EverChat</p>
             <span role="status" className="px-3 text-xs text-muted-foreground">
-              {status === 'loading' ? '连接中' : '未连接'}
+              {status === 'loading' ? t(($) => $.connecting) : t(($) => $.disconnected)}
             </span>
           </>
         }
@@ -97,22 +101,22 @@ export function AccessGate({
         <section className="mx-auto flex w-full max-w-[49rem] flex-1 flex-col justify-center gap-5 px-4 pb-16">
           {status === 'loading' ? (
             <div className="rounded-3xl border border-input p-2.5" aria-busy="true">
-              <LoadingContent label="正在确认身份" />
+              <LoadingContent label={t(($) => $.checkingIdentity)} />
             </div>
           ) : (
             <>
               <p role="alert" className="text-sm text-foreground">
                 {status === 'denied'
-                  ? '当前账号没有访问权限。'
+                  ? t(($) => $.accessDenied)
                   : status === 'unavailable'
-                    ? error || '暂时无法连接。'
+                    ? error || t(($) => $.connectionUnavailable)
                     : status === 'signed-out'
-                      ? error || '本地记录已清除。联网后可完成退出。'
-                      : '请登录以继续。'}
+                      ? error || t(($) => $.signedOutOffline)
+                      : t(($) => $.signInRequired)}
               </p>
               {status === 'unavailable' && (
                 <Button variant="secondary" onClick={onRetry}>
-                  重新连接
+                  {t(($) => $.reconnect)}
                 </Button>
               )}
               {status === 'signed-out' ? (
@@ -120,13 +124,13 @@ export function AccessGate({
                   disabled={!error && !online}
                   onClick={error ? onRetry : () => completeSignOut(logoutUrl)}
                 >
-                  {error ? '重试清除本地记录' : '完成退出'}
+                  {error ? t(($) => $.retryClearData) : t(($) => $.finishSignOut)}
                 </Button>
               ) : (
                 <Button
                   onClick={status === 'denied' ? () => completeSignOut(logoutUrl) : resumeAccess}
                 >
-                  {status === 'denied' ? '切换账号' : '重新登录'}
+                  {status === 'denied' ? t(($) => $.switchAccount) : t(($) => $.signInAgain)}
                 </Button>
               )}
             </>

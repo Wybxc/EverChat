@@ -311,7 +311,7 @@ test('user and assistant copy actions open independent URLs, preserve the source
 }) => {
   const fixture = await generationSource(page.request),
     copies: string[] = [];
-  const secondDevice = await browser.newContext();
+  const secondDevice = await browser.newContext({ locale: 'zh-CN' });
   try {
     const first = await fixture.send('第一条问题');
     await fixture.done();

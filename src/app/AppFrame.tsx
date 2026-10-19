@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import { t } from './locales';
 import type { ReactNode } from 'react';
 import { Plus, Settings, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -15,6 +17,8 @@ export function AppFrame({
   children: ReactNode;
   dropOverlay?: ReactNode;
 }) {
+  const { t } = useTranslation('app', { useSuspense: false });
+
   return (
     <div className="flex h-dvh min-h-0 overflow-hidden" data-testid="app-frame">
       {sidebar}
@@ -28,11 +32,18 @@ export function AppFrame({
 }
 
 export function SidebarHeader({ toggle, create }: { toggle: () => void; create?: () => void }) {
+  const { t } = useTranslation('app', { useSuspense: false });
+
   return (
     <>
       <div className="flex min-w-0 shrink-0 items-center justify-between min-h-[56px] gap-2 px-3 py-1 [&>button]:shrink-0 [&>div]:min-w-0 [&>div]:overflow-hidden">
         <Brand small />
-        <Button variant="ghost" size="icon" aria-label="收起侧栏" onClick={toggle}>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={t(($) => $.collapseSidebar)}
+          onClick={toggle}
+        >
           <X className="size-[1.125rem]" />
         </Button>
       </div>
@@ -41,14 +52,14 @@ export function SidebarHeader({ toggle, create }: { toggle: () => void; create?:
           variant="secondary"
           disabled={!create}
           onClick={create}
-          aria-label="开启新对话"
+          aria-label={t(($) => $.newChat)}
           aria-keyshortcuts={ariaShortcut('new-chat')}
-          title={`开启新对话（${shortcutLabel('new-chat')}）`}
+          title={t(($) => $.newChatShortcut, { shortcut: shortcutLabel('new-chat') })}
           className="min-h-[44px] h-auto w-full justify-between gap-1 bg-accent px-3 py-1 text-sm font-medium text-accent-foreground"
         >
           <span className="flex min-w-0 items-center gap-2">
             <Plus className="size-[1.0625rem] shrink-0" />
-            <span className="truncate">开启新对话</span>
+            <span className="truncate">{t(($) => $.newChat)}</span>
           </span>
           <kbd className="shrink-0 text-xs text-muted-foreground">{shortcutLabel('new-chat')}</kbd>
         </Button>
@@ -58,25 +69,29 @@ export function SidebarHeader({ toggle, create }: { toggle: () => void; create?:
 }
 
 export function SpaceSettingsButton({ open }: { open: () => void }) {
+  const { t } = useTranslation('app', { useSuspense: false });
+
   return (
     <Button
       variant="ghost"
-      aria-label="空间设置"
+      aria-label={t(($) => $.spaceSettings)}
       className="mx-2 mb-2 flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-3 py-1.5 text-left hover:bg-border"
       onClick={open}
     >
       <span className="flex h-7 w-7 items-center justify-center rounded-full bg-background text-xs">
-        我
+        {t(($) => $.me)}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-xs font-medium">私人空间</span>
+        <span className="block truncate text-xs font-medium">{t(($) => $.privateSpace)}</span>
       </span>
       <Settings className="size-4" />
     </Button>
   );
 }
 
-export function LoadingContent({ label = '读取中' }: { label?: string }) {
+export function LoadingContent({ label = t(($) => $.loading) }: { label?: string }) {
+  const { t } = useTranslation('app', { useSuspense: false });
+
   return (
     <div
       role="status"

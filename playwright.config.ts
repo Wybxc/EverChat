@@ -14,7 +14,7 @@ export default defineConfig({
   workers: 1,
   timeout: 60_000,
   expect: { timeout: 20_000 },
-  use: { baseURL: origin, trace: 'retain-on-failure' },
+  use: { baseURL: origin, trace: 'retain-on-failure', locale: 'zh-CN' },
   ...(pwa
     ? {
         projects: [

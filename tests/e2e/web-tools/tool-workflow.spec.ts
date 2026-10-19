@@ -342,7 +342,10 @@ test('tool process sync survives page closure and a second device, with no priva
   page.on('websocket', (socket) =>
     socket.on('framereceived', ({ payload }) => frames.push(String(payload))),
   );
-  const second = await browser.newContext({ storageState: await context.storageState() });
+  const second = await browser.newContext({
+    locale: 'zh-CN',
+    storageState: await context.storageState(),
+  });
   try {
     await page.goto(`/c/${f.id}`);
     await expect(page.getByTestId('tool-activity')).toContainText('执行中');

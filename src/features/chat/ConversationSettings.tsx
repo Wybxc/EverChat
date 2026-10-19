@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import './locales';
 import { MAX_MODEL_TOKENS } from '../../../shared/models/metadata';
 import { MAX_SYSTEM_PROMPT_LENGTH } from '../../../shared/conversation/limits';
 import { Modal, ModalTitle } from '../../components/Modal';
@@ -38,9 +40,9 @@ const withContextDefaults = (settings: ConversationSettings) =>
     : settings;
 
 const parameterTabs = [
-  { id: 'general', label: '常规' },
-  { id: 'context', label: '上下文' },
-  { id: 'tools', label: '联网' },
+  { id: 'general', label: 'general' },
+  { id: 'context', label: 'context' },
+  { id: 'tools', label: 'webTools' },
 ] as const;
 type ParameterTab = (typeof parameterTabs)[number]['id'];
 
@@ -61,6 +63,8 @@ function NumberSetting({
   disabled?: boolean;
   change: (value: number | null) => void;
 }) {
+  const { t } = useTranslation('chat', { useSuspense: false });
+
   const input = useRef<HTMLInputElement>(null);
   const [text, setText] = useState(value === null ? '' : String(value));
   useEffect(() => {
@@ -82,7 +86,7 @@ function NumberSetting({
         aria-label={label}
         aria-invalid={invalid || undefined}
         className="w-full border-input"
-        placeholder="未设置"
+        placeholder={t(($) => $.notSet)}
         min={min}
         max={max}
         step={integer ? 1 : 'any'}
@@ -133,6 +137,8 @@ export function ConversationSettingsDialog({
   presetChangeRef?: RefObject<((prompt: string | null) => void) | null>;
   defaultOutputBudget?: number | null;
 }) {
+  const { t } = useTranslation('chat', { useSuspense: false });
+
   const titleId = useId();
   const scroll = useRef<HTMLDivElement>(null);
   const [tab, setTab] = useState<ParameterTab>(focusTools ? 'tools' : 'general');
@@ -147,7 +153,7 @@ export function ConversationSettingsDialog({
     const autosave = new Autosave(
       withContextDefaults(cached?.dirty ? cached.settings : initial),
       async (settings: ConversationSettings) => {
-        if (epoch !== storageEpoch()) throw new Error('登录状态已改变。');
+        if (epoch !== storageEpoch()) throw new Error(t(($) => $.sessionChanged));
         if (id) return api<ConversationSettings>(`/conversations/${id}/settings`, 'PUT', settings);
         write('conversation-settings:new', settings);
         return settings;
@@ -158,10 +164,7 @@ export function ConversationSettingsDialog({
       },
       (_saved, draft) => {
         const result = v.safeParse(conversationSettingsSchema, draft);
-        if (!result.success)
-          throw new Error(
-            '请检查参数：Temperature 为 0–2，Top P 为 0–1；预算和条数须为正整数，自动压缩阈值为 50–95%。',
-          );
+        if (!result.success) throw new Error(t(($) => $.invalidParameters));
         return result.output;
       },
     );
@@ -256,9 +259,14 @@ export function ConversationSettingsDialog({
       <div className="settings-dialog settings-fields flex h-[38rem] max-h-[85dvh] w-full max-w-xl flex-col overflow-hidden p-0">
         <div className="flex shrink-0 items-center justify-between gap-3 px-3 py-1.5 sm:px-4">
           <ModalTitle id={titleId} className="text-lg font-semibold">
-            {id ? '会话参数' : '新对话参数'}
+            {id ? t(($) => $.chatParameters) : t(($) => $.newChatParameters)}
           </ModalTitle>
-          <Button variant="ghost" size="icon" onClick={close} aria-label="关闭会话参数">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={close}
+            aria-label={t(($) => $.closeParameters)}
+          >
             <X className="h-[1.125rem] w-[1.125rem]" />
           </Button>
         </div>
@@ -269,7 +277,7 @@ export function ConversationSettingsDialog({
         >
           <TabsList
             variant="line"
-            aria-label="会话参数分类"
+            aria-label={t(($) => $.parameterCategories)}
             className="mx-3 w-auto shrink-0 self-stretch justify-start px-0 aria-[orientation=horizontal]:h-auto sm:mx-4"
           >
             {parameterTabs.map((item) => (
@@ -279,7 +287,7 @@ export function ConversationSettingsDialog({
                 value={item.id}
                 aria-controls={`${titleId}-panel-${item.id}`}
               >
-                {item.label}
+                {t(($) => $[item.label])}
               </TabsTrigger>
             ))}
           </TabsList>
@@ -308,10 +316,10 @@ export function ConversationSettingsDialog({
                 />
                 {settings.systemPrompt !== null && (
                   <label className="block space-y-1 text-sm">
-                    <span>会话系统提示词</span>
+                    <span>{t(($) => $.systemPrompt)}</span>
                     <Textarea
                       className="min-h-32 w-full border-input"
-                      aria-label="会话系统提示词"
+                      aria-label={t(($) => $.systemPrompt)}
                       maxLength={MAX_SYSTEM_PROMPT_LENGTH}
                       value={settings.systemPrompt}
                       onChange={(event) => update({ systemPrompt: event.currentTarget.value })}
@@ -350,8 +358,15 @@ export function ConversationSettingsDialog({
               {(!support || support.temperatureMax === null || support.topPMin === null) && (
                 <p className="text-xs text-muted-foreground">
                   {!support
-                    ? '请先选择模型。'
-                    : `当前模型不支持调整 ${[support.temperatureMax === null ? 'Temperature' : '', support.topPMin === null ? 'Top P' : ''].filter(Boolean).join('、')}。`}
+                    ? t(($) => $.chooseModel)
+                    : t(($) => $.unsupportedSampling, {
+                        parameters: [
+                          support.temperatureMax === null ? 'Temperature' : '',
+                          support.topPMin === null ? 'Top P' : '',
+                        ]
+                          .filter(Boolean)
+                          .join(', '),
+                      })}
                 </p>
               )}
             </section>
@@ -363,10 +378,10 @@ export function ConversationSettingsDialog({
               className="space-y-3"
             >
               <label className="block space-y-1 text-sm">
-                <span>输出预算</span>
+                <span>{t(($) => $.outputBudget)}</span>
                 <NativeSelect
                   className="w-full border-input"
-                  aria-label="输出预算方式"
+                  aria-label={t(($) => $.outputBudgetMode)}
                   value={limitMode}
                   onChange={(event) =>
                     update({
@@ -379,18 +394,18 @@ export function ConversationSettingsDialog({
                   }
                 >
                   <option value="inherit">
-                    默认
+                    {t(($) => $.default)}
                     {defaultOutputBudget
                       ? `（${defaultOutputBudget.toLocaleString()} Tokens）`
-                      : '（不设置）'}
+                      : t(($) => $.notSetParenthetical)}
                   </option>
-                  <option value="unset">不设置</option>
-                  <option value="custom">自定义</option>
+                  <option value="unset">{t(($) => $.unset)}</option>
+                  <option value="custom">{t(($) => $.custom)}</option>
                 </NativeSelect>
               </label>
               {limitMode === 'custom' && (
                 <NumberSetting
-                  label="输出 Token 预算"
+                  label={t(($) => $.outputTokenBudget)}
                   value={settings.maxOutputTokens}
                   min={1}
                   max={MAX_MODEL_TOKENS}
@@ -410,11 +425,11 @@ export function ConversationSettingsDialog({
                     })
                   }
                 />
-                使用历史摘要
+                {t(($) => $.useSummaries)}
               </label>
               <div className="grid gap-3 sm:grid-cols-2">
                 <NumberSetting
-                  label="上下文 Token 预算"
+                  label={t(($) => $.contextTokenBudget)}
                   value={settings.contextBudget}
                   min={1}
                   max={10000000}
@@ -422,7 +437,7 @@ export function ConversationSettingsDialog({
                   change={(contextBudget) => update({ contextBudget })}
                 />
                 <NumberSetting
-                  label="最近历史消息条数"
+                  label={t(($) => $.recentMessages)}
                   value={settings.recentMessages}
                   min={1}
                   max={1000}
@@ -430,9 +445,7 @@ export function ConversationSettingsDialog({
                   change={(recentMessages) => update({ recentMessages })}
                 />
               </div>
-              <p className="text-xs text-muted-foreground">
-                留空按模型窗口；预算包含系统提示词和本次输入，历史按完整轮次选取。
-              </p>
+              <p className="text-xs text-muted-foreground">{t(($) => $.contextBudgetHint)}</p>
               <label className="flex min-h-11 items-center gap-2 text-sm">
                 <Checkbox
                   checked={compression.enabled}
@@ -443,12 +456,12 @@ export function ConversationSettingsDialog({
                     })
                   }
                 />
-                自动压缩历史
+                {t(($) => $.autoCompaction)}
               </label>
               {compression.enabled && (
                 <div className="space-y-3">
                   <NumberSetting
-                    label="自动压缩阈值（%）"
+                    label={t(($) => $.compactionThreshold)}
                     value={compression.threshold}
                     min={50}
                     max={95}
@@ -460,10 +473,10 @@ export function ConversationSettingsDialog({
                     }
                   />
                   <label className="block space-y-1 text-sm">
-                    <span>自动摘要模型</span>
+                    <span>{t(($) => $.autoSummaryModel)}</span>
                     <NativeSelect
                       className="w-full border-input"
-                      aria-label="自动摘要模型"
+                      aria-label={t(($) => $.autoSummaryModel)}
                       value={compressionModel}
                       onChange={(event) => {
                         const selected = models.find(
@@ -479,9 +492,9 @@ export function ConversationSettingsDialog({
                         });
                       }}
                     >
-                      <option value="">当前聊天模型</option>
+                      <option value="">{t(($) => $.currentModel)}</option>
                       {!compressionModelAvailable && (
-                        <option value={compressionModel}>所选模型不可用</option>
+                        <option value={compressionModel}>{t(($) => $.modelUnavailable)}</option>
                       )}
                       {models.map((item) => (
                         <option key={modelSelectionKey(item)} value={modelSelectionKey(item)}>
@@ -491,13 +504,11 @@ export function ConversationSettingsDialog({
                     </NativeSelect>
                   </label>
                   <p className="text-xs text-muted-foreground">
-                    按摘要及未覆盖的完整历史估算触发；条数限制只用于压缩后的原文。失败后须主动重试。
+                    {t(($) => $.compactionThresholdHint)}
                   </p>
                 </div>
               )}
-              <p className="text-xs text-muted-foreground">
-                开启后会额外调用摘要模型，产生供应商费用。原始消息保留。
-              </p>
+              <p className="text-xs text-muted-foreground">{t(($) => $.compactionCostHint)}</p>
             </section>
             <section
               role="tabpanel"
@@ -508,7 +519,7 @@ export function ConversationSettingsDialog({
             >
               <div className="space-y-2">
                 <label className="flex min-h-11 items-center justify-between gap-3 text-sm">
-                  <span>联网搜索</span>
+                  <span>{t(($) => $.webSearch)}</span>
                   <Switch
                     checked={settings.tools.length > 0}
                     disabled={
@@ -520,10 +531,10 @@ export function ConversationSettingsDialog({
                   />
                 </label>
                 {!canAttemptCapability(model?.metadata, 'toolCalls') && (
-                  <p className="text-xs text-muted-foreground">当前模型不支持工具调用。</p>
+                  <p className="text-xs text-muted-foreground">{t(($) => $.toolsUnsupported)}</p>
                 )}
                 {model?.metadata.sources.toolCalls === 'fallback' && (
-                  <p className="text-xs text-muted-foreground">工具能力未识别，可尝试。</p>
+                  <p className="text-xs text-muted-foreground">{t(($) => $.toolsUnknown)}</p>
                 )}
                 <Button
                   variant="secondary"
@@ -534,20 +545,20 @@ export function ConversationSettingsDialog({
                     manageWebTools();
                   }}
                 >
-                  {service.data?.hasApiKey ? '联网服务设置' : '配置联网服务'}
+                  {service.data?.hasApiKey
+                    ? t(($) => $.webServiceSettings)
+                    : t(($) => $.configureWebService)}
                 </Button>
               </div>{' '}
               {service.isError && !service.data && (
                 <div className="flex items-center gap-2 text-xs">
-                  <span role="alert">无法读取联网服务配置。</span>
+                  <span role="alert">{t(($) => $.webSettingsFailed)}</span>
                   <Button variant="secondary" type="button" onClick={() => void service.refetch()}>
-                    重新读取
+                    {t(($) => $.reload)}
                   </Button>
                 </div>
               )}
-              <p className="text-xs text-muted-foreground">
-                开启后可能增加搜索服务与模型费用。每个新对话默认关闭。
-              </p>
+              <p className="text-xs text-muted-foreground">{t(($) => $.webCostHint)}</p>
             </section>
           </div>
         </Tabs>
@@ -573,7 +584,7 @@ export function ConversationSettingsDialog({
                     );
                   }}
                 >
-                  查看错误
+                  {t(($) => $.viewError)}
                 </Button>
               )}
             </div>
@@ -582,13 +593,13 @@ export function ConversationSettingsDialog({
             <span role="status" className="text-xs text-muted-foreground">
               {status === 'saved'
                 ? id
-                  ? '已保存'
-                  : '已保存到本机'
+                  ? t(($) => $.saved)
+                  : t(($) => $.savedLocally)
                 : status === 'saving'
-                  ? '保存中…'
+                  ? t(($) => $.saving)
                   : status === 'waiting'
-                    ? '保存中…'
-                    : '未保存'}
+                    ? t(($) => $.saving)
+                    : t(($) => $.notSaved)}
             </span>
             <div className="flex flex-wrap gap-2">
               <Button
@@ -596,7 +607,7 @@ export function ConversationSettingsDialog({
                 type="button"
                 onClick={() => update({ ...DEFAULT_CONVERSATION_SETTINGS })}
               >
-                恢复继承
+                {t(($) => $.restoreInherited)}
               </Button>
               {status === 'error' && (
                 <Button
@@ -604,7 +615,7 @@ export function ConversationSettingsDialog({
                   type="button"
                   onClick={() => void store.flush().catch(() => {})}
                 >
-                  重试保存
+                  {t(($) => $.retrySave)}
                 </Button>
               )}
             </div>

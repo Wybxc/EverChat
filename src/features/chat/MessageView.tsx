@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import './locales';
 import { Spinner } from '@/components/ui/spinner';
 import { Infinity as InfinityIcon } from 'lucide-react';
 import { useRef, useState, type Ref } from 'react';
@@ -58,6 +60,8 @@ export function MessageView({
     cancel: () => void;
   };
 }) {
+  const { t } = useTranslation('chat', { useSuspense: false });
+
   const [copied, setCopied] = useState(false);
   const [forking, setForking] = useState(false),
     [forkError, setForkError] = useState('');
@@ -79,7 +83,7 @@ export function MessageView({
     try {
       await onFork();
     } catch (failure) {
-      setForkError(failure instanceof Error ? failure.message : '复制失败，请重试。');
+      setForkError(failure instanceof Error ? failure.message : t(($) => $.copyFailed));
     } finally {
       forkLock.current = false;
       setForking(false);
@@ -93,7 +97,7 @@ export function MessageView({
         data-deleted="true"
         className={`py-2 text-xs text-muted-foreground ${message.role === 'user' ? 'text-right' : ''}`}
       >
-        <p>消息已删除</p>
+        <p>{t(($) => $.messageDeleted)}</p>
         <div className={`flex ${message.role === 'user' ? 'justify-end' : ''}`}>
           <BranchSwitcher {...branch} />
         </div>
@@ -175,13 +179,15 @@ export function MessageView({
           <span className="flex items-center gap-1.5 text-muted-foreground">
             <Spinner />
             {message.waitingForSummary
-              ? '等待历史摘要'
+              ? t(($) => $.waitingSummary)
               : message.status === 'queued'
-                ? '排队中'
-                : '生成中'}
+                ? t(($) => $.queued)
+                : t(($) => $.generating)}
           </span>
         )}
-        {message.status === 'failed' && toolErrorVisible && <span>生成失败</span>}
+        {message.status === 'failed' && toolErrorVisible && (
+          <span>{t(($) => $.generationFailed)}</span>
+        )}
       </div>
       <ReasoningContent message={message} />
       {editing ? (
@@ -194,12 +200,12 @@ export function MessageView({
         />
       ) : isActive(message) && !messageText(message, 'reasoning') && !message.tools ? (
         <p className="py-2 text-sm text-muted-foreground">
-          {message.waitingForSummary ? '压缩历史后开始回答…' : '准备中…'}
+          {message.waitingForSummary ? t(($) => $.compactionBeforeAnswer) : t(($) => $.preparing)}
         </p>
       ) : null}
       {message.status === 'failed' && (!toolErrorVisible || message.generation?.failure) && (
         <ProviderFailureView
-          summary={message.error ?? '生成失败，已保存部分内容。'}
+          summary={message.error ?? t(($) => $.partialAnswerSaved)}
           failure={message.generation?.failure}
           showSummary={!toolErrorVisible}
           stateKey={`failure:${message.id}`}
@@ -207,7 +213,7 @@ export function MessageView({
         />
       )}
       {message.status === 'cancelled' && (
-        <p className="mt-4 text-xs text-muted-foreground">已停止</p>
+        <p className="mt-4 text-xs text-muted-foreground">{t(($) => $.stopped)}</p>
       )}
       {!editing && actions}
       {forkError && (

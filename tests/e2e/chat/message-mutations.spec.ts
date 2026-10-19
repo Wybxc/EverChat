@@ -380,7 +380,7 @@ test('editing and deleting an answer preserves drafts and focus while another de
     });
   });
   const fixture = await setup(page.request);
-  const second = await browser.newContext();
+  const second = await browser.newContext({ locale: 'zh-CN' });
   try {
     await fixture.send('界面测试');
     await fixture.done();

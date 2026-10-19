@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import './locales';
 import { Button } from '@/components/ui/button';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, Search, X } from 'lucide-react';
@@ -59,6 +61,8 @@ export function ConversationSearch({
   close: () => void;
   initial?: { query: string; key: string };
 }) {
+  const { t } = useTranslation('chat', { useSuspense: false });
+
   const input = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState(initial?.query ?? '');
   const [status, setStatus] = useState({ count: 0, index: 0, excerpt: '', reasoning: false });
@@ -182,7 +186,7 @@ export function ConversationSearch({
     <div
       id="conversation-search"
       role="search"
-      aria-label="当前对话搜索"
+      aria-label={t(($) => $.conversationSearch)}
       className="shrink-0 border-b border-border bg-muted px-3 py-2 sm:px-8"
       onKeyDown={(event) => {
         if (event.key === 'Escape' && !event.nativeEvent.isComposing) {
@@ -196,8 +200,8 @@ export function ConversationSearch({
           <Search className="h-[0.875rem] w-[0.875rem]" />
           <input
             ref={input}
-            aria-label="查找当前对话"
-            placeholder="查找当前分支"
+            aria-label={t(($) => $.findChat)}
+            placeholder={t(($) => $.findBranch)}
             maxLength={200}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
@@ -214,15 +218,20 @@ export function ConversationSearch({
             {query.trim()
               ? status.count
                 ? `${status.index + 1} / ${status.count}`
-                : '无结果'
+                : t(($) => $.noResults)
               : ''}
           </span>
           <span className="sr-only">
             {query.trim()
               ? status.count
-                ? `第 ${status.index + 1} 个匹配，共 ${status.count} 个。${status.reasoning ? '思考内容' : '正文'}：${status.excerpt}`
-                : '没有匹配结果'
-              : '输入关键词查找'}
+                ? t(($) => $.searchMatchDescription, {
+                    position: status.index + 1,
+                    count: status.count,
+                    field: status.reasoning ? t(($) => $.reasoningContent) : t(($) => $.body),
+                    excerpt: status.excerpt,
+                  })
+                : t(($) => $.noMatches)
+              : t(($) => $.searchHint)}
           </span>
         </span>
         <Button
@@ -230,7 +239,7 @@ export function ConversationSearch({
           size="icon"
           type="button"
           className="h-11 w-11"
-          aria-label="上一个匹配"
+          aria-label={t(($) => $.previousMatch)}
           disabled={!status.count}
           onClick={() => move.current(-1)}
         >
@@ -241,7 +250,7 @@ export function ConversationSearch({
           size="icon"
           type="button"
           className="h-11 w-11"
-          aria-label="下一个匹配"
+          aria-label={t(($) => $.nextMatch)}
           disabled={!status.count}
           onClick={() => move.current(1)}
         >
@@ -252,7 +261,7 @@ export function ConversationSearch({
           size="icon"
           type="button"
           className="h-11 w-11"
-          aria-label="关闭对话搜索"
+          aria-label={t(($) => $.closeSearch)}
           onClick={close}
         >
           <X className="h-[0.9375rem] w-[0.9375rem]" />

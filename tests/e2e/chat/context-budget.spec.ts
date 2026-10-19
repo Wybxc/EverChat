@@ -243,7 +243,7 @@ test('composer estimates reflect model prompts and autosaved budgets across devi
   context,
 }) => {
   const fixture = await setup(page.request),
-    other = await browser.newContext();
+    other = await browser.newContext({ locale: 'zh-CN' });
   try {
     expect(
       (await fixture.save({ ...defaults, contextBudget: 300, recentMessages: 3 })).status(),

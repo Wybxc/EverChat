@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import './locales';
 import { Modal, ModalTitle } from '../../components/Modal';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
@@ -18,6 +20,8 @@ export function MessageDeleteDialog({
   close: () => void;
   restoreCompletedFocus?: () => void;
 }) {
+  const { t } = useTranslation('chat', { useSuspense: false });
+
   const titleId = useId(),
     cancel = useRef<HTMLButtonElement>(null);
   const [busy, setBusy] = useState(false),
@@ -33,7 +37,7 @@ export function MessageDeleteDialog({
       confirmed.current = true;
       close();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '操作失败，请重试。');
+      setError(cause instanceof Error ? cause.message : t(($) => $.operationFailed));
     } finally {
       setBusy(false);
     }
@@ -58,7 +62,7 @@ export function MessageDeleteDialog({
       <div className="p-5 flex max-h-[85dvh] max-w-2xl flex-col overflow-hidden">
         <div className="mb-4 flex shrink-0 items-center justify-between gap-3">
           <ModalTitle id={titleId} className="text-lg font-semibold">
-            {message.summary ? '删除摘要' : '删除消息'}
+            {message.summary ? t(($) => $.deleteSummary) : t(($) => $.deleteMessage)}
           </ModalTitle>
           <div>
             <Button
@@ -66,7 +70,7 @@ export function MessageDeleteDialog({
               size="icon"
               type="button"
               onClick={close}
-              aria-label="关闭消息操作"
+              aria-label={t(($) => $.closeMessageActions)}
               disabled={busy}
             >
               <X className="h-[1.125rem] w-[1.125rem]" />
@@ -76,10 +80,10 @@ export function MessageDeleteDialog({
         <form className="flex min-h-0 flex-col" onSubmit={(event) => void submit(event)}>
           <p>
             {message.summary
-              ? '删除摘要？原始消息仍保留。'
+              ? t(($) => $.confirmDeleteSummary)
               : affectsSummaries
-                ? '删除这条消息？覆盖它的历史摘要也会清除。'
-                : '删除这条消息？'}
+                ? t(($) => $.confirmDeleteCoveredMessage)
+                : t(($) => $.confirmDeleteMessage)}
           </p>
           {error && (
             <p role="alert" className="mt-3 shrink-0 text-sm">
@@ -94,11 +98,11 @@ export function MessageDeleteDialog({
               disabled={busy}
               onClick={() => close()}
             >
-              取消
+              {t(($) => $.cancel)}
             </Button>
             <Button variant="destructive" type="submit" disabled={busy}>
               {busy && <Spinner />}
-              确认删除
+              {t(($) => $.confirmDelete)}
             </Button>
           </div>
         </form>

@@ -1,12 +1,19 @@
+import { useTranslation } from 'react-i18next';
+import './locales';
 import { Button } from '@/components/ui/button';
 import type { ContextEstimate } from '../../../shared/conversation/context-budget';
 import { metadataSourceLabels } from '../../../shared/models/metadata';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { formatNumber } from '../../platform/i18n/format';
 
-const number = new Intl.NumberFormat('zh-CN');
-const compact = new Intl.NumberFormat('zh-CN', { notation: 'compact', maximumFractionDigits: 1 });
+const number = { format: formatNumber };
+const compact = {
+  format: (value: number) => formatNumber(value, { notation: 'compact', maximumFractionDigits: 1 }),
+};
 
 export function ContextEstimateView({ estimate }: { estimate: ContextEstimate }) {
+  const { t } = useTranslation('chat', { useSuspense: false });
+
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -15,14 +22,17 @@ export function ContextEstimateView({ estimate }: { estimate: ContextEstimate })
           type="button"
           data-testid="context-estimate"
           className="context-trigger min-w-11 shrink-0 px-2 text-xs text-muted-foreground"
-          aria-label="查看上下文估算"
-          aria-description={`上下文约 ${number.format(estimate.totalTokens)} / ${number.format(estimate.inputBudget)} Tokens`}
+          aria-label={t(($) => $.viewContextEstimate)}
+          aria-description={t(($) => $.contextDescription, {
+            total: number.format(estimate.totalTokens),
+            budget: number.format(estimate.inputBudget),
+          })}
         >
           ≈{compact.format(estimate.totalTokens)}
         </Button>
       </PopoverTrigger>
       <PopoverContent
-        aria-label="上下文估算"
+        aria-label={t(($) => $.contextEstimate)}
         side="top"
         align="end"
         className="max-h-[var(--radix-popover-content-available-height)] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto overscroll-contain p-4 text-xs"
@@ -34,55 +44,66 @@ export function ContextEstimateView({ estimate }: { estimate: ContextEstimate })
 }
 
 export function ContextEstimateDetails({ estimate }: { estimate: ContextEstimate }) {
+  const { t } = useTranslation('chat', { useSuspense: false });
+
   return (
     <>
       <p>
-        上下文 ≈{number.format(estimate.totalTokens)} / {number.format(estimate.inputBudget)} Tokens
+        {t(($) => $.contextTokens, {
+          total: number.format(estimate.totalTokens),
+          budget: number.format(estimate.inputBudget),
+        })}
       </p>
       <p>
-        输入 ≈{number.format(estimate.inputTokens)} Tokens
-        {estimate.windowSource === 'fallback' ? ' · 模型窗口未识别' : ''}
+        {t(($) => $.inputTokens, { tokens: number.format(estimate.inputTokens) })}
+        {estimate.windowSource === 'fallback' ? t(($) => $.windowUnknown) : ''}
       </p>
       <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2">
-        <dt>系统提示词（估算）</dt>
+        <dt>{t(($) => $.systemEstimate)}</dt>
         <dd>{number.format(estimate.systemTokens)}</dd>
-        <dt>历史（估算）</dt>
+        <dt>{t(($) => $.historyEstimate)}</dt>
         <dd>
-          {number.format(estimate.historyTokens)} · {estimate.retainedMessages} 条
+          {t(($) => $.historyTokens, {
+            tokens: number.format(estimate.historyTokens),
+            count: estimate.retainedMessages,
+          })}
         </dd>
         {estimate.imageTokens !== undefined && (
           <>
-            <dt>其中图片规划额度</dt>
+            <dt>{t(($) => $.imageAllocation)}</dt>
             <dd>{number.format(estimate.imageTokens)}</dd>
           </>
         )}
         {estimate.summaryTokens !== undefined && (
           <>
-            <dt>摘要（估算）</dt>
+            <dt>{t(($) => $.summaryEstimate)}</dt>
             <dd>
-              {number.format(estimate.summaryTokens)} · 覆盖 {estimate.summarizedMessages} 条
+              {t(($) => $.summaryCoverage, {
+                tokens: number.format(estimate.summaryTokens),
+                count: estimate.summarizedMessages ?? 0,
+              })}
             </dd>
           </>
         )}
         {estimate.documentTokens !== undefined && (
           <>
-            <dt>其中文件（估算）</dt>
+            <dt>{t(($) => $.fileEstimate)}</dt>
             <dd>{number.format(estimate.documentTokens)}</dd>
           </>
         )}
-        <dt>模型窗口</dt>
+        <dt>{t(($) => $.modelWindow)}</dt>
         <dd>
           {number.format(estimate.contextWindow)} · {metadataSourceLabels[estimate.windowSource]}
         </dd>
-        <dt>输出预留</dt>
+        <dt>{t(($) => $.outputReserve)}</dt>
         <dd>
           {number.format(estimate.outputReserve)}
-          {estimate.contextScope === 'input' ? '（独立窗口）' : ''}
+          {estimate.contextScope === 'input' ? t(($) => $.separateWindow) : ''}
         </dd>
-        <dt>估算余量</dt>
+        <dt>{t(($) => $.safetyMargin)}</dt>
         <dd>{number.format(estimate.safetyMargin)}</dd>
       </dl>
-      <p className="mt-2">近似值；输出预留不设置请求上限，实际用量以供应商报告为准。</p>
+      <p className="mt-2">{t(($) => $.estimateHint)}</p>
     </>
   );
 }
@@ -94,23 +115,24 @@ export function ContextEstimateNotices({
   estimate: ContextEstimate;
   compressing?: boolean;
 }) {
+  const { t } = useTranslation('chat', { useSuspense: false });
+
   return (
     <div className="text-xs text-muted-foreground">
       {compressing ? (
         <p className="mt-1" data-testid="automatic-compression-preview">
-          发送时先自动压缩历史，会额外调用摘要模型。
+          {t(($) => $.autoCompactionNotice)}
         </p>
       ) : (
         estimate.omittedMessages > 0 && (
           <p className="mt-1" data-testid="context-omission">
-            将省略 {estimate.omittedMessages} 条历史消息，原文仍保留。
+            {t(($) => $.omittedHistory, { count: estimate.omittedMessages })}
           </p>
         )
       )}
       {!compressing && estimate.totalTokens > estimate.inputBudget && (
         <p className="mt-1" data-testid="context-budget-warning">
-          {estimate.summaryTokens ? '系统提示词、摘要与输入' : '系统提示词与输入'}
-          超过预算，请调整后发送。
+          {estimate.summaryTokens ? t(($) => $.summaryOverBudget) : t(($) => $.inputOverBudget)}
         </p>
       )}
     </div>

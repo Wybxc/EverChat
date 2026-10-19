@@ -370,8 +370,8 @@ for (const provider of [
     browser,
   }) => {
     const fixture = await setup(request, provider),
-      first = await browser.newContext(),
-      second = await browser.newContext();
+      first = await browser.newContext({ locale: 'zh-CN' }),
+      second = await browser.newContext({ locale: 'zh-CN' });
     try {
       const page = await first.newPage();
       await login(page, fixture.id);

@@ -1,3 +1,6 @@
+import { useTranslation } from 'react-i18next';
+import './locales';
+import { formatNumber } from '../../platform/i18n/format';
 import { Modal, ModalTitle } from '../../components/Modal';
 import { Button } from '@/components/ui/button';
 import { NativeSelect } from '@/components/ui/native-select';
@@ -32,6 +35,8 @@ export function SummaryDialog({
   close: () => void;
   focusComposer: () => void;
 }) {
+  const { t } = useTranslation('chat', { useSuspense: false });
+
   const titleId = useId(),
     first = useRef<HTMLSelectElement>(null),
     lock = useRef(false),
@@ -74,7 +79,7 @@ export function SummaryDialog({
         modelMetadata: model.metadata,
       }).estimate;
   } catch (error) {
-    preparationError = error instanceof Error ? error.message : '无法构建摘要输入。';
+    preparationError = error instanceof Error ? error.message : t(($) => $.summaryInputFailed);
   }
   const create = async (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -91,7 +96,7 @@ export function SummaryDialog({
       submitted.current = true;
       close();
     } catch (error) {
-      setError(error instanceof Error ? error.message : '无法提交摘要请求。');
+      setError(error instanceof Error ? error.message : t(($) => $.summarySubmitFailed));
     } finally {
       lock.current = false;
       setSending(false);
@@ -116,14 +121,14 @@ export function SummaryDialog({
       <div className="w-full flex max-h-[85dvh] max-w-xl flex-col overflow-hidden p-0">
         <div className="flex shrink-0 items-center justify-between gap-3 p-5">
           <ModalTitle id={titleId} className="text-lg font-semibold">
-            {target ? '重新生成摘要' : '压缩历史'}
+            {target ? t(($) => $.regenerateSummary) : t(($) => $.compactHistory)}
           </ModalTitle>
           <div>
             <Button
               variant="ghost"
               size="icon"
               onClick={close}
-              aria-label="关闭摘要设置"
+              aria-label={t(($) => $.closeSummarySettings)}
               disabled={sending}
             >
               <X className="h-[1.125rem] w-[1.125rem]" />
@@ -133,10 +138,10 @@ export function SummaryDialog({
         <form className="flex min-h-0 flex-1 flex-col" onSubmit={(event) => void create(event)}>
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 pb-5">
             <label className="block space-y-2 text-sm">
-              <span>摘要模型</span>
+              <span>{t(($) => $.summaryModel)}</span>
               <NativeSelect
                 ref={first}
-                aria-label="摘要模型"
+                aria-label={t(($) => $.summaryModel)}
                 className="w-full"
                 value={model ? modelSelectionKey(model) : ''}
                 disabled={sending || busy}
@@ -150,9 +155,9 @@ export function SummaryDialog({
               </NativeSelect>
             </label>
             <label className="block space-y-2 text-sm">
-              <span>覆盖到</span>
+              <span>{t(($) => $.summarizeThrough)}</span>
               <NativeSelect
-                aria-label="摘要覆盖边界"
+                aria-label={t(($) => $.summaryBoundary)}
                 className="w-full"
                 value={throughId}
                 disabled={sending || busy}
@@ -160,17 +165,21 @@ export function SummaryDialog({
               >
                 {boundaries.map((message) => (
                   <option key={message.id} value={message.id}>
-                    第 {path.findIndex(({ id }) => id === message.id) + 1} 条 ·{' '}
-                    {messageText(message).replace(/\s+/g, ' ').slice(0, 45)}
+                    {t(($) => $.summaryBoundaryOption, {
+                      position: path.findIndex(({ id }) => id === message.id) + 1,
+                      text: messageText(message).replace(/\s+/g, ' ').slice(0, 45),
+                    })}
                   </option>
                 ))}
               </NativeSelect>
             </label>
-            <p className="text-sm">会额外调用所选模型，可能产生费用；原始消息保留。</p>
+            <p className="text-sm">{t(($) => $.summaryCostHint)}</p>
             {estimate && (
               <p className="text-xs text-muted-foreground">
-                输入约 {estimate.totalTokens.toLocaleString('zh-CN')} Tokens · 摘要输出上限{' '}
-                {estimate.outputReserve.toLocaleString('zh-CN')} Tokens
+                {t(($) => $.summaryBudget, {
+                  input: formatNumber(estimate.totalTokens),
+                  output: formatNumber(estimate.outputReserve),
+                })}
               </p>
             )}
             {(error || preparationError) && (
@@ -178,11 +187,11 @@ export function SummaryDialog({
                 {error || preparationError}
               </p>
             )}
-            {!boundaries.length && <p className="text-sm">当前分支没有可压缩的已完成回答。</p>}
+            {!boundaries.length && <p className="text-sm">{t(($) => $.noSummarizableAnswers)}</p>}
           </div>
           <div className="flex shrink-0 justify-end gap-2 border-t border-border p-5">
             <Button variant="secondary" type="button" disabled={sending} onClick={() => close()}>
-              取消
+              {t(($) => $.cancel)}
             </Button>
             <Button
               variant="secondary"
@@ -196,7 +205,8 @@ export function SummaryDialog({
                 Boolean(preparationError)
               }
             >
-              {sending && <Spinner />}生成摘要
+              {sending && <Spinner />}
+              {t(($) => $.generateSummary)}
             </Button>
           </div>
         </form>

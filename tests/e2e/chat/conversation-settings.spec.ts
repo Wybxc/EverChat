@@ -390,7 +390,7 @@ test('conversation settings autosave, preserve failed and invalid drafts, sync d
   browser,
 }) => {
   const fixture = await setup(page.request);
-  const second = await browser.newContext();
+  const second = await browser.newContext({ locale: 'zh-CN' });
   try {
     await second.request.post('/__dev/access/login', { headers });
     const other = await second.newPage();
@@ -471,7 +471,7 @@ test('an offline new conversation pins its parameters without overwriting anothe
   browser,
 }) => {
   const fixture = await setup(page.request, 'benchmark-text-40-100-32');
-  const other = await browser.newContext();
+  const other = await browser.newContext({ locale: 'zh-CN' });
   let id = '';
   try {
     await other.request.post('/__dev/access/login', { headers });

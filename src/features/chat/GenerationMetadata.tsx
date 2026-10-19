@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import './locales';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../platform/api';
 import type { UsageTotals } from '../../../shared/usage/types';
@@ -5,28 +7,31 @@ import { formatAmount } from '../../../shared/usage/pricing';
 import { useState } from 'react';
 import { Modal, ModalTitle } from '../../components/Modal';
 import { Button } from '@/components/ui/button';
+import { formatNumber } from '../../platform/i18n/format';
 
 import type { GenerationResult } from '../../../shared/streaming/generation';
 import type { StreamUsage } from '../../../shared/streaming/provider-stream';
 
-const usageFields: [keyof StreamUsage, string][] = [
-  ['inputTokens', '输入 Tokens'],
-  ['cachedInputTokens', '其中缓存读取'],
-  ['cacheWriteInputTokens', '其中缓存写入'],
-  ['uncachedInputTokens', '其中未缓存'],
-  ['toolInputTokens', '其中工具输入'],
-  ['outputTokens', '输出 Tokens'],
-  ['textOutputTokens', '其中正文'],
-  ['reasoningTokens', '其中思考'],
-  ['totalTokens', '总计 Tokens'],
-];
+const usageFields = [
+  ['inputTokens', 'inputTokensLabel'],
+  ['cachedInputTokens', 'cacheReadLabel'],
+  ['cacheWriteInputTokens', 'cacheWriteLabel'],
+  ['uncachedInputTokens', 'uncachedLabel'],
+  ['toolInputTokens', 'toolInputLabel'],
+  ['outputTokens', 'outputTokensLabel'],
+  ['textOutputTokens', 'textOutputLabel'],
+  ['reasoningTokens', 'reasoningTokensLabel'],
+  ['totalTokens', 'totalTokensLabel'],
+] as const satisfies readonly [keyof StreamUsage, string][];
 const timings = [
-  ['firstTokenMs', '云端首 Token（含思考）'],
-  ['queueMs', '排队'],
-  ['durationMs', '云端生成'],
+  ['firstTokenMs', 'firstTokenLabel'],
+  ['queueMs', 'queueLabel'],
+  ['durationMs', 'durationLabel'],
 ] as const;
-const number = new Intl.NumberFormat('zh-CN');
-const compact = new Intl.NumberFormat('zh-CN', { notation: 'compact', maximumFractionDigits: 1 });
+const number = { format: formatNumber };
+const compact = {
+  format: (value: number) => formatNumber(value, { notation: 'compact', maximumFractionDigits: 1 }),
+};
 const duration = (ms: number) =>
   ms < 1000 ? `${number.format(ms)} ms` : `${(ms / 1000).toFixed(2)} s`;
 
@@ -37,6 +42,8 @@ export function GenerationMetadata({
   generation?: GenerationResult;
   messageId?: string;
 }) {
+  const { t } = useTranslation('chat', { useSuspense: false });
+
   const [open, setOpen] = useState(false);
   const cost = useQuery({
     queryKey: ['usage', 'answer', messageId],
@@ -52,13 +59,13 @@ export function GenerationMetadata({
     usage.totalTokens !== undefined
       ? `${compact.format(usage.totalTokens)} Tokens`
       : usage.outputTokens !== undefined
-        ? `输出 ${compact.format(usage.outputTokens)} Tokens`
+        ? t(($) => $.outputTokenSummary, { tokens: compact.format(usage.outputTokens) })
         : usage.inputTokens !== undefined
-          ? `输入 ${compact.format(usage.inputTokens)} Tokens`
+          ? t(($) => $.inputTokenSummary, { tokens: compact.format(usage.inputTokens) })
           : '';
   const elapsed = generation.timing?.durationMs;
   const summary = [
-    tokens && !generation.usageIsFinal ? '部分' : '',
+    tokens && !generation.usageIsFinal ? t(($) => $.partial) : '',
     tokens,
     elapsed === undefined ? '' : `${(elapsed / 1000).toFixed(1)} s`,
   ]
@@ -70,36 +77,39 @@ export function GenerationMetadata({
         variant="ghost"
         type="button"
         className="min-w-0 max-w-full px-2 text-xs text-muted-foreground"
-        aria-label="生成信息"
+        aria-label={t(($) => $.generationInfo)}
         aria-description={summary || undefined}
         data-testid="generation-summary"
-        title={summary || '生成信息'}
+        title={summary || t(($) => $.generationInfo)}
         onClick={() => setOpen(true)}
       >
-        <span className="truncate">{summary || '生成信息'}</span>
+        <span className="truncate">{summary || t(($) => $.generationInfo)}</span>
       </Button>
       <Modal showCloseButton open={open} onOpenChange={setOpen}>
         <div data-testid="message-generation" className="w-full max-w-md space-y-4 p-5 text-xs">
-          <ModalTitle>生成信息</ModalTitle>
+          <ModalTitle>{t(($) => $.generationInfo)}</ModalTitle>
           <div className="py-2">
             <dl className="space-y-2">
               <div className="flex items-baseline justify-between gap-4">
-                <dt>费用估算</dt>
+                <dt>{t(($) => $.estimatedCost)}</dt>
                 <dd>
                   {cost.isFetching
-                    ? '读取中…'
+                    ? t(($) => $.loading)
                     : cost.error
-                      ? '暂不可用'
+                      ? t(($) => $.unavailable)
                       : Object.entries(cost.data?.currencies ?? {})
                           .map(([currency, amount]) => `${currency} ${formatAmount(amount)}`)
-                          .join(' · ') || '未知'}
+                          .join(' · ') || t(($) => $.unknown)}
                 </dd>
               </div>
               {cost.data && (
                 <div className="flex items-baseline justify-between gap-4">
-                  <dt>实际请求</dt>
+                  <dt>{t(($) => $.actualRequests)}</dt>
                   <dd>
-                    {cost.data.requests} 次 · 费用不完整 {cost.data.unpriced} 项
+                    {t(($) => $.requestCosts, {
+                      requests: cost.data.requests,
+                      unpriced: cost.data.unpriced,
+                    })}
                   </dd>
                 </div>
               )}
@@ -110,21 +120,21 @@ export function GenerationMetadata({
                   window.dispatchEvent(new Event('everchat:open-usage'));
                 }}
               >
-                查看用量统计
+                {t(($) => $.viewUsage)}
               </Button>
               <div className="flex items-baseline justify-between gap-4 sm:gap-6">
-                <dt>Token 用量</dt>
+                <dt>{t(($) => $.tokenUsage)}</dt>
                 <dd>
                   {fields.length
                     ? generation.usageIsFinal
-                      ? '供应商报告'
-                      : '部分报告'
-                    : '供应商未返回'}
+                      ? t(($) => $.providerReport)
+                      : t(($) => $.partialReport)
+                    : t(($) => $.noProviderUsage)}
                 </dd>
               </div>
               {fields.map(([key, label]) => (
                 <div key={key} className="flex items-baseline justify-between gap-4 sm:gap-6">
-                  <dt>{label}</dt>
+                  <dt>{t(($) => $[label])}</dt>
                   <dd data-testid={`generation-${key}`}>{number.format(generation.usage[key]!)}</dd>
                 </div>
               ))}
@@ -132,14 +142,14 @@ export function GenerationMetadata({
                 .filter(([key]) => generation.timing?.[key] !== undefined)
                 .map(([key, label]) => (
                   <div key={key} className="flex items-baseline justify-between gap-4 sm:gap-6">
-                    <dt>{label}</dt>
+                    <dt>{t(($) => $[label])}</dt>
                     <dd data-testid={`generation-${key}`}>{duration(generation.timing![key]!)}</dd>
                   </div>
                 ))}
               {generation.context && (
                 <>
                   <div className="flex items-baseline justify-between gap-4 sm:gap-6">
-                    <dt>发送上下文（估算）</dt>
+                    <dt>{t(($) => $.sentContextEstimate)}</dt>
                     <dd data-testid="generation-contextTokens">
                       ≈{number.format(generation.context.totalTokens)} /{' '}
                       {number.format(generation.context.inputBudget)}
@@ -147,25 +157,30 @@ export function GenerationMetadata({
                   </div>
                   {generation.context.toolTokens !== undefined && (
                     <div className="flex items-baseline justify-between gap-4 sm:gap-6">
-                      <dt>其中工具（估算）</dt>
+                      <dt>{t(($) => $.toolsEstimate)}</dt>
                       <dd data-testid="generation-toolTokens">
                         ≈{number.format(generation.context.toolTokens)}
                       </dd>
                     </div>
                   )}
                   <div className="flex items-baseline justify-between gap-4 sm:gap-6">
-                    <dt>历史消息</dt>
+                    <dt>{t(($) => $.historyMessages)}</dt>
                     <dd data-testid="generation-contextMessages">
-                      {generation.context.retainedMessages} 条 · 省略{' '}
-                      {generation.context.omittedMessages} 条
+                      {t(($) => $.historyRetained, {
+                        retained: generation.context.retainedMessages,
+                        omitted: generation.context.omittedMessages,
+                      })}
                     </dd>
                   </div>
                   {generation.context.summaryTokens !== undefined && (
                     <div className="flex items-baseline justify-between gap-4 sm:gap-6">
-                      <dt>摘要（估算）</dt>
+                      <dt>{t(($) => $.summaryEstimate)}</dt>
                       <dd data-testid="generation-summaryTokens">
-                        ≈{number.format(generation.context.summaryTokens)} · 覆盖{' '}
-                        {generation.context.summarizedMessages} 条
+                        ≈
+                        {t(($) => $.summaryCoverage, {
+                          tokens: number.format(generation.context.summaryTokens),
+                          count: generation.context.summarizedMessages ?? 0,
+                        })}
                       </dd>
                     </div>
                   )}

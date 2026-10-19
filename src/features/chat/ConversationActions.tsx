@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import { t } from './locales';
 import { useState, type ReactNode } from 'react';
 import {
   Check,
@@ -29,7 +31,7 @@ export function ConversationActions({
   actions,
   children,
   exports,
-  label = '更多会话操作',
+  label = t(($) => $.moreChatActions),
   className,
   activity,
 }: {
@@ -42,6 +44,8 @@ export function ConversationActions({
   className?: string;
   activity?: ConversationActivity;
 }) {
+  const { t } = useTranslation('chat', { useSuspense: false });
+
   const [menuOpen, setMenuOpen] = useState(false),
     [error, setError] = useState(''),
     [copied, setCopied] = useState(false);
@@ -54,7 +58,7 @@ export function ConversationActions({
       if (cloud) await actions.perform(conversation.id, action);
       else await action();
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : '修改失败，请重试。');
+      setError(failure instanceof Error ? failure.message : t(($) => $.updateFailed));
       setMenuOpen(true);
     }
   };
@@ -75,13 +79,13 @@ export function ConversationActions({
       {children}
       {conversation && (
         <>
-          <ActionMenuLabel>整理</ActionMenuLabel>
+          <ActionMenuLabel>{t(($) => $.organize)}</ActionMenuLabel>
           <ActionMenuItem
             disabled={disabled || busy}
             onSelect={() => actions.open('rename', conversation)}
           >
             <Pencil className="size-4" />
-            重命名
+            {t(($) => $.rename)}
           </ActionMenuItem>
           {actions.titleConfigured && actions.generateTitle && (
             <ActionMenuItem
@@ -94,10 +98,10 @@ export function ConversationActions({
             >
               <Sparkles className="size-4" />
               {['queued', 'running'].includes(conversation.titleTask?.status ?? '')
-                ? '标题生成中'
+                ? t(($) => $.generatingTitle)
                 : conversation.titleSource === 'ai'
-                  ? '重新生成标题'
-                  : '生成标题'}
+                  ? t(($) => $.regenerateTitle)
+                  : t(($) => $.generateTitle)}
             </ActionMenuItem>
           )}
           {conversation.titleTask?.status === 'failed' && (
@@ -112,16 +116,16 @@ export function ConversationActions({
             }
           >
             {conversation.pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
-            {conversation.pinned ? '取消置顶' : '置顶'}
+            {conversation.pinned ? t(($) => $.unpin) : t(($) => $.pin)}
           </ActionMenuItem>
-          <ActionMenuLabel>复用</ActionMenuLabel>
+          <ActionMenuLabel>{t(($) => $.reuse)}</ActionMenuLabel>
           {actions.share && (
             <ActionMenuItem
               disabled={disabled || busy}
               onSelect={() => actions.share?.(conversation.id)}
             >
               <Share2 className="size-4" />
-              分享当前分支
+              {t(($) => $.shareBranch)}
             </ActionMenuItem>
           )}
           <ActionMenuItem
@@ -134,29 +138,29 @@ export function ConversationActions({
             }
           >
             {copied ? <Check className="size-4" /> : <Link className="size-4" />}
-            {copied ? '链接已复制' : '复制私有链接'}
+            {copied ? t(($) => $.linkCopied) : t(($) => $.copyPrivateLink)}
           </ActionMenuItem>
           <ActionMenuItem
             disabled={disabled || busy}
             onSelect={() => void perform(() => actions.duplicate(conversation.id))}
           >
             <Copy className="size-4" />
-            复制对话
+            {t(($) => $.copyChat)}
           </ActionMenuItem>
         </>
       )}
       {exports && (
         <>
-          <ActionMenuLabel>导出</ActionMenuLabel>
+          <ActionMenuLabel>{t(($) => $.export)}</ActionMenuLabel>
           {exports}
         </>
       )}
       {conversation && task && (
         <>
-          <ActionMenuLabel>任务</ActionMenuLabel>
+          <ActionMenuLabel>{t(($) => $.tasks)}</ActionMenuLabel>
           <ActionMenuItem onSelect={() => actions.viewTask(conversation.id, task)}>
             <LocateFixed className="size-4" />
-            查看生成位置
+            {t(($) => $.viewGeneration)}
           </ActionMenuItem>
           <ActionMenuItem
             disabled={
@@ -166,8 +170,8 @@ export function ConversationActions({
           >
             <Square className="size-4" />
             {activity?.status === 'stopping' && activity.runId === task.runId
-              ? '停止中'
-              : '停止生成'}
+              ? t(($) => $.stopping)
+              : t(($) => $.stopGenerating)}
           </ActionMenuItem>
         </>
       )}
@@ -179,7 +183,7 @@ export function ConversationActions({
             onSelect={() => actions.open('delete', conversation)}
           >
             <Trash2 className="size-4" />
-            删除对话
+            {t(($) => $.deleteChat)}
           </ActionMenuItem>
         </>
       )}

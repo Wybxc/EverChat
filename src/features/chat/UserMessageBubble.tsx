@@ -1,8 +1,11 @@
+import { useTranslation } from 'react-i18next';
 import { useLayoutEffect, useRef, useState, type ComponentProps } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 
 export function UserMessageBubble({ className, ...props }: ComponentProps<'div'>) {
+  const { t } = useTranslation('common', { useSuspense: false });
+
   const content = useRef<HTMLDivElement>(null);
   const [long, setLong] = useState(false),
     [expanded, setExpanded] = useState(false);
@@ -37,7 +40,7 @@ export function UserMessageBubble({ className, ...props }: ComponentProps<'div'>
           onClick={() => setExpanded((value) => !value)}
           className="h-8 px-2 text-xs"
         >
-          {expanded ? '收起消息' : '展开消息'}
+          {expanded ? t(($) => $.collapseMessage) : t(($) => $.expandMessage)}
         </Button>
       )}
     </div>

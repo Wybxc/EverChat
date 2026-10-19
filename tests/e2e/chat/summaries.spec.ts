@@ -315,7 +315,7 @@ test('automatic compression saves coverage before answering, retains early facts
   browser,
 }) => {
   const fixture = await setup(request),
-    other = await browser.newContext();
+    other = await browser.newContext({ locale: 'zh-CN' });
   try {
     const input = automaticInput(fixture);
     const responses = await Promise.all([fixture.submit(input), fixture.submit(input)]);
@@ -675,7 +675,7 @@ test('automatic compression preferences autosave with fee disclosure, offline ed
   browser,
 }) => {
   const fixture = await setup(page.request),
-    other = await browser.newContext();
+    other = await browser.newContext({ locale: 'zh-CN' });
   try {
     await page.goto(`/c/${fixture.id}`);
     const composer = page.getByLabel('消息', { exact: true });
@@ -1047,7 +1047,10 @@ test('summary controls stream Markdown, preserve the draft and URL, sync another
   browser,
 }) => {
   const fixture = await setup(page.request),
-    other = await browser.newContext({ storageState: await page.context().storageState() });
+    other = await browser.newContext({
+      locale: 'zh-CN',
+      storageState: await page.context().storageState(),
+    });
   try {
     await page.goto(`/c/${fixture.id}`);
     const composer = page.getByLabel('消息', { exact: true });

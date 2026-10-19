@@ -179,7 +179,7 @@ test('deleting a running conversation notifies subscribers, aborts generation, r
     data: input,
   });
   expect(response.status()).toBe(202);
-  const other = await browser.newContext();
+  const other = await browser.newContext({ locale: 'zh-CN' });
   let subscribed: Awaited<ReturnType<typeof subscribe>> | undefined;
   try {
     await page.goto(`/c/${fixture.id}`);
@@ -287,7 +287,7 @@ test('the management menu preserves failed edits, syncs metadata to another devi
 }) => {
   const fixture = await setup(page.request);
   const neighbor = crypto.randomUUID();
-  const other = await browser.newContext();
+  const other = await browser.newContext({ locale: 'zh-CN' });
   try {
     // A surviving sidebar row must not take focus from the new-chat composer on current deletion.
     expect(
@@ -382,7 +382,7 @@ test('a device reconnects with a late outbox, clears an unselected deleted conve
   browser,
 }) => {
   const fixture = await setup(page.request, 'alarm-test');
-  const second = await browser.newContext();
+  const second = await browser.newContext({ locale: 'zh-CN' });
   try {
     expect(
       (

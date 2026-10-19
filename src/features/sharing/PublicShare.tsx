@@ -1,5 +1,7 @@
 import { StrictMode, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { I18nextProvider } from 'react-i18next';
+import { pageI18n } from '../../platform/i18n/react';
 import { Button } from '@/components/ui/button';
 import { NativeSelect } from '@/components/ui/native-select';
 import type { PublicShare, ShareBlock, SharedSnapshot } from '../../../shared/sharing/types';
@@ -150,7 +152,9 @@ export function start() {
   document.documentElement.classList.add('public-share-document');
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
-      <PublicSharePage />
+      <I18nextProvider i18n={pageI18n}>
+        <PublicSharePage />
+      </I18nextProvider>
     </StrictMode>,
   );
 }

@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import './locales';
 import { messageText } from '../../../shared/conversation/content';
 import { isActive } from '../../../shared/conversation/message-state';
 import type { Message } from '../../../shared/conversation/types';
@@ -8,6 +10,8 @@ import { MarkdownContent } from './rendering/MarkdownContent';
 import { useFollowScroll } from './useFollowScroll';
 
 export function ReasoningContent({ message }: { message: Message }) {
+  const { t } = useTranslation('chat', { useSuspense: false });
+
   const scroll = useFollowScroll(message.id);
   const reasoning = messageText(message, 'reasoning');
   if (!reasoning && !message.tools?.calls.length) return null;
@@ -17,7 +21,7 @@ export function ReasoningContent({ message }: { message: Message }) {
       <Disclosure
         stateKey={`reasoning:${message.id}`}
         defaultOpen
-        title="思考过程"
+        title={t(($) => $.reasoningProcess)}
         className="mb-2"
         testId="message-reasoning"
       >

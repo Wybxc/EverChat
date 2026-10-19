@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import { t } from './locales';
 import { useEffect, useRef, useState, type SubmitEvent } from 'react';
 import type { ConversationInfo } from '../../../shared/conversation/types';
 import type { ConversationActivity } from '../../../shared/conversation/activity';
@@ -122,6 +124,8 @@ export function ConversationActionDialogs({
   actions: ConversationActionController;
   disabled: boolean;
 }) {
+  const { t } = useTranslation('chat', { useSuspense: false });
+
   return actions.dialog ? <ConversationActionDialog actions={actions} disabled={disabled} /> : null;
 }
 function ConversationActionDialog({
@@ -131,6 +135,8 @@ function ConversationActionDialog({
   actions: ConversationActionController;
   disabled: boolean;
 }) {
+  const { t } = useTranslation('chat', { useSuspense: false });
+
   const { mode, conversation, fallback, returnTarget } = actions.dialog!;
   const [title, setTitle] = useState(conversation.title),
     [error, setError] = useState('');
@@ -150,7 +156,7 @@ function ConversationActionDialog({
       });
       if (epoch === storageEpoch()) actions.close();
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : '修改失败，请重试。');
+      setError(failure instanceof Error ? failure.message : t(($) => $.updateFailed));
     }
   };
   return (
@@ -197,12 +203,12 @@ function ConversationActionDialog({
     >
       <div className="w-full max-w-md p-5">
         <ModalTitle className="text-lg font-semibold">
-          {mode === 'delete' ? '删除对话' : '重命名'}
+          {mode === 'delete' ? t(($) => $.deleteChat) : t(($) => $.rename)}
         </ModalTitle>
         <form onSubmit={(event) => void submit(event)}>
           {mode === 'rename' ? (
             <label className="mt-5 block text-sm">
-              对话名称
+              {t(($) => $.chatName)}
               <Input
                 ref={titleInput}
                 className="mt-2 w-full"
@@ -215,7 +221,7 @@ function ConversationActionDialog({
             </label>
           ) : (
             <p className="mt-4 break-words text-sm leading-6">
-              删除“{conversation.title}”后无法恢复，正在生成的回答也会停止。
+              {t(($) => $.deleteChatConfirmation, { title: conversation.title })}
             </p>
           )}
           {error && (
@@ -231,14 +237,14 @@ function ConversationActionDialog({
               onClick={actions.close}
               disabled={busy}
             >
-              取消
+              {t(($) => $.cancel)}
             </Button>
             <Button
               variant={mode === 'delete' ? 'destructive' : 'default'}
               type="submit"
               disabled={disabled || busy || (mode === 'rename' && !title.trim())}
             >
-              {busy ? <Spinner /> : mode === 'delete' ? '删除' : '保存'}
+              {busy ? <Spinner /> : mode === 'delete' ? t(($) => $.delete) : t(($) => $.save)}
             </Button>
           </div>
         </form>

@@ -272,7 +272,7 @@ test('the real browser ZIP survives source deletion and restores private preview
 }) => {
   const fixture = await setup(request);
   let imported = '';
-  const device = await browser.newContext({ baseURL: origin });
+  const device = await browser.newContext({ locale: 'zh-CN', baseURL: origin });
   try {
     const csv = await upload(
       request,

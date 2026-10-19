@@ -3,12 +3,12 @@ import { hasOpenModal } from '../components/Modal';
 
 export const macShortcuts = /Mac|iPhone|iPad/.test(navigator.userAgent);
 export const commandDefinitions = {
-  'new-chat': { label: '开启新对话', key: 'j' },
-  'global-search': { label: '全局搜索', key: 'k' },
-  'find-in-chat': { label: '搜索当前对话', key: 'f' },
-  'focus-composer': { label: '聚焦输入框', key: 'l', shift: true },
-  'toggle-sidebar': { label: '切换侧边栏', key: 'b' },
-} satisfies Record<string, { label: string; key: string; shift?: boolean }>;
+  'new-chat': { labelKey: 'newChat', key: 'j' },
+  'global-search': { labelKey: 'globalSearch', key: 'k' },
+  'find-in-chat': { labelKey: 'findInChat', key: 'f' },
+  'focus-composer': { labelKey: 'focusComposer', key: 'l', shift: true },
+  'toggle-sidebar': { labelKey: 'toggleSidebar', key: 'b' },
+} as const satisfies Record<string, { labelKey: string; key: string; shift?: boolean }>;
 export type CommandId = keyof typeof commandDefinitions;
 export const shortcutLabel = (id: CommandId) => {
   const definition = commandDefinitions[id];

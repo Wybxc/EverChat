@@ -200,7 +200,7 @@ test('preset management autosaves and recovers drafts, applies copies, synchroni
   browser,
 }) => {
   const fixture = await setup(page.request),
-    second = await browser.newContext();
+    second = await browser.newContext({ locale: 'zh-CN' });
   try {
     await second.request.post('/__dev/access/login', { headers });
     await page.setViewportSize({ width: 390, height: 700 });
@@ -314,7 +314,7 @@ test('cached presets apply offline and queued tasks retain their text after the 
   browser,
 }) => {
   const fixture = await setup(page.request),
-    second = await browser.newContext();
+    second = await browser.newContext({ locale: 'zh-CN' });
   let newId = '';
   try {
     await second.request.post('/__dev/access/login', { headers });
@@ -435,7 +435,7 @@ test('a dirty draft whose preset was deleted remotely can be saved under a new I
   browser,
 }) => {
   const fixture = await setup(page.request),
-    second = await browser.newContext(),
+    second = await browser.newContext({ locale: 'zh-CN' }),
     id = crypto.randomUUID();
   try {
     await second.request.post('/__dev/access/login', { headers });

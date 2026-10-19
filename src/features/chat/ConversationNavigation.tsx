@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import './locales';
 import { ArrowDownToLine, ArrowUpToLine, ChevronDown, ChevronUp } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '../../components/ui/button';
@@ -31,6 +33,8 @@ export function ConversationNavigation({
   announcement: string;
   navigate: (action: ReadingAction) => void;
 }) {
+  const { t } = useTranslation('chat', { useSuspense: false });
+
   const touch = useRef(false);
   const visibility = useNavigationVisibility(viewport, visible);
   const [openTooltip, setOpenTooltip] = useState<ReadingAction | null>(null);
@@ -42,10 +46,10 @@ export function ConversationNavigation({
   }, [visible]);
   if (!visible) return null;
   const actions = [
-    { id: 'top', label: '跳到顶部', icon: ArrowUpToLine, unavailable: atTop },
-    { id: 'previous', label: '上一条回答', icon: ChevronUp, unavailable: !previous },
-    { id: 'next', label: '下一条回答', icon: ChevronDown, unavailable: !next },
-    { id: 'bottom', label: '跳到底部', icon: ArrowDownToLine, unavailable: atBottom },
+    { id: 'top', label: t(($) => $.jumpTop), icon: ArrowUpToLine, unavailable: atTop },
+    { id: 'previous', label: t(($) => $.previousAnswer), icon: ChevronUp, unavailable: !previous },
+    { id: 'next', label: t(($) => $.nextAnswer), icon: ChevronDown, unavailable: !next },
+    { id: 'bottom', label: t(($) => $.jumpBottom), icon: ArrowDownToLine, unavailable: atBottom },
   ] satisfies { id: ReadingAction; label: string; icon: typeof ChevronUp; unavailable: boolean }[];
   return (
     <TooltipProvider delayDuration={400}>
@@ -53,7 +57,7 @@ export function ConversationNavigation({
         className="conversation-navigation"
         data-active={visibility.active || undefined}
         role="group"
-        aria-label="对话阅读导航"
+        aria-label={t(($) => $.readingNavigation)}
         onPointerEnter={(event) => {
           if (event.pointerType === 'mouse') visibility.enter();
         }}

@@ -1,3 +1,7 @@
+import { useTranslation } from 'react-i18next';
+import './locales';
+import { formatDateTime } from '../platform/i18n/format';
+import { useLocale } from '../platform/i18n/react';
 import { lazy, Suspense } from 'react';
 import {
   MAX_MESSAGE_TEXT_BYTES,
@@ -114,7 +118,7 @@ import { useFollowScroll } from '../features/chat/useFollowScroll';
 import { useMessageNavigation } from '../features/chat/useMessageNavigation';
 import { ConversationNavigation } from '../features/chat/ConversationNavigation';
 import { useOutbox } from '../features/chat/useOutbox';
-import { conversationGroup } from '../features/library/group-conversations';
+import { conversationGroup, conversationGroupLabel } from '../features/library/group-conversations';
 import { GlobalSearch } from '../features/library/GlobalSearch';
 import { Sidebar } from '../features/library/Sidebar';
 import { ConversationListItem } from '../features/library/ConversationListItem';
@@ -152,6 +156,9 @@ const ShareDialog = lazy(() => import('../features/sharing/ShareDialog'));
 export function App({
   initialSettings,
 }: { initialSettings?: { open: boolean; tab?: SettingsTab } } = {}) {
+  const { t } = useTranslation('app', { useSuspense: false });
+  useLocale();
+
   const queryClient = useQueryClient();
   const [logoutTarget, setLogoutTarget] = useState(
     () => pendingLogout() ?? '/cdn-cgi/access/logout',
@@ -670,13 +677,13 @@ export function App({
     messageBlocked || Boolean(imageProgress) || messageMutation?.mode === 'edit';
   useReloadBlocker(
     imageProgress
-      ? '附件尚在上传或解析'
+      ? t(($) => $.attachmentBusy)
       : sending
-        ? '消息正在提交'
+        ? t(($) => $.submitting)
         : backupTask
-          ? '备份操作尚未结束'
+          ? t(($) => $.backupBusy)
           : messageMutation
-            ? '请先保存或关闭消息编辑'
+            ? t(($) => $.finishEditingFirst)
             : null,
   );
   const select = (id: string | null, focusComposer = true) => {
@@ -790,8 +797,19 @@ export function App({
     if (top !== undefined) anchorBranch(selector, top, direction);
     branches.choose(target, { descend: true });
     const role = branches.index.roles.get(message.parentId),
-      label = role === 'assistant' ? '回答版本' : role === 'user' ? '提问版本' : '分支';
-    setBranchAnnouncement(`${label} ${position + direction + 1}，共 ${choices.length} 个`);
+      label =
+        role === 'assistant'
+          ? t(($) => $.answerVersion)
+          : role === 'user'
+            ? t(($) => $.questionVersion)
+            : t(($) => $.branch);
+    setBranchAnnouncement(
+      t(($) => $.branchPosition, {
+        label,
+        position: position + direction + 1,
+        count: choices.length,
+      }),
+    );
   };
   const branchNavigation = (message: Message): BranchNavigation => {
     const choices = branches.choices(message.id),
@@ -800,7 +818,12 @@ export function App({
       count: choices.length,
       position: branches.index.positions.get(message.id) ?? 0,
       parent: parentKey(message.parentId),
-      label: role === 'user' ? '提问版本' : role === 'assistant' ? '回答版本' : '分支',
+      label:
+        role === 'user'
+          ? t(($) => $.questionVersion)
+          : role === 'assistant'
+            ? t(($) => $.answerVersion)
+            : t(($) => $.branch),
       change: (direction) => switchVersion(message, direction),
     };
   };
@@ -830,7 +853,7 @@ export function App({
       epoch = storageEpoch();
     const settings = v.safeParse(conversationSettingsSchema, conversationSettings);
     if (!settings.success) {
-      return reject('请先修正会话参数。');
+      return reject(t(($) => $.fixParameters));
     }
     input = {
       ...input,
@@ -847,7 +870,7 @@ export function App({
       };
     if (input.content !== undefined && !input.revisionOf && input.parentId === undefined) {
       if (branches.index.order.length && !branches.continuationParentId) {
-        return reject('请选择可继续的版本，或新建对话。');
+        return reject(t(($) => $.chooseBranch));
       }
       input = { ...input, parentId: branches.continuationParentId };
     }
@@ -891,10 +914,10 @@ export function App({
               staleTime: 0,
             })
           : webToolSettings.data;
-        if (!service?.hasApiKey) throw new Error('请先配置联网服务，或关闭会话中的联网工具。');
+        if (!service?.hasApiKey) throw new Error(t(($) => $.configureWebTools));
       } catch (error) {
         if (selectedRef.current === origin && storageEpoch() === epoch)
-          return reject(error instanceof Error ? error.message : '无法读取联网服务配置。');
+          return reject(error instanceof Error ? error.message : t(($) => $.webSettingsFailed));
         return false;
       }
       if (
@@ -931,7 +954,7 @@ export function App({
           const model = selection
             ? models.find((item) => modelSelectionKey(item) === modelSelectionKey(selection))
             : generationModel;
-          if (!model) throw new Error('自动压缩模型不可用，请启用所选模型或关闭自动压缩。');
+          if (!model) throw new Error(t(($) => $.compressionModelUnavailable));
           summaryGeneration(snapshot.messages, prepared.automatic.throughId, {
             ...model,
             systemPrompt: '',
@@ -940,7 +963,7 @@ export function App({
           });
         }
       } catch (error) {
-        return reject(error instanceof Error ? error.message : '会话参数无效。');
+        return reject(error instanceof Error ? error.message : t(($) => $.invalidParameters));
       }
     }
     const conversation: ConversationInfo = currentConversation ?? {
@@ -949,7 +972,7 @@ export function App({
         input.content?.trim() ||
         draftImages[0]?.name ||
         draftFiles[0]?.name ||
-        '新对话'
+        t(($) => $.untitledChat)
       ).slice(0, 26),
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -966,8 +989,7 @@ export function App({
       images: input.retryOf ? undefined : images,
       files: input.retryOf ? undefined : files,
     };
-    if (!commitPending([...pendingRef.current, item]))
-      return reject('浏览器存储已满，无法保存待发送消息。');
+    if (!commitPending([...pendingRef.current, item])) return reject(t(($) => $.storageFull));
     if (!conversations.some((item) => item.id === conversation.id)) {
       rememberConversation(conversation);
     }
@@ -1023,12 +1045,12 @@ export function App({
   };
   const queueSummary = async (input: SubmitInput) => {
     if (!selected || !currentConversation || generationBlocked || !input.summaryThrough)
-      throw new Error('当前对话暂时无法压缩，请等待同步或生成完成。');
+      throw new Error(t(($) => $.compactionNotReady));
     const model = models.find(
       (model) =>
         model.providerId === input.selection?.providerId && model.model === input.selection?.model,
     );
-    if (!model) throw new Error('所选摘要模型不可用。');
+    if (!model) throw new Error(t(($) => $.summaryModelUnavailable));
     summaryGeneration(snapshot.messages, input.summaryThrough, {
       ...model,
       systemPrompt: '',
@@ -1041,7 +1063,8 @@ export function App({
       input,
       viewHeadId: branches.head,
     };
-    if (!commitPending([...pendingRef.current, item])) throw new Error('无法保存待发送请求。');
+    if (!commitPending([...pendingRef.current, item]))
+      throw new Error(t(($) => $.pendingSaveFailed));
     await deliver(item);
   };
   const cancel = async () => {
@@ -1049,7 +1072,7 @@ export function App({
     try {
       await api(`/conversations/${selected}/cancel`, 'POST', { runId: active.runId });
     } catch (error) {
-      setError(error instanceof Error ? error.message : '停止失败。');
+      setError(error instanceof Error ? error.message : t(($) => $.stopFailed));
     }
   };
   const retry = async (message: Message) => {
@@ -1113,8 +1136,7 @@ export function App({
     if (!selected || !messageMutation) return;
     if (messageMutation.mode === 'edit') {
       if (mutationMessage?.role === 'user') {
-        if (messageBlocked || !selectedModel)
-          throw new Error('请等待同步或生成完成，并选择可用模型。');
+        if (messageBlocked || !selectedModel) throw new Error(t(($) => $.waitForSyncAndModel));
         if (
           !(await queue(
             {
@@ -1132,7 +1154,7 @@ export function App({
             true,
           ))
         )
-          throw new Error('会话已切换，请返回原消息后重试。');
+          throw new Error(t(($) => $.conversationChanged));
         return;
       }
       const version = branches.navigationVersion.current;
@@ -1215,7 +1237,7 @@ export function App({
       setSettingsOpen(false);
       if (navigator.onLine) completeSignOut(target);
     } catch (error) {
-      reportSignOutError(error instanceof Error ? error.message : '本地记录未能完全清除，请重试。');
+      reportSignOutError(error instanceof Error ? error.message : t(($) => $.clearDataFailed));
       setSettingsOpen(false);
     }
   };
@@ -1284,7 +1306,7 @@ export function App({
         (error.code === 'copy-stopped' || (error.status >= 400 && error.status < 500))
       )
         write(key, null);
-      throw error instanceof ApiError ? error : new Error('复制结果未确认，请重试查看结果。');
+      throw error instanceof ApiError ? error : new Error(t(($) => $.copyUnconfirmed));
     }
     if (epoch !== storageEpoch()) return;
     write(key, null);
@@ -1377,14 +1399,14 @@ export function App({
     );
   const statusText =
     connection === 'unavailable'
-      ? '同步失败'
+      ? t(($) => $.syncFailed)
       : connection === 'offline'
-        ? '离线'
+        ? t(($) => $.offline)
         : connection === 'connecting'
-          ? '连接中'
+          ? t(($) => $.connecting)
           : hasUnconfirmed
-            ? '保存中'
-            : '已同步';
+            ? t(($) => $.savingShort)
+            : t(($) => $.synced);
   const welcome =
     !invalidRoute &&
     !syncError &&
@@ -1395,7 +1417,7 @@ export function App({
         dropOverlay={
           draggingFiles ? (
             <div className="file-drop-overlay" role="status" data-testid="file-drop-overlay">
-              <div>松开以添加图片或文件</div>
+              <div>{t(($) => $.dropFiles)}</div>
             </div>
           ) : undefined
         }
@@ -1418,12 +1440,12 @@ export function App({
               variant="ghost"
               className="mx-3 mt-1 min-h-[44px] h-auto shrink-0 justify-start gap-2 px-3 py-1"
               onClick={openGlobalSearch}
-              aria-label="全局搜索"
+              aria-label={t(($) => $.globalSearch)}
               aria-keyshortcuts={ariaShortcut('global-search')}
-              title={`全局搜索（${shortcutLabel('global-search')}）`}
+              title={t(($) => $.globalSearchShortcut, { shortcut: shortcutLabel('global-search') })}
             >
               <Search className="h-[0.875rem] w-[0.875rem]" />
-              <span className="min-w-0 flex-1 truncate text-left">搜索</span>
+              <span className="min-w-0 flex-1 truncate text-left">{t(($) => $.search)}</span>
               <kbd className="shrink-0 text-xs text-muted-foreground">
                 {shortcutLabel('global-search')}
               </kbd>
@@ -1436,7 +1458,7 @@ export function App({
                       conversationGroup(item) !==
                         conversationGroup(visibleConversations[index - 1])) && (
                       <h2 className="px-3 pt-3 pb-1 text-xs font-normal text-muted-foreground">
-                        {conversationGroup(item)}
+                        {conversationGroupLabel(conversationGroup(item))}
                       </h2>
                     )}
                     <ConversationListItem
@@ -1464,17 +1486,19 @@ export function App({
               </ul>
               {!visibleConversations.length && libraryLoading ? (
                 <div className="px-3">
-                  <LoadingContent label="正在读取对话列表" />
+                  <LoadingContent label={t(($) => $.loadingConversations)} />
                 </div>
               ) : (
                 !visibleConversations.length &&
-                !libraryError && <p className="px-3 text-xs text-muted-foreground">暂无对话</p>
+                !libraryError && (
+                  <p className="px-3 text-xs text-muted-foreground">{t(($) => $.noChats)}</p>
+                )
               )}
               {libraryError && (
                 <div className="flex items-center gap-2 px-3 text-xs">
                   <span role="alert">{libraryError}</span>
                   <Button variant="ghost" onClick={refreshLibrary}>
-                    重试
+                    {t(($) => $.retry)}
                   </Button>
                 </div>
               )}
@@ -1490,7 +1514,7 @@ export function App({
               ref={mobileSidebarTrigger}
               className={`h-11 w-11 shrink-0 ${desktop && !sidebarCollapsed ? 'hidden' : ''}`}
               onClick={toggleSidebar}
-              aria-label="打开对话列表"
+              aria-label={t(($) => $.openSidebar)}
               aria-expanded={desktop ? !sidebarCollapsed : sidebarOpen}
             >
               <Menu className="h-[1.25rem] w-[1.25rem]" />
@@ -1501,8 +1525,9 @@ export function App({
               title={currentConversation?.title}
             >
               {invalidRoute
-                ? '页面不可用'
-                : (currentConversation?.title ?? (selected ? '对话' : '新对话'))}
+                ? t(($) => $.pageUnavailable)
+                : (currentConversation?.title ??
+                  (selected ? t(($) => $.chat) : t(($) => $.untitledChat)))}
             </p>
             {!selected && !invalidRoute && session?.authenticated && (
               <PromptPresetPicker
@@ -1522,7 +1547,13 @@ export function App({
                 className="mr-3 hidden items-center gap-1.5 text-xs text-muted-foreground md:flex"
                 title={
                   syncedAt
-                    ? `已同步 · 上次同步 ${new Date(syncedAt).toLocaleTimeString('zh-CN')}`
+                    ? t(($) => $.lastSynced, {
+                        time: formatDateTime(syncedAt, {
+                          hour: 'numeric',
+                          minute: '2-digit',
+                          second: '2-digit',
+                        }),
+                      })
                     : undefined
                 }
               >
@@ -1546,10 +1577,12 @@ export function App({
                   size="icon"
                   ref={searchTrigger}
                   type="button"
-                  aria-label="搜索当前对话"
+                  aria-label={t(($) => $.findInChat)}
                   aria-expanded={searchOpen}
                   aria-controls={searchOpen ? 'conversation-search' : undefined}
-                  title={`搜索当前对话（${shortcutLabel('find-in-chat')}）`}
+                  title={t(($) => $.findInChatShortcut, {
+                    shortcut: shortcutLabel('find-in-chat'),
+                  })}
                   aria-keyshortcuts={ariaShortcut('find-in-chat')}
                   className="h-11 w-11"
                   onClick={() =>
@@ -1563,8 +1596,8 @@ export function App({
                 variant="ghost"
                 size="icon"
                 type="button"
-                aria-label="会话参数"
-                title="会话参数"
+                aria-label={t(($) => $.parameters)}
+                title={t(($) => $.parameters)}
                 className="h-11 w-11 hidden md:inline-flex"
                 disabled={Boolean(invalidRoute || syncError)}
                 onClick={() => setConversationSettingsOpen(true)}
@@ -1589,7 +1622,7 @@ export function App({
                       disabled={!snapshot.messages.length}
                       onSelect={() => exportChat('txt')}
                     >
-                      纯文本
+                      {t(($) => $.plainText)}
                     </ActionMenuItem>
                     <ActionMenuItem
                       disabled={!snapshot.messages.length}
@@ -1598,17 +1631,17 @@ export function App({
                       HTML
                     </ActionMenuItem>
                     <ActionMenuSeparator />
-                    <ActionMenuLabel>备份与恢复</ActionMenuLabel>
+                    <ActionMenuLabel>{t(($) => $.backupRestore)}</ActionMenuLabel>
                     <ActionMenuItem
                       disabled={!currentConversation}
                       onSelect={() => void exportBackup()}
                     >
                       <Download className="size-4" />
-                      下载备份
+                      {t(($) => $.downloadBackup)}
                     </ActionMenuItem>
                     <ActionMenuItem onSelect={() => backupInput.current?.click()}>
                       <Upload className="size-4" />
-                      导入备份
+                      {t(($) => $.importBackup)}
                     </ActionMenuItem>
                   </>
                 }
@@ -1619,18 +1652,18 @@ export function App({
                   onSelect={() => setConversationSettingsOpen(true)}
                 >
                   <SlidersHorizontal className="h-[1rem] w-[1rem]" />
-                  会话参数
+                  {t(($) => $.parameters)}
                 </ActionMenuItem>
                 {session.attachmentsConfigured &&
                   selected &&
                   currentConversation &&
                   !snapshot.deletedAt && (
                     <ActionMenuItem
-                      aria-label="管理对话文件"
+                      aria-label={t(($) => $.manageFiles)}
                       onSelect={() => setAttachmentsFor(selected)}
                     >
                       <FolderOpen className="h-[1rem] w-[1rem]" />
-                      对话文件
+                      {t(($) => $.chatFiles)}
                     </ActionMenuItem>
                   )}
                 {selected && latestCompletedAssistant && (
@@ -1642,12 +1675,12 @@ export function App({
                     }}
                   >
                     <BookOpen className="h-[1rem] w-[1rem]" />
-                    压缩历史
+                    {t(($) => $.compactHistory)}
                   </ActionMenuItem>
                 )}
                 <ActionMenuItem onSelect={() => setShortcutHelpOpen(true)}>
                   <Keyboard className="size-4" />
-                  快捷键
+                  {t(($) => $.shortcuts)}
                 </ActionMenuItem>
               </ConversationActions>
               <input
@@ -1676,7 +1709,7 @@ export function App({
             className="flex items-center justify-center gap-2 border-b border-border bg-muted px-4 py-2 text-xs text-foreground"
           >
             <WifiOff className="h-[0.8125rem] w-[0.8125rem]" />
-            你现在离线，已保存的对话仍可阅读。新消息将在联网后发送。
+            {t(($) => $.offlineHint)}
           </div>
         )}
         <div className="conversation-body" data-welcome={welcome}>
@@ -1695,11 +1728,11 @@ export function App({
                 ) : (
                   <section
                     ref={contentRef}
-                    aria-label="对话消息"
+                    aria-label={t(($) => $.chatMessages)}
                     className="conversation-messages mx-auto w-full max-w-[49rem] space-y-6 px-4"
                   >
                     {loading && !snapshot.messages.length && (
-                      <LoadingContent label="正在读取对话" />
+                      <LoadingContent label={t(($) => $.loadingChat)} />
                     )}
                     {branches.path.map((message) => (
                       <Fragment key={message.id}>
@@ -1791,7 +1824,11 @@ export function App({
                                 (summary) =>
                                   summary.summary!.throughId === message.id && isActive(summary),
                               )}
-                              title={`历史摘要 · ${branchSummaries.filter((summary) => summary.summary!.throughId === message.id).length}`}
+                              title={t(($) => $.summaryCount, {
+                                count: branchSummaries.filter(
+                                  (summary) => summary.summary!.throughId === message.id,
+                                ).length,
+                              })}
                             >
                               <div className="space-y-3">
                                 {branchSummaries
@@ -1834,12 +1871,16 @@ export function App({
                         />
                         <p className="text-sm leading-7 whitespace-pre-wrap">
                           {currentPending.input.summaryThrough
-                            ? '历史摘要请求'
-                            : (currentPending.input.content ?? '新版本')}
+                            ? t(($) => $.summaryRequest)
+                            : (currentPending.input.content ?? t(($) => $.newVersion))}
                         </p>
                         <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
                           <CloudOff className="h-[0.75rem] w-[0.75rem]" />
-                          <span>{currentPending.error ? '发送失败' : '等待发送'}</span>
+                          <span>
+                            {currentPending.error
+                              ? t(($) => $.sendFailed)
+                              : t(($) => $.waitingToSend)}
+                          </span>
                           {currentPending.modelLabel && <span>{currentPending.modelLabel}</span>}
                         </div>
                         {currentPending.error && (
@@ -1860,11 +1901,13 @@ export function App({
                               void deliver(clean);
                             }}
                           >
-                            重试
+                            {t(($) => $.retry)}
                           </Button>
                           {(!currentPending.input.summaryThrough || currentPending.error) && (
                             <Button variant="ghost" onClick={() => editPending(currentPending)}>
-                              {currentPending.input.summaryThrough ? '取消请求' : '编辑'}
+                              {currentPending.input.summaryThrough
+                                ? t(($) => $.cancelRequest)
+                                : t(($) => $.edit)}
                             </Button>
                           )}
                         </div>
@@ -1888,14 +1931,14 @@ export function App({
             <div className="mx-auto w-full max-w-[48.5rem]">
               {welcome && (
                 <h1 className="mb-6 text-center text-xl font-semibold leading-snug sm:text-2xl">
-                  今天想聊些什么？
+                  {t(($) => $.welcome)}
                 </h1>
               )}
               {invalidRoute && (
                 <Alert variant="destructive" role="alert" className="mb-3 text-xs">
-                  <span>找不到这个页面。</span>
+                  <span>{t(($) => $.pageNotFound)}</span>
                   <Button variant="secondary" type="button" onClick={() => select(null)}>
-                    开启新对话
+                    {t(($) => $.newChat)}
                   </Button>
                 </Alert>
               )}
@@ -1903,7 +1946,7 @@ export function App({
                 <Alert variant="destructive" role="alert" className="mb-3 text-xs">
                   <span>{syncError}</span>
                   <Button variant="secondary" type="button" onClick={reconnect}>
-                    重新同步
+                    {t(($) => $.resync)}
                   </Button>
                 </Alert>
               )}
@@ -1911,7 +1954,7 @@ export function App({
                 <div className="mb-2 flex items-center gap-2 text-xs">
                   <span role="alert">{connectionError}</span>
                   <Button variant="ghost" onClick={reconnect}>
-                    重新同步
+                    {t(($) => $.resync)}
                   </Button>
                 </div>
               )}
@@ -1929,7 +1972,7 @@ export function App({
                   <Button
                     variant="ghost"
                     size="icon"
-                    aria-label="关闭分支提示"
+                    aria-label={t(($) => $.closeBranchNotice)}
                     onClick={branches.dismissNotice}
                   >
                     <X className="size-4" />
@@ -1941,27 +1984,27 @@ export function App({
                   <span>
                     {hiddenPending
                       ? currentPending.error
-                        ? `发送失败：${currentPending.error}`
+                        ? t(($) => $.sendFailedDetail, { error: currentPending.error })
                         : currentPending.viewHeadId == null
-                          ? '发送结果待确认'
-                          : '另一分支等待发送'
+                          ? t(($) => $.sendUnconfirmed)
+                          : t(($) => $.otherBranchPending)
                       : backgroundMessage && isActive(backgroundMessage)
-                        ? '另一分支生成中'
-                        : '另一分支已结束'}
+                        ? t(($) => $.otherBranchGenerating)
+                        : t(($) => $.otherBranchFinished)}
                   </span>
                   {hiddenPending &&
                   currentPending.error &&
                   !branches.index.browsable.has(currentPending.viewHeadId ?? '') ? (
                     <Button
                       variant="ghost"
-                      aria-label="编辑待发送消息"
+                      aria-label={t(($) => $.editPendingMessage)}
                       onClick={() => editPending(currentPending)}
                     >
-                      编辑
+                      {t(($) => $.edit)}
                     </Button>
                   ) : hiddenPending && currentPending.viewHeadId == null ? (
                     <Button variant="ghost" onClick={() => void deliver(currentPending)}>
-                      重试
+                      {t(($) => $.retry)}
                     </Button>
                   ) : (
                     <Button
@@ -1976,14 +2019,16 @@ export function App({
                         }
                       }}
                     >
-                      {backgroundMessage && !isActive(backgroundMessage) ? '查看' : '返回'}
+                      {backgroundMessage && !isActive(backgroundMessage)
+                        ? t(($) => $.view)
+                        : t(($) => $.return)}
                     </Button>
                   )}
                   {!hiddenPending && backgroundMessage && !isActive(backgroundMessage) && (
                     <Button
                       variant="ghost"
                       size="icon"
-                      aria-label="关闭后台分支提示"
+                      aria-label={t(($) => $.closeBackgroundNotice)}
                       onClick={() => setBackgroundTask(null)}
                     >
                       <X className="size-4" />
@@ -1999,7 +2044,11 @@ export function App({
               {messageMutation?.mode === 'edit' &&
                 (!branches.ids.includes(messageMutation.id) || mutationMessage?.deletedAt) && (
                   <div className="mb-2 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                    <span>{mutationMessage?.deletedAt ? '原消息已删除' : '消息编辑尚未完成'}</span>
+                    <span>
+                      {mutationMessage?.deletedAt
+                        ? t(($) => $.originalDeleted)
+                        : t(($) => $.editingUnfinished)}
+                    </span>
                     <Button
                       variant="ghost"
                       disabled={Boolean(mutationMessage?.deletedAt)}
@@ -2008,10 +2057,10 @@ export function App({
                         branches.choose(messageMutation.id);
                       }}
                     >
-                      返回原消息
+                      {t(($) => $.returnToOriginal)}
                     </Button>
                     <Button variant="ghost" onClick={closeMessageEdit}>
-                      取消编辑
+                      {t(($) => $.cancelEditing)}
                     </Button>
                   </div>
                 )}
@@ -2051,14 +2100,18 @@ export function App({
                       className="progress-meter w-20 shrink-0"
                       value={imageProgress.percent}
                       max={100}
-                      aria-label={imageProgress.kind === 'image' ? '图片上传进度' : '文件上传进度'}
+                      aria-label={
+                        imageProgress.kind === 'image'
+                          ? t(($) => $.imageUploadProgress)
+                          : t(($) => $.fileUploadProgress)
+                      }
                     />
                     <Button
                       variant="ghost"
                       type="button"
                       onClick={() => imageUpload.current?.controller.abort()}
                     >
-                      取消上传
+                      {t(($) => $.cancelUpload)}
                     </Button>
                   </div>
                 )}
@@ -2072,9 +2125,9 @@ export function App({
                   }}
                   ref={editor}
                   disabled={Boolean(snapshot.deletedAt)}
-                  aria-label="消息"
+                  aria-label={t(($) => $.message)}
                   className="composer-editor block min-h-11 w-full resize-none border-0 px-2 py-1 text-base leading-6 placeholder:text-muted-foreground outline-none! focus:outline-none!"
-                  placeholder={active ? '生成中…' : '输入消息…'}
+                  placeholder={active ? t(($) => $.generating) : t(($) => $.messagePlaceholder)}
                   value={draft}
                   maxLength={MAX_MESSAGE_TEXT_BYTES}
                   rows={1}
@@ -2102,27 +2155,27 @@ export function App({
                 >
                   {session.attachmentsConfigured && (
                     <ActionMenu
-                      label="添加附件"
+                      label={t(($) => $.addAttachment)}
                       icon={<Paperclip className="h-[1.125rem] w-[1.125rem]" />}
                       placement="dropdown-top dropdown-start"
                       className="composer-icon"
                       disabled={attachmentBlocked || !navigator.onLine}
                     >
                       <ActionMenuItem
-                        aria-label="添加文件"
+                        aria-label={t(($) => $.addFile)}
                         disabled={draftFiles.length >= MAX_MESSAGE_DOCUMENTS}
                         onSelect={() => fileInput.current?.click()}
                       >
                         <Paperclip className="h-[1rem] w-[1rem]" />
-                        文件
+                        {t(($) => $.file)}
                       </ActionMenuItem>
                       <ActionMenuItem
-                        aria-label="添加图片"
+                        aria-label={t(($) => $.addImage)}
                         disabled={draftImages.length >= MAX_MESSAGE_IMAGES}
                         onSelect={() => imageInput.current?.click()}
                       >
                         <ImagePlus className="h-[1rem] w-[1rem]" />
-                        图片
+                        {t(($) => $.image)}
                       </ActionMenuItem>
                     </ActionMenu>
                   )}
@@ -2132,7 +2185,7 @@ export function App({
                     accept=".pdf,.txt,.md,.csv,.js,.jsx,.ts,.tsx,.py,.rs,.go,.c,.cpp,.h,.css,.json,.yaml,.yml,.toml,.sh"
                     multiple
                     className="hidden"
-                    aria-label="选择聊天文件"
+                    aria-label={t(($) => $.chooseChatFiles)}
                     onChange={(event) => {
                       const files = Array.from(event.target.files ?? []);
                       event.target.value = '';
@@ -2145,7 +2198,7 @@ export function App({
                     accept="image/png,image/jpeg,image/webp"
                     multiple
                     className="hidden"
-                    aria-label="选择聊天图片"
+                    aria-label={t(($) => $.chooseChatImages)}
                     onChange={(event) => {
                       const files = Array.from(event.target.files ?? []);
                       event.target.value = '';
@@ -2172,7 +2225,7 @@ export function App({
                         openSettings();
                       }}
                     >
-                      配置模型
+                      {t(($) => $.configureModels)}
                     </Button>
                   )}
                   <ComposerParameters
@@ -2195,8 +2248,8 @@ export function App({
                       size="icon"
                       type="button"
                       className="composer-icon send-button ml-auto"
-                      aria-label="停止生成"
-                      title="停止生成"
+                      aria-label={t(($) => $.stopGenerating)}
+                      title={t(($) => $.stopGenerating)}
                       onClick={cancel}
                       disabled={!navigator.onLine}
                     >
@@ -2208,7 +2261,7 @@ export function App({
                       size="icon"
                       type="submit"
                       className="composer-icon send-button ml-auto"
-                      aria-label="发送消息"
+                      aria-label={t(($) => $.sendMessage)}
                       disabled={
                         (!draft.trim() && !draftImages.length && !draftFiles.length) ||
                         generationBlocked ||
@@ -2274,15 +2327,15 @@ export function App({
       <Modal open={shortcutHelpOpen} onOpenChange={setShortcutHelpOpen}>
         <div className="w-full max-w-md p-5">
           <div className="flex items-center justify-between">
-            <ModalTitle>快捷键</ModalTitle>
+            <ModalTitle>{t(($) => $.shortcuts)}</ModalTitle>
             <Button variant="ghost" onClick={() => setShortcutHelpOpen(false)}>
-              关闭
+              {t(($) => $.close)}
             </Button>
           </div>
           <dl className="mt-3 space-y-3 text-sm">
             {(Object.keys(commandDefinitions) as CommandId[]).map((id) => (
               <div key={id} className="flex items-center justify-between gap-3">
-                <dt>{commandDefinitions[id].label}</dt>
+                <dt>{t(($) => $[commandDefinitions[id].labelKey])}</dt>
                 <dd>
                   <kbd>{shortcutLabel(id)}</kbd>
                 </dd>
@@ -2302,8 +2355,8 @@ export function App({
               showCloseButton
             >
               <div>
-                <ModalTitle>分享当前分支</ModalTitle>
-                <LoadingContent label="正在读取" />
+                <ModalTitle>{t(($) => $.shareBranch)}</ModalTitle>
+                <LoadingContent label={t(($) => $.reading)} />
               </div>
             </Modal>
           }
@@ -2324,13 +2377,13 @@ export function App({
               showCloseButton
             >
               <div>
-                <ModalTitle>分享当前分支</ModalTitle>
+                <ModalTitle>{t(($) => $.shareBranch)}</ModalTitle>
                 {syncError || invalidRoute ? (
-                  <p role="alert">无法读取这个对话。</p>
+                  <p role="alert">{t(($) => $.chatReadFailed)}</p>
                 ) : snapshotFor === shareFor && !snapshot.messages.length ? (
-                  <p>当前对话没有可分享的消息。</p>
+                  <p>{t(($) => $.nothingToShare)}</p>
                 ) : (
-                  <LoadingContent label="正在读取当前分支" />
+                  <LoadingContent label={t(($) => $.loadingBranch)} />
                 )}
               </div>
             </Modal>

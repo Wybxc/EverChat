@@ -186,7 +186,7 @@ test('a full copy owns independent image, CSV, PDF and unused raw files after so
         original.bytes,
       );
     }
-    const device = await browser.newContext();
+    const device = await browser.newContext({ locale: 'zh-CN' });
     try {
       await device.request.post('/__dev/access/login', { headers });
       const page = await device.newPage();

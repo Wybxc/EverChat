@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import './locales';
 import { CircleDashed, Clock3, Pin, Square } from 'lucide-react';
 import { Spinner } from '@/components/ui/spinner';
 import type { ConversationActivity } from '../../../shared/conversation/activity';
@@ -28,15 +30,17 @@ export function ConversationListItem({
   activity?: ConversationActivity;
   fresh: boolean;
 }) {
+  const { t } = useTranslation('library', { useSuspense: false });
+
   const active = activity && activity.status !== 'idle' ? activity : undefined;
   const label = active
     ? !fresh
-      ? '生成状态待同步'
+      ? t(($) => $.generationUnconfirmed)
       : active.status === 'running'
-        ? '生成中'
+        ? t(($) => $.generating)
         : active.status === 'stopping'
-          ? '停止中'
-          : '等待生成'
+          ? t(($) => $.stopping)
+          : t(($) => $.waiting)
     : undefined;
   return (
     <div className="sidebar-row flex min-w-0 items-center rounded-lg" data-current={selected}>
@@ -55,7 +59,7 @@ export function ConversationListItem({
           select();
         }}
         aria-current={selected ? 'page' : undefined}
-        aria-description={conversation.pinned ? '已置顶' : undefined}
+        aria-description={conversation.pinned ? t(($) => $.pinned) : undefined}
         title={conversation.title}
         className="sidebar-link min-w-0 flex-1 font-normal"
       >
@@ -83,8 +87,8 @@ export function ConversationListItem({
       {pending && !active && (
         <span
           role="status"
-          aria-label={pending.error ? '发送失败' : '待发送'}
-          title={pending.error ? '发送失败' : '待发送'}
+          aria-label={pending.error ? t(($) => $.sendFailed) : t(($) => $.pending)}
+          title={pending.error ? t(($) => $.sendFailed) : t(($) => $.pending)}
           className="size-1.5 shrink-0 rounded-full bg-warning"
         />
       )}
@@ -94,7 +98,7 @@ export function ConversationListItem({
           disabled={disabled}
           actions={actions}
           activity={activity}
-          label={`${conversation.title}的更多操作`}
+          label={t(($) => $.moreActions, { title: conversation.title })}
           className="conversation-row-menu shrink-0"
         />
       )}

@@ -71,7 +71,7 @@ test('generation survives offline, tab closure and a second device; retries are 
   await context.setOffline(true);
   await expect(page.getByRole('status').filter({ hasText: '你现在离线' })).toContainText('离线');
 
-  const second = await browser.newContext();
+  const second = await browser.newContext({ locale: 'zh-CN' });
   const otherPage = await second.newPage();
   await login(otherPage);
   await otherPage.getByRole('link', { name: prompt }).click();

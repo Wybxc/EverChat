@@ -150,8 +150,8 @@ for (const provider of [
     const fixture = await setup(request, provider),
       original = await upload(request, fixture.id),
       file = await parse(request, fixture.id, original.id);
-    const first = await browser.newContext(),
-      second = await browser.newContext();
+    const first = await browser.newContext({ locale: 'zh-CN' }),
+      second = await browser.newContext({ locale: 'zh-CN' });
     try {
       const before = await control(request),
         again = await parse(request, fixture.id, original.id),
@@ -191,7 +191,7 @@ for (const provider of [
       const read = await second.request.get(documentUrl(fixture.id, file.attachmentId));
       expect(read.headers()['cache-control']).toBe('no-store');
       expect((await read.json()).text).toBe(text);
-      const anonymous = await browser.newContext();
+      const anonymous = await browser.newContext({ locale: 'zh-CN' });
       try {
         expect(
           (await anonymous.request.get(documentUrl(fixture.id, file.attachmentId))).status(),

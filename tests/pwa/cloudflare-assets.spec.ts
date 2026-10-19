@@ -13,7 +13,7 @@ test('Cloudflare HTML canonicalization breaks precaching; the deployed routing s
       maxRedirects: 0,
     });
     expect(index.status()).toBe(status);
-    const context = await browser.newContext();
+    const context = await browser.newContext({ locale: 'zh-CN' });
     const page = await context.newPage();
     try {
       // Retain the initial object to verify the exact failure chain that Safari reported.

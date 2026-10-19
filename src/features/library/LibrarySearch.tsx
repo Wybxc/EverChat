@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import './locales';
 import { Spinner } from '@/components/ui/spinner';
 import { Button } from '@/components/ui/button';
 import { useEffect, useState } from 'react';
@@ -16,6 +18,8 @@ export function LibrarySearch({
   query: string;
   open: (result: SearchResult, query: string) => void;
 }) {
+  const { t } = useTranslation('library', { useSuspense: false });
+
   const [debounced, setDebounced] = useState('');
   const [online, setOnline] = useState(navigator.onLine);
   useEffect(() => {
@@ -51,15 +55,16 @@ export function LibrarySearch({
   const ready = debounced === query.trim();
   const pages = ready ? search.data?.pages : undefined;
   return (
-    <section aria-label="正文搜索结果" className="mt-4">
-      <p className="px-3 pb-2 text-xs font-medium">正文与思考</p>
+    <section aria-label={t(($) => $.bodySearchResults)} className="mt-4">
+      <p className="px-3 pb-2 text-xs font-medium">{t(($) => $.bodyAndReasoning)}</p>
       {!online ? (
         <p role="status" className="px-3 text-xs text-muted-foreground">
-          联网后搜索正文
+          {t(($) => $.searchNeedsNetwork)}
         </p>
       ) : !ready || search.isPending ? (
         <p role="status" className="px-3 text-xs">
-          <Spinner aria-hidden="true" /> 搜索中
+          <Spinner aria-hidden="true" />
+          {t(($) => $.searching)}
         </p>
       ) : null}
       {pages && (
@@ -76,7 +81,7 @@ export function LibrarySearch({
                 >
                   <span className="block truncate text-xs font-medium">
                     <SearchHighlight text={result.title} query={debounced} /> ·{' '}
-                    {result.field === 'reasoning' ? '思考' : '正文'}
+                    {result.field === 'reasoning' ? t(($) => $.reasoning) : t(($) => $.body)}
                   </span>
                   <span className="mt-1 block line-clamp-3 break-words text-xs text-muted-foreground">
                     <SearchHighlight text={result.excerpt} query={debounced} />
@@ -88,12 +93,12 @@ export function LibrarySearch({
       )}
       {pages && !pages.some((page) => page.results.length) && (
         <p role="status" className="px-3 text-xs text-muted-foreground">
-          没有正文匹配
+          {t(($) => $.noBodyMatches)}
         </p>
       )}
       {pages?.some((page) => page.indexing) && (
         <p role="status" className="mt-2 px-3 text-xs text-muted-foreground">
-          索引更新中
+          {t(($) => $.indexing)}
         </p>
       )}
       {pages?.at(-1)?.error && (
@@ -110,7 +115,7 @@ export function LibrarySearch({
               void search.refetch();
             }}
           >
-            重新搜索
+            {t(($) => $.searchAgain)}
           </Button>
         </div>
       )}
@@ -124,7 +129,7 @@ export function LibrarySearch({
             void search.fetchNextPage();
           }}
         >
-          {search.isFetchingNextPage ? '加载中…' : '加载更多结果'}
+          {search.isFetchingNextPage ? t(($) => $.loading) : t(($) => $.loadMore)}
         </Button>
       )}
     </section>

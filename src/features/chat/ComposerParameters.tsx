@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import './locales';
 import { useEffect, useRef, useState } from 'react';
 import { Globe, SlidersHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -27,21 +29,23 @@ export function ComposerParameters({
   estimate?: ContextEstimate;
   focusComposer: () => void;
 }) {
+  const { t } = useTranslation('chat', { useSuspense: false });
+
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
   useEffect(() => setOpen(false), [compact]);
-  const effortLabel = effort ? effortLabels[effort] : '默认';
-  const description = `思维：${effortLabel}`;
+  const effortLabel = effort ? effortLabels[effort] : t(($) => $.default);
+  const description = t(($) => $.reasoningDescription, { effort: effortLabel });
   const reasoning = model?.reasoningSupported && model.reasoningEfforts.length > 0 && (
     <NativeSelect
-      aria-label="思维强度"
-      title={`思维强度：${effortLabel}`}
+      aria-label={t(($) => $.reasoningEffort)}
+      title={t(($) => $.reasoningEffortDescription, { effort: effortLabel })}
       className={compact ? 'w-full' : 'w-24 shrink-0'}
       selectClassName={compact ? 'text-sm' : 'border-transparent pl-1 pr-6 text-xs'}
       value={effort}
       onChange={(event) => chooseEffort(event.target.value as ReasoningEffort | '')}
     >
-      <option value="">思考</option>
+      <option value="">{t(($) => $.reasoning)}</option>
       {model.reasoningEfforts.map((value) => (
         <option key={value} value={value}>
           {effortLabels[value]}
@@ -55,9 +59,9 @@ export function ComposerParameters({
       size="icon"
       type="button"
       className={`composer-icon ${webEnabled ? 'bg-accent text-accent-foreground' : ''}`}
-      aria-label="联网搜索"
+      aria-label={t(($) => $.webSearch)}
       aria-pressed={webEnabled}
-      title={webEnabled ? '关闭联网搜索' : '开启联网搜索'}
+      title={webEnabled ? t(($) => $.disableWebSearch) : t(($) => $.enableWebSearch)}
       onClick={toggleWeb}
     >
       <Globe className="size-[1.125rem]" />
@@ -82,7 +86,7 @@ export function ComposerParameters({
             variant="ghost"
             size="icon"
             className={`composer-icon relative ${effort ? 'bg-muted' : ''}`}
-            aria-label="更多参数"
+            aria-label={t(($) => $.moreParameters)}
             aria-description={description}
             title={description}
           >
@@ -100,7 +104,7 @@ export function ComposerParameters({
         <PopoverContent
           side="top"
           align="end"
-          aria-label="更多参数"
+          aria-label={t(($) => $.moreParameters)}
           className="max-h-[var(--radix-popover-content-available-height)] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto overscroll-contain p-4"
           onCloseAutoFocus={(event) => {
             if (!trigger.current?.isConnected) {
@@ -111,13 +115,13 @@ export function ComposerParameters({
         >
           {reasoning && (
             <label className="space-y-1 text-xs">
-              <span>思维强度</span>
+              <span>{t(($) => $.reasoningEffort)}</span>
               {reasoning}
             </label>
           )}
           {estimate && (
             <section data-testid="context-estimate" className="border-t pt-3 text-xs">
-              <h2 className="mb-2 font-medium">上下文估算</h2>
+              <h2 className="mb-2 font-medium">{t(($) => $.contextEstimate)}</h2>
               <ContextEstimateDetails estimate={estimate} />
             </section>
           )}

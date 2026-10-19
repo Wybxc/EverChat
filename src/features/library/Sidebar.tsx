@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import './locales';
 import type { ReactNode, RefObject } from 'react';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 export function Sidebar({
@@ -17,10 +19,15 @@ export function Sidebar({
   children: ReactNode;
   onClosed?: () => boolean;
 }) {
+  const { t } = useTranslation('library', { useSuspense: false });
+
   if (desktop)
     return (
       !collapsed && (
-        <aside aria-label="对话列表" className="sidebar-surface flex w-65 shrink-0 flex-col">
+        <aside
+          aria-label={t(($) => $.chatList)}
+          className="sidebar-surface flex w-65 shrink-0 flex-col"
+        >
           {children}
         </aside>
       )
@@ -43,7 +50,7 @@ export function Sidebar({
             trigger.current?.focus({ preventScroll: true });
         }}
       >
-        <SheetTitle className="sr-only">对话列表</SheetTitle>
+        <SheetTitle className="sr-only">{t(($) => $.chatList)}</SheetTitle>
         {children}
       </SheetContent>
     </Sheet>

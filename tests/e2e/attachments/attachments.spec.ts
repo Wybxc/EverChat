@@ -70,7 +70,7 @@ test('private R2 upload preserves Unicode bytes, validates integrity, is idempot
   browser,
 }) => {
   const fixture = await setup(request),
-    other = await browser.newContext(),
+    other = await browser.newContext({ locale: 'zh-CN' }),
     bytes = Buffer.from('# 预算\n42 元🙂'),
     input = file(bytes);
   try {
@@ -293,7 +293,10 @@ test('the file manager uploads with progress, preserves the composer and URL, sy
   browser,
 }) => {
   const fixture = await setup(page.request),
-    other = await browser.newContext({ storageState: await page.context().storageState() });
+    other = await browser.newContext({
+      locale: 'zh-CN',
+      storageState: await page.context().storageState(),
+    });
   try {
     await page.goto(`/c/${fixture.id}`);
     const composer = page.getByLabel('消息', { exact: true });
@@ -434,7 +437,7 @@ test('attachment routes reject unauthorized, cross-origin, foreign-conversation,
   browser,
 }) => {
   const fixture = await setup(request),
-    other = await browser.newContext(),
+    other = await browser.newContext({ locale: 'zh-CN' }),
     bytes = Buffer.from('bounded text'),
     input = file(bytes);
   try {

@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import './locales';
 import { useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import type { ConversationInfo } from '../../../shared/conversation/types';
@@ -30,6 +32,8 @@ export function GlobalSearch({
   select: (id: string) => void;
   openResult: (result: SearchResult, query: string) => void;
 }) {
+  const { t } = useTranslation('library', { useSuspense: false });
+
   const [query, setQuery] = useState('');
   const input = useRef<HTMLInputElement>(null);
   const titles = conversations.filter((item) =>
@@ -54,18 +58,18 @@ export function GlobalSearch({
         className="search-dialog flex min-h-0 flex-col gap-0 overflow-hidden p-0"
         data-testid="global-search"
       >
-        <ModalTitle className="sr-only">全局搜索</ModalTitle>
+        <ModalTitle className="sr-only">{t(($) => $.globalSearch)}</ModalTitle>
         <Button
           variant="ghost"
           size="icon"
           className="absolute top-3 right-3 z-10 size-11 shrink-0"
-          aria-label="关闭全局搜索"
+          aria-label={t(($) => $.closeSearch)}
           onClick={close}
         >
           <X />
         </Button>
         <Command
-          label="搜索对话"
+          label={t(($) => $.searchChats)}
           shouldFilter={false}
           vimBindings={false}
           className="min-h-0 flex-1 rounded-none! p-0"
@@ -91,17 +95,17 @@ export function GlobalSearch({
                   value={query}
                   onValueChange={setQuery}
                   maxLength={200}
-                  placeholder="搜索你的对话"
+                  placeholder={t(($) => $.searchPlaceholder)}
                 />
               </div>
             </div>
           </div>
           <CommandList
             className="min-h-0 max-h-none flex-1 overscroll-contain px-3 pb-6 sm:px-5"
-            label="搜索结果"
+            label={t(($) => $.searchResults)}
           >
             <div className="mx-auto max-w-3xl">
-              <CommandGroup heading={query.trim() ? '标题' : '近期对话'}>
+              <CommandGroup heading={query.trim() ? t(($) => $.titles) : t(($) => $.recentChats)}>
                 {titles.map((item) => (
                   <SearchResultItem
                     key={item.id}
@@ -116,20 +120,20 @@ export function GlobalSearch({
                 ))}
                 {loading && (
                   <p role="status" className="px-3 py-2 text-xs text-muted-foreground">
-                    正在读取对话列表
+                    {t(($) => $.loadingChats)}
                   </p>
                 )}
                 {error && (
                   <div role="alert" className="flex items-center gap-2 px-3 py-2 text-xs">
                     <span>{error}</span>
                     <Button variant="ghost" onClick={retry}>
-                      重试
+                      {t(($) => $.retry)}
                     </Button>
                   </div>
                 )}
                 {!titles.length && !loading && !error && (
                   <p role="status" className="px-3 py-2 text-xs text-muted-foreground">
-                    {query.trim() ? '没有标题匹配' : '暂无对话'}
+                    {query.trim() ? t(($) => $.noTitleMatches) : t(($) => $.noChats)}
                   </p>
                 )}
               </CommandGroup>

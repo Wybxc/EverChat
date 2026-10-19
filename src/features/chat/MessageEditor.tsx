@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import './locales';
 import { useLayoutEffect, useRef, useState, type SubmitEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
@@ -24,6 +26,8 @@ export function MessageEditor({
   save: () => Promise<void>;
   cancel: () => void;
 }) {
+  const { t } = useTranslation('chat', { useSuspense: false });
+
   const input = useRef<HTMLTextAreaElement>(null);
   const lock = useRef(false);
   const [busy, setBusy] = useState(false),
@@ -46,7 +50,7 @@ export function MessageEditor({
     try {
       await save();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '保存失败，请重试。');
+      setError(cause instanceof Error ? cause.message : t(($) => $.saveFailed));
     } finally {
       lock.current = false;
       setBusy(false);
@@ -55,13 +59,13 @@ export function MessageEditor({
   return (
     <form
       data-testid="message-editor"
-      aria-label={user ? '编辑提问' : '编辑回答'}
+      aria-label={user ? t(($) => $.editQuestion) : t(($) => $.editAnswer)}
       className="message-editor space-y-2"
       onSubmit={(event) => void submit(event)}
     >
       <Textarea
         ref={input}
-        aria-label={user ? '提问内容' : '回答内容'}
+        aria-label={user ? t(($) => $.questionContent) : t(($) => $.answerContent)}
         value={content}
         maxLength={MAX_MESSAGE_TEXT_BYTES}
         disabled={busy}
@@ -90,11 +94,11 @@ export function MessageEditor({
       )}
       <div className="sticky bottom-0 flex flex-wrap justify-end gap-2 bg-background py-1">
         <Button type="button" variant="ghost" disabled={busy} onClick={cancel}>
-          取消编辑
+          {t(($) => $.cancelEditing)}
         </Button>
         <Button type="submit" disabled={busy || (!content.trim() && !hasAttachments)}>
           {busy && <Spinner />}
-          {user ? '保存并重新生成' : '保存新版本'}
+          {user ? t(($) => $.saveAndRegenerate) : t(($) => $.saveVersion)}
         </Button>
       </div>
     </form>

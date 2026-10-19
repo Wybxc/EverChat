@@ -300,6 +300,7 @@ test('mobile production search leaves a tappable close control and returns focus
   browser,
 }) => {
   const context = await browser.newContext({
+    locale: 'zh-CN',
     baseURL: 'http://127.0.0.1:5175',
     viewport: { width: 390, height: 844 },
     isMobile: true,

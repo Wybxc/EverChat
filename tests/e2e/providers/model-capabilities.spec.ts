@@ -119,6 +119,7 @@ test('public catalog enrichment preserves manual values and drafts, persists acr
     await saved(page);
     expect(downloads).toBe(1);
     const other = await browser.newContext({
+      locale: 'zh-CN',
       baseURL: 'http://127.0.0.1:5174',
       storageState: await context.storageState(),
     });
