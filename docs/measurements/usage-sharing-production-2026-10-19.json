@@ -1,0 +1,116 @@
+{
+  "date": "2026-10-19",
+  "origin": "https://chat.wybxc.cc",
+  "anonymous": {
+    "at": "2026-10-19T04:44:21.731Z",
+    "static": [
+      {
+        "route": "/",
+        "status": 200
+      },
+      {
+        "route": "/s/:id",
+        "status": 200
+      },
+      {
+        "route": "/sw.js",
+        "status": 200
+      },
+      {
+        "route": "/manifest.webmanifest",
+        "status": 200
+      }
+    ],
+    "private": [
+      {
+        "route": "/api",
+        "status": 302
+      },
+      {
+        "route": "/api/session",
+        "status": 302
+      },
+      {
+        "route": "/api/usage/report",
+        "status": 302
+      },
+      {
+        "route": "/api/settings/providers",
+        "status": 302
+      },
+      {
+        "route": "/api/shares",
+        "status": 302
+      },
+      {
+        "route": "/auth",
+        "status": 302
+      },
+      {
+        "route": "/auth/resume",
+        "status": 302
+      }
+    ],
+    "public": [
+      {
+        "check": "anonymous GET/HEAD, safe headers, token required, no CORS, private owner recopy",
+        "passed": true
+      }
+    ]
+  },
+  "ownerLifecycle": {
+    "at": "2026-10-19T04:45:59.177Z",
+    "accessBoundary": "public reads anonymous; owner mutations use existing Access authorization",
+    "ownerRecopy": true,
+    "rotation": {
+      "oldTokenStatus": 404,
+      "newTokenStatus": 200,
+      "headStatus": 200,
+      "pageStatus": 200
+    },
+    "revocation": {
+      "getStatus": 404,
+      "headStatus": 404,
+      "pageStatus": 404,
+      "ownerRecopyStatus": 404
+    },
+    "replacement": {
+      "published": true,
+      "messageCount": 2,
+      "expiryDays": 1
+    },
+    "modelCalls": 0
+  },
+  "cleanup": {
+    "at": "2026-10-19T04:55:18.425Z",
+    "testSharesRevoked": true,
+    "anonymousResults": [
+      {
+        "method": "GET",
+        "pagination": false,
+        "status": 404
+      },
+      {
+        "method": "HEAD",
+        "pagination": false,
+        "status": 404
+      },
+      {
+        "method": "GET",
+        "pagination": true,
+        "status": 404
+      }
+    ],
+    "modelCalls": 0
+  },
+  "browser": {
+    "environment": "Codex in-app browser",
+    "existingApplicationVersion": "2026-10-18T02:43:49.672Z",
+    "updatedThroughSettings": true,
+    "shareRenderedAfterUpdate": true,
+    "messageCount": 2,
+    "afterRevocation": "链接不可用。",
+    "testConversationRetained": true
+  },
+  "privacy": "Synthetic test text only. No share IDs, secrets, Access credentials, private message contents or provider configuration."
+}

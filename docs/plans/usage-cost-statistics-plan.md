@@ -137,4 +137,4 @@ CNY、USD 等币种分别汇总。首期不默认换汇；以后若支持统一�
 
 Conversation／Library 的 schema 2 仅增加空的 `usage_outbox`；65 个存量对象已完成维护窗口内的备份、本地转换、补丁写回与逐行校验，原 282 条消息保留。UsageStore 使用新 namespace 的独立初始版本 1。生产恢复后私有接口正常；一条 DeepSeek Flash 纯测试请求输入 30、输出 6 Token，最终用量只入账一次，未定价保持未知金额。
 
-证据、合成资源数据、生产版本和未完成的分享 Access 验收见[执行记录](../measurements/usage-sharing-implementation-2026-10-19.md)。供应商账单对账不包含在本次验收中。
+证据、合成资源数据、生产版本和已完成的分享 Access 验收见[执行记录](../measurements/usage-sharing-implementation-2026-10-19.md)。供应商账单对账不包含在本次验收中。

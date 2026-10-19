@@ -1,6 +1,6 @@
 # Cloudflare 生产部署与用量告警
 
-更新日期：2026-10-19。以下为已保存的实际配置；待确认的 Access 路径调整单独标明，费用以账户账单和 Cloudflare 当前规则为准。
+更新日期：2026-10-19。以下为已保存并验证的实际配置；费用以账户账单和 Cloudflare 当前规则为准。
 
 ## 生产资源
 
@@ -11,7 +11,7 @@
 | Worker           | `everchat`                                                                                                                                   |
 | Workers 套餐     | Workers Free                                                                                                                                 |
 | Access 套餐      | Teams Free                                                                                                                                   |
-| Access 应用      | EverChat，覆盖整个正式域名，仅允许配置的所有者邮箱                                                                                           |
+| Access 应用      | EverChat，保护 `/api`、`/api/*`、`/auth`、`/auth/*`，仅允许配置的所有者邮箱；前端与 SW 公开                                                  |
 | Durable Objects  | `CONVERSATIONS` → `everchat_Conversation`；`LIBRARY` → `everchat_Library`；`USAGE` → `everchat_UsageStore`；`SHARES` → `everchat_ShareStore` |
 | Workflow         | `WEB_TOOLS` → `everchat-web-tools`                                                                                                           |
 | 私有 R2          | `ATTACHMENTS` → `everchat-attachments`，Standard 存储                                                                                        |
@@ -76,9 +76,11 @@ Workers Free、Durable Objects Free 和 Workflows Free 的免费用量边界按�
 
 存量 65 个对象已通过维护窗口内的离线 schema 2 升级与逐行验证，保留 282 条消息；恢复后全量读取和私有 API 验收通过。生产增加 UsageStore／ShareStore 绑定及 `SHARE_LINK_KEY` Secret，密钥未进入静态包或 Git。提交 `41e078a` 的 Workers Builds 已成功，自动部署版本为 `b7832078-491d-4bbd-8bfa-3d77043ba853`。
 
-Access 当前仍覆盖整站。已准备将同一个应用的 Public hostnames 改为 `/api`、`/api/*`、`/auth`、`/auth/*`，保留原 Allow 身份、AUD 和会话设置；表单尚未保存，等待最终公开范围确认。前端／SW／分享页面随后可公开，公开数据读取仍逐次验证随机令牌、状态与有效期。此配置不用 Bypass，不能把私有后端改为 Everyone 放行。保存后必须完成匿名访问及撤销验收，不能把代码部署成功当成分享已对外可用。
+Access 已由所有者保存为同一个应用的四个 Public hostname 路径：`/api`、`/api/*`、`/auth`、`/auth/*`，沿用原 Allow 身份、AUD 和会话设置。前端／SW／分享页面公开，公开数据读取仍逐次验证随机令牌、状态与有效期。此配置不用 Bypass，私有后端未改为 Everyone 放行。
 
-验收、资源测量与尚未完成的条件见[执行记录](../measurements/usage-sharing-implementation-2026-10-19.md)，回滚时可先恢复整站 Access 保护；数据库格式回滚仍须执行本地反向补丁，不能只回滚代码。
+生产匿名验证：静态入口与有效分享成功，私有 API／认证恢复仍进入登录；错误令牌与跨站请求被拒绝，轮换旧令牌和撤销后的 GET／HEAD／分页均为 404。实际旧 SW 浏览器更新后分享正常，撤销并刷新显示“链接不可用”。旧版已安装 PWA 需先检查并更新应用一次。
+
+验收与资源测量边界见[执行记录](../measurements/usage-sharing-implementation-2026-10-19.md)，回滚时可先恢复整站 Access 保护；数据库格式回滚仍须执行本地反向补丁，不能只回滚代码。
 
 ## 回答完成通知
 
