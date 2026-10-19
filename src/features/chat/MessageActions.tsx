@@ -104,6 +104,7 @@ export function MessageActions({
       </IconButton>
       <ActionMenu
         label={t(($) => $.moreMessageActions)}
+        triggerData="message"
         icon={<MoreHorizontal className="h-[1.0625rem] w-[1.0625rem]" />}
         placement="dropdown-top dropdown-end"
       >

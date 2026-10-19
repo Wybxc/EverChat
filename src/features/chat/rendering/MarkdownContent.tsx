@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import {
   Component,
@@ -21,10 +22,19 @@ const markdownComponents: StreamdownProps['components'] = {
       {children}
     </a>
   ),
-  img: ({ alt }) => <span className="text-muted-foreground">[图片：{alt ?? '附件'}]</span>,
+  img: ({ alt }) => <ImagePlaceholder alt={alt} />,
   table: ({ node: _node, ...props }) => <table {...props} />,
 };
+function ImagePlaceholder({ alt }: { alt?: string }) {
+  const { t } = useTranslation('common');
+  return (
+    <span className="text-muted-foreground">
+      {t(($) => $.imagePlaceholder, { alt: alt ?? t(($) => $.attachment) })}
+    </span>
+  );
+}
 function PublicImage({ src, alt }: { src?: string; alt?: string }) {
+  const { t } = useTranslation('common');
   const [loaded, setLoaded] = useState(false);
   let allowed = false;
   try {
@@ -45,10 +55,12 @@ function PublicImage({ src, alt }: { src?: string; alt?: string }) {
     );
   return allowed ? (
     <Button variant="secondary" type="button" onClick={() => setLoaded(true)}>
-      加载外部图片{alt ? `：${alt}` : ''}
+      {alt ? t(($) => $.loadNamedImage, { alt }) : t(($) => $.loadImage)}
     </Button>
   ) : (
-    <span className="text-muted-foreground">[图片已省略{alt ? `：${alt}` : ''}]</span>
+    <span className="text-muted-foreground">
+      {alt ? t(($) => $.namedImageOmitted, { alt }) : t(($) => $.imageOmitted)}
+    </span>
   );
 }
 const publicComponents: StreamdownProps['components'] = {
@@ -163,6 +175,7 @@ function MarkdownFallback({
   className: string;
   publicContent: boolean;
 }) {
+  const { t } = useTranslation('common');
   const [online, setOnline] = useState(navigator.onLine);
   useEffect(() => {
     const update = () => setOnline(navigator.onLine);
@@ -190,7 +203,7 @@ function MarkdownFallback({
               )
         }
       >
-        重新加载
+        {t(($) => $.reload)}
       </Button>
     </div>
   );
@@ -209,6 +222,7 @@ export function MarkdownContent({
   className?: string;
   publicContent?: boolean;
 }) {
+  const { t } = useTranslation('common');
   const container = useRef<HTMLDivElement>(null);
   const [Renderer, setRenderer] = useState<MarkdownRenderer | null>(() => markdownRenderer);
   const [plugins, setPlugins] = useState<PluginConfig | null>(null);
@@ -290,6 +304,7 @@ export function MarkdownContent({
             remarkPlugins={markdownRemarkPlugins}
             components={publicContent ? publicComponents : markdownComponents}
             plugins={plugins ?? undefined}
+            translations={t(($) => $.markdown, { returnObjects: true })}
             controls={{
               code: { copy: true, download: false },
               mermaid: { fullscreen: true, download: false, copy: false, panZoom: true },

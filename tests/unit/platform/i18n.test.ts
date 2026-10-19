@@ -1,3 +1,6 @@
+import { runInNewContext } from 'node:vm';
+import { startupLocaleScript } from '../../../src/platform/i18n/startup';
+import { notificationText } from '../../../src/platform/notifications/text';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { globSync } from 'node:fs';
@@ -127,3 +130,58 @@ function translationTypes() {
   t(($) => $.sendFailedDetail, { unrelated: 'invalid' });
 }
 void translationTypes;
+
+test('inline startup matches the page locale without private runtime or network dependencies', () => {
+  for (const [stored, languages, expected] of [
+    ['en', ['zh-CN'], 'en'],
+    ['system', ['zh-SG'], 'zh-CN'],
+    ['invalid', ['zh-Hant', 'en-GB'], 'en'],
+    [null, ['zh-Hant'], 'en'],
+  ] as const) {
+    const content = { textContent: '' };
+    const root = {
+      label: '',
+      setAttribute(_name: string, value: string) {
+        this.label = value;
+      },
+      querySelector() {
+        return content;
+      },
+    };
+    const document = {
+      documentElement: { lang: '' },
+      querySelector() {
+        return root;
+      },
+    };
+    runInNewContext(startupLocaleScript(), {
+      Intl,
+      document,
+      navigator: { languages },
+      localStorage: { getItem: () => stored },
+    });
+    assert.equal(document.documentElement.lang, expected);
+    assert.equal(content.textContent, expected === 'en' ? 'Starting…' : '正在启动…');
+    assert.equal(root.label, expected === 'en' ? 'Starting EverChat' : '正在启动 EverChat');
+  }
+  assert.doesNotThrow(() =>
+    runInNewContext(startupLocaleScript(), {
+      Intl,
+      document: { documentElement: {}, querySelector: () => null },
+      navigator: { languages: ['en'] },
+      localStorage: {
+        getItem() {
+          throw new Error('Denied');
+        },
+      },
+    }),
+  );
+});
+
+test('background notification language is resolved per delivery with no locale state bleed', () => {
+  assert.equal(notificationText('en', ['zh-CN'], true), 'Answer completed');
+  assert.equal(notificationText('zh-CN', ['en'], true), '回答已完成');
+  assert.equal(notificationText(undefined, ['zh-SG'], false), '通知已启用');
+  assert.equal(notificationText('system', ['zh-Hant', 'en-GB'], true), 'Answer completed');
+  assert.equal(notificationText('en', ['zh-CN'], true), 'Answer completed');
+});

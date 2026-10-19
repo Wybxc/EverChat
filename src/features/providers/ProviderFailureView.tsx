@@ -1,11 +1,10 @@
+import { useTranslation } from 'react-i18next';
+import './locales';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Disclosure } from '../../components/Disclosure';
-import {
-  failureDiagnosticText,
-  failureEntries,
-  type ProviderFailure,
-} from '../../../shared/providers/failure';
+import type { ProviderFailure } from '../../../shared/providers/failure';
+import { failureDiagnosticText, failureEntries } from './failure-details';
 
 export function ProviderFailureView({
   summary,
@@ -20,6 +19,8 @@ export function ProviderFailureView({
   showSummary?: boolean;
   onSettings?: () => void;
 }) {
+  const { t } = useTranslation('providers', { useSuspense: false });
+
   const [copied, setCopied] = useState(false),
     [copyError, setCopyError] = useState('');
   return (
@@ -33,7 +34,7 @@ export function ProviderFailureView({
         </p>
       )}
       {failure && (
-        <Disclosure title="错误详情" stateKey={stateKey} className="mt-1">
+        <Disclosure title={t(($) => $.errorDetails)} stateKey={stateKey} className="mt-1">
           <dl className="space-y-1">
             {failureEntries(failure).map(([label, value]) => (
               <div key={label} className="grid grid-cols-[5rem_minmax(0,1fr)] gap-2">
@@ -53,15 +54,15 @@ export function ProviderFailureView({
                   await navigator.clipboard.writeText(failureDiagnosticText(summary, failure));
                   setCopied(true);
                 } catch {
-                  setCopyError('复制失败，请重试。');
+                  setCopyError(t(($) => $.copyFailed));
                 }
               }}
             >
-              {copied ? '已复制' : '复制诊断信息'}
+              {copied ? t(($) => $.copied) : t(($) => $.copyDiagnostics)}
             </Button>
             {onSettings && (
               <Button type="button" variant="ghost" size="sm" onClick={onSettings}>
-                供应商设置
+                {t(($) => $.providerSettings)}
               </Button>
             )}
           </div>

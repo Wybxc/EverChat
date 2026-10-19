@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import './locales';
 import { Badge } from '@/components/ui/badge';
 import { Spinner } from '@/components/ui/spinner';
 import { Button } from '@/components/ui/button';
@@ -7,15 +9,17 @@ import { Disclosure } from '../../components/Disclosure';
 import { PAUSE_FOLLOW_EVENT } from '../chat/useFollowScroll';
 
 const labels = {
-  queued: '等待中',
-  running: '执行中',
-  completed: '已完成',
-  failed: '失败',
-  cancelled: '已停止',
-};
+  queued: 'queued',
+  running: 'running',
+  completed: 'completed',
+  failed: 'failed',
+  cancelled: 'cancelled',
+} as const;
 const callId = (messageId: string, id: string) => `tool-${messageId}-${id}`;
 
 export function ToolActivity({ calls, messageId }: { calls: PublicToolCall[]; messageId: string }) {
+  const { t } = useTranslation('web-tools', { useSuspense: false });
+
   return (
     <div data-testid="tool-activity" data-search-ignore className="space-y-1 text-sm">
       {calls.map(({ call, state, result, round }) => {
@@ -39,16 +43,18 @@ export function ToolActivity({ calls, messageId }: { calls: PublicToolCall[]; me
                   ) : (
                     <Globe aria-hidden="true" className="h-[0.875rem] w-[0.875rem] shrink-0" />
                   )}
-                  <span>{call.name === 'web_search' ? '搜索' : '读取网页'}</span>
+                  <span>{call.name === 'web_search' ? t(($) => $.search) : t(($) => $.fetch)}</span>
                   <span className="min-w-0 font-normal break-all">
                     {call.name === 'web_search' ? call.input.query : call.input.url}
                   </span>
-                  <Badge>{labels[state]}</Badge>
+                  <Badge>{t(($) => $[labels[state]])}</Badge>
                   {state === 'running' && <Spinner aria-hidden="true" />}
                   {result?.status === 'completed' && (
-                    <span className="text-xs font-normal">{result.sources.length} 个来源</span>
+                    <span className="text-xs font-normal">
+                      {t(($) => $.sourcesCount, { count: result.sources.length })}
+                    </span>
                   )}
-                  <span className="sr-only">第 {round + 1} 轮</span>
+                  <span className="sr-only">{t(($) => $.round, { round: round + 1 })}</span>
                 </span>
               }
             >
@@ -68,7 +74,7 @@ export function ToolActivity({ calls, messageId }: { calls: PublicToolCall[]; me
                         </a>
                         <Disclosure
                           stateKey={`tools:${messageId}:${call.id}:${index}`}
-                          title="查看内容"
+                          title={t(($) => $.viewContent)}
                         >
                           <p className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words">
                             {source.content}
@@ -78,10 +84,10 @@ export function ToolActivity({ calls, messageId }: { calls: PublicToolCall[]; me
                     ))}
                   </ul>
                 ) : (
-                  <p>没有找到来源。</p>
+                  <p>{t(($) => $.noSources)}</p>
                 )
               ) : (
-                <p>{result?.status === 'failed' ? result.error : labels[state]}</p>
+                <p>{result?.status === 'failed' ? result.error : t(($) => $[labels[state]])}</p>
               )}
             </Disclosure>
           </div>
@@ -92,6 +98,8 @@ export function ToolActivity({ calls, messageId }: { calls: PublicToolCall[]; me
 }
 
 export function ToolFailures({ calls, messageId }: { calls: PublicToolCall[]; messageId: string }) {
+  const { t } = useTranslation('web-tools', { useSuspense: false });
+
   const locate = (id: string) => {
     const target = document.getElementById(callId(messageId, id));
     for (let element = target; element; element = element.parentElement) {
@@ -116,7 +124,10 @@ export function ToolFailures({ calls, messageId }: { calls: PublicToolCall[]; me
           className="min-w-0 flex-1 py-2"
         >
           <span className="font-medium">
-            第 {item.round + 1} 轮{item.call.name === 'web_search' ? '搜索' : '网页读取'}：
+            {t(($) => $.failureLabel, {
+              round: item.round + 1,
+              tool: item.call.name === 'web_search' ? t(($) => $.search) : t(($) => $.fetchLabel),
+            })}
           </span>
           {item.result?.status === 'failed' ? item.result.error : ''}
         </p>
@@ -125,9 +136,11 @@ export function ToolFailures({ calls, messageId }: { calls: PublicToolCall[]; me
           type="button"
           className="shrink-0"
           onClick={() => locate(item.call.id)}
-          aria-label={`查看失败调用 ${item.call.name === 'web_search' ? item.call.input.query : item.call.input.url}`}
+          aria-label={t(($) => $.failedCallLabel, {
+            input: item.call.name === 'web_search' ? item.call.input.query : item.call.input.url,
+          })}
         >
-          查看调用
+          {t(($) => $.viewCall)}
         </Button>
       </div>
     ));

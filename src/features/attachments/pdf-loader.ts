@@ -1,3 +1,4 @@
+import { t } from './locales';
 import { PDF_PARSE_TIMEOUT, type PDFExtraction } from '../../../shared/attachments/pdf';
 import { abortable } from '../../platform/abort';
 
@@ -10,7 +11,7 @@ export async function preparePdf(
   const timeout = new AbortController(),
     bounded = AbortSignal.any([signal, timeout.signal]);
   const timer = setTimeout(
-    () => timeout.abort(new Error('PDF 解析超过 30 秒，请拆分文件后重试。')),
+    () => timeout.abort(new Error(t(($) => $.pdfTimeout))),
     PDF_PARSE_TIMEOUT,
   );
   try {

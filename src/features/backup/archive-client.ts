@@ -1,9 +1,18 @@
+import { t } from './locales';
 import { notifyAuthFailure } from '../../platform/auth';
 import { authenticatedUploadSignal, xhrJson } from '../../platform/xhr';
 import { api, ApiError } from '../../platform/api';
 import { read, storageEpoch, write } from '../../platform/storage';
 
-export type BackupProgress = { value: number; label: string };
+export type BackupStage =
+  | 'readingData'
+  | 'readingFiles'
+  | 'generating'
+  | 'checking'
+  | 'checked'
+  | 'savingFiles'
+  | 'savingChat';
+export type BackupProgress = { value: number; label: BackupStage };
 type RestorableArchive = {
   hash: string;
   manifest: Blob;
@@ -28,12 +37,13 @@ function archiveWorker<T>(
       else resolve(value!);
     };
     const abort = () => finish(signal.reason),
-      timeout = setTimeout(() => finish(new Error('备份处理超过 5 分钟，请重试。')), 5 * 60_000);
+      timeout = setTimeout(() => finish(new Error(t(($) => $.timeout))), 5 * 60_000);
     signal.addEventListener('abort', abort, { once: true });
     worker.onmessage = (
       event: MessageEvent<{
         progress?: BackupProgress;
         error?: string;
+        errorKey?: 'readFailed' | 'invalidSize' | 'processingFailed';
         status?: number;
         code?: string;
         result?: T;
@@ -41,12 +51,13 @@ function archiveWorker<T>(
     ) => {
       if (event.data.progress) progress(event.data.progress);
       else if (event.data.error) {
-        const { error, status, code } = event.data;
-        finish(status ? new ApiError(status, error, code) : new Error(error));
+        const { error, status, code, errorKey } = event.data;
+        const message = errorKey ? t(($) => $[errorKey]) : error;
+        finish(status ? new ApiError(status, message, code) : new Error(message));
         if (status) notifyAuthFailure(status, code);
       } else if (event.data.result) finish(undefined, event.data.result);
     };
-    worker.onerror = () => finish(new Error('备份处理组件加载失败，请刷新后重试。'));
+    worker.onerror = () => finish(new Error(t(($) => $.workerFailed)));
     worker.postMessage(request);
   });
 }
@@ -83,15 +94,25 @@ function uploadBlob(
     xhr.upload.onprogress = (event) => progress(Math.min(body.size, event.loaded));
     xhr.onload = () => {
       try {
-        const result = xhrJson(xhr, '恢复请求失败。');
+        const result = xhrJson(
+          xhr,
+          t(($) => $.restoreFailed),
+        );
         resolve(result);
       } catch (error) {
         reject(error);
       }
     };
-    xhr.onerror = () => reject(new Error('恢复结果未确认，请重新导入同一存档查看结果。'));
-    xhr.ontimeout = () => reject(new Error('恢复等待超时，请重新导入同一存档查看结果。'));
-    xhr.onabort = () => reject(signal.reason ?? new DOMException('恢复已取消。', 'AbortError'));
+    xhr.onerror = () => reject(new Error(t(($) => $.unconfirmed)));
+    xhr.ontimeout = () => reject(new Error(t(($) => $.restoreTimeout)));
+    xhr.onabort = () =>
+      reject(
+        signal.reason ??
+          new DOMException(
+            t(($) => $.cancelled),
+            'AbortError',
+          ),
+      );
     xhr.onloadend = () => signal.removeEventListener('abort', abort);
     signal.addEventListener('abort', abort, { once: true });
     xhr.send(body);
@@ -113,7 +134,11 @@ export async function restoreArchive(
   const key = `import:${archive.hash}`,
     id = read<string | null>(key, null) ?? crypto.randomUUID(),
     path = `/backup/imports/${id}`;
-  if (epoch !== storageEpoch()) throw new DOMException('恢复已取消。', 'AbortError');
+  if (epoch !== storageEpoch())
+    throw new DOMException(
+      t(($) => $.cancelled),
+      'AbortError',
+    );
   write(key, id);
   const clearIdentifier = () => {
     if (epoch === storageEpoch() && read<string | null>(key, null) === id) write(key, null);
@@ -139,13 +164,13 @@ export async function restoreArchive(
             await uploadBlob(`${path}/files/${item.sourceId}/${kind}`, blob, signal, (loaded) =>
               progress({
                 value: 10 + Math.round(((saved + loaded) / Math.max(1, total)) * 75),
-                label: '正在保存文件',
+                label: 'savingFiles',
               }),
             );
             saved += blob.size;
           }
     }
-    progress({ value: 90, label: '正在保存对话' });
+    progress({ value: 90, label: 'savingChat' });
     const result = await api<{ id: string }>(`${path}/complete`, 'POST', undefined, signal);
     clearIdentifier();
     return result;

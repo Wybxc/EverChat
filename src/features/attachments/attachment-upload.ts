@@ -1,3 +1,4 @@
+import { t } from './locales';
 import * as v from 'valibot';
 import {
   attachmentInputSchema,
@@ -8,13 +9,13 @@ import {
   type Attachment,
   type AttachmentInput,
 } from '../../../shared/attachments/files';
-import { api, ApiError } from '../../platform/api';
+import { api } from '../../platform/api';
 import { authenticatedUploadSignal, xhrJson } from '../../platform/xhr';
 
 export async function prepareAttachment(file: File, signal: AbortSignal): Promise<AttachmentInput> {
   const mediaType = fileMediaType(file.name);
   if (!mediaType || file.size > MAX_ATTACHMENT_BYTES || !file.size)
-    throw new Error('请选择不超过 5 MiB 的图片、文本、代码或 PDF 文件。');
+    throw new Error(t(($) => $.invalidUpload));
   const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
   signal.throwIfAborted();
   const input = {
@@ -26,8 +27,7 @@ export async function prepareAttachment(file: File, signal: AbortSignal): Promis
       '',
     ),
   };
-  if (!v.safeParse(attachmentInputSchema, input).success)
-    throw new Error('文件名无效，请重命名后重试。');
+  if (!v.safeParse(attachmentInputSchema, input).success) throw new Error(t(($) => $.invalidName));
   return input;
 }
 export async function uploadAttachment(
@@ -52,15 +52,24 @@ export async function uploadAttachment(
       xhr.upload.onprogress = (event) => progress(Math.min(file.size, event.loaded));
       xhr.onload = () => {
         try {
-          const body = xhrJson(xhr, '附件上传失败。');
+          const body = xhrJson(
+            xhr,
+            t(($) => $.uploadFailed),
+          );
           resolve(body as Attachment);
         } catch (error) {
-          reject(error instanceof Error ? error : new Error('附件响应无效。'));
+          reject(error instanceof Error ? error : new Error(t(($) => $.invalidResponse)));
         }
       };
-      xhr.onerror = () => reject(new Error('上传中断，请联网后重试。'));
-      xhr.ontimeout = () => reject(new Error('上传超时，请重试。'));
-      xhr.onabort = () => reject(new DOMException('已取消上传。', 'AbortError'));
+      xhr.onerror = () => reject(new Error(t(($) => $.interrupted)));
+      xhr.ontimeout = () => reject(new Error(t(($) => $.timeout)));
+      xhr.onabort = () =>
+        reject(
+          new DOMException(
+            t(($) => $.cancelled),
+            'AbortError',
+          ),
+        );
       xhr.onloadend = () => signal.removeEventListener('abort', abort);
       signal.addEventListener('abort', abort, { once: true });
       if (signal.aborted) {

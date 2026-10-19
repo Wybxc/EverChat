@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import './locales';
 import { MAX_SYSTEM_PROMPT_LENGTH } from '../../../shared/conversation/limits';
 import { Modal, ModalTitle } from '../../components/Modal';
 import { Button } from '@/components/ui/button';
@@ -36,6 +38,8 @@ export function PromptPresetPicker({
   compact?: boolean;
   manage: () => void;
 }) {
+  const { t } = useTranslation('presets', { useSuspense: false });
+
   const query = usePromptPresets(open);
   const value =
     prompt === null
@@ -47,9 +51,9 @@ export function PromptPresetPicker({
     <div className={compact ? 'min-w-0 max-w-40' : 'space-y-2'}>
       {!compact && (
         <div className="flex items-center justify-between gap-2">
-          <span className="text-sm">提示词预设</span>
+          <span className="text-sm">{t(($) => $.presets)}</span>
           <Button variant="ghost" type="button" onClick={manage}>
-            管理预设
+            {t(($) => $.manage)}
           </Button>
         </div>
       )}
@@ -60,7 +64,7 @@ export function PromptPresetPicker({
             ? 'h-11 sm:h-9 truncate border-transparent bg-transparent dark:bg-transparent dark:hover:bg-accent/50'
             : undefined
         }
-        aria-label={compact ? '新对话预设' : '提示词预设'}
+        aria-label={compact ? t(($) => $.newChatPreset) : t(($) => $.presets)}
         value={value}
         disabled={!query.data?.length}
         onChange={(event) => {
@@ -81,20 +85,22 @@ export function PromptPresetPicker({
           if (preset) apply(preset.systemPrompt);
         }}
       >
-        {!query.data?.length && <option value={DEFAULT_PROMPT_PRESET_ID}>默认预设</option>}
+        {!query.data?.length && (
+          <option value={DEFAULT_PROMPT_PRESET_ID}>{t(($) => $.defaultPreset)}</option>
+        )}
         {query.data?.map((preset) => (
           <option key={preset.id} value={preset.id}>
             {preset.name}
           </option>
         ))}
-        {(!compact || value === 'custom') && <option value="custom">自定义提示词</option>}
-        {compact && <option value="manage">管理预设…</option>}
+        {(!compact || value === 'custom') && <option value="custom">{t(($) => $.custom)}</option>}
+        {compact && <option value="manage">{t(($) => $.manageMenu)}</option>}
       </NativeSelect>
       {query.isError && (
         <div className="flex items-center gap-2 text-xs">
-          <span role="alert">无法更新预设</span>
+          <span role="alert">{t(($) => $.updateFailed)}</span>
           <Button variant="ghost" type="button" onClick={() => void query.refetch()}>
-            重新读取预设
+            {t(($) => $.reload)}
           </Button>
         </div>
       )}
@@ -111,6 +117,8 @@ export function PromptPresetsPanel({
   beforeDefaultSave?: () => Promise<unknown>;
   onDefaultSaved?: () => Promise<void>;
 }) {
+  const { t } = useTranslation('presets', { useSuspense: false });
+
   const query = usePromptPresets(open);
   const queryClient = useQueryClient();
   const [selection, setSelection] = useState<string | null>(() =>
@@ -144,7 +152,7 @@ export function PromptPresetsPanel({
   const add = () => {
     const preset = {
       id: crypto.randomUUID(),
-      name: '新预设',
+      name: t(($) => $.newPreset),
       systemPrompt: '',
       updatedAt: Date.now(),
     };
@@ -156,7 +164,7 @@ export function PromptPresetsPanel({
     const preset = {
       ...source,
       id: crypto.randomUUID(),
-      name: source.name.trim() || '新预设',
+      name: source.name.trim() || t(($) => $.newPreset),
       updatedAt: Date.now(),
     };
     savePresetDraft(preset);
@@ -169,14 +177,18 @@ export function PromptPresetsPanel({
         <NativeSelect
           ref={select}
           className="min-w-0 flex-1"
-          aria-label="编辑预设"
+          aria-label={t(($) => $.edit)}
           value={selected?.id ?? ''}
           disabled={!items.length}
           onChange={(event) => selectPreset(event.currentTarget.value)}
         >
           {!items.length && (
             <option value="">
-              {query.isPending ? '读取中…' : query.isError ? '读取失败' : '暂无预设'}
+              {query.isPending
+                ? t(($) => $.loading)
+                : query.isError
+                  ? t(($) => $.loadFailed)
+                  : t(($) => $.empty)}
             </option>
           )}
           {items.map((preset) => (
@@ -196,14 +208,14 @@ export function PromptPresetsPanel({
           onClick={add}
         >
           <Plus className="h-[0.9375rem] w-[0.9375rem]" />
-          添加预设
+          {t(($) => $.add)}
         </Button>
       </div>
       {query.isError && (
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span role="alert">{query.error.message}</span>
           <Button variant="secondary" type="button" onClick={() => void query.refetch()}>
-            重新读取预设
+            {t(($) => $.reload)}
           </Button>
         </div>
       )}
@@ -245,6 +257,8 @@ function PresetEditor({
   beforeDefaultSave?: () => Promise<unknown>;
   onDefaultSaved?: () => Promise<void>;
 }) {
+  const { t } = useTranslation('presets', { useSuspense: false });
+
   const isDefault = preset.id === DEFAULT_PROMPT_PRESET_ID;
   const callbacks = useRef({ beforeDefaultSave, onDefaultSaved });
   callbacks.current = { beforeDefaultSave, onDefaultSaved };
@@ -263,12 +277,12 @@ function PresetEditor({
       new Autosave(
         preset,
         async (draft: PromptPreset) => {
-          if (epoch !== storageEpoch() || deleting.current) throw new Error('当前预设已关闭。');
+          if (epoch !== storageEpoch() || deleting.current) throw new Error(t(($) => $.closed));
           const parsed = v.safeParse(promptPresetInputSchema, {
             name: draft.name,
             systemPrompt: draft.systemPrompt,
           });
-          if (!parsed.success) throw new Error('预设名称为 1–100 字，系统提示词最多 20,000 字。');
+          if (!parsed.success) throw new Error(t(($) => $.invalid));
           if (isDefault) await callbacks.current.beforeDefaultSave?.();
           const saved = await api<PromptPreset>(
             `/settings/presets/${preset.id}`,
@@ -349,7 +363,7 @@ function PresetEditor({
       removed();
     } catch (error) {
       deleting.current = false;
-      setRemoveError(error instanceof Error ? error.message : '删除失败，请重试。');
+      setRemoveError(error instanceof Error ? error.message : t(($) => $.deleteFailed));
     } finally {
       setRemoving(false);
     }
@@ -366,10 +380,10 @@ function PresetEditor({
       }}
     >
       <label className="block space-y-1 text-sm">
-        <span>预设名称</span>
+        <span>{t(($) => $.name)}</span>
         <Input
           ref={name}
-          aria-label="预设名称"
+          aria-label={t(($) => $.name)}
           className="w-full"
           maxLength={100}
           value={settings.name}
@@ -378,9 +392,9 @@ function PresetEditor({
         />
       </label>
       <label className="block space-y-1 text-sm">
-        <span>预设系统提示词</span>
+        <span>{t(($) => $.systemPrompt)}</span>
         <Textarea
-          aria-label="预设系统提示词"
+          aria-label={t(($) => $.systemPrompt)}
           className="min-h-48 w-full"
           maxLength={MAX_SYSTEM_PROMPT_LENGTH}
           rows={8}
@@ -406,12 +420,12 @@ function PresetEditor({
           className="text-xs text-muted-foreground"
         >
           {status === 'saved'
-            ? '已保存'
+            ? t(($) => $.saved)
             : status === 'saving'
-              ? '保存中…'
+              ? t(($) => $.saving)
               : status === 'waiting'
-                ? '保存中…'
-                : '未保存'}
+                ? t(($) => $.saving)
+                : t(($) => $.unsaved)}
         </span>
         <div className="flex flex-wrap gap-2">
           {status === 'error' && (
@@ -421,7 +435,7 @@ function PresetEditor({
                 type="button"
                 onClick={() => void store.flush().catch(() => {})}
               >
-                重试保存预设
+                {t(($) => $.retrySave)}
               </Button>
               <Button
                 variant="secondary"
@@ -429,7 +443,7 @@ function PresetEditor({
                 disabled={!canCopy}
                 onClick={() => copy(settings)}
               >
-                另存为新预设
+                {t(($) => $.saveAsNew)}
               </Button>
             </>
           )}
@@ -445,7 +459,7 @@ function PresetEditor({
               }}
             >
               <Trash2 className="h-[0.875rem] w-[0.875rem]" />
-              删除预设
+              {t(($) => $.delete)}
             </Button>
           )}
         </div>
@@ -458,8 +472,8 @@ function PresetEditor({
         busy={removing}
       >
         <div className="w-full max-w-sm space-y-3 p-5">
-          <ModalTitle>删除预设</ModalTitle>
-          <p className="text-sm">删除「{settings.name}」？</p>
+          <ModalTitle>{t(($) => $.delete)}</ModalTitle>
+          <p className="text-sm">{t(($) => $.deleteConfirmation, { name: settings.name })}</p>
           {removeError && (
             <p role="alert" className="text-sm">
               {removeError}
@@ -477,7 +491,7 @@ function PresetEditor({
                 void store.flush().catch(() => {});
               }}
             >
-              取消删除预设
+              {t(($) => $.cancelDelete)}
             </Button>
             <Button
               variant="destructive"
@@ -485,7 +499,7 @@ function PresetEditor({
               disabled={removing}
               onClick={() => void remove()}
             >
-              确认删除预设
+              {t(($) => $.confirmDelete)}
             </Button>
           </div>
         </div>

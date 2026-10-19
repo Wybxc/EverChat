@@ -36,10 +36,7 @@ export class Autosave<T, Input = T> {
   private emit(snapshot: SaveState<T>) {
     this.snapshot = snapshot;
     if (!this.disposed)
-      setReloadBlocker(
-        this,
-        snapshot.status === 'saved' ? null : '设置尚未保存，请保存或放弃修改后再更新',
-      );
+      setReloadBlocker(this, snapshot.status === 'saved' ? null : 'unsavedSettings');
     this.listeners.forEach((listener) => listener());
   }
   update(settings: T) {

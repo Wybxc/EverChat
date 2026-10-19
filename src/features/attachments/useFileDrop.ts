@@ -1,3 +1,4 @@
+import { t } from './locales';
 import { useEffect, useRef, useState } from 'react';
 
 export function isFileDrag(transfer: Pick<DataTransfer, 'types'> | null) {
@@ -59,7 +60,7 @@ export function useFileDrop({
             .map((item) => item.getAsFile())
             .filter((file): file is File => file !== null)
         : Array.from(event.dataTransfer.files);
-      if (directory) callbacks.current.onRejected('暂不支持文件夹，请拖入图片或文件。');
+      if (directory) callbacks.current.onRejected(t(($) => $.noFolders));
       if (files.length) callbacks.current.onFiles(files);
     };
     window.addEventListener('dragenter', enter, true);

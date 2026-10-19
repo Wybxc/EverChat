@@ -1,3 +1,6 @@
+import { formatNumber, formatDateTime } from '../../platform/i18n/format';
+import { useTranslation } from 'react-i18next';
+import './locales';
 import { useState } from 'react';
 import {
   Brush,
@@ -13,16 +16,20 @@ import { NativeSelect } from '@/components/ui/native-select';
 import type { UsageGroup } from '../../../shared/usage/types';
 import { formatAmount } from '../../../shared/usage/pricing';
 
-const compact = new Intl.NumberFormat('zh-CN', { notation: 'compact', maximumFractionDigits: 2 });
-const amount = new Intl.NumberFormat('zh-CN', { maximumSignificantDigits: 3 });
 export function UsageChart({ points }: { points: UsageGroup[] }) {
+  const { t } = useTranslation('usage', { useSuspense: false });
+
   const [selectedMetric, setMetric] = useState('requests');
   const currencies = [...new Set(points.flatMap((point) => Object.keys(point.currencies)))];
   const metric = ['requests', 'tokens', ...currencies].includes(selectedMetric)
     ? selectedMetric
     : 'requests';
   const name =
-    metric === 'requests' ? '请求量' : metric === 'tokens' ? 'Token' : `估算费用（${metric}）`;
+    metric === 'requests'
+      ? t(($) => $.requests)
+      : metric === 'tokens'
+        ? 'Token'
+        : t(($) => $.estimatedCurrency, { currency: metric });
   const data = points.map((point) => ({
     ...point,
     value:
@@ -34,27 +41,28 @@ export function UsageChart({ points }: { points: UsageGroup[] }) {
   }));
   const tick = (value: string) => value.replace(/^\d{4}-/, '');
   const hourly = points.some((point) => point.key.includes('GMT'));
-  const date = new Intl.DateTimeFormat('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    ...(hourly
-      ? { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' as const }
-      : { timeZone: 'UTC' }),
-  });
+  const date = (at: number) =>
+    formatDateTime(at, {
+      month: '2-digit',
+      day: '2-digit',
+      ...(hourly
+        ? { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' as const }
+        : { timeZone: 'UTC' }),
+    });
   return (
-    <figure className="min-w-0 space-y-2" aria-label="用量趋势图">
+    <figure className="min-w-0 space-y-2" aria-label={t(($) => $.chart)}>
       <div className="flex items-center justify-between gap-2">
-        <figcaption className="text-sm font-medium">趋势</figcaption>
+        <figcaption className="text-sm font-medium">{t(($) => $.trend)}</figcaption>
         <NativeSelect
-          aria-label="趋势指标"
+          aria-label={t(($) => $.trendMetric)}
           value={metric}
           onChange={(event) => setMetric(event.target.value)}
         >
-          <option value="requests">请求量</option>
+          <option value="requests">{t(($) => $.requests)}</option>
           <option value="tokens">Token</option>
           {currencies.map((currency) => (
             <option key={currency} value={currency}>
-              估算费用（{currency}）
+              {t(($) => $.estimatedCurrency, { currency })}
             </option>
           ))}
         </NativeSelect>
@@ -72,7 +80,7 @@ export function UsageChart({ points }: { points: UsageGroup[] }) {
                 type="number"
                 dataKey="at"
                 domain={['dataMin', 'dataMax']}
-                tickFormatter={(at) => date.format(at)}
+                tickFormatter={(at) => date(at)}
                 tickLine={false}
                 axisLine={false}
                 minTickGap={40}
@@ -81,7 +89,12 @@ export function UsageChart({ points }: { points: UsageGroup[] }) {
               <YAxis
                 width={48}
                 tickFormatter={(value: number) =>
-                  (metric === 'requests' || metric === 'tokens' ? compact : amount).format(value)
+                  formatNumber(
+                    value,
+                    metric === 'requests' || metric === 'tokens'
+                      ? { notation: 'compact', maximumFractionDigits: 2 }
+                      : { maximumSignificantDigits: 3 },
+                  )
                 }
                 allowDecimals={metric !== 'requests' && metric !== 'tokens'}
                 tickLine={false}
@@ -89,12 +102,14 @@ export function UsageChart({ points }: { points: UsageGroup[] }) {
                 stroke="currentColor"
               />
               <Tooltip
-                labelFormatter={(_label, payload) => payload[0]?.payload.label ?? ''}
+                labelFormatter={(_label, payload) =>
+                  payload[0]?.payload.at === undefined ? '' : date(payload[0].payload.at)
+                }
                 formatter={(value, _name, entry) => [
                   metric === 'requests'
-                    ? `${value} 次请求`
+                    ? t(($) => $.requestCount, { count: Number(value) })
                     : metric === 'tokens'
-                      ? `${Number(value).toLocaleString()} Tokens`
+                      ? `${formatNumber(Number(value))} Tokens`
                       : `${metric} ${formatAmount(entry.payload.currencies[metric] ?? '0')}`,
                   name,
                 ]}
@@ -132,7 +147,7 @@ export function UsageChart({ points }: { points: UsageGroup[] }) {
           </ResponsiveContainer>
         </div>
       ) : (
-        <p className="text-xs text-muted-foreground">暂无数据</p>
+        <p className="text-xs text-muted-foreground">{t(($) => $.empty)}</p>
       )}
     </figure>
   );

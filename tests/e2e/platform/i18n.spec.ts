@@ -77,3 +77,102 @@ test('system language follows browser changes while an explicit choice stays fix
   await page.evaluate(() => window.dispatchEvent(new Event('languagechange')));
   await expect(page.getByRole('combobox', { name: 'Language', exact: true })).toHaveValue('en');
 });
+
+test('lazy settings stay localized at narrow widths without translating configured content', async ({
+  page,
+}) => {
+  await page.addInitScript(() => localStorage.setItem('everchat:locale', 'en'));
+  await page.request.post('/__dev/access/login', { headers });
+  await page.setViewportSize({ width: 320, height: 720 });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open chat list', exact: true }).click();
+  await page.getByRole('button', { name: 'Workspace settings', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Settings', exact: true });
+  await dialog.getByRole('tab', { name: 'Providers', exact: true }).click();
+  await expect(dialog.getByRole('group', { name: 'AI providers', exact: true })).toBeVisible();
+  await dialog.getByRole('tab', { name: 'Presets', exact: true }).click();
+  await expect(dialog.getByRole('button', { name: 'Add preset', exact: true })).toBeVisible();
+  await dialog.getByRole('tab', { name: 'Web', exact: true }).click();
+  await expect(dialog.getByRole('combobox', { name: 'Web service', exact: true })).toBeVisible();
+  await expect(dialog.getByLabel('Web service daily request limit', { exact: true })).toBeVisible();
+  await dialog.getByRole('tab', { name: 'Usage', exact: true }).click();
+  await expect(
+    dialog.getByRole('tablist', { name: 'Usage categories', exact: true }),
+  ).toBeVisible();
+  await dialog.getByRole('tab', { name: 'Pricing', exact: true }).click();
+  await expect(
+    dialog.getByRole('button', { name: 'Configure price', exact: true }).first(),
+  ).toBeVisible();
+  await expect(
+    dialog.getByRole('button', { name: 'Close settings', exact: true }),
+  ).toBeInViewport();
+  expect(await dialog.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+});
+
+test('anonymous shares localize bubbles and Markdown controls without loading private APIs or losing the secret', async ({
+  page,
+}) => {
+  const id = 'A'.repeat(22),
+    secret = 'B'.repeat(43);
+  const requests: string[] = [];
+  page.on('request', (request) => requests.push(new URL(request.url()).pathname));
+  await page.route('**/public/shares/*', (route) =>
+    route.fulfill({
+      json: {
+        share: {
+          id,
+          title: 'Original 标题',
+          createdAt: 1,
+          expiresAt: null,
+          messageCount: 2,
+          omittedAttachments: 0,
+          hash: 'x',
+        },
+        page: {
+          cursor: null,
+          blocks: [
+            {
+              message: 0,
+              role: 'user',
+              channel: 'text',
+              text: 'Original 用户内容',
+              omittedAttachments: 0,
+            },
+            {
+              message: 1,
+              role: 'assistant',
+              modelName: 'Model 原名',
+              channel: 'reasoning',
+              text: 'Original 思考',
+              omittedAttachments: 0,
+            },
+            {
+              message: 1,
+              role: 'assistant',
+              modelName: 'Model 原名',
+              channel: 'text',
+              text: '```js\nconsole.log("原文")\n```',
+              omittedAttachments: 0,
+            },
+          ],
+        },
+      },
+    }),
+  );
+  await page.addInitScript(() => localStorage.setItem('everchat:locale', 'en'));
+  await page.goto(`/s/${id}#${secret}`);
+  await expect(page.getByRole('article', { name: 'Question 1', exact: true })).toContainText(
+    'Original 用户内容',
+  );
+  await expect(page.getByRole('heading', { name: 'Model 原名', exact: true })).toBeVisible();
+  await expect(page.getByText('Read-only snapshot · 2 messages', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Copy code', exact: true })).toBeVisible();
+  await page.getByRole('combobox', { name: 'Language', exact: true }).selectOption('zh-CN');
+  await expect(page.getByRole('button', { name: '复制代码', exact: true })).toBeVisible();
+  await expect(page.getByRole('article', { name: '提问 1', exact: true })).toContainText(
+    'Original 用户内容',
+  );
+  await expect(page).toHaveURL(`/s/${id}#${secret}`);
+  expect(requests.filter((path) => /^\/(api|auth)(\/|$)/.test(path))).toEqual([]);
+  expect(requests.filter((path) => /private-bootstrap|notifications/.test(path))).toEqual([]);
+});

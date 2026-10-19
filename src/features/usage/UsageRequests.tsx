@@ -1,10 +1,14 @@
+import { formatNumber, formatDateTime } from '../../platform/i18n/format';
+import { useTranslation } from 'react-i18next';
+import './locales';
 import { useEffect, useRef, useState } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { api } from '../../platform/api';
 import { formatAmount } from '../../../shared/usage/pricing';
-import { usageCsvHeader, usageCsvRow } from '../../../shared/usage/csv';
-import { usageKindLabels, usageStatusLabels, type UsageRecord } from '../../../shared/usage/types';
+import { usageCsvHeader, usageCsvRow, csvLabels } from './csv';
+import type { UsageRecord } from '../../../shared/usage/types';
+import { usageKindLabel, usageStatusLabel } from './labels';
 
 type Page = { records: UsageRecord[]; cursor: string | null };
 export const money = (currencies: Record<string, string>) =>
@@ -12,34 +16,51 @@ export const money = (currencies: Record<string, string>) =>
     .map(([currency, amount]) => `${currency} ${formatAmount(amount)}`)
     .join(' · ') || '—';
 export function RecordCost({ record }: { record: UsageRecord }) {
+  const { t } = useTranslation('usage', { useSuspense: false });
+
   const amount = record.cost.amount;
   return (
     <span>
-      {amount === null ? '未定价' : `${record.cost.currency} ${formatAmount(amount)}`}
+      {amount === null ? t(($) => $.unpriced) : `${record.cost.currency} ${formatAmount(amount)}`}
       {record.cost.state === 'partial'
-        ? '（部分）'
+        ? t(($) => $.partial)
         : record.cost.state === 'invalid'
-          ? '（用量异常）'
+          ? t(($) => $.invalidUsage)
           : ''}
     </span>
   );
 }
 type Locate = ((conversationId: string, messageId: string) => void) | undefined;
 function RequestDetails({ record, onLocate }: { record: UsageRecord; onLocate: Locate }) {
+  const { t } = useTranslation('usage', { useSuspense: false });
+
   return (
     <details className="py-2">
       <summary className="cursor-pointer text-xs">
-        {new Date(record.startedAt).toLocaleString()} · {usageKindLabels[record.kind]} ·{' '}
-        {record.providerName} · {record.modelName}
+        {formatDateTime(record.startedAt, { dateStyle: 'medium', timeStyle: 'medium' })} ·{' '}
+        {usageKindLabel(record.kind)} · {record.providerName} · {record.modelName}
       </summary>
       <div className="space-y-2 pt-2 text-xs">
         <p>
-          {usageStatusLabels[record.status]} ·{' '}
-          {record.usageIsFinal ? '供应商最终用量' : '用量不完整'} · <RecordCost record={record} />
+          {usageStatusLabel(record.status)} ·{' '}
+          {record.usageIsFinal ? t(($) => $.finalUsage) : t(($) => $.incompleteUsage)} ·{' '}
+          <RecordCost record={record} />
         </p>
         <p>
-          输入 {record.usage.inputTokens ?? '未知'} · 输出 {record.usage.outputTokens ?? '未知'} ·
-          缓存读取 {record.usage.cachedInputTokens ?? '未知'}
+          {t(($) => $.usageDetails, {
+            input:
+              record.usage.inputTokens === undefined
+                ? t(($) => $.unknown)
+                : formatNumber(record.usage.inputTokens),
+            output:
+              record.usage.outputTokens === undefined
+                ? t(($) => $.unknown)
+                : formatNumber(record.usage.outputTokens),
+            cache:
+              record.usage.cachedInputTokens === undefined
+                ? t(($) => $.unknown)
+                : formatNumber(record.usage.cachedInputTokens),
+          })}
         </p>
         <p>
           {record.model} · {record.protocol}
@@ -47,16 +68,34 @@ function RequestDetails({ record, onLocate }: { record: UsageRecord; onLocate: L
         </p>
         {record.endedAt !== null && (
           <p>
-            耗时 {((record.endedAt - record.startedAt) / 1000).toFixed(2)} s
+            {t(($) => $.duration, {
+              seconds: formatNumber((record.endedAt - record.startedAt) / 1000, {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              }),
+            })}
             {record.firstTokenMs !== undefined
-              ? ` · 首字 ${(record.firstTokenMs / 1000).toFixed(2)} s`
+              ? t(($) => $.firstToken, {
+                  seconds: formatNumber(record.firstTokenMs / 1000, {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  }),
+                })
               : ''}
           </p>
         )}
         {record.price && (
           <p>
-            采用价格：{new Date(record.price.effectiveFrom).toLocaleString()} · 估算{' '}
-            {record.cost.amount === null ? '未知' : formatAmount(record.cost.amount)}
+            {t(($) => $.priceUsed, {
+              date: formatDateTime(record.price.effectiveFrom, {
+                dateStyle: 'medium',
+                timeStyle: 'medium',
+              }),
+              amount:
+                record.cost.amount === null
+                  ? t(($) => $.unknown)
+                  : formatAmount(record.cost.amount),
+            })}
           </p>
         )}
         {record.conversationId && record.messageId && (
@@ -77,7 +116,7 @@ function RequestDetails({ record, onLocate }: { record: UsageRecord; onLocate: L
               }
             }}
           >
-            定位回答
+            {t(($) => $.locate)}
           </a>
         )}
       </div>
@@ -85,6 +124,8 @@ function RequestDetails({ record, onLocate }: { record: UsageRecord; onLocate: L
   );
 }
 export function UsageRequests({ params, onLocate }: { params: string; onLocate: Locate }) {
+  const { t } = useTranslation('usage', { useSuspense: false });
+
   const query = useInfiniteQuery({
     queryKey: ['usage', 'requests', params],
     initialPageParam: '',
@@ -108,7 +149,8 @@ export function UsageRequests({ params, onLocate }: { params: string; onLocate: 
     setExported(0);
     setError('');
     try {
-      const parts: string[] = ['\ufeff', usageCsvHeader];
+      const labels = csvLabels(); // Pin export labels even if the UI language changes mid-download.
+      const parts: string[] = ['\ufeff', usageCsvHeader(labels)];
       let cursor: string | null = null,
         count = 0;
       do {
@@ -118,7 +160,7 @@ export function UsageRequests({ params, onLocate }: { params: string; onLocate: 
           undefined,
           abort.signal,
         );
-        parts.push(...page.records.map(usageCsvRow));
+        parts.push(...page.records.map((record) => usageCsvRow(record, labels)));
         count += page.records.length;
         setExported(count);
         cursor = page.cursor;
@@ -132,7 +174,7 @@ export function UsageRequests({ params, onLocate }: { params: string; onLocate: 
       setTimeout(() => URL.revokeObjectURL(url), 30_000);
     } catch (failure) {
       if (!abort.signal.aborted)
-        setError(failure instanceof Error ? failure.message : '导出失败。');
+        setError(failure instanceof Error ? failure.message : t(($) => $.exportFailed));
     } finally {
       if (exportAbort.current === abort) {
         exportAbort.current = null;
@@ -144,15 +186,15 @@ export function UsageRequests({ params, onLocate }: { params: string; onLocate: 
     <div className="space-y-2">
       <div className="flex items-center gap-2">
         <Button variant="secondary" onClick={() => void download()} disabled={exported !== null}>
-          导出 CSV
+          {t(($) => $.exportCsv)}
         </Button>
         {exported !== null && (
           <>
             <span role="status" className="text-xs">
-              已读取 {exported} 条
+              {t(($) => $.exportedCount, { count: exported })}
             </span>
             <Button variant="ghost" onClick={() => exportAbort.current?.abort()}>
-              取消
+              {t(($) => $.cancel)}
             </Button>
           </>
         )}
@@ -164,7 +206,7 @@ export function UsageRequests({ params, onLocate }: { params: string; onLocate: 
       )}
       {query.isPending && (
         <p role="status" className="text-sm">
-          读取中…
+          {t(($) => $.loading)}
         </p>
       )}
       <div className="divide-y divide-border">
@@ -175,7 +217,7 @@ export function UsageRequests({ params, onLocate }: { params: string; onLocate: 
           ))}
       </div>
       {query.data?.pages[0]?.records.length === 0 && (
-        <p className="text-sm text-muted-foreground">暂无请求</p>
+        <p className="text-sm text-muted-foreground">{t(($) => $.noRequests)}</p>
       )}
       {query.hasNextPage && (
         <Button
@@ -183,7 +225,7 @@ export function UsageRequests({ params, onLocate }: { params: string; onLocate: 
           disabled={query.isFetchingNextPage}
           onClick={() => void query.fetchNextPage()}
         >
-          加载更多
+          {t(($) => $.loadMore)}
         </Button>
       )}
     </div>

@@ -8,7 +8,6 @@ import {
   type SyncPacket,
 } from '../../../shared/streaming/protocol';
 import { api, ApiError } from '../../platform/api';
-import { notifyAuthFailure } from '../../platform/auth';
 import { SnapshotWriter } from './snapshot-writer';
 import { storageEpoch } from '../../platform/storage';
 import { cachedSnapshot, writeChatCache as write } from './cache';

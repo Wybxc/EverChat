@@ -1,3 +1,9 @@
+export class InvalidPushSubscriptionError extends Error {
+  readonly code = 'PUSH_SUBSCRIPTION_INVALID';
+  constructor() {
+    super('The browser returned invalid push subscription keys. Enable notifications again.');
+  }
+}
 import type { NotificationDevice } from '../../../shared/notifications/protocol';
 
 type BrowserSubscription = {
@@ -12,8 +18,7 @@ export function serializePushSubscription(
 ): NonNullable<NotificationDevice['subscription']> {
   const key = (name: 'auth' | 'p256dh', length: number) => {
     const value = subscription.getKey(name);
-    if (!value || value.byteLength !== length)
-      throw new Error('浏览器未返回有效的推送订阅密钥，请重新启用通知。');
+    if (!value || value.byteLength !== length) throw new InvalidPushSubscriptionError();
     return btoa(String.fromCharCode(...new Uint8Array(value)))
       .replace(/\+/g, '-')
       .replace(/\//g, '_')

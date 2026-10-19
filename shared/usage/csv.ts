@@ -1,8 +1,15 @@
 import { formatAmount } from './pricing';
-import { usageKindLabels, usageStatusLabels, type UsageRecord } from './types';
+import type { UsageRecord, UsageKind, UsageStatus } from './types';
 
-export const usageCsvHeader =
-  '时间,类型,供应商,模型,状态,输入 Token,输出 Token,缓存读取 Token,用量完整,币种,估算费用\r\n';
+export interface UsageCsvLabels {
+  header: string[];
+  kinds: Record<UsageKind, string>;
+  statuses: Record<UsageStatus, string>;
+  yes: string;
+  no: string;
+}
+export const usageCsvHeader = (labels: UsageCsvLabels) =>
+  labels.header.map(csvCell).join(',') + '\r\n';
 export function csvCell(value: string | number | undefined) {
   const text = String(value ?? '');
   // Spreadsheet applications also interpret formulas after whitespace/control characters.
@@ -10,18 +17,18 @@ export function csvCell(value: string | number | undefined) {
     /^[\s\u0000-\u001f]*[=+\-@]/.test(text) || /^[\t\r\n]/.test(text) ? `'${text}` : text;
   return `"${safe.replaceAll('"', '""')}"`;
 }
-export function usageCsvRow(record: UsageRecord) {
+export function usageCsvRow(record: UsageRecord, labels: UsageCsvLabels) {
   return (
     [
       new Date(record.startedAt).toISOString(),
-      usageKindLabels[record.kind],
+      labels.kinds[record.kind],
       record.providerName,
       record.modelName,
-      usageStatusLabels[record.status],
+      labels.statuses[record.status],
       record.usage.inputTokens,
       record.usage.outputTokens,
       record.usage.cachedInputTokens,
-      record.usageIsFinal ? '是' : '否',
+      record.usageIsFinal ? labels.yes : labels.no,
       record.cost.currency ?? '',
       record.cost.amount === null ? '' : formatAmount(record.cost.amount, 12),
     ]

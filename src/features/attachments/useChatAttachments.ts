@@ -1,3 +1,4 @@
+import { t } from './locales';
 import type { RefObject } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import * as v from 'valibot';
@@ -72,11 +73,11 @@ export function useChatAttachments({
   const addUploads = async (inputFiles: File[], forcedKind?: 'image' | 'file') => {
     if (!inputFiles.length || isBusy() || imageUpload.current) return;
     if (!navigator.onLine || !session?.attachmentsConfigured) {
-      setError('附件上传需要联网并配置文件存储。');
+      setError(t(($) => $.storageRequired));
       return;
     }
     if (selected && !currentConversation) {
-      setError('请等待对话同步后再添加附件。');
+      setError(t(($) => $.waitSync));
       return;
     }
     const origin = selected,
@@ -111,16 +112,14 @@ export function useChatAttachments({
         try {
           controller.signal.throwIfAborted();
           if (kind === 'image' && !canAttemptCapability(selectedModel?.metadata, 'imageInput'))
-            throw new Error('当前模型不支持图片，请选择视觉模型。');
+            throw new Error(t(($) => $.visionRequired));
           if (
             (kind === 'image'
               ? draftImages.length + uploadedImages.length
               : draftFiles.length + uploadedFiles.length) >=
             (kind === 'image' ? MAX_MESSAGE_IMAGES : MAX_MESSAGE_DOCUMENTS)
           )
-            throw new Error(
-              kind === 'image' ? '每条消息最多添加 4 张图片。' : '每条消息最多添加 4 个文本文件。',
-            );
+            throw new Error(kind === 'image' ? t(($) => $.imageLimit) : t(($) => $.documentLimit));
           setImageProgress({ name: file.name, percent: 0, kind });
           const mediaType = fileMediaType(file.name);
           if (
@@ -129,7 +128,7 @@ export function useChatAttachments({
               !file.size ||
               (mediaType !== 'application/pdf' && file.size > MAX_DOCUMENT_BYTES))
           )
-            throw new Error('请选择 PDF 或不超过 128 KiB 的 UTF-8 文本、代码、CSV 文件。');
+            throw new Error(t(($) => $.invalidDocument));
           const prepared =
             kind === 'image' ? await prepareChatImage(file, controller.signal) : file;
           const input = await prepareAttachment(prepared, controller.signal);
@@ -137,17 +136,21 @@ export function useChatAttachments({
             kind === 'file' && input.mediaType === 'application/pdf'
               ? await preparePdf(prepared, input.sha256, controller.signal, (page, pages) =>
                   setImageProgress({
-                    name: `正在提取 ${prepared.name} · ${page}/${pages}`,
+                    name: t(($) => $.extracting, { name: prepared.name, page, pages }),
                     percent: Math.round((page / pages) * 100),
                     kind,
                   }),
                 )
               : undefined;
           controller.signal.throwIfAborted();
-          if (selectedRef.current !== origin) throw new DOMException('已切换对话', 'AbortError');
+          if (selectedRef.current !== origin)
+            throw new DOMException(
+              t(($) => $.chatChanged),
+              'AbortError',
+            );
           if (!conversation) {
             const parameters = v.safeParse(conversationSettingsSchema, conversationSettings);
-            if (!parameters.success) throw new Error('请先修正会话参数，再添加附件。');
+            if (!parameters.success) throw new Error(t(($) => $.settingsRequired));
             const created: ConversationInfo = {
               id: crypto.randomUUID(),
               title: (draft.trim() || file.name).slice(0, 26),
@@ -165,7 +168,7 @@ export function useChatAttachments({
           }
           if (!settingsSaved) {
             const parameters = v.safeParse(conversationSettingsSchema, conversationSettings);
-            if (!parameters.success) throw new Error('请先修正会话参数，再添加附件。');
+            if (!parameters.success) throw new Error(t(($) => $.settingsRequired));
             await api(
               `/conversations/${conversation.id}/settings`,
               'PUT',
@@ -198,7 +201,11 @@ export function useChatAttachments({
               mediaType: prepared.type as ImagePart['mediaType'],
             });
           else {
-            setImageProgress({ name: `正在解析 ${prepared.name}`, percent: 100, kind });
+            setImageProgress({
+              name: t(($) => $.parsing, { name: prepared.name }),
+              percent: 100,
+              kind,
+            });
             uploadedFiles.push(
               await api<DocumentPart>(
                 `/conversations/${conversation.id}/attachments/${saved.id}/document`,
@@ -227,11 +234,20 @@ export function useChatAttachments({
             await cleanup(registeredId);
             registered.splice(registered.indexOf(registeredId), 1);
           }
-          errors.push(`${file.name}：${error instanceof Error ? error.message : '附件上传失败。'}`);
+          errors.push(
+            t(($) => $.fileFailure, {
+              name: file.name,
+              error: error instanceof Error ? error.message : t(($) => $.uploadFailed),
+            }),
+          );
         }
       }
       controller.signal.throwIfAborted();
-      if (selectedRef.current !== origin) throw new DOMException('已切换对话', 'AbortError');
+      if (selectedRef.current !== origin)
+        throw new DOMException(
+          t(($) => $.chatChanged),
+          'AbortError',
+        );
       if (conversation && (uploadedImages.length || uploadedFiles.length)) {
         const savedDraft = read<{ text: string; images?: ImagePart[]; files?: DocumentPart[] }>(
           `draft:${origin ?? 'new'}`,
@@ -260,7 +276,7 @@ export function useChatAttachments({
     } catch (error) {
       for (const id of registered) await cleanup(id);
       if (selectedRef.current === origin && !controller.signal.aborted)
-        setError(error instanceof Error ? error.message : '附件上传失败。');
+        setError(error instanceof Error ? error.message : t(($) => $.uploadFailed));
     } finally {
       if (imageUpload.current === operation) {
         imageUpload.current = null;

@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import './locales';
 import { useRef, useState } from 'react';
 import { Check, ChevronDown } from 'lucide-react';
 import type { ChatModel } from '../../../shared/models/types';
@@ -24,6 +26,8 @@ export function ModelPicker({
   choose: (value: string) => void;
   focusComposer: () => void;
 }) {
+  const { t } = useTranslation('providers', { useSuspense: false });
+
   const [open, setOpen] = useState(false);
   const selectedInMenu = useRef(false);
   return (
@@ -34,7 +38,7 @@ export function ModelPicker({
           variant="ghost"
           role="combobox"
           data-model-key={modelSelectionKey(selected)}
-          aria-label="聊天模型"
+          aria-label={t(($) => $.chatModel)}
           aria-expanded={open}
           className="min-w-11 flex-1 justify-between gap-1 px-2 sm:max-w-80"
           title={`${selected.providerName} · ${selected.name}`}
@@ -58,9 +62,12 @@ export function ModelPicker({
         }}
       >
         <Command>
-          <CommandInput placeholder="搜索模型" aria-label="搜索模型" />
+          <CommandInput
+            placeholder={t(($) => $.searchModels)}
+            aria-label={t(($) => $.searchModels)}
+          />
           <CommandList>
-            <CommandEmpty>没有匹配的模型</CommandEmpty>
+            <CommandEmpty>{t(($) => $.noModelMatches)}</CommandEmpty>
             {[...new Set(models.map((model) => model.providerId))].map((providerId) => (
               <CommandGroup
                 key={providerId}

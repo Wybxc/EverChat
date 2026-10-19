@@ -105,18 +105,3 @@ export interface UsageReport {
   trend: UsageGroup[];
   collectedSince: number | null;
 }
-export const usageKindLabels: Record<UsageKind, string> = {
-  chat: '对话',
-  summary: '摘要',
-  title: '标题',
-  probe: '能力检测',
-  web_search: '网页搜索',
-  read_webpage: '网页读取',
-};
-export const usageStatusLabels: Record<UsageStatus, string> = {
-  running: '进行中',
-  completed: '成功',
-  failed: '失败',
-  cancelled: '已取消',
-  unknown: '结果未知',
-};

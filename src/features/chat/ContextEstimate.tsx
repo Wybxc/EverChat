@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next';
 import './locales';
 import { Button } from '@/components/ui/button';
 import type { ContextEstimate } from '../../../shared/conversation/context-budget';
-import { metadataSourceLabels } from '../../../shared/models/metadata';
+import { metadataSourceLabel } from '../providers/model-labels';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { formatNumber } from '../../platform/i18n/format';
 
@@ -93,7 +93,7 @@ export function ContextEstimateDetails({ estimate }: { estimate: ContextEstimate
         )}
         <dt>{t(($) => $.modelWindow)}</dt>
         <dd>
-          {number.format(estimate.contextWindow)} · {metadataSourceLabels[estimate.windowSource]}
+          {number.format(estimate.contextWindow)} · {metadataSourceLabel(estimate.windowSource)}
         </dd>
         <dt>{t(($) => $.outputReserve)}</dt>
         <dd>

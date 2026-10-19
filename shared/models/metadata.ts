@@ -1,4 +1,4 @@
-import type { MetadataSource, ModelMetadata, ProviderModel, ResolvedModelMetadata } from './types';
+import type { ModelMetadata, ProviderModel, ResolvedModelMetadata } from './types';
 import type { ProviderApiKind } from '../providers/types';
 import { matchModelCatalog } from './catalog';
 
@@ -12,15 +12,6 @@ export const reasoningEfforts = [
   'xhigh',
   'max',
 ] as const;
-export const metadataSourceLabels: Record<MetadataSource, string> = {
-  manual: '自定义',
-  provider: '供应商',
-  tested: '已验证',
-  catalog: '内置',
-  directory: '模型目录',
-  inferred: '别名推断',
-  fallback: '未识别',
-};
 export const FALLBACK_MODEL_METADATA: Readonly<ModelMetadata> = {
   contextWindow: 32_768,
   contextScope: 'combined',

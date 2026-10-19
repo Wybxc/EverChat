@@ -1,9 +1,13 @@
+import { useTranslation } from 'react-i18next';
+import './locales';
 import type { ShareBlock } from '../../../shared/sharing/types';
 import { MarkdownContent } from '../chat/rendering/MarkdownContent';
 import { UserMessageBubble } from '../chat/UserMessageBubble';
 import { Infinity as InfinityIcon } from 'lucide-react';
 
 export function ShareContent({ blocks }: { blocks: ShareBlock[] }) {
+  const { t } = useTranslation('sharing', { useSuspense: false });
+
   const messages: {
     index: number;
     role: 'user' | 'assistant';
@@ -33,7 +37,10 @@ export function ShareContent({ blocks }: { blocks: ShareBlock[] }) {
       {messages.map((message) => (
         <article
           key={message.index}
-          aria-label={`${message.role === 'user' ? '提问' : '回答'} ${message.index + 1}`}
+          aria-label={t(($) => $.messageLabel, {
+            role: message.role === 'user' ? t(($) => $.question) : t(($) => $.answer),
+            index: message.index + 1,
+          })}
           data-testid={`${message.role}-message`}
           className={
             message.role === 'user' ? 'ml-auto w-fit min-w-0 max-w-[90%] sm:max-w-[82%]' : 'min-w-0'
@@ -41,7 +48,7 @@ export function ShareContent({ blocks }: { blocks: ShareBlock[] }) {
         >
           {message.role === 'user' ? (
             <>
-              <h2 className="sr-only">提问</h2>
+              <h2 className="sr-only">{t(($) => $.question)}</h2>
               {message.text && <UserMessageBubble>{message.text}</UserMessageBubble>}
             </>
           ) : (
@@ -52,7 +59,7 @@ export function ShareContent({ blocks }: { blocks: ShareBlock[] }) {
               </h2>
               {message.reasoning && (
                 <details className="mb-4 text-sm text-muted-foreground">
-                  <summary className="cursor-pointer">思考内容</summary>
+                  <summary className="cursor-pointer">{t(($) => $.reasoning)}</summary>
                   <div className="pt-2">
                     <MarkdownContent content={message.reasoning} streaming={false} publicContent />
                   </div>
@@ -62,7 +69,9 @@ export function ShareContent({ blocks }: { blocks: ShareBlock[] }) {
             </>
           )}
           {message.omitted > 0 && (
-            <p className="mt-2 text-xs text-muted-foreground">已省略 {message.omitted} 个附件</p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              {t(($) => $.omitted, { count: message.omitted })}
+            </p>
           )}
         </article>
       ))}

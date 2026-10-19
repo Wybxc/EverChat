@@ -1,3 +1,4 @@
+import { notificationText } from './text';
 /// <reference lib="webworker" />
 import * as v from 'valibot';
 import {
@@ -10,7 +11,11 @@ import {
   shouldNotify,
   type AnswerCompletion,
 } from '../../../shared/notifications/protocol';
-import { claimLocalNotification, readNotificationPreference } from './store';
+import {
+  claimLocalNotification,
+  readNotificationPreference,
+  readNotificationLocale,
+} from './store';
 
 declare const self: ServiceWorkerGlobalScope;
 const windows = async () =>
@@ -19,8 +24,14 @@ const windows = async () =>
       new URL(client.url).origin === self.location.origin &&
       !/^\/(s|public|api|auth|cdn-cgi)(\/|$)/.test(new URL(client.url).pathname),
   );
-const options = (completion?: AnswerCompletion): NotificationOptions & { renotify: boolean } => ({
-  body: completion ? '回答已完成' : '通知已启用',
+const options = async (
+  completion?: AnswerCompletion,
+): Promise<NotificationOptions & { renotify: boolean }> => ({
+  body: notificationText(
+    await readNotificationLocale().catch(() => undefined),
+    navigator.languages,
+    Boolean(completion),
+  ),
   icon: '/icon-192.png',
   badge: '/icon-192.png',
   tag: completion ? completionId(completion) : 'everchat:test',
@@ -49,7 +60,7 @@ export function registerAnswerNotifications() {
         if (!completion.success) return;
         // Every accepted push displays a visible notification, including a foreground race
         // or a retry. The server suppresses foreground delivery before contacting the gateway.
-        await self.registration.showNotification('EverChat', options(completion.output));
+        await self.registration.showNotification('EverChat', await options(completion.output));
       })(),
     );
   });
@@ -76,7 +87,7 @@ export function registerAnswerNotifications() {
           )
             return;
           if (input.type === 'test') {
-            await self.registration.showNotification('EverChat', options());
+            await self.registration.showNotification('EverChat', await options());
           } else {
             const result = v.safeParse(completionSchema, input.completion);
             if (!result.success || !completionIsRecent(result.output) || preference.push) return;
@@ -93,7 +104,7 @@ export function registerAnswerNotifications() {
               return;
             const latest = await readNotificationPreference();
             if (!latest?.enabled || latest.revision !== preference.revision) return;
-            await self.registration.showNotification('EverChat', options(result.output));
+            await self.registration.showNotification('EverChat', await options(result.output));
           }
           event.ports[0]?.postMessage({ ok: true });
         } catch {

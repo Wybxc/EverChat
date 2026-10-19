@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import './locales';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
@@ -6,11 +8,15 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { useEffect, useRef, useState } from 'react';
 import {
   MAX_MODEL_TOKENS,
-  metadataSourceLabels,
   reasoningEfforts,
   resolveModelMetadata,
 } from '../../../shared/models/metadata';
-import { effortLabels } from '../../../shared/models/selection';
+import {
+  metadataSourceLabel,
+  effortLabel,
+  probeCapabilityLabel,
+  probeReasonLabel,
+} from './model-labels';
 import type {
   ModelMetadata,
   ModelMetadataOverrides,
@@ -20,11 +26,7 @@ import type { ProviderApiKind } from '../../../shared/providers/types';
 import * as v from 'valibot';
 import { modelSchema } from '../../../shared/providers/settings';
 import { Disclosure } from '../../components/Disclosure';
-import {
-  probeCapabilityLabels,
-  probeReasonLabels,
-  type ModelProbeResult,
-} from '../../../shared/models/probe';
+import { type ModelProbeResult } from '../../../shared/models/probe';
 import { ProviderFailureView } from './ProviderFailureView';
 
 function TokenLimitInput({
@@ -38,6 +40,8 @@ function TokenLimitInput({
   automatic: number;
   change: (value: number | undefined) => void;
 }) {
+  useTranslation('providers', { useSuspense: false });
+
   const input = useRef<HTMLInputElement>(null);
   const [text, setText] = useState(value === undefined ? '' : String(value));
   useEffect(() => {
@@ -93,6 +97,8 @@ export function ModelMetadataFields({
   results: ModelProbeResult[];
   testError: string;
 }) {
+  const { t } = useTranslation('providers', { useSuspense: false });
+
   const metadata = resolveModelMetadata(provider, model);
   const automatic = resolveModelMetadata(provider, {
     ...model,
@@ -102,17 +108,19 @@ export function ModelMetadataFields({
   const overrides = model.metadataOverrides ?? {};
   const change = (patch: ModelMetadataOverrides) =>
     onChange({ metadataOverrides: { ...overrides, ...patch } });
-  const source = (field: keyof ModelMetadata) => metadataSourceLabels[metadata.sources[field]];
+  const source = (field: keyof ModelMetadata) => metadataSourceLabel(metadata.sources[field]);
   const capability = (field: 'imageInput' | 'toolCalls' | 'structuredOutput' | 'reasoning') => {
     if (automatic.sources[field] === 'fallback')
-      return field === 'imageInput' || field === 'toolCalls' ? '未识别，可尝试' : '未识别';
+      return field === 'imageInput' || field === 'toolCalls'
+        ? t(($) => $.unknownCanTry)
+        : t(($) => $.unknown);
     if (
       automatic.sources[field] === 'inferred' &&
       !automatic[field] &&
       (field === 'imageInput' || field === 'toolCalls')
     )
-      return '推断不支持，可尝试';
-    return automatic[field] ? '支持' : '不支持';
+      return t(($) => $.inferredUnsupported);
+    return automatic[field] ? t(($) => $.supported) : t(($) => $.unsupported);
   };
   const custom =
     Object.values(overrides).filter((value) => value !== undefined).length +
@@ -129,13 +137,13 @@ export function ModelMetadataFields({
       forceOpen={invalid}
       title={
         <>
-          模型能力{' '}
+          {t(($) => $.modelCapabilities)}{' '}
           <span className="ml-2 text-xs font-normal text-muted-foreground">
             {custom
-              ? `自定义 ${custom} 项`
+              ? t(($) => $.customCount, { count: custom })
               : automatic.sources.contextWindow === 'fallback'
-                ? '未识别'
-                : '自动'}
+                ? t(($) => $.unknown)
+                : t(($) => $.automatic)}
           </span>
         </>
       }
@@ -145,36 +153,38 @@ export function ModelMetadataFields({
           <Button
             variant="secondary"
             type="button"
-            title="发送最多 3 次模型请求，可能产生供应商费用"
+            title={t(($) => $.probeCostHint)}
             disabled={testing}
             onClick={onTest}
           >
             {testing && <Spinner />}
-            {testing ? '测试中' : '测试能力'}
+            {testing ? t(($) => $.testing) : t(($) => $.testCapabilities)}
           </Button>
           <Button
             variant="ghost"
             type="button"
             onClick={() => onChange({ metadataOverrides: undefined, reasoningSupport: 'auto' })}
           >
-            恢复自动
+            {t(($) => $.restoreAutomatic)}
           </Button>
         </div>
         {(testing || results.length > 0) && (
           <div
             role="status"
             aria-live="polite"
-            aria-label="能力测试结果"
+            aria-label={t(($) => $.probeResults)}
             className="space-y-1 text-xs"
           >
             {results.map((result) => (
               <div key={result.capability}>
                 <p>
-                  {probeCapabilityLabels[result.capability]}：{probeReasonLabels[result.reason]}
+                  {probeCapabilityLabel(result.capability)}：{probeReasonLabel(result.reason)}
                 </p>
                 {result.failure && (
                   <ProviderFailureView
-                    summary={`${probeCapabilityLabels[result.capability]}测试失败`}
+                    summary={t(($) => $.probeFailureSummary, {
+                      capability: probeCapabilityLabel(result.capability),
+                    })}
                     failure={result.failure}
                     stateKey={`probe:${result.capability}:${result.testedAt}`}
                     showSummary={false}
@@ -192,17 +202,20 @@ export function ModelMetadataFields({
         <div className="grid gap-3 sm:grid-cols-2">
           {(
             [
-              ['contextWindow', '上下文窗口'],
-              ['maxOutputTokens', '最大输出'],
+              ['contextWindow', t(($) => $.contextWindow)],
+              ['maxOutputTokens', t(($) => $.maxOutput)],
             ] as const
           ).map(([field, label]) => (
             <label key={field} className="block min-w-0 space-y-1">
               <span className="flex flex-wrap justify-between gap-1 text-sm">
-                <span>{label}（Tokens）</span>
+                <span>{t(($) => $.tokenField, { label })}</span>
                 <span className="text-xs text-muted-foreground">{source(field)}</span>
               </span>
               <TokenLimitInput
-                label={`${label}（Tokens） ${index + 1}`}
+                label={t(($) => $.indexedField, {
+                  label: t(($) => $.tokenField, { label }),
+                  index: index + 1,
+                })}
                 value={overrides[field]}
                 automatic={automatic[field]}
                 change={(value) => change({ [field]: value })}
@@ -211,11 +224,11 @@ export function ModelMetadataFields({
           ))}
           <label className="block min-w-0 space-y-1">
             <span className="flex flex-wrap justify-between gap-1 text-sm">
-              <span>窗口范围</span>
+              <span>{t(($) => $.contextScope)}</span>
               <span className="text-xs text-muted-foreground">{source('contextScope')}</span>
             </span>
             <NativeSelect
-              aria-label={`窗口范围 ${index + 1}`}
+              aria-label={t(($) => $.contextScopeField, { index: index + 1 })}
               className="w-full border-input"
               value={overrides.contextScope ?? 'auto'}
               onChange={(event) =>
@@ -228,19 +241,24 @@ export function ModelMetadataFields({
               }
             >
               <option value="auto">
-                自动（{automatic.contextScope === 'input' ? '仅输入' : '输入＋输出'}）
+                {t(($) => $.automaticValue, {
+                  value:
+                    automatic.contextScope === 'input'
+                      ? t(($) => $.inputOnly)
+                      : t(($) => $.combined),
+                })}
               </option>
-              <option value="combined">输入＋输出</option>
-              <option value="input">仅输入</option>
+              <option value="combined">{t(($) => $.combined)}</option>
+              <option value="input">{t(($) => $.inputOnly)}</option>
             </NativeSelect>
           </label>
           <label className="block min-w-0 space-y-1">
             <span className="flex flex-wrap justify-between gap-1 text-sm">
-              <span>思考能力</span>
+              <span>{t(($) => $.reasoningSupport)}</span>
               <span className="text-xs text-muted-foreground">{source('reasoning')}</span>
             </span>
             <NativeSelect
-              aria-label={`思考能力 ${index + 1}`}
+              aria-label={t(($) => $.reasoningSupportField, { index: index + 1 })}
               className="w-full border-input"
               value={model.reasoningSupport ?? 'auto'}
               onChange={(event) =>
@@ -249,16 +267,18 @@ export function ModelMetadataFields({
                 })
               }
             >
-              <option value="auto">自动（{capability('reasoning')}）</option>
-              <option value="supported">支持</option>
-              <option value="unsupported">不支持</option>
+              <option value="auto">
+                {t(($) => $.automaticValue, { value: capability('reasoning') })}
+              </option>
+              <option value="supported">{t(($) => $.supported)}</option>
+              <option value="unsupported">{t(($) => $.unsupported)}</option>
             </NativeSelect>
           </label>
           {(
             [
-              ['imageInput', '图片输入'],
-              ['toolCalls', '工具调用'],
-              ['structuredOutput', '结构化输出'],
+              ['imageInput', t(($) => $.imageInput)],
+              ['toolCalls', t(($) => $.toolCalls)],
+              ['structuredOutput', t(($) => $.structuredOutput)],
             ] as const
           ).map(([field, label]) => (
             <label key={field} className="block min-w-0 space-y-1">
@@ -267,7 +287,7 @@ export function ModelMetadataFields({
                 <span className="text-xs text-muted-foreground">{source(field)}</span>
               </span>
               <NativeSelect
-                aria-label={`${label} ${index + 1}`}
+                aria-label={t(($) => $.indexedField, { label, index: index + 1 })}
                 className="w-full border-input"
                 value={
                   overrides[field] === undefined
@@ -285,19 +305,21 @@ export function ModelMetadataFields({
                   })
                 }
               >
-                <option value="auto">自动（{capability(field)}）</option>
-                <option value="supported">支持</option>
-                <option value="unsupported">不支持</option>
+                <option value="auto">
+                  {t(($) => $.automaticValue, { value: capability(field) })}
+                </option>
+                <option value="supported">{t(($) => $.supported)}</option>
+                <option value="unsupported">{t(($) => $.unsupported)}</option>
               </NativeSelect>
             </label>
           ))}
         </div>
-        <p className="text-xs text-muted-foreground">留空自动；模型最大输出不改变请求输出上限。</p>
+        <p className="text-xs text-muted-foreground">{t(($) => $.limitsHint)}</p>
         {metadata.reasoning && (
           <div className="space-y-2">
             <label className="flex items-center gap-2 text-sm">
               <Checkbox
-                aria-label={`自定义思维强度 ${index + 1}`}
+                aria-label={t(($) => $.customEffortsField, { index: index + 1 })}
                 checked={overrides.reasoningEfforts !== undefined}
                 onCheckedChange={(checked) =>
                   change({
@@ -305,19 +327,22 @@ export function ModelMetadataFields({
                   })
                 }
               />
-              自定义可选思维强度
+              {t(($) => $.customEfforts)}
               <span className="text-xs text-muted-foreground">{source('reasoningEfforts')}</span>
             </label>
             {overrides.reasoningEfforts !== undefined && (
               <div
                 role="group"
-                aria-label={`可选思维强度 ${index + 1}`}
+                aria-label={t(($) => $.availableEffortsField, { index: index + 1 })}
                 className="flex flex-wrap gap-x-4 gap-y-2"
               >
                 {reasoningEfforts.map((effort) => (
                   <label key={effort} className="flex items-center gap-2 text-sm">
                     <Checkbox
-                      aria-label={`思维强度 ${effortLabels[effort]} ${index + 1}`}
+                      aria-label={t(($) => $.effortField, {
+                        effort: effortLabel(effort),
+                        index: index + 1,
+                      })}
                       checked={overrides.reasoningEfforts!.includes(effort)}
                       onCheckedChange={(checked) =>
                         change({
@@ -329,7 +354,7 @@ export function ModelMetadataFields({
                         })
                       }
                     />
-                    {effortLabels[effort]}
+                    {effortLabel(effort)}
                   </label>
                 ))}
               </div>
@@ -338,7 +363,7 @@ export function ModelMetadataFields({
         )}
         {invalid && (
           <p role="alert" className="text-xs">
-            请检查模型能力参数。
+            {t(($) => $.invalidCapabilities)}
           </p>
         )}
       </div>

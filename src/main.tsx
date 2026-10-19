@@ -1,5 +1,6 @@
 import { isSharePage } from '../shared/sharing/types';
 import './style.css';
+import { startupFailureText } from './platform/i18n/startup';
 
 // Select the public entry before private storage, identity, notifications or PWA startup.
 void (
@@ -8,5 +9,5 @@ void (
     : import('./private-bootstrap').then((module) => module.start())
 ).catch(() => {
   const root = document.getElementById('root');
-  if (root) root.textContent = '加载失败，请恢复连接后刷新页面。';
+  if (root) root.textContent = startupFailureText();
 });

@@ -1,3 +1,6 @@
+import { formatDateTime } from '../../platform/i18n/format';
+import { useTranslation } from 'react-i18next';
+import './locales';
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as v from 'valibot';
@@ -13,29 +16,31 @@ import {
 } from '../../../shared/usage/types';
 
 const rates = [
-  ['input', '每百万输入 Token'],
-  ['output', '每百万输出 Token'],
-  ['reasoning', '每百万思考 Token'],
-  ['cacheRead', '每百万缓存读取 Token'],
-  ['cacheWrite', '每百万缓存写入 Token'],
-  ['perRequest', '每次请求'],
+  ['input', 'rateInput'],
+  ['output', 'rateOutput'],
+  ['reasoning', 'rateReasoning'],
+  ['cacheRead', 'rateCacheRead'],
+  ['cacheWrite', 'rateCacheWrite'],
+  ['perRequest', 'ratePerRequest'],
 ] as const;
 export const priceQuery = () => api<UsagePrice[]>('/usage/prices');
 
 export function ModelPriceButton({ providerId, model }: { providerId: string; model: string }) {
+  const { t } = useTranslation('usage', { useSuspense: false });
+
   const [open, setOpen] = useState(false);
   const query = useQuery({ queryKey: ['usage', 'prices'], queryFn: priceQuery, enabled: open });
   return (
     <>
       <Button variant="ghost" onClick={() => setOpen(true)}>
-        配置价格
+        {t(($) => $.configurePrice)}
       </Button>
       <Modal showCloseButton open={open} onOpenChange={setOpen}>
         <div className="flex max-h-[min(42rem,calc(100dvh-2rem))] w-full max-w-lg flex-col overflow-hidden p-4">
-          <ModalTitle className="shrink-0 pr-8">模型定价</ModalTitle>
+          <ModalTitle className="shrink-0 pr-8">{t(($) => $.pricingTitle)}</ModalTitle>
           <div className="min-h-0 overflow-y-auto pt-3">
             {query.isPending ? (
-              <p role="status">读取中…</p>
+              <p role="status">{t(($) => $.loading)}</p>
             ) : query.error ? (
               <p role="alert">{query.error.message}</p>
             ) : (
@@ -65,6 +70,8 @@ export function PriceEditor({
   prices: UsagePrice[];
   onSaved?: () => void;
 }) {
+  const { t } = useTranslation('usage', { useSuspense: false });
+
   const saved = prices.find((p) => p.providerId === providerId && p.model === model);
   const [draft, setDraft] = useState<UsagePriceInput>(() => ({
     providerId,
@@ -92,17 +99,17 @@ export function PriceEditor({
         setNotice('');
         const result = v.safeParse(priceInputSchema, draft);
         if (!result.success) {
-          setError('币种须为三位大写代码；单价须为非负数，最多六位小数。');
+          setError(t(($) => $.invalidPrice));
           return;
         }
         setBusy(true);
         try {
           await api('/usage/prices', 'PUT', result.output);
           await client.invalidateQueries({ queryKey: ['usage'] });
-          setNotice('已保存，仅影响后续请求。');
+          setNotice(t(($) => $.priceSaved));
           onSaved?.();
         } catch (failure) {
-          setError(failure instanceof Error ? failure.message : '保存失败。');
+          setError(failure instanceof Error ? failure.message : t(($) => $.saveFailed));
         } finally {
           setBusy(false);
         }
@@ -111,7 +118,7 @@ export function PriceEditor({
       <p className="break-all text-sm">{model}</p>
       {copies.length > 0 && (
         <NativeSelect
-          aria-label="复制其他模型价格"
+          aria-label={t(($) => $.copyPrice)}
           value=""
           onChange={(event) => {
             const source = copies.find((p) => p.id === event.target.value);
@@ -121,7 +128,7 @@ export function PriceEditor({
             }
           }}
         >
-          <option value="">复制其他模型价格…</option>
+          <option value="">{t(($) => $.copyPricePlaceholder)}</option>
           {copies.map((p) => (
             <option key={p.id} value={p.id}>
               {p.model}
@@ -131,21 +138,21 @@ export function PriceEditor({
       )}
       <div className="grid grid-cols-2 gap-2">
         <label className="space-y-1 text-xs">
-          币种
+          {t(($) => $.currency)}
           <Input
-            aria-label="计价币种"
+            aria-label={t(($) => $.pricingCurrency)}
             value={draft.currency}
             maxLength={3}
             onChange={(e) => setDraft({ ...draft, currency: e.target.value.toUpperCase() })}
           />
         </label>
-        {rates.map(([key, label]) => (
+        {rates.map(([key, labelKey]) => (
           <label key={key} className="space-y-1 text-xs">
-            {label}
+            {t(($) => $[labelKey])}
             <Input
-              aria-label={label}
+              aria-label={t(($) => $[labelKey])}
               inputMode="decimal"
-              placeholder="未知"
+              placeholder={t(($) => $.unknown)}
               value={draft[key] ?? ''}
               onChange={(e) => setDraft({ ...draft, [key]: e.target.value || null })}
             />
@@ -153,25 +160,28 @@ export function PriceEditor({
         ))}
       </div>
       <label className="block space-y-1 text-xs">
-        价格来源
+        {t(($) => $.priceSource)}
         <Input
-          aria-label="价格来源"
+          aria-label={t(($) => $.priceSource)}
           maxLength={500}
           value={draft.source}
           onChange={(e) => setDraft({ ...draft, source: e.target.value })}
         />
       </label>
-      <p className="text-xs text-muted-foreground">
-        留空表示未知，0 表示免费。缓存单价留空时继承输入单价，思考单价留空时继承输出单价。
-      </p>
+      <p className="text-xs text-muted-foreground">{t(($) => $.priceHint)}</p>
       {saved?.id.startsWith('models.dev:') ? (
         <p className="text-xs text-muted-foreground">
-          默认参考价格：{saved.source} · USD。保存后使用自定义价格。
+          {t(($) => $.defaultPrice, { source: saved.source })}
         </p>
       ) : (
         saved && (
           <p className="text-xs text-muted-foreground">
-            当前价格生效于 {new Date(saved.effectiveFrom).toLocaleString()}
+            {t(($) => $.priceEffective, {
+              date: formatDateTime(saved.effectiveFrom, {
+                dateStyle: 'medium',
+                timeStyle: 'medium',
+              }),
+            })}
           </p>
         )
       )}
@@ -186,7 +196,7 @@ export function PriceEditor({
         </p>
       )}
       <Button type="submit" disabled={busy}>
-        {busy ? '保存中…' : '保存价格'}
+        {busy ? t(($) => $.saving) : t(($) => $.savePrice)}
       </Button>
     </form>
   );

@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import { pwaMessage } from './locales';
 import { useState, useSyncExternalStore } from 'react';
 import { Download, RefreshCw, Wrench, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -13,11 +15,13 @@ import {
 } from './controller';
 
 export function PwaSettings() {
+  const { t } = useTranslation('pwa', { useSuspense: false });
+
   const state = useSyncExternalStore(subscribePwa, pwaSnapshot);
   const [repair, setRepair] = useState(false);
-  const [copyStatus, setCopyStatus] = useState('');
+  const [copyStatus, setCopyStatus] = useState<'copied' | 'copyFailed' | ''>('');
   return (
-    <section aria-label="应用" className="space-y-2">
+    <section aria-label={t(($) => $.application)} className="space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-sm font-medium">EverChat</span>
         <span className="break-all text-xs text-muted-foreground" data-testid="app-version">
@@ -28,7 +32,7 @@ export function PwaSettings() {
         {!state.installed && state.canInstall && (
           <Button variant="secondary" type="button" onClick={() => void installPwa()}>
             <Download className="size-4" />
-            安装应用
+            {t(($) => $.install)}
           </Button>
         )}
         {state.supported && (
@@ -41,12 +45,12 @@ export function PwaSettings() {
             >
               {state.checking || state.installing ? <Spinner /> : <RefreshCw className="size-4" />}
               {state.installing
-                ? '准备更新资源'
+                ? t(($) => $.preparingResources)
                 : state.checking
-                  ? '检查中'
+                  ? t(($) => $.checking)
                   : state.pending
-                    ? '浏览器仍在检查'
-                    : '检查更新'}
+                    ? t(($) => $.stillChecking)
+                    : t(($) => $.check)}
             </Button>
             {state.available && (
               <Button
@@ -54,7 +58,7 @@ export function PwaSettings() {
                 disabled={state.preparing || state.repairing}
                 onClick={() => void applyPwaChange('update')}
               >
-                更新应用
+                {t(($) => $.update)}
               </Button>
             )}
             <Button
@@ -64,33 +68,33 @@ export function PwaSettings() {
               onClick={() => setRepair(true)}
             >
               <Wrench className="size-4" />
-              {state.repairing ? '准备修复资源' : '修复应用缓存'}
+              {state.repairing ? t(($) => $.preparingRepair) : t(($) => $.repairCache)}
             </Button>
           </>
         )}
       </div>
       <p className="text-xs text-muted-foreground">
         {state.installed
-          ? '已安装'
+          ? t(($) => $.installed)
           : !state.canInstall
-            ? '可从浏览器菜单安装应用或添加到主屏幕。'
+            ? t(($) => $.installHint)
             : null}
         {state.supported
           ? state.available
-            ? ' 有新版本'
+            ? t(($) => $.newVersion)
             : state.ready
-              ? ' 可离线启动'
-              : ' 离线启动尚未就绪'
+              ? t(($) => $.offlineReady)
+              : t(($) => $.offlineNotReady)
           : null}
       </p>
       {state.error && (
         <p role="alert" className="text-sm text-destructive">
-          {state.error}
+          {pwaMessage(state.error)}
         </p>
       )}
       {state.diagnostic && (
         <details className="text-xs text-muted-foreground">
-          <summary className="cursor-pointer">更新诊断</summary>
+          <summary className="cursor-pointer">{t(($) => $.diagnostics)}</summary>
           <pre className="my-2 max-h-48 overflow-auto whitespace-pre-wrap break-all select-text">
             {JSON.stringify(state.diagnostic, null, 2)}
           </pre>
@@ -99,25 +103,23 @@ export function PwaSettings() {
             size="sm"
             onClick={() => {
               void navigator.clipboard.writeText(JSON.stringify(state.diagnostic, null, 2)).then(
-                () => setCopyStatus('已复制'),
-                () => setCopyStatus('复制失败，请重试'),
+                () => setCopyStatus('copied'),
+                () => setCopyStatus('copyFailed'),
               );
             }}
           >
-            复制诊断
+            {t(($) => $.copyDiagnostics)}
           </Button>
-          <span role="status">{copyStatus}</span>
+          <span role="status">{copyStatus ? t(($) => $[copyStatus]) : ''}</span>
         </details>
       )}
       <Modal alert open={repair} onOpenChange={setRepair}>
         <div className="w-full max-w-sm space-y-4 p-5">
-          <ModalTitle>修复应用缓存</ModalTitle>
-          <p className="text-sm">
-            重新加载已打开的 EverChat 页面，保留本地对话、草稿和待发送请求。需要联网。
-          </p>
+          <ModalTitle>{t(($) => $.repairCache)}</ModalTitle>
+          <p className="text-sm">{t(($) => $.repairHint)}</p>
           <div className="dialog-actions">
             <Button variant="secondary" onClick={() => setRepair(false)}>
-              取消
+              {t(($) => $.cancel)}
             </Button>
             <Button
               onClick={() => {
@@ -125,7 +127,7 @@ export function PwaSettings() {
                 void applyPwaChange('repair');
               }}
             >
-              修复并重新加载
+              {t(($) => $.repairReload)}
             </Button>
           </div>
         </div>
@@ -134,6 +136,8 @@ export function PwaSettings() {
   );
 }
 export function PwaNotice() {
+  const { t } = useTranslation('pwa', { useSuspense: false });
+
   const state = useSyncExternalStore(subscribePwa, pwaSnapshot);
   const [dismissed, setDismissed] = useState(false);
   if (state.preparing)
@@ -143,7 +147,7 @@ export function PwaNotice() {
         role="status"
       >
         <Spinner />
-        正在更新应用…
+        {t(($) => $.updating)}
       </div>
     );
   const error = state.noticeError ? state.error : '';
@@ -154,14 +158,16 @@ export function PwaNotice() {
       role={error ? 'alert' : 'status'}
       data-testid="pwa-notice"
     >
-      <span className="min-w-0 flex-1">{error || '新版本已就绪'}</span>
+      <span className="min-w-0 flex-1">
+        {error ? t(($) => $[error]) : t(($) => $.versionReady)}
+      </span>
       {state.resourceError ? (
         <Button
           size="sm"
           disabled={state.repairing || state.pending}
           onClick={() => void applyPwaChange('repair')}
         >
-          修复缓存
+          {t(($) => $.repair)}
         </Button>
       ) : (
         state.available && (
@@ -170,20 +176,20 @@ export function PwaNotice() {
             disabled={state.repairing}
             onClick={() => void applyPwaChange('update')}
           >
-            更新
+            {t(($) => $.updateShort)}
           </Button>
         )
       )}
       <Button
         size="sm"
-        aria-label={error ? '关闭应用提示' : undefined}
+        aria-label={error ? t(($) => $.closeNotice) : undefined}
         variant="ghost"
         onClick={() => {
           setDismissed(true);
           dismissPwaError();
         }}
       >
-        {error ? <X className="size-4" aria-hidden="true" /> : '稍后'}
+        {error ? <X className="size-4" aria-hidden="true" /> : t(($) => $.later)}
       </Button>
     </div>
   );

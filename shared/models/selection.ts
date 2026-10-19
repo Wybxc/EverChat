@@ -1,16 +1,6 @@
-import type { ChatModel, ProviderModel, ReasoningEffort } from './types';
+import type { ChatModel, ProviderModel } from './types';
 import type { ProviderApiKind, ProviderSettings, ProviderSettingsInput } from '../providers/types';
 import { resolveModelMetadata } from './metadata';
-
-export const effortLabels: Record<ReasoningEffort, string> = {
-  none: '关闭',
-  minimal: '最低',
-  low: '低',
-  medium: '中',
-  high: '高',
-  xhigh: '更高',
-  max: '最高',
-};
 
 export function modelReasoning(provider: ProviderApiKind, model: ProviderModel) {
   const metadata = resolveModelMetadata(provider, model);

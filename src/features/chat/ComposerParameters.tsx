@@ -7,7 +7,7 @@ import { NativeSelect } from '@/components/ui/native-select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import type { ContextEstimate } from '../../../shared/conversation/context-budget';
 import type { ChatModel, ReasoningEffort } from '../../../shared/models/types';
-import { effortLabels } from '../../../shared/models/selection';
+import { effortLabel as modelEffortLabel } from '../providers/model-labels';
 import { ContextEstimateDetails, ContextEstimateView } from './ContextEstimate';
 
 export function ComposerParameters({
@@ -34,7 +34,7 @@ export function ComposerParameters({
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
   useEffect(() => setOpen(false), [compact]);
-  const effortLabel = effort ? effortLabels[effort] : t(($) => $.default);
+  const effortLabel = effort ? modelEffortLabel(effort) : t(($) => $.default);
   const description = t(($) => $.reasoningDescription, { effort: effortLabel });
   const reasoning = model?.reasoningSupported && model.reasoningEfforts.length > 0 && (
     <NativeSelect
@@ -48,7 +48,7 @@ export function ComposerParameters({
       <option value="">{t(($) => $.reasoning)}</option>
       {model.reasoningEfforts.map((value) => (
         <option key={value} value={value}>
-          {effortLabels[value]}
+          {modelEffortLabel(value)}
         </option>
       ))}
     </NativeSelect>
@@ -96,7 +96,7 @@ export function ComposerParameters({
                 aria-hidden="true"
                 className="absolute top-0 right-0 rounded bg-secondary px-0.5 text-[0.625rem] leading-tight text-secondary-foreground"
               >
-                {effortLabels[effort].slice(0, 1)}
+                {modelEffortLabel(effort).slice(0, 1)}
               </span>
             )}
           </Button>

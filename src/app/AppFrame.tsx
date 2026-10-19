@@ -17,7 +17,7 @@ export function AppFrame({
   children: ReactNode;
   dropOverlay?: ReactNode;
 }) {
-  const { t } = useTranslation('app', { useSuspense: false });
+  useTranslation('app', { useSuspense: false });
 
   return (
     <div className="flex h-dvh min-h-0 overflow-hidden" data-testid="app-frame">
@@ -90,7 +90,7 @@ export function SpaceSettingsButton({ open }: { open: () => void }) {
 }
 
 export function LoadingContent({ label = t(($) => $.loading) }: { label?: string }) {
-  const { t } = useTranslation('app', { useSuspense: false });
+  useTranslation('app', { useSuspense: false });
 
   return (
     <div

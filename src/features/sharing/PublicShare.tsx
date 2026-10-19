@@ -1,3 +1,6 @@
+import { LanguageControl } from '../../platform/i18n/LanguageControl';
+import { useTranslation } from 'react-i18next';
+import './locales';
 import { StrictMode, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { I18nextProvider } from 'react-i18next';
@@ -10,6 +13,8 @@ import { useThemeMode } from '../../platform/theme';
 import { ShareContent } from './ShareContent';
 
 function PublicSharePage() {
+  const { t } = useTranslation('sharing', { useSuspense: false });
+
   const [theme, chooseTheme] = useThemeMode();
   const [share, setShare] = useState<PublicShare>();
   const [blocks, setBlocks] = useState<ShareBlock[]>([]);
@@ -21,7 +26,7 @@ function PublicSharePage() {
     token = location.hash.slice(1);
   const request = async (signal: AbortSignal): Promise<SharedSnapshot> => {
     if (!shareIdPattern.test(id) || !shareSecretPattern.test(token))
-      throw new Error('链接不可用。');
+      throw new Error(t(($) => $.unavailable));
     let response: Response;
     try {
       response = await fetch(`/public/shares/${id}`, {
@@ -32,14 +37,14 @@ function PublicSharePage() {
         redirect: 'error',
       });
     } catch {
-      throw new Error('无法连接，请联网后重试。');
+      throw new Error(t(($) => $.connectionFailed));
     }
     if (!response.ok)
-      throw new Error(response.status === 404 ? '链接不可用。' : '暂时无法读取，请稍后重试。');
+      throw new Error(response.status === 404 ? t(($) => $.unavailable) : t(($) => $.readFailed));
     try {
       return (await response.json()) as SharedSnapshot;
     } catch {
-      throw new Error('暂时无法读取，请稍后重试。');
+      throw new Error(t(($) => $.readFailed));
     }
   };
   useEffect(() => {
@@ -53,14 +58,14 @@ function PublicSharePage() {
       .then((result) => {
         if (current !== version.current) return;
         if (result.share.expiresAt && result.share.expiresAt <= Date.now())
-          throw new Error('链接不可用。');
+          throw new Error(t(($) => $.unavailable));
         setShare(result.share);
         setBlocks(result.page.blocks);
         document.title = `${result.share.title} · EverChat`;
       })
       .catch((failure) => {
         if (!controller.signal.aborted && current === version.current)
-          setError(failure instanceof Error ? failure.message : '暂时无法读取。');
+          setError(failure instanceof Error ? failure.message : t(($) => $.readFailedShort));
       })
       .finally(() => {
         if (current === version.current) setBusy(false);
@@ -80,7 +85,7 @@ function PublicSharePage() {
       else {
         setShare(undefined);
         setBlocks([]);
-        setError('链接不可用。');
+        setError(t(($) => $.unavailable));
         document.title = 'EverChat';
       }
     };
@@ -108,15 +113,18 @@ function PublicSharePage() {
     <div className="min-h-dvh bg-background text-foreground">
       <header className="sticky top-0 z-10 flex items-center justify-between gap-3 bg-background/95 px-4 py-3 backdrop-blur">
         <span className="font-semibold">EverChat</span>
-        <NativeSelect
-          aria-label="颜色模式"
-          value={theme}
-          onChange={(event) => chooseTheme(event.target.value as typeof theme)}
-        >
-          <option value="system">跟随系统</option>
-          <option value="light">浅色</option>
-          <option value="dark">深色</option>
-        </NativeSelect>
+        <div className="flex min-w-0 items-center gap-2">
+          <LanguageControl compact />
+          <NativeSelect
+            aria-label={t(($) => $.theme)}
+            value={theme}
+            onChange={(event) => chooseTheme(event.target.value as typeof theme)}
+          >
+            <option value="system">{t(($) => $.system)}</option>
+            <option value="light">{t(($) => $.light)}</option>
+            <option value="dark">{t(($) => $.dark)}</option>
+          </NativeSelect>
+        </div>
       </header>
       <main className="mx-auto w-full max-w-[49rem] space-y-6 px-4 pt-4 pb-[max(2rem,env(safe-area-inset-bottom))]">
         {share && (
@@ -124,8 +132,8 @@ function PublicSharePage() {
             <div className="space-y-2">
               <h1 className="text-xl font-semibold break-words">{share.title}</h1>
               <p className="text-xs text-muted-foreground">
-                只读快照 · {share.messageCount} 条消息
-                {share.omittedAttachments > 0 ? ' · 不含附件' : ''}
+                {t(($) => $.snapshotCount, { count: share.messageCount })}
+                {share.omittedAttachments > 0 ? t(($) => $.noAttachments) : ''}
               </p>
             </div>
             <ShareContent blocks={blocks} />
@@ -135,13 +143,13 @@ function PublicSharePage() {
           <div role="alert" className="space-y-3">
             <p>{error}</p>
             <Button variant="secondary" onClick={() => setReload((value) => value + 1)}>
-              重新读取
+              {t(($) => $.reload)}
             </Button>
           </div>
         )}
         {busy && (
           <p role="status" className="text-sm text-muted-foreground">
-            正在读取…
+            {t(($) => $.loading)}
           </p>
         )}
       </main>

@@ -1,3 +1,6 @@
+import { formatNumber } from '../../platform/i18n/format';
+import { useTranslation } from 'react-i18next';
+import './locales';
 import { Modal, ModalTitle } from '../../components/Modal';
 import { Button } from '@/components/ui/button';
 import { useEffect, useId, useState } from 'react';
@@ -20,6 +23,8 @@ export function DocumentPreviews({
   onChange?: (file: DocumentPart) => void;
   budgetFor?: (file: DocumentPart) => number | undefined;
 }) {
+  const { t } = useTranslation('attachments', { useSuspense: false });
+
   const [preview, setPreview] = useState<DocumentPart | null>(null),
     [text, setText] = useState(''),
     [error, setError] = useState(''),
@@ -55,7 +60,7 @@ export function DocumentPreviews({
         },
         (error) => {
           if (!abort.signal.aborted)
-            setError(error instanceof Error ? error.message : '暂时无法读取文件。');
+            setError(error instanceof Error ? error.message : t(($) => $.readFailed));
         },
       )
       .finally(() => {
@@ -68,7 +73,7 @@ export function DocumentPreviews({
     <>
       <ul
         className="mb-2 divide-y divide-border max-w-full rounded-lg border border-border bg-background"
-        aria-label={remove ? '待发送文件' : '消息文件'}
+        aria-label={remove ? t(($) => $.draftFiles) : t(($) => $.messageFiles)}
       >
         {files.map((file) => (
           <li key={file.attachmentId} className="flex items-center gap-2 p-2">
@@ -77,13 +82,14 @@ export function DocumentPreviews({
               variant="ghost"
               type="button"
               className="min-w-0 flex-1 justify-start"
-              aria-label={`预览 ${file.name}`}
+              aria-label={t(($) => $.preview, { name: file.name })}
               onClick={() => setPreview(file)}
             >
               <span className="truncate">{file.name}</span>
               {file.pdf && (
                 <span className="text-xs text-muted-foreground">
-                  {file.selection ? '已选片段' : '全文'} · ≈{file.tokens.toLocaleString()}
+                  {file.selection ? t(($) => $.selected) : t(($) => $.fullText)} · ≈
+                  {formatNumber(file.tokens)}
                 </span>
               )}
             </Button>
@@ -92,7 +98,7 @@ export function DocumentPreviews({
                 variant="ghost"
                 size="icon"
                 type="button"
-                aria-label={`移除 ${file.name}`}
+                aria-label={t(($) => $.remove, { name: file.name })}
                 onClick={() => remove(file.attachmentId)}
               >
                 <X className="h-[0.8125rem] w-[0.8125rem]" />
@@ -117,7 +123,7 @@ export function DocumentPreviews({
               </ModalTitle>
               <Button variant="ghost" size="icon" asChild>
                 <a
-                  aria-label="下载文件"
+                  aria-label={t(($) => $.downloadFile)}
                   href={attachmentUrl(conversationId, preview.attachmentId)}
                   download={preview.name}
                 >
@@ -128,7 +134,7 @@ export function DocumentPreviews({
                 variant="ghost"
                 size="icon"
                 type="button"
-                aria-label="关闭文件预览"
+                aria-label={t(($) => $.closePreview)}
                 onClick={() => setPreview(null)}
               >
                 <X className="h-[1.125rem] w-[1.125rem]" />
@@ -150,7 +156,7 @@ export function DocumentPreviews({
             ) : (
               <div className="min-h-0 overflow-auto p-4">
                 {loading ? (
-                  <p role="status">正在读取…</p>
+                  <p role="status">{t(($) => $.loading)}</p>
                 ) : error ? (
                   <p role="alert">{error}</p>
                 ) : (

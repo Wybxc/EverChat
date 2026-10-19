@@ -50,7 +50,7 @@ export class ProviderSettingsStore {
         .exec<{ systemPrompt: string }>('SELECT systemPrompt FROM provider_preferences WHERE id=1')
         .toArray()[0]?.systemPrompt ??
       this.env.SYSTEM_PROMPT ??
-      '你是一位清晰、友善的助手。请默认使用中文回答。'
+      'You are a clear, friendly assistant. Respond in the language of the user’s question.'
     );
   }
   titleConfig(automatic = false): ProviderConfig | null {

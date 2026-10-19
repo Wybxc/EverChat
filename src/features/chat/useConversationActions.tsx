@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { t } from './locales';
+import './locales';
 import { useEffect, useRef, useState, type SubmitEvent } from 'react';
 import type { ConversationInfo } from '../../../shared/conversation/types';
 import type { ConversationActivity } from '../../../shared/conversation/activity';
@@ -124,7 +124,7 @@ export function ConversationActionDialogs({
   actions: ConversationActionController;
   disabled: boolean;
 }) {
-  const { t } = useTranslation('chat', { useSuspense: false });
+  useTranslation('chat', { useSuspense: false });
 
   return actions.dialog ? <ConversationActionDialog actions={actions} disabled={disabled} /> : null;
 }

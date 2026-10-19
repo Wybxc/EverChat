@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import * as v from 'valibot';
-import { serializePushSubscription } from '../../../src/platform/notifications/subscription';
+import { serializePushSubscription, InvalidPushSubscriptionError } from '../../../src/platform/notifications/subscription';
 import { subscriptionSchema } from '../../../shared/notifications/protocol';
 
 test('subscriptions with an omitted expiry produce a canonical, validated wire format without browser JSON extensions', () => {
@@ -24,6 +24,6 @@ test('subscriptions with an omitted expiry produce a canonical, validated wire f
   assert.deepEqual(v.parse(subscriptionSchema, withoutExpiry), result);
   assert.throws(
     () => serializePushSubscription({ ...browser, getKey: () => null }),
-    /有效的推送订阅密钥/,
+    InvalidPushSubscriptionError,
   );
 });

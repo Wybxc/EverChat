@@ -10,6 +10,16 @@ const migrated = [
   'src/components/ui/*.tsx',
   'src/features/chat/*.tsx',
   'src/features/library/*.tsx',
+  'src/features/providers/*.tsx',
+  'src/features/presets/*.tsx',
+  'src/features/web-tools/*.tsx',
+  'src/features/usage/*.tsx',
+  'src/features/attachments/*.tsx',
+  'src/features/sharing/*.tsx',
+  'src/features/chat/rendering/*.tsx',
+  'src/features/backup/*.tsx',
+  'src/features/notifications/*.tsx',
+  'src/platform/pwa/*.tsx',
 ];
 const literalTerms = new Set([
   'EverChat',
@@ -20,6 +30,12 @@ const literalTerms = new Set([
   'Temperature',
   'Top P',
   'Tokens',
+  'ID',
+  'Token',
+  'Tavily',
+  'DeepSeek Search / Fetch',
+  'https://api.example.com/v1',
+  'claude-sonnet-4-6',
 ]);
 const displayAttributes = new Set([
   'aria-label',

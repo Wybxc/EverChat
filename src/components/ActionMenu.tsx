@@ -42,7 +42,9 @@ export function ActionMenu({
   disabled = false,
   open,
   onOpenChange,
+  triggerData,
 }: {
+  triggerData?: string;
   label: string;
   icon: ReactNode;
   children: ReactNode;
@@ -70,6 +72,7 @@ export function ActionMenu({
         <DropdownMenuTrigger asChild>
           <Button
             ref={trigger}
+            data-action-menu={triggerData}
             type="button"
             variant="ghost"
             size="icon"

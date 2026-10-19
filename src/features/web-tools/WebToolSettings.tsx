@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import './locales';
 import { ApiKeyInput } from '../../components/ApiKeyInput';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
@@ -24,22 +26,26 @@ import {
 
 type Draft = WebToolServiceSettings & { apiKey?: string };
 export function WebToolSettingsPanel({ active }: { active: boolean }) {
+  const { t } = useTranslation('web-tools', { useSuspense: false });
+
   const query = useWebToolSettings(active);
   if (!query.data)
     return query.isError ? (
       <div className="space-y-3">
         <p role="alert">{query.error.message}</p>
         <Button variant="secondary" type="button" onClick={() => void query.refetch()}>
-          重新读取
+          {t(($) => $.reload)}
         </Button>
       </div>
     ) : (
-      <Spinner role="status" aria-label="读取联网服务" />
+      <Spinner role="status" aria-label={t(($) => $.loading)} />
     );
   return <ServiceEditor initial={query.data} active={active} />;
 }
 
 function ServiceEditor({ initial, active }: { initial: WebToolServiceSettings; active: boolean }) {
+  const { t } = useTranslation('web-tools', { useSuspense: false });
+
   const queryClient = useQueryClient();
   const [epoch] = useState(storageEpoch);
   const [store] = useState(
@@ -47,7 +53,7 @@ function ServiceEditor({ initial, active }: { initial: WebToolServiceSettings; a
       new Autosave<Draft, WebToolServiceInput>(
         initial,
         async (input) => {
-          if (storageEpoch() !== epoch) throw new Error('登录状态已改变。');
+          if (storageEpoch() !== epoch) throw new Error(t(($) => $.sessionChanged));
           return api<WebToolServiceSettings>('/settings/web-tools', 'PUT', input);
         },
         (result) => {
@@ -61,8 +67,7 @@ function ServiceEditor({ initial, active }: { initial: WebToolServiceSettings; a
             dailyLimit: draft.dailyLimit,
             ...(draft.apiKey === undefined ? {} : { apiKey: draft.apiKey }),
           });
-          if (!parsed.success)
-            throw new Error('每日上限须为 1–1,000 的整数，密钥不能包含空格或控制字符。');
+          if (!parsed.success) throw new Error(t(($) => $.invalid));
           return parsed.output;
         },
       ),
@@ -117,13 +122,13 @@ function ServiceEditor({ initial, active }: { initial: WebToolServiceSettings; a
           provider,
           dailyLimit: store.getSnapshot().settings.dailyLimit,
         });
-        if (storageEpoch() !== epoch) throw new Error('登录状态已改变。');
+        if (storageEpoch() !== epoch) throw new Error(t(($) => $.sessionChanged));
         queryClient.setQueryData(WEB_TOOL_SETTINGS_KEY, result);
         write('web-tool-settings', result);
         return result;
       });
     } catch (error) {
-      setReadError(error instanceof Error ? error.message : '切换服务失败。');
+      setReadError(error instanceof Error ? error.message : t(($) => $.switchFailed));
     } finally {
       setSwitching(false);
     }
@@ -150,7 +155,7 @@ function ServiceEditor({ initial, active }: { initial: WebToolServiceSettings; a
         setRevealed(result.apiKey);
     } catch (error) {
       if (!controller.signal.aborted && activeRef.current && storageEpoch() === epoch)
-        setReadError(error instanceof Error ? error.message : '密钥读取失败。');
+        setReadError(error instanceof Error ? error.message : t(($) => $.keyFailed));
     } finally {
       if (revealRequest.current === controller) {
         revealRequest.current = null;
@@ -161,9 +166,9 @@ function ServiceEditor({ initial, active }: { initial: WebToolServiceSettings; a
   return (
     <div className="space-y-4" onBlur={() => void store.flush().catch(() => {})}>
       <label className="block space-y-1 text-sm">
-        <span>联网服务</span>
+        <span>{t(($) => $.service)}</span>
         <NativeSelect
-          aria-label="联网服务"
+          aria-label={t(($) => $.service)}
           value={settings.provider}
           disabled={switching}
           onChange={(event) =>
@@ -176,19 +181,19 @@ function ServiceEditor({ initial, active }: { initial: WebToolServiceSettings; a
       </label>
       <div className="space-y-1">
         <label htmlFor="web-tool-key" className="block text-sm font-medium">
-          API 密钥
+          {t(($) => $.apiKey)}
         </label>
         <div className="flex items-center gap-2">
           <ApiKeyInput
             disabled={switching}
             id="web-tool-key"
-            aria-label="联网服务 API 密钥"
+            aria-label={t(($) => $.serviceKey)}
             visible={revealed !== null}
             loading={reading}
             onToggle={() => void reveal()}
-            showLabel="查看联网服务密钥"
-            hideLabel="隐藏联网服务密钥"
-            placeholder={settings.hasApiKey ? '已配置 · 留空保留' : '输入 API 密钥'}
+            showLabel={t(($) => $.showKey)}
+            hideLabel={t(($) => $.hideKey)}
+            placeholder={settings.hasApiKey ? t(($) => $.keepKey) : t(($) => $.enterKey)}
             value={settings.apiKey ?? revealed ?? ''}
             onChange={(event) => update({ apiKey: event.currentTarget.value })}
           />
@@ -198,14 +203,14 @@ function ServiceEditor({ initial, active }: { initial: WebToolServiceSettings; a
             disabled={switching || (!settings.hasApiKey && !settings.apiKey)}
             onClick={() => update({ apiKey: '' })}
           >
-            清除密钥
+            {t(($) => $.clearKey)}
           </Button>
         </div>
       </div>
       <label className="block space-y-1 text-sm">
-        <span>每日请求上限（UTC）</span>
+        <span>{t(($) => $.dailyLimit)}</span>
         <Input
-          aria-label="联网服务每日请求上限"
+          aria-label={t(($) => $.dailyLimitLabel)}
           type="number"
           min={1}
           max={1000}
@@ -217,31 +222,31 @@ function ServiceEditor({ initial, active }: { initial: WebToolServiceSettings; a
       </label>
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <span>
-          今日已用：{settings.usedToday} /{' '}
-          {Number.isFinite(settings.dailyLimit) ? settings.dailyLimit : '—'}
+          {t(($) => $.todayUsage, {
+            used: settings.usedToday,
+            limit: Number.isFinite(settings.dailyLimit) ? settings.dailyLimit : '—',
+          })}
         </span>
         <Button
           variant="ghost"
           size="icon"
           type="button"
-          aria-label="刷新联网服务用量"
+          aria-label={t(($) => $.refreshUsage)}
           onClick={() => void store.refresh(() => loadWebToolSettings()).catch(() => {})}
         >
           <RefreshCw className="h-[0.875rem] w-[0.875rem]" />
         </Button>
       </div>
-      <p className="text-xs text-muted-foreground">
-        在输入框中开启联网搜索，同时启用搜索和网页读取。请求上限按次数计算，可能产生服务与模型费用。
-      </p>
+      <p className="text-xs text-muted-foreground">{t(($) => $.usageHint)}</p>
       <div className="flex items-center gap-3 text-xs text-muted-foreground">
         <span data-testid="web-tool-save-status" role={status === 'error' ? 'alert' : 'status'}>
           {status === 'error'
             ? error
             : status === 'saving'
-              ? '保存中…'
+              ? t(($) => $.saving)
               : status === 'waiting'
-                ? '保存中…'
-                : '已保存'}
+                ? t(($) => $.saving)
+                : t(($) => $.saved)}
         </span>
         {status === 'error' && (
           <Button
@@ -249,7 +254,7 @@ function ServiceEditor({ initial, active }: { initial: WebToolServiceSettings; a
             type="button"
             onClick={() => void store.flush().catch(() => {})}
           >
-            重试保存
+            {t(($) => $.retrySave)}
           </Button>
         )}
       </div>

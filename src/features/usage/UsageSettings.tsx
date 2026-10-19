@@ -1,3 +1,7 @@
+import { usageKindLabel, usageStatusLabel } from './labels';
+import { formatNumber, formatDateTime } from '../../platform/i18n/format';
+import { useTranslation } from 'react-i18next';
+import './locales';
 import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
@@ -9,8 +13,6 @@ import type { ProviderSettings } from '../../../shared/providers/types';
 import {
   usageKinds,
   usageStatuses,
-  usageKindLabels,
-  usageStatusLabels,
   type UsageGroup,
   type UsageReport,
 } from '../../../shared/usage/types';
@@ -22,27 +24,29 @@ import { formatAmount } from '../../../shared/usage/pricing';
 type Dimension = { providerId: string; providerName: string; model: string; modelName: string };
 const localDate = (date: Date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-const number = (value: number) => new Intl.NumberFormat('zh-CN').format(value);
+const number = formatNumber;
 function startDate(days: number) {
   const date = new Date();
   date.setDate(date.getDate() - days + 1);
   return localDate(date);
 }
 function GroupTable({ rows }: { rows: UsageGroup[] }) {
+  const { t } = useTranslation('usage', { useSuspense: false });
+
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-left text-xs">
         <thead>
           <tr>
             {[
-              '供应商／模型',
-              '请求',
-              '输入／输出 Token',
-              '缓存命中率',
-              '估算费用',
-              '平均估算',
-              '成功率',
-              '平均首字／耗时',
+              t(($) => $.providerModel),
+              t(($) => $.requestColumn),
+              t(($) => $.inputOutput),
+              t(($) => $.cacheHitRate),
+              t(($) => $.estimatedCost),
+              t(($) => $.averageEstimate),
+              t(($) => $.successRate),
+              t(($) => $.averageTime),
             ].map((label) => (
               <th key={label} className="whitespace-nowrap py-2 pr-4 font-medium">
                 {label}
@@ -60,19 +64,18 @@ function GroupTable({ rows }: { rows: UsageGroup[] }) {
               </td>
               <td className="pr-4">
                 {row.cacheEligibleInputTokens
-                  ? `${((100 * row.cacheReportedReadTokens) / row.cacheEligibleInputTokens).toFixed(1)}%`
+                  ? `${formatNumber((100 * row.cacheReportedReadTokens) / row.cacheEligibleInputTokens, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`
                   : '—'}
               </td>
               <td className="min-w-32 pr-4">
                 {money(row.currencies)}
                 {row.unpriced > 0 && (
-                  <span className="block text-muted-foreground">{row.unpriced} 项费用不完整</span>
+                  <span className="block text-muted-foreground">
+                    {t(($) => $.unpricedCount, { count: row.unpriced })}
+                  </span>
                 )}
               </td>
-              <td
-                className="min-w-32 pr-4"
-                title="可计算部分除以总请求数；用量或定价不完整时可能低估。"
-              >
+              <td className="min-w-32 pr-4" title={t(($) => $.averageHint)}>
                 {row.requests
                   ? Object.entries(row.currencies)
                       .map(
@@ -83,26 +86,42 @@ function GroupTable({ rows }: { rows: UsageGroup[] }) {
                   : '—'}
               </td>
               <td className="pr-4">
-                {row.requests ? `${((100 * row.completed) / row.requests).toFixed(1)}%` : '—'}
+                {row.requests
+                  ? `${formatNumber((100 * row.completed) / row.requests, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`
+                  : '—'}
               </td>
               <td className="min-w-36">
                 {row.firstTokenSamples
-                  ? `${(row.firstTokenMs / row.firstTokenSamples / 1000).toFixed(2)} s（${row.firstTokenSamples}）`
+                  ? t(($) => $.sampleTime, {
+                      seconds: formatNumber(row.firstTokenMs / row.firstTokenSamples / 1000, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      }),
+                      count: row.firstTokenSamples,
+                    })
                   : '—'}{' '}
                 /{' '}
                 {row.durationSamples
-                  ? `${(row.durationMs / row.durationSamples / 1000).toFixed(2)} s（${row.durationSamples}）`
+                  ? t(($) => $.sampleTime, {
+                      seconds: formatNumber(row.durationMs / row.durationSamples / 1000, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      }),
+                      count: row.durationSamples,
+                    })
                   : '—'}
               </td>
             </tr>
           ))}
         </tbody>
       </table>
-      {!rows.length && <p className="py-3 text-sm text-muted-foreground">暂无数据</p>}
+      {!rows.length && <p className="py-3 text-sm text-muted-foreground">{t(($) => $.empty)}</p>}
     </div>
   );
 }
 function Pricing({ dimensions }: { dimensions: Dimension[] }) {
+  const { t } = useTranslation('usage', { useSuspense: false });
+
   const query = useQuery({
     queryKey: ['provider-settings'],
     queryFn: () => api<ProviderSettings>('/settings/providers'),
@@ -120,9 +139,9 @@ function Pricing({ dimensions }: { dimensions: Dimension[] }) {
     for (const model of ['web_search', 'read_webpage'])
       rows.set(`web:${provider}:${model}`, {
         providerId: `web:${provider}`,
-        providerName: provider === 'deepseek' ? 'DeepSeek 联网' : 'Tavily',
+        providerName: provider === 'deepseek' ? t(($) => $.deepseekWeb) : 'Tavily',
         model,
-        modelName: model === 'web_search' ? '网页搜索' : '网页读取',
+        modelName: model === 'web_search' ? t(($) => $.webSearch) : t(($) => $.webFetch),
       });
   return (
     <div className="divide-y divide-border">
@@ -147,6 +166,8 @@ export default function UsageSettings({
 }: {
   onLocate?: (conversationId: string, messageId: string) => void;
 }) {
+  const { t } = useTranslation('usage', { useSuspense: false });
+
   const [tab, setTab] = useState('overview'),
     [days, setDays] = useState('30'),
     [from, setFrom] = useState(() => startDate(30)),
@@ -196,14 +217,14 @@ export default function UsageSettings({
           <TabsList
             variant="line"
             className="max-w-full justify-start overflow-x-auto"
-            aria-label="统计分类"
+            aria-label={t(($) => $.tabs)}
           >
             {[
-              ['overview', '概览'],
-              ['providers', '供应商'],
-              ['models', '模型'],
-              ['requests', '请求'],
-              ['pricing', '定价'],
+              ['overview', t(($) => $.overview)],
+              ['providers', t(($) => $.providers)],
+              ['models', t(($) => $.models)],
+              ['requests', t(($) => $.requestColumn)],
+              ['pricing', t(($) => $.pricing)],
             ].map(([id, label]) => (
               <TabsTrigger
                 key={id}
@@ -226,7 +247,7 @@ export default function UsageSettings({
         {tab !== 'pricing' && (
           <div className="flex flex-wrap items-end gap-2 py-2">
             <NativeSelect
-              aria-label="统计时间范围"
+              aria-label={t(($) => $.timeRange)}
               value={days}
               onChange={(e) => {
                 setDays(e.target.value);
@@ -236,28 +257,28 @@ export default function UsageSettings({
                 }
               }}
             >
-              <option value="1">今日</option>
-              <option value="7">近 7 日</option>
-              <option value="30">近 30 日</option>
-              <option value="custom">自定义</option>
+              <option value="1">{t(($) => $.today)}</option>
+              <option value="7">{t(($) => $.last7days)}</option>
+              <option value="30">{t(($) => $.last30days)}</option>
+              <option value="custom">{t(($) => $.custom)}</option>
             </NativeSelect>
             {days === 'custom' && (
               <>
                 <label className="text-xs">
-                  开始日期
+                  {t(($) => $.from)}
                   <Input
                     type="date"
-                    aria-label="开始日期"
+                    aria-label={t(($) => $.from)}
                     required
                     value={from}
                     onChange={(e) => setFrom(e.target.value)}
                   />
                 </label>
                 <label className="text-xs">
-                  结束日期
+                  {t(($) => $.to)}
                   <Input
                     type="date"
-                    aria-label="结束日期"
+                    aria-label={t(($) => $.to)}
                     min={from}
                     required
                     value={to}
@@ -267,14 +288,14 @@ export default function UsageSettings({
               </>
             )}
             <NativeSelect
-              aria-label="统计供应商"
+              aria-label={t(($) => $.filterProvider)}
               value={provider}
               onChange={(e) => {
                 setProvider(e.target.value);
                 setModel('');
               }}
             >
-              <option value="">全部供应商</option>
+              <option value="">{t(($) => $.allProviders)}</option>
               {providers.map((d) => (
                 <option key={d.providerId} value={d.providerId}>
                   {d.providerName}
@@ -282,11 +303,11 @@ export default function UsageSettings({
               ))}
             </NativeSelect>
             <NativeSelect
-              aria-label="统计模型"
+              aria-label={t(($) => $.filterModel)}
               value={model}
               onChange={(e) => setModel(e.target.value)}
             >
-              <option value="">全部模型</option>
+              <option value="">{t(($) => $.allModels)}</option>
               {[...new Map(models.map((d) => [d.model, d])).values()].map((d) => (
                 <option key={d.model} value={d.model}>
                   {d.modelName}
@@ -294,26 +315,26 @@ export default function UsageSettings({
               ))}
             </NativeSelect>
             <NativeSelect
-              aria-label="请求类型"
+              aria-label={t(($) => $.requestKind)}
               value={kind}
               onChange={(e) => setKind(e.target.value)}
             >
-              <option value="">全部类型</option>
+              <option value="">{t(($) => $.allKinds)}</option>
               {usageKinds.map((k) => (
                 <option key={k} value={k}>
-                  {usageKindLabels[k]}
+                  {usageKindLabel(k)}
                 </option>
               ))}
             </NativeSelect>
             <NativeSelect
-              aria-label="请求状态"
+              aria-label={t(($) => $.requestStatus)}
               value={status}
               onChange={(e) => setStatus(e.target.value)}
             >
-              <option value="">全部状态</option>
+              <option value="">{t(($) => $.allStatuses)}</option>
               {usageStatuses.map((s) => (
                 <option key={s} value={s}>
-                  {usageStatusLabels[s]}
+                  {usageStatusLabel(s)}
                 </option>
               ))}
             </NativeSelect>
@@ -321,13 +342,13 @@ export default function UsageSettings({
               variant="ghost"
               onClick={() => void client.invalidateQueries({ queryKey: ['usage'] })}
             >
-              刷新
+              {t(($) => $.refresh)}
             </Button>
           </div>
         )}
         {tab !== 'pricing' && report.isPending && (
           <p role="status" className="py-4 text-sm">
-            读取中…
+            {t(($) => $.loading)}
           </p>
         )}
         {(report.error || dimensions.error) && (
@@ -339,16 +360,19 @@ export default function UsageSettings({
           <div className="space-y-4 pt-2">
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {[
-                ['可计算部分估算', money(totals.currencies)],
-                ['模型请求／回答', `${number(totals.modelRequests)} / ${number(totals.answers)}`],
+                [t(($) => $.calculatedEstimate), money(totals.currencies)],
                 [
-                  '输入／输出 Token',
+                  t(($) => $.modelRequestsAnswers),
+                  `${number(totals.modelRequests)} / ${number(totals.answers)}`,
+                ],
+                [
+                  t(($) => $.inputOutput),
                   `${number(totals.inputTokens)} / ${number(totals.outputTokens)}`,
                 ],
                 [
-                  '成功率',
+                  t(($) => $.successRate),
                   totals.requests
-                    ? `${((100 * totals.completed) / totals.requests).toFixed(1)}%`
+                    ? `${formatNumber((100 * totals.completed) / totals.requests, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`
                     : '—',
                 ],
               ].map(([label, value]) => (
@@ -360,27 +384,38 @@ export default function UsageSettings({
             </div>
             <details className="text-xs">
               <summary className="cursor-pointer">
-                费用不完整 {totals.unpriced} 项 · 用量不完整 {totals.incomplete} 项
+                {t(($) => $.incompleteCounts, {
+                  unpriced: totals.unpriced,
+                  incomplete: totals.incomplete,
+                })}
               </summary>
               <p className="pt-2">
-                缓存读取 {number(totals.cachedInputTokens)} · 缓存写入{' '}
-                {number(totals.cacheWriteInputTokens)} · 总请求 {number(totals.requests)}
+                {t(($) => $.cacheTotals, {
+                  read: number(totals.cachedInputTokens),
+                  write: number(totals.cacheWriteInputTokens),
+                  requests: number(totals.requests),
+                })}
               </p>
             </details>
             <NativeSelect
-              aria-label="趋势粒度"
+              aria-label={t(($) => $.trendInterval)}
               value={interval}
               onChange={(e) => setInterval(e.target.value)}
             >
-              <option value="day">按日</option>
-              <option value="hour">按小时</option>
+              <option value="day">{t(($) => $.daily)}</option>
+              <option value="hour">{t(($) => $.hourly)}</option>
             </NativeSelect>
             <UsageChart points={report.data!.trend} />
             <p className="text-xs text-muted-foreground">
               {report.data!.collectedSince
-                ? `记录始于 ${new Date(report.data!.collectedSince).toLocaleString()}。`
-                : '从首次请求开始记录。'}{' '}
-              金额为估算，以供应商账单为准。
+                ? t(($) => $.collectedSince, {
+                    date: formatDateTime(report.data!.collectedSince, {
+                      dateStyle: 'medium',
+                      timeStyle: 'medium',
+                    }),
+                  })
+                : t(($) => $.firstRequest)}{' '}
+              {t(($) => $.estimateHint)}
             </p>
           </div>
         )}

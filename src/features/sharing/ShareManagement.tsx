@@ -1,3 +1,6 @@
+import { formatDateTime } from '../../platform/i18n/format';
+import { useTranslation } from 'react-i18next';
+import './locales';
 import { useEffect, useRef, useState } from 'react';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
@@ -8,6 +11,8 @@ import { shareUrl } from './ShareDialog';
 import { Modal, ModalTitle } from '../../components/Modal';
 
 export default function ShareManagement({ active }: { active: boolean }) {
+  const { t } = useTranslation('sharing', { useSuspense: false });
+
   const client = useQueryClient(),
     [busy, setBusy] = useState<string>(),
     [error, setError] = useState(''),
@@ -43,7 +48,7 @@ export default function ShareManagement({ active }: { active: boolean }) {
       await action();
       await client.invalidateQueries({ queryKey: ['shares'] });
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : '操作失败，请重试。');
+      setError(failure instanceof Error ? failure.message : t(($) => $.operationFailed));
     } finally {
       setBusy(undefined);
     }
@@ -53,7 +58,7 @@ export default function ShareManagement({ active }: { active: boolean }) {
     const url = shareUrl(result.share.id, result.secret);
     try {
       await navigator.clipboard.writeText(url);
-      setNotice('分享链接已复制。');
+      setNotice(t(($) => $.linkCopied));
     } catch {
       setLink(url);
     }
@@ -61,13 +66,13 @@ export default function ShareManagement({ active }: { active: boolean }) {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-medium">只读分享</h2>
+        <h2 className="text-sm font-medium">{t(($) => $.readOnlyShares)}</h2>
         <Button
           variant="ghost"
           disabled={Boolean(busy) || query.isFetching}
           onClick={() => void query.refetch()}
         >
-          刷新
+          {t(($) => $.refresh)}
         </Button>
       </div>
       {(error || query.error) && (
@@ -82,7 +87,7 @@ export default function ShareManagement({ active }: { active: boolean }) {
       )}
       {link && (
         <Input
-          aria-label="只读分享链接"
+          aria-label={t(($) => $.link)}
           readOnly
           value={link}
           onFocus={(event) => event.currentTarget.select()}
@@ -90,10 +95,10 @@ export default function ShareManagement({ active }: { active: boolean }) {
       )}
       {query.isPending ? (
         <p role="status" className="text-sm text-muted-foreground">
-          正在读取…
+          {t(($) => $.loading)}
         </p>
       ) : query.data?.pages.every((page) => !page.shares.length) ? (
-        <p className="text-sm text-muted-foreground">暂无分享。可在对话菜单中创建。</p>
+        <p className="text-sm text-muted-foreground">{t(($) => $.empty)}</p>
       ) : (
         query.data?.pages
           .flatMap((page) => page.shares)
@@ -106,14 +111,20 @@ export default function ShareManagement({ active }: { active: boolean }) {
               <div className="flex items-start justify-between gap-3">
                 <h3 className="min-w-0 break-words text-sm font-medium">{share.title}</h3>
                 <span className="shrink-0 text-xs text-muted-foreground">
-                  {share.status === 'active' ? '' : '已失效'}
+                  {share.status === 'active' ? '' : t(($) => $.expired)}
                 </span>
               </div>
               <p className="text-xs text-muted-foreground">
-                {new Date(share.createdAt).toLocaleString()} · {share.messageCount} 条消息
+                {formatDateTime(share.createdAt, { dateStyle: 'medium', timeStyle: 'short' })} ·{' '}
+                {t(($) => $.messages, { count: share.messageCount })}
                 {share.expiresAt
-                  ? ` · ${new Date(share.expiresAt).toLocaleString()} 到期自动删除`
-                  : ' · 永久'}
+                  ? t(($) => $.autoDelete, {
+                      date: formatDateTime(share.expiresAt, {
+                        dateStyle: 'medium',
+                        timeStyle: 'short',
+                      }),
+                    })
+                  : t(($) => $.permanent)}
               </p>
               <div className="flex flex-wrap items-center gap-1">
                 <Button
@@ -121,10 +132,10 @@ export default function ShareManagement({ active }: { active: boolean }) {
                   disabled={Boolean(busy) || share.status !== 'active'}
                   onClick={() => void perform(share.id, () => copy(share.id))}
                 >
-                  复制
+                  {t(($) => $.copy)}
                 </Button>
                 <Button variant="ghost" disabled={Boolean(busy)} onClick={() => setDeleting(share)}>
-                  删除分享
+                  {t(($) => $.deleteShare)}
                 </Button>
               </div>
             </div>
@@ -136,7 +147,7 @@ export default function ShareManagement({ active }: { active: boolean }) {
           disabled={query.isFetchingNextPage}
           onClick={() => void query.fetchNextPage()}
         >
-          更多分享
+          {t(($) => $.more)}
         </Button>
       )}
       {deleting && (
@@ -150,10 +161,8 @@ export default function ShareManagement({ active }: { active: boolean }) {
           }}
         >
           <div className="max-w-sm space-y-4 p-5">
-            <ModalTitle>删除分享</ModalTitle>
-            <p className="text-sm">
-              删除「{deleting.title}」？链接将立即失效，并清除分享快照。接收者已保存的内容无法收回。
-            </p>
+            <ModalTitle>{t(($) => $.deleteShare)}</ModalTitle>
+            <p className="text-sm">{t(($) => $.deleteConfirmation, { title: deleting.title })}</p>
             {error && (
               <p role="alert" className="text-sm">
                 {error}
@@ -166,7 +175,7 @@ export default function ShareManagement({ active }: { active: boolean }) {
                 disabled={Boolean(busy)}
                 onClick={() => setDeleting(undefined)}
               >
-                取消
+                {t(($) => $.cancel)}
               </Button>
               <Button
                 variant="destructive"
@@ -175,11 +184,11 @@ export default function ShareManagement({ active }: { active: boolean }) {
                   void perform(deleting.id, async () => {
                     await api(`/shares/${deleting.id}`, 'DELETE');
                     setDeleting(undefined);
-                    setNotice('分享已删除。');
+                    setNotice(t(($) => $.deleted));
                   })
                 }
               >
-                确认删除
+                {t(($) => $.confirmDelete)}
               </Button>
             </div>
           </div>

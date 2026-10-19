@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import './locales';
 import { MAX_SYSTEM_PROMPT_LENGTH } from '../../../shared/conversation/limits';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -29,13 +31,15 @@ export function ModelOptions({
   onChange: (patch: Partial<ProviderModel>) => void;
   stateKey: string;
 } & ProbeControls) {
+  const { t } = useTranslation('providers', { useSuspense: false });
+
   return (
     <div className="space-y-3 pt-2">
       <div className="grid min-w-0 gap-3 sm:grid-cols-2">
         <label className="min-w-0 space-y-1">
           <span className="text-xs">ID</span>
           <Input
-            aria-label={`模型 ID ${index + 1}`}
+            aria-label={t(($) => $.modelIdField, { index: index + 1 })}
             required
             maxLength={200}
             className="w-full border-input"
@@ -44,9 +48,9 @@ export function ModelOptions({
           />
         </label>
         <label className="min-w-0 space-y-1">
-          <span className="text-xs">显示名</span>
+          <span className="text-xs">{t(($) => $.displayName)}</span>
           <Input
-            aria-label={`模型显示名 ${index + 1}`}
+            aria-label={t(($) => $.modelNameField, { index: index + 1 })}
             maxLength={200}
             className="w-full border-input"
             value={model.name}
@@ -57,7 +61,7 @@ export function ModelOptions({
       </div>
       <label className="flex items-center gap-2 text-sm">
         <Checkbox
-          aria-label={`继承统一提示词 ${index + 1}`}
+          aria-label={t(($) => $.inheritPromptField, { index: index + 1 })}
           checked={model.useGlobalSystemPrompt !== false}
           onCheckedChange={(checked) =>
             onChange({
@@ -66,13 +70,13 @@ export function ModelOptions({
             })
           }
         />
-        使用统一系统提示词
+        {t(($) => $.inheritSystemPrompt)}
       </label>
       {model.useGlobalSystemPrompt === false && (
         <label className="block space-y-2">
-          <span className="text-sm">模型专属提示词</span>
+          <span className="text-sm">{t(($) => $.modelSystemPrompt)}</span>
           <Textarea
-            aria-label={`模型专属提示词 ${index + 1}`}
+            aria-label={t(($) => $.modelPromptField, { index: index + 1 })}
             rows={4}
             maxLength={MAX_SYSTEM_PROMPT_LENGTH}
             className="w-full border-input"

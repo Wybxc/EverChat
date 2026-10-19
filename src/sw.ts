@@ -103,7 +103,7 @@ const ask = (client: WindowClient, token: string) =>
     const channel = new MessageChannel();
     const timer = setTimeout(() => {
       channel.port1.close();
-      resolve({ ready: false, reason: '另一个页面尚未响应，请关闭后重试' });
+      resolve({ ready: false, reason: 'otherPageTimeout' });
     }, 8000);
     channel.port1.onmessage = (event) => {
       clearTimeout(timer);
@@ -111,13 +111,13 @@ const ask = (client: WindowClient, token: string) =>
       resolve(
         event.data?.ready === true
           ? { ready: true }
-          : { ready: false, reason: event.data?.reason || '另一个页面尚未准备好' },
+          : { ready: false, reason: event.data?.reason || 'otherPageNotReady' },
       );
     };
     client.postMessage({ channel: PWA_CHANNEL, type: 'prepare', token }, [channel.port2]);
   });
 let operation: Promise<Preparation> | undefined;
-async function coordinate() {
+async function coordinate(): Promise<Preparation> {
   const token = crypto.randomUUID();
   const prepared = new Set<string>();
   const release = async () => {
@@ -145,10 +145,10 @@ async function coordinate() {
       }
     }
     await release();
-    return { ready: false, reason: '页面状态正在变化，请稍后重试' };
+    return { ready: false, reason: 'pageChanging' };
   } catch {
     await release();
-    return { ready: false, reason: '更新未能完成，请重试' };
+    return { ready: false, reason: 'workerUpdateFailed' };
   }
 }
 self.addEventListener('message', (event) => {

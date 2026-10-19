@@ -677,13 +677,13 @@ export function App({
     messageBlocked || Boolean(imageProgress) || messageMutation?.mode === 'edit';
   useReloadBlocker(
     imageProgress
-      ? t(($) => $.attachmentBusy)
+      ? 'uploadBusy'
       : sending
-        ? t(($) => $.submitting)
+        ? 'sendBusy'
         : backupTask
-          ? t(($) => $.backupBusy)
+          ? 'backupBusy'
           : messageMutation
-            ? t(($) => $.finishEditingFirst)
+            ? 'editBusy'
             : null,
   );
   const select = (id: string | null, focusComposer = true) => {

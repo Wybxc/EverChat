@@ -1,4 +1,4 @@
-import { clear, createStore, get, update } from 'idb-keyval';
+import { clear, createStore, get, set, update } from 'idb-keyval';
 import type { NotificationMode } from '../../../shared/notifications/protocol';
 
 const store = createStore('everchat-notifications', 'state');
@@ -73,3 +73,9 @@ export async function claimLocalNotification(id: string, expires: number) {
 export async function clearNotificationStorage() {
   await clear(store);
 }
+
+// Language is local to this installation and does not alter subscription revisions.
+export const readNotificationLocale = () => get<unknown>('locale', store);
+export const writeNotificationLocale = (
+  locale: import('../../../shared/i18n/locale').LocalePreference,
+) => set('locale', locale, store);

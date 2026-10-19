@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import './locales';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -25,6 +27,8 @@ export default function ShareDialog({
   headId: string;
   close: () => void;
 }) {
+  const { t } = useTranslation('sharing', { useSuspense: false });
+
   const [preview, setPreview] = useState<SharePreview>(),
     [blocks, setBlocks] = useState<ShareBlock[]>([]),
     [cursor, setCursor] = useState<number | null>(null);
@@ -66,7 +70,7 @@ export default function ShareDialog({
       })
       .catch((failure) => {
         if (!controller.signal.aborted)
-          setError(failure instanceof Error ? failure.message : '预览失败。');
+          setError(failure instanceof Error ? failure.message : t(($) => $.previewFailed));
       })
       .finally(() => {
         if (!controller.signal.aborted) setBusy(false);
@@ -79,7 +83,7 @@ export default function ShareDialog({
     try {
       await action();
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : '操作失败，请重试。');
+      setError(failure instanceof Error ? failure.message : t(($) => $.operationFailed));
     } finally {
       setBusy(false);
     }
@@ -94,7 +98,7 @@ export default function ShareDialog({
             ? customExpiryTime
             : Date.now() + Number(expiry) * 1000;
       if (expiresAt !== null && (!Number.isSafeInteger(expiresAt) || expiresAt <= Date.now()))
-        throw new Error('请选择未来的有效到期时间。');
+        throw new Error(t(($) => $.invalidExpiry));
       const result = await api<{ share: ManagedShare; secret: string }>(
         `/shares/${preview.share.id}/publish`,
         'POST',
@@ -113,14 +117,14 @@ export default function ShareDialog({
     >
       <div className="flex max-h-[min(90dvh,52rem)] w-[min(48rem,calc(100dvw-1rem))] max-w-none flex-col gap-0 p-0">
         <header className="shrink-0 px-4 py-3 pr-12">
-          <ModalTitle>分享当前分支</ModalTitle>
+          <ModalTitle>{t(($) => $.shareBranch)}</ModalTitle>
         </header>
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 pb-4">
           {link ? (
             <>
-              <p className="text-sm">拥有链接的人均可查看此快照。</p>
+              <p className="text-sm">{t(($) => $.linkHint)}</p>
               <Input
-                aria-label="只读分享链接"
+                aria-label={t(($) => $.link)}
                 value={link}
                 readOnly
                 onFocus={(event) => event.currentTarget.select()}
@@ -134,14 +138,14 @@ export default function ShareDialog({
                     })
                   }
                 >
-                  {copied ? '已复制' : '复制分享链接'}
+                  {copied ? t(($) => $.copied) : t(($) => $.copyLink)}
                 </Button>
                 {typeof navigator.share === 'function' && (
                   <Button
                     variant="secondary"
                     onClick={() => void perform(() => navigator.share({ title, url: link }))}
                   >
-                    系统分享
+                    {t(($) => $.systemShare)}
                   </Button>
                 )}
               </div>
@@ -150,9 +154,9 @@ export default function ShareDialog({
             <>
               <div className="flex flex-wrap items-end gap-3">
                 <label className="min-w-40 flex-1 space-y-1 text-sm">
-                  分享标题
+                  {t(($) => $.title)}
                   <Input
-                    aria-label="分享标题"
+                    aria-label={t(($) => $.title)}
                     maxLength={120}
                     value={title}
                     onChange={(event) => {
@@ -162,47 +166,47 @@ export default function ShareDialog({
                   />
                 </label>
                 <label className="space-y-1 text-sm">
-                  分享有效期
+                  {t(($) => $.validity)}
                   <NativeSelect
-                    aria-label="分享有效期"
+                    aria-label={t(($) => $.validity)}
                     value={expiry}
                     disabled={busy}
                     onChange={(event) => setExpiry(event.target.value)}
                   >
-                    <option value="never">永久</option>
-                    <option value="3600">1 小时</option>
-                    <option value="86400">1 天</option>
-                    <option value="604800">7 天</option>
-                    <option value="2592000">30 天</option>
-                    <option value="custom">指定时间</option>
+                    <option value="never">{t(($) => $.never)}</option>
+                    <option value="3600">{t(($) => $.oneHour)}</option>
+                    <option value="86400">{t(($) => $.oneDay)}</option>
+                    <option value="604800">{t(($) => $.sevenDays)}</option>
+                    <option value="2592000">{t(($) => $.thirtyDays)}</option>
+                    <option value="custom">{t(($) => $.customTime)}</option>
                   </NativeSelect>
                 </label>
                 {expiry === 'custom' && (
                   <label className="space-y-1 text-sm">
-                    到期时间（本地时间）
+                    {t(($) => $.localExpiry)}
                     <Input
-                      aria-label="到期时间"
+                      aria-label={t(($) => $.expiry)}
                       type="datetime-local"
                       value={customExpiry}
                       disabled={busy}
                       onChange={(event) => setCustomExpiry(event.target.value)}
                     />
                     {customExpiry && invalidExpiry && (
-                      <span className="text-xs text-destructive">请选择未来的时间。</span>
+                      <span className="text-xs text-destructive">{t(($) => $.futureTime)}</span>
                     )}
                   </label>
                 )}
               </div>
               {expiry !== 'never' && (
-                <p className="text-xs text-muted-foreground">到期后自动删除链接和分享快照。</p>
+                <p className="text-xs text-muted-foreground">{t(($) => $.expiryHint)}</p>
               )}
               {preview && (
                 <p className="text-xs text-muted-foreground">
-                  {preview.share.messageCount} 条消息 · 包含思考内容 · 固定快照
+                  {t(($) => $.previewCount, { count: preview.share.messageCount })}
                   {preview.share.omittedAttachments > 0
-                    ? ` · 已省略 ${preview.share.omittedAttachments} 个附件`
+                    ? ` · ${t(($) => $.omitted, { count: preview.share.omittedAttachments })}`
                     : ''}
-                  。后续修改不会同步到此链接。
+                  {t(($) => $.fixedSnapshot)}
                 </p>
               )}
               <ShareContent blocks={blocks} />
@@ -220,7 +224,7 @@ export default function ShareDialog({
                     })
                   }
                 >
-                  继续预览
+                  {t(($) => $.continuePreview)}
                 </Button>
               )}
             </>
@@ -239,14 +243,14 @@ export default function ShareDialog({
                     setRetry((value) => value + 1);
                   }}
                 >
-                  重新预览
+                  {t(($) => $.retryPreview)}
                 </Button>
               )}
             </div>
           )}
           {busy && (
             <p role="status" className="text-sm text-muted-foreground">
-              正在处理…
+              {t(($) => $.processing)}
             </p>
           )}
         </div>
@@ -256,7 +260,7 @@ export default function ShareDialog({
               disabled={busy || !preview || !title.trim() || invalidExpiry}
               onClick={() => void publish()}
             >
-              生成只读链接
+              {t(($) => $.createLink)}
             </Button>
           </footer>
         )}

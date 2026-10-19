@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import { notificationMessage } from './locales';
 import { useSyncExternalStore } from 'react';
 import { Bell, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -12,45 +14,45 @@ import {
 } from '../../platform/notifications/controller';
 
 export function NotificationSettings() {
+  const { t } = useTranslation('notifications', { useSuspense: false });
+
   const state = useSyncExternalStore(subscribeNotifications, notificationSnapshot);
   return (
-    <section aria-label="回答通知" className="space-y-2">
+    <section aria-label={t(($) => $.title)} className="space-y-2">
       <label className="flex flex-wrap items-center justify-between gap-2 text-sm font-medium">
-        <span>回答完成通知</span>
+        <span>{t(($) => $.completion)}</span>
         <NativeSelect
-          aria-label="回答完成通知"
+          aria-label={t(($) => $.completion)}
           value={state.mode}
           className="w-full sm:w-64"
           onChange={(event) => void setNotificationMode(event.target.value as NotificationMode)}
         >
-          <option value="always">始终发送</option>
-          <option value="never">不发送</option>
-          <option value="unfocused">仅在无焦点或后台时发送</option>
+          <option value="always">{t(($) => $.always)}</option>
+          <option value="never">{t(($) => $.never)}</option>
+          <option value="unfocused">{t(($) => $.unfocused)}</option>
         </NativeSelect>
       </label>
       {state.mode === 'unfocused' && (
-        <p className="text-xs text-muted-foreground">
-          同一账号任一设备的 EverChat 页面可见且有焦点时不提醒。
-        </p>
+        <p className="text-xs text-muted-foreground">{t(($) => $.foregroundHint)}</p>
       )}
       <p role="status" className="text-xs text-muted-foreground">
         {state.mode === 'never'
           ? state.pending
-            ? '停用待同步'
-            : '已停用'
+            ? t(($) => $.disablePending)
+            : t(($) => $.disabled)
           : state.permission === 'unsupported'
-            ? '当前环境不支持；iPhone／iPad 需添加到主屏幕。'
+            ? t(($) => $.unsupported)
             : state.permission === 'denied'
-              ? '通知被拒绝，请在浏览器或系统设置中允许。'
+              ? t(($) => $.denied)
               : !state.enabled
-                ? '未启用'
+                ? t(($) => $.notEnabled)
                 : state.pending
-                  ? '设置待同步'
+                  ? t(($) => $.pending)
                   : state.ready === 'push'
-                    ? '后台推送已就绪'
+                    ? t(($) => $.pushReady)
                     : state.ready === 'local'
-                      ? '页面通知可用'
-                      : '通知尚未就绪'}
+                      ? t(($) => $.localReady)
+                      : t(($) => $.notReady)}
       </p>
       {state.mode !== 'never' && (
         <div className="flex flex-wrap gap-2">
@@ -63,7 +65,7 @@ export function NotificationSettings() {
             onClick={() => void enableNotifications()}
           >
             <Bell className="size-4" />
-            {state.ready === 'push' ? '重新检查' : '启用系统通知'}
+            {state.ready === 'push' ? t(($) => $.recheck) : t(($) => $.enable)}
           </Button>
           {state.enabled && state.permission === 'granted' && (
             <Button
@@ -73,14 +75,14 @@ export function NotificationSettings() {
               onClick={() => void testNotification()}
             >
               <Send className="size-4" />
-              发送测试通知
+              {t(($) => $.test)}
             </Button>
           )}
         </div>
       )}
       {state.error && (
         <p role="alert" className="text-sm text-destructive">
-          {state.error}
+          {notificationMessage(state.error)}
         </p>
       )}
     </section>

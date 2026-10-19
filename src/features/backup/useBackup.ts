@@ -1,3 +1,4 @@
+import { t } from './locales';
 import { useQueryClient } from '@tanstack/react-query';
 import type { RefObject } from 'react';
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
@@ -26,7 +27,7 @@ export function useBackup({
   const queryClient = useQueryClient();
   const backupOperation = useRef<AbortController | null>(null);
   const [backupTask, setBackupTask] = useState<{
-    title: string;
+    title: 'download' | 'import';
     progress: BackupProgress;
     route: string | null;
     epoch: number;
@@ -39,8 +40,8 @@ export function useBackup({
       epoch = storageEpoch();
     backupOperation.current = controller;
     setBackupTask({
-      title: '下载备份',
-      progress: { value: 0, label: '正在读取备份资料' },
+      title: 'download',
+      progress: { value: 0, label: 'readingData' },
       route: id,
       epoch,
     });
@@ -52,7 +53,7 @@ export function useBackup({
         downloadFile(`EverChat-${id}.everchat.zip`, blob, 'application/zip');
     } catch (cause) {
       if (!controller.signal.aborted && epoch === storageEpoch())
-        setError(cause instanceof Error ? cause.message : '备份失败，请稍后重试。');
+        setError(cause instanceof Error ? cause.message : t(($) => $.exportFailed));
     } finally {
       if (backupOperation.current === controller) {
         backupOperation.current = null;
@@ -70,8 +71,8 @@ export function useBackup({
     backupOperation.current = controller;
     setError('');
     setBackupTask({
-      title: '导入备份',
-      progress: { value: 0, label: '正在检查备份' },
+      title: 'import',
+      progress: { value: 0, label: 'checking' },
       route: sourceId,
       epoch,
     });
@@ -90,7 +91,7 @@ export function useBackup({
       if (selectedRef.current === sourceId) navigate(result.id);
     } catch (cause) {
       if (!controller.signal.aborted && epoch === storageEpoch())
-        setError(cause instanceof Error ? cause.message : '恢复备份失败，请检查文件。');
+        setError(cause instanceof Error ? cause.message : t(($) => $.importFailed));
     } finally {
       if (backupOperation.current === controller) {
         backupOperation.current = null;

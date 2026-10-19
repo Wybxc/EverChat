@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import './locales';
 import { ApiKeyInput } from '../../components/ApiKeyInput';
 import { ModelPriceButton } from '../usage/PriceEditor';
 import { MAX_PROVIDER_MODELS, MODEL_LIST_LIMIT_MESSAGE } from '../../../shared/providers/limits';
@@ -69,6 +71,8 @@ export function ProviderEditor({
   active: boolean;
   requestedProviderId?: string;
 }) {
+  const { t } = useTranslation('providers', { useSuspense: false });
+
   const queryClient = useQueryClient();
   const catalogIdentity = JSON.stringify(
     settings.providers.map((profile) => [
@@ -111,7 +115,7 @@ export function ProviderEditor({
   const [newModel, setNewModel] = useState('');
   const [newName, setNewName] = useState('');
   const [addingModel, setAddingModel] = useState(false);
-  useReloadBlocker(addingModel && (newModel || newName) ? '请先添加或取消编辑中的模型' : null);
+  useReloadBlocker(addingModel && (newModel || newName) ? 'finishAddingModel' : null);
   const newModelInput = useRef<HTMLInputElement>(null),
     providerNameInput = useRef<HTMLInputElement>(null);
   const [fetchingId, setFetchingId] = useState<string | null>(null);
@@ -344,11 +348,11 @@ export function ProviderEditor({
         ),
       });
       await store.flush();
-      setNotice(`已获取 ${result.models.length} 个模型`);
+      setNotice(t(($) => $.fetchedModels, { count: result.models.length }));
     } catch (error) {
       if (error instanceof ApiError && error.failure)
         setNoticeFailure({ providerId: target.id, summary: error.message, failure: error.failure });
-      else setNotice(error instanceof Error ? error.message : '获取失败');
+      else setNotice(error instanceof Error ? error.message : t(($) => $.fetchFailed));
     } finally {
       setFetchingId(null);
     }
@@ -357,7 +361,7 @@ export function ProviderEditor({
     if (!selected || !newModel.trim()) return;
     const id = newModel.trim();
     if (selected.models.some((model) => model.id === id)) {
-      setNotice('模型 ID 已存在');
+      setNotice(t(($) => $.modelIdExists));
       return;
     }
     if (selected.models.length >= MAX_PROVIDER_MODELS) {
@@ -415,7 +419,7 @@ export function ProviderEditor({
         );
         const latest = currentTarget();
         if (!latest) return;
-        if (result.capability !== capability) throw new Error('测试结果无效。');
+        if (result.capability !== capability) throw new Error(t(($) => $.invalidProbeResult));
         setTestResults((results) => [...results, result]);
         if (result.status === 'confirmed' && capability !== 'text') {
           const testedCapabilities = {
@@ -442,7 +446,7 @@ export function ProviderEditor({
       await store.flush();
     } catch (error) {
       if (!controller.signal.aborted && currentTarget())
-        setTestError(error instanceof Error ? error.message : '测试失败。');
+        setTestError(error instanceof Error ? error.message : t(($) => $.probeFailed));
     } finally {
       if (probeController.current === controller) {
         probeController.current = null;
@@ -475,7 +479,7 @@ export function ProviderEditor({
     <DisclosureScope key={`${open}:${selectedId}:${modelListRevision}`}>
       <div>
         <fieldset className="gap-3" disabled={Boolean(fetchingId)}>
-          <legend className="sr-only">AI 供应商</legend>
+          <legend className="sr-only">{t(($) => $.aiProviders)}</legend>
           <div className="grid gap-3 md:grid-cols-[minmax(11rem,0.3fr)_minmax(0,0.7fr)]">
             <div
               ref={providerList}
@@ -501,23 +505,31 @@ export function ProviderEditor({
                     aria-current={selectedId === profile.id ? 'true' : undefined}
                     className={`provider-list-row flex w-full items-center gap-2 rounded-lg px-3 py-1 text-left text-sm ${selectedId === profile.id ? 'bg-primary/10 text-foreground' : 'hover:bg-muted'}`}
                   >
-                    <span className="min-w-0 flex-1 truncate">{profile.name || '新供应商'}</span>
-                    {settings.activeProviderId === profile.id && <Badge>默认</Badge>}
+                    <span className="min-w-0 flex-1 truncate">
+                      {profile.name || t(($) => $.newProvider)}
+                    </span>
+                    {settings.activeProviderId === profile.id && (
+                      <Badge>{t(($) => $.default)}</Badge>
+                    )}
                     <span
                       aria-label={
-                        profile.hasApiKey || profile.apiKey?.trim() ? '密钥已配置' : '密钥未配置'
+                        profile.hasApiKey || profile.apiKey?.trim()
+                          ? t(($) => $.keyConfigured)
+                          : t(($) => $.keyMissing)
                       }
                       className={`h-2 w-2 shrink-0 rounded-full ${profile.hasApiKey || profile.apiKey?.trim() ? 'bg-success' : 'bg-border'}`}
                     />
                   </Button>
                 ))}
                 {!settings.providers.length && (
-                  <p className="px-2 py-5 text-center text-sm text-muted-foreground">尚无供应商</p>
+                  <p className="px-2 py-5 text-center text-sm text-muted-foreground">
+                    {t(($) => $.noProviders)}
+                  </p>
                 )}
               </div>
               <Button variant="outline" ref={addProviderButton} type="button" onClick={addProvider}>
                 <Plus className="h-[0.9375rem] w-[0.9375rem]" />
-                添加供应商
+                {t(($) => $.addProvider)}
               </Button>
             </div>
             {selected ? (
@@ -541,18 +553,18 @@ export function ProviderEditor({
                   }}
                 >
                   <ArrowLeft className="h-[1rem] w-[1rem]" />
-                  供应商列表
+                  {t(($) => $.providerList)}
                 </Button>
                 <div className="flex items-center gap-2">
                   <h3 className="min-w-0 flex-1 truncate text-lg font-semibold">
-                    {selected.name || '新供应商'}
+                    {selected.name || t(($) => $.newProvider)}
                   </h3>
                   <Button
                     variant="ghost"
                     size="icon"
                     type="button"
                     className="text-destructive"
-                    aria-label={`删除供应商 ${selected.name}`}
+                    aria-label={t(($) => $.deleteProviderLabel, { name: selected.name })}
                     onClick={() =>
                       setRemoval({ kind: 'provider', providerId: selected.id, name: selected.name })
                     }
@@ -563,7 +575,7 @@ export function ProviderEditor({
                 <div className="provider-connection">
                   <div className="space-y-1">
                     <label htmlFor="provider-name" className="block text-sm font-medium">
-                      名称
+                      {t(($) => $.name)}
                     </label>
                     <Input
                       ref={providerNameInput}
@@ -580,13 +592,13 @@ export function ProviderEditor({
                     />
                     {!selected.name.trim() && (
                       <p id="provider-name-error" className="text-xs">
-                        名称不能为空。
+                        {t(($) => $.nameRequired)}
                       </p>
                     )}
                   </div>
                   <div className="space-y-1">
                     <label htmlFor="provider-protocol" className="block text-sm font-medium">
-                      API 类型
+                      {t(($) => $.apiType)}
                     </label>
                     <NativeSelect
                       id="provider-protocol"
@@ -607,7 +619,7 @@ export function ProviderEditor({
                   </div>
                   <div className="space-y-1">
                     <label htmlFor="provider-url" className="block text-sm font-medium">
-                      API 端点
+                      {t(($) => $.apiEndpoint)}
                     </label>
                     <Input
                       id="provider-url"
@@ -624,14 +636,18 @@ export function ProviderEditor({
                   </div>
                   <div className="space-y-1">
                     <label htmlFor="provider-key" className="block text-sm font-medium">
-                      API 密钥
+                      {t(($) => $.apiKey)}
                     </label>
                     <ApiKeyInput
                       id="provider-key"
                       visible={showKey}
                       onToggle={() => setShowKey((current) => !current)}
                       value={selected.apiKey ?? ''}
-                      placeholder={selected.hasApiKey ? '已配置 · 留空保留' : '输入 API 密钥'}
+                      placeholder={
+                        selected.hasApiKey
+                          ? t(($) => $.keepKeyPlaceholder)
+                          : t(($) => $.enterKeyPlaceholder)
+                      }
                       onChange={(event) =>
                         changeProvider(selected.id, { apiKey: event.target.value })
                       }
@@ -640,10 +656,12 @@ export function ProviderEditor({
                 </div>
                 <div className="space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h4 className="text-sm font-semibold">模型</h4>
+                    <h4 className="text-sm font-semibold">{t(($) => $.models)}</h4>
                     <span className="flex-1 text-xs text-muted-foreground">
-                      已启用 {selected.models.filter((model) => model.enabled).length} /{' '}
-                      {selected.models.length}
+                      {t(($) => $.enabledModels, {
+                        enabled: selected.models.filter((model) => model.enabled).length,
+                        total: selected.models.length,
+                      })}
                     </span>
                     <Button
                       variant="ghost"
@@ -659,15 +677,15 @@ export function ProviderEditor({
                       ) : (
                         <RefreshCw className="h-[0.875rem] w-[0.875rem]" />
                       )}
-                      获取
+                      {t(($) => $.fetchModels)}
                     </Button>
                   </div>
                   {selected.models.length > 1 && (
                     <label className="field-control h-11 w-full gap-2 border-input">
                       <Search className="h-[0.9375rem] w-[0.9375rem]" />
                       <input
-                        aria-label="筛选模型"
-                        placeholder="筛选模型"
+                        aria-label={t(($) => $.filterModels)}
+                        placeholder={t(($) => $.filterModels)}
                         value={modelFilter}
                         onChange={(event) => {
                           setModelFilter(event.target.value);
@@ -697,7 +715,9 @@ export function ProviderEditor({
                               <label className="provider-model-toggle flex min-w-0 flex-1 cursor-pointer items-center gap-2">
                                 <Checkbox
                                   className="shrink-0"
-                                  aria-label={`启用模型 ${model.name || model.id}`}
+                                  aria-label={t(($) => $.enableModelLabel, {
+                                    name: model.name || model.id,
+                                  })}
                                   checked={model.enabled}
                                   onCheckedChange={(checked) =>
                                     changeModel(index, { enabled: checked === true })
@@ -719,7 +739,7 @@ export function ProviderEditor({
                                 size="icon-sm"
                                 type="button"
                                 className="shrink-0"
-                                aria-label={`模型设置 ${index + 1}`}
+                                aria-label={t(($) => $.modelSettingsLabel, { index: index + 1 })}
                                 aria-expanded={expanded}
                                 aria-controls={`model-editor-${selected.id}-${index}`}
                                 onClick={() => setEditingModel(expanded ? null : index)}
@@ -748,7 +768,9 @@ export function ProviderEditor({
                                 <Button
                                   variant="ghost"
                                   type="button"
-                                  aria-label={`删除模型 ${model.name || model.id || index + 1}`}
+                                  aria-label={t(($) => $.deleteModelLabel, {
+                                    name: model.name || model.id || index + 1,
+                                  })}
                                   onClick={() =>
                                     setRemoval({
                                       kind: 'model',
@@ -759,7 +781,7 @@ export function ProviderEditor({
                                   }
                                 >
                                   <Trash2 className="h-[0.9375rem] w-[0.9375rem]" />
-                                  删除模型
+                                  {t(($) => $.deleteModel)}
                                 </Button>
                               </div>
                             )}
@@ -772,11 +794,15 @@ export function ProviderEditor({
                           `${model.name} ${model.id}`
                             .toLowerCase()
                             .includes(modelFilter.toLowerCase()),
-                        ) && <p className="py-4 text-sm text-muted-foreground">没有匹配的模型</p>}
+                        ) && (
+                          <p className="py-4 text-sm text-muted-foreground">
+                            {t(($) => $.noModelMatches)}
+                          </p>
+                        )}
                     </div>
                   )}
                   <Disclosure
-                    title="添加模型"
+                    title={t(($) => $.addModel)}
                     open={addingModel}
                     onOpenChange={(next) => {
                       setAddingModel(next);
@@ -789,10 +815,10 @@ export function ProviderEditor({
                     <div className="grid gap-2 sm:grid-cols-2">
                       <Input
                         ref={newModelInput}
-                        aria-label="新模型 ID"
+                        aria-label={t(($) => $.newModelId)}
                         maxLength={200}
                         className="w-full border-input"
-                        placeholder="模型 ID"
+                        placeholder={t(($) => $.modelId)}
                         value={newModel}
                         onChange={(event) => setNewModel(event.target.value)}
                         onKeyDown={(event) => {
@@ -803,10 +829,10 @@ export function ProviderEditor({
                         }}
                       />
                       <Input
-                        aria-label="新模型显示名"
+                        aria-label={t(($) => $.newModelDisplayName)}
                         maxLength={200}
                         className="w-full border-input"
-                        placeholder="显示名"
+                        placeholder={t(($) => $.displayName)}
                         value={newName}
                         onChange={(event) => setNewName(event.target.value)}
                         onKeyDown={(event) => {
@@ -824,7 +850,7 @@ export function ProviderEditor({
                           disabled={!newModel.trim()}
                         >
                           <Plus className="h-[0.875rem] w-[0.875rem]" />
-                          添加
+                          {t(($) => $.add)}
                         </Button>
                         <Button
                           variant="ghost"
@@ -835,7 +861,7 @@ export function ProviderEditor({
                             setAddingModel(false);
                           }}
                         >
-                          取消添加
+                          {t(($) => $.cancelAdding)}
                         </Button>
                       </div>
                     </div>
@@ -844,7 +870,7 @@ export function ProviderEditor({
               </div>
             ) : (
               <div className="flex min-h-48 items-center justify-center rounded-lg border border-dashed border-border text-sm text-muted-foreground">
-                添加一个供应商开始配置
+                {t(($) => $.addProviderHint)}
               </div>
             )}
           </div>
@@ -872,10 +898,10 @@ export function ProviderEditor({
         >
           <div className="p-5 max-w-sm">
             <ModalTitle id="provider-removal-title" className="text-lg font-semibold">
-              {removal?.kind === 'provider' ? '删除供应商' : '删除模型'}
+              {removal?.kind === 'provider' ? t(($) => $.deleteProvider) : t(($) => $.deleteModel)}
             </ModalTitle>
             <p className="mt-4 break-words text-sm">
-              删除“{removal?.name}”？此操作会自动保存，无法撤销。
+              {t(($) => $.deleteProviderConfirmation, { name: removal?.name ?? '' })}
             </p>
             <div className="dialog-actions">
               <Button
@@ -884,10 +910,10 @@ export function ProviderEditor({
                 type="button"
                 onClick={() => setRemoval(null)}
               >
-                取消
+                {t(($) => $.cancel)}
               </Button>
               <Button variant="destructive" type="button" onClick={confirmRemoval}>
-                确认删除
+                {t(($) => $.confirmDelete)}
               </Button>
             </div>
           </div>

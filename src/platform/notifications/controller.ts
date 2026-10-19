@@ -1,3 +1,5 @@
+import { mirrorNotificationLocale } from './locale';
+import type notificationLabels from '../../features/notifications/locales/en';
 import { registerNotificationCleanup } from '../storage';
 import { clearNotificationLocal } from './cleanup';
 import * as v from 'valibot';
@@ -10,7 +12,7 @@ import {
 } from '../../../shared/notifications/protocol';
 import { identityKey } from '../../../shared/auth/types';
 import { api } from '../api';
-import { serializePushSubscription } from './subscription';
+import { serializePushSubscription, InvalidPushSubscriptionError } from './subscription';
 import { networkIdentity, notifyAuthFailure } from '../auth';
 import {
   acknowledgeNotificationPreference,
@@ -20,6 +22,11 @@ import {
 } from './store';
 
 registerNotificationCleanup(clearNotificationLocal);
+class NotificationError extends Error {
+  constructor(readonly key: Exclude<NotificationState['error'], ''>) {
+    super(key);
+  }
+}
 
 export interface NotificationState {
   mode: NotificationMode;
@@ -28,7 +35,8 @@ export interface NotificationState {
   ready: 'none' | 'local' | 'push';
   pending: boolean;
   busy: boolean;
-  error: string;
+  error: keyof typeof notificationLabels | '';
+  diagnostic?: string;
 }
 let state: NotificationState = {
   mode: 'unfocused',
@@ -66,9 +74,9 @@ let stopped = true,
 let syncing: Promise<void> | null = null;
 let navigating: ((conversationId: string, messageId: string) => void) | null = null;
 const registration = async () => {
-  if (!('serviceWorker' in navigator)) throw new Error('当前环境不支持系统通知。');
+  if (!('serviceWorker' in navigator)) throw new NotificationError('unsupportedError');
   const value = await navigator.serviceWorker.getRegistration('/');
-  if (!value?.active) throw new Error('应用通知尚未就绪，请等待应用准备完成后重试。');
+  if (!value?.active) throw new NotificationError('registrationNotReady');
   return value;
 };
 const authorized = () => {
@@ -77,7 +85,15 @@ const authorized = () => {
 };
 const broadcast = () => channel?.postMessage('changed');
 const fail = (error: unknown) =>
-  emit({ error: error instanceof Error ? error.message : '通知设置失败，请重试。' });
+  emit({
+    error:
+      error instanceof NotificationError
+        ? error.key
+        : error instanceof InvalidPushSubscriptionError
+          ? 'invalidSubscription'
+          : 'settingsFailed',
+    diagnostic: error instanceof Error ? error.message : undefined,
+  });
 async function refresh() {
   const value = await notificationPreference();
   emit({
@@ -172,7 +188,7 @@ async function synchronizeNow() {
   const expectedOwner = owner,
     current = generation;
   let subscription: PushSubscription | null = null;
-  let reason = '';
+  let reason: NotificationState['error'] = '';
   if (value.enabled && value.mode !== 'never' && permission() === 'granted') {
     const reg = await registration();
     const config = await api<{ publicKey: string | null }>('/notifications/config');
@@ -194,9 +210,9 @@ async function synchronizeNow() {
           applicationServerKey: publicKey,
         });
       } catch {
-        reason = '后台推送未能启用；当前仅支持页面在线时通知。可重试启用。';
+        reason = 'pushFailed';
       }
-    } else reason = '当前仅支持页面在线时通知。';
+    } else reason = 'localOnly';
   } else {
     const reg = await navigator.serviceWorker?.getRegistration('/');
     await reg?.pushManager
@@ -251,6 +267,7 @@ export function startNotifications(
   identity: string | null,
   navigate: (conversationId: string, messageId: string) => void,
 ) {
+  mirrorNotificationLocale();
   stopped = false;
   owner = identity;
   navigating = navigate;
@@ -314,11 +331,11 @@ export async function setNotificationMode(mode: NotificationMode) {
 }
 export async function enableNotifications() {
   if (!owner || !authorized()) {
-    fail(new Error('请先恢复连接并登录。'));
+    fail(new NotificationError('signInFirst'));
     return;
   }
   if (permission() === 'unsupported') {
-    fail(new Error('当前环境不支持；iPhone／iPad 请先添加到主屏幕，再从应用中启用。'));
+    fail(new NotificationError('installFirst'));
     return;
   }
   // Keep permission request in the original click gesture, before any asynchronous work.
@@ -327,8 +344,7 @@ export async function enableNotifications() {
   emit({ busy: true, error: '' });
   try {
     const result = Notification.requestPermission();
-    if ((await result) !== 'granted')
-      throw new Error('通知未获允许，请在浏览器或系统设置中允许通知。');
+    if ((await result) !== 'granted') throw new NotificationError('permissionRequired');
     if (stopped || owner !== expectedOwner || generation !== expectedGeneration) return;
     await registration();
     await changeNotificationPreference({ owner, enabled: true });
@@ -346,17 +362,17 @@ export async function testNotification() {
   try {
     const value = await notificationPreference(),
       reg = await registration();
-    if (!value.enabled || permission() !== 'granted') throw new Error('请先启用系统通知。');
+    if (!value.enabled || permission() !== 'granted') throw new NotificationError('enableFirst');
     await new Promise<void>((resolve, reject) => {
       const ports = new MessageChannel(),
         timer = setTimeout(() => {
           ports.port1.close();
-          reject(new Error('通知测试超时，请重试。'));
+          reject(new NotificationError('testTimeout'));
         }, 5000);
       ports.port1.onmessage = (event) => {
         clearTimeout(timer);
         ports.port1.close();
-        event.data?.ok ? resolve() : reject(new Error('系统通知显示失败。'));
+        event.data?.ok ? resolve() : reject(new NotificationError('displayFailed'));
       };
       reg.active!.postMessage(
         { channel: NOTIFICATION_CHANNEL, type: 'test', revision: value.revision },

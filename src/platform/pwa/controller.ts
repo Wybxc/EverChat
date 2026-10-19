@@ -11,7 +11,13 @@ import {
 } from './diagnostics';
 import { reloadBlocked } from './reload-guard';
 import { freezeForReload } from './browser-lock';
-import { APP_VERSION, PWA_CHANNEL, type Preparation, type ReloadCommand } from './protocol';
+import {
+  APP_VERSION,
+  PWA_CHANNEL,
+  type Preparation,
+  type ReloadReason,
+  type ReloadCommand,
+} from './protocol';
 import { isBundledAsset } from './assets';
 
 type InstallPrompt = Event & {
@@ -31,7 +37,7 @@ type PwaState = {
   installing: boolean;
   canInstall: boolean;
   installed: boolean;
-  error: string;
+  error: ReloadReason | '';
   resourceError: boolean;
   version: string;
 };
@@ -126,9 +132,7 @@ function release(token?: string) {
 }
 async function prepare(token: string): Promise<Preparation> {
   if (preparedToken)
-    return preparedToken === token
-      ? { ready: true }
-      : { ready: false, reason: '另一次更新正在进行' };
+    return preparedToken === token ? { ready: true } : { ready: false, reason: 'otherUpdate' };
   const reason = reloadBlocked();
   if (reason) return { ready: false, reason };
   preparedToken = token;
@@ -136,12 +140,12 @@ async function prepare(token: string): Promise<Preparation> {
   publish({ preparing: true, error: '', noticeError: false });
   releaseTimer = setTimeout(() => {
     release(token);
-    publish({ error: '更新等待超时，请重试。', noticeError: true });
+    publish({ error: 'waitTimeout', noticeError: true });
   }, 20_000);
   try {
     window.dispatchEvent(new Event('everchat:prepare-reload'));
     await flushStorage();
-    if (preparedToken !== token) return { ready: false, reason: '更新已取消，请重试' };
+    if (preparedToken !== token) return { ready: false, reason: 'updateCancelled' };
     const after = reloadBlocked();
     if (after) {
       release(token);
@@ -150,7 +154,7 @@ async function prepare(token: string): Promise<Preparation> {
     return { ready: true };
   } catch {
     release(token);
-    return { ready: false, reason: '无法保存本地记录，请释放浏览器存储后重试' };
+    return { ready: false, reason: 'storageFailed' };
   }
 }
 function request<T>(worker: ServiceWorker, type: string): Promise<T> {
@@ -158,7 +162,7 @@ function request<T>(worker: ServiceWorker, type: string): Promise<T> {
     const channel = new MessageChannel();
     const timer = setTimeout(() => {
       channel.port1.close();
-      reject(new Error('应用服务未响应，请重试。'));
+      reject(new Error('serviceTimeout'));
     }, 20_000);
     channel.port1.onmessage = (event) => {
       clearTimeout(timer);
@@ -190,11 +194,10 @@ async function controllerChanged() {
     if (result.ready && !reloading) {
       reloading = true;
       location.reload();
-    } else if (!result.ready)
-      publish({ error: result.reason ?? '完成当前修改后再更新。', available: true });
+    } else if (!result.ready) publish({ error: result.reason ?? 'finishChanges', available: true });
   } catch {
     release();
-    publish({ error: '无法确认应用版本，请检查更新。' });
+    publish({ error: 'unknownVersion' });
   }
 }
 function watch(next: ServiceWorkerRegistration, source: PwaSource) {
@@ -240,9 +243,7 @@ function watch(next: ServiceWorkerRegistration, source: PwaSource) {
         diagnostic(origin, 'install', 'install');
         publish({
           installing: false,
-          error: repairInstall
-            ? '修复资源未能下载，当前版本继续可用。'
-            : pwaFailureMessage('install'),
+          error: repairInstall ? 'repairDownloadFailed' : pwaFailureMessage('install'),
           noticeError: origin === 'manual',
         });
       }
@@ -303,7 +304,7 @@ export function startPwa() {
     if (navigator.onLine)
       publish({
         resourceError: true,
-        error: '界面资源未能加载，请修复缓存后重试。',
+        error: 'resourcesFailed',
         noticeError: true,
       });
   });
@@ -420,7 +421,7 @@ export async function installPwa() {
     await prompt.prompt();
     await prompt.userChoice;
   } catch {
-    publish({ error: '安装未能完成，可从浏览器菜单安装。', noticeError: true });
+    publish({ error: 'installFailed', noticeError: true });
   }
 }
 export async function applyPwaChange(command: ReloadCommand): Promise<void> {
@@ -446,15 +447,15 @@ export async function applyPwaChange(command: ReloadCommand): Promise<void> {
       worker = await installedWorker(next);
     }
     if (!worker) {
-      publish({ error: '应用服务尚未就绪，请先检查更新。', noticeError: true });
+      publish({ error: 'serviceNotReady', noticeError: true });
       return;
     }
     const result = await request<Preparation>(worker, command);
-    if (!result.ready) publish({ error: result.reason ?? '更新暂时无法进行。', noticeError: true });
+    if (!result.ready) publish({ error: result.reason ?? 'updateUnavailable', noticeError: true });
   } catch (error) {
     release();
     publish({
-      error: error instanceof Error ? error.message : '更新未能完成。',
+      error: 'updateFailed',
       noticeError: true,
     });
   } finally {
@@ -465,7 +466,7 @@ export async function applyPwaChange(command: ReloadCommand): Promise<void> {
 
 function installedWorker(next: ServiceWorkerRegistration): Promise<ServiceWorker> {
   const worker = next.installing ?? next.waiting;
-  if (!worker) return Promise.reject(new Error('修复资源尚未就绪，请重试。'));
+  if (!worker) return Promise.reject(new Error('repairNotReady'));
   return new Promise((resolve, reject) => {
     const finish = (error?: Error) => {
       clearTimeout(timer);
@@ -475,12 +476,9 @@ function installedWorker(next: ServiceWorkerRegistration): Promise<ServiceWorker
     };
     const changed = () => {
       if (worker.state === 'installed' || worker.state === 'activated') finish();
-      if (worker.state === 'redundant') finish(new Error('修复资源未能下载，当前版本继续可用。'));
+      if (worker.state === 'redundant') finish(new Error('repairDownloadFailed'));
     };
-    const timer = setTimeout(
-      () => finish(new Error('修复资源下载耗时较长，就绪后可更新。')),
-      120_000,
-    );
+    const timer = setTimeout(() => finish(new Error('repairSlow')), 120_000);
     worker.addEventListener('statechange', changed);
     changed();
   });
@@ -496,5 +494,5 @@ export async function recoverApplicationResources(): Promise<void> {
   if (result.ready && !reloading) {
     reloading = true;
     location.reload();
-  } else if (!result.ready) publish({ error: result.reason ?? '请先完成当前修改。' });
+  } else if (!result.ready) publish({ error: result.reason ?? 'finishCurrent' });
 }

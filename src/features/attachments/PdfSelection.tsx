@@ -1,3 +1,6 @@
+import { formatNumber } from '../../platform/i18n/format';
+import { useTranslation } from 'react-i18next';
+import './locales';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -29,6 +32,8 @@ export function PdfSelection({
   budget?: number;
   onApply: (file: DocumentPart) => void;
 }) {
+  const { t } = useTranslation('attachments', { useSuspense: false });
+
   const [mode, setMode] = useState(file.selection ? 'fragment' : 'all'),
     [pages, setPages] = useState('1');
   const [fragment, setFragment] = useState<DocumentRange[]>(
@@ -75,22 +80,22 @@ export function PdfSelection({
       <div className="shrink-0 space-y-2 px-4 py-3">
         <div className="flex flex-wrap items-center gap-2">
           <NativeSelect
-            aria-label="PDF 发送范围"
+            aria-label={t(($) => $.pdfRange)}
             value={mode}
             onChange={(event) => {
               setMode(event.target.value);
               setError('');
             }}
           >
-            <option value="all">全文</option>
+            <option value="all">{t(($) => $.fullText)}</option>
             <option value="pages" disabled={!pageOffsets}>
-              选择页码
+              {t(($) => $.choosePages)}
             </option>
-            <option value="fragment">选择片段</option>
+            <option value="fragment">{t(($) => $.chooseExcerpt)}</option>
           </NativeSelect>
           {mode === 'pages' && (
             <Input
-              aria-label="发送页码"
+              aria-label={t(($) => $.sendPages)}
               placeholder="1-3, 5"
               className="min-w-32 flex-1"
               value={pages}
@@ -117,7 +122,7 @@ export function PdfSelection({
                 }
                 if (!low) {
                   setMode('fragment');
-                  setError('首页已超过可用容量，请在原文中选择片段。');
+                  setError(t(($) => $.firstPageOver));
                   return;
                 }
                 setPages(`1-${low}`);
@@ -125,7 +130,7 @@ export function PdfSelection({
                 setError('');
               }}
             >
-              按容量选择前几页
+              {t(($) => $.fitPages)}
             </Button>
           )}
         </div>
@@ -133,11 +138,13 @@ export function PdfSelection({
           className={`text-xs ${over ? 'text-destructive' : 'text-muted-foreground'}`}
           role="status"
         >
-          {file.pdf!.pages} 页全文已保存 · 当前约 {tokens.toLocaleString()} Tokens
-          {budget === undefined ? '' : `／可用约 ${budget.toLocaleString()}`}
+          {t(($) => $.pdfSummary, { count: file.pdf!.pages, tokens: formatNumber(tokens) })}
+          {budget === undefined
+            ? ''
+            : t(($) => $.availableBudget, { tokens: formatNumber(budget) })}
         </p>
         {mode === 'fragment' && (
-          <p className="text-xs text-muted-foreground">在原文中选中需要发送的文本。</p>
+          <p className="text-xs text-muted-foreground">{t(($) => $.selectionHint)}</p>
         )}
         {(invalid || error) && (
           <p className="text-xs text-destructive" role="alert">
@@ -150,7 +157,7 @@ export function PdfSelection({
           <Textarea
             readOnly
             ref={source}
-            aria-label="PDF 原文"
+            aria-label={t(($) => $.pdfOriginal)}
             className="h-[min(50dvh,24rem)] min-h-32 w-full resize-none font-mono"
             style={{ fieldSizing: 'fixed' }}
             value={text}
@@ -161,7 +168,7 @@ export function PdfSelection({
       </div>
       <div className="flex shrink-0 items-center justify-between gap-2 border-t border-border px-4 py-2">
         <span className="text-xs text-muted-foreground">
-          {over ? '超出当前预算，发送前需缩小范围或切换模型。' : '发送所选内容，全文保留。'}
+          {over ? t(($) => $.overBudget) : t(($) => $.retainedHint)}
         </span>
         <Button
           type="button"
@@ -185,7 +192,7 @@ export function PdfSelection({
             }
           }}
         >
-          {busy ? '保存中…' : '使用选区'}
+          {busy ? t(($) => $.saving) : t(($) => $.useSelection)}
         </Button>
       </div>
     </div>

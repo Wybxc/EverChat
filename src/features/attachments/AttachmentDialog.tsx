@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import './locales';
 import { Modal, ModalTitle } from '../../components/Modal';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,6 +19,8 @@ export function AttachmentDialog({
   open: boolean;
   close: () => void;
 }) {
+  const { t } = useTranslation('attachments', { useSuspense: false });
+
   const picker = useRef<HTMLInputElement>(null),
     titleId = useId();
   const controller = useRef<AbortController | null>(null),
@@ -49,7 +53,7 @@ export function AttachmentDialog({
       }
     } catch (failure) {
       if (!abort.signal.aborted)
-        setError(failure instanceof Error ? failure.message : '上传失败。');
+        setError(failure instanceof Error ? failure.message : t(($) => $.simpleUploadFailed));
     } finally {
       controller.current = null;
       setUpload(null);
@@ -64,7 +68,7 @@ export function AttachmentDialog({
       await api(`/conversations/${id}/attachments/${file.id}`, 'DELETE');
       await client.invalidateQueries({ queryKey: key });
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : '删除失败。');
+      setError(failure instanceof Error ? failure.message : t(($) => $.deleteFailed));
     } finally {
       setRemoving(null);
     }
@@ -81,36 +85,36 @@ export function AttachmentDialog({
       <div className="w-full flex max-h-[85dvh] max-w-xl flex-col overflow-hidden p-0">
         <div className="flex shrink-0 items-center justify-between gap-3 p-5">
           <ModalTitle id={titleId} className="text-lg font-semibold">
-            对话文件
+            {t(($) => $.files)}
           </ModalTitle>
           <div>
-            <Button variant="ghost" size="icon" onClick={close} aria-label="关闭对话文件">
+            <Button variant="ghost" size="icon" onClick={close} aria-label={t(($) => $.closeFiles)}>
               <X className="h-[1.125rem] w-[1.125rem]" />
             </Button>
           </div>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
           <label className="block space-y-2 text-sm">
-            <span>上传文件</span>
+            <span>{t(($) => $.upload)}</span>
             <Input
               ref={picker}
               type="file"
               multiple
-              aria-label="上传文件"
+              aria-label={t(($) => $.upload)}
               className="w-full"
               disabled={Boolean(upload) || !navigator.onLine}
               accept=".png,.jpg,.jpeg,.webp,.txt,.md,.csv,.pdf,.js,.jsx,.ts,.tsx,.py,.rs,.go,.c,.cpp,.h,.css,.json,.yaml,.yml,.toml,.sh"
               onChange={(event) => void selectFiles(event.currentTarget.files)}
             />
           </label>
-          <p className="mt-2 text-xs text-muted-foreground">单文件 ≤5 MiB · 此处仅保存文件</p>
+          <p className="mt-2 text-xs text-muted-foreground">{t(($) => $.storageHint)}</p>
           {upload && (
             <div role="status" className="mt-4 space-y-2 text-sm">
               <div className="flex items-center justify-between gap-2">
                 <span className="min-w-0 truncate">
                   {upload.name} ·{' '}
                   {upload.sent === upload.size
-                    ? '保存中…'
+                    ? t(($) => $.saving)
                     : `${Math.round((upload.sent / Math.max(1, upload.size)) * 100)}%`}
                 </span>
                 <Button
@@ -118,12 +122,12 @@ export function AttachmentDialog({
                   type="button"
                   onClick={() => controller.current?.abort()}
                 >
-                  取消上传
+                  {t(($) => $.cancelUpload)}
                 </Button>
               </div>
               <progress
                 className="progress-meter w-full"
-                aria-label="上传进度"
+                aria-label={t(($) => $.progress)}
                 value={upload.sent}
                 max={Math.max(1, upload.size)}
               />
@@ -135,7 +139,7 @@ export function AttachmentDialog({
             </p>
           )}
           {files.isPending ? (
-            <p className="mt-5 text-sm">正在读取…</p>
+            <p className="mt-5 text-sm">{t(($) => $.loading)}</p>
           ) : (
             <ul className="mt-4 divide-y divide-border">
               {files.data?.map((file) => (
@@ -149,12 +153,12 @@ export function AttachmentDialog({
                     <p className="mt-1 text-xs text-muted-foreground">
                       {bytesLabel(file.size)} ·{' '}
                       {file.status === 'ready'
-                        ? '已保存'
+                        ? t(($) => $.saved)
                         : file.status === 'uploading'
-                          ? '上传中'
+                          ? t(($) => $.uploading)
                           : file.status === 'failed'
-                            ? '上传失败'
-                            : '等待上传'}
+                            ? t(($) => $.uploadError)
+                            : t(($) => $.waiting)}
                     </p>
                   </div>
                   <div className="flex items-center gap-1">
@@ -164,14 +168,14 @@ export function AttachmentDialog({
                         href={attachmentUrl(id, file.id)}
                         download={file.name}
                       >
-                        下载
+                        {t(($) => $.download)}
                       </a>
                     )}
                     <Button
                       variant="ghost"
                       size="icon"
                       type="button"
-                      aria-label={`删除文件 ${file.name}`}
+                      aria-label={t(($) => $.deleteFile, { name: file.name })}
                       disabled={Boolean(removing) || !navigator.onLine}
                       onClick={() => void remove(file)}
                     >
@@ -183,7 +187,7 @@ export function AttachmentDialog({
             </ul>
           )}
           {files.data?.length === 0 && (
-            <p className="mt-5 text-sm text-muted-foreground">暂无文件</p>
+            <p className="mt-5 text-sm text-muted-foreground">{t(($) => $.empty)}</p>
           )}
         </div>
       </div>

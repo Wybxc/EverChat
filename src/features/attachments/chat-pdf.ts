@@ -1,3 +1,4 @@
+import { t } from './locales';
 import { MAX_ATTACHMENT_BYTES } from '../../../shared/attachments/files';
 import {
   MAX_PDF_TEXT_BYTES,
@@ -32,9 +33,9 @@ function binaryFactory(signal: AbortSignal) {
   return class {
     async fetch({ kind, filename }: { kind: string; filename: string }) {
       const url = resource[kind]?.get(filename);
-      if (!url) throw new Error('PDF 所需的内置字体资源不可用。');
+      if (!url) throw new Error(t(($) => $.fontMissing));
       const response = await fetch(url, { signal, credentials: 'same-origin' });
-      if (!response.ok) throw new Error('PDF 字体资源加载失败。');
+      if (!response.ok) throw new Error(t(($) => $.fontFailed));
       return new Uint8Array(await response.arrayBuffer());
     }
   };
@@ -45,8 +46,7 @@ export async function prepareChatPdf(
   signal: AbortSignal,
   progress: (page: number, pages: number) => void = () => {},
 ): Promise<PDFExtraction> {
-  if (!file.size || file.size > MAX_ATTACHMENT_BYTES)
-    throw new Error('PDF 原文件最多 5 MiB，请拆分文件。');
+  if (!file.size || file.size > MAX_ATTACHMENT_BYTES) throw new Error(t(($) => $.pdfTooLarge));
   const abort = new AbortController(),
     onAbort = () => abort.abort(signal.reason);
   signal.addEventListener('abort', onAbort, { once: true });
@@ -54,10 +54,7 @@ export async function prepareChatPdf(
   let timer: ReturnType<typeof setTimeout> | undefined;
   const heartbeat = () => {
     clearTimeout(timer);
-    timer = setTimeout(
-      () => abort.abort(new Error('PDF 解析已停滞 30 秒，请重试。')),
-      PDF_PARSE_TIMEOUT,
-    );
+    timer = setTimeout(() => abort.abort(new Error(t(($) => $.pdfStalled))), PDF_PARSE_TIMEOUT);
   };
   heartbeat();
   let worker: Worker | undefined,
@@ -77,8 +74,7 @@ export async function prepareChatPdf(
     abort.signal.throwIfAborted();
     const pdfjs = await import('pdfjs-dist');
     abort.signal.throwIfAborted();
-    if (pdfjs.version !== PDF_PARSER_VERSION)
-      throw new Error('PDF 解析器版本不匹配，请重新构建应用。');
+    if (pdfjs.version !== PDF_PARSER_VERSION) throw new Error(t(($) => $.pdfVersionMismatch));
     const data = new Uint8Array(await file.arrayBuffer());
     abort.signal.throwIfAborted();
     worker = new Worker(workerUrl, { type: 'module' });
@@ -104,7 +100,7 @@ export async function prepareChatPdf(
       hasText = false;
     const append = (value: string) => {
       bytes += encoder.encode(value).length;
-      if (bytes > MAX_PDF_TEXT_BYTES) throw new Error('PDF 全文超过此对话 32 MiB 的附件存储容量。');
+      if (bytes > MAX_PDF_TEXT_BYTES) throw new Error(t(($) => $.pdfCapacity));
       chunks.push(value);
       characters += value.length;
     };
@@ -134,7 +130,7 @@ export async function prepareChatPdf(
         page.cleanup();
       }
     }
-    if (!hasText) throw new Error('PDF 没有可提取的文本，请选择含文字的 PDF。');
+    if (!hasText) throw new Error(t(($) => $.pdfNoText));
     return {
       sourceSha256,
       text: chunks.join(''),
@@ -146,10 +142,10 @@ export async function prepareChatPdf(
     return await Promise.race([extracting, aborted]);
   } catch (error) {
     if (error instanceof Error && error.name === 'PasswordException')
-      throw new Error('PDF 需要口令，请先解密后重新选择。');
+      throw new Error(t(($) => $.pdfPassword));
     if (abort.signal.aborted) throw abort.signal.reason;
     if (error instanceof Error && /[\u4e00-\u9fff]/u.test(error.message)) throw error;
-    throw new Error('PDF 无法读取，请检查文件或重新导出。');
+    throw new Error(t(($) => $.pdfInvalid));
   } finally {
     clearTimeout(timer);
     signal.removeEventListener('abort', onAbort);

@@ -1,3 +1,4 @@
+import type { BackupStage } from './archive-client';
 import { decodeBackup, encodeArchive } from '../../../shared/backup/codec';
 import {
   extractedPath,
@@ -8,6 +9,11 @@ import {
 } from '../../../shared/backup/archive';
 import { attachmentUrl } from '../../../shared/attachments/files';
 
+class ArchiveError extends Error {
+  constructor(readonly key: 'invalidSize') {
+    super(key);
+  }
+}
 class PrivateReadError extends Error {
   constructor(
     message: string,
@@ -17,7 +23,8 @@ class PrivateReadError extends Error {
     super(message);
   }
 }
-const progress = (value: number, label: string) => self.postMessage({ progress: { value, label } });
+const progress = (value: number, label: BackupStage) =>
+  self.postMessage({ progress: { value, label } });
 async function privateGet(url: string) {
   const response = await fetch(url, {
     credentials: 'same-origin',
@@ -25,7 +32,7 @@ async function privateGet(url: string) {
     headers: { 'X-Requested-With': 'XMLHttpRequest' },
   });
   if (!response.ok) {
-    let message = '备份资料无法读取。',
+    let message = 'Could not read backup data.',
       code: string | undefined;
     try {
       const body = (await response.json()) as { error?: string; code?: string };
@@ -44,7 +51,7 @@ self.onmessage = async (
   try {
     const request = event.data;
     if (request.operation === 'export') {
-      progress(0, '正在读取备份资料');
+      progress(0, 'readingData');
       const manifest = validateArchiveManifest(
         await (await privateGet(`/api/conversations/${request.id}/backup/manifest`)).json(),
       );
@@ -61,17 +68,17 @@ self.onmessage = async (
           ).json()) as { text: string };
           entries[extractedPath(file.id)] = new TextEncoder().encode(saved.text);
         }
-        progress(Math.round(((index + 1) / Math.max(1, total)) * 90), '正在读取文件');
+        progress(Math.round(((index + 1) / Math.max(1, total)) * 90), 'readingFiles');
       }
-      progress(95, '正在生成备份');
+      progress(95, 'generating');
       const bytes = await encodeArchive(manifest, entries);
       self.postMessage({
         result: { blob: new Blob([new Uint8Array(bytes)], { type: 'application/zip' }) },
       });
     } else {
       if (!request.file.size || request.file.size > MAX_ARCHIVE_BYTES)
-        throw new Error('备份存档大小无效。');
-      progress(0, '正在检查备份');
+        throw new ArchiveError('invalidSize');
+      progress(0, 'checking');
       const bytes = new Uint8Array(await request.file.arrayBuffer()),
         hash = await sha256(bytes);
       const decoded = await decodeBackup(bytes);
@@ -88,7 +95,7 @@ self.onmessage = async (
             }
           : {}),
       }));
-      progress(100, '备份检查完成');
+      progress(100, 'checked');
       self.postMessage({
         result: {
           hash,
@@ -99,7 +106,12 @@ self.onmessage = async (
     }
   } catch (error) {
     self.postMessage({
-      error: error instanceof Error ? error.message : '备份处理失败。',
+      error: error instanceof Error ? error.message : 'Backup processing failed.',
+      ...(error instanceof ArchiveError
+        ? { errorKey: error.key }
+        : !(error instanceof Error)
+          ? { errorKey: 'processingFailed' }
+          : {}),
       ...(error instanceof PrivateReadError ? { status: error.status, code: error.code } : {}),
     });
   }

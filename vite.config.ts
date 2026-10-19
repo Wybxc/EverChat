@@ -1,3 +1,4 @@
+import { startupLocaleScript } from './src/platform/i18n/startup';
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
@@ -27,6 +28,11 @@ export default defineConfig(async ({ command, mode }) => {
       react(),
       tailwindcss(),
       startup.plugin,
+      {
+        name: 'everchat-startup-locale',
+        transformIndexHtml: (html: string) =>
+          html.replace('/*__EVERCHAT_LOCALE__*/', startupLocaleScript()),
+      },
       VitePWA({
         injectRegister: false,
         registerType: 'prompt',
@@ -36,10 +42,10 @@ export default defineConfig(async ({ command, mode }) => {
         includeAssets: ['icon.svg', 'icon-192.png', 'icon-512.png'],
         manifest: {
           id: '/',
-          name: 'EverChat · 让对话继续',
+          name: 'EverChat',
           short_name: 'EverChat',
-          description: '断线不散，换端续聊。你的私人 AI 对话空间。',
-          lang: 'zh-CN',
+          description: 'EverChat',
+
           start_url: '/',
           scope: '/',
           display: 'standalone',

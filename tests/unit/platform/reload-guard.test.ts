@@ -17,9 +17,9 @@ test('an invalid settings draft blocks update until a successful save or explici
   );
   try {
     save.update('private unsaved key');
-    assert.match(reloadBlocked(), /设置尚未保存/);
+    assert.equal(reloadBlocked(), 'unsavedSettings');
     await assert.rejects(save.flush());
-    assert.match(reloadBlocked(), /设置尚未保存/);
+    assert.equal(reloadBlocked(), 'unsavedSettings');
     fail = false;
     await save.flush();
     assert.equal(reloadBlocked(), '');
@@ -35,17 +35,17 @@ test('unknown cloud writes remain protected until the same operation is confirme
   const first = beginWrite('PUT:settings');
   const second = beginWrite('PUT:settings');
   first(false);
-  assert.match(reloadBlocked(), /云端修改/);
+  assert.equal(reloadBlocked(), 'cloudWrites');
   first(true); // A late duplicate callback cannot change its outcome.
   second(false);
-  assert.match(reloadBlocked(), /尚未确认/);
+  assert.equal(reloadBlocked(), 'unconfirmedWrites');
   beginWrite('PUT:another')(true);
-  assert.match(reloadBlocked(), /尚未确认/);
+  assert.equal(reloadBlocked(), 'unconfirmedWrites');
   beginWrite('PUT:settings')(true);
   assert.equal(reloadBlocked(), '');
   setReloadLock(true);
   try {
-    assert.throws(() => beginWrite('POST:new'), /正在更新/);
+    assert.throws(() => beginWrite('POST:new'), /updating/);
   } finally {
     setReloadLock(false);
   }

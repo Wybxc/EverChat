@@ -4,12 +4,12 @@ import { chooseLocale } from './preference';
 import { useLocale } from './react';
 import { localePreference } from '../../../shared/i18n/locale';
 
-export function LanguageControl() {
+export function LanguageControl({ compact = false }: { compact?: boolean }) {
   const { t } = useTranslation('common');
   const { preference } = useLocale();
   return (
     <label className="block space-y-2 text-sm font-medium">
-      <span>{t(($) => $.language)}</span>
+      <span className={compact ? 'sr-only' : undefined}>{t(($) => $.language)}</span>
       <NativeSelect
         aria-label={t(($) => $.language)}
         value={preference}

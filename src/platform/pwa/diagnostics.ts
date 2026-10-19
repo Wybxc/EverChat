@@ -22,16 +22,18 @@ export function safePwaError(error: unknown) {
     .slice(0, 400);
 }
 
-export function pwaFailureMessage(failure: PwaFailure) {
-  return {
-    offline: '当前离线，联网后重试。',
-    authentication: '登录已失效，重新登录后检查更新。',
-    server: '更新服务暂不可用，请稍后重试。',
-    script: '更新文件异常，请稍后重试。',
-    install: '离线资源未能准备，请检查更新后重试。',
-    timeout: '检查更新耗时较长，浏览器仍在处理。',
-    unknown: '暂时无法检查更新，请重试。',
-  }[failure];
+export function pwaFailureMessage(failure: PwaFailure): import('./protocol').ReloadReason {
+  return (
+    {
+      offline: 'failureOffline',
+      authentication: 'failureAuthentication',
+      server: 'failureServer',
+      script: 'failureScript',
+      install: 'failureInstall',
+      timeout: 'failureTimeout',
+      unknown: 'failureUnknown',
+    } as const
+  )[failure];
 }
 
 /** A failed SW request alone cannot prove that an Access session expired. */
