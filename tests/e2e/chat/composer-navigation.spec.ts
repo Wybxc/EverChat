@@ -112,3 +112,92 @@ test('centered new chat keeps its composer, draft and focus when sending and nav
     await data.cleanup();
   }
 });
+
+test('desktop Enter sends, Shift+Enter inserts a newline, and IME confirmation never sends', async ({
+  page,
+}) => {
+  const data = await fixture(page);
+  let id = '';
+  try {
+    // A narrow desktop window still uses desktop keyboard behavior.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/');
+    const input = page.getByRole('textbox', { name: '消息', exact: true });
+    await expect(input).toHaveAttribute('enterkeyhint', 'send');
+    await input.fill('第一行第二行');
+    for (const composition of [{ isComposing: true }, { keyCode: 229 }]) {
+      await input.dispatchEvent('keydown', { key: 'Enter', ...composition });
+      await expect(input).toHaveValue('第一行第二行');
+      await expect(page.getByTestId('user-message')).toHaveCount(0);
+    }
+    await input.evaluate((node: HTMLTextAreaElement) => node.setSelectionRange(3, 3));
+    await input.press('Shift+Enter');
+    await expect(input).toHaveValue('第一行\n第二行');
+    await expect(page.getByTestId('user-message')).toHaveCount(0);
+    const sent = page.waitForRequest(
+      (request) =>
+        request.method() === 'POST' && /\/api\/conversations\/[^/]+\/messages$/.test(request.url()),
+    );
+    await input.press('Enter');
+    const request = await sent;
+    id = new URL(request.url()).pathname.split('/')[3];
+    expect(request.postDataJSON().content).toBe('第一行\n第二行');
+    await expect(page.getByTestId('assistant-message')).toHaveAttribute('data-status', 'completed');
+    await expect(input).toHaveValue('');
+  } finally {
+    if (id) await page.request.delete(`/api/conversations/${id}`, { headers });
+    await data.cleanup();
+  }
+});
+
+test.describe('touch composer', () => {
+  test.use({
+    hasTouch: true,
+    isMobile: true,
+    viewport: { width: 390, height: 844 },
+  });
+
+  test('Return inserts native newlines at the caret and only the send button submits', async ({
+    page,
+  }) => {
+    const data = await fixture(page);
+    let id = '';
+    try {
+      await page.goto('/');
+      const input = page.getByRole('textbox', { name: '消息', exact: true });
+      await expect(input).toHaveAttribute('enterkeyhint', 'enter');
+      await input.tap();
+      await input.fill('第一行第二行');
+      await input.evaluate((node: HTMLTextAreaElement) => node.setSelectionRange(3, 3));
+      await input.press('Enter');
+      await expect(input).toHaveValue('第一行\n第二行');
+      await input.press('Enter');
+      await expect(input).toHaveValue('第一行\n\n第二行');
+      await expect(page.getByTestId('user-message')).toHaveCount(0);
+      await expect(input).toBeFocused();
+      await page.setViewportSize({ width: 844, height: 390 });
+      await expect(input).toHaveAttribute('enterkeyhint', 'enter');
+      await input.press('Enter');
+      await expect(input).toHaveValue('第一行\n\n\n第二行');
+      await expect(page.getByTestId('user-message')).toHaveCount(0);
+      await page.setViewportSize({ width: 390, height: 844 });
+      const sent = page.waitForRequest(
+        (request) =>
+          request.method() === 'POST' &&
+          /\/api\/conversations\/[^/]+\/messages$/.test(request.url()),
+      );
+      await page.getByRole('button', { name: '发送消息', exact: true }).tap();
+      const request = await sent;
+      id = new URL(request.url()).pathname.split('/')[3];
+      expect(request.postDataJSON().content).toBe('第一行\n\n\n第二行');
+      await expect(page.getByTestId('assistant-message')).toHaveAttribute(
+        'data-status',
+        'completed',
+      );
+      await expect(input).toHaveValue('');
+    } finally {
+      if (id) await page.request.delete(`/api/conversations/${id}`, { headers });
+      await data.cleanup();
+    }
+  });
+});

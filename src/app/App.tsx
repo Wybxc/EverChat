@@ -127,6 +127,7 @@ import {
 } from '../features/web-tools/web-tool-settings';
 import { api, ApiError } from '../platform/api';
 import { clearLocal, read, remove, storageEpoch, write } from '../platform/storage';
+import { useMediaQuery } from '../platform/useMediaQuery';
 import { AppFrame, LoadingContent, SidebarHeader, SpaceSettingsButton } from './AppFrame';
 import { SettingsDialog } from './SettingsDialog';
 import { AccessGate } from './AccessGate';
@@ -244,6 +245,7 @@ export function App({
   const searchTrigger = useRef<HTMLButtonElement>(null);
   const backupInput = useRef<HTMLInputElement>(null);
   const editor = useRef<HTMLTextAreaElement>(null);
+  const touchPrimary = useMediaQuery('(hover: none) and (pointer: coarse)');
   const { toolbarRef, compact: compactComposer } = useComposerLayout();
   const [editorFocusTarget, setEditorFocusTarget] = useState<{ id: string | null } | null>(null);
   const mobileSidebarTrigger = useRef<HTMLButtonElement>(null);
@@ -2018,12 +2020,16 @@ export function App({
                   value={draft}
                   maxLength={MAX_MESSAGE_TEXT_BYTES}
                   rows={1}
+                  enterKeyHint={touchPrimary ? 'enter' : 'send'}
                   onChange={(event) => updateDraft(event.target.value)}
                   onKeyDown={(event) => {
                     if (
+                      !touchPrimary &&
                       event.key === 'Enter' &&
                       !event.shiftKey &&
-                      !event.nativeEvent.isComposing
+                      !event.nativeEvent.isComposing &&
+                      // WebKit may clear isComposing before the IME confirmation keydown.
+                      event.nativeEvent.keyCode !== 229
                     ) {
                       event.preventDefault();
                       void submit();
