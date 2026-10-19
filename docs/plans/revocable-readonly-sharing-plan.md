@@ -1,6 +1,6 @@
 # 可撤销的公开只读分享计划
 
-日期：2026-10-19。状态：待实施。本次不修改线上 Access、DNS 或服务路由。
+日期：2026-10-19。状态：待实施。根据用户补充，优先采用同域名方案，允许前端与 SW 公开，仅保护私有后端。本次不修改线上 Access、DNS 或服务路由。
 
 ## 目标与默认行为
 
@@ -10,37 +10,67 @@
 
 撤销含义是停止后续读取，不承诺收回已经下载、截图或进入接收者内存的内容。已打开的页面无需持续轮询；恢复到前台或从页面缓存返回时重新检查状态，但这不能代替撤销后的服务端校验。
 
-## 现有访问链路与方案选择
+## 同域方案与访问边界
 
-当前 `chat.wybxc.cc` 由 Access 保护；`worker/http/app.ts` 又对所有 `/api/*` 验证 Access JWT。`src/app/App.tsx` 启动会读取私有 session，根作用域 Service Worker 会将普通导航回退到私有应用入口。因此只在 Access 添加 Bypass，或让同一个 App 根据 URL 隐藏编辑按钮，都不能形成独立的公开只读入口。
+HTML、JS、CSS、图标、manifest 和 `sw.js` 本身无需保密；它们不能包含真实密钥、会话正文或用户配置。静态程序公开与私有数据公开是不同的边界，安全性由服务端鉴权保证，不依赖隐藏源码、按钮或页面地址。
 
-| 方案                           | 代价与边界                                                                | 结论                                                       |
-| ------------------------------ | ------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| 聊天域名下开放 `/share/*`      | 需同时处理 Access 路径例外、独立资源前缀、Worker 入口和已安装 SW 导航拦截 | 可行，但容易与私有缓存和登录行为耦合，作为域名受限时的备选 |
-| 独立分享域名与轻量 Worker      | 独立静态入口、路由与 origin；私有站点继续原 Access 保护                   | 推荐                                                       |
-| 把聊天站点或全部 `/api/*` 公开 | 扩大私有应用访问面，不能满足隔离目标                                      | 不采用                                                     |
+继续使用 `chat.wybxc.cc` 和现有 Worker，不新增分享域名或独立 Worker。公开页面为 `/s/:shareId`，公开读取接口为 `/public/shares/*`；所有聊天、供应商、统计、附件和分享管理接口都留在 `/api/*`，继续强制 Access 和应用层 JWT 校验。新增 ShareStore DO 保存分享状态与文本快照，只有公开读取处理器可以从它获取白名单 DTO。
 
-推荐增加 `everchat-share` Worker，域名以 `share.wybxc.cc` 为建议值，实施前确认可用性。该 Worker 只部署分享页面与公开读取处理器，不部署私有 App，不注入供应商／Web Push 密钥，不绑定 Conversation、Library 或私有附件桶。
+| 范围                                                        | Access                        | Worker／客户端职责                                                |
+| ----------------------------------------------------------- | ----------------------------- | ----------------------------------------------------------------- |
+| `/`、`/c/*`、`/s/*`、`/assets/*`、`/sw.js`、图标与 manifest | 不要求登录                    | 只公开应用程序；普通聊天界面仍须取得私有 session 才能联网读取数据 |
+| `/api`、`/api/*`                                            | 只允许已有用户策略            | Worker 再验证 JWT、邮箱与资源归属；包括分享创建／撤销和附件下载   |
+| `/auth`、`/auth/*`                                          | 与私有 API 使用同一应用和策略 | 保留顶层导航登录恢复；未知路径拒绝，不返回应用壳                  |
+| `/public/shares/*`                                          | 不要求 Access 登录            | 只接受受控读取，验证分享令牌、有效期与撤销状态                    |
 
-私有 Worker 新增 `ShareStore` SQLite DO，保存分享状态和文本快照；分享 Worker 通过 `script_name` 绑定相同 namespace，仅调用公开读取方法。绑定本身不是只读权限：HTTP 路由必须严格白名单，绝不能把方法名、SQL 或任意 DO RPC 透传给访客。[Cloudflare DO 绑定配置](https://developers.cloudflare.com/durable-objects/get-started/)
+公开路由是单独的受限处理器，不通过在现有 `/api/*` 鉴权中间件中增加宽泛跳过条件实现。公开页也不因为浏览器已有 Access cookie 就获得原对话读取或编辑能力。
 
-分享域名不要求 Access，私有域名及其 API 保持现有校验。实施时检查账户是否开启全域默认 Access 保护；若必须使用 Bypass，只为这个分享 hostname 配置，不放宽 `chat.wybxc.cc`。同域备选也必须单独配置精确路径；Cloudflare 更具体的应用路径独立匹配策略，不能假设其继承父应用规则。[Access 应用路径规则](https://developers.cloudflare.com/cloudflare-one/access-controls/policies/app-paths/)
+## Access 配置方案
+
+推荐把现有站点级 Access 应用收窄为“EverChat 私有后端”，使用 hostname／path 类型，而非覆盖整个 Worker 的全局保护。在 Zero Trust → Access controls → Applications → 对应 Self-hosted 应用中，将 Public hostnames 配置为同一应用下的以下四项：
+
+| Subdomain | Domain     | Path     |
+| --------- | ---------- | -------- |
+| `chat`    | `wybxc.cc` | `api`    |
+| `chat`    | `wybxc.cc` | `api/*`  |
+| `chat`    | `wybxc.cc` | `auth`   |
+| `chat`    | `wybxc.cc` | `auth/*` |
+
+保留 `Allow → Include → Emails → wybxc@qq.com`、现有身份提供商和会话期限；移除这个应用中 Path 为空或为 `*` 的整站条目。`api/*` 不包含 `/api` 本身，所以父路径与子路径都显式配置；`auth` 同理。Access 支持按路径保护部分网站，路径通配符不覆盖父路径。[应用路径匹配](https://developers.cloudflare.com/cloudflare-one/access-controls/policies/app-paths/)
+
+API 与认证恢复使用同一个 Access 应用，避免拆成不同 AUD。优先编辑现有应用，实施时确认 AUD 是否保留；若更换应用，必须同时更新服务端 `ACCESS_AUD`，不能跳过 audience 校验来兼容。Cookie Path Attribute 保持关闭，让同一应用的登录 cookie 能用于 `/auth/resume` 和 `/api/*`，保留 HttpOnly、Secure 等属性。[Access 授权 Cookie](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/)
+
+在没有其他整站／账户级 Access 保护的情况下，前端和 `/public/*` 不再匹配 Access 应用，自然公开，**无需增加 Bypass**。若账户启用了 Require Access／Worker 整体保护，实施前先核对其覆盖与优先级，确保最终使用路径粒度保护私有后端，不能直接为整个后端添加 Everyone 放行。[Worker、域名与路径保护范围](https://developers.cloudflare.com/workers/configuration/cloudflare-access/)
+
+备选配置是“公开根应用 Bypass Everyone + 更具体的私有路径应用 Allow”，但不作为首选：它增加策略交叠，且公开路径没有 Access 审计。若采用，必须独立配置私有路径，验证更具体的应用优先匹配；不能在同一个整站应用里简单增加一条 Bypass Everyone。[路径策略优先级](https://developers.cloudflare.com/cloudflare-one/access-controls/policies/app-paths/)、[公开端点 Bypass](https://developers.cloudflare.com/cloudflare-one/access-controls/policies/common-policies/)
+
+前端打开普通聊天页时，未登录可显示应用壳和登录入口，不能加载私有数据；首次登录仍通过顶层 `/auth/resume?returnTo=...` 导航完成。AJAX 请求遇到失效会话时沿用现有重新认证状态，不把 Access HTML 登录页解析成有效业务响应。
+
+## 前端、SW 与同源安全
+
+当前 `src/main.tsx` 在路径判断前执行 `hydrateStorage()`，并启动 App、PWA 与私有 session；`src/sw.ts` 为普通导航返回缓存的 `index.html`。本次将入口改为先判断路径，再按需启动聊天或分享界面。分享分支不调用私有 session、读取私有本地缓存或启用通知，不复用带身份状态的私有 API 客户端。
+
+SW 代码继续公开，现有根作用域 SW 可以继续服务聊天。已经装过 PWA 的浏览器可能由该 SW 控制 `/s/*`，因此不能把“分享页不注册 SW”当成“分享页一定不受 SW 控制”。导航返回通用应用壳可以保留，只要启动路由正确选择分享界面；`/public/*` 必须加入导航 fallback 的排除范围，公开数据一律网络读取、不预缓存，也不加入模块缓存。
+
+`appClients` 等更新协调、通知焦点和私有前台状态统计排除分享页面，避免它阻塞聊天 PWA 更新或抑制回答通知。分享页面无需主动注册 SW，静态模块仍可复用同域资源。退出登录只清理私有缓存，不能把公共静态资源和历史私有数据混为一类；新访客不能获得其他浏览器已保存的离线数据。
+
+同域分享与已登录聊天共享 origin。Markdown 中若能执行脚本，就可能读取该浏览器的私有缓存，或借助现有 cookie 请求私有 API；仅拆分 React 组件／JS 分包不能隔离此风险。因此公开内容必须走无脚本的 Markdown 渲染、严格 URL／HTML 清理和 CSP，禁止同源可执行附件与任意脚本加载。后续附件以下载或安全图片格式提供，不能在同源直接打开用户上传的 HTML／SVG 应用。此要求是同域方案的内容安全边界，不是前端源码保密要求。
 
 ## 链接、公开 API 与撤销
 
-建议链接形式：`https://share.wybxc.cc/s/<shareId>#<secret>`。`shareId` 独立随机生成，不使用会话或消息 ID；`secret` 使用密码学安全随机数生成，至少 256 bit。URL fragment 不随页面请求发送给服务器，减少令牌进入 URL 日志和 Referer 的机会。
+建议链接形式：`https://chat.wybxc.cc/s/<shareId>#<secret>`。`shareId` 独立随机生成，不使用会话或消息 ID；`secret` 使用密码学安全随机数生成，至少 256 bit。URL fragment 不随页面请求发送给服务器，减少令牌进入 URL 日志和 Referer 的机会。
 
-页面脚本从 fragment 读取令牌，通过 `Authorization: Bearer` 请求同源公开 API；不把令牌放入查询参数、localStorage、统计埋点或错误报告。服务器保存令牌哈希用于校验；为支持所有者跨设备再次复制链接，另保存加密密文，解密密钥仅存在私有 Worker Secret 中，分享 Worker 不持有。重新生成时替换哈希及密文，旧令牌立即无效。
+页面脚本从 fragment 读取令牌，通过 `Authorization: Bearer` 请求同源公开 API，显式使用 `credentials: 'omit'`；不把令牌放入查询参数、localStorage、统计埋点或错误报告。服务器保存令牌哈希用于校验；为支持所有者跨设备再次复制链接，另保存加密密文，解密密钥仅存在 Worker Secret 中，只由 Access 保护的管理处理器使用，不进入浏览器或公开 DTO。重新生成时替换哈希及密文，旧令牌立即无效。
 
 链接依赖 JavaScript；聊天软件的链接预览仅显示通用 EverChat 分享标题，不公开正文。接收者拥有链接即可转发，这是本功能的权限模型，不把“无需 Access”误写成可阻止二次传播。
 
-| 入口                                             | 权限与作用                                                          |
-| ------------------------------------------------ | ------------------------------------------------------------------- |
-| 私有 `/api/shares`                               | Access 用户创建、列出、复制、撤销、修改有效期与重建链接             |
-| 公开 `/s/:shareId`                               | 返回不含对话数据的通用页面                                          |
-| 公开 `GET /v1/shares/:shareId`                   | 校验令牌、状态、过期时间后返回公开元数据与首屏；HEAD 也经过同样校验 |
-| 公开 `GET /v1/shares/:shareId/messages?cursor=…` | 每页再次校验，读取同一不可变快照；HEAD 不得绕过校验                 |
-| 其他公开动态路径和写方法                         | 统一拒绝，不重定向到登录或私有应用                                  |
+| 入口                                                 | 权限与作用                                                          |
+| ---------------------------------------------------- | ------------------------------------------------------------------- |
+| 私有 `/api/shares`                                   | Access 用户创建、列出、复制、撤销、修改有效期与重建链接             |
+| 公开 `/s/:shareId`                                   | 返回不含对话数据的通用页面                                          |
+| 公开 `GET /public/shares/:shareId`                   | 校验令牌、状态、过期时间后返回公开元数据与首屏；HEAD 也经过同样校验 |
+| 公开 `GET /public/shares/:shareId/messages?cursor=…` | 每页再次校验，读取同一不可变快照；HEAD 不得绕过校验                 |
+| 其他公开动态路径和写方法                             | 统一拒绝，不重定向到登录或私有应用                                  |
 
 所有管理操作仍检查 Access 身份、资源归属及同源请求。公共请求不使用 Access cookie 作为授权，不开放跨域读取，不提供会话查询、生成、搜索、附件上传或订阅接口。
 
@@ -70,13 +100,13 @@
 
 首期只使用 ShareStore 的 SQLite 文本分块，不为纯文本额外引入 R2、Workflow 或常驻连接。建议表为分享元数据、版本化快照消息及正文块，按空间、创建时间和关联会话建立最少索引。快照只保存公开 DTO，不复制整份对话数据库、所有分支和原始流。
 
-契约与公开投影归 `shared/sharing/`，存储与私有管理归 `worker/sharing/`，所有者界面归 `src/features/sharing/`；公开 Worker 与页面使用独立构建入口及配置，只导入纯渲染模块。部署构建同时检查公开产物没有私有 App、API 客户端、SW 注册或环境密钥。
+契约与公开投影归 `shared/sharing/`，存储、公开读取和私有管理归 `worker/sharing/`，界面归 `src/features/sharing/`；继续单 Worker／单域部署，入口按路由加载聊天或只读界面。`worker/http/worker.ts` 先分派 `/public/*` 受限处理器，再进入原私有 API；`run_worker_first` 覆盖 `/public`、`/public/*` 及私有 API／认证路径，未知动态路径拒绝而不落回静态 SPA。构建检查所有公开资源无环境密钥或用户数据，而非要求隐藏聊天代码。
 
 创建过程为“私有预览 → 分批写入不可见快照 → 校验消息数量／内容摘要 → 原子标记 active”。失败任务不可公开，重试沿用创建操作 ID；清理由低频维护处理。发布的是预览时冻结的持久化版本，预览后源对话变化时提示重新预览，不拼接多个时刻的数据。
 
 读取按消息／正文块分页，使用原生 Response／流式传输减少普通 Worker JSON 重编码；不能在每次访问时拼接整个大对话。有效期在读路径即时检查，过期与撤销内容的物理删除可以稍后分批进行；标记 active 之前或删除正文之前都不能产生短暂公开窗口。
 
-公开数据响应使用 `Cache-Control: no-store`，CDN 对公开数据路由明确绕过缓存，不能仅依赖浏览器行为；不发放可绕过状态检查的 CDN／R2 直链，不在撤销前后返回未校验的 304。分享页面不注册 SW、不接入私有 PWA 缓存、通知或本地会话存储。静态脚本／样式可长期缓存，里面没有对话数据。
+公开数据响应使用 `Cache-Control: no-store`，CDN 对公开数据路由明确绕过缓存，不能仅依赖浏览器行为；不发放可绕过状态检查的 CDN／R2 直链，不在撤销前后返回未校验的 304。分享页面不主动注册 SW、不接入私有 PWA 数据缓存、通知或本地会话存储；现有 SW 控制下的公开读取同样不缓存正文。静态脚本／样式可长期缓存，里面没有对话数据。
 
 Markdown 复用纯呈现模块与既有软换行、数学和代码能力，不复用带编辑／重新生成／工具执行的 MessageView。检查 HTML 清理、危险 URL、Mermaid 安全配置和外链行为。公开页面设置 CSP、`Referrer-Policy: no-referrer`、`X-Robots-Tag: noindex, nofollow, noarchive`，禁止嵌入第三方 iframe 和自动执行内容；这些措施不等于阻止拥有链接的人复制。
 
@@ -90,7 +120,7 @@ Markdown 复用纯呈现模块与既有软换行、数学和代码能力，不�
 
 ## 免费层与后续附件
 
-公开访问会消耗原本只供私人聊天使用的账户资源。Workers Free 当前每天 100,000 次请求、普通 Worker 每次 10ms CPU；独立 Worker 不增加账户总额度。文本清理和快照构建在低频创建阶段完成，公开请求不做 SSR、大型聚合或模型调用。[Workers 限制](https://developers.cloudflare.com/workers/platform/limits/)
+公开访问会消耗原本只供私人聊天使用的账户资源。Workers Free 当前每天 100,000 次请求、普通 Worker 每次 10ms CPU。沿用同一个 Worker，静态资源继续按需由 Assets 服务；不将所有静态请求改为先运行 Worker。文本清理和快照构建在低频创建阶段完成，公开数据请求不做 SSR、大型聚合或模型调用。[Workers 限制](https://developers.cloudflare.com/workers/platform/limits/)
 
 DO Free 的 SQL 存储是账户总共 5 GB，单对象上限为 1 GB；分享快照与账本、现有聊天共同核算容量，不能将独立 namespace 当成独立配额。有效期和主动清理降低长期占用，但不静默删除仍有效的分享。[DO 限制](https://developers.cloudflare.com/durable-objects/platform/limits/)、[DO 定价](https://developers.cloudflare.com/durable-objects/platform/pricing/)
 
@@ -100,14 +130,16 @@ DO Free 的 SQL 存储是账户总共 5 GB，单对象上限为 1 GB；分享快
 
 ## 实施顺序与验收
 
-| 阶段          | 工作                                                       | 完成条件                                                                   |
-| ------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------- |
-| 1. 隔离原型   | 独立入口／Worker、域名配置草案、ShareStore 与令牌契约      | 本地访客无 Access 可读模拟分享；所有私有 API 不可经公开入口访问            |
-| 2. 创建与撤销 | 当前分支投影、预览、快照、有效期、密文管理、撤销与重建链接 | 不含排除字段；旧令牌立即失效；源对话后续编辑不改变快照                     |
-| 3. 前端与资源 | 只读渲染、管理弹窗、分页、缓存头、日志脱敏及容量测量       | 深浅色、手机、公式／代码／软换行可用，关闭按钮始终可操作                   |
-| 4. 发布验收   | 私有站点回归、公开域名配置、无痕与 PWA 缓存测试            | 无 Access cookie 可访问有效链接；撤销后新读取全部失败，私有站点仍需 Access |
-| 后续          | 可选图片／文件及安全下载                                   | 在 R2 用量、文件安全和撤销测试通过后再发布                                 |
+| 阶段              | 工作                                                                      | 完成条件                                                                    |
+| ----------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| 1. 路由与认证边界 | 同域入口、公开／私有处理器、Access 路径配置草案、SW 路由、ShareStore 契约 | 本地访客无 Access 可读模拟分享；私有 API 强制鉴权                           |
+| 2. 创建与撤销     | 当前分支投影、预览、快照、有效期、密文管理、撤销与重建链接                | 不含排除字段；旧令牌立即失效；源对话后续编辑不改变快照                      |
+| 3. 前端与资源     | 只读渲染、管理弹窗、分页、缓存头、日志脱敏及容量测量                      | 深浅色、手机、公式／代码／软换行可用，关闭按钮始终可操作                    |
+| 4. 发布验收       | Access 收窄到私有后端、无痕与 PWA 缓存测试                                | 无 Access cookie 可读前端与有效分享；撤销后新读取失败，私有 API 仍需 Access |
+| 后续              | 可选图片／文件及安全下载                                                  | 在 R2 用量、文件安全和撤销测试通过后再发布                                  |
 
-重点测试：错误／过期／轮换令牌；并发撤销与分页；缓存命中、HEAD、刷新及浏览器后退；公开 origin 下的 `/api`、`/auth`、路径编码与静态 fallback；跨空间管理；删除原对话；失败创建重试；密钥轮换；Markdown 脚本和远程资源；既有私有 PWA 不接管分享页面。公开站点的未知路径不能 fallback 成私有 App。
+发布顺序为先部署路由、SW 与后端鉴权改动，整站 Access 暂时保留；验证完成后再收窄 Access 应用路径，核对 AUD 与无痕访问，最后开放创建分享入口。旧版根 SW 可能仍返回旧应用壳，应在已安装 PWA 中实际更新并验证；不能把服务端路由调整当成已绕过旧 SW。回滚预先保存 Access 配置，必要时恢复整站保护；暂停分享创建不等于撤销已发出的链接。
+
+重点测试：错误／过期／轮换令牌；并发撤销与分页；缓存命中、HEAD、刷新及浏览器后退；无痕直达 `/api`、`/api/*`、`/auth/resume`、`/public/*`；编码路径与静态 fallback；伪造 JWT／邮箱头；已登录与未登录的分享页均不读取私有缓存；跨空间管理；删除原对话；失败创建重试；密钥轮换；Markdown 脚本和远程资源；既有根 SW 控制下也能正确启动分享，且分享不参与私有更新协调和通知焦点确认。未知公开数据路径返回受控 404，不能用 App HTML 冒充 API 响应。
 
 存量 schema 变化仅用[本地运维迁移](../operations/offline-storage-migration.md)，不在线回填历史分享；新对象空库初始化与 Cloudflare namespace 声明单独部署。建议先完成纯文本闭环，再增加附件，不在本次规划中操作生产安全配置。
