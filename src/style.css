@@ -421,6 +421,9 @@ html.public-share-document,
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
+.message-editor [data-slot='textarea'] {
+  font-size: 1rem;
+}
 .composer-editor {
   min-height: max(2.75rem, 44px);
   max-height: min(10rem, 24dvh);

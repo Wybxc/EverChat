@@ -71,7 +71,7 @@ export function MessageEditor({
         value={content}
         maxLength={MAX_MESSAGE_TEXT_BYTES}
         disabled={busy}
-        className="min-h-28 max-h-[min(24rem,45dvh)] resize-none overflow-y-auto text-base leading-7 md:text-base"
+        className="min-h-28 max-h-[min(24rem,45dvh)] resize-none overflow-y-auto leading-7"
         onChange={(event) => {
           change(event.target.value);
           setError('');
