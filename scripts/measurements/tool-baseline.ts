@@ -1,16 +1,15 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
-import { parseArgs } from 'node:util';
+import { join, resolve } from 'node:path';
 import { setTimeout as pause } from 'node:timers/promises';
+import { parseArgs } from 'node:util';
 import WebSocket from 'ws';
 import { messageText } from '../../shared/conversation/content';
-import { StreamSync } from '../../shared/streaming/sync';
-import type { ProviderKind } from '../../shared/providers/types';
-import type { Snapshot, SyncPacket } from '../../shared/streaming/protocol';
 import type { Submission } from '../../shared/conversation/types';
+import type { ProviderKind } from '../../shared/providers/types';
+import type { Snapshot } from '../../shared/streaming/protocol';
+import { startLocalRuntime } from '../lib/runtime';
+import { measurementApi, subscribe, writeReport } from './support/client';
 import type { ToolResourceWindow, ToolWorkflowMeasurements } from './support/resources';
 
 const { values } = parseArgs({
@@ -35,55 +34,20 @@ assert.ok(chunks * size <= 90_000, 'Final output must fit the bounded message li
 const port = integer(values.port, 1024, 65535),
   origin = `http://127.0.0.1:${port}`;
 const runtimeId = crypto.randomUUID();
-const state = await mkdtemp(join(tmpdir(), 'everchat-tool-baseline-'));
-const server = spawn(
-  process.execPath,
-  ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', String(port), '--strictPort'],
-  {
-    cwd: process.cwd(),
-    stdio: ['ignore', 'pipe', 'pipe'],
-    env: {
-      ...process.env,
-      EVERCHAT_TEST_STATE: state,
-      EVERCHAT_MOCK_PROVIDER: '1',
-      EVERCHAT_TOOL_METRICS: '1',
-      EVERCHAT_GENERATION_METRICS: '0',
-      EVERCHAT_MEASUREMENT_RUN: runtimeId,
-      EVERCHAT_TOOL_WORKLOAD: JSON.stringify({ chunks, interval, size }),
-      WRANGLER_LOG_PATH: join(state, 'wrangler.log'),
-    },
+const runtime = await startLocalRuntime({
+  name: 'tool-baseline',
+  port,
+  env: {
+    EVERCHAT_MOCK_PROVIDER: '1',
+    EVERCHAT_TOOL_METRICS: '1',
+    EVERCHAT_GENERATION_METRICS: '0',
+    EVERCHAT_MEASUREMENT_RUN: runtimeId,
+    EVERCHAT_TOOL_WORKLOAD: JSON.stringify({ chunks, interval, size }),
   },
-);
-let serverError: Error | undefined,
-  cookie = '',
-  runtimeLog = '',
-  complete = false;
-server.on('error', (error) => {
-  serverError = error;
 });
-for (const stream of [server.stdout, server.stderr])
-  stream.on('data', (chunk) => {
-    runtimeLog = (runtimeLog + String(chunk)).slice(-32_768);
-  });
+let cookie = '';
 const sockets = new Set<WebSocket>();
-async function api<T>(
-  path: string,
-  body?: unknown,
-  method = body === undefined ? 'GET' : 'POST',
-): Promise<T> {
-  const response = await fetch(`${origin}/api${path}`, {
-    method,
-    headers: {
-      Origin: origin,
-      Cookie: cookie,
-      ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
-    },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    signal: AbortSignal.timeout(10_000),
-  });
-  assert.ok(response.ok, `${method} ${path}: HTTP ${response.status}`);
-  return response.json() as Promise<T>;
-}
+const { api } = measurementApi({ origin, headers: () => ({ Cookie: cookie }), timeout: 10_000 });
 type ConversationSample = {
   report: ToolResourceWindow | null;
   databaseBytes: number;
@@ -111,65 +75,15 @@ const sampleConversation = (id: string, taskId?: string, windowId?: string) =>
 const sampleLibrary = (windowId?: string) =>
   api<LibrarySample>('/__test/resources/library', { windowId });
 async function subscriber(id: string, disconnect: boolean) {
-  const baseline = await api<Snapshot>(`/conversations/${id}`);
-  const socket = new WebSocket(
-    `${origin.replace('http:', 'ws:')}/api/conversations/${id}/sync?after=${baseline.seq}&epoch=${baseline.epoch ?? ''}`,
-    { headers: { Cookie: cookie, Origin: origin } },
-  );
-  sockets.add(socket);
-  const observed = { frames: 0, bytes: 0, disconnected: false },
-    sync = new StreamSync(baseline);
-  let failure: unknown;
-  await new Promise<void>((ready, reject) => {
-    const timer = setTimeout(() => reject(new Error('WebSocket readiness timed out')), 10_000);
-    socket.on('error', (error) => {
-      clearTimeout(timer);
-      failure = error;
-      reject(error);
-    });
-    socket.on('message', (data) => {
-      const bytes = Buffer.isBuffer(data)
-        ? data
-        : Array.isArray(data)
-          ? Buffer.concat(data)
-          : Buffer.from(data);
-      observed.frames++;
-      observed.bytes += bytes.byteLength;
-      try {
-        const packet = JSON.parse(bytes.toString()) as SyncPacket;
-        sync.receive(packet);
-        if (packet.type === 'ready') {
-          clearTimeout(timer);
-          ready();
-        }
-        if (packet.type === 'preview' && disconnect) {
-          observed.disconnected = true;
-          socket.close();
-        } else if (packet.type === 'preview')
-          socket.send(
-            JSON.stringify({
-              type: 'preview-ack',
-              runId: packet.batch.runId,
-              messageId: packet.batch.messageId,
-              offset: packet.batch.endOffset,
-            }),
-          );
-      } catch (error) {
-        failure = error;
-        clearTimeout(timer);
-        socket.close();
-        reject(error);
-      }
-    });
+  return subscribe({
+    origin,
+    id,
+    baseline: await api<Snapshot>(`/conversations/${id}`),
+    headers: { Cookie: cookie },
+    sockets,
+    disconnect,
+    timeout: 10_000,
   });
-  return {
-    socket,
-    observed,
-    snapshot: () => {
-      if (failure) throw failure;
-      return sync.durable;
-    },
-  };
 }
 const protocols: ProviderKind[] = ['openai-chat', 'openai-responses', 'anthropic', 'gemini'];
 const scenarios = [
@@ -191,7 +105,7 @@ const scenarios = [
     disconnect: false,
     mode: 'rejected',
   },
-  { name: 'round-limit', protocol: 'openai-chat' as const, disconnect: false, mode: 'loop' },
+  { name: 'multi-round', protocol: 'openai-chat' as const, disconnect: false, mode: 'multi' },
 ];
 const results: unknown[] = [];
 try {
@@ -199,21 +113,7 @@ try {
     values.scenario === 'all' || scenarios.some((scenario) => scenario.name === values.scenario),
     'Unknown scenario',
   );
-  const readyDeadline = Date.now() + 30_000;
-  while (true) {
-    if (serverError) throw serverError;
-    assert.ok(
-      server.exitCode === null && server.signalCode === null,
-      'Fixture server exited before readiness',
-    );
-    try {
-      if ((await fetch(`${origin}/`, { signal: AbortSignal.timeout(500) })).ok) break;
-    } catch {
-      /* Runtime startup. */
-    }
-    assert.ok(Date.now() < readyDeadline, 'Fixture startup timed out');
-    await pause(100);
-  }
+  await runtime.ready();
   const anonymous = await fetch(`${origin}/api/__test/resources/library`, {
     method: 'POST',
     headers: { Origin: origin, 'Content-Type': 'application/json' },
@@ -239,7 +139,7 @@ try {
     provider,
     baseUrl: 'https://provider.test/v1',
     apiKey: 'integration-test-key',
-    models: [`tools-service-${provider}`, `tools-loop-${provider}`].map((id) => ({
+    models: [`tools-service-${provider}`, `tools-multi-${provider}`].map((id) => ({
       id,
       name: id,
       enabled: true,
@@ -291,7 +191,7 @@ try {
       content: 'Deterministic bounded web tool workload',
       selection: {
         providerId: provider.id,
-        model: `tools-${scenario.mode === 'loop' ? 'loop' : 'service'}-${scenario.protocol}`,
+        model: `tools-${scenario.mode === 'multi' ? 'multi' : 'service'}-${scenario.protocol}`,
       },
       tools: ['web_search', 'read_webpage'],
     };
@@ -335,16 +235,16 @@ try {
     );
     const snapshot = await api<Snapshot>(`/conversations/${id}`),
       answer = snapshot.messages[1];
-    const expectedModels = scenario.mode === 'loop' ? 4 : scenario.mode === 'rejected' ? 1 : 2;
-    const expectedTools = scenario.mode === 'loop' ? 6 : scenario.mode === 'rejected' ? 1 : 2;
-    assert.equal(answer.status, scenario.mode === 'success' ? 'completed' : 'failed');
-    if (scenario.mode === 'success')
+    const expectedModels = scenario.mode === 'multi' ? 6 : scenario.mode === 'rejected' ? 1 : 2;
+    const expectedTools = scenario.mode === 'multi' ? 10 : scenario.mode === 'rejected' ? 1 : 2;
+    assert.equal(answer.status, scenario.mode === 'rejected' ? 'failed' : 'completed');
+    if (scenario.mode !== 'rejected')
       assert.equal(
         messageText(answer),
         (scenario.protocol === 'openai-chat' ? '先查阅资料。\n' : '') +
           ('x'.repeat(size - 2) + '🙂').repeat(chunks),
       );
-    else assert.ok(answer.error?.includes(scenario.mode === 'loop' ? '轮数' : '密钥'));
+    else assert.ok(answer.error?.includes('密钥'));
     if (scenario.disconnect) assert.ok(live.observed.disconnected);
     else {
       const syncDeadline = Date.now() + 5000;
@@ -443,41 +343,24 @@ try {
     );
   }
   const output = resolve(values.output!);
-  await mkdir(dirname(output), { recursive: true });
-  await writeFile(
-    output,
-    JSON.stringify(
-      {
-        version: 1,
-        runtime: 'local Cloudflare fixture',
-        capturedAt: new Date().toISOString(),
-        workload: {
-          chunks,
-          intervalMs: interval,
-          finalCharactersPerChunk: size,
-          toolResponseDelayMs: 1500,
-          duplicateAcceptance: true,
-          scenario: values.scenario,
-        },
-        scope:
-          'Warm initialized objects: before acceptance/subscription to terminal Workflow, private cleanup, search outbox drain and no pending Conversation/Library alarms. Native SQL cursor counters include API, Alarm and indexing work; diagnostic reads and fixture SQL excluded. Read-only probes keep local counter windows observable, so natural hibernation is not measured. Workflow callback attempts and serialized reference sizes only. No CPU, billed requests, active GB-s, Workflow engine storage, account quotas or real upstream quality measured. No paid calls.',
-        results,
-      },
-      null,
-      2,
-    ) + '\n',
-  );
+  await writeReport(output, {
+    version: 1,
+    runtime: 'local Cloudflare fixture',
+    capturedAt: new Date().toISOString(),
+    workload: {
+      chunks,
+      intervalMs: interval,
+      finalCharactersPerChunk: size,
+      toolResponseDelayMs: 1500,
+      duplicateAcceptance: true,
+      scenario: values.scenario,
+    },
+    scope:
+      'Warm initialized objects: before acceptance/subscription to terminal Workflow, private cleanup, search outbox drain and no pending Conversation/Library alarms. Native SQL cursor counters include API, Alarm and indexing work; diagnostic reads and fixture SQL excluded. Read-only probes keep local counter windows observable, so natural hibernation is not measured. Workflow callback attempts and serialized reference sizes only. No CPU, billed requests, active GB-s, Workflow engine storage, account quotas or real upstream quality measured. No paid calls.',
+    results,
+  });
   console.log(`Saved ${output}`);
-  complete = true;
 } finally {
   for (const socket of sockets) socket.terminate();
-  if (server.pid && server.exitCode === null && server.signalCode === null) {
-    const exited = new Promise<void>((done) => server.once('exit', () => done()));
-    server.kill('SIGTERM');
-    const force = setTimeout(() => server.kill('SIGKILL'), 5000);
-    await exited;
-    clearTimeout(force);
-  }
-  if (!complete) await writeFile(join(tmpdir(), 'everchat-tool-baseline-failure.log'), runtimeLog);
-  await rm(state, { recursive: true, force: true });
+  await runtime.stop();
 }

@@ -124,5 +124,28 @@
         },
       ],
     },
+    "usage": {
+      "name": "everchat-usage-sharing-validation",
+      "main": "../scripts/measurements/support/usage-sharing-worker.ts",
+      "workers_dev": true,
+      "vars": {},
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "MEASUREMENTS",
+            "class_name": "UsageSharingMeasurement",
+          },
+        ],
+      },
+      "migrations": [
+        {
+          "tag": "v1",
+          "new_sqlite_classes": ["UsageSharingMeasurement"],
+        },
+      ],
+      "observability": {
+        "enabled": true,
+      },
+    },
   },
 }

@@ -1,5 +1,5 @@
-import { globSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { globSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const [suite, ...args] = process.argv.slice(2);

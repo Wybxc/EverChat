@@ -19,15 +19,8 @@
     "test": "node --import tsx/esm scripts/test.ts unit",
     "test:e2e": "node --import tsx/esm scripts/test.ts e2e",
     "test:pwa": "node --import tsx/esm scripts/test.ts pwa",
-    "measure:cloudflare-metrics": "node --import tsx/esm scripts/measurements/cloudflare-metrics.ts",
-    "measure:cloudflare-tail": "node --import tsx/esm scripts/measurements/cloudflare-tail.ts",
-    "measure:cloudflare": "node --import tsx/esm scripts/measurements/stream-cloudflare.ts",
-    "measure:cloudflare-history": "node --import tsx/esm scripts/measurements/history-cloudflare.ts",
-    "measure:stream": "node --import tsx/esm scripts/measurements/stream-baseline.ts",
-    "measure:tools": "node --import tsx/esm scripts/measurements/tool-baseline.ts",
-    "measure:cloudflare-tools": "node --import tsx/esm scripts/measurements/tools-cloudflare.ts",
-    "measure:tools-platform-local": "node --import tsx/esm scripts/measurements/tool-platform-local.ts",
-    "check": "pnpm test && pnpm test:operations && pnpm build && pnpm test:e2e && pnpm test:pwa"
+    "check": "pnpm test && pnpm test:operations && pnpm build && pnpm test:e2e && pnpm test:pwa",
+    "measure": "node --import tsx/esm scripts/measure.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.78",

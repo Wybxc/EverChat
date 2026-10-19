@@ -1,15 +1,13 @@
-import type { MeasurementAccess } from './credentials';
 import assert from 'node:assert/strict';
-import { mkdir, writeFile } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
-import { setTimeout as pause } from 'node:timers/promises';
 import { Agent } from 'node:https';
+import { resolve } from 'node:path';
 import WebSocket from 'ws';
 import { messageText } from '../../../shared/conversation/content';
-import { StreamSync } from '../../../shared/streaming/sync';
-import type { ProviderKind } from '../../../shared/providers/types';
-import type { Snapshot, SyncPacket } from '../../../shared/streaming/protocol';
 import type { Submission } from '../../../shared/conversation/types';
+import type { ProviderKind } from '../../../shared/providers/types';
+import type { Snapshot } from '../../../shared/streaming/protocol';
+import { measurementApi, subscribe, until, writeReport } from './client';
+import type { MeasurementAccess } from './credentials';
 import {
   TOOL_VALIDATION_WORKER,
   type ToolValidationConversation,
@@ -61,112 +59,19 @@ export async function runToolValidation(options: ToolValidationOptions) {
     conversationStatusReads: 0,
     libraryStatusReads: 0,
   };
-  async function request(
-    path: string,
-    body?: unknown,
-    method = body === undefined ? 'GET' : 'POST',
-    headers?: Record<string, string>,
-  ) {
-    return fetch(`${origin}/api${path}`, {
-      method,
-      redirect: 'error',
-      headers: {
-        Origin: origin,
-        ...options.access.headers,
-        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
-        ...headers,
-      },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      signal: AbortSignal.timeout(30_000),
-    });
-  }
-  async function api<T>(path: string, body?: unknown, method?: string): Promise<T> {
-    const response = await request(path, body, method);
-    assert.ok(
-      response.ok,
-      `${method ?? (body === undefined ? 'GET' : 'POST')} ${path}: HTTP ${response.status}`,
-    );
-    return response.json() as Promise<T>;
-  }
-  async function until(
-    check: () => boolean | Promise<boolean>,
-    label: string,
-    timeout = 45_000,
-    interval = 50,
-  ) {
-    const deadline = Date.now() + timeout;
-    while (!(await check())) {
-      assert.ok(Date.now() < deadline, `${label}: timed out`);
-      await pause(interval);
-    }
-  }
+
+  const { api, request } = measurementApi({ origin, headers: () => options.access.headers });
+
   async function subscriber(id: string, disconnect = false) {
-    const baseline = await api<Snapshot>(`/conversations/${id}`);
-    const socket = new WebSocket(
-      `${origin.replace(/^http/, 'ws')}/api/conversations/${id}/sync?after=${baseline.seq}&epoch=${baseline.epoch ?? ''}`,
-      {
-        ...(agent ? { agent } : {}),
-        handshakeTimeout: 30_000,
-        headers: { ...options.access.headers, Origin: origin },
-      },
-    );
-    sockets.add(socket);
-    const sync = new StreamSync(baseline),
-      observed = { frames: 0, bytes: 0, disconnected: false };
-    let failure: unknown,
-      closed = false;
-    socket.on('close', () => {
-      closed = true;
-      sockets.delete(socket);
+    return subscribe({
+      origin,
+      id,
+      baseline: await api<Snapshot>(`/conversations/${id}`),
+      headers: options.access.headers,
+      sockets,
+      agent,
+      disconnect,
     });
-    await new Promise<void>((ready, reject) => {
-      const timer = setTimeout(() => {
-        reject(new Error('Subscription timed out'));
-        socket.terminate();
-      }, 30_000);
-      socket.on('error', (error) => {
-        failure = error;
-        clearTimeout(timer);
-        reject(error);
-      });
-      socket.on('message', (value) => {
-        observed.frames++;
-        observed.bytes += Buffer.byteLength(value.toString());
-        try {
-          const packet = JSON.parse(value.toString()) as SyncPacket;
-          sync.receive(packet);
-          if (packet.type === 'ready') {
-            clearTimeout(timer);
-            ready();
-          }
-          if (packet.type === 'preview' && disconnect && !observed.disconnected) {
-            observed.disconnected = true;
-            socket.close(1000);
-          } else if (packet.type === 'preview' && socket.readyState === WebSocket.OPEN)
-            socket.send(
-              JSON.stringify({
-                type: 'preview-ack',
-                runId: packet.batch.runId,
-                messageId: packet.batch.messageId,
-                offset: packet.batch.endOffset,
-              }),
-            );
-        } catch (error) {
-          failure = error;
-          clearTimeout(timer);
-          reject(error);
-        }
-      });
-    });
-    return {
-      socket,
-      sync,
-      observed,
-      check: () => {
-        if (failure) throw failure;
-      },
-      closed: () => closed,
-    };
   }
   const library = () => {
     observations.libraryStatusReads++;
@@ -229,7 +134,7 @@ export async function runToolValidation(options: ToolValidationOptions) {
     apiKey: 'integration-test-key',
     models: [
       `tools-service-${provider}`,
-      `tools-loop-${provider}`,
+      `tools-multi-${provider}`,
       `tools-service-large-${provider}`,
       `tools-service-sustained-${provider}`,
     ].map((id) => ({
@@ -389,7 +294,7 @@ export async function runToolValidation(options: ToolValidationOptions) {
               mode: 'success',
             })),
             { name: 'disconnected-replay', protocol: 'openai-chat' as const, mode: 'disconnect' },
-            { name: 'round-limit', protocol: 'openai-chat' as const, mode: 'loop' },
+            { name: 'multi-round', protocol: 'openai-chat' as const, mode: 'multi' },
             { name: 'service-rejected', protocol: 'openai-chat' as const, mode: 'rejected' },
             { name: 'cancel-model', protocol: 'openai-chat' as const, mode: 'cancel' },
           ]
@@ -411,7 +316,7 @@ export async function runToolValidation(options: ToolValidationOptions) {
       const item = await prepare(
         entry.name,
         entry.protocol,
-        `tools-${entry.mode === 'loop' ? 'loop' : 'service'}-${variant}${entry.protocol}`,
+        `tools-${entry.mode === 'multi' ? 'multi' : 'service'}-${variant}${entry.protocol}`,
         entry.mode === 'rejected' ? 'service-401' : 'service',
         entry.mode === 'disconnect',
       );
@@ -425,11 +330,11 @@ export async function runToolValidation(options: ToolValidationOptions) {
       }
       const result = await finish(item, entry.mode === 'disconnect');
       const after = await idleLibrary(),
-        failed = entry.mode === 'loop' || entry.mode === 'rejected',
+        failed = entry.mode === 'rejected',
         cancelled = entry.mode === 'cancel';
-      const expectedModels = entry.mode === 'loop' ? 4 : failed || cancelled ? 1 : 2;
+      const expectedModels = entry.mode === 'multi' ? 6 : failed || cancelled ? 1 : 2;
       const expectedTools =
-        entry.mode === 'loop' ? 6 : entry.mode === 'rejected' ? 1 : cancelled ? 0 : 2;
+        entry.mode === 'multi' ? 10 : entry.mode === 'rejected' ? 1 : cancelled ? 0 : 2;
       assert.equal(result.status, cancelled ? 'cancelled' : failed ? 'failed' : 'completed');
       assert.equal(result.runtime.modelCalls, expectedModels);
       assert.equal(result.runtime.task!.modelRequests, expectedModels);
@@ -517,34 +422,26 @@ export async function runToolValidation(options: ToolValidationOptions) {
     for (const socket of sockets) socket.terminate();
     agent?.destroy();
     const output = resolve(options.output);
-    await mkdir(dirname(output), { recursive: true });
-    await writeFile(
-      output,
-      JSON.stringify(
-        {
-          version: 1,
-          runtime: options.runtime,
-          workerName: TOOL_VALIDATION_WORKER,
-          suite: options.suite,
-          startedAt,
-          finishedAt: new Date().toISOString(),
-          complete,
-          expectedScenarios: options.suite === 'functional' ? 9 : 1,
-          identity,
-          observations,
-          observationPolicy: {
-            activeLibraryProbes: false,
-            offlineSnapshotIntervalMs: 5000,
-            terminalStatusIntervalMs: 2000,
-          },
-          scope:
-            'All diagnostic counters disabled. Native tool Workflow and production service adapter with isolated mock HTTP; no paid supplier calls. Public WebSocket completion before read-only terminal checks. API setup, fixture bookkeeping SQL and observation requests are part of the reported platform window. Local elapsed time/SQLite allocation are not CPU, billed resources, natural hibernation proof or account totals.',
-          results,
-        },
-        null,
-        2,
-      ) + '\n',
-    );
+    await writeReport(output, {
+      version: 1,
+      runtime: options.runtime,
+      workerName: TOOL_VALIDATION_WORKER,
+      suite: options.suite,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      complete,
+      expectedScenarios: options.suite === 'functional' ? 9 : 1,
+      identity,
+      observations,
+      observationPolicy: {
+        activeLibraryProbes: false,
+        offlineSnapshotIntervalMs: 5000,
+        terminalStatusIntervalMs: 2000,
+      },
+      scope:
+        'All diagnostic counters disabled. Native tool Workflow and production service adapter with isolated mock HTTP; no paid supplier calls. Public WebSocket completion before read-only terminal checks. API setup, fixture bookkeeping SQL and observation requests are part of the reported platform window. Local elapsed time/SQLite allocation are not CPU, billed resources, natural hibernation proof or account totals.',
+      results,
+    });
   }
   return { complete, scenarios: results.length };
 }

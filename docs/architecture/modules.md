@@ -2,19 +2,21 @@
 
 本项目保留一个 pnpm 包。模块按功能归属，运行环境由目录及类型检查明确区分。
 
-| 位置                   | 职责                                                 | 依赖方向                                                    |
-| ---------------------- | ---------------------------------------------------- | ----------------------------------------------------------- |
-| `src/app`              | 登录、路由、页面与设置装配                           | 客户端功能、平台组件、shared                                |
-| `src/features`         | 聊天、供应商、附件、备份、侧栏、预设、联网界面及状态 | 自己的规则、明确的跨功能契约、platform、shared              |
-| `src/platform`         | HTTP、通用存储、自动保存、主题、浏览器能力           | 浏览器／第三方库；不认识聊天数据库                          |
-| `worker/http`          | API 装配、鉴权、来源检查、错误映射                   | 各业务的 `routes.ts`                                        |
-| `worker/conversation`  | Conversation DO 的事务、任务生命周期、Alarm 协调     | 消息存储、订阅、生成、搜索、工具任务                        |
-| `worker/library`       | Library DO 的对话索引、RPC 与维护调度                | 供应商存储、附件、预设、备份任务、搜索                      |
-| `shared`               | 业务契约及可跨环境复用的纯规则                       | 标准 Web API；不依赖 src、worker、Node、React 或 Cloudflare |
-| `shared/auth`          | Access 身份／会话契约、同源返回路径规则              | 标准 Web API                                                |
-| `scripts/dev`          | Node 临时签名与独立本地 Worker 入口                  | jose、Vite、生产验证器；生产入口不依赖它                    |
-| `scripts/models`       | 更新模型元数据快照                                   | Node、模型目录规则                                          |
-| `scripts/measurements` | 本地／隔离 Cloudflare 验证与测量                     | 测量支持及测试运行时                                        |
+| 位置                              | 职责                                                 | 依赖方向                                                    |
+| --------------------------------- | ---------------------------------------------------- | ----------------------------------------------------------- |
+| `src/app`                         | 登录、路由、页面与设置装配                           | 客户端功能、平台组件、shared                                |
+| `src/features`                    | 聊天、供应商、附件、备份、侧栏、预设、联网界面及状态 | 自己的规则、明确的跨功能契约、platform、shared              |
+| `src/platform`                    | HTTP、通用存储、自动保存、主题、浏览器能力           | 浏览器／第三方库；不认识聊天数据库                          |
+| `worker/http`                     | API 装配、鉴权、来源检查、错误映射                   | 各业务的 `routes.ts`                                        |
+| `worker/conversation`             | Conversation DO 的事务、任务生命周期、Alarm 协调     | 消息存储、订阅、生成、搜索、工具任务                        |
+| `worker/library`                  | Library DO 的对话索引、RPC 与维护调度                | 供应商存储、附件、预设、备份任务、搜索                      |
+| `shared`                          | 业务契约及可跨环境复用的纯规则                       | 标准 Web API；不依赖 src、worker、Node、React 或 Cloudflare |
+| `shared/auth`                     | Access 身份／会话契约、同源返回路径规则              | 标准 Web API                                                |
+| `scripts/dev`                     | Node 临时签名与独立本地 Worker 入口                  | jose、Vite、生产验证器；生产入口不依赖它                    |
+| `scripts/update-model-catalog.ts` | 更新模型元数据快照                                   | Node、模型目录规则                                          |
+| `scripts/lib`                     | Cloudflare 只读客户端、本地运行时生命周期            | Node；不依赖测量场景                                        |
+| `scripts/operations`              | 离线备份、迁移、校验、回滚与索引重建                 | Node SQLite、只读 Cloudflare 客户端和维护传输契约           |
+| `scripts/measurements`            | 本地／隔离 Cloudflare 验证与测量                     | 测量支持及测试运行时                                        |
 
 各业务直接导入明确文件。`types.ts`／`protocol.ts` 只放契约；算法、校验和协议应用分别命名，不建立全局重导出入口。shadcn 的 `src/components/ui`、`src/lib/utils.ts` 与根配置沿用工具约定。
 

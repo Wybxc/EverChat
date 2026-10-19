@@ -1,14 +1,13 @@
-import { measurementAccess } from './support/credentials';
-import { messageText } from '../../shared/conversation/content';
 import assert from 'node:assert/strict';
-import { readFile, mkdir, writeFile } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
-import { parseArgs } from 'node:util';
-import { setTimeout as pause } from 'node:timers/promises';
+import { readFile } from 'node:fs/promises';
 import { Agent } from 'node:https';
+import { resolve } from 'node:path';
+import { parseArgs } from 'node:util';
 import WebSocket from 'ws';
-import type { Snapshot, SyncPacket } from '../../shared/streaming/protocol';
-import { StreamSync } from '../../shared/streaming/sync';
+import { messageText } from '../../shared/conversation/content';
+import type { Snapshot } from '../../shared/streaming/protocol';
+import { measurementApi, subscribe, until, writeReport } from './support/client';
+import { measurementAccess } from './support/credentials';
 
 const { values } = parseArgs({
   options: {
@@ -29,24 +28,8 @@ const origin = url.origin;
 const access = await measurementAccess(values.credentials, origin);
 const agent = new Agent({ proxyEnv: process.env });
 const sockets = new Set<WebSocket>();
-function request(path: string, body?: unknown) {
-  return fetch(`${origin}/api${path}`, {
-    method: body === undefined ? 'GET' : 'POST',
-    redirect: 'error',
-    signal: AbortSignal.timeout(60000),
-    headers: {
-      Origin: origin,
-      ...access.headers,
-      ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
-    },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-}
-async function api<T>(path: string, body?: unknown): Promise<T> {
-  const response = await request(path, body);
-  assert.ok(response.ok, `${path}: HTTP ${response.status}`);
-  return response.json() as Promise<T>;
-}
+
+const { api, request } = measurementApi({ origin, headers: () => access.headers, timeout: 60_000 });
 type Seed = {
   messages: number;
   contentCharacters: number;
@@ -67,56 +50,31 @@ function validate(snapshot: Snapshot, history: History) {
 }
 async function replay(history: History, snapshot?: Snapshot) {
   const began = Date.now();
-  const baseline = snapshot ?? (await api<Snapshot>(`/conversations/${history.conversationId}`));
-  const sync = new StreamSync(baseline);
-  const socket = new WebSocket(
-    `${origin.replace('https:', 'wss:')}/api/conversations/${history.conversationId}/sync?after=${baseline.seq}&epoch=${baseline.epoch ?? ''}`,
-    {
-      agent,
-      handshakeTimeout: 30000,
-      maxPayload: 32 * 1024 * 1024,
-      headers: { ...access.headers, Origin: origin },
-    },
-  );
-  sockets.add(socket);
-  let frames = 0,
-    bytes = 0,
-    closed = false,
-    ready = false;
-  const timer = setTimeout(() => socket.terminate(), 60000);
+  const baseline = snapshot ?? { messages: [], seq: 0 };
+  const live = await subscribe({
+    origin,
+    id: history.conversationId,
+    baseline,
+    headers: access.headers,
+    sockets,
+    agent,
+    maxPayload: 32 * 1024 * 1024,
+    timeout: 60_000,
+  });
   try {
-    await new Promise<void>((done, reject) => {
-      socket.on('error', reject);
-      socket.on('close', (code) => {
-        closed = true;
-        if (!ready) reject(new Error(`Replay closed before ready: ${code}`));
-      });
-      socket.on('message', (value) => {
-        try {
-          frames++;
-          bytes += Buffer.byteLength(value.toString());
-          const packet = JSON.parse(value.toString()) as SyncPacket;
-          sync.receive(packet);
-          if (packet.type === 'ready') {
-            ready = true;
-            done();
-          }
-        } catch (error) {
-          reject(error);
-        }
-      });
-    });
-    validate(sync.durable, history);
-    if (snapshot) assert.deepEqual(sync.durable, snapshot);
-    socket.close(1000);
-    const deadline = Date.now() + 5000;
-    while (!closed && Date.now() < deadline) await pause(25);
-    assert.equal(closed, true, 'Cleanly close the replay socket');
-    return { passed: true, frames, bytes, elapsedMs: Date.now() - began };
+    live.check();
+    validate(live.sync.durable, history);
+    if (snapshot) assert.deepEqual(live.sync.durable, snapshot);
+    live.socket.close(1000);
+    await until(() => live.closed(), 'Clean replay close', 5000, 25);
+    return {
+      passed: true,
+      frames: live.observed.frames,
+      bytes: live.observed.bytes,
+      elapsedMs: Date.now() - began,
+    };
   } finally {
-    clearTimeout(timer);
-    socket.terminate();
-    sockets.delete(socket);
+    live.socket.terminate();
   }
 }
 const startedAt = new Date().toISOString(),
@@ -212,28 +170,20 @@ try {
       ].every((item) => item.passed),
     );
   const output = resolve(values.output!);
-  await mkdir(dirname(output), { recursive: true });
-  await writeFile(
-    output,
-    JSON.stringify(
-      {
-        version: 1,
-        workerName: 'everchat-stream-validation',
-        plan: 'Workers Free (user confirmed)',
-        diagnosticCounters: false,
-        suite: 'history',
-        expectedScenarios: 3,
-        complete,
-        passed,
-        startedAt,
-        finishedAt: new Date().toISOString(),
-        results,
-        scope:
-          'Synthetic persisted completed history with compacted events. Five HTTP reads and full/latest WebSocket recovery. No suppliers, production data or configuration changes. Complete means all sizes exercised; passed separately records correctness.',
-      },
-      null,
-      2,
-    ) + '\n',
-  );
+  await writeReport(output, {
+    version: 1,
+    workerName: 'everchat-stream-validation',
+    plan: 'Workers Free (user confirmed)',
+    diagnosticCounters: false,
+    suite: 'history',
+    expectedScenarios: 3,
+    complete,
+    passed,
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    results,
+    scope:
+      'Synthetic persisted completed history with compacted events. Five HTTP reads and full/latest WebSocket recovery. No suppliers, production data or configuration changes. Complete means all sizes exercised; passed separately records correctness.',
+  });
   if (!passed) process.exitCode = 1;
 }

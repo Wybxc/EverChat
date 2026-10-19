@@ -4,11 +4,11 @@ import {
   decodeValue,
   encodeValue,
   quoteIdentifier,
+  type IndexSchema,
+  type Statement,
   type StorageSnapshot,
   type StoreKind,
   type TableSchema,
-  type IndexSchema,
-  type Statement,
 } from './storage-protocol';
 
 // FTS is derived from search_fields. Never copy FTS shadow tables or export its

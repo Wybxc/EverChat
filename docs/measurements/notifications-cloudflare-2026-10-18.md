@@ -63,8 +63,8 @@
 ```sh
 pnpm exec wrangler deploy --config config/wrangler.validation.jsonc --env notifications
 pnpm exec wrangler secret bulk <临时密钥文件> --config config/wrangler.validation.jsonc --env notifications
-pnpm measure:cloudflare-tail --worker everchat-notifications-validation --seconds 90 --output /tmp/notifications-tail.json
-node --import tsx/esm scripts/measurements/notifications-cloudflare.ts --url <部署返回的workers.dev地址> --secrets <临时密钥文件> --output /tmp/notifications-functional.json
+pnpm measure tail --worker everchat-notifications-validation --seconds 90 --output /tmp/notifications-tail.json
+pnpm measure notifications --suite transport --url <部署返回的workers.dev地址> --secrets <临时密钥文件> --output /tmp/notifications-functional.json
 pnpm exec wrangler delete --config config/wrangler.validation.jsonc --env notifications --force
 ```
 

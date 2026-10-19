@@ -74,8 +74,9 @@ test('two real production builds wait for unsaved settings in every tab and pres
   await second.getByLabel('消息', { exact: true }).fill('第二页的新对话草稿');
   await control(page.request, { failSettings: true });
   const otherSettings = await settings(second);
-  await otherSettings.getByRole('tab', { name: '对话', exact: true }).click();
-  await otherSettings.getByLabel('系统提示词', { exact: true }).fill('尚未保存的配置');
+  await otherSettings.getByRole('tab', { name: '供应商', exact: true }).click();
+  await otherSettings.getByRole('button', { name: '添加供应商', exact: true }).click();
+  await otherSettings.getByLabel('名称', { exact: true }).fill('尚未保存的供应商');
   await expect(otherSettings.getByTestId('settings-save-status')).toContainText('未保存');
   await control(page.request, { version: 'b' });
   const firstSettings = await settings(page);
@@ -87,9 +88,7 @@ test('two real production builds wait for unsaved settings in every tab and pres
   await firstSettings.getByRole('button', { name: '更新应用', exact: true }).click();
   await expect(firstSettings.getByRole('alert')).toContainText('设置尚未保存');
   expect(await version(page)).toBe('pwa-test-a');
-  await expect(otherSettings.getByLabel('系统提示词', { exact: true })).toHaveValue(
-    '尚未保存的配置',
-  );
+  await expect(otherSettings.getByLabel('名称', { exact: true })).toHaveValue('尚未保存的供应商');
   await control(page.request, { failSettings: false });
   await otherSettings.getByRole('button', { name: '重试', exact: true }).click();
   await expect(otherSettings.getByTestId('settings-save-status')).toContainText('已保存');

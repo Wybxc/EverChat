@@ -4,7 +4,7 @@
 
 ## 隔离与观察边界
 
-- [独立配置](../../config/wrangler.validation.jsonc)仅用于 `everchat-tools-validation`，提供两个独立 SQLite DO 和 `everchat-tools-validation-flow`。不绑定 R2，未配置附件时聊天／工具仍能工作。使用生产 Workflow、供应商请求构造、AI SDK 续接和 Tavily 适配器，模型与工具 HTTP 响应由 fixture 模拟；其余外部供应商网络被禁用。
+- [验证配置](../../config/wrangler.validation.jsonc)的 `tools` 命名环境用于 `everchat-tools-validation`，提供两个独立 SQLite DO 和 `everchat-tools-validation-flow`。不绑定 R2，未配置附件时聊天／工具仍能工作。使用生产 Workflow、供应商请求构造、AI SDK 续接和 Tavily 适配器，模型与工具 HTTP 响应由 fixture 模拟；其余外部供应商网络被禁用。
 - `LOCAL_RESOURCE_METRICS=0`、`GENERATION_METRICS=0`。不使用本地计数代理或测量版 Workflow，不在模型生成期间轮询 Library。mock 工作负载独立配置：默认 120 段 × 200 UTF-16 码元、每段 25ms；`large` 为 120 × 750；`sustained` 为 120 × 200、每段 500ms。协议控制事件和两次 1.5 秒工具响应照常保留。
 - [执行器](../../scripts/measurements/support/tool-platform-runner.ts)在发送凭据或写设置前核对 Worker 类型、版本、随机 `VALIDATION_RUN_ID`、模拟上游和关闭的计数开关。远程仅接受专用 `everchat-tools-validation.wybxc.cc` 域名；本地模式只接受显式的 `127.0.0.1`。拒绝跟随 HTTP 重定向。
 - `/api/__test/*` 在该入口返回 404。专用准备接口要求登录、同源、UUID 和两个固定模式，且仅允许未开始工具任务的对话；没有通用故障注入接口。
@@ -15,12 +15,14 @@
 ## 本地复现与结果
 
 ```sh
-pnpm measure:tools-platform-local
+pnpm measure tools --mode platform
 # 默认端口 5191；也可以只跑一组：
-pnpm measure:tools-platform-local --suite sustained --port 5192 --output /tmp/everchat-tools-recheck
+pnpm measure tools --mode platform --suite sustained --port 5192 --output /tmp/everchat-tools-recheck
 ```
 
 该命令生成随机本地 Secrets，使用临时配置和持久化目录启动自建 Wrangler 服务，复用将要部署的 API-only 入口，完成后只停止自己的进程并删除临时状态。不会连接正在开发的 5173 服务。输出按 suite 分为 `-functional.json`、`-large.json`、`-sustained.json`，明确标记 `runtime: local`。
+
+当前默认只跑 `functional`，执行三组使用 `--suite all`。2026-10-19 起功能场景以 `multi-round` 验证五轮工具、六次模型／十次工具正常完成；下表链接保留的是旧版本的实测结果，其中的轮次上限已从产品中移除。
 
 | 报告                                                     | 实际验证                                                                                                                                 |
 | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
@@ -36,16 +38,16 @@ pnpm measure:tools-platform-local --suite sustained --port 5192 --output /tmp/ev
 
 1. 检查账户和专用 Worker／Workflow 名称，确认使用本轮隔离资源，保存 namespace ID 和部署版本。先创建覆盖隔离验证域名的 Access 应用与 Service Auth 策略，只允许该次验证的服务令牌。Worker 配置 `ACCESS_TEAM_DOMAIN`、`ACCESS_AUD`、`APP_ORIGIN`、`VALIDATION_ACCESS_SERVICE_IDS`（指定 Client ID）及 UUID `VALIDATION_RUN_ID`。权限为 0600 的凭据 JSON 包含 `ACCESS_ORIGIN`、`CF_ACCESS_CLIENT_ID`、`CF_ACCESS_CLIENT_SECRET`、`VALIDATION_RUN_ID`；文件绑定到验证 origin，不能用于正式 EverChat 域名。部署命令为 `pnpm exec wrangler deploy --config config/wrangler.validation.jsonc --env tools`。先验证边缘保护，缺少 JWT 配置时业务入口拒绝访问。
 2. 三组分别运行下方命令，保存完整报告。并行启动专用 tail，使用 `--worker everchat-tools-validation`；tail 只保留脱敏路径、状态和可选资源字段。
-3. 每组用 `measure:cloudflare-metrics --functional <该组报告>` 查询对应分钟窗口，使用 `--url` 和同一 Secrets 文件取得终态 SQLite 分配。工具报告必须标记 `runtime: cloudflare`，本地报告会被拒绝。
+3. 每组用 `pnpm measure metrics --functional <该组报告>` 查询对应分钟窗口，使用 `--url` 和同一 Secrets 文件取得终态 SQLite 分配。工具报告必须标记 `runtime: cloudflare`，本地报告会被拒绝。
 4. Worker／DO 图表与 Workflow 图表分别查询；某个数据集缺失不能使其他数据丢失。Workflow 使用 [`workflowsAdaptiveGroups`](https://developers.cloudflare.com/workflows/observability/metrics-analytics/)，本轮实际 schema 另核对 CPU、执行时长、步骤、重试和状态增长字段。`cpuTime` 为毫秒；`storageRate` 不是保留存储或账单。查询后保留缺失项，不写成零。各子窗口分钟取整后可能重叠，应另建总窗口，不能相加。
 5. 保存报告和资源 ID 后，删除本轮 Workflow（含实例）、Worker 和残留的两个 namespace，核实远程已不存在，再删除临时 Secrets。不要用 `--force` 绕过其他 Worker 依赖检查。可以在资源清理后，用保存的 namespace 报告读取迟到指标，不为等待采样保留公共验证资源。
 
 ```sh
-pnpm measure:cloudflare-tail --worker everchat-tools-validation --seconds 300 --output /tmp/everchat-tools-tail.json
-pnpm measure:cloudflare-tools --suite functional --url https://everchat-tools-validation.wybxc.cc --credentials /tmp/everchat-tools-validation-secrets.json --output /tmp/everchat-tools-functional.json
-pnpm measure:cloudflare-tools --suite large --url https://everchat-tools-validation.wybxc.cc --credentials /tmp/everchat-tools-validation-secrets.json --output /tmp/everchat-tools-large.json
-pnpm measure:cloudflare-tools --suite sustained --url https://everchat-tools-validation.wybxc.cc --credentials /tmp/everchat-tools-validation-secrets.json --output /tmp/everchat-tools-sustained.json
-pnpm measure:cloudflare-metrics --account YOUR_ACCOUNT_ID --functional /tmp/everchat-tools-functional.json --url https://everchat-tools-validation.wybxc.cc --credentials /tmp/everchat-tools-validation-secrets.json --output /tmp/everchat-tools-metrics.json
+pnpm measure tail --worker everchat-tools-validation --seconds 300 --output /tmp/everchat-tools-tail.json
+pnpm measure tools --runtime cloudflare --suite functional --url https://everchat-tools-validation.wybxc.cc --credentials /tmp/everchat-tools-validation-secrets.json --output /tmp/everchat-tools-functional.json
+pnpm measure tools --runtime cloudflare --suite large --url https://everchat-tools-validation.wybxc.cc --credentials /tmp/everchat-tools-validation-secrets.json --output /tmp/everchat-tools-large.json
+pnpm measure tools --runtime cloudflare --suite sustained --url https://everchat-tools-validation.wybxc.cc --credentials /tmp/everchat-tools-validation-secrets.json --output /tmp/everchat-tools-sustained.json
+pnpm measure metrics --account YOUR_ACCOUNT_ID --functional /tmp/everchat-tools-functional.json --url https://everchat-tools-validation.wybxc.cc --credentials /tmp/everchat-tools-validation-secrets.json --output /tmp/everchat-tools-metrics.json
 ```
 
 本轮真实平台负载与资源样本已见[实测报告](tools-cloudflare-measurements.md)。账户级长期共享额度、SQL 计费存储采样和真实 Tavily 权限／质量仍保留边界；这里的本地通过不替代平台结果。

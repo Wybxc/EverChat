@@ -1,9 +1,10 @@
-import { measurementAccess } from './support/credentials';
 import assert from 'node:assert/strict';
-import { readFile, mkdir, writeFile } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { cloudflareQuery, cloudflareRead } from './support/cloudflare-api';
+import { cloudflareQuery, cloudflareRead } from '../lib/cloudflare';
+import { writeReport } from './support/client';
+import { measurementAccess } from './support/credentials';
 import { TOOL_VALIDATION_WORKER, type ToolValidationIdentity } from './support/validation';
 const { values } = parseArgs({
   options: {
@@ -146,54 +147,46 @@ if (values.url || values.credentials) {
   deployedStorage = await storage.json();
 }
 const output = resolve(values.output!);
-await mkdir(dirname(output), { recursive: true });
-await writeFile(
-  output,
-  JSON.stringify(
-    {
-      version: 1,
-      queriedAt: new Date().toISOString(),
-      window: { start, end },
-      storageWindow: { start: storageStart, end: storageEnd },
-      workerName: functional.workerName,
-      namespaces,
-      units: {
-        cpuTime: 'microseconds',
-        cpuTimeUs: 'microseconds',
-        activeTime: 'microseconds',
-        duration: 'GB*s',
-        storedBytes: 'bytes',
-        memoryUsageBytes: 'bytes',
-      },
-      scope: `Isolated deployed namespaces and Worker, diagnostic counters ${functional.workerName === 'everchat-notification-pipeline-validation' ? 'enabled' : 'disabled'}. Adaptive fields may be sampled; empty arrays do not prove zero usage. Invocation minute rounding includes setup and idle activity. Storage uses a separate wider window and reports samples rather than the exact functional-run peak.`,
-      available,
-      data: response.data,
-      errors: response.errors,
-      deployedStorage,
-      workflow: workflow
-        ? {
-            workflowName: 'everchat-tools-validation-flow',
-            available: Boolean(
-              workflow.data?.viewer.accounts[0]?.workflowsAdaptiveGroups instanceof Array &&
-              (workflow.data.viewer.accounts[0].workflowsAdaptiveGroups as unknown[]).length,
-            ),
-            data: workflow.data,
-            errors: workflow.errors,
-            units: {
-              wallTime: 'seconds',
-              cpuTime: 'milliseconds',
-              executionDuration: 'GB*s',
-              storageRate: 'bytes of state growth',
-            },
-            scope:
-              'Workflow analytics grouped by eventType; do not add summaries across different lifecycle events without checking their semantics. CPU/execution duration/step fields are platform analytics, not an invoice. storageRate is state growth, not retained storage or byte-days. Empty/missing data is unavailable, never zero.',
-          }
-        : undefined,
-    },
-    null,
-    2,
-  ) + '\n',
-);
+await writeReport(output, {
+  version: 1,
+  queriedAt: new Date().toISOString(),
+  window: { start, end },
+  storageWindow: { start: storageStart, end: storageEnd },
+  workerName: functional.workerName,
+  namespaces,
+  units: {
+    cpuTime: 'microseconds',
+    cpuTimeUs: 'microseconds',
+    activeTime: 'microseconds',
+    duration: 'GB*s',
+    storedBytes: 'bytes',
+    memoryUsageBytes: 'bytes',
+  },
+  scope: `Isolated deployed namespaces and Worker, diagnostic counters ${functional.workerName === 'everchat-notification-pipeline-validation' ? 'enabled' : 'disabled'}. Adaptive fields may be sampled; empty arrays do not prove zero usage. Invocation minute rounding includes setup and idle activity. Storage uses a separate wider window and reports samples rather than the exact functional-run peak.`,
+  available,
+  data: response.data,
+  errors: response.errors,
+  deployedStorage,
+  workflow: workflow
+    ? {
+        workflowName: 'everchat-tools-validation-flow',
+        available: Boolean(
+          workflow.data?.viewer.accounts[0]?.workflowsAdaptiveGroups instanceof Array &&
+          (workflow.data.viewer.accounts[0].workflowsAdaptiveGroups as unknown[]).length,
+        ),
+        data: workflow.data,
+        errors: workflow.errors,
+        units: {
+          wallTime: 'seconds',
+          cpuTime: 'milliseconds',
+          executionDuration: 'GB*s',
+          storageRate: 'bytes of state growth',
+        },
+        scope:
+          'Workflow analytics grouped by eventType; do not add summaries across different lifecycle events without checking their semantics. CPU/execution duration/step fields are platform analytics, not an invoice. storageRate is state growth, not retained storage or byte-days. Empty/missing data is unavailable, never zero.',
+      }
+    : undefined,
+});
 if (response.errors?.length) {
   console.error(JSON.stringify(response.errors));
   process.exitCode = 1;

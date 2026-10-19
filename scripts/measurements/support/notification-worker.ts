@@ -1,8 +1,8 @@
 // Temporary platform measurement only. No production data, DOs, R2 or real push gateways.
 import * as v from 'valibot';
-import { notificationDeviceSchema, completionSchema } from '../../../shared/notifications/protocol';
-import { sendWebPush } from '../../../worker/notifications/push';
+import { completionSchema, notificationDeviceSchema } from '../../../shared/notifications/protocol';
 import type { Env } from '../../../worker/http/env';
+import { sendWebPush } from '../../../worker/notifications/push';
 
 type ValidationEnv = Env & { VALIDATION_SECRET?: string };
 type Capture = { authorization: string; encoding: string; ttl: string; body: string };

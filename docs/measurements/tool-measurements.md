@@ -2,12 +2,14 @@
 
 2026-10-15，在 `e9a174c` 后的工具测量与终态清理检查点运行。默认七场景报告见 [tools-baseline.json](tools-baseline.json)。这是本地原生 Cloudflare 运行时的应用计数，平台 CPU、活跃时长和 Workflow 引擎存储仍需另测。
 
+2026-10-19 脚本整理：当前命令已用 `multi-round` 替换旧的轮次上限场景，五轮工具调用后正常完成，累计六次模型／十次工具请求。下文旧报告中的四模型／六工具结果仍是当时版本的历史数据，不代表当前产品限制。当前入口见[测量命令](README.md)。
+
 ## 复现
 
 ```sh
-pnpm measure:tools
-pnpm measure:tools --scenario online-openai-responses --size 750 --output /tmp/everchat-tools-large.json
-pnpm measure:tools --scenario online-openai-responses --interval 500 --output /tmp/everchat-tools-sustained.json
+pnpm measure tools
+pnpm measure tools --scenario online-openai-responses --size 750 --output /tmp/everchat-tools-large.json
+pnpm measure tools --scenario online-openai-responses --interval 500 --output /tmp/everchat-tools-sustained.json
 ```
 
 默认监听 5185，使用新建临时数据库、模拟模型 HTTP 响应和生产 Tavily 适配器的模拟 HTTP 响应；结束时停止自己的服务器并删除临时状态。登录前校验本次运行时身份，端口属于其他实例时拒绝登录和修改配置。本地身份由临时 RS256 签名夹具提供，不配置应用密码。配置、正文、密钥及私有续接内容不进入报告。

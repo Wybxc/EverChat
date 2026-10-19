@@ -1,5 +1,5 @@
 // Node-only signer. No private key is sent to a Worker, browser, or production bundle.
-import { exportJWK, generateKeyPair, SignJWT } from 'jose';
+import { SignJWT, exportJWK, generateKeyPair } from 'jose';
 import type { Plugin } from 'vite';
 import { authReturnTo } from '../../shared/auth/navigation';
 

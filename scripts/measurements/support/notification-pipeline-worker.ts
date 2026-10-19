@@ -2,12 +2,12 @@
 // No production data, model calls, attachments, WebSockets or real push gateways.
 import { DurableObject } from 'cloudflare:workers';
 import * as v from 'valibot';
-import { completionSchema, notificationDeviceSchema } from '../../../shared/notifications/protocol';
 import type { AnswerCompletion, NotificationDevice } from '../../../shared/notifications/protocol';
+import { completionSchema, notificationDeviceSchema } from '../../../shared/notifications/protocol';
+import { FixtureResourceMeter } from '../../../tests/support/runtime/resource-meter';
+import type { Env } from '../../../worker/http/env';
 import { Library as ProductionLibrary } from '../../../worker/library/durable-object';
 import { COMPLETION_OUTBOX_SCHEMA, CompletionOutbox } from '../../../worker/notifications/outbox';
-import type { Env } from '../../../worker/http/env';
-import { FixtureResourceMeter } from '../../../tests/support/runtime/resource-meter';
 
 type ValidationEnv = Env & { VALIDATION_SECRET?: string };
 globalThis.fetch = async (input, init) => {

@@ -1,10 +1,11 @@
+import { unstable_readConfig } from 'wrangler';
 // Isolated Cloudflare measurement using synthetic records only; no production bindings.
 import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { readFile, writeFile, mkdir, chmod } from 'node:fs/promises';
-import { resolve, join } from 'node:path';
+import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { cloudflareRead, cloudflareQuery } from './support/cloudflare-api';
+import { cloudflareQuery, cloudflareRead } from '../lib/cloudflare';
 const { positionals, values } = parseArgs({
   allowPositionals: true,
   options: {
@@ -38,20 +39,22 @@ if (positionals[0] === 'prepare') {
     mode: 0o600,
     flag: 'wx',
   });
+  const source = unstable_readConfig({ config: 'config/wrangler.validation.jsonc', env: 'usage' });
+  const fields = [
+    'name',
+    'main',
+    'compatibility_date',
+    'compatibility_flags',
+    'workers_dev',
+    'preview_urls',
+    'durable_objects',
+    'migrations',
+    'observability',
+  ] as const;
   await save('worker.json', {
-    name: workerName,
+    ...Object.fromEntries(fields.map((key) => [key, source[key]])),
     account_id: values.account,
-    main: resolve('scripts/measurements/support/usage-sharing-worker.ts'),
-    compatibility_date: '2026-10-09',
-    compatibility_flags: ['nodejs_compat'],
-    workers_dev: true,
-    preview_urls: false,
     vars: { MEASUREMENT_TOKEN: manifest.token, MEASUREMENT_RUN: manifest.run },
-    durable_objects: {
-      bindings: [{ name: 'MEASUREMENTS', class_name: 'UsageSharingMeasurement' }],
-    },
-    migrations: [{ tag: 'v1', new_sqlite_classes: ['UsageSharingMeasurement'] }],
-    observability: { enabled: true },
   });
   console.log(JSON.stringify({ prepared: true, workerName, directory }));
 } else {

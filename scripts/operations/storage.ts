@@ -1,24 +1,23 @@
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { chmod, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
-import { resolve, join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { parseArgs } from 'node:util';
 import { unstable_readConfig } from 'wrangler';
-import { cloudflareRead } from '../measurements/support/cloudflare-api';
-import { migrateStorage } from './migrate-storage';
+import { cloudflareRead } from '../lib/cloudflare';
+import { cleanIncompleteUsage, migrateStorage } from './migrations';
 import { rebuildSearch } from './rebuild-search';
-import { cleanIncompleteUsage } from './clean-usage';
-import { localSnapshot, restoreSnapshot, snapshotStatements } from './storage-snapshot';
 import {
   MIGRATION_TABLES,
   quoteIdentifier,
-  type StoreKind,
-  type Statement,
-  type TableSchema,
   type IndexSchema,
   type StorageSnapshot as Snapshot,
+  type Statement,
+  type StoreKind,
+  type TableSchema,
 } from './storage-protocol';
+import { localSnapshot, restoreSnapshot, snapshotStatements } from './storage-snapshot';
 
 type Target = { kind: StoreKind; id: string; name?: string };
 type Manifest = {

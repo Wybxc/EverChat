@@ -1,8 +1,9 @@
 import { spawn } from 'node:child_process';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
+import { writeReport } from './support/client';
 const { values } = parseArgs({
   options: {
     output: { type: 'string', default: '/tmp/everchat-cloudflare-tail.json' },
@@ -128,28 +129,20 @@ try {
     child.once('close', done);
   });
   const output = resolve(values.output!);
-  await mkdir(dirname(output), { recursive: true });
-  await writeFile(
-    output,
-    JSON.stringify(
-      {
-        version: 1,
-        workerName: values.worker,
-        startedAt,
-        finishedAt: new Date().toISOString(),
-        connected,
-        code,
-        malformed,
-        dropped,
-        partialFrame: Boolean(frame.trim() || buffer.trim()),
-        events,
-        scope:
-          'Sanitized real-time tail. Optional CPU fields may be absent; missing values are not zero. Receipt does not prove exhaustive platform coverage.',
-      },
-      null,
-      2,
-    ) + '\n',
-  );
+  await writeReport(output, {
+    version: 1,
+    workerName: values.worker,
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    connected,
+    code,
+    malformed,
+    dropped,
+    partialFrame: Boolean(frame.trim() || buffer.trim()),
+    events,
+    scope:
+      'Sanitized real-time tail. Optional CPU fields may be absent; missing values are not zero. Receipt does not prove exhaustive platform coverage.',
+  });
   console.log(
     JSON.stringify({
       connected,

@@ -32,13 +32,13 @@
 
 ## 复测入口
 
-配置为 `config/wrangler.validation.jsonc --env notification-pipeline`，脚本为 `scripts/measurements/notification-pipeline.ts`。每次先确认同名 Worker 不存在，生成仓库外的随机测试 VAPID／验证口令文件（0600），部署后写入 Secrets；勿复用生产密钥。运行脚本前先连接 tail：
+配置为 `config/wrangler.validation.jsonc --env notification-pipeline`，脚本为 `scripts/measurements/notifications.ts`。每次先确认同名 Worker 不存在，生成仓库外的随机测试 VAPID／验证口令文件（0600），部署后写入 Secrets；勿复用生产密钥。运行脚本前先连接 tail：
 
 ```sh
 pnpm exec wrangler deploy --config config/wrangler.validation.jsonc --env notification-pipeline
 pnpm exec wrangler secret bulk <测试密钥文件> --config config/wrangler.validation.jsonc --env notification-pipeline
-pnpm measure:cloudflare-tail --worker everchat-notification-pipeline-validation --seconds 60 --output /tmp/notifications-pipeline-tail.json
-node --import tsx/esm scripts/measurements/notification-pipeline.ts --url <部署返回地址> --secrets <测试密钥文件> --output /tmp/notifications-pipeline-functional.json
+pnpm measure tail --worker everchat-notification-pipeline-validation --seconds 60 --output /tmp/notifications-pipeline-tail.json
+pnpm measure notifications --suite pipeline --url <部署返回地址> --secrets <测试密钥文件> --output /tmp/notifications-pipeline-functional.json
 pnpm exec wrangler delete --config config/wrangler.validation.jsonc --env notification-pipeline --force
 ```
 

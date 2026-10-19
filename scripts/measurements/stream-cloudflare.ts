@@ -1,17 +1,17 @@
-import { measurementAccess } from './support/credentials';
-import { messageText } from '../../shared/conversation/content';
 import assert from 'node:assert/strict';
-import { readFile, mkdir, writeFile } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
-import { parseArgs } from 'node:util';
-import { setTimeout as pause } from 'node:timers/promises';
-import WebSocket from 'ws';
+import { readFile } from 'node:fs/promises';
 import { Agent } from 'node:https';
+import { resolve } from 'node:path';
+import { setTimeout as pause } from 'node:timers/promises';
+import { parseArgs } from 'node:util';
+import WebSocket from 'ws';
+import { messageText } from '../../shared/conversation/content';
+import type { Submission } from '../../shared/conversation/types';
 import type { ModelSelection } from '../../shared/models/types';
 import type { ProviderKind } from '../../shared/providers/types';
-import type { Snapshot, SyncPacket } from '../../shared/streaming/protocol';
-import type { Submission } from '../../shared/conversation/types';
-import { StreamSync } from '../../shared/streaming/sync';
+import type { Snapshot } from '../../shared/streaming/protocol';
+import { measurementApi, subscribe, until, writeReport } from './support/client';
+import { measurementAccess } from './support/credentials';
 
 const { values } = parseArgs({
   options: {
@@ -41,103 +41,21 @@ const access = await measurementAccess(values.credentials, origin);
 const sockets = new Set<WebSocket>();
 // ws overrides the default connector; supply an explicit agent to honor configured proxies.
 const agent = new Agent({ proxyEnv: process.env });
-async function api<T>(
-  path: string,
-  body?: unknown,
-  method = body === undefined ? 'GET' : 'POST',
-): Promise<T> {
-  const response = await fetch(`${origin}/api${path}`, {
-    method,
-    redirect: 'error',
-    headers: {
-      Origin: origin,
-      ...access.headers,
-      ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
-    },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    signal: AbortSignal.timeout(30000),
+const { api } = measurementApi({ origin, headers: () => access.headers });
+async function subscriber(id: string, initial?: Snapshot, acknowledge = true) {
+  const baseline = initial?.epoch ? initial : await api<Snapshot>(`/conversations/${id}`);
+  const result = await subscribe({
+    origin,
+    id,
+    baseline,
+    headers: access.headers,
+    sockets,
+    agent,
+    acknowledge,
   });
-  assert.ok(response.ok, `${method} ${path}: HTTP ${response.status}`);
-  return response.json() as Promise<T>;
+  return { ...result, received: result.observed };
 }
-async function subscriber(
-  id: string,
-  initial: Snapshot = { messages: [], seq: 0 },
-  acknowledge = true,
-) {
-  if (!initial.epoch) initial = await api<Snapshot>(`/conversations/${id}`);
-  const socket = new WebSocket(
-    `${origin.replace('https:', 'wss:')}/api/conversations/${id}/sync?after=${initial.seq}&epoch=${initial.epoch ?? ''}`,
-    { agent, handshakeTimeout: 30000, headers: { ...access.headers, Origin: origin } },
-  );
-  sockets.add(socket);
-  const sync = new StreamSync(initial),
-    received = { frames: 0, bytes: 0 };
-  let failure: Error | undefined, code: number | undefined;
-  socket.on('close', (value) => {
-    code = value;
-    sockets.delete(socket);
-  });
-  try {
-    await new Promise<void>((ready, reject) => {
-      const timer = setTimeout(() => reject(new Error('Subscription timed out')), 30000);
-      socket.on('error', (error) => {
-        failure = error;
-        clearTimeout(timer);
-        reject(error);
-      });
-      socket.on('message', (value) => {
-        received.frames++;
-        received.bytes += Buffer.byteLength(value.toString());
-        try {
-          const packet = JSON.parse(value.toString()) as SyncPacket;
-          sync.receive(packet);
-          if (packet.type === 'preview' && acknowledge)
-            socket.send(
-              JSON.stringify({
-                type: 'preview-ack',
-                runId: packet.batch.runId,
-                messageId: packet.batch.messageId,
-                offset: packet.batch.endOffset,
-              }),
-            );
-          if (packet.type === 'ready') {
-            clearTimeout(timer);
-            ready();
-          }
-        } catch (error) {
-          failure = error as Error;
-          clearTimeout(timer);
-          reject(error);
-        }
-      });
-    });
-  } catch (error) {
-    socket.terminate();
-    throw error;
-  }
-  return {
-    socket,
-    sync,
-    received,
-    check: () => {
-      if (failure) throw failure;
-    },
-    code: () => code,
-  };
-}
-async function until(
-  check: () => boolean | Promise<boolean>,
-  label: string,
-  timeout = 30000,
-  interval = 100,
-) {
-  const deadline = Date.now() + timeout;
-  while (!(await check())) {
-    assert.ok(Date.now() < deadline, `${label}: timed out`);
-    await pause(interval);
-  }
-}
+
 const startedAt = new Date().toISOString();
 const results: Record<string, unknown>[] = [];
 try {
@@ -460,27 +378,19 @@ try {
   for (const socket of sockets) socket.terminate();
   agent.destroy();
   const output = resolve(values.output!);
-  await mkdir(dirname(output), { recursive: true });
-  await writeFile(
-    output,
-    JSON.stringify(
-      {
-        version: 1,
-        runtime: 'deployed Cloudflare isolated fixture',
-        workerName: 'everchat-stream-validation',
-        plan: 'Workers Free (user confirmed)',
-        suite: values.suite,
-        diagnosticCounters: false,
-        expectedScenarios,
-        complete: results.length === expectedScenarios,
-        startedAt,
-        finishedAt: new Date().toISOString(),
-        results,
-        scope:
-          'Functional cases with mock suppliers; platform analytics collected separately. No real model calls or production data.',
-      },
-      null,
-      2,
-    ) + '\n',
-  );
+  await writeReport(output, {
+    version: 1,
+    runtime: 'deployed Cloudflare isolated fixture',
+    workerName: 'everchat-stream-validation',
+    plan: 'Workers Free (user confirmed)',
+    suite: values.suite,
+    diagnosticCounters: false,
+    expectedScenarios,
+    complete: results.length === expectedScenarios,
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    results,
+    scope:
+      'Functional cases with mock suppliers; platform analytics collected separately. No real model calls or production data.',
+  });
 }

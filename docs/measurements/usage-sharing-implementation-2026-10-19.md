@@ -27,7 +27,7 @@
 
 ## 本地存储测量
 
-重现命令：`node --import tsx/esm scripts/measurements/usage-ledger.ts`。
+重现命令：`pnpm measure usage`。
 
 1,000 次合成请求，三个供应商、十个模型，每次依次写入 running 和 completed：空库 49,152 字节，最终 1,368,064 字节，增加 1,318,912 字节（约 1.26 MiB）；10,000 条 SQL，返回 2,490 行，逻辑改变 5,000 行。本机一次运行耗时 47 ms，仅用于复现观察，不作为性能保证。
 
@@ -62,11 +62,11 @@ Chromium／WebKit 各通过两项运行时分享测试与桌面／手机管理�
 仅部署临时 `everchat-usage-sharing-validation`，没有生产 DO、R2、Workflow、Access 绑定或真实 AI 请求。复现流程：
 
 ```sh
-node --import tsx/esm scripts/measurements/usage-sharing-cloudflare.ts prepare --directory <private-directory> --account <account-id>
+pnpm measure usage --runtime cloudflare prepare --directory <private-directory> --account <account-id>
 pnpm exec wrangler deploy --config <private-directory>/worker.json
-node --import tsx/esm scripts/measurements/usage-sharing-cloudflare.ts run --directory <private-directory>
-node --import tsx/esm scripts/measurements/usage-sharing-cloudflare.ts analytics --directory <private-directory>
-node --import tsx/esm scripts/measurements/usage-sharing-cloudflare.ts clear --directory <private-directory>
+pnpm measure usage --runtime cloudflare run --directory <private-directory>
+pnpm measure usage --runtime cloudflare analytics --directory <private-directory>
+pnpm measure usage --runtime cloudflare clear --directory <private-directory>
 pnpm exec wrangler delete --config <private-directory>/worker.json --force
 ```
 

@@ -1,10 +1,10 @@
 // Synthetic local storage measurement. No network, credentials, or real conversations.
-import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import { performance } from 'node:perf_hooks';
+import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
+import type { UsageAttempt } from '../../shared/usage/types';
+import type { SqlQuery } from '../../worker/generation/metrics';
 import { USAGE_SCHEMA } from '../../worker/usage/schema';
 import { UsageLedger } from '../../worker/usage/store';
-import type { SqlQuery } from '../../worker/generation/metrics';
-import type { UsageAttempt } from '../../shared/usage/types';
 
 const db = new DatabaseSync(':memory:');
 db.exec(USAGE_SCHEMA);

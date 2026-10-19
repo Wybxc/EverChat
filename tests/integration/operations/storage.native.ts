@@ -3,7 +3,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
 import { resolve } from 'node:path';
 import { createTestHarness } from 'wrangler';
-import { migrateStorage } from '../../../scripts/operations/migrate-storage';
+import { migrateStorage } from '../../../scripts/operations/migrations';
 import type { Statement } from '../../../scripts/operations/storage-protocol';
 import { rebuildSearch } from '../../../scripts/operations/rebuild-search';
 import { initializeConversation } from '../../../worker/conversation/schema';

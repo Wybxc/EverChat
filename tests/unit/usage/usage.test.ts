@@ -10,7 +10,7 @@ import { UsageOutbox } from '../../../worker/usage/outbox';
 import { UsageAccounting, modelIdentity } from '../../../worker/usage/accounting';
 import type { Env } from '../../../worker/http/env';
 import type { SqlQuery } from '../../../worker/generation/metrics';
-import { cleanIncompleteUsage } from '../../../scripts/operations/clean-usage';
+import { cleanIncompleteUsage } from '../../../scripts/operations/migrations';
 import { localSnapshot, restoreSnapshot } from '../../../scripts/operations/storage-snapshot';
 import { decodeValue } from '../../../scripts/operations/storage-protocol';
 

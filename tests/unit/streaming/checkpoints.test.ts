@@ -10,7 +10,7 @@ import { ConversationState, requestFingerprint } from '../../../worker/conversat
 import type { SqlQuery } from '../../../worker/generation/metrics';
 import { GenerationCheckpoints } from '../../../worker/streaming/checkpoints';
 import { STREAM_JOURNAL_SCHEMA } from '../../../worker/streaming/journal';
-import { migrateStorage } from '../../../scripts/operations/migrate-storage';
+import { migrateStorage } from '../../../scripts/operations/migrations';
 
 function fixture() {
   const db = new DatabaseSync(':memory:');

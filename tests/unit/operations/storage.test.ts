@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
-import { migrateStorage } from '../../../scripts/operations/migrate-storage';
+import { migrateStorage } from '../../../scripts/operations/migrations';
 import { decodeValue } from '../../../scripts/operations/storage-protocol';
 import { initializeConversation } from '../../../worker/conversation/schema';
 import {

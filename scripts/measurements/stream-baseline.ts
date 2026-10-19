@@ -1,15 +1,14 @@
-import { messageText } from '../../shared/conversation/content';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
-import { parseArgs } from 'node:util';
+import { join, resolve } from 'node:path';
 import { setTimeout as pause } from 'node:timers/promises';
+import { parseArgs } from 'node:util';
 import WebSocket from 'ws';
+import { messageText } from '../../shared/conversation/content';
 import type { GenerationMeasurements } from '../../shared/streaming/metrics';
-import { type Snapshot, type SyncPacket } from '../../shared/streaming/protocol';
-import { StreamSync } from '../../shared/streaming/sync';
+import { type Snapshot } from '../../shared/streaming/protocol';
+import { startLocalRuntime } from '../lib/runtime';
+import { measurementApi, subscribe, writeReport } from './support/client';
 
 const { values } = parseArgs({
   options: {
@@ -33,128 +32,30 @@ const chunks = integer(values.chunks, 1, 1000),
 const size = integer(values.size, 4, 2000),
   port = integer(values.port, 1024, 65535);
 const origin = `http://127.0.0.1:${port}`;
-const state = await mkdtemp(join(tmpdir(), 'everchat-stream-baseline-'));
-const server = spawn(
-  process.execPath,
-  ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', String(port), '--strictPort'],
-  {
-    cwd: process.cwd(),
-    stdio: ['ignore', 'pipe', 'pipe'],
-    env: {
-      ...process.env,
-      EVERCHAT_TEST_STATE: state,
-      EVERCHAT_MOCK_PROVIDER: '1',
-      EVERCHAT_GENERATION_METRICS: '1',
-      WRANGLER_LOG_PATH: join(state, 'wrangler.log'),
-    },
-  },
-);
-let serverError: Error | undefined;
-server.on('error', (error) => {
-  serverError = error;
+const runtime = await startLocalRuntime({
+  name: 'stream-baseline',
+  port,
+  env: { EVERCHAT_MOCK_PROVIDER: '1', EVERCHAT_GENERATION_METRICS: '1' },
 });
-// Drain output without printing provider configuration or local environment values.
-server.stdout.resume();
-server.stderr.resume();
 const sockets = new Set<WebSocket>();
 let cookie = '';
 
-async function api<T>(
-  path: string,
-  body?: unknown,
-  method = body === undefined ? 'GET' : 'POST',
-): Promise<T> {
-  const response = await fetch(`${origin}/api${path}`, {
-    method,
-    headers: {
-      Origin: origin,
-      Cookie: cookie,
-      ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
-    },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    signal: AbortSignal.timeout(10_000),
-  });
-  assert.ok(response.ok, `${method} ${path}: HTTP ${response.status}`);
-  return response.json() as Promise<T>;
-}
+const { api } = measurementApi({ origin, headers: () => ({ Cookie: cookie }), timeout: 10_000 });
 
 async function subscriber(id: string, disconnect: boolean) {
-  const baseline = await api<Snapshot>(`/conversations/${id}`);
-  const socket = new WebSocket(
-    `${origin.replace('http:', 'ws:')}/api/conversations/${id}/sync?after=${baseline.seq}&epoch=${baseline.epoch ?? ''}`,
-    { headers: { Cookie: cookie, Origin: origin } },
-  );
-  sockets.add(socket);
-  const observed = { frames: 0, bytes: 0, disconnected: false };
-  const sync = new StreamSync(baseline);
-  let failure: Error | undefined;
-  await new Promise<void>((resolveReady, reject) => {
-    const timer = setTimeout(() => reject(new Error('WebSocket readiness timed out')), 10_000);
-    socket.on('error', (error) => {
-      clearTimeout(timer);
-      failure = error;
-      reject(error);
-    });
-    socket.on('message', (data) => {
-      const bytes = Buffer.isBuffer(data)
-        ? data
-        : Array.isArray(data)
-          ? Buffer.concat(data)
-          : Buffer.from(data);
-      observed.frames++;
-      observed.bytes += bytes.byteLength;
-      try {
-        const packet = JSON.parse(bytes.toString()) as SyncPacket;
-        sync.receive(packet);
-        if (packet.type === 'preview')
-          socket.send(
-            JSON.stringify({
-              type: 'preview-ack',
-              runId: packet.batch.runId,
-              messageId: packet.batch.messageId,
-              offset: packet.batch.endOffset,
-            }),
-          );
-        if (packet.type === 'ready') {
-          clearTimeout(timer);
-          resolveReady();
-        }
-        if (disconnect && packet.type === 'preview') {
-          observed.disconnected = true;
-          socket.close();
-        }
-      } catch (error) {
-        failure = error instanceof Error ? error : new Error('Invalid sync packet');
-        clearTimeout(timer);
-        socket.close();
-        reject(failure);
-      }
-    });
+  return subscribe({
+    origin,
+    id,
+    baseline: await api<Snapshot>(`/conversations/${id}`),
+    headers: { Cookie: cookie },
+    sockets,
+    disconnect,
+    timeout: 10_000,
   });
-  return {
-    socket,
-    observed,
-    snapshot: () => {
-      if (failure) throw failure;
-      return sync.durable;
-    },
-  };
 }
 
 try {
-  const deadline = Date.now() + 30_000;
-  while (true) {
-    if (serverError) throw serverError;
-    if (server.exitCode !== null || server.signalCode !== null)
-      throw new Error('Fixture server exited before readiness');
-    try {
-      if ((await fetch(`${origin}/`, { signal: AbortSignal.timeout(500) })).ok) break;
-    } catch {
-      /* Wait for local runtime startup. */
-    }
-    assert.ok(Date.now() < deadline, 'Fixture server startup timed out');
-    await pause(100);
-  }
+  await runtime.ready();
   assert.equal(
     (await fetch(`${origin}/api/conversations/${crypto.randomUUID()}/measurements`)).status,
     401,
@@ -286,32 +187,17 @@ try {
     );
   }
   const output = resolve(values.output!);
-  await mkdir(dirname(output), { recursive: true });
-  await writeFile(
-    output,
-    JSON.stringify(
-      {
-        version: 2,
-        runtime: 'local Cloudflare fixture',
-        capturedAt: new Date().toISOString(),
-        workload: { chunks, intervalMs: interval, baseCharactersPerChunk: size },
-        scope:
-          'Claim-to-terminal Conversation SQL and broadcasts; excludes bootstrap, acceptance, Library, RPC metering, alarms and diagnostic persistence. elapsedMs is wall time, not CPU. No paid model calls.',
-        results,
-      },
-      null,
-      2,
-    ) + '\n',
-  );
+  await writeReport(output, {
+    version: 2,
+    runtime: 'local Cloudflare fixture',
+    capturedAt: new Date().toISOString(),
+    workload: { chunks, intervalMs: interval, baseCharactersPerChunk: size },
+    scope:
+      'Claim-to-terminal Conversation SQL and broadcasts; excludes bootstrap, acceptance, Library, RPC metering, alarms and diagnostic persistence. elapsedMs is wall time, not CPU. No paid model calls.',
+    results,
+  });
   console.log(`Saved ${output}`);
 } finally {
   for (const socket of sockets) socket.terminate();
-  if (server.pid && server.exitCode === null && server.signalCode === null) {
-    const exited = new Promise<void>((resolveExit) => server.once('exit', () => resolveExit()));
-    server.kill('SIGTERM');
-    const force = setTimeout(() => server.kill('SIGKILL'), 5000);
-    await exited;
-    clearTimeout(force);
-  }
-  await rm(state, { recursive: true, force: true });
+  await runtime.stop();
 }

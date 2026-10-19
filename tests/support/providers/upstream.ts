@@ -239,7 +239,7 @@ export function installMockUpstream() {
       });
     }
     const toolModel =
-      /^tools-(?:(loop|pause|service|flow)-)?(?:(large|sustained)-)?(openai-chat|openai-responses|anthropic|gemini)$/.exec(
+      /^tools-(?:(loop|multi|pause|service|flow)-)?(?:(large|sustained)-)?(openai-chat|openai-responses|anthropic|gemini)$/.exec(
         modelId ?? '',
       );
     const toolKind = toolModel?.[3] as ProviderKind | undefined;
@@ -271,14 +271,18 @@ export function installMockUpstream() {
       )
         return Response.json({ error: 'Missing continuation metadata' }, { status: 400 });
       const loop = modelId?.startsWith('tools-loop-'),
+        multi = modelId?.startsWith('tools-multi-'),
         flow = modelId?.startsWith('tools-flow-');
       const round = flow
         ? Math.max(
             -1,
             ...[...serialized.matchAll(/call_flow_(\d+)_/g)].map((match) => Number(match[1])),
           ) + 1
-        : loop
-          ? (serialized.match(/"role":"tool"/g) ?? []).length / 2
+        : loop || multi
+          ? Math.max(
+              -1,
+              ...[...serialized.matchAll(/call_(\d+)_/g)].map((match) => Number(match[1])),
+            ) + 1
           : 0;
       // The mock workload is independent of diagnostic counters so a later CPU
       // validation can use the same input with all instrumentation switched off.
@@ -292,7 +296,7 @@ export function installMockUpstream() {
               ? (JSON.parse(encodedWorkload) as { chunks: number; size: number; interval: number })
               : undefined;
       let wire =
-        continued && !loop && (!flow || round >= 2)
+        continued && !loop && (!flow || round >= 2) && (!multi || round >= 5)
           ? toolFinalStream(toolKind, workload, flow ? '**整合结果🙂**\n\n继续分析。' : undefined)
           : toolStream(toolKind, {
               count: 2,
