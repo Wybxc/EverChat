@@ -59,3 +59,11 @@ pnpm build
 - [开发指南](docs/development.md)：本地开发、格式化、测试和调试。
 - [部署指南](docs/operations/self-hosting.md)：Cloudflare 部署、访问控制和可选服务。
 - [文档索引](docs/README.md)：架构、资源边界、功能专题、计划及验收记录。
+
+## 开源协议
+
+Copyright 2026 EverChat contributors.
+
+除另有声明外，EverChat 的代码与文档采用 [Apache License 2.0](LICENSE)。允许使用、修改、分发和商业使用，也允许闭源衍生；分发时须遵守协议中的许可证、署名和修改说明等要求。协议包含明确的贡献者专利授权，不授予商标使用权。
+
+第三方代码和依赖保留各自的许可证；其中 shadcn/ui 组件的 [MIT 许可证](src/components/ui/LICENSE.md)单独保留。
