@@ -1,4 +1,5 @@
 import { SHARE_CSP } from '../../../shared/sharing/security';
+import { isSharePage } from '../../../shared/sharing/types';
 import { messageParts } from '../../../shared/conversation/content';
 import type { Snapshot } from '../../../shared/streaming/protocol';
 // Serve the production shell with read-only synthetic API data; DO behavior is covered by the main E2E suite.
@@ -259,11 +260,18 @@ const server = createServer(async (request, response) => {
     return;
   }
   try {
-    const source = path === '/' || !extname(path) ? resolve(root, 'index.html') : file;
+    // Only the optional migration fixture predates share.html; production has no legacy branch.
+    const shareDocument =
+      process.env.EVERCHAT_PWA_LEGACY_BUILD && root === builds.a ? 'index.html' : 'share.html';
+    const source = isSharePage(path)
+      ? resolve(root, shareDocument)
+      : path === '/' || !extname(path)
+        ? resolve(root, 'index.html')
+        : file;
     const body = await readFile(source);
     response.writeHead(200, {
       'Content-Type': types[extname(source)] ?? 'application/octet-stream',
-      ...(path.startsWith('/s/')
+      ...(isSharePage(path)
         ? {
             'Content-Security-Policy': SHARE_CSP,
             'Referrer-Policy': 'no-referrer',

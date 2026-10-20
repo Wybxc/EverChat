@@ -160,7 +160,10 @@ test('anonymous shares localize bubbles and Markdown controls without loading pr
     }),
   );
   await page.addInitScript(() => localStorage.setItem('everchat:locale', 'en'));
-  await page.goto(`/s/${id}#${secret}`);
+  const htmlResponse = await page.goto(`/s/${id}#${secret}`);
+  expect(htmlResponse!.status()).toBe(200);
+  expect(await htmlResponse!.text()).toContain('/src/share.tsx');
+  expect(await htmlResponse!.text()).not.toContain('/src/main.tsx');
   await expect(page.getByRole('article', { name: 'Question 1', exact: true })).toContainText(
     'Original 用户内容',
   );
@@ -185,7 +188,9 @@ test('anonymous shares localize bubbles and Markdown controls without loading pr
   );
   await expect(page).toHaveURL(`/s/${id}#${secret}`);
   expect(requests.filter((path) => /^\/(api|auth)(\/|$)/.test(path))).toEqual([]);
-  expect(requests.filter((path) => /private-bootstrap|notifications/.test(path))).toEqual([]);
+  expect(requests.filter((path) => /\/src\/(?:main\.tsx|app\/)|notifications/.test(path))).toEqual(
+    [],
+  );
 });
 
 test('an existing provider save error is translated when language changes, without resaving the draft', async ({

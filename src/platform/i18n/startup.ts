@@ -19,6 +19,11 @@ export function startupFailureText() {
   return startupMessages[resolveLocale(localePreference(stored), navigator.languages)].loadFailed;
 }
 
+export function showStartupFailure() {
+  const root = document.getElementById('root');
+  if (root) root.textContent = startupFailureText();
+}
+
 /** Build-time inline bootstrap: shared matching functions and messages, no network request. */
 export function startupLocaleScript() {
   const messages = Object.fromEntries(

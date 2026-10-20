@@ -16,6 +16,11 @@ export async function preparePwaBuilds() {
   if (existing) await rename(dist, saved);
   try {
     for (const version of ['a', 'b']) {
+      // Accept a preserved pre-change production bundle to exercise a real installed SW upgrade.
+      if (version === 'a' && process.env.EVERCHAT_PWA_LEGACY_BUILD) {
+        await cp(process.env.EVERCHAT_PWA_LEGACY_BUILD, join(root, version), { recursive: true });
+        continue;
+      }
       const { stdout, stderr } = await promisify(execFile)(
         process.execPath,
         [resolve('node_modules/vite/bin/vite.js'), 'build'],

@@ -10,7 +10,7 @@ import {
   precacheAndRoute,
 } from 'workbox-precaching';
 import { NavigationRoute, registerRoute } from 'workbox-routing';
-import { CacheFirst } from 'workbox-strategies';
+import { CacheFirst, NetworkFirst } from 'workbox-strategies';
 import { CacheExpiration, ExpirationPlugin } from 'workbox-expiration';
 import { isBundledAsset } from './platform/pwa/assets';
 import {
@@ -60,13 +60,36 @@ const modules = new CacheFirst({
 });
 registerRoute(({ url }) => isBundledAsset(url, self.location.origin), modules);
 const navigation = createHandlerBoundToURL('/index.html');
+// Cache only the shell visited under this build; shared conversation data stays network-only.
+const shareDocumentCache = `${cacheNames.runtime}-share-${encodeURIComponent(APP_VERSION)}`;
+const shareNavigation = new NetworkFirst({
+  cacheName: shareDocumentCache,
+  plugins: [
+    validateResource,
+    {
+      cacheWillUpdate: async ({ response }) =>
+        response.headers.get('Content-Type')?.includes('text/html') &&
+        (await response.clone().text()).includes(
+          `name="everchat-build" content="${encodeURIComponent(APP_VERSION)}"`,
+        )
+          ? response
+          : null,
+    },
+  ],
+});
 registerRoute(
   new NavigationRoute(
     async (options) => {
-      // Workbox replaces options.request with /index.html; retain the actual navigation path.
       const publicPage = isSharePage(new URL(options.request.url).pathname);
-      const response = await navigation(options);
-      if (!publicPage) return response;
+      if (!publicPage) return navigation(options);
+      const response = await shareNavigation.handle({
+        request: new Request(new URL('/share.html', self.location.origin), {
+          credentials: 'omit',
+          cache: 'no-store',
+          redirect: 'error',
+        }),
+        event: options.event,
+      });
       const headers = new Headers(response.headers);
       headers.set('Content-Security-Policy', SHARE_CSP);
       headers.set('Referrer-Policy', 'no-referrer');
@@ -84,7 +107,8 @@ self.addEventListener('activate', (event) => {
         if (
           name.startsWith(STATIC_CACHE_PREFIX) &&
           name !== cacheNames.precache &&
-          name !== moduleCache
+          name !== moduleCache &&
+          name !== shareDocumentCache
         ) {
           await caches.delete(name);
           if (name.endsWith('-modules'))
@@ -95,9 +119,10 @@ self.addEventListener('activate', (event) => {
 });
 
 const appClients = async () =>
-  (await self.clients.matchAll({ type: 'window', includeUncontrolled: true })).filter(
-    (client) => !/^\/(?:s|public|api|auth|cdn-cgi)(?:\/|$)/.test(new URL(client.url).pathname),
-  );
+  (await self.clients.matchAll({ type: 'window', includeUncontrolled: true })).filter((client) => {
+    const path = new URL(client.url).pathname;
+    return !isSharePage(path) && !/^\/(?:public|api|auth|cdn-cgi)(?:\/|$)/.test(path);
+  });
 const ask = (client: WindowClient, token: string) =>
   new Promise<Preparation>((resolve) => {
     const channel = new MessageChannel();

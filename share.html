@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en" class="public-share-document">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#ffffff" />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="robots" content="noindex, nofollow, noarchive" />
+    <meta name="everchat-build" content="__EVERCHAT_BUILD__" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <title>EverChat</title>
+    <style>
+      body {
+        margin: 0;
+      }
+      .startup {
+        display: grid;
+        min-height: 100dvh;
+        place-items: center;
+        background: #fff;
+        color: #61666b;
+        font:
+          0.875rem system-ui,
+          sans-serif;
+      }
+      @media (prefers-color-scheme: dark) {
+        .startup {
+          background: #151517;
+          color: #a3a7ae;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"><div class="startup" role="status" aria-label="EverChat">EverChat</div></div>
+    <script type="module" src="/src/share.tsx"></script>
+  </body>
+</html>

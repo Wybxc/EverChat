@@ -54,9 +54,23 @@ test('Cloudflare HTML canonicalization breaks precaching; the deployed routing s
         });
         expect(error).toBe('InvalidStateError');
       } else {
-        const publicDocument = await request.get(`${origin}/s/${'a'.repeat(22)}`);
-        expect(publicDocument.headers()['content-security-policy']).toContain("script-src 'self'");
-        expect(publicDocument.headers()['referrer-policy']).toBe('no-referrer');
+        const publicHtml = await request.get(`${origin}/share.html`, { maxRedirects: 0 });
+        expect(publicHtml.status()).toBe(200);
+        const html = await publicHtml.text();
+        expect(html).toContain('name="everchat-build"');
+        expect(html).not.toContain('startup-side');
+        for (const path of ['/share.html', '/s', `/s/${'a'.repeat(22)}?source=test`]) {
+          const document = await request.get(`${origin}${path}`, { maxRedirects: 0 });
+          expect(document.status(), path).toBe(200);
+          expect(await document.text(), path).toBe(html);
+          expect(document.headers()['location'], path).toBeUndefined();
+          expect(document.headers()['x-fixture-worker'], path).toBeUndefined();
+          expect(document.headers()['content-security-policy'], path).toContain(
+            "script-src 'self'",
+          );
+          expect(document.headers()['referrer-policy'], path).toBe('no-referrer');
+          expect(document.headers()['x-robots-tag'], path).toBe('noindex, nofollow, noarchive');
+        }
         await expect
           .poll(() => page.evaluate(() => navigator.serviceWorker.controller?.state))
           .toBe('activated');

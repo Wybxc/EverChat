@@ -9,7 +9,11 @@ export async function startCloudflareAssets(root: string, temporary: string) {
     main,
     `export default { fetch(request, env) {
     if (new URL(request.url).pathname.startsWith('/api/')) return Response.json({ authenticated: true, identity: { issuer: 'http://everchat.local.invalid', sub: 'local-developer', email: 'developer@everchat.local' }, providers: [], conversations: [], deletions: [], activity: {}, models: [] });
-    return env.ASSETS.fetch(request);
+    return env.ASSETS.fetch(request).then(response => {
+      const headers = new Headers(response.headers);
+      headers.set('X-Fixture-Worker', 'invoked');
+      return new Response(response.body, { status: response.status, headers });
+    });
   } };`,
   );
   const children: ChildProcess[] = [];

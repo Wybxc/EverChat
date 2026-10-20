@@ -42,4 +42,6 @@ API、模型、消息、工具和附件的故障恢复测试均保留。`support
 
 `unit/platform/access.test.ts` 验证签名、声明、固定信任源、错误身份、服务身份、依赖故障、重定向及订阅租期；`e2e/platform/access.spec.ts` 验证缓存不能恢复失效的联网认证、URL／草稿恢复和离线跨标签页退出。PWA 测试使用合成 Session DTO，不能替代真实 Access 边缘验证。
 
+验证入口／SW 结构升级时，可在修改前以 `EVERCHAT_BUILD_ID=pwa-test-a pnpm exec vite build` 构建并将 `dist/client` 复制到临时目录，再用 `EVERCHAT_PWA_LEGACY_BUILD=<临时目录> pnpm test:pwa tests/pwa/sharing.spec.ts tests/pwa/lifecycle.spec.ts` 验证该真实旧构建升级到当前版本。旧 HTML 的识别仅存在于测试服务器，不加入线上兼容逻辑；普通 PWA 回归仍构建当前源码的 A／B 两个版本。
+
 远端测量使用隔离 Access 应用的 Service Auth 凭据，详情见[迁移方案](../docs/plans/cloudflare-access-migration-plan.md)。不再配置应用密码。

@@ -84,6 +84,24 @@ test('controlled public shares stay network-only, skip private startup and do no
     }),
   ).toBe(false);
   await request.post('/__test/pwa/build', { headers, data: { version: 'b' } });
+  if (!process.env.EVERCHAT_PWA_LEGACY_BUILD) {
+    // A still-active SW must not save build B's HTML into its build A shell cache.
+    const newerDocument = await shared.reload();
+    expect(await newerDocument!.text()).toContain('name="everchat-build" content="pwa-test-b"');
+    const cachedShells = await shared.evaluate(async () =>
+      Promise.all(
+        (await caches.keys())
+          .filter((name) => name.endsWith('-share-pwa-test-a'))
+          .map(async (name) => (await (await caches.open(name)).match('/share.html'))!.text()),
+      ),
+    );
+    expect(cachedShells).toHaveLength(1);
+    expect(cachedShells[0]).toContain('name="everchat-build" content="pwa-test-a"');
+    // Direct HTML navigation is also public and must not wait for a private update handshake.
+    const direct = await context.newPage();
+    await direct.goto('/share.html');
+    await expect(direct.getByRole('alert')).toContainText('链接不可用');
+  }
   await page.getByRole('button', { name: '空间设置', exact: true }).click();
   await page.getByRole('button', { name: '检查更新', exact: true }).click();
   await expect(page.getByRole('button', { name: '更新应用', exact: true })).toBeVisible();
@@ -92,13 +110,20 @@ test('controlled public shares stay network-only, skip private startup and do no
   await page.getByRole('button', { name: '空间设置', exact: true }).click();
   await expect(page.getByTestId('app-version')).toHaveText('pwa-test-b');
   // Activation discards old hashed modules. Visit once online to cache the new public entry.
-  await shared.reload();
+  const updatedDocument = await shared.reload();
+  expect(await updatedDocument!.text()).toContain('name="everchat-build" content="pwa-test-b"');
   await expect(shared.getByText('公开正文', { exact: true })).toBeVisible();
   expect(privateCalls).toEqual([]);
+  expect(
+    await shared.evaluate(async () =>
+      (await caches.keys()).some((name) => name.endsWith('-share-pwa-test-a')),
+    ),
+  ).toBe(false);
   await context.setOffline(true);
   await shared.reload();
   await expect(shared.getByRole('alert')).toContainText('联网后重试');
   await expect(shared.getByText('公开正文', { exact: true })).not.toBeVisible();
+  expect(privateCalls).toEqual([]);
   await context.setOffline(false);
   await request.post('/__test/pwa/build', { headers, data: { version: 'a' } });
 });

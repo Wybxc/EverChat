@@ -1,22 +1,36 @@
 import { startupLocaleScript } from './src/platform/i18n/startup';
-import { defineConfig, type Plugin } from 'vite';
+import { isSharePage } from './shared/sharing/types';
+import { defineConfig, type Plugin, type ViteDevServer } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { cloudflare } from '@cloudflare/vite-plugin';
 import { VitePWA } from 'vite-plugin-pwa';
 import { fileURLToPath } from 'node:url';
+import { readFile } from 'node:fs/promises';
 import { localAccess } from './scripts/dev/access';
 
 export default defineConfig(async ({ command, mode }) => {
   const local = command === 'serve' && mode !== 'access' ? await localAccess() : null;
   const startup = startupCache();
+  const version =
+    command === 'build'
+      ? (process.env.EVERCHAT_BUILD_ID ?? new Date().toISOString())
+      : 'development';
   return {
     define: {
-      'import.meta.env.VITE_APP_VERSION': JSON.stringify(
-        command === 'build'
-          ? (process.env.EVERCHAT_BUILD_ID ?? new Date().toISOString())
-          : 'development',
-      ),
+      'import.meta.env.VITE_APP_VERSION': JSON.stringify(version),
+    },
+    environments: {
+      client: {
+        build: {
+          rolldownOptions: {
+            input: {
+              app: fileURLToPath(new URL('./index.html', import.meta.url)),
+              share: fileURLToPath(new URL('./share.html', import.meta.url)),
+            },
+          },
+        },
+      },
     },
     cacheDir: process.env.EVERCHAT_TEST_STATE
       ? `${process.env.EVERCHAT_TEST_STATE}/vite-cache`
@@ -29,9 +43,30 @@ export default defineConfig(async ({ command, mode }) => {
       tailwindcss(),
       startup.plugin,
       {
-        name: 'everchat-startup-locale',
+        name: 'everchat-html-entries',
+        configureServer(server: ViteDevServer) {
+          server.middlewares.use(async (request, response, next) => {
+            const url = new URL(request.url ?? '/', 'http://localhost');
+            if (!['GET', 'HEAD'].includes(request.method ?? '') || !isSharePage(url.pathname))
+              return next();
+            try {
+              const html = await server.transformIndexHtml(
+                '/share.html',
+                await readFile(new URL('./share.html', import.meta.url), 'utf8'),
+              );
+              response.setHeader('Content-Type', 'text/html');
+              response.setHeader('Referrer-Policy', 'no-referrer');
+              response.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
+              response.end(request.method === 'HEAD' ? undefined : html);
+            } catch (error) {
+              next(error);
+            }
+          });
+        },
         transformIndexHtml: (html: string) =>
-          html.replace('/*__EVERCHAT_LOCALE__*/', startupLocaleScript()),
+          html
+            .replace('/*__EVERCHAT_LOCALE__*/', startupLocaleScript())
+            .replace('__EVERCHAT_BUILD__', encodeURIComponent(version)),
       },
       VitePWA({
         injectRegister: false,
@@ -126,7 +161,8 @@ function startupCache() {
         for (const chunk of Object.values(bundle))
           if (
             chunk.type === 'chunk' &&
-            (chunk.isEntry || chunk.facadeModuleId?.endsWith('/src/private-bootstrap.tsx'))
+            chunk.isEntry &&
+            chunk.facadeModuleId === fileURLToPath(new URL('./index.html', import.meta.url))
           )
             visit(chunk.fileName);
         if (![...assets].some((name) => name.endsWith('.js')))

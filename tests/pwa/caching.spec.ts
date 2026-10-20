@@ -54,7 +54,9 @@ test('cold installation only requires the application shell and opens offline wh
   await controlled(page);
   const paths = await cachedPaths(page, 'precache');
   expect(paths).toContain('/index.html');
-  expect(paths.some((path) => /\/index-[\w-]+\.js$/.test(path))).toBe(true);
+  expect(paths.some((path) => /\/app-[\w-]+\.js$/.test(path))).toBe(true);
+  expect(paths).not.toContain('/share.html');
+  expect(paths.some((path) => /\/share-[\w-]+\.js$/.test(path))).toBe(false);
   expect(paths.some((path) => path.endsWith('.css'))).toBe(true);
   expect(paths.some((path) => /mermaid|pdf|KaTeX|highlighted-body|javascript-/.test(path))).toBe(
     false,

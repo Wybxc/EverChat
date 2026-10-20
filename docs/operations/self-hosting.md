@@ -40,6 +40,8 @@ Worker 会再次校验 JWT 的签名、issuer、audience、有效期和允许身
 
 保留 `workers_dev: false`、`preview_urls: false`，避免出现未纳入域名访问规则的备用入口。域名在控制台管理，仓库不声明 `routes`；普通部署不重新分配已绑定的自定义域名。静态资源保留 SPA 回退、`html_handling: none` 及 `/api`、`/auth`、`/public` 的 `run_worker_first` 配置。
 
+构建输出包含聊天用的 `index.html` 和分享用的 `share.html`。保留 `public/_redirects` 中将 `/s`、`/s/*` 以 200 代理到 `/share.html` 的规则，以及 `_headers` 对分享路径和直接 HTML 地址的安全头；它们随构建复制到静态目录。此分流不改变分享 URL，不需要将 `/s/*` 加入 `run_worker_first` 或 Access 保护。已安装 PWA 按正常检查更新流程获取新的 SW 后，分别处理聊天与分享导航。
+
 ### 可选：使用 GitHub 登录
 
 按照 [Cloudflare GitHub 集成文档](https://developers.cloudflare.com/cloudflare-one/integrations/identity-providers/github/)创建专用 GitHub OAuth 应用，回调地址使用 `https://<你的团队域名>/cdn-cgi/access/callback`。将客户端 ID 和密钥填入 Cloudflare 身份提供商，密钥不写入仓库或前端。

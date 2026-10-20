@@ -165,7 +165,6 @@ function PublicSharePage() {
   );
 }
 export function start() {
-  document.documentElement.classList.add('public-share-document');
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <I18nextProvider i18n={pageI18n}>

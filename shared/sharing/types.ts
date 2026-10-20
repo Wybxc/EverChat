@@ -1,7 +1,7 @@
 export const shareIdPattern = /^[A-Za-z0-9_-]{22}$/;
 export const shareSecretPattern = /^[A-Za-z0-9_-]{43}$/;
 export const sharePath = (id: string) => `/s/${id}`;
-export const isSharePage = (path: string) => /^\/s(?:\/|$)/.test(path);
+export const isSharePage = (path: string) => path === '/share.html' || /^\/s(?:\/|$)/.test(path);
 export interface ShareBlock {
   message: number;
   role: 'user' | 'assistant';
