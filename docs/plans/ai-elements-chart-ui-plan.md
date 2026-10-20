@@ -1,10 +1,10 @@
 # AI Elements 与 Chart 界面优化方案
 
-日期：2026-10-20。状态：设计完成，待实施。代码基线：`fc2a1b6`。
+日期：2026-10-20。状态：实施中。代码基线：`fc2a1b6`。进度与验证见 [实施记录](../measurements/ai-elements-chart-2026-10-20.md)。
 
 目标：采用 shadcn/ui 官方 AI Elements 组合模式和 Chart 组件，统一消息、思考／联网过程、输入区与用量图表的表现，减少自制展示结构与重复样式。延续 EverChat 的紧凑布局、初音未来主题色、必要文案和移动端交互。
 
-本轮交付为方案与实施顺序；没有安装组件、修改运行代码或完成新界面的验收。本方案是[原 shadcn/ui 迁移](shadcn-ui-migration-plan.md)的后续优化，现行[前端设计规范](../architecture/frontend-design-standard.md)继续有效。
+本方案是[原 shadcn/ui 迁移](shadcn-ui-migration-plan.md)的后续优化，现行[前端设计规范](../architecture/frontend-design-standard.md)继续有效。
 
 ## 1. 选型结论与调研边界
 

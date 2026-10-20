@@ -19,7 +19,7 @@ import { errorMessage, renderUiMessage } from '../../platform/i18n/messages';
 import { usageKindLabel, usageStatusLabel } from './labels';
 import './locales';
 import { ModelPriceButton } from './PriceEditor';
-import { UsageChart } from './UsageChart';
+import { UsageChart, UsageComparison } from './UsageChart';
 import { money, UsageRequests } from './UsageRequests';
 
 type Dimension = { providerId: string; providerName: string; model: string; modelName: string };
@@ -420,8 +420,18 @@ export default function UsageSettings({
             </p>
           </div>
         )}
-        {tab === 'providers' && <GroupTable rows={report.data?.providers ?? []} />}
-        {tab === 'models' && <GroupTable rows={report.data?.models ?? []} />}
+        {(tab === 'providers' || tab === 'models') && (
+          <div className="flex min-w-0 flex-col gap-4 pt-2">
+            <UsageComparison
+              key={tab}
+              rows={report.data?.[tab] ?? []}
+              title={
+                tab === 'providers' ? t(($) => $.providerComparison) : t(($) => $.modelComparison)
+              }
+            />
+            <GroupTable rows={report.data?.[tab] ?? []} />
+          </div>
+        )}
         {tab === 'requests' && <UsageRequests params={params} onLocate={onLocate} />}
         {tab === 'pricing' && <Pricing dimensions={dimensions.data ?? []} />}
       </div>

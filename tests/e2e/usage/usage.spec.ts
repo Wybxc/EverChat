@@ -145,6 +145,9 @@ test('line trend supports tooltips, keyboard inspection, metric switching and ra
   await expect(chart.locator('.recharts-tooltip-wrapper')).toBeVisible();
   await expect(chart.locator('.recharts-tooltip-wrapper')).toContainText('次请求');
   await chart.getByLabel('趋势指标').selectOption('tokens');
+  await expect(chart.locator('.recharts-line-curve')).toHaveCount(2);
+  await expect(chart.locator('.recharts-legend-wrapper')).toContainText('输入 Token');
+  await expect(chart.locator('.recharts-legend-wrapper')).toContainText('输出 Token');
   await plot.focus();
   await page.keyboard.press('ArrowRight');
   await expect(chart.locator('.recharts-tooltip-wrapper')).toContainText('Tokens');
@@ -191,6 +194,79 @@ test('line trend supports tooltips, keyboard inspection, metric switching and ra
     )
     .toBe(0);
   await page.screenshot({ path: '/tmp/everchat-usage-line-phone.png' });
+});
+test('comparison charts rank existing report data without extra requests and preserve exact currency tooltips', async ({
+  page,
+}) => {
+  await page.request.post('/__dev/access/login', { headers });
+  const providers = Array.from({ length: 10 }, (_, index) => ({
+    ...emptyTotals(),
+    key: `provider-${index}`,
+    label: `Provider ${index}`,
+    requests: index + 1,
+    inputTokens: (10 - index) * 100,
+    currencies:
+      index === 0
+        ? { CNY: '5000000000000' }
+        : index === 1
+          ? {}
+          : { USD: `${9007199254740993n + BigInt(index)}` },
+    unpriced: index === 1 ? 1 : 0,
+  }));
+  let reports = 0;
+  await page.route('**/api/usage/report?*', (route) => {
+    reports++;
+    return route.fulfill({
+      json: {
+        totals: emptyTotals(),
+        providers,
+        models: providers.map((p) => ({ ...p, label: `${p.label} · Model` })),
+        trend: [],
+        collectedSince: null,
+      },
+    });
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: '空间设置', exact: true }).click();
+  await page.getByRole('tab', { name: '用量统计', exact: true }).click();
+  await page
+    .getByRole('tablist', { name: '统计分类', exact: true })
+    .getByRole('tab', { name: '供应商', exact: true })
+    .click();
+  const chart = page.getByRole('figure', { name: '供应商比较' });
+  await expect(chart.locator('.recharts-bar-rectangle')).toHaveCount(9);
+  const before = reports;
+  await chart.getByLabel('比较指标').selectOption('USD');
+  await expect(chart.locator('.recharts-bar-rectangle')).toHaveCount(8);
+  const plot = chart.locator('.recharts-surface').first();
+  await plot.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(chart.locator('.recharts-tooltip-wrapper')).toContainText('USD 9007.199255');
+  await expect(chart.locator('.recharts-tooltip-wrapper')).toContainText('Provider ');
+  await chart.getByLabel('比较指标').selectOption('CNY');
+  await expect(chart.locator('.recharts-bar-rectangle')).toHaveCount(1);
+  await chart.getByLabel('比较指标').selectOption('tokens');
+  await expect(
+    chart
+      .locator('text')
+      .filter({ hasText: /^Provider/ })
+      .first(),
+  ).toContainText('Provider 0');
+  expect(reports).toBe(before);
+  await page.getByRole('tab', { name: '模型', exact: true }).click();
+  await expect(
+    page.getByRole('figure', { name: '模型比较' }).locator('.recharts-bar-rectangle'),
+  ).toHaveCount(9);
+  await page.getByRole('figure', { name: '模型比较' }).locator('.recharts-surface').first().focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(
+    page.getByRole('figure', { name: '模型比较' }).locator('.recharts-tooltip-wrapper'),
+  ).toContainText('Model');
+  await page.setViewportSize({ width: 390, height: 740 });
+  await expect.poll(() => chart.count()).toBe(0);
+  const modelChart = page.getByRole('figure', { name: '模型比较' });
+  await expect.poll(() => modelChart.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+  await page.screenshot({ path: '/tmp/everchat-ai-elements-comparison-phone.png' });
 });
 for (const mobile of [false, true])
   test(`usage filters, pricing, export and dismissal work on ${mobile ? 'phone' : 'desktop'}`, async ({

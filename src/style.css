@@ -35,6 +35,8 @@
   --input: #858b95;
   --ring: #16817a;
   --sidebar-ring: #16817a;
+  --chart-1: #16817a;
+  --chart-2: #7860a8;
   --destructive: #b42318;
   --destructive-foreground: #ffffff;
   --warning: #7a4a00;
@@ -72,6 +74,8 @@
   --input: #858b95;
   --ring: #39c5bb;
   --sidebar-ring: #39c5bb;
+  --chart-1: #39c5bb;
+  --chart-2: #bdabeb;
   --destructive: #ffb4ab;
   --destructive-foreground: #151517;
   --warning: #ffd78a;
@@ -106,6 +110,8 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
@@ -565,8 +571,6 @@ html.public-share-document,
   padding-bottom: 0.5rem;
 }
 .reasoning-content {
-  border-left: 2px solid var(--border);
-  padding: 0 0 0 1rem;
   color: var(--muted-foreground);
 }
 .reasoning-content .markdown {
