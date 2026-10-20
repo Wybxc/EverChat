@@ -1,42 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import * as v from 'valibot';
-import type { ProviderKind } from '../../../shared/providers/types';
 import { generationSchema } from '../../../shared/streaming/generation';
 import { ProviderStream } from '../../../shared/streaming/provider-stream';
-import { FirstTokenProbe, generationTiming } from '../../../worker/generation/timing';
-import { applicationStreams as providerStreams } from '../../support/providers/streams';
+import { generationTiming } from '../../../worker/generation/timing';
 
 const encoder = new TextEncoder();
 const frame = (event: unknown) => encoder.encode(JSON.stringify(event) + '\n');
-
-for (const [kind, fixture] of Object.entries(providerStreams)) {
-  test(`${kind} observes the first output once across fragmented UTF-8, then stops parsing`, () => {
-    const observed: number[] = [],
-      probe = new FirstTokenProbe(kind as ProviderKind, (at) => observed.push(at));
-    probe.feed(frame({ type: 'usage', usage: {} }), 0);
-    probe.feed(frame({ type: 'text', text: '' }), 10);
-    assert.deepEqual(observed, []);
-    const bytes = encoder.encode(fixture.partial);
-    for (let index = 0; index < bytes.length; index++)
-      probe.feed(bytes.subarray(index, index + 1), 20 + index);
-    assert.equal(observed.length, 1);
-    assert.ok(observed[0] > 20);
-    probe.feed(Uint8Array.of(0xff), 5000);
-    probe.feed(encoder.encode(fixture.finish), 6000);
-    probe.end(7000);
-    assert.equal(observed.length, 1);
-  });
-}
-
-test('first output includes thoughts and ignores empty events', () => {
-  const observed: number[] = [],
-    probe = new FirstTokenProbe('openai-chat', (at) => observed.push(at));
-  probe.feed(frame({ type: 'reasoning', text: '' }), 10);
-  probe.feed(frame({ type: 'reasoning', text: '思考' }), 200);
-  probe.end(210);
-  assert.deepEqual(observed, [200]);
-});
 
 test('cloud timing separates queueing, first output and supplier duration and leaves unobserved values absent', () => {
   assert.deepEqual(

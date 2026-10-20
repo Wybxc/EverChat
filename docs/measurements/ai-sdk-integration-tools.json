@@ -1,0 +1,2323 @@
+{
+  "version": 2,
+  "runtime": "local Cloudflare fixture",
+  "modelBytesSource": "normalized events-v1, not provider SSE",
+  "capturedAt": "2026-10-20T04:13:36.204Z",
+  "workload": {
+    "chunks": 120,
+    "intervalMs": 25,
+    "finalCharactersPerChunk": 200,
+    "toolResponseDelayMs": 1500,
+    "duplicateAcceptance": true,
+    "scenario": "all"
+  },
+  "scope": "Warm initialized objects: before acceptance/subscription to terminal Workflow, private cleanup, search outbox drain and no pending Conversation/Library alarms. Native SQL cursor counters include API, Alarm and indexing work; diagnostic reads and fixture SQL excluded. Read-only probes keep local counter windows observable, so natural hibernation is not measured. Workflow callback attempts and serialized reference sizes only. No CPU, billed requests, active GB-s, Workflow engine storage, account quotas or real upstream quality measured. No paid calls.",
+  "results": [
+    {
+      "scenario": "online-openai-chat",
+      "protocol": "openai-chat",
+      "status": "completed",
+      "conversation": {
+        "report": {
+          "windowId": "5b1284de-d190-41a4-93e7-c051bdbf9172",
+          "instanceId": "5aa2501c-045e-47c3-81df-d27db4348d9b",
+          "elapsedMs": 9081,
+          "sql": {
+            "privateStream": {
+              "statements": 0,
+              "rowsRead": 0,
+              "rowsWritten": 0
+            },
+            "publicStream": {
+              "statements": 84,
+              "rowsRead": 103,
+              "rowsWritten": 18
+            },
+            "events": {
+              "statements": 0,
+              "rowsRead": 0,
+              "rowsWritten": 0
+            },
+            "webService": {
+              "statements": 0,
+              "rowsRead": 0,
+              "rowsWritten": 0
+            },
+            "toolState": {
+              "statements": 352,
+              "rowsRead": 461,
+              "rowsWritten": 50
+            },
+            "search": {
+              "statements": 53,
+              "rowsRead": 57,
+              "rowsWritten": 6
+            },
+            "other": {
+              "statements": 395,
+              "rowsRead": 537,
+              "rowsWritten": 133
+            }
+          },
+          "streams": {
+            "public": {
+              "commits": 4,
+              "wireBytes": 27853,
+              "payloadBytes": 28733
+            },
+            "private": {
+              "commits": 0,
+              "wireBytes": 0,
+              "payloadBytes": 0
+            }
+          },
+          "eventPayloadBytes": 0,
+          "broadcasts": {
+            "frames": 51,
+            "bytes": 87647
+          },
+          "alarms": {
+            "set": 27,
+            "delete": 1
+          },
+          "upstream": {
+            "modelRequests": 2,
+            "modelBytes": 27853,
+            "toolRequests": 2,
+            "toolResponseBytes": 273
+          }
+        },
+        "databaseBytes": 327680,
+        "alarmAt": null,
+        "pendingSearch": 0,
+        "pendingNotifications": 0,
+        "privateStreams": 0,
+        "privatePayloads": 0,
+        "retainedContexts": 0,
+        "task": {
+          "status": "completed",
+          "round": 1,
+          "modelRequests": 2,
+          "toolRequests": 2
+        },
+        "workflow": {
+          "status": "complete",
+          "__LOCAL_DEV_STEP_OUTPUTS": [
+            {
+              "status": "active",
+              "phase": "queued",
+              "round": 0,
+              "calls": []
+            },
+            {
+              "taskId": "38a4c7a9-1897-4e4c-b8e1-7d586dfb277e",
+              "round": 0
+            },
+            {
+              "status": "active",
+              "phase": "tools",
+              "round": 0,
+              "calls": [
+                "call_0_0",
+                "call_0_1"
+              ]
+            },
+            {
+              "status": "active",
+              "phase": "tools",
+              "round": 0,
+              "calls": [
+                "call_0_0",
+                "call_0_1"
+              ]
+            },
+            {
+              "status": "active",
+              "phase": "tools",
+              "round": 0,
+              "calls": [
+                "call_0_0",
+                "call_0_1"
+              ]
+            },
+            {
+              "status": "active",
+              "phase": "queued",
+              "round": 1,
+              "calls": []
+            },
+            {
+              "taskId": "38a4c7a9-1897-4e4c-b8e1-7d586dfb277e",
+              "round": 1
+            },
+            {
+              "status": "completed",
+              "phase": "completed",
+              "round": 1,
+              "calls": []
+            }
+          ],
+          "output": {
+            "status": "completed",
+            "localMeasurement": {
+              "steps": [
+                {
+                  "name": "schedule-model-0",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 57
+                },
+                {
+                  "name": "read-model-0",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 77
+                },
+                {
+                  "name": "tool-0-0",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 77
+                },
+                {
+                  "name": "tool-0-1",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 77
+                },
+                {
+                  "name": "schedule-model-1",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 57
+                },
+                {
+                  "name": "read-model-1",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 63
+                }
+              ],
+              "waits": [
+                {
+                  "name": "model-finished-0",
+                  "resultBytes": 127
+                },
+                {
+                  "name": "model-finished-1",
+                  "resultBytes": 127
+                }
+              ]
+            }
+          }
+        }
+      },
+      "storage": {
+        "databaseBytes": 327680,
+        "allocatedBytes": 327680,
+        "usedBytes": 327680,
+        "reusableBytes": null,
+        "limits": {
+          "admissionBytes": 29360128,
+          "writeBytes": 31457280,
+          "maximumBytes": 33554432
+        },
+        "messages": 2,
+        "canonicalBytes": 24329,
+        "checkpointBytes": 0,
+        "privateStreamBytes": 0,
+        "activeTaskBytes": 4,
+        "idempotencyBytes": 380
+      },
+      "library": {
+        "report": {
+          "windowId": "5b1284de-d190-41a4-93e7-c051bdbf9172",
+          "instanceId": "ce038374-aaa7-4c93-9f0f-6d4d724db4cc",
+          "elapsedMs": 9097,
+          "sql": {
+            "privateStream": {
+              "statements": 0,
+              "rowsRead": 0,
+              "rowsWritten": 0
+            },
+            "publicStream": {
+              "statements": 0,
+              "rowsRead": 0,
+              "rowsWritten": 0
+            },
+            "events": {
+              "statements": 0,
+              "rowsRead": 0,
+              "rowsWritten": 0
+            },
+            "webService": {
+              "statements": 16,
+              "rowsRead": 10,
+              "rowsWritten": 6
+            },
+            "toolState": {
+              "statements": 7,
+              "rowsRead": 7,
+              "rowsWritten": 0
+            },
+            "search": {
+              "statements": 19,
+              "rowsRead": 9,
+              "rowsWritten": 18
+            },
+            "other": {
+              "statements": 38,
+              "rowsRead": 50,
+              "rowsWritten": 8
+            }
+          },
+          "streams": {
+            "public": {
+              "commits": 0,
+              "wireBytes": 0,
+              "payloadBytes": 0
+            },
+            "private": {
+              "commits": 0,
+              "wireBytes": 0,
+              "payloadBytes": 0
+            }
+          },
+          "eventPayloadBytes": 0,
+          "broadcasts": {
+            "frames": 0,
+            "bytes": 0
+          },
+          "alarms": {
+            "set": 0,
+            "delete": 0
+          },
+          "upstream": {
+            "modelRequests": 0,
+            "modelBytes": 0,
+            "toolRequests": 0,
+            "toolResponseBytes": 0
+          }
+        },
+        "databaseBytes": 352256,
+        "alarmAt": null,
+        "pendingBackfills": 0,
+        "usedToday": 2,
+        "workflow": null,
+        "usedInWindow": 2
+      },
+      "client": {
+        "frames": 52,
+        "bytes": 87671,
+        "disconnected": false
+      }
+    },
+    {
+      "scenario": "online-openai-responses",
+      "protocol": "openai-responses",
+      "status": "completed",
+      "conversation": {
+        "report": {
+          "windowId": "7d714b2d-0841-43c9-802a-f3be8ca0e0df",
+          "instanceId": "e1a09276-ae47-486d-a229-058d58f9bca5",
+          "elapsedMs": 9325,
+          "sql": {
+            "privateStream": {
+              "statements": 0,
+              "rowsRead": 0,
+              "rowsWritten": 0
+            },
+            "publicStream": {
+              "statements": 83,
+              "rowsRead": 80,
+              "rowsWritten": 17
+            },
+            "events": {
+              "statements": 0,
+              "rowsRead": 0,
+              "rowsWritten": 0
+            },
+            "webService": {
+              "statements": 0,
+              "rowsRead": 0,
+              "rowsWritten": 0
+            },
+            "toolState": {
+              "statements": 352,
+              "rowsRead": 461,
+              "rowsWritten": 50
+            },
+            "search": {
+              "statements": 53,
+              "rowsRead": 57,
+              "rowsWritten": 6
+            },
+            "other": {
+              "statements": 395,
+              "rowsRead": 537,
+              "rowsWritten": 133
+            }
+          },
+          "streams": {
+            "public": {
+              "commits": 4,
+              "wireBytes": 27763,
+              "payloadBytes": 27409
+            },
+            "private": {
+              "commits": 0,
+              "wireBytes": 0,
+              "payloadBytes": 0
+            }
+          },
+          "eventPayloadBytes": 0,
+          "broadcasts": {
+            "frames": 50,
+            "bytes": 86852
+          },
+          "alarms": {
+            "set": 27,
+            "delete": 1
+          },
+          "upstream": {
+            "modelRequests": 2,
+            "modelBytes": 27763,
+            "toolRequests": 2,
+            "toolResponseBytes": 273
+          }
+        },
+        "databaseBytes": 327680,
+        "alarmAt": null,
+        "pendingSearch": 0,
+        "pendingNotifications": 0,
+        "privateStreams": 0,
+        "privatePayloads": 0,
+        "retainedContexts": 0,
+        "task": {
+          "status": "completed",
+          "round": 1,
+          "modelRequests": 2,
+          "toolRequests": 2
+        },
+        "workflow": {
+          "status": "complete",
+          "__LOCAL_DEV_STEP_OUTPUTS": [
+            {
+              "status": "active",
+              "phase": "queued",
+              "round": 0,
+              "calls": []
+            },
+            {
+              "taskId": "15726fd2-adad-4f36-bec1-1f4d4987a258",
+              "round": 0
+            },
+            {
+              "status": "active",
+              "phase": "tools",
+              "round": 0,
+              "calls": [
+                "call_0_0",
+                "call_0_1"
+              ]
+            },
+            {
+              "status": "active",
+              "phase": "tools",
+              "round": 0,
+              "calls": [
+                "call_0_0",
+                "call_0_1"
+              ]
+            },
+            {
+              "status": "active",
+              "phase": "tools",
+              "round": 0,
+              "calls": [
+                "call_0_0",
+                "call_0_1"
+              ]
+            },
+            {
+              "status": "active",
+              "phase": "queued",
+              "round": 1,
+              "calls": []
+            },
+            {
+              "taskId": "15726fd2-adad-4f36-bec1-1f4d4987a258",
+              "round": 1
+            },
+            {
+              "status": "completed",
+              "phase": "completed",
+              "round": 1,
+              "calls": []
+            }
+          ],
+          "output": {
+            "status": "completed",
+            "localMeasurement": {
+              "steps": [
+                {
+                  "name": "schedule-model-0",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 57
+                },
+                {
+                  "name": "read-model-0",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 77
+                },
+                {
+                  "name": "tool-0-0",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 77
+                },
+                {
+                  "name": "tool-0-1",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 77
+                },
+                {
+                  "name": "schedule-model-1",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 57
+                },
+                {
+                  "name": "read-model-1",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 63
+                }
+              ],
+              "waits": [
+                {
+                  "name": "model-finished-0",
+                  "resultBytes": 127
+                },
+                {
+                  "name": "model-finished-1",
+                  "resultBytes": 127
+                }
+              ]
+            }
+          }
+        }
+      },
+      "storage": {
+        "databaseBytes": 327680,
+        "allocatedBytes": 327680,
+        "usedBytes": 327680,
+        "reusableBytes": null,
+        "limits": {
+          "admissionBytes": 29360128,
+          "writeBytes": 31457280,
+          "maximumBytes": 33554432
+        },
+        "messages": 2,
+        "canonicalBytes": 24309,
+        "checkpointBytes": 0,
+        "privateStreamBytes": 0,
+        "activeTaskBytes": 4,
+        "idempotencyBytes": 380
+      },
+      "library": {
+        "report": {
+          "windowId": "7d714b2d-0841-43c9-802a-f3be8ca0e0df",
+          "instanceId": "ce038374-aaa7-4c93-9f0f-6d4d724db4cc",
+          "elapsedMs": 9339,
+          "sql": {
+            "privateStream": {
+              "statements": 0,
+              "rowsRead": 0,
+              "rowsWritten": 0
+            },
+            "publicStream": {
+              "statements": 0,
+              "rowsRead": 0,
+              "rowsWritten": 0
+            },
+            "events": {
+              "statements": 0,
+              "rowsRead": 0,
+              "rowsWritten": 0
+            },
+            "webService": {
+              "statements": 16,
+              "rowsRead": 16,
+              "rowsWritten": 6
+            },
+            "toolState": {
+              "statements": 7,
+              "rowsRead": 7,
+              "rowsWritten": 0
+            },
+            "search": {
+              "statements": 19,
+              "rowsRead": 9,
+              "rowsWritten": 18
+            },
+            "other": {
+              "statements": 38,
+              "rowsRead": 50,
+              "rowsWritten": 8
+            }
+          },
+          "streams": {
+            "public": {
+              "commits": 0,
+              "wireBytes": 0,
+              "payloadBytes": 0
+            },
+            "private": {
+              "commits": 0,
+              "wireBytes": 0,
+              "payloadBytes": 0
+            }
+          },
+          "eventPayloadBytes": 0,
+          "broadcasts": {
+            "frames": 0,
+            "bytes": 0
+          },
+          "alarms": {
+            "set": 0,
+            "delete": 0
+          },
+          "upstream": {
+            "modelRequests": 0,
+            "modelBytes": 0,
+            "toolRequests": 0,
+            "toolResponseBytes": 0
+          }
+        },
+        "databaseBytes": 405504,
+        "alarmAt": null,
+        "pendingBackfills": 0,
+        "usedToday": 4,
+        "workflow": null,
+        "usedInWindow": 2
+      },
+      "client": {
+        "frames": 51,
+        "bytes": 86876,
+        "disconnected": false
+      }
+    },
+    {
+      "scenario": "online-anthropic",
+      "protocol": "anthropic",
+      "status": "completed",
+      "conversation": {
+        "report": {
+          "windowId": "c45a8562-95a6-4b42-b99c-c803c009483c",
+          "instanceId": "4a73c8e1-4e17-4250-a39b-d978af942d9c",
+          "elapsedMs": 9328,
+          "sql": {
+            "privateStream": {
+              "statements": 0,
+              "rowsRead": 0,
+              "rowsWritten": 0
+            },
+            "publicStream": {
+              "statements": 83,
+              "rowsRead": 80,
+              "rowsWritten": 17
+            },
+            "events": {
+              "statements": 0,
+              "rowsRead": 0,
+              "rowsWritten": 0
+            },
+            "webService": {
+              "statements": 0,
+              "rowsRead": 0,
+              "rowsWritten": 0
+            },
+            "toolState": {
+              "statements": 352,
+              "rowsRead": 461,
+              "rowsWritten": 50
+            },
+            "search": {
+              "statements": 53,
+              "rowsRead": 57,
+              "rowsWritten": 6
+            },
+            "other": {
+              "statements": 395,
+              "rowsRead": 537,
+              "rowsWritten": 133
+            }
+          },
+          "streams": {
+            "public": {
+              "commits": 4,
+              "wireBytes": 29411,
+              "payloadBytes": 30285
+            },
+            "private": {
+              "commits": 0,
+              "wireBytes": 0,
+              "payloadBytes": 0
+            }
+          },
+          "eventPayloadBytes": 0,
+          "broadcasts": {
+            "frames": 52,
+            "bytes": 94267
+          },
+          "alarms": {
+            "set": 27,
+            "delete": 1
+          },
+          "upstream": {
+            "modelRequests": 2,
+            "modelBytes": 29411,
+            "toolRequests": 2,
+            "toolResponseBytes": 273
+          }
+        },
+        "databaseBytes": 327680,
+        "alarmAt": null,
+        "pendingSearch": 0,
+        "pendingNotifications": 0,
+        "privateStreams": 0,
+        "privatePayloads": 0,
+        "retainedContexts": 0,
+        "task": {
+          "status": "completed",
+          "round": 1,
+          "modelRequests": 2,
+          "toolRequests": 2
+        },
+        "workflow": {
+          "status": "complete",
+          "__LOCAL_DEV_STEP_OUTPUTS": [
+            {
+              "status": "active",
+              "phase": "queued",
+              "round": 0,
+              "calls": []
+            },
+            {
+              "taskId": "36db5c93-27ac-46ed-a49e-508398412ec3",
+              "round": 0
+            },
+            {
+              "status": "active",
+              "phase": "tools",
+              "round": 0,
+              "calls": [
+                "call_0_0",
+                "call_0_1"
+              ]
+            },
+            {
+              "status": "active",
+              "phase": "tools",
+              "round": 0,
+              "calls": [
+                "call_0_0",
+                "call_0_1"
+              ]
+            },
+            {
+              "status": "active",
+              "phase": "tools",
+              "round": 0,
+              "calls": [
+                "call_0_0",
+                "call_0_1"
+              ]
+            },
+            {
+              "status": "active",
+              "phase": "queued",
+              "round": 1,
+              "calls": []
+            },
+            {
+              "taskId": "36db5c93-27ac-46ed-a49e-508398412ec3",
+              "round": 1
+            },
+            {
+              "status": "completed",
+              "phase": "completed",
+              "round": 1,
+              "calls": []
+            }
+          ],
+          "output": {
+            "status": "completed",
+            "localMeasurement": {
+              "steps": [
+                {
+                  "name": "schedule-model-0",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 57
+                },
+                {
+                  "name": "read-model-0",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 77
+                },
+                {
+                  "name": "tool-0-0",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 77
+                },
+                {
+                  "name": "tool-0-1",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 77
+                },
+                {
+                  "name": "schedule-model-1",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 57
+                },
+                {
+                  "name": "read-model-1",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 63
+                }
+              ],
+              "waits": [
+                {
+                  "name": "model-finished-0",
+                  "resultBytes": 127
+                },
+                {
+                  "name": "model-finished-1",
+                  "resultBytes": 127
+                }
+              ]
+            }
+          }
+        }
+      },
+      "storage": {
+        "databaseBytes": 327680,
+        "allocatedBytes": 327680,
+        "usedBytes": 327680,
+        "reusableBytes": null,
+        "limits": {
+          "admissionBytes": 29360128,
+          "writeBytes": 31457280,
+          "maximumBytes": 33554432
+        },
+        "messages": 2,
+        "canonicalBytes": 24309,
+        "checkpointBytes": 0,
+        "privateStreamBytes": 0,
+        "activeTaskBytes": 4,
+        "idempotencyBytes": 380
+      },
+      "library": {
+        "report": {
+          "windowId": "c45a8562-95a6-4b42-b99c-c803c009483c",
+          "instanceId": "ce038374-aaa7-4c93-9f0f-6d4d724db4cc",
+          "elapsedMs": 9344,
+          "sql": {
+            "privateStream": {
+              "statements": 0,
+              "rowsRead": 0,
+              "rowsWritten": 0
+            },
+            "publicStream": {
+              "statements": 0,
+              "rowsRead": 0,
+              "rowsWritten": 0
+            },
+            "events": {
+              "statements": 0,
+              "rowsRead": 0,
+              "rowsWritten": 0
+            },
+            "webService": {
+              "statements": 16,
+              "rowsRead": 22,
+              "rowsWritten": 6
+            },
+            "toolState": {
+              "statements": 7,
+              "rowsRead": 7,
+              "rowsWritten": 0
+            },
+            "search": {
+              "statements": 19,
+              "rowsRead": 9,
+              "rowsWritten": 18
+            },
+            "other": {
+              "statements": 38,
+              "rowsRead": 50,
+              "rowsWritten": 8
+            }
+          },
+          "streams": {
+            "public": {
+              "commits": 0,
+              "wireBytes": 0,
+              "payloadBytes": 0
+            },
+            "private": {
+              "commits": 0,
+              "wireBytes": 0,
+              "payloadBytes": 0
+            }
+          },
+          "eventPayloadBytes": 0,
+          "broadcasts": {
+            "frames": 0,
+            "bytes": 0
+          },
+          "alarms": {
+            "set": 0,
+            "delete": 0
+          },
+          "upstream": {
+            "modelRequests": 0,
+            "modelBytes": 0,
+            "toolRequests": 0,
+            "toolResponseBytes": 0
+          }
+        },
+        "databaseBytes": 454656,
+        "alarmAt": null,
+        "pendingBackfills": 0,
+        "usedToday": 6,
+        "workflow": null,
+        "usedInWindow": 2
+      },
+      "client": {
+        "frames": 53,
+        "bytes": 94291,
+        "disconnected": false
+      }
+    },
+    {
+      "scenario": "online-gemini",
+      "protocol": "gemini",
+      "status": "completed",
+      "conversation": {
+        "report": {
+          "windowId": "8f5c72a1-297a-45fc-9439-67276f1f05b3",
+          "instanceId": "2f9ddf89-4946-49de-85d3-8fe8cfb3d285",
+          "elapsedMs": 8926,
+          "sql": {
+            "privateStream": {
+              "statements": 0,
+              "rowsRead": 0,
+              "rowsWritten": 0
+            },
+            "publicStream": {
+              "statements": 82,
+              "rowsRead": 49,
+              "rowsWritten": 16
+            },
+            "events": {
+              "statements": 0,
+              "rowsRead": 0,
+              "rowsWritten": 0
+            },
+            "webService": {
+              "statements": 0,
+              "rowsRead": 0,
+              "rowsWritten": 0
+            },
+            "toolState": {
+              "statements": 352,
+              "rowsRead": 461,
+              "rowsWritten": 50
+            },
+            "search": {
+              "statements": 53,
+              "rowsRead": 57,
+              "rowsWritten": 6
+            },
+            "other": {
+              "statements": 394,
+              "rowsRead": 536,
+              "rowsWritten": 132
+            }
+          },
+          "streams": {
+            "public": {
+              "commits": 4,
+              "wireBytes": 27870,
+              "payloadBytes": 28711
+            },
+            "private": {
+              "commits": 0,
+              "wireBytes": 0,
+              "payloadBytes": 0
+            }
+          },
+          "eventPayloadBytes": 0,
+          "broadcasts": {
+            "frames": 48,
+            "bytes": 86338
+          },
+          "alarms": {
+            "set": 27,
+            "delete": 1
+          },
+          "upstream": {
+            "modelRequests": 2,
+            "modelBytes": 27870,
+            "toolRequests": 2,
+            "toolResponseBytes": 273
+          }
+        },
+        "databaseBytes": 327680,
+        "alarmAt": null,
+        "pendingSearch": 0,
+        "pendingNotifications": 0,
+        "privateStreams": 0,
+        "privatePayloads": 0,
+        "retainedContexts": 0,
+        "task": {
+          "status": "completed",
+          "round": 1,
+          "modelRequests": 2,
+          "toolRequests": 2
+        },
+        "workflow": {
+          "status": "complete",
+          "__LOCAL_DEV_STEP_OUTPUTS": [
+            {
+              "status": "active",
+              "phase": "queued",
+              "round": 0,
+              "calls": []
+            },
+            {
+              "taskId": "5fda97ef-4ac5-48d8-9938-0cbf40430db9",
+              "round": 0
+            },
+            {
+              "status": "active",
+              "phase": "tools",
+              "round": 0,
+              "calls": [
+                "call_0_0",
+                "call_0_1"
+              ]
+            },
+            {
+              "status": "active",
+              "phase": "tools",
+              "round": 0,
+              "calls": [
+                "call_0_0",
+                "call_0_1"
+              ]
+            },
+            {
+              "status": "active",
+              "phase": "tools",
+              "round": 0,
+              "calls": [
+                "call_0_0",
+                "call_0_1"
+              ]
+            },
+            {
+              "status": "active",
+              "phase": "queued",
+              "round": 1,
+              "calls": []
+            },
+            {
+              "taskId": "5fda97ef-4ac5-48d8-9938-0cbf40430db9",
+              "round": 1
+            },
+            {
+              "status": "completed",
+              "phase": "completed",
+              "round": 1,
+              "calls": []
+            }
+          ],
+          "output": {
+            "status": "completed",
+            "localMeasurement": {
+              "steps": [
+                {
+                  "name": "schedule-model-0",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 57
+                },
+                {
+                  "name": "read-model-0",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 77
+                },
+                {
+                  "name": "tool-0-0",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 77
+                },
+                {
+                  "name": "tool-0-1",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 77
+                },
+                {
+                  "name": "schedule-model-1",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 57
+                },
+                {
+                  "name": "read-model-1",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 63
+                }
+              ],
+              "waits": [
+                {
+                  "name": "model-finished-0",
+                  "resultBytes": 127
+                },
+                {
+                  "name": "model-finished-1",
+                  "resultBytes": 127
+                }
+              ]
+            }
+          }
+        }
+      },
+      "storage": {
+        "databaseBytes": 327680,
+        "allocatedBytes": 327680,
+        "usedBytes": 327680,
+        "reusableBytes": null,
+        "limits": {
+          "admissionBytes": 29360128,
+          "writeBytes": 31457280,
+          "maximumBytes": 33554432
+        },
+        "messages": 2,
+        "canonicalBytes": 24291,
+        "checkpointBytes": 0,
+        "privateStreamBytes": 0,
+        "activeTaskBytes": 4,
+        "idempotencyBytes": 380
+      },
+      "library": {
+        "report": {
+          "windowId": "8f5c72a1-297a-45fc-9439-67276f1f05b3",
+          "instanceId": "ce038374-aaa7-4c93-9f0f-6d4d724db4cc",
+          "elapsedMs": 8943,
+          "sql": {
+            "privateStream": {
+              "statements": 0,
+              "rowsRead": 0,
+              "rowsWritten": 0
+            },
+            "publicStream": {
+              "statements": 0,
+              "rowsRead": 0,
+              "rowsWritten": 0
+            },
+            "events": {
+              "statements": 0,
+              "rowsRead": 0,
+              "rowsWritten": 0
+            },
+            "webService": {
+              "statements": 16,
+              "rowsRead": 28,
+              "rowsWritten": 6
+            },
+            "toolState": {
+              "statements": 7,
+              "rowsRead": 7,
+              "rowsWritten": 0
+            },
+            "search": {
+              "statements": 17,
+              "rowsRead": 7,
+              "rowsWritten": 14
+            },
+            "other": {
+              "statements": 38,
+              "rowsRead": 50,
+              "rowsWritten": 8
+            }
+          },
+          "streams": {
+            "public": {
+              "commits": 0,
+              "wireBytes": 0,
+              "payloadBytes": 0
+            },
+            "private": {
+              "commits": 0,
+              "wireBytes": 0,
+              "payloadBytes": 0
+            }
+          },
+          "eventPayloadBytes": 0,
+          "broadcasts": {
+            "frames": 0,
+            "bytes": 0
+          },
+          "alarms": {
+            "set": 0,
+            "delete": 0
+          },
+          "upstream": {
+            "modelRequests": 0,
+            "modelBytes": 0,
+            "toolRequests": 0,
+            "toolResponseBytes": 0
+          }
+        },
+        "databaseBytes": 503808,
+        "alarmAt": null,
+        "pendingBackfills": 0,
+        "usedToday": 8,
+        "workflow": null,
+        "usedInWindow": 2
+      },
+      "client": {
+        "frames": 49,
+        "bytes": 86362,
+        "disconnected": false
+      }
+    },
+    {
+      "scenario": "disconnected-openai-chat",
+      "protocol": "openai-chat",
+      "status": "completed",
+      "conversation": {
+        "report": {
+          "windowId": "5b90e22e-17d0-4d21-9693-3e76354152b0",
+          "instanceId": "ba2a526e-9a59-4685-b637-b88ac89477ea",
+          "elapsedMs": 9017,
+          "sql": {
+            "privateStream": {
+              "statements": 0,
+              "rowsRead": 0,
+              "rowsWritten": 0
+            },
+            "publicStream": {
+              "statements": 84,
+              "rowsRead": 103,
+              "rowsWritten": 18
+            },
+            "events": {
+              "statements": 0,
+              "rowsRead": 0,
+              "rowsWritten": 0
+            },
+            "webService": {
+              "statements": 0,
+              "rowsRead": 0,
+              "rowsWritten": 0
+            },
+            "toolState": {
+              "statements": 352,
+              "rowsRead": 461,
+              "rowsWritten": 50
+            },
+            "search": {
+              "statements": 53,
+              "rowsRead": 57,
+              "rowsWritten": 6
+            },
+            "other": {
+              "statements": 395,
+              "rowsRead": 537,
+              "rowsWritten": 133
+            }
+          },
+          "streams": {
+            "public": {
+              "commits": 4,
+              "wireBytes": 27853,
+              "payloadBytes": 29137
+            },
+            "private": {
+              "commits": 0,
+              "wireBytes": 0,
+              "payloadBytes": 0
+            }
+          },
+          "eventPayloadBytes": 0,
+          "broadcasts": {
+            "frames": 4,
+            "bytes": 4275
+          },
+          "alarms": {
+            "set": 27,
+            "delete": 1
+          },
+          "upstream": {
+            "modelRequests": 2,
+            "modelBytes": 27853,
+            "toolRequests": 2,
+            "toolResponseBytes": 273
+          }
+        },
+        "databaseBytes": 327680,
+        "alarmAt": null,
+        "pendingSearch": 0,
+        "pendingNotifications": 0,
+        "privateStreams": 0,
+        "privatePayloads": 0,
+        "retainedContexts": 0,
+        "task": {
+          "status": "completed",
+          "round": 1,
+          "modelRequests": 2,
+          "toolRequests": 2
+        },
+        "workflow": {
+          "status": "complete",
+          "__LOCAL_DEV_STEP_OUTPUTS": [
+            {
+              "status": "active",
+              "phase": "queued",
+              "round": 0,
+              "calls": []
+            },
+            {
+              "taskId": "4124532d-d2f9-4444-9c5c-84532ef79b6d",
+              "round": 0
+            },
+            {
+              "status": "active",
+              "phase": "tools",
+              "round": 0,
+              "calls": [
+                "call_0_0",
+                "call_0_1"
+              ]
+            },
+            {
+              "status": "active",
+              "phase": "tools",
+              "round": 0,
+              "calls": [
+                "call_0_0",
+                "call_0_1"
+              ]
+            },
+            {
+              "status": "active",
+              "phase": "tools",
+              "round": 0,
+              "calls": [
+                "call_0_0",
+                "call_0_1"
+              ]
+            },
+            {
+              "status": "active",
+              "phase": "queued",
+              "round": 1,
+              "calls": []
+            },
+            {
+              "taskId": "4124532d-d2f9-4444-9c5c-84532ef79b6d",
+              "round": 1
+            },
+            {
+              "status": "completed",
+              "phase": "completed",
+              "round": 1,
+              "calls": []
+            }
+          ],
+          "output": {
+            "status": "completed",
+            "localMeasurement": {
+              "steps": [
+                {
+                  "name": "schedule-model-0",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 57
+                },
+                {
+                  "name": "read-model-0",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 77
+                },
+                {
+                  "name": "tool-0-0",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 77
+                },
+                {
+                  "name": "tool-0-1",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 77
+                },
+                {
+                  "name": "schedule-model-1",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 57
+                },
+                {
+                  "name": "read-model-1",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 63
+                }
+              ],
+              "waits": [
+                {
+                  "name": "model-finished-0",
+                  "resultBytes": 127
+                },
+                {
+                  "name": "model-finished-1",
+                  "resultBytes": 127
+                }
+              ]
+            }
+          }
+        }
+      },
+      "storage": {
+        "databaseBytes": 327680,
+        "allocatedBytes": 327680,
+        "usedBytes": 327680,
+        "reusableBytes": null,
+        "limits": {
+          "admissionBytes": 29360128,
+          "writeBytes": 31457280,
+          "maximumBytes": 33554432
+        },
+        "messages": 2,
+        "canonicalBytes": 24329,
+        "checkpointBytes": 0,
+        "privateStreamBytes": 0,
+        "activeTaskBytes": 4,
+        "idempotencyBytes": 380
+      },
+      "library": {
+        "report": {
+          "windowId": "5b90e22e-17d0-4d21-9693-3e76354152b0",
+          "instanceId": "ce038374-aaa7-4c93-9f0f-6d4d724db4cc",
+          "elapsedMs": 9038,
+          "sql": {
+            "privateStream": {
+              "statements": 0,
+              "rowsRead": 0,
+              "rowsWritten": 0
+            },
+            "publicStream": {
+              "statements": 0,
+              "rowsRead": 0,
+              "rowsWritten": 0
+            },
+            "events": {
+              "statements": 0,
+              "rowsRead": 0,
+              "rowsWritten": 0
+            },
+            "webService": {
+              "statements": 16,
+              "rowsRead": 34,
+              "rowsWritten": 6
+            },
+            "toolState": {
+              "statements": 7,
+              "rowsRead": 7,
+              "rowsWritten": 0
+            },
+            "search": {
+              "statements": 19,
+              "rowsRead": 9,
+              "rowsWritten": 18
+            },
+            "other": {
+              "statements": 38,
+              "rowsRead": 50,
+              "rowsWritten": 8
+            }
+          },
+          "streams": {
+            "public": {
+              "commits": 0,
+              "wireBytes": 0,
+              "payloadBytes": 0
+            },
+            "private": {
+              "commits": 0,
+              "wireBytes": 0,
+              "payloadBytes": 0
+            }
+          },
+          "eventPayloadBytes": 0,
+          "broadcasts": {
+            "frames": 0,
+            "bytes": 0
+          },
+          "alarms": {
+            "set": 0,
+            "delete": 0
+          },
+          "upstream": {
+            "modelRequests": 0,
+            "modelBytes": 0,
+            "toolRequests": 0,
+            "toolResponseBytes": 0
+          }
+        },
+        "databaseBytes": 552960,
+        "alarmAt": null,
+        "pendingBackfills": 0,
+        "usedToday": 10,
+        "workflow": null,
+        "usedInWindow": 2
+      },
+      "client": {
+        "frames": 5,
+        "bytes": 4299,
+        "disconnected": true
+      }
+    },
+    {
+      "scenario": "service-rejected",
+      "protocol": "openai-chat",
+      "status": "failed",
+      "conversation": {
+        "report": {
+          "windowId": "4411685b-517c-4fc5-842a-b2d0c522489e",
+          "instanceId": "50321b93-2efc-4141-91f3-f7762d0cae43",
+          "elapsedMs": 4406,
+          "sql": {
+            "privateStream": {
+              "statements": 0,
+              "rowsRead": 0,
+              "rowsWritten": 0
+            },
+            "publicStream": {
+              "statements": 40,
+              "rowsRead": 24,
+              "rowsWritten": 5
+            },
+            "events": {
+              "statements": 0,
+              "rowsRead": 0,
+              "rowsWritten": 0
+            },
+            "webService": {
+              "statements": 0,
+              "rowsRead": 0,
+              "rowsWritten": 0
+            },
+            "toolState": {
+              "statements": 226,
+              "rowsRead": 293,
+              "rowsWritten": 35
+            },
+            "search": {
+              "statements": 47,
+              "rowsRead": 51,
+              "rowsWritten": 6
+            },
+            "other": {
+              "statements": 253,
+              "rowsRead": 335,
+              "rowsWritten": 76
+            }
+          },
+          "streams": {
+            "public": {
+              "commits": 1,
+              "wireBytes": 281,
+              "payloadBytes": 291
+            },
+            "private": {
+              "commits": 0,
+              "wireBytes": 0,
+              "payloadBytes": 0
+            }
+          },
+          "eventPayloadBytes": 0,
+          "broadcasts": {
+            "frames": 11,
+            "bytes": 12042
+          },
+          "alarms": {
+            "set": 18,
+            "delete": 2
+          },
+          "upstream": {
+            "modelRequests": 1,
+            "modelBytes": 281,
+            "toolRequests": 1,
+            "toolResponseBytes": 32
+          }
+        },
+        "databaseBytes": 303104,
+        "alarmAt": null,
+        "pendingSearch": 0,
+        "pendingNotifications": 0,
+        "privateStreams": 0,
+        "privatePayloads": 0,
+        "retainedContexts": 0,
+        "task": {
+          "status": "failed",
+          "round": 0,
+          "modelRequests": 1,
+          "toolRequests": 1
+        },
+        "workflow": {
+          "status": "complete",
+          "__LOCAL_DEV_STEP_OUTPUTS": [
+            {
+              "status": "active",
+              "phase": "queued",
+              "round": 0,
+              "calls": []
+            },
+            {
+              "taskId": "0fb759e1-10bd-4fa3-a3a3-7e0389a8db1c",
+              "round": 0
+            },
+            {
+              "status": "active",
+              "phase": "tools",
+              "round": 0,
+              "calls": [
+                "call_0_0",
+                "call_0_1"
+              ]
+            },
+            {
+              "status": "failed",
+              "phase": "failed",
+              "round": 0,
+              "calls": [
+                "call_0_0",
+                "call_0_1"
+              ]
+            }
+          ],
+          "output": {
+            "status": "failed",
+            "localMeasurement": {
+              "steps": [
+                {
+                  "name": "schedule-model-0",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 57
+                },
+                {
+                  "name": "read-model-0",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 77
+                },
+                {
+                  "name": "tool-0-0",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 78
+                }
+              ],
+              "waits": [
+                {
+                  "name": "model-finished-0",
+                  "resultBytes": 127
+                }
+              ]
+            }
+          }
+        }
+      },
+      "storage": {
+        "databaseBytes": 303104,
+        "allocatedBytes": 303104,
+        "usedBytes": 303104,
+        "reusableBytes": null,
+        "limits": {
+          "admissionBytes": 29360128,
+          "writeBytes": 31457280,
+          "maximumBytes": 33554432
+        },
+        "messages": 2,
+        "canonicalBytes": 79,
+        "checkpointBytes": 0,
+        "privateStreamBytes": 0,
+        "activeTaskBytes": 2,
+        "idempotencyBytes": 380
+      },
+      "library": {
+        "report": {
+          "windowId": "4411685b-517c-4fc5-842a-b2d0c522489e",
+          "instanceId": "ce038374-aaa7-4c93-9f0f-6d4d724db4cc",
+          "elapsedMs": 4422,
+          "sql": {
+            "privateStream": {
+              "statements": 0,
+              "rowsRead": 0,
+              "rowsWritten": 0
+            },
+            "publicStream": {
+              "statements": 0,
+              "rowsRead": 0,
+              "rowsWritten": 0
+            },
+            "events": {
+              "statements": 0,
+              "rowsRead": 0,
+              "rowsWritten": 0
+            },
+            "webService": {
+              "statements": 10,
+              "rowsRead": 26,
+              "rowsWritten": 3
+            },
+            "toolState": {
+              "statements": 5,
+              "rowsRead": 5,
+              "rowsWritten": 0
+            },
+            "search": {
+              "statements": 18,
+              "rowsRead": 8,
+              "rowsWritten": 18
+            },
+            "other": {
+              "statements": 25,
+              "rowsRead": 35,
+              "rowsWritten": 6
+            }
+          },
+          "streams": {
+            "public": {
+              "commits": 0,
+              "wireBytes": 0,
+              "payloadBytes": 0
+            },
+            "private": {
+              "commits": 0,
+              "wireBytes": 0,
+              "payloadBytes": 0
+            }
+          },
+          "eventPayloadBytes": 0,
+          "broadcasts": {
+            "frames": 0,
+            "bytes": 0
+          },
+          "alarms": {
+            "set": 0,
+            "delete": 0
+          },
+          "upstream": {
+            "modelRequests": 0,
+            "modelBytes": 0,
+            "toolRequests": 0,
+            "toolResponseBytes": 0
+          }
+        },
+        "databaseBytes": 557056,
+        "alarmAt": null,
+        "pendingBackfills": 0,
+        "usedToday": 11,
+        "workflow": null,
+        "usedInWindow": 1
+      },
+      "client": {
+        "frames": 12,
+        "bytes": 12066,
+        "disconnected": false
+      }
+    },
+    {
+      "scenario": "multi-round",
+      "protocol": "openai-chat",
+      "status": "completed",
+      "conversation": {
+        "report": {
+          "windowId": "32501266-3528-496b-af68-220384524312",
+          "instanceId": "736ed2ff-8f08-4b8e-9d58-7e7fdd7518dc",
+          "elapsedMs": 22221,
+          "sql": {
+            "privateStream": {
+              "statements": 0,
+              "rowsRead": 0,
+              "rowsWritten": 0
+            },
+            "publicStream": {
+              "statements": 230,
+              "rowsRead": 319,
+              "rowsWritten": 34
+            },
+            "events": {
+              "statements": 0,
+              "rowsRead": 0,
+              "rowsWritten": 0
+            },
+            "webService": {
+              "statements": 0,
+              "rowsRead": 0,
+              "rowsWritten": 0
+            },
+            "toolState": {
+              "statements": 1288,
+              "rowsRead": 2041,
+              "rowsWritten": 162
+            },
+            "search": {
+              "statements": 129,
+              "rowsRead": 141,
+              "rowsWritten": 6
+            },
+            "other": {
+              "statements": 1189,
+              "rowsRead": 1707,
+              "rowsWritten": 377
+            }
+          },
+          "streams": {
+            "public": {
+              "commits": 8,
+              "wireBytes": 28793,
+              "payloadBytes": 29969
+            },
+            "private": {
+              "commits": 0,
+              "wireBytes": 0,
+              "payloadBytes": 0
+            }
+          },
+          "eventPayloadBytes": 0,
+          "broadcasts": {
+            "frames": 95,
+            "bytes": 188913
+          },
+          "alarms": {
+            "set": 79,
+            "delete": 1
+          },
+          "upstream": {
+            "modelRequests": 6,
+            "modelBytes": 28793,
+            "toolRequests": 10,
+            "toolResponseBytes": 1560
+          }
+        },
+        "databaseBytes": 335872,
+        "alarmAt": null,
+        "pendingSearch": 0,
+        "pendingNotifications": 0,
+        "privateStreams": 0,
+        "privatePayloads": 0,
+        "retainedContexts": 0,
+        "task": {
+          "status": "completed",
+          "round": 5,
+          "modelRequests": 6,
+          "toolRequests": 10
+        },
+        "workflow": {
+          "status": "complete",
+          "__LOCAL_DEV_STEP_OUTPUTS": [
+            {
+              "status": "active",
+              "phase": "queued",
+              "round": 0,
+              "calls": []
+            },
+            {
+              "taskId": "cdfd2f3a-7e2b-4c68-b238-382361e462e4",
+              "round": 0
+            },
+            {
+              "status": "active",
+              "phase": "tools",
+              "round": 0,
+              "calls": [
+                "call_0_0",
+                "call_0_1"
+              ]
+            },
+            {
+              "status": "active",
+              "phase": "tools",
+              "round": 0,
+              "calls": [
+                "call_0_0",
+                "call_0_1"
+              ]
+            },
+            {
+              "status": "active",
+              "phase": "tools",
+              "round": 0,
+              "calls": [
+                "call_0_0",
+                "call_0_1"
+              ]
+            },
+            {
+              "status": "active",
+              "phase": "queued",
+              "round": 1,
+              "calls": []
+            },
+            {
+              "taskId": "cdfd2f3a-7e2b-4c68-b238-382361e462e4",
+              "round": 1
+            },
+            {
+              "status": "active",
+              "phase": "tools",
+              "round": 1,
+              "calls": [
+                "call_1_1_0",
+                "call_1_1"
+              ]
+            },
+            {
+              "status": "active",
+              "phase": "tools",
+              "round": 1,
+              "calls": [
+                "call_1_1_0",
+                "call_1_1"
+              ]
+            },
+            {
+              "status": "active",
+              "phase": "tools",
+              "round": 1,
+              "calls": [
+                "call_1_1_0",
+                "call_1_1"
+              ]
+            },
+            {
+              "status": "active",
+              "phase": "queued",
+              "round": 2,
+              "calls": []
+            },
+            {
+              "taskId": "cdfd2f3a-7e2b-4c68-b238-382361e462e4",
+              "round": 2
+            },
+            {
+              "status": "active",
+              "phase": "tools",
+              "round": 2,
+              "calls": [
+                "call_2_0",
+                "call_2_1"
+              ]
+            },
+            {
+              "status": "active",
+              "phase": "tools",
+              "round": 2,
+              "calls": [
+                "call_2_0",
+                "call_2_1"
+              ]
+            },
+            {
+              "status": "active",
+              "phase": "tools",
+              "round": 2,
+              "calls": [
+                "call_2_0",
+                "call_2_1"
+              ]
+            },
+            {
+              "status": "active",
+              "phase": "queued",
+              "round": 3,
+              "calls": []
+            },
+            {
+              "taskId": "cdfd2f3a-7e2b-4c68-b238-382361e462e4",
+              "round": 3
+            },
+            {
+              "status": "active",
+              "phase": "tools",
+              "round": 3,
+              "calls": [
+                "call_3_0",
+                "call_3_1"
+              ]
+            },
+            {
+              "status": "active",
+              "phase": "tools",
+              "round": 3,
+              "calls": [
+                "call_3_0",
+                "call_3_1"
+              ]
+            },
+            {
+              "status": "active",
+              "phase": "tools",
+              "round": 3,
+              "calls": [
+                "call_3_0",
+                "call_3_1"
+              ]
+            },
+            {
+              "status": "active",
+              "phase": "queued",
+              "round": 4,
+              "calls": []
+            },
+            {
+              "taskId": "cdfd2f3a-7e2b-4c68-b238-382361e462e4",
+              "round": 4
+            },
+            {
+              "status": "active",
+              "phase": "tools",
+              "round": 4,
+              "calls": [
+                "call_4_0",
+                "call_4_1"
+              ]
+            },
+            {
+              "status": "active",
+              "phase": "tools",
+              "round": 4,
+              "calls": [
+                "call_4_0",
+                "call_4_1"
+              ]
+            },
+            {
+              "status": "active",
+              "phase": "tools",
+              "round": 4,
+              "calls": [
+                "call_4_0",
+                "call_4_1"
+              ]
+            },
+            {
+              "status": "active",
+              "phase": "queued",
+              "round": 5,
+              "calls": []
+            },
+            {
+              "taskId": "cdfd2f3a-7e2b-4c68-b238-382361e462e4",
+              "round": 5
+            },
+            {
+              "status": "completed",
+              "phase": "completed",
+              "round": 5,
+              "calls": []
+            }
+          ],
+          "output": {
+            "status": "completed",
+            "localMeasurement": {
+              "steps": [
+                {
+                  "name": "schedule-model-0",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 57
+                },
+                {
+                  "name": "read-model-0",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 77
+                },
+                {
+                  "name": "tool-0-0",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 77
+                },
+                {
+                  "name": "tool-0-1",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 77
+                },
+                {
+                  "name": "schedule-model-1",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 57
+                },
+                {
+                  "name": "read-model-1",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 79
+                },
+                {
+                  "name": "tool-1-0",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 79
+                },
+                {
+                  "name": "tool-1-1",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 79
+                },
+                {
+                  "name": "schedule-model-2",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 57
+                },
+                {
+                  "name": "read-model-2",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 77
+                },
+                {
+                  "name": "tool-2-0",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 77
+                },
+                {
+                  "name": "tool-2-1",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 77
+                },
+                {
+                  "name": "schedule-model-3",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 57
+                },
+                {
+                  "name": "read-model-3",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 77
+                },
+                {
+                  "name": "tool-3-0",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 77
+                },
+                {
+                  "name": "tool-3-1",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 77
+                },
+                {
+                  "name": "schedule-model-4",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 57
+                },
+                {
+                  "name": "read-model-4",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 77
+                },
+                {
+                  "name": "tool-4-0",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 77
+                },
+                {
+                  "name": "tool-4-1",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 77
+                },
+                {
+                  "name": "schedule-model-5",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 57
+                },
+                {
+                  "name": "read-model-5",
+                  "attempts": 1,
+                  "failures": 0,
+                  "resultBytes": 63
+                }
+              ],
+              "waits": [
+                {
+                  "name": "model-finished-0",
+                  "resultBytes": 127
+                },
+                {
+                  "name": "model-finished-1",
+                  "resultBytes": 127
+                },
+                {
+                  "name": "model-finished-2",
+                  "resultBytes": 127
+                },
+                {
+                  "name": "model-finished-3",
+                  "resultBytes": 127
+                },
+                {
+                  "name": "model-finished-4",
+                  "resultBytes": 127
+                },
+                {
+                  "name": "model-finished-5",
+                  "resultBytes": 127
+                }
+              ]
+            }
+          }
+        }
+      },
+      "storage": {
+        "databaseBytes": 335872,
+        "allocatedBytes": 335872,
+        "usedBytes": 335872,
+        "reusableBytes": null,
+        "limits": {
+          "admissionBytes": 29360128,
+          "writeBytes": 31457280,
+          "maximumBytes": 33554432
+        },
+        "messages": 2,
+        "canonicalBytes": 24393,
+        "checkpointBytes": 0,
+        "privateStreamBytes": 0,
+        "activeTaskBytes": 12,
+        "idempotencyBytes": 380
+      },
+      "library": {
+        "report": {
+          "windowId": "32501266-3528-496b-af68-220384524312",
+          "instanceId": "ce038374-aaa7-4c93-9f0f-6d4d724db4cc",
+          "elapsedMs": 22268,
+          "sql": {
+            "privateStream": {
+              "statements": 0,
+              "rowsRead": 0,
+              "rowsWritten": 0
+            },
+            "publicStream": {
+              "statements": 0,
+              "rowsRead": 0,
+              "rowsWritten": 0
+            },
+            "events": {
+              "statements": 0,
+              "rowsRead": 0,
+              "rowsWritten": 0
+            },
+            "webService": {
+              "statements": 64,
+              "rowsRead": 199,
+              "rowsWritten": 30
+            },
+            "toolState": {
+              "statements": 23,
+              "rowsRead": 23,
+              "rowsWritten": 0
+            },
+            "search": {
+              "statements": 19,
+              "rowsRead": 9,
+              "rowsWritten": 18
+            },
+            "other": {
+              "statements": 50,
+              "rowsRead": 66,
+              "rowsWritten": 16
+            }
+          },
+          "streams": {
+            "public": {
+              "commits": 0,
+              "wireBytes": 0,
+              "payloadBytes": 0
+            },
+            "private": {
+              "commits": 0,
+              "wireBytes": 0,
+              "payloadBytes": 0
+            }
+          },
+          "eventPayloadBytes": 0,
+          "broadcasts": {
+            "frames": 0,
+            "bytes": 0
+          },
+          "alarms": {
+            "set": 0,
+            "delete": 0
+          },
+          "upstream": {
+            "modelRequests": 0,
+            "modelBytes": 0,
+            "toolRequests": 0,
+            "toolResponseBytes": 0
+          }
+        },
+        "databaseBytes": 606208,
+        "alarmAt": null,
+        "pendingBackfills": 0,
+        "usedToday": 21,
+        "workflow": null,
+        "usedInWindow": 10
+      },
+      "client": {
+        "frames": 96,
+        "bytes": 188937,
+        "disconnected": false
+      }
+    }
+  ]
+}

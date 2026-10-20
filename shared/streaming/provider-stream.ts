@@ -5,6 +5,12 @@ import {
   textWithinBytes,
 } from '../conversation/limits';
 import { AppError, problem } from '../errors/descriptor';
+import * as v from 'valibot';
+import {
+  generationDiagnosticsSchema,
+  mergeGenerationDiagnostics,
+  type GenerationDiagnostics,
+} from './diagnostics';
 import type { ProviderKind } from '../providers/types';
 
 export const MAX_EVENT_CHARACTERS = 1024 * 1024;
@@ -30,7 +36,7 @@ export interface StreamUsage {
 }
 export type GenerationEvent =
   | { type: 'text' | 'reasoning'; text: string; replace?: true }
-  | { type: 'usage'; usage: StreamUsage }
+  | { type: 'usage'; usage: StreamUsage; diagnostics?: GenerationDiagnostics }
   | {
       type: 'finish';
       reason: FinishReason;
@@ -38,6 +44,7 @@ export type GenerationEvent =
       message?: string;
       usage: StreamUsage;
       usageIsFinal: boolean;
+      diagnostics?: GenerationDiagnostics;
     };
 export interface StreamState {
   protocol: ProviderKind;
@@ -49,6 +56,7 @@ export interface StreamState {
   finishReason?: FinishReason;
   rawFinishReason?: string;
   finishMessage?: string;
+  diagnostics?: GenerationDiagnostics;
   failure?: string;
   textDeltas: number;
   reasoningDeltas: number;
@@ -122,6 +130,18 @@ export class ProviderStream {
   }
   checkpoint(): StreamState {
     return structuredClone(this.state);
+  }
+  get failure() {
+    return this.state.failure;
+  }
+  /** Apply an already structured event without encoding or cloning a checkpoint. */
+  accept(event: GenerationEvent) {
+    if (this.failed) return;
+    try {
+      this.event(event);
+    } catch {
+      this.fail('回答数据格式无效。已保存部分内容，请主动重新生成。');
+    }
   }
   get failed() {
     return Boolean(this.state.failure);
@@ -236,6 +256,11 @@ export class ProviderStream {
         this.deltas.push({ kind, text: accepted.slice(before.length) });
       if (accepted.length !== next.length) this.fail(MESSAGE_TEXT_LIMIT_MESSAGE);
     } else if (event.type === 'usage' || event.type === 'finish') {
+      if (event.diagnostics !== undefined)
+        this.state.diagnostics = mergeGenerationDiagnostics(
+          this.state.diagnostics,
+          v.parse(generationDiagnosticsSchema, event.diagnostics),
+        );
       if (!event.usage || typeof event.usage !== 'object' || Array.isArray(event.usage))
         throw new Error('Invalid usage');
       for (const [key, count] of Object.entries(event.usage)) {

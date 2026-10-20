@@ -7,12 +7,13 @@ import { formatAmount } from '../../../shared/usage/pricing';
 import { useMemo, useState } from 'react';
 import { Modal, ModalTitle } from '../../components/Modal';
 import { Button } from '@/components/ui/button';
-import { formatNumber } from '../../platform/i18n/format';
+import { formatDateTime, formatNumber } from '../../platform/i18n/format';
 
 import { messageText } from '../../../shared/conversation/content';
 import { isActive } from '../../../shared/conversation/message-state';
 import type { Message } from '../../../shared/conversation/types';
 import type { StreamUsage } from '../../../shared/streaming/provider-stream';
+import { mergeGenerationDiagnostics } from '../../../shared/streaming/diagnostics';
 import { countCharacters } from './character-count';
 
 const usageFields = [
@@ -67,6 +68,10 @@ export function GenerationMetadata({ message }: { message: Message }) {
         : usage.inputTokens !== undefined
           ? t(($) => $.inputTokenSummary, { tokens: compact.format(usage.inputTokens) })
           : '';
+  const diagnostics = mergeGenerationDiagnostics(
+    generation.diagnostics,
+    isActive(message) ? message.streamState?.diagnostics : undefined,
+  );
   const elapsed = generation.timing?.durationMs;
   const summary = [
     t(($) => $.characterSummary, {
@@ -81,6 +86,7 @@ export function GenerationMetadata({ message }: { message: Message }) {
       : '',
     tokens && !generation.usageIsFinal ? t(($) => $.partial) : '',
     tokens,
+    diagnostics?.warnings.length ? t(($) => $.providerWarnings) : '',
     elapsed === undefined ? '' : `${(elapsed / 1000).toFixed(1)} s`,
   ]
     .filter(Boolean)
@@ -176,6 +182,47 @@ export function GenerationMetadata({ message }: { message: Message }) {
                     <dd data-testid={`generation-${key}`}>{duration(generation.timing![key]!)}</dd>
                   </div>
                 ))}
+              {diagnostics?.response &&
+                (
+                  [
+                    ['actualModel', diagnostics.response.model],
+                    ['responseId', diagnostics.response.id],
+                    ['requestId', diagnostics.response.requestId],
+                    [
+                      'responseTime',
+                      diagnostics.response.timestamp === undefined
+                        ? undefined
+                        : formatDateTime(diagnostics.response.timestamp, {
+                            dateStyle: 'medium',
+                            timeStyle: 'medium',
+                          }),
+                    ],
+                  ] as const
+                )
+                  .filter(([, value]) => value)
+                  .map(([label, value]) => (
+                    <div key={label} className="flex items-baseline justify-between gap-4">
+                      <dt>{t(($) => $[label])}</dt>
+                      <dd
+                        className="min-w-0 break-all text-right"
+                        data-testid={`generation-${label}`}
+                      >
+                        {value}
+                      </dd>
+                    </div>
+                  ))}
+              {Boolean(diagnostics?.warnings.length) && (
+                <div className="space-y-1" data-testid="generation-warnings">
+                  <dt>{t(($) => $.providerWarnings)}</dt>
+                  <dd>
+                    <ul className="list-disc space-y-1 pl-4 break-words">
+                      {diagnostics!.warnings.map((warning) => (
+                        <li key={warning}>{warning}</li>
+                      ))}
+                    </ul>
+                  </dd>
+                </div>
+              )}
               {generation.context && (
                 <>
                   <div className="flex items-baseline justify-between gap-4 sm:gap-6">

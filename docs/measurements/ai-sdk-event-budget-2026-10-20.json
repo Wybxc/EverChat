@@ -1,0 +1,60 @@
+{
+  "runtime": "v26.5.0",
+  "scope": "local structured-event budget bridge only; includes transport encoding; not Cloudflare CPU",
+  "events": 5000,
+  "samplesMs": {
+    "serialized": [
+      21.687249999999977,
+      21.971332999999987,
+      21.772249999999985,
+      20.592250000000007,
+      20.327166999999974,
+      20.270249999999976,
+      19.633167000000014
+    ],
+    "structured": [
+      13.713791000000015,
+      14.472167000000013,
+      12.364167000000009,
+      11.607875000000007,
+      11.467499999999973,
+      11.384625000000028,
+      10.91745800000001
+    ]
+  },
+  "medianMs": {
+    "serialized": 20.592250000000007,
+    "structured": 11.607875000000007
+  },
+  "reduction": 0.43629885029562077,
+  "earlierRunWithConcurrentValidation": {
+    "runtime": "v26.5.0",
+    "scope": "local structured-event budget bridge only; includes transport encoding; not Cloudflare CPU",
+    "events": 5000,
+    "samplesMs": {
+      "serialized": [
+        26.661958000000027,
+        30.61258399999997,
+        28.04020799999995,
+        30.13012500000002,
+        35.2008330000001,
+        23.049999999999955,
+        22.421249999999986
+      ],
+      "structured": [
+        47.27275000000003,
+        33.399167000000034,
+        18.934458000000063,
+        17.501958999999943,
+        25.418000000000006,
+        16.798416999999972,
+        13.860500000000002
+      ]
+    },
+    "medianMs": {
+      "serialized": 28.04020799999995,
+      "structured": 18.934458000000063
+    },
+    "reduction": 0.3247390318930552
+  }
+}

@@ -60,7 +60,8 @@ import { GenerationBuffer } from '../generation/buffer';
 import { consumeModelStream, type ActiveGeneration } from '../generation/consume-stream';
 import { GenerationCancelled, ProviderError, providerIssue } from '../generation/errors';
 import { GenerationMeter, measuredQuery } from '../generation/metrics';
-import { FirstTokenProbe, generationTiming } from '../generation/timing';
+import { mergeGenerationDiagnostics } from '../../shared/streaming/diagnostics';
+import { generationTiming } from '../generation/timing';
 import type { Env } from '../http/env';
 import { json } from '../http/response';
 import { CompletionOutbox } from '../notifications/outbox';
@@ -1913,14 +1914,14 @@ export class Conversation extends DurableObject<Env> {
         }
       }, 100);
       this.query('INSERT INTO generation_timings VALUES (?, ?, NULL)', runId, Date.now());
-      const probe = new FirstTokenProbe(claim.config.provider, (receivedAt) => {
+      const observeOutput = (receivedAt: number) => {
         if (!this.deletedAt && !active.cancelled)
           this.query(
             'UPDATE generation_timings SET firstTokenAt = ? WHERE runId = ?',
             receivedAt,
             runId,
           );
-      });
+      };
       const body = await this.openModelStream(
         claim.config,
         claim.context,
@@ -1968,8 +1969,9 @@ export class Conversation extends DurableObject<Env> {
             );
           this.ctx.waitUntil(this.accounting.deliver().finally(() => this.scheduleAlarm()));
         },
+        observeOutput,
       );
-      await consumeModelStream(body, active, probe, (bytes) => active.buffer.add(bytes));
+      await consumeModelStream(body, active, (bytes) => active.buffer.add(bytes));
       active.buffer.flush();
       await active.persistence;
       const turn = toolModel && !active.cancelled ? body.toolTurn : undefined;
@@ -2162,6 +2164,10 @@ export class Conversation extends DurableObject<Env> {
         finishReason: message.streamState.finishReason,
         rawFinishReason: message.streamState.rawFinishReason,
         finishMessage: message.streamState.finishMessage,
+        diagnostics: mergeGenerationDiagnostics(
+          toolModel?.round ? prior?.diagnostics : undefined,
+          message.streamState.diagnostics,
+        ),
         usage: message.streamState.usage,
         usageIsFinal:
           message.streamState.usageIsFinal &&

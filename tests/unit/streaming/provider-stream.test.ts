@@ -92,6 +92,28 @@ test('escaped-text budget preserves a split surrogate pair and a usable prefix',
   );
 });
 
+test('structured SDK events and fragmented transport use identical replacement, surrogate and capacity rules', () => {
+  const direct = new ProviderStream('openai-chat', true),
+    transported = new ProviderStream('openai-chat', true);
+  for (const event of [
+    { type: 'reasoning' as const, text: 'summary' },
+    { type: 'reasoning' as const, text: 'r'.repeat(200_000), replace: true as const },
+    { type: 'text' as const, text: 'x'.repeat(MAX_MESSAGE_TEXT_BYTES - 200_000 - 6) + '\ud83d' },
+    { type: 'text' as const, text: '\ude42zz' },
+    { type: 'text' as const, text: 'overflow' },
+  ]) {
+    direct.accept(event);
+    const bytes = encodeGenerationEvent(event);
+    for (let index = 0; index < bytes.length; index += 8192)
+      transported.feed(bytes.subarray(index, index + 8192));
+    assert.equal(direct.content, transported.content);
+    assert.equal(direct.reasoning, transported.reasoning);
+    assert.deepEqual(direct.checkpoint(), transported.checkpoint());
+  }
+  assert.ok(direct.failed);
+  assert.ok(direct.content.endsWith('🙂zz'));
+});
+
 test('malformed events, native SSE, invalid UTF-8 and oversized partial frames never become completed responses', () => {
   for (const bytes of [
     encoder.encode('data: {}\n\n'),

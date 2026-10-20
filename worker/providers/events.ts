@@ -5,8 +5,8 @@ import {
   ProviderStream,
   type GenerationEvent,
 } from '../../shared/streaming/provider-stream';
-import { ProviderError } from '../generation/errors';
-import { providerFailure, providerErrorSummary, redactDiagnostic } from './failure';
+import { sdkDiagnostics, sdkProviderError } from './sdk-diagnostics';
+import { redactDiagnostic } from './failure';
 import { ResponseReasoning } from './response-reasoning';
 import { ProviderUsage } from './stream-usage';
 import {
@@ -32,6 +32,7 @@ export function providerEvents(
   secrets: readonly string[],
   headers: Headers | undefined,
   tools?: ProviderToolRequest,
+  onOutput?: (receivedAt: number) => void,
 ): ProviderResponse {
   const reader = input.getReader(),
     usage = new ProviderUsage(),
@@ -39,43 +40,25 @@ export function providerEvents(
   const collector = tools ? new ProviderToolCollector(config, tools.enabled) : undefined;
   const budget = new ProviderStream(config.provider, true);
   let body: ProviderResponse;
-  const diagnostics = (error: unknown, stage: 'stream' | 'protocol' = 'protocol') => {
-    if (error instanceof ProviderError && error.details) return error;
-    let detail = object(error);
-    // SDK transport wrappers retain the guard's actionable cause.
-    if (detail.cause instanceof Error) detail = object(detail.cause);
-    const data = detail.data ?? detail;
-    const failure = providerFailure(config, stage, data, {
-      headers,
-      secrets,
-      status: typeof detail.statusCode === 'number' ? detail.statusCode : undefined,
-      responseBody:
-        typeof detail.responseBody === 'string'
-          ? detail.responseBody
-          : stage === 'stream' && !(error instanceof Error)
-            ? JSON.stringify(data)
-            : undefined,
-    });
-    return new ProviderError(
-      stage === 'stream'
-        ? providerErrorSummary(failure)
-        : `供应商流格式无效或未完整结束：${failure.message ?? '连接中断'}。已保存部分内容。`,
-      failure,
-    );
-  };
+  const diagnostics = (error: unknown, stage: 'stream' | 'protocol' = 'protocol') =>
+    sdkProviderError(error, config, stage, headers, secrets);
   async function* events(): AsyncGenerator<Uint8Array> {
     let finish: Extract<LanguageModelV4StreamPart, { type: 'finish' }> | undefined;
     let nativeEnd = false,
       finishMessage: string | undefined;
     let pendingBudgetFailure: string | undefined;
     const emit = (event: GenerationEvent) => {
-      const bytes = encodeGenerationEvent(event);
-      budget.feed(bytes);
+      budget.accept(event);
       budget.drainDeltas();
-      const failure = budget.checkpoint().failure;
+      const failure = budget.failure;
       // Deliver the bounded prefix before surfacing a capacity failure.
       if (failure) pendingBudgetFailure = failure;
-      return bytes;
+      if (onOutput && (event.type === 'text' || event.type === 'reasoning') && event.text) {
+        const observed = onOutput;
+        onOutput = undefined;
+        observed(Date.now());
+      }
+      return encodeGenerationEvent(event);
     };
     try {
       while (true) {
@@ -121,24 +104,19 @@ export function providerEvents(
         if (part.type === 'finish') {
           if (finish) throw new Error('供应商重复返回结束事件。');
           finish = part;
-          // The raw counter extension retains early counts and supplier totals;
-          // fill only SDK-reported final fields the extension did not receive.
-          const normalized = {
-            inputTokens: part.usage.inputTokens.total,
-            outputTokens: part.usage.outputTokens.total,
-            cachedInputTokens: part.usage.inputTokens.cacheRead,
-            cacheWriteInputTokens: part.usage.inputTokens.cacheWrite,
-            reasoningTokens: part.usage.outputTokens.reasoning,
-          };
-          for (const [key, count] of Object.entries(normalized)) {
-            if (count !== undefined && usage.usage[key as keyof typeof usage.usage] === undefined)
-              usage.usage[key as keyof typeof usage.usage] = count;
-          }
+          usage.mergeSdk(part.usage);
           continue;
         }
         if (finish) throw new Error('供应商在结束后继续发送内容。');
         collector?.add(part);
-        if (part.type === 'text-delta') yield emit({ type: 'text', text: part.delta });
+        if (part.type === 'stream-start' || part.type === 'response-metadata') {
+          const info = sdkDiagnostics(part, config, secrets, headers);
+          if (
+            info.warnings.length ||
+            Object.values(info.response ?? {}).some((value) => value !== undefined)
+          )
+            yield emit({ type: 'usage', usage: {}, diagnostics: info });
+        } else if (part.type === 'text-delta') yield emit({ type: 'text', text: part.delta });
         else if (part.type === 'reasoning-delta' && config.provider !== 'openai-responses')
           yield emit({ type: 'reasoning', text: part.delta });
         else if (

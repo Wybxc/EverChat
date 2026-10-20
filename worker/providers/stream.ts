@@ -18,7 +18,8 @@ import {
 import { providerCallOptions, providerModel } from './sdk';
 import { providerToolPrompt, webToolDefinitions, type ProviderToolRequest } from './tool-turn';
 import { assertWebToolSupport } from '../../shared/web-tools/tasks';
-import { httpProviderError, providerFailure, providerErrorSummary } from './failure';
+import { sdkProviderError } from './sdk-diagnostics';
+import { httpProviderError, providerFailure } from './failure';
 import { ProviderWireGuard } from './stream-errors';
 import { providerEvents, type ProviderResponse } from './events';
 
@@ -32,6 +33,7 @@ export async function openProviderStream(
   loadDocument?: (file: DocumentPart) => Promise<string>,
   toolRequest?: ProviderToolRequest,
   beforeRequest?: () => Promise<void>,
+  onOutput?: (receivedAt: number) => void,
 ): Promise<ProviderResponse> {
   if (!config.apiKey)
     throw new ProviderError('尚未配置供应商 API 密钥。', providerFailure(config, 'connect'));
@@ -160,6 +162,7 @@ export async function openProviderStream(
       secrets,
       responseHeaders,
       toolRequest,
+      onOutput,
     );
   } catch (error) {
     await guard.cancel();
@@ -168,33 +171,6 @@ export async function openProviderStream(
     if (error instanceof ProviderError || error instanceof GenerationCancelled) throw error;
     if (signal.aborted)
       throw new ProviderError('模型供应商连接已中断。', providerFailure(config, 'connect'));
-    // Anthropic may report its initial stream error from doStream() itself.
-    if (error && typeof error === 'object' && 'statusCode' in error) {
-      const detail = error as {
-        statusCode: number;
-        responseBody?: string;
-        data?: unknown;
-        message?: string;
-      };
-      let value: unknown = detail.data ?? { message: detail.message };
-      if (detail.responseBody) {
-        try {
-          value = JSON.parse(detail.responseBody);
-        } catch {
-          /* Keep the SDK error. */
-        }
-      }
-      const failure = providerFailure(config, 'response', value, {
-        status: detail.statusCode,
-        headers: responseHeaders,
-        secrets,
-        responseBody: detail.responseBody,
-      });
-      throw new ProviderError(providerErrorSummary(failure), failure);
-    }
-    throw new ProviderError(
-      '无法连接模型供应商，请检查服务地址和网络。',
-      providerFailure(config, 'connect'),
-    );
+    throw sdkProviderError(error, config, 'connect', responseHeaders, secrets);
   }
 }

@@ -7,3 +7,6 @@ minimumReleaseAgeExclude:
   - '@cloudflare/vite-plugin@1.63.1'
   - miniflare@5.20261006.1-alpha
   - wrangler@4.149.0
+  - '@ai-sdk/provider-utils@5.0.63'
+  - '@ai-sdk/provider@4.0.30'
+  - '@ai-sdk/valibot@3.0.63'

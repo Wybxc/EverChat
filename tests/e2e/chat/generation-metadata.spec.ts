@@ -85,6 +85,12 @@ for (const protocol of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
           cachedInputTokens: 4,
         },
       });
+      if (protocol === 'openai-chat')
+        expect(generation.diagnostics?.response).toEqual({
+          id: 'fixture-response',
+          model: 'fixture-actual-model',
+          timestamp: 1700000000000,
+        });
       expect(generation.timing!.queueMs).toBeGreaterThanOrEqual(0);
       expect(generation.timing!.firstTokenMs).toBeGreaterThanOrEqual(1500);
       expect(generation.timing!.durationMs! - generation.timing!.firstTokenMs!).toBeGreaterThan(
@@ -124,6 +130,13 @@ for (const protocol of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
         protocol === 'anthropic' ? '14' : '10',
       );
       await expect(info.getByTestId('generation-cachedInputTokens')).toHaveText('4');
+      if (protocol === 'openai-chat') {
+        await expect(info.getByTestId('generation-actualModel')).toHaveText('fixture-actual-model');
+        await expect(info.getByTestId('generation-responseId')).toHaveText('fixture-response');
+        await expect(info.getByTestId('generation-responseTime')).toContainText('2023');
+        await expect(info.getByTestId('generation-uncachedInputTokens')).toHaveText('6');
+        await expect(info.getByTestId('generation-textOutputTokens')).toHaveText('3');
+      }
       await expect(info.getByText('供应商报告', { exact: true })).toBeVisible();
       await page
         .getByRole('dialog', { name: '生成信息', exact: true })

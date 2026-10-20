@@ -7,7 +7,8 @@ import type { ProviderConfig } from '../../shared/providers/types';
 import type { ModelProbeResult, ProbeCapability } from '../../shared/models/probe';
 import { providerCallOptions, providerModel } from './sdk';
 import { probeImage } from './probe-image';
-import { httpProviderError, providerFailure } from './failure';
+import { sdkProviderError } from './sdk-diagnostics';
+import { httpProviderError } from './failure';
 import { ProviderError } from '../generation/errors';
 import { sdkUsage } from '../../shared/usage/normalize';
 import type { StreamUsage } from '../../shared/streaming/provider-stream';
@@ -180,7 +181,7 @@ export async function probeModelCapability(
       failure:
         error instanceof ProviderError && error.details
           ? error.details
-          : providerFailure(config, 'connect'),
+          : sdkProviderError(error, config, 'connect').details,
     };
   } finally {
     accounting?.finish(

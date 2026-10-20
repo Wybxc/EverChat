@@ -3,6 +3,9 @@ const frame = (event: unknown) => `data: ${JSON.stringify(event)}\r\n\r\n`;
 export const providerStreams: Record<ProviderKind, { partial: string; finish: string }> = {
   'openai-chat': {
     partial: frame({
+      id: 'fixture-response',
+      model: 'fixture-actual-model',
+      created: 1700000000,
       choices: [
         {
           index: 0,

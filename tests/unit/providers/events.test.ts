@@ -14,7 +14,12 @@ const config = (provider: ProviderKind): ProviderConfig => ({
   maxOutputTokens: null,
 });
 const frame = (value: unknown) => `data: ${JSON.stringify(value)}\n\n`;
-async function consume(t: TestContext, provider: ProviderKind, wire: string | Uint8Array) {
+async function consume(
+  t: TestContext,
+  provider: ProviderKind,
+  wire: string | Uint8Array,
+  overrides: Partial<ProviderConfig> = {},
+) {
   let calls = 0;
   t.mock.method(globalThis, 'fetch', async () => {
     calls++;
@@ -22,8 +27,18 @@ async function consume(t: TestContext, provider: ProviderKind, wire: string | Ui
       headers: { 'content-type': 'text/event-stream', 'request-id': 'fixture-request' },
     });
   });
+  const outputTimes: number[] = [];
   const parser = new ProviderStream(provider, true),
-    body = await openProviderStream(config(provider), [], new AbortController().signal);
+    body = await openProviderStream(
+      { ...config(provider), ...overrides },
+      [],
+      new AbortController().signal,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      (time) => outputTimes.push(time),
+    );
   let failure: unknown;
   const reader = body.getReader();
   try {
@@ -36,13 +51,15 @@ async function consume(t: TestContext, provider: ProviderKind, wire: string | Ui
     failure = error;
   }
   assert.equal(calls, 1);
-  return { parser, failure };
+  return { parser, failure, outputTimes };
 }
 for (const provider of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'] as const) {
   test(`${provider} SDK decoding streams separate channels and final usage, while missing native completion retains a non-final prefix`, async (t) => {
     const fixture = providerStreams[provider];
     const full = await consume(t, provider, fixture.partial + fixture.finish);
     assert.equal(full.failure, undefined);
+    assert.equal(full.outputTimes.length, 1);
+    assert.ok(full.outputTimes[0] <= Date.now());
     full.parser.assertComplete();
     assert.equal(full.parser.reasoning, '**思考🙂**\n结论。');
     assert.equal(full.parser.content, '**正文🙂**\n答案。');
@@ -50,6 +67,7 @@ for (const provider of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
     t.mock.restoreAll();
     const partial = await consume(t, provider, fixture.partial);
     assert.ok(partial.failure instanceof ProviderError);
+    assert.equal(partial.outputTimes.length, 1);
     assert.equal(partial.parser.content, '**正文🙂**\n');
     assert.equal(partial.parser.checkpoint().usageIsFinal, false);
   });
@@ -162,4 +180,35 @@ test('Responses chooses raw thoughts in either arrival order and bounds raw iden
       }),
     );
   }
+});
+
+test('metadata and empty content do not count as first output, and absent usage stays unknown', async (t) => {
+  const empty = await consume(
+    t,
+    'openai-chat',
+    frame({
+      id: 'empty',
+      model: 'actual',
+      choices: [{ index: 0, delta: { content: '' }, finish_reason: 'stop' }],
+    }) + 'data: [DONE]\n\n',
+  );
+  assert.deepEqual(empty.outputTimes, []);
+  assert.equal(empty.parser.checkpoint().diagnostics?.response?.model, 'actual');
+  assert.deepEqual(empty.parser.checkpoint().usage, {});
+});
+
+test('real SDK unsupported-setting warnings survive a disconnected response and carry only allowed headers', async (t) => {
+  const fixture = providerStreams['openai-chat'];
+  const result = await consume(t, 'openai-chat', fixture.partial, {
+    baseUrl: 'https://api.openai.com/v1',
+    model: 'o3',
+    temperature: 0.4,
+  });
+  assert.ok(result.failure instanceof ProviderError);
+  assert.ok(result.parser.content);
+  const diagnostics = result.parser.checkpoint().diagnostics!;
+  assert.ok(diagnostics.warnings.some((warning) => warning.includes('temperature')));
+  assert.equal(diagnostics.response?.requestId, 'fixture-request');
+  assert.equal(diagnostics.response?.model, 'fixture-actual-model');
+  assert.doesNotMatch(JSON.stringify(diagnostics), /private-fixture-key|private system prompt/);
 });

@@ -1,4 +1,10 @@
 export default {
+  requestId: '请求 ID',
+  providerWarnings: '供应商警告',
+  actualModel: '实际模型',
+  responseId: '响应 ID',
+  responseTime: '响应时间',
+
   defaultOutputBudget: '默认（{{tokens}} Tokens）',
   outboxFull: '浏览器存储已满，无法可靠保存待发送消息。请释放空间后重试。',
   chatDeleted: '这个对话已删除。',

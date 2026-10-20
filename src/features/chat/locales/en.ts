@@ -1,4 +1,10 @@
 export default {
+  requestId: 'Request ID',
+  providerWarnings: 'Provider warnings',
+  actualModel: 'Response model',
+  responseId: 'Response ID',
+  responseTime: 'Response time',
+
   defaultOutputBudget: 'Default ({{tokens}} tokens)',
   outboxFull:
     'Browser storage is full. Free up space before sending so your message can be saved reliably.',

@@ -46,10 +46,7 @@ const safeText = (limit: number) =>
     v.string(),
     v.minLength(1),
     v.maxLength(limit),
-    v.check(
-      (text) =>
-        Boolean(text.trim()) && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text),
-    ),
+    v.regex(/^(?=[\s\S]*\S)[^\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]*$/),
   );
 const callId = v.pipe(
   v.string(),
@@ -58,7 +55,13 @@ const callId = v.pipe(
   v.check((id) => !/[\u0000-\u0020\u007f]/.test(id)),
 );
 const name = v.picklist(WEB_TOOL_NAMES);
-const url = v.pipe(v.string(), v.check(publicWebUrl, '只允许公开 HTTPS 网页地址。'));
+const webUrlInput = v.pipe(v.string(), v.minLength(1), v.maxLength(2048));
+const url = v.pipe(webUrlInput, v.check(publicWebUrl, '只允许公开 HTTPS 网页地址。'));
+// Serializable model constraints. Network-target policy remains a business check.
+export const webToolInputSchemas = {
+  web_search: v.strictObject({ query: safeText(500) }),
+  read_webpage: v.strictObject({ url: webUrlInput }),
+};
 export function validateWebToolIdentity(
   id: string,
   toolName: string,
@@ -71,9 +74,16 @@ const webToolCallSchema = v.variant('name', [
   v.strictObject({
     id: callId,
     name: v.literal('web_search'),
-    input: v.strictObject({ query: safeText(500) }),
+    input: webToolInputSchemas.web_search,
   }),
-  v.strictObject({ id: callId, name: v.literal('read_webpage'), input: v.strictObject({ url }) }),
+  v.strictObject({
+    id: callId,
+    name: v.literal('read_webpage'),
+    input: v.pipe(
+      webToolInputSchemas.read_webpage,
+      v.check((input) => publicWebUrl(input.url), '只允许公开 HTTPS 网页地址。'),
+    ),
+  }),
 ]);
 export type WebToolCall = v.InferOutput<typeof webToolCallSchema>;
 const sourceSchema = v.strictObject({

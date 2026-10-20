@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import { generationDiagnosticsSchema, type GenerationDiagnostics } from './diagnostics';
 import { contextEstimateSchema, type ContextEstimate } from '../conversation/context-budget';
 import { errorIssueSchema, type ErrorIssue } from '../errors/descriptor';
 import { providerFailureSchema, type ProviderFailure } from '../providers/failure';
@@ -13,6 +14,7 @@ export interface GenerationResult {
   finishReason?: StreamState['finishReason'];
   rawFinishReason?: string;
   finishMessage?: string;
+  diagnostics?: GenerationDiagnostics;
   /** A retained ordinary answer whose supplier stream ended before successful completion. */
   interrupted?: true;
   usage: StreamUsage;
@@ -57,6 +59,7 @@ export const generationSchema = v.strictObject({
   ),
   rawFinishReason: v.optional(v.pipe(v.string(), v.maxLength(128))),
   finishMessage: v.optional(v.pipe(v.string(), v.maxLength(4096))),
+  diagnostics: v.optional(generationDiagnosticsSchema),
   interrupted: v.optional(v.literal(true)),
   usage: v.strictObject({
     inputTokens: count,

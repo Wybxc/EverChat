@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import { mergeGenerationDiagnostics } from '../streaming/diagnostics';
 import { branchPath } from '../conversation/branch-path';
 import { messagePartsSchema, messageText } from '../conversation/content';
 import { MAX_SYSTEM_PROMPT_LENGTH } from '../conversation/limits';
@@ -81,6 +82,14 @@ export function backupMessage(message: Message): BackupMessage {
     partial && message.streamState
       ? {
           ...message.generation,
+          ...(message.streamState.diagnostics
+            ? {
+                diagnostics: mergeGenerationDiagnostics(
+                  message.generation?.diagnostics,
+                  message.streamState.diagnostics,
+                ),
+              }
+            : {}),
           ...addGenerationUsage(message.tools?.round ? message.generation : undefined, {
             usage: message.streamState.usage,
             usageIsFinal: false,

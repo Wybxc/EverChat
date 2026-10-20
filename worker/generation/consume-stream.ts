@@ -1,6 +1,5 @@
 import type { GenerationBuffer } from './buffer';
 import { GenerationCancelled, ProviderError } from './errors';
-import type { FirstTokenProbe } from './timing';
 
 export type ActiveGeneration = {
   runId: string;
@@ -17,7 +16,6 @@ export type ActiveGeneration = {
 export async function consumeModelStream(
   body: ReadableStream<Uint8Array>,
   active: ActiveGeneration,
-  probe: FirstTokenProbe,
   onChunk: (bytes: Uint8Array) => void,
 ) {
   const reader = body.getReader();
@@ -31,11 +29,9 @@ export async function consumeModelStream(
       const receivedAt = Date.now();
       if (next.done) {
         active.endedAt ??= receivedAt;
-        probe.end(receivedAt);
         break;
       }
       if (active.cancelled) throw new GenerationCancelled();
-      probe.feed(next.value, receivedAt);
       onChunk(next.value);
     }
   } finally {

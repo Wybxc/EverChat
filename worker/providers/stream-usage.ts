@@ -1,3 +1,5 @@
+import type { LanguageModelV4Usage } from '@ai-sdk/provider';
+import { sdkUsage } from '../../shared/usage/normalize';
 import type { ProviderKind } from '../../shared/providers/types';
 import type { StreamUsage } from '../../shared/streaming/provider-stream';
 const object = (value: unknown): Record<string, unknown> =>
@@ -50,6 +52,25 @@ export class ProviderUsage {
     }
     return updated;
   }
+  mergeSdk(value: LanguageModelV4Usage) {
+    const normalized = sdkUsage(value),
+      report = this.usage;
+    // Some adapters default missing counters to zero. Only enrich dimensions
+    // whose raw evidence is present, and keep provider-specific totals intact.
+    if (report.inputTokens !== undefined && report.cachedInputTokens !== undefined) {
+      const noCache =
+        report.inputTokens - report.cachedInputTokens - (report.cacheWriteInputTokens ?? 0);
+      if (report.uncachedInputTokens === undefined && noCache >= 0)
+        report.uncachedInputTokens =
+          normalized.uncachedInputTokens === noCache ? normalized.uncachedInputTokens : noCache;
+    }
+    if (report.outputTokens !== undefined && report.reasoningTokens !== undefined) {
+      const text = report.outputTokens - report.reasoningTokens;
+      if (report.textOutputTokens === undefined && text >= 0)
+        report.textOutputTokens =
+          normalized.textOutputTokens === text ? normalized.textOutputTokens : text;
+    }
+  }
   record(value: unknown, kind: ProviderKind) {
     const usage = object(value),
       inputDetails = object(usage.input_tokens_details ?? usage.prompt_tokens_details),
@@ -75,6 +96,7 @@ export class ProviderUsage {
               inputTokens: number(usage.input_tokens) ?? number(usage.prompt_tokens),
               outputTokens: number(usage.output_tokens) ?? number(usage.completion_tokens),
               totalTokens: number(usage.total_tokens),
+              uncachedInputTokens: number(usage.prompt_cache_miss_tokens),
               cachedInputTokens:
                 number(inputDetails.cached_tokens) ?? number(usage.prompt_cache_hit_tokens),
               cacheWriteInputTokens: number(inputDetails.cache_write_tokens),
