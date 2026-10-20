@@ -22,23 +22,21 @@ export function ContextEstimateView({ estimate }: { estimate: ContextEstimate })
           variant="ghost"
           type="button"
           data-testid="context-estimate"
-          className="context-trigger min-w-11 shrink-0 px-2 text-xs text-muted-foreground"
+          className="context-trigger relative min-w-11 shrink-0 px-2 text-xs text-muted-foreground"
           aria-label={t(($) => $.viewContextEstimate)}
           aria-description={t(($) => $.contextDescription, {
             total: number.format(estimate.totalTokens),
             budget: number.format(estimate.inputBudget),
           })}
         >
-          <span className="flex flex-col items-center gap-1">
-            ≈{compact.format(estimate.totalTokens)}
-            {estimate.windowSource !== 'fallback' && estimate.inputBudget > 0 && (
-              <Progress
-                aria-hidden
-                className="w-10"
-                value={Math.min(100, (100 * estimate.totalTokens) / estimate.inputBudget)}
-              />
-            )}
-          </span>
+          <span>≈{compact.format(estimate.totalTokens)}</span>
+          {estimate.windowSource !== 'fallback' && estimate.inputBudget > 0 && (
+            <Progress
+              aria-hidden
+              className="absolute bottom-1 left-1/2 w-10 -translate-x-1/2"
+              value={Math.min(100, (100 * estimate.totalTokens) / estimate.inputBudget)}
+            />
+          )}
         </Button>
       </PopoverTrigger>
       <PopoverContent

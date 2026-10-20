@@ -53,6 +53,7 @@ test('a narrow viewport folds parameters and preserves them across resizing and 
                     name: '一个很长的模型显示名用于验证窄屏仍然可以发送消息',
                     enabled: true,
                     reasoningSupport: 'supported',
+                    metadataOverrides: { contextWindow: 128000 },
                   },
                 ],
               },
@@ -70,7 +71,10 @@ test('a narrow viewport folds parameters and preserves them across resizing and 
     const composer = await page.getByTestId('chat-composer').boundingBox();
     expect(composer!.height).toBeLessThanOrEqual(144);
     await expect(page.getByRole('heading', { name: '今天想聊些什么？' })).toBeVisible();
-    const send = await page.getByRole('button', { name: '发送消息', exact: true }).boundingBox();
+    const sendButton = page.getByRole('button', { name: '发送消息', exact: true });
+    await expect(sendButton).toBeDisabled();
+    await expect(page.getByTestId('chat-composer')).toHaveCSS('opacity', '1');
+    const send = await sendButton.boundingBox();
     expect(send!.x + send!.width).toBeLessThanOrEqual(320);
     const toolbar = page.getByTestId('composer-toolbar');
     for (const control of await toolbar.locator('button:visible, select:visible').all()) {
@@ -95,7 +99,35 @@ test('a narrow viewport folds parameters and preserves them across resizing and 
     await page.setViewportSize({ width: 1280, height: 720 });
     await expect(parameters).toHaveCount(0);
     await expect(page.getByLabel('思维强度', { exact: true })).toHaveValue('high');
-    await expect(page.getByRole('button', { name: '查看上下文估算' })).toBeVisible();
+    const context = page.getByRole('button', { name: '查看上下文估算' });
+    await expect(context).toBeVisible();
+    await expect(context.locator('[data-slot=progress]')).toBeVisible();
+    // The label remains centered even when the budget meter is present.
+    const labelCenter = await context.locator(':scope > span').evaluate((node) => {
+      const label = node.getBoundingClientRect(),
+        button = node.parentElement!.getBoundingClientRect();
+      return Math.abs(label.y + label.height / 2 - button.y - button.height / 2);
+    });
+    expect(labelCenter).toBeLessThanOrEqual(1);
+    for (const theme of ['light', 'dark']) {
+      await page
+        .locator('html')
+        .evaluate((node, theme) => node.classList.toggle('dark', theme === 'dark'), theme);
+      await expect(page.getByTestId('chat-composer')).toHaveCSS('opacity', '1');
+      const model = page.getByRole('combobox', { name: '聊天模型', exact: true });
+      await page.getByLabel('消息', { exact: true }).fill('颜色检查');
+      await expect(sendButton).toBeEnabled();
+      await expect
+        .poll(() =>
+          model.evaluate(
+            (node) => getComputedStyle(node).color === getComputedStyle(document.body).color,
+          ),
+        )
+        .toBe(true);
+      await page.getByLabel('消息', { exact: true }).fill('');
+      await expect(sendButton).toBeDisabled();
+    }
+    await page.locator('html').evaluate((node) => node.classList.remove('dark'));
     await page.setViewportSize({ width: 320, height: 568 });
     await expect(parameters).toBeVisible();
     await page.evaluate(() => (document.documentElement.style.fontSize = '200%'));

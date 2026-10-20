@@ -30,7 +30,6 @@ import { MessageEditor } from './MessageEditor';
 import { ReasoningContent } from './ReasoningContent';
 import { MarkdownContent } from './rendering/MarkdownContent';
 import { UserMessageBubble } from './UserMessageBubble';
-import { GenerationMetadata } from './GenerationMetadata';
 import { isReportedToolFailure } from './message-errors';
 
 export function MessageView({
@@ -195,7 +194,6 @@ export function MessageView({
               {providerName && <>{providerName} · </>}
               {message.modelName || message.model || 'EverChat'}
             </span>
-            <GenerationMetadata message={message} />
             {message.revisionOf && !message.generation && <span>{t(($) => $.manuallyEdited)}</span>}
             {isActive(message) && (
               <span className="flex items-center gap-1.5 text-muted-foreground">

@@ -33,6 +33,7 @@ export function ChatComposer({
         {input}
         <InputGroupAddon
           align="block-end"
+          tone="default"
           ref={toolbarRef}
           className="composer-toolbar mt-1 min-w-0 gap-1 p-0"
           data-testid="composer-toolbar"

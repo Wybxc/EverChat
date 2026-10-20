@@ -8,7 +8,12 @@ import { ActionMenu, ActionMenuItem, ActionMenuSeparator } from '../../component
 import { GenerationMetadata } from './GenerationMetadata';
 import { MarkdownContent } from './rendering/MarkdownContent';
 import { ProviderFailureView } from '../providers/ProviderFailureView';
-import { Message as ChatMessage, MessageContent, MessageHeader } from '@/components/ui/message';
+import {
+  Message as ChatMessage,
+  MessageContent,
+  MessageFooter,
+  MessageHeader,
+} from '@/components/ui/message';
 
 export function SummaryView({
   message,
@@ -64,11 +69,6 @@ export function SummaryView({
                       ? ` ${t(($) => $.summaryUsed)}`
                       : ` ${t(($) => $.summaryUnused)}`}
             </div>
-            {message.generation && (
-              <div className="order-3 w-full sm:order-none sm:w-auto">
-                <GenerationMetadata message={message} />
-              </div>
-            )}
             <ActionMenu
               label={t(($) => $.moreSummaryActions)}
               icon={<MoreHorizontal className="h-[1.0625rem] w-[1.0625rem]" />}
@@ -98,6 +98,11 @@ export function SummaryView({
           )}
           {message.status === 'cancelled' && (
             <p className="text-sm">{t(($) => $.stoppedSummaryUnused)}</p>
+          )}
+          {message.generation && (
+            <MessageFooter className="px-0">
+              <GenerationMetadata message={message} />
+            </MessageFooter>
           )}
         </MessageContent>
       </ChatMessage>

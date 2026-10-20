@@ -109,6 +109,15 @@ for (const protocol of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
       const bodyCharacters = [...messageText(message).replace(/\s/gu, '')].length,
         reasoningCharacters = [...messageText(message, 'reasoning').replace(/\s/gu, '')].length;
       await expect(page.getByTestId('generation-summary')).toBeVisible();
+      await expect(
+        page.getByTestId('assistant-message').locator('[data-slot="message-header"]'),
+      ).not.toContainText('Tokens');
+      await expect(
+        page
+          .getByTestId('assistant-message')
+          .locator('[data-slot="message-footer"]')
+          .getByTestId('generation-summary'),
+      ).toBeVisible();
       await expect(page.getByTestId('generation-summary')).toContainText(`${bodyCharacters} 字`);
       await expect(page.getByTestId('generation-summary')).toContainText('Tokens');
       await expect(page.getByTestId('generation-summary')).not.toContainText('部分');
