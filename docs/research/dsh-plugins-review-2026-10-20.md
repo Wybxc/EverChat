@@ -34,3 +34,5 @@ OCR、MCP 和知识库沿用用户此前明确排除的范围；归档管理不�
 ## 下一步建议
 
 用户新增的 [new-api 连接信息导入](../plans/new-api-connection-import-plan.md)独立设计，优先降低配置供应商的成本。后续推荐依次推进上下文可视化、用户消息模板、余额查询；旁路问答和分支图作为第二批。以上是调研建议，不代表已经建立实施目标或授权全部开发。
+
+余额查询已进一步形成[供应商余额与额度设计](../plans/provider-balance-plan.md)，核对 DeepSeek、new-api、Sub2API 和 OpenRouter 的不同数据范围，并约定按需查询、短期缓存与配置离线迁移。该项仍待实施。

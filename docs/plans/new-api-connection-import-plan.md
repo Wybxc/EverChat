@@ -99,6 +99,12 @@ new-api 复制的是平台地址，而现有 OpenAI 兼容适配器使用 API �
 3. 将现有供应商模型获取、结果合并和错误呈现提取为可复用操作；接入保存成功后的模型读取，保留既有自动保存行为。
 4. 增加新增、重复识别、失败重试与移动端焦点回归，完成使用指南。后续再扩展明确更新已有供应商，不在首版支持任意 JSON／文件批量导入或 URL 携带凭据。
 
+## Sub2API 扩展评估
+
+Sub2API 当前提供「导入 CC Switch」和面向不同客户端的配置复制，导出为包含名称、端点、密钥、客户端类型等参数的 `ccswitch://v1/import?...`，与 new-api JSON 不同。可后续增加独立解析器，共用本方案的预览、保存、去重和模型获取。只在专用入口本地解析用户粘贴的内容，不接管该协议或跳转带密钥的深链。[官方入口](https://github.com/Wei-Shaw/sub2api/blob/8f2cbb53d9d1c40e1865b07ac460571f7d4c48de/frontend/src/views/user/KeysView.vue)、[导出格式](https://github.com/Wei-Shaw/sub2api/blob/8f2cbb53d9d1c40e1865b07ac460571f7d4c48de/frontend/src/utils/ccswitchImport.ts)。
+
+导出中的余额脚本不执行。余额查询使用独立的内置适配器；其他服务也可能生成 CC Switch 链接，不能据此自动判为 Sub2API。相关接口与来源配置见[供应商余额设计](provider-balance-plan.md)。本节为扩展评估，不改变 new-api 首版范围，也不表示已实现 Sub2API 导入。
+
 ## 验收标准
 
 - 官方 JSON 格式可导入，原始站点地址最终只补一次 `/v1`，代理路径保留；自定义编辑不被自动逻辑重置。
