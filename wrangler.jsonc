@@ -12,12 +12,10 @@
   },
   "workers_dev": false,
   "preview_urls": false,
-  "routes": [{ "pattern": "chat.wybxc.cc", "custom_domain": true }],
+  // Configure your Custom Domain and Access variables in the Cloudflare dashboard.
+  // Keep deployment-specific variables when publishing from this shared config.
+  "keep_vars": true,
   "vars": {
-    "ACCESS_AUD": "fbe91ef41fa71985ac8aa25409f047cc0bc03cec0152cf3151333c6d71515ffd",
-    "ACCESS_TEAM_DOMAIN": "wybxc.cloudflareaccess.com",
-    "ACCESS_ALLOWED_EMAILS": "wybxc@qq.com",
-    "APP_ORIGIN": "https://chat.wybxc.cc",
     "AI_PROVIDER": "",
     "AI_BASE_URL": "https://api.openai.com/v1",
     "AI_MODEL": "",

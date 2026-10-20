@@ -8,19 +8,20 @@
 
 需要 Cloudflare 账户、可绑定 Worker 的域名、Cloudflare Access，以及启用了 R2 的账户。模型供应商密钥可在部署后通过网页配置。
 
-编辑根目录的 `wrangler.jsonc`，将现有部署的域名、Access 参数、资源名称替换为自己的值：
+仓库的 `wrangler.jsonc` 只声明通用运行配置，不包含作者的域名、AUD 或邮箱。域名和身份参数在每个部署者自己的 Cloudflare 账户中配置，无需修改源码或将个人参数提交到 Git。
+
+下列参数在 Worker 的「设置 → 变量和机密」中配置：
 
 | 配置                    | 用途                                                   |
 | ----------------------- | ------------------------------------------------------ |
-| `name`、`routes`        | Worker 名称及自己的自定义域名                          |
 | `APP_ORIGIN`            | 完整站点 Origin，例如 `https://chat.example.com`       |
 | `ACCESS_TEAM_DOMAIN`    | Access 团队域名，例如 `your-team.cloudflareaccess.com` |
 | `ACCESS_AUD`            | 下节创建的 Access 应用 AUD；它是应用标识，不是密钥     |
 | `ACCESS_ALLOWED_EMAILS` | 允许的邮箱；多项使用逗号分隔                           |
-| `r2_buckets`            | 私有附件桶名称，绑定名保持 `ATTACHMENTS`               |
-| `workflows`             | 自己的工具 Workflow 名称，绑定名保持 `WEB_TOOLS`       |
 
-保留 `CONVERSATIONS`、`LIBRARY`、`USAGE`、`SHARES` 四个 DO 绑定及已有类迁移声明。首次部署由 Wrangler 创建对应 namespace 和 Workflow 定义；不要把已有生产资源名称当作新账户的配置。
+这些是部署参数，允许使用文本变量；希望在控制台隐藏邮箱等值时也可使用 Secret。配置中的 `keep_vars: true` 保留账户中已有的变量，普通部署不会清除它们；与仓库 `vars` 同名的值仍以仓库配置为准。模型 API 密钥等凭据应使用 Secret 或网页供应商设置。
+
+默认 Worker、附件桶和 Workflow 分别命名为 `everchat`、`everchat-attachments`、`everchat-web-tools`，都属于当前部署账户，不指向作者账户。如果同一账户已有同名资源，可统一调整 `name`、`r2_buckets` 和 `workflows` 中的名称。保留 `CONVERSATIONS`、`LIBRARY`、`USAGE`、`SHARES` 及其他绑定名和已有类迁移声明；首次部署由 Wrangler 创建 namespace 和 Workflow 定义。
 
 ## 2. 配置 Cloudflare Access
 
@@ -35,19 +36,27 @@ chat.example.com/auth/*
 
 前端、静态资源、`sw.js` 和 `/s/:id` 分享页面公开；`/public/shares/:id` 也须可匿名到达 Worker，由分享令牌和有效期校验控制读取。不要将私有 API 配为 Everyone 或 Bypass。使用同域分享时，覆盖整个域名的其他 Access 应用也不能继续拦截这些公开路径。
 
-Worker 会再次校验 JWT 的签名、issuer、audience、有效期和允许身份；修改请求与 WebSocket 仍有同源检查。仅填写 Wrangler 变量不会启用边缘 Access 规则。应用当前是共享的个人空间，不按多个允许身份隔离数据。
+Worker 会再次校验 JWT 的签名、issuer、audience、有效期和允许身份；修改请求与 WebSocket 仍有同源检查。仅设置变量不会启用边缘 Access 规则。应用当前是共享的个人空间，不按多个允许身份隔离数据。
 
-保留 `workers_dev: false`、`preview_urls: false`，避免出现未纳入域名访问规则的备用入口。静态资源保留 SPA 回退和 `html_handling: none`，并保留 `/api`、`/auth`、`/public` 的 `run_worker_first` 配置，以支持直接打开对话 URL、PWA 缓存和公开分享接口。
+保留 `workers_dev: false`、`preview_urls: false`，避免出现未纳入域名访问规则的备用入口。域名在控制台管理，仓库不声明 `routes`；普通部署不重新分配已绑定的自定义域名。静态资源保留 SPA 回退、`html_handling: none` 及 `/api`、`/auth`、`/public` 的 `run_worker_first` 配置。
 
 ## 3. 创建附件桶并部署
 
 ```sh
 pnpm exec wrangler login
-pnpm exec wrangler r2 bucket create your-everchat-attachments --storage-class Standard
+pnpm exec wrangler r2 bucket create everchat-attachments --storage-class Standard
 pnpm deploy
 ```
 
-先将桶名写入 Wrangler 配置，保持私有，不启用公开下载。`pnpm deploy` 执行类型检查、构建和部署。部署后使用允许的身份登录，在网页添加供应商和模型。
+附件桶保持私有，不启用公开下载；自定义桶名时同步修改 Wrangler 配置。`pnpm deploy` 执行类型检查、构建和部署，默认不会创建 `workers.dev` 公开入口。
+
+首次部署完成后，在 Workers 和 Pages → 对应 Worker 中完成：
+
+1. 在「设置 → 变量和机密」填写前述四个 Access／Origin 参数并保存部署。
+2. 在「设置 → 域和路由」添加自己的自定义域名，确认该域名的 Access 应用已按上节配置。
+3. 使用允许的身份登录，在网页添加供应商和模型。
+
+缺少 Access 配置时私有 API 拒绝访问，不会退回作者的身份或开放匿名聊天。已有部署已保存参数和自定义域名时无需重复设置。
 
 应用针对 Workers Free 控制读写频率与存储，但不提供账户级账单硬停保证。R2、模型和联网服务分别计算用量；预算与告警参考[免费层资源政策](../architecture/free-tier-resource-policy.md)和[生产原生告警记录](cloudflare-deployment.md#平台原生告警)。
 

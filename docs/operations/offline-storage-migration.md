@@ -8,16 +8,18 @@ Durable Object 的 SQLite 存储属于对象实例，不能像 D1 一样直接�
 
 先结束正在生成的回答、标题、联网工具调用及备份导入／复制。维护期间不启动这些任务。保留当前部署版本 ID，并暂停向 `main` 推送，避免自动构建打断维护窗口。
 
+通用 `wrangler.jsonc` 不含生产身份参数。运维时另准备被 Git 忽略的私有配置 `<private-production-config>`，保留本部署的资源绑定，并在 `vars` 中填写真实的 `APP_ORIGIN`、`ACCESS_TEAM_DOMAIN`、`ACCESS_AUD` 和唯一管理员邮箱 `ACCESS_ALLOWED_EMAILS`；相对路径按配置位置调整。每次 `ops:storage` 都显式传入 `--config`，不能从通用配置推断目标站点或管理员。该文件仅用于本机运维，不加入源码或普通自动构建。
+
 ```sh
 pnpm test
 pnpm test:operations
 pnpm build
 pnpm exec wrangler deployments list
-pnpm ops:storage prepare --directory /private/tmp/everchat-storage-maintenance --account <account-id>
-cloudflared access login --quiet https://chat.wybxc.cc/auth/resume
+pnpm ops:storage prepare --config <private-production-config> --directory /private/tmp/everchat-storage-maintenance --account <account-id>
+cloudflared access login --quiet https://chat.example.com/auth/resume
 umask 077
-cloudflared access token --app=https://chat.wybxc.cc > /private/tmp/everchat-storage-maintenance/access-token
-pnpm ops:storage preflight --directory /private/tmp/everchat-storage-maintenance
+cloudflared access token --app=https://chat.example.com > /private/tmp/everchat-storage-maintenance/access-token
+pnpm ops:storage preflight --config <private-production-config> --directory /private/tmp/everchat-storage-maintenance
 ```
 
 `prepare` 只读取绑定和命名空间对象清单，不实例化业务对象。目前要求配置中有且只有一个允许邮箱，明确作为运维身份。该目录权限为 0700，备份、补丁及本地 SQLite 权限为 0600；文件含对话文本和凭据，不应提交到 Git、打印到控制台或上传公共制品。
@@ -28,11 +30,11 @@ pnpm ops:storage preflight --directory /private/tmp/everchat-storage-maintenance
 
 ```sh
 pnpm exec wrangler deploy --config /private/tmp/everchat-storage-maintenance/maintenance.json
-pnpm ops:storage backup --directory /private/tmp/everchat-storage-maintenance
-pnpm ops:storage convert --directory /private/tmp/everchat-storage-maintenance
-pnpm ops:storage apply --directory /private/tmp/everchat-storage-maintenance
-pnpm ops:storage verify --directory /private/tmp/everchat-storage-maintenance
-pnpm ops:storage cleanup --directory /private/tmp/everchat-storage-maintenance
+pnpm ops:storage backup --config <private-production-config> --directory /private/tmp/everchat-storage-maintenance
+pnpm ops:storage convert --config <private-production-config> --directory /private/tmp/everchat-storage-maintenance
+pnpm ops:storage apply --config <private-production-config> --directory /private/tmp/everchat-storage-maintenance
+pnpm ops:storage verify --config <private-production-config> --directory /private/tmp/everchat-storage-maintenance
+pnpm ops:storage cleanup --config <private-production-config> --directory /private/tmp/everchat-storage-maintenance
 pnpm exec wrangler deploy --config dist/everchat/wrangler.json
 ```
 
@@ -50,7 +52,7 @@ Library 启动不再扫描已有对话、创建历史索引回填任务；新建
 需要修复历史索引、升级索引规则，或清除旧版本尚未完成的历史回填队列时，在上述维护窗口中将转换命令替换为：
 
 ```sh
-pnpm ops:storage convert --rebuild-search --directory /private/tmp/everchat-storage-maintenance
+pnpm ops:storage convert --config <private-production-config> --rebuild-search --directory /private/tmp/everchat-storage-maintenance
 ```
 
 其余 `prepare → preflight → backup → convert → apply → verify → cleanup → 恢复业务版本` 步骤相同，必须使用新的运维目录。不要把历史任务重新放回在线 Alarm。转换中断后重试须保留 `--rebuild-search`，工具拒绝在同一批次中途更换转换选项。
@@ -85,8 +87,8 @@ pnpm ops:storage convert --rebuild-search --directory /private/tmp/everchat-stor
 必须撤回时，使用完整原始备份生成反向补丁，逐对象恢复涉及表和索引／触发器并校验，然后回滚到维护前的业务代码版本：
 
 ```sh
-pnpm ops:storage rollback --directory /private/tmp/everchat-storage-maintenance
-pnpm ops:storage cleanup --directory /private/tmp/everchat-storage-maintenance
+pnpm ops:storage rollback --config <private-production-config> --directory /private/tmp/everchat-storage-maintenance
+pnpm ops:storage cleanup --config <private-production-config> --directory /private/tmp/everchat-storage-maintenance
 pnpm exec wrangler rollback <previous-version-id>
 ```
 
@@ -125,7 +127,7 @@ pnpm exec wrangler rollback <previous-version-id>
 仅维护统计库时，使用新的私有目录执行 `prepare --usage-only`；后续命令继续使用该目录。清单结合 USAGE 命名空间和规范的 personal 对象，备份只含 storage_schema、usage_attempts、usage_prices、usage_rollups。临时 UsageStore 同样只搬运 SQL，不运行业务构造函数。
 
 ```sh
-pnpm ops:storage prepare --usage-only --directory /private/tmp/everchat-usage-cleanup --account <account-id>
+pnpm ops:storage prepare --config <private-production-config> --usage-only --directory /private/tmp/everchat-usage-cleanup --account <account-id>
 ```
 
 其余预检、维护部署、backup → convert → apply → verify → cleanup、恢复正式部署的顺序与上文一致。在本地 convert 时删除备份中已结束且没有最终用量、价格快照或完整估算的请求，保留进行中请求；完整记录移除已取消的手动修正字段，按原始估算重新构建全部小时聚合。价格配置不变，不访问对话或分享表。每个对象生成仅含数量的 `.cleanup.json` 审计文件；先检查该文件再 apply。
