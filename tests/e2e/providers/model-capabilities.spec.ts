@@ -67,7 +67,7 @@ test.beforeEach(async ({ page }) => {
   );
 });
 
-test('public catalog enrichment preserves manual values and drafts, persists across devices, and reuses its seven-day cache', async ({
+test('browsing providers never saves catalog enrichment; edits persist it without replacing manual values or drafts', async ({
   page,
   context,
   browser,
@@ -76,6 +76,11 @@ test('public catalog enrichment preserves manual values and drafts, persists acr
     metadataOverrides: { imageInput: false },
   });
   let downloads = 0;
+  const writes: unknown[] = [];
+  page.on('request', (request) => {
+    if (request.url().endsWith('/api/settings/providers') && request.method() === 'PUT')
+      writes.push(request.postDataJSON());
+  });
   await page.route('https://models.dev/api.json', async (route) => {
     downloads++;
     await route.fulfill({ json: publicCatalog });
@@ -86,13 +91,29 @@ test('public catalog enrichment preserves manual values and drafts, persists acr
     await openSpaceSettings(page);
     await page.getByRole('tab', { name: '供应商', exact: true }).press('Space');
     await editModel(page);
-    await saved(page);
     await expect(page.getByLabel('上下文窗口（Tokens） 1')).toHaveAttribute(
       'placeholder',
       '131072',
     );
     await expect(page.getByLabel('图片输入 1')).toHaveValue('unsupported');
     await expect(page.getByText('模型目录', { exact: true }).first()).toBeVisible();
+    // Wait beyond the autosave debounce, including tab changes and a close/reopen.
+    await page.waitForTimeout(1000);
+    await page.getByRole('tab', { name: '通用', exact: true }).click();
+    await page.getByRole('tab', { name: '供应商', exact: true }).click();
+    await page.getByRole('button', { name: '关闭设置', exact: true }).click();
+    await openSpaceSettings(page);
+    await editModel(page);
+    await expect(page.getByLabel('模型显示名 1')).toHaveValue('My model');
+    await page.waitForTimeout(1000);
+    expect(writes).toEqual([]);
+    await expect(page.getByTestId('settings-save-status')).toHaveCount(0);
+    expect((await getSettings(context.request)).providers[0].models[0]).not.toHaveProperty(
+      'directoryMetadata',
+    );
+    await page.getByLabel('模型显示名 1').fill('My renamed model');
+    await saved(page);
+    expect(writes).toHaveLength(1);
     await expect
       .poll(
         async () => (await getSettings(context.request)).providers[0].models[0].directoryMetadata,
@@ -104,7 +125,7 @@ test('public catalog enrichment preserves manual values and drafts, persists acr
     const enriched = await getSettings(context.request),
       model = enriched.providers[0].models[0];
     expect(model).toMatchObject({
-      name: 'My model',
+      name: 'My renamed model',
       enabled: true,
       metadataOverrides: { imageInput: false },
       directoryMetadata: {
@@ -124,7 +145,10 @@ test('public catalog enrichment preserves manual values and drafts, persists acr
     await page.getByRole('button', { name: '关闭设置', exact: true }).click();
     await expect(page.getByLabel('消息', { exact: true })).toHaveValue('保留聊天草稿');
     await openProvider(page);
-    await saved(page);
+    await expect(page.getByLabel('模型显示名 1')).toHaveValue('My renamed model');
+    await page.waitForTimeout(1000);
+    expect(writes).toHaveLength(1);
+    await expect(page.getByTestId('settings-save-status')).toHaveCount(0);
     expect(downloads).toBe(1);
     const other = await browser.newContext({
       locale: 'zh-CN',

@@ -81,40 +81,18 @@ export function ProviderEditor({
   const { t } = useTranslation('providers', { useSuspense: false });
 
   const queryClient = useQueryClient();
-  const catalogIdentity = JSON.stringify(
-    settings.providers.map((profile) => [
-      profile.id,
-      profile.provider,
-      profile.baseUrl,
-      profile.models.map((model) => [model.id, model.directoryMetadata?.updatedAt ?? 0]),
-    ]),
-  );
+  const [modelCatalog, setModelCatalog] =
+    useState<Awaited<ReturnType<typeof loadModelCatalog>>>(null);
   useEffect(() => {
     if (!open || !active) return;
     let cancelled = false;
     void loadModelCatalog().then((catalog) => {
-      if (cancelled || !catalog) return;
-      const current = store.getSnapshot().settings;
-      let changed = false;
-      const providers = current.providers.map((profile) => ({
-        ...profile,
-        models: profile.models.map((model) => {
-          const enriched = enrichModelCatalog(
-            profile.provider,
-            model,
-            catalog.data,
-            catalog.updatedAt,
-          );
-          changed ||= enriched !== model;
-          return enriched;
-        }),
-      }));
-      if (changed) store.update({ ...current, providers });
+      if (!cancelled && catalog) setModelCatalog(catalog);
     });
     return () => {
       cancelled = true;
     };
-  }, [open, active, catalogIdentity, store]);
+  }, [open, active]);
   const [selectedId, setSelectedId] = useState(
     settings.activeProviderId ?? settings.providers[0]?.id ?? null,
   );
@@ -206,6 +184,17 @@ export function ProviderEditor({
   }, [selectedId]);
   const update = (next: ProviderSettings, chooseIfEmpty = false) => {
     setNotice('');
+    // Catalog downloads are read-only; persist their facts alongside a user edit.
+    if (modelCatalog)
+      next = {
+        ...next,
+        providers: next.providers.map((profile) => ({
+          ...profile,
+          models: profile.models.map((model) =>
+            enrichModelCatalog(profile.provider, model, modelCatalog.data, modelCatalog.updatedAt),
+          ),
+        })),
+      };
     store.update(reconcile(next, chooseIfEmpty));
   };
   const changeProvider = (id: string, patch: Partial<ProviderProfile>) => {
@@ -440,7 +429,7 @@ export function ProviderEditor({
             [capability]: true as const,
             testedAt: result.testedAt,
           };
-          store.update({
+          update({
             ...latest.current,
             providers: latest.current.providers.map((profile) =>
               profile.id === target.id
@@ -766,7 +755,16 @@ export function ProviderEditor({
                                 className="space-y-2 pb-2"
                               >
                                 <ModelOptions
-                                  model={model}
+                                  model={
+                                    modelCatalog
+                                      ? enrichModelCatalog(
+                                          selected.provider,
+                                          model,
+                                          modelCatalog.data,
+                                          modelCatalog.updatedAt,
+                                        )
+                                      : model
+                                  }
                                   index={index}
                                   provider={selected.provider}
                                   globalPrompt={settings.systemPrompt}
