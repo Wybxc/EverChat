@@ -1,4 +1,5 @@
 export default {
+  newTab: ' (opens in a new tab)',
   queued: 'Queued',
   running: 'Running',
   completed: 'Completed',

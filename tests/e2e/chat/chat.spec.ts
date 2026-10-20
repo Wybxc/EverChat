@@ -306,19 +306,25 @@ test('the composer uses the selected model and always shows returned provider th
     answer.locator('[data-streamdown="strong"]').filter({ hasText: '集成测试回答。' }),
   ).toBeVisible();
   await expect(answer).toHaveAttribute('data-status', 'running');
-  await answer.getByTestId('message-reasoning').locator('summary').click();
-  await expect(answer.getByTestId('message-reasoning')).toHaveJSProperty('open', false);
+  await answer
+    .getByTestId('message-reasoning')
+    .locator(':scope > [data-slot=trace-collapsible-trigger]')
+    .click();
+  await expect(answer.getByTestId('message-reasoning')).toHaveAttribute('data-state', 'closed');
   await expect(answer).toHaveAttribute('data-status', 'completed', { timeout: 30_000 });
-  await expect(answer.getByTestId('message-reasoning')).toHaveJSProperty('open', false);
-  await answer.getByTestId('message-reasoning').locator('summary').click();
+  await expect(answer.getByTestId('message-reasoning')).toHaveAttribute('data-state', 'closed');
+  await answer
+    .getByTestId('message-reasoning')
+    .locator(':scope > [data-slot=trace-collapsible-trigger]')
+    .click();
   await expect(answer).toContainText('第二模型：');
   await expect(answer).toContainText('第二模型');
   await expect(answer.getByTestId('message-reasoning')).toContainText('集成思考。');
-  await expect(answer.getByTestId('message-reasoning')).toHaveJSProperty('open', true);
+  await expect(answer.getByTestId('message-reasoning')).toHaveAttribute('data-state', 'open');
   await expect(
     answer
       .getByTestId('message-reasoning')
-      .locator('.disclosure-content [data-streamdown="strong"]'),
+      .locator('[data-slot="trace-collapsible-content"] [data-streamdown="strong"]'),
   ).toContainText('集成思考。');
   const id = new URL(page.url()).pathname.split('/')[2];
   const snapshot = await context.request
@@ -374,14 +380,14 @@ test('DeepSeek-compatible Responses streams Markdown thoughts, persists them and
   await expect(
     answer.locator('[data-streamdown="strong"]').filter({ hasText: '集成测试回答。' }),
   ).toHaveCount(0);
-  await thoughts.locator('summary').click();
-  await expect(thoughts).not.toHaveAttribute('open');
+  await thoughts.locator(':scope > [data-slot=trace-collapsible-trigger]').click();
+  await expect(thoughts).toHaveAttribute('data-state', 'closed');
   await expect(
     answer.locator('[data-streamdown="strong"]').filter({ hasText: '集成测试回答。' }),
   ).toBeVisible();
   await expect(answer).toHaveAttribute('data-status', 'running');
   await expect(answer).toHaveAttribute('data-status', 'completed');
-  await expect(thoughts).not.toHaveAttribute('open');
+  await expect(thoughts).toHaveAttribute('data-state', 'closed');
   const id = new URL(page.url()).pathname.split('/')[2];
   const snapshot = await context.request
     .get(`/api/conversations/${id}`)

@@ -1,11 +1,19 @@
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Spinner } from '@/components/ui/spinner';
-import { Globe, Search } from 'lucide-react';
+import {
+  Trace,
+  TraceCollapsible,
+  TraceCollapsibleContent,
+  TraceCollapsibleTrigger,
+  TraceDescription,
+  TraceIcon,
+  TraceLine,
+  TraceTitle,
+} from '@/components/ui/trace';
+import { ArrowUpRight, Globe, Search } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { problem } from '../../../shared/errors/descriptor';
 import type { PublicToolCall } from '../../../shared/web-tools/tasks';
-import { Disclosure } from '../../components/Disclosure';
+import { useDisclosureController, useDisclosureState } from '../../components/Disclosure';
 import { issueMessage, renderUiMessage } from '../../platform/i18n/messages';
 import { PAUSE_FOLLOW_EVENT } from '../chat/useFollowScroll';
 import './locales';
@@ -19,103 +27,145 @@ const labels = {
 } as const;
 const callId = (messageId: string, id: string) => `tool-${messageId}-${id}`;
 
-export function ToolActivity({ calls, messageId }: { calls: PublicToolCall[]; messageId: string }) {
-  const { t } = useTranslation('web-tools', { useSuspense: false });
-
+function SourceContent({
+  source,
+  stateKey,
+}: {
+  source: { title: string; url: string; content: string };
+  stateKey: string;
+}) {
+  const { t } = useTranslation('web-tools');
+  const [open, setOpen] = useDisclosureState(stateKey);
   return (
-    <div data-testid="tool-activity" data-search-ignore className="space-y-1 text-sm">
-      {calls.map(({ call, state, result, round }) => {
-        const id = callId(messageId, call.id);
-        return (
-          <div
-            key={call.id}
-            id={id}
-            tabIndex={-1}
-            data-tool-id={call.id}
-            data-tool-state={state}
-            aria-describedby={result?.status === 'failed' ? `${id}-error` : undefined}
-          >
-            <Disclosure
-              stateKey={`tools:${messageId}:${call.id}`}
-              testId="tool-call"
-              title={
-                <span className="inline-flex min-w-0 flex-wrap items-center gap-1.5 break-words">
-                  {call.name === 'web_search' ? (
-                    <Search aria-hidden="true" className="h-[0.875rem] w-[0.875rem] shrink-0" />
-                  ) : (
-                    <Globe aria-hidden="true" className="h-[0.875rem] w-[0.875rem] shrink-0" />
+    <TraceCollapsible open={open} onOpenChange={setOpen}>
+      <a
+        href={source.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        referrerPolicy="no-referrer"
+        title={source.title}
+      >
+        <TraceLine>
+          <TraceIcon>
+            <Globe />
+          </TraceIcon>
+          <TraceTitle>
+            {source.title}
+            <span className="sr-only">{t(($) => $.newTab)}</span>
+          </TraceTitle>
+          <TraceIcon>
+            <ArrowUpRight />
+          </TraceIcon>
+        </TraceLine>
+      </a>
+      <TraceCollapsibleTrigger>
+        <TraceLine>
+          <TraceTitle>{t(($) => $.viewContent)}</TraceTitle>
+        </TraceLine>
+      </TraceCollapsibleTrigger>
+      <TraceCollapsibleContent>
+        <p className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words">{source.content}</p>
+      </TraceCollapsibleContent>
+    </TraceCollapsible>
+  );
+}
+
+function ToolCallView({ item, messageId }: { item: PublicToolCall; messageId: string }) {
+  const { t } = useTranslation('web-tools', { useSuspense: false });
+  const { call, state, result, round } = item;
+  const [open, setOpen] = useDisclosureState(`tools:${messageId}:${call.id}`);
+  const id = callId(messageId, call.id);
+  const input = call.name === 'web_search' ? call.input.query : call.input.url;
+  const line = (
+    <TraceLine
+      status={
+        state === 'running'
+          ? 'running'
+          : state === 'queued'
+            ? 'pending'
+            : state === 'failed'
+              ? 'error'
+              : undefined
+      }
+    >
+      <TraceIcon>{call.name === 'web_search' ? <Search /> : <Globe />}</TraceIcon>
+      <TraceTitle title={input}>
+        {call.name === 'web_search' ? t(($) => $.search) : t(($) => $.fetch)} · {input}
+        <span className="sr-only">{t(($) => $.round, { round: round + 1 })}</span>
+      </TraceTitle>
+      <TraceDescription>
+        {t(($) => $[labels[state]])}
+        {result?.status === 'completed'
+          ? ` · ${t(($) => $.sourcesCount, { count: result.sources.length })}`
+          : ''}
+      </TraceDescription>
+    </TraceLine>
+  );
+  return (
+    <div
+      id={id}
+      tabIndex={-1}
+      data-tool-id={call.id}
+      data-tool-state={state}
+      aria-describedby={result?.status === 'failed' ? `${id}-error` : undefined}
+    >
+      {result ? (
+        <TraceCollapsible open={open} onOpenChange={setOpen} data-testid="tool-call">
+          <TraceCollapsibleTrigger>{line}</TraceCollapsibleTrigger>
+          <TraceCollapsibleContent>
+            {result.status === 'completed' ? (
+              result.sources.length ? (
+                <Trace>
+                  {[...new Map(result.sources.map((source) => [source.url, source])).values()].map(
+                    (source) => (
+                      <SourceContent
+                        key={source.url}
+                        source={source}
+                        stateKey={`tools:${messageId}:${call.id}:${source.url}`}
+                      />
+                    ),
                   )}
-                  <span>{call.name === 'web_search' ? t(($) => $.search) : t(($) => $.fetch)}</span>
-                  <span className="min-w-0 font-normal break-all">
-                    {call.name === 'web_search' ? call.input.query : call.input.url}
-                  </span>
-                  <Badge>{t(($) => $[labels[state]])}</Badge>
-                  {state === 'running' && <Spinner aria-hidden="true" />}
-                  {result?.status === 'completed' && (
-                    <span className="text-xs font-normal">
-                      {t(($) => $.sourcesCount, { count: result.sources.length })}
-                    </span>
-                  )}
-                  <span className="sr-only">{t(($) => $.round, { round: round + 1 })}</span>
-                </span>
-              }
-            >
-              {result?.status === 'completed' ? (
-                result.sources.length ? (
-                  <ul className="space-y-1">
-                    {result.sources.map((source, index) => (
-                      <li key={`${source.url}:${index}`}>
-                        <a
-                          href={source.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          referrerPolicy="no-referrer"
-                          className="link break-words"
-                        >
-                          {source.title}
-                        </a>
-                        <Disclosure
-                          stateKey={`tools:${messageId}:${call.id}:${index}`}
-                          title={t(($) => $.viewContent)}
-                        >
-                          <p className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words">
-                            {source.content}
-                          </p>
-                        </Disclosure>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p>{t(($) => $.noSources)}</p>
-                )
+                </Trace>
               ) : (
-                <p>
-                  {result?.status === 'failed'
-                    ? renderUiMessage(issueMessage(result.issue ?? problem('TOOL_FAILED')))
-                    : t(($) => $[labels[state]])}
-                </p>
-              )}
-            </Disclosure>
-          </div>
-        );
-      })}
+                <p>{t(($) => $.noSources)}</p>
+              )
+            ) : (
+              <p>{t(($) => $[labels[state]])}</p>
+            )}
+          </TraceCollapsibleContent>
+        </TraceCollapsible>
+      ) : (
+        <div data-testid="tool-call">{line}</div>
+      )}
     </div>
+  );
+}
+
+export function ToolActivity({ calls, messageId }: { calls: PublicToolCall[]; messageId: string }) {
+  return (
+    <Trace data-testid="tool-activity" data-search-ignore>
+      {calls.map((item) => (
+        <ToolCallView key={item.call.id} item={item} messageId={messageId} />
+      ))}
+    </Trace>
   );
 }
 
 export function ToolFailures({ calls, messageId }: { calls: PublicToolCall[]; messageId: string }) {
   const { t } = useTranslation('web-tools', { useSuspense: false });
-
+  const setOpen = useDisclosureController();
   const locate = (id: string) => {
-    const target = document.getElementById(callId(messageId, id));
-    for (let element = target; element; element = element.parentElement) {
-      if (element instanceof HTMLDetailsElement) element.open = true;
-      if (element.classList.contains('reasoning-content'))
-        element.dispatchEvent(new Event(PAUSE_FOLLOW_EVENT));
-    }
-    const call = target?.querySelector('details');
-    if (call) call.open = true;
+    setOpen?.(`reasoning:${messageId}`, true);
+    setOpen?.(`tools:${messageId}:${id}`, true);
     requestAnimationFrame(() => {
+      const target = document.getElementById(callId(messageId, id));
+      for (let element = target; element; element = element.parentElement) {
+        if (
+          element.classList.contains('reasoning-content') ||
+          element.dataset.testid === 'message-viewport'
+        )
+          element.dispatchEvent(new Event(PAUSE_FOLLOW_EVENT));
+      }
       target?.focus({ preventScroll: true });
       target?.scrollIntoView({ block: 'nearest' });
     });

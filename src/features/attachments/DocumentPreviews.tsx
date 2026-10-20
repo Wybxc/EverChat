@@ -1,4 +1,15 @@
 import { Button } from '@/components/ui/button';
+import {
+  Attachment,
+  AttachmentAction,
+  AttachmentActions,
+  AttachmentContent,
+  AttachmentDescription,
+  AttachmentGroup,
+  AttachmentMedia,
+  AttachmentTitle,
+  AttachmentTrigger,
+} from '@/components/ui/attachment';
 import { Download, FileText, X } from 'lucide-react';
 import { useEffect, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -77,42 +88,46 @@ export function DocumentPreviews({
   if (!files.length) return null;
   return (
     <>
-      <ul
-        className="mb-2 divide-y divide-border max-w-full rounded-lg border border-border bg-background"
+      <AttachmentGroup
+        role="list"
+        className="gap-2"
         aria-label={remove ? t(($) => $.draftFiles) : t(($) => $.messageFiles)}
       >
         {files.map((file) => (
-          <li key={file.attachmentId} className="flex items-center gap-2 p-2">
-            <FileText className="h-[1rem] w-[1rem]" />
-            <Button
-              variant="ghost"
-              type="button"
-              className="min-w-0 flex-1 justify-start"
-              aria-label={t(($) => $.preview, { name: file.name })}
-              onClick={() => setPreview(file)}
-            >
-              <span className="truncate">{file.name}</span>
+          <Attachment key={file.attachmentId} role="listitem" size="sm" className="max-w-72">
+            <AttachmentMedia>
+              <FileText />
+            </AttachmentMedia>
+            <AttachmentContent>
+              <AttachmentTitle title={file.name}>{file.name}</AttachmentTitle>
               {file.pdf && (
-                <span className="text-xs text-muted-foreground">
+                <AttachmentDescription>
                   {file.selection ? t(($) => $.selected) : t(($) => $.fullText)} · ≈
                   {formatNumber(file.tokens)}
-                </span>
+                </AttachmentDescription>
               )}
-            </Button>
+            </AttachmentContent>
+            <AttachmentTrigger
+              type="button"
+              aria-label={t(($) => $.preview, { name: file.name })}
+              onClick={() => setPreview(file)}
+            />
             {remove && (
-              <Button
-                variant="ghost"
-                size="icon"
-                type="button"
-                aria-label={t(($) => $.remove, { name: file.name })}
-                onClick={() => remove(file.attachmentId)}
-              >
-                <X className="h-[0.8125rem] w-[0.8125rem]" />
-              </Button>
+              <AttachmentActions>
+                <AttachmentAction
+                  variant="ghost"
+                  size="icon"
+                  type="button"
+                  aria-label={t(($) => $.remove, { name: file.name })}
+                  onClick={() => remove(file.attachmentId)}
+                >
+                  <X className="h-[0.8125rem] w-[0.8125rem]" />
+                </AttachmentAction>
+              </AttachmentActions>
             )}
-          </li>
+          </Attachment>
         ))}
-      </ul>
+      </AttachmentGroup>
       {preview && (
         <Modal
           open

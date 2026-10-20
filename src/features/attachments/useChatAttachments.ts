@@ -65,6 +65,7 @@ export function useChatAttachments({
     name: string;
     percent: number;
     kind: 'image' | 'file';
+    state: 'processing' | 'uploading';
   } | null>(null);
   useEffect(() => {
     if (imageUpload.current && (imageUpload.current.origin !== selected || !session?.authenticated))
@@ -88,7 +89,12 @@ export function useChatAttachments({
     const kindOf = (file: File) =>
       forcedKind ??
       ((file.type || fileMediaType(file.name))?.startsWith('image/') ? 'image' : 'file');
-    setImageProgress({ name: inputFiles[0].name, percent: 0, kind: kindOf(inputFiles[0]) });
+    setImageProgress({
+      name: inputFiles[0].name,
+      percent: 0,
+      kind: kindOf(inputFiles[0]),
+      state: 'processing',
+    });
     setError('');
     setFailure(null);
     let conversation = currentConversation;
@@ -123,7 +129,7 @@ export function useChatAttachments({
             throw new UiError(
               uiMessage('attachments', kind === 'image' ? 'imageLimit' : 'documentLimit'),
             );
-          setImageProgress({ name: file.name, percent: 0, kind });
+          setImageProgress({ name: file.name, percent: 0, kind, state: 'processing' });
           const mediaType = fileMediaType(file.name);
           if (
             kind === 'file' &&
@@ -142,6 +148,7 @@ export function useChatAttachments({
                     name: t(($) => $.extracting, { name: prepared.name, page, pages }),
                     percent: Math.round((page / pages) * 100),
                     kind,
+                    state: 'processing',
                   }),
                 )
               : undefined;
@@ -194,6 +201,7 @@ export function useChatAttachments({
                 name: prepared.name,
                 percent: Math.round((received / input.size) * 100),
                 kind,
+                state: 'uploading',
               }),
           );
           if (kind === 'image')
@@ -210,6 +218,7 @@ export function useChatAttachments({
               name: t(($) => $.parsing, { name: prepared.name }),
               percent: 100,
               kind,
+              state: 'processing',
             });
             uploadedFiles.push(
               await api<DocumentPart>(

@@ -1,7 +1,8 @@
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
-import { Textarea } from '@/components/ui/textarea';
+import { Marker, MarkerContent } from '@/components/ui/marker';
+import { InputGroupButton, InputGroupTextarea } from '@/components/ui/input-group';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   ArrowUp,
@@ -86,6 +87,8 @@ import {
   writePending,
   type Pending,
 } from '../features/chat/cache';
+import { ChatComposer } from '../features/chat/ChatComposer';
+import { AttachmentUpload } from '../features/attachments/AttachmentUpload';
 import { ComposerParameters } from '../features/chat/ComposerParameters';
 import { ContextEstimateNotices } from '../features/chat/ContextEstimate';
 import { ConversationActions } from '../features/chat/ConversationActions';
@@ -1839,15 +1842,13 @@ export function App({
                           (summary) => summary.summary!.throughId === message.id,
                         ) && (
                           <div data-testid="branch-summaries">
-                            <div
-                              className="my-4 flex items-center gap-3 text-xs text-muted-foreground"
-                              role="separator"
-                              aria-label={t(($) => $.historyCompressed)}
+                            <Marker
+                              variant="separator"
+                              className="my-3"
+                              data-testid="history-compressed"
                             >
-                              <div className="h-px flex-1 bg-border" />
-                              <span>{t(($) => $.historyCompressed)}</span>
-                              <div className="h-px flex-1 bg-border" />
-                            </div>
+                              <MarkerContent>{t(($) => $.historyCompressed)}</MarkerContent>
+                            </Marker>
                             <div className="space-y-4">
                               {branchSummaries
                                 .filter((summary) => summary.summary!.throughId === message.id)
@@ -2083,224 +2084,223 @@ export function App({
                     </Button>
                   </div>
                 )}
-              <form onSubmit={submit} data-testid="chat-composer" className="chat-composer">
-                {selected && (draftFiles.length > 0 || draftImages.length > 0) && (
-                  <div
-                    data-testid="draft-previews"
-                    className="draft-previews mb-2 max-h-[min(9rem,20dvh)] overflow-y-auto overscroll-contain p-1"
-                  >
-                    <DocumentPreviews
-                      conversationId={selected}
-                      files={draftFiles}
-                      onChange={imageProgress ? undefined : updateDocument}
-                      budgetFor={(file) =>
-                        contextPreview?.estimate
-                          ? Math.max(
-                              0,
-                              file.tokens +
-                                contextPreview.estimate.inputBudget -
-                                contextPreview.estimate.totalTokens,
-                            )
-                          : undefined
-                      }
-                      remove={imageProgress ? undefined : removeDocument}
-                    />
-                    <ImagePreviews
-                      conversationId={selected}
-                      images={draftImages}
-                      remove={imageProgress ? undefined : removeImage}
-                    />
-                  </div>
-                )}
-                {imageProgress && (
-                  <div className="flex items-center gap-2 py-2 text-xs" role="status">
-                    <span className="min-w-0 flex-1 truncate">{imageProgress.name}</span>
-                    <progress
-                      className="progress-meter w-20 shrink-0"
-                      value={imageProgress.percent}
-                      max={100}
-                      aria-label={
-                        imageProgress.kind === 'image'
-                          ? t(($) => $.imageUploadProgress)
-                          : t(($) => $.fileUploadProgress)
-                      }
-                    />
-                    <Button
-                      variant="ghost"
-                      type="button"
-                      onClick={() => imageUpload.current?.controller.abort()}
+              <ChatComposer
+                onSubmit={submit}
+                attachments={
+                  selected &&
+                  (draftFiles.length > 0 || draftImages.length > 0) && (
+                    <div
+                      data-testid="draft-previews"
+                      className="draft-previews mb-2 max-h-[min(9rem,20dvh)] overflow-y-auto overscroll-contain p-1"
                     >
-                      {t(($) => $.cancelUpload)}
-                    </Button>
-                  </div>
-                )}
-                <Textarea
-                  onPaste={(event) => {
-                    const files = Array.from(event.clipboardData.files);
-                    if (files.length) {
-                      event.preventDefault();
-                      void addImages(files);
-                    }
-                  }}
-                  ref={editor}
-                  disabled={Boolean(snapshot.deletedAt)}
-                  aria-label={t(($) => $.message)}
-                  className="composer-editor block min-h-11 w-full resize-none border-0 px-2 py-1 text-base leading-6 placeholder:text-muted-foreground outline-none! focus:outline-none!"
-                  placeholder={active ? t(($) => $.generating) : t(($) => $.messagePlaceholder)}
-                  value={draft}
-                  maxLength={MAX_MESSAGE_TEXT_BYTES}
-                  rows={1}
-                  enterKeyHint={touchPrimary ? 'enter' : 'send'}
-                  onChange={promptHistory.onChange}
-                  onKeyDown={(event) => {
-                    if (promptHistory.onKeyDown(event)) return;
-                    if (
-                      !touchPrimary &&
-                      event.key === 'Enter' &&
-                      !event.shiftKey &&
-                      !event.nativeEvent.isComposing &&
-                      // WebKit may clear isComposing before the IME confirmation keydown.
-                      event.nativeEvent.keyCode !== 229
-                    ) {
-                      event.preventDefault();
-                      void submit();
-                    }
-                  }}
-                />
-                <div
-                  ref={toolbarRef}
-                  className="composer-toolbar mt-1 flex min-w-0 items-center gap-1"
-                  data-testid="composer-toolbar"
-                  data-compact={compactComposer}
-                >
-                  {session.attachmentsConfigured && (
-                    <ActionMenu
-                      label={t(($) => $.addAttachment)}
-                      icon={<Paperclip className="h-[1.125rem] w-[1.125rem]" />}
-                      placement="dropdown-top dropdown-start"
-                      className="composer-icon"
-                      disabled={attachmentBlocked || !navigator.onLine}
-                    >
-                      <ActionMenuItem
-                        aria-label={t(($) => $.addFile)}
-                        disabled={draftFiles.length >= MAX_MESSAGE_DOCUMENTS}
-                        onSelect={() => fileInput.current?.click()}
-                      >
-                        <Paperclip className="h-[1rem] w-[1rem]" />
-                        {t(($) => $.file)}
-                      </ActionMenuItem>
-                      <ActionMenuItem
-                        aria-label={t(($) => $.addImage)}
-                        disabled={draftImages.length >= MAX_MESSAGE_IMAGES}
-                        onSelect={() => imageInput.current?.click()}
-                      >
-                        <ImagePlus className="h-[1rem] w-[1rem]" />
-                        {t(($) => $.image)}
-                      </ActionMenuItem>
-                    </ActionMenu>
-                  )}
-                  <input
-                    ref={fileInput}
-                    type="file"
-                    accept=".pdf,.txt,.md,.csv,.js,.jsx,.ts,.tsx,.py,.rs,.go,.c,.cpp,.h,.css,.json,.yaml,.yml,.toml,.sh"
-                    multiple
-                    className="hidden"
-                    aria-label={t(($) => $.chooseChatFiles)}
-                    onChange={(event) => {
-                      const files = Array.from(event.target.files ?? []);
-                      event.target.value = '';
-                      void addDocuments(files);
+                      <DocumentPreviews
+                        conversationId={selected}
+                        files={draftFiles}
+                        onChange={imageProgress ? undefined : updateDocument}
+                        budgetFor={(file) =>
+                          contextPreview?.estimate
+                            ? Math.max(
+                                0,
+                                file.tokens +
+                                  contextPreview.estimate.inputBudget -
+                                  contextPreview.estimate.totalTokens,
+                              )
+                            : undefined
+                        }
+                        remove={imageProgress ? undefined : removeDocument}
+                      />
+                      <ImagePreviews
+                        conversationId={selected}
+                        images={draftImages}
+                        remove={imageProgress ? undefined : removeImage}
+                      />
+                    </div>
+                  )
+                }
+                upload={
+                  imageProgress && (
+                    <AttachmentUpload
+                      progress={imageProgress}
+                      cancel={() => imageUpload.current?.controller.abort()}
+                    />
+                  )
+                }
+                input={
+                  <InputGroupTextarea
+                    onPaste={(event) => {
+                      const files = Array.from(event.clipboardData.files);
+                      if (files.length) {
+                        event.preventDefault();
+                        void addImages(files);
+                      }
+                    }}
+                    ref={editor}
+                    disabled={Boolean(snapshot.deletedAt)}
+                    aria-label={t(($) => $.message)}
+                    className="composer-editor block min-h-11 w-full resize-none border-0 px-2 py-1 text-base leading-6 placeholder:text-muted-foreground outline-none! focus:outline-none!"
+                    placeholder={active ? t(($) => $.generating) : t(($) => $.messagePlaceholder)}
+                    value={draft}
+                    maxLength={MAX_MESSAGE_TEXT_BYTES}
+                    rows={1}
+                    enterKeyHint={touchPrimary ? 'enter' : 'send'}
+                    onChange={promptHistory.onChange}
+                    onKeyDown={(event) => {
+                      if (promptHistory.onKeyDown(event)) return;
+                      if (
+                        !touchPrimary &&
+                        event.key === 'Enter' &&
+                        !event.shiftKey &&
+                        !event.nativeEvent.isComposing &&
+                        // WebKit may clear isComposing before the IME confirmation keydown.
+                        event.nativeEvent.keyCode !== 229
+                      ) {
+                        event.preventDefault();
+                        void submit();
+                      }
                     }}
                   />
-                  <input
-                    ref={imageInput}
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp"
-                    multiple
-                    className="hidden"
-                    aria-label={t(($) => $.chooseChatImages)}
-                    onChange={(event) => {
-                      const files = Array.from(event.target.files ?? []);
-                      event.target.value = '';
-                      void addImages(files);
-                    }}
-                  />
-                  {selectedModel ? (
-                    <ModelPicker
-                      focusComposer={() => editor.current?.focus({ preventScroll: true })}
-                      models={models}
-                      selected={selectedModel}
-                      choose={chooseModel}
-                    />
-                  ) : (
-                    <Button
-                      variant="ghost"
-                      type="button"
-                      className="min-w-0 flex-1 text-sm"
-                      onClick={() => {
-                        setRequestedSettingsTab('providers');
-                        openSettings();
+                }
+                toolbarRef={toolbarRef}
+                compact={compactComposer}
+                toolbar={
+                  <>
+                    {session.attachmentsConfigured && (
+                      <ActionMenu
+                        label={t(($) => $.addAttachment)}
+                        icon={<Paperclip className="h-[1.125rem] w-[1.125rem]" />}
+                        placement="dropdown-top dropdown-start"
+                        className="composer-icon"
+                        disabled={attachmentBlocked || !navigator.onLine}
+                      >
+                        <ActionMenuItem
+                          aria-label={t(($) => $.addFile)}
+                          disabled={draftFiles.length >= MAX_MESSAGE_DOCUMENTS}
+                          onSelect={() => fileInput.current?.click()}
+                        >
+                          <Paperclip className="h-[1rem] w-[1rem]" />
+                          {t(($) => $.file)}
+                        </ActionMenuItem>
+                        <ActionMenuItem
+                          aria-label={t(($) => $.addImage)}
+                          disabled={draftImages.length >= MAX_MESSAGE_IMAGES}
+                          onSelect={() => imageInput.current?.click()}
+                        >
+                          <ImagePlus className="h-[1rem] w-[1rem]" />
+                          {t(($) => $.image)}
+                        </ActionMenuItem>
+                      </ActionMenu>
+                    )}
+                    <input
+                      ref={fileInput}
+                      type="file"
+                      accept=".pdf,.txt,.md,.csv,.js,.jsx,.ts,.tsx,.py,.rs,.go,.c,.cpp,.h,.css,.json,.yaml,.yml,.toml,.sh"
+                      multiple
+                      className="hidden"
+                      aria-label={t(($) => $.chooseChatFiles)}
+                      onChange={(event) => {
+                        const files = Array.from(event.target.files ?? []);
+                        event.target.value = '';
+                        void addDocuments(files);
                       }}
-                    >
-                      {t(($) => $.configureModels)}
-                    </Button>
-                  )}
-                  <ComposerParameters
-                    compact={compactComposer}
-                    model={selectedModel}
-                    effort={reasoningEffort}
-                    chooseEffort={(value) => {
-                      setReasoningEffort(value);
-                      if (selectedModel)
-                        write(`reasoning-effort:${modelSelectionKey(selectedModel)}`, value);
-                    }}
-                    webEnabled={Boolean(conversationSettings.tools?.length)}
-                    toggleWeb={() => toolsToggleRef.current?.()}
-                    estimate={contextPreview?.estimate}
-                    focusComposer={() => editor.current?.focus({ preventScroll: true })}
-                  />
-                  {active ? (
-                    <Button
-                      variant="secondary"
-                      size="icon"
-                      type="button"
-                      className="composer-icon send-button ml-auto"
-                      aria-label={t(($) => $.stopGenerating)}
-                      title={t(($) => $.stopGenerating)}
-                      onClick={cancel}
-                      disabled={!navigator.onLine}
-                    >
-                      <Square className="h-[1rem] w-[1rem]" />
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="default"
-                      size="icon"
-                      type="submit"
-                      className="composer-icon send-button ml-auto"
-                      aria-label={t(($) => $.sendMessage)}
-                      disabled={
-                        (!draft.trim() && !draftImages.length && !draftFiles.length) ||
-                        generationBlocked ||
-                        !selectedModel
-                      }
-                    >
-                      {sending ? <Spinner /> : <ArrowUp className="h-[1.1875rem] w-[1.1875rem]" />}
-                    </Button>
-                  )}
-                </div>
-                {contextPreview?.estimate && (
-                  <ContextEstimateNotices
-                    estimate={contextPreview.estimate}
-                    compressing={contextPreview.compressing}
-                  />
-                )}
-                {contextPreview?.error && (
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    {renderUiMessage(contextPreview.error)}
-                  </p>
-                )}
-              </form>
+                    />
+                    <input
+                      ref={imageInput}
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      multiple
+                      className="hidden"
+                      aria-label={t(($) => $.chooseChatImages)}
+                      onChange={(event) => {
+                        const files = Array.from(event.target.files ?? []);
+                        event.target.value = '';
+                        void addImages(files);
+                      }}
+                    />
+                    {selectedModel ? (
+                      <ModelPicker
+                        focusComposer={() => editor.current?.focus({ preventScroll: true })}
+                        models={models}
+                        selected={selectedModel}
+                        choose={chooseModel}
+                      />
+                    ) : (
+                      <Button
+                        variant="ghost"
+                        type="button"
+                        className="min-w-0 flex-1 text-sm"
+                        onClick={() => {
+                          setRequestedSettingsTab('providers');
+                          openSettings();
+                        }}
+                      >
+                        {t(($) => $.configureModels)}
+                      </Button>
+                    )}
+                    <ComposerParameters
+                      compact={compactComposer}
+                      model={selectedModel}
+                      effort={reasoningEffort}
+                      chooseEffort={(value) => {
+                        setReasoningEffort(value);
+                        if (selectedModel)
+                          write(`reasoning-effort:${modelSelectionKey(selectedModel)}`, value);
+                      }}
+                      webEnabled={Boolean(conversationSettings.tools?.length)}
+                      toggleWeb={() => toolsToggleRef.current?.()}
+                      estimate={contextPreview?.estimate}
+                      focusComposer={() => editor.current?.focus({ preventScroll: true })}
+                    />
+                    {active ? (
+                      <InputGroupButton
+                        variant="secondary"
+                        size="icon-sm"
+                        type="button"
+                        className="composer-icon send-button ml-auto"
+                        aria-label={t(($) => $.stopGenerating)}
+                        title={t(($) => $.stopGenerating)}
+                        onClick={cancel}
+                        disabled={!navigator.onLine}
+                      >
+                        <Square className="h-[1rem] w-[1rem]" />
+                      </InputGroupButton>
+                    ) : (
+                      <InputGroupButton
+                        variant="default"
+                        size="icon-sm"
+                        type="submit"
+                        className="composer-icon send-button ml-auto"
+                        aria-label={t(($) => $.sendMessage)}
+                        disabled={
+                          (!draft.trim() && !draftImages.length && !draftFiles.length) ||
+                          generationBlocked ||
+                          !selectedModel
+                        }
+                      >
+                        {sending ? (
+                          <Spinner />
+                        ) : (
+                          <ArrowUp className="h-[1.1875rem] w-[1.1875rem]" />
+                        )}
+                      </InputGroupButton>
+                    )}
+                  </>
+                }
+                notices={
+                  <>
+                    {contextPreview?.estimate && (
+                      <ContextEstimateNotices
+                        estimate={contextPreview.estimate}
+                        compressing={contextPreview.compressing}
+                      />
+                    )}
+                    {contextPreview?.error && (
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        {renderUiMessage(contextPreview.error)}
+                      </p>
+                    )}
+                  </>
+                }
+              />
             </div>
           </div>
         </div>

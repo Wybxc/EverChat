@@ -62,7 +62,8 @@ async function fixture(page: Page) {
   };
 }
 
-const isOpen = (details: Locator) => details.evaluate((node: HTMLDetailsElement) => node.open);
+const isOpen = (details: Locator) =>
+  details.evaluate((node) => node.getAttribute('data-state') === 'open');
 
 test('answers use the available narrow width and rich content retains one frame while folded thoughts stay closed after branch selection and reconnect', async ({
   page,
@@ -102,7 +103,7 @@ test('answers use the available narrow width and rich content retains one frame 
     expect(frames).toEqual([1, 1]);
     const thought = answer.getByTestId('message-reasoning');
     await expect.poll(() => isOpen(thought)).toBe(true);
-    await thought.locator('summary').click();
+    await thought.locator(':scope > [data-slot=trace-collapsible-trigger]').click();
     await expect.poll(() => isOpen(thought)).toBe(false);
     await answer.getByRole('button', { name: '更多消息操作', exact: true }).click();
     await page.getByRole('menuitem', { name: '从这里继续', exact: true }).click();

@@ -12,6 +12,14 @@
 - 468 项单元测试、Chart 阶段生产构建通过。金额排序与汇总使用 BigInt，绘图才转换为 Number，Tooltip 使用原始金额。
 - 基线截图和产物清单保留在本机 `/tmp/everchat-ai-elements-baseline-phone.png`、`/tmp/everchat-ai-elements-baseline-assets.json`，收尾再比较。
 
+## 消息、过程与输入
+
+- 私有消息与分享使用 Message / Bubble，历史压缩使用 Marker；模型、供应商和生成信息集中到回答头部。分享仍只显示模型名，思考默认折叠。
+- 思考、工具和来源改为受控 Trace，沿用原来的流式 Markdown 和交错顺序。折叠记忆、搜索展开、失败调用定位保持可用。
+- 修复基线中同一工具错误重复显示：通过终止阶段关联故障，并避免把 undefined 传给默认显示摘要的组件；独立供应商故障仍单独展示。
+- ChatComposer 保持单草稿、单输入实例，用 InputGroup 组合附件、输入和工具栏。Attachment 映射原上传／处理状态；原 PDF 提取、选页和取消逻辑不变。上下文 Progress 只在窗口已知时显示比例。
+- 消息／分支／搜索／工具 42 项、桌面与手机分享 2 项、输入／附件／PDF／模型选择 66 项 Chromium 回归通过。470 项单元测试、类型检查与生产构建通过。SW 仍为 12 项、1200.77 KiB。
+
 ## 待完成
 
-消息 / Trace、输入与附件、Message Scroller 对照及切换、公开入口边界、完整 PWA 回归和本轮真机验收尚未完成。
+Message Scroller 隔离对照及切换、公开入口构建边界、完整 PWA 回归和本轮真机验收尚未完成。

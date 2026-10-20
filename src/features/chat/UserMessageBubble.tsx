@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { useLayoutEffect, useRef, useState, type ComponentProps } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { Bubble, BubbleContent } from '@/components/ui/bubble';
 
 export function UserMessageBubble({ className, ...props }: ComponentProps<'div'>) {
   const { t } = useTranslation('common', { useSuspense: false });
@@ -20,29 +21,25 @@ export function UserMessageBubble({ className, ...props }: ComponentProps<'div'>
     return () => observer.disconnect();
   }, [props.children]);
   return (
-    <div
-      data-collapsed-message={long && !expanded ? 'true' : undefined}
-      className={cn(
-        'rounded-[1.375rem] bg-user-message text-user-message-foreground px-4 py-2.5 text-base leading-7 whitespace-pre-wrap break-words',
-        className,
-      )}
-    >
-      <div
-        {...props}
-        ref={content}
-        className={!expanded ? 'max-h-[10lh] overflow-hidden' : undefined}
-      />
-      {long && (
-        <Button
-          variant="ghost"
-          type="button"
-          aria-expanded={expanded}
-          onClick={() => setExpanded((value) => !value)}
-          className="h-8 px-2 text-xs"
-        >
-          {expanded ? t(($) => $.collapseMessage) : t(($) => $.expandMessage)}
-        </Button>
-      )}
-    </div>
+    <Bubble variant="user" align="end" className={cn('max-w-full', className)}>
+      <BubbleContent data-collapsed-message={long && !expanded ? 'true' : undefined}>
+        <div
+          {...props}
+          ref={content}
+          className={!expanded ? 'max-h-[10lh] overflow-hidden' : undefined}
+        />
+        {long && (
+          <Button
+            variant="ghost"
+            type="button"
+            aria-expanded={expanded}
+            onClick={() => setExpanded((value) => !value)}
+            className="h-8 px-2 text-xs"
+          >
+            {expanded ? t(($) => $.collapseMessage) : t(($) => $.expandMessage)}
+          </Button>
+        )}
+      </BubbleContent>
+    </Bubble>
   );
 }

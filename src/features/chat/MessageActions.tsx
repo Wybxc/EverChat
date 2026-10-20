@@ -16,7 +16,6 @@ import {
 import type { Message } from '../../../shared/conversation/types';
 import { isActive } from '../../../shared/conversation/message-state';
 import { ActionMenu } from '../../components/ActionMenu';
-import { GenerationMetadata } from './GenerationMetadata';
 import { BranchSwitcher, type BranchNavigation } from './BranchSwitcher';
 
 export function MessageActions({
@@ -141,10 +140,6 @@ export function MessageActions({
           {t(($) => $.deleteMessage)}
         </ActionMenuItem>
       </ActionMenu>
-      {!user && <GenerationMetadata message={message} />}
-      {!user && message.revisionOf && !message.generation && (
-        <span className="px-1 text-xs">{t(($) => $.manuallyEdited)}</span>
-      )}
     </div>
   );
 }

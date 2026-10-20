@@ -422,6 +422,7 @@ html.public-share-document,
   background: var(--composer);
   border: 1px solid var(--input);
   padding: 0.625rem;
+  box-shadow: none;
 }
 .chat-composer:focus-within {
   outline: 2px solid var(--ring);

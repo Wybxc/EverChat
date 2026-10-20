@@ -277,13 +277,23 @@ for (const provider of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
       f.ids.push(sent.id);
       const answer = page.getByTestId('assistant-message'),
         reasoning = answer.getByTestId('message-reasoning');
-      await expect(reasoning).toHaveAttribute('open');
+      await expect(reasoning).toHaveAttribute('data-state', 'open');
       const firstCall = answer.locator('[data-tool-id="call_flow_0_0"]');
       await expect(firstCall).toHaveAttribute('data-tool-state', 'running');
-      await firstCall.locator(':scope > details > summary').click();
-      await expect(firstCall.locator(':scope > details')).toHaveAttribute('open');
+      await firstCall
+        .locator(
+          ':scope > [data-slot="trace-collapsible"] > [data-slot="trace-collapsible-trigger"]',
+        )
+        .click();
+      await expect(firstCall.locator(':scope > [data-slot="trace-collapsible"]')).toHaveAttribute(
+        'data-state',
+        'open',
+      );
       await expect(answer.locator('[data-tool-id="call_flow_1_0"]')).toBeVisible();
-      await expect(firstCall.locator(':scope > details')).toHaveAttribute('open');
+      await expect(firstCall.locator(':scope > [data-slot="trace-collapsible"]')).toHaveAttribute(
+        'data-state',
+        'open',
+      );
       await expect(answer).toHaveAttribute('data-status', 'completed');
       await expect(reasoning.locator('[data-streamdown="strong"]')).toHaveText([
         '搜索之前🙂',
@@ -336,13 +346,13 @@ for (const provider of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
       }
       await page.reload();
       await expect(answer).toHaveAttribute('data-status', 'completed');
-      await reasoning.locator(':scope > summary').click();
+      await reasoning.locator(':scope > [data-slot="trace-collapsible-trigger"]').click();
       await page.getByRole('button', { name: '搜索当前对话', exact: true }).click();
       const search = page.getByRole('search', { name: '当前对话搜索', exact: true }),
         input = search.getByLabel('查找当前对话', { exact: true });
       await input.fill('搜索之后🙂');
       await expect(search.getByRole('status')).toContainText('1 / 1');
-      await expect(reasoning).toHaveAttribute('open');
+      await expect(reasoning).toHaveAttribute('data-state', 'open');
       await input.fill('第二行。 搜索之后🙂');
       await expect(search.getByRole('status')).toContainText('1 / 1');
       await expect
@@ -403,17 +413,17 @@ test('a failed tool has one visible error while collapsed and can reveal and foc
       activity = page.getByTestId('tool-call');
     await expect(answer).toHaveAttribute('data-status', 'failed');
     const reasoning = page.getByTestId('message-reasoning');
-    await reasoning.locator(':scope > summary').click();
-    await expect(reasoning).not.toHaveAttribute('open');
-    await expect(activity).not.toHaveAttribute('open');
+    await reasoning.locator(':scope > [data-slot="trace-collapsible-trigger"]').click();
+    await expect(reasoning).toHaveAttribute('data-state', 'closed');
+    await expect(activity).toHaveAttribute('data-state', 'closed');
     await expect(answer.getByRole('alert')).toHaveCount(1);
     const error = answer.getByRole('alert');
     await expect(error).toContainText('联网服务拒绝访问，请检查密钥与权限。');
     await expect(error).toBeVisible();
     await expect(answer.getByText('生成失败', { exact: true })).toBeVisible();
     await answer.getByRole('button', { name: /^查看失败调用/ }).click();
-    await expect(reasoning).toHaveAttribute('open');
-    await expect(activity).toHaveAttribute('open');
+    await expect(reasoning).toHaveAttribute('data-state', 'open');
+    await expect(activity).toHaveAttribute('data-state', 'open');
     const call = answer.locator('[data-tool-state="failed"]');
     await expect(call).toBeFocused();
     await expect(call).toHaveAttribute(
@@ -421,7 +431,7 @@ test('a failed tool has one visible error while collapsed and can reveal and foc
       (await error.getAttribute('id')) as string,
     );
     await expect(answer.getByRole('alert')).toHaveCount(1);
-    await reasoning.locator(':scope > summary').click();
+    await reasoning.locator(':scope > [data-slot="trace-collapsible-trigger"]').click();
     await expect(error).toBeVisible();
   } finally {
     await page.close();
@@ -446,7 +456,10 @@ for (const [provider, tools] of combinations)
         'data-status',
         'completed',
       );
-      for (const summary of await page.getByTestId('tool-call').locator(':scope > summary').all())
+      for (const summary of await page
+        .getByTestId('tool-call')
+        .locator(':scope > [data-slot="trace-collapsible-trigger"]')
+        .all())
         await summary.click();
       await expect(page.getByTestId('tool-activity').getByRole('link')).toHaveCount(tools.length);
       await expect(
@@ -693,7 +706,10 @@ test('copy and restore retain enabled tools and saved sources without executing 
     }
     await page.goto(`/c/${restored.id}`);
     await expect(page.getByTestId('tool-call')).toHaveCount(2);
-    for (const summary of await page.getByTestId('tool-call').locator(':scope > summary').all())
+    for (const summary of await page
+      .getByTestId('tool-call')
+      .locator(':scope > [data-slot="trace-collapsible-trigger"]')
+      .all())
       await summary.click();
     await expect(page.getByTestId('tool-activity').getByRole('link')).toHaveCount(2);
     const modal = await parameters(page);

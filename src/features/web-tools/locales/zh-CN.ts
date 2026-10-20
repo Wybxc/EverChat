@@ -1,4 +1,5 @@
 export default {
+  newTab: '（在新标签页打开）',
   queued: '等待中',
   running: '执行中',
   completed: '已完成',

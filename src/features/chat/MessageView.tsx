@@ -1,4 +1,11 @@
 import { Spinner } from '@/components/ui/spinner';
+import {
+  Message as ChatMessage,
+  MessageContent,
+  MessageFooter,
+  MessageHeader,
+} from '@/components/ui/message';
+import { Bubble, BubbleContent } from '@/components/ui/bubble';
 import { Infinity as InfinityIcon } from 'lucide-react';
 import { useRef, useState, type Ref } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -23,6 +30,8 @@ import { MessageEditor } from './MessageEditor';
 import { ReasoningContent } from './ReasoningContent';
 import { MarkdownContent } from './rendering/MarkdownContent';
 import { UserMessageBubble } from './UserMessageBubble';
+import { GenerationMetadata } from './GenerationMetadata';
+import { isReportedToolFailure } from './message-errors';
 
 export function MessageView({
   navigationRef,
@@ -138,35 +147,36 @@ export function MessageView({
         data-message-id={message.id}
         className={`group ml-auto ${editing ? 'w-full' : 'w-fit'} max-w-[90%] sm:max-w-[82%]`}
       >
-        <DocumentPreviews conversationId={conversationId} files={messageFiles(message)} />
-        <ImagePreviews conversationId={conversationId} images={messageImages(message)} />
-        {editing ? (
-          <MessageEditor
-            {...editing}
-            user
-            hasAttachments={Boolean(messageFiles(message).length || messageImages(message).length)}
-          />
-        ) : (
-          messageText(message) && (
-            <UserMessageBubble data-search-content={`${message.id}:content`}>
-              {messageText(message)}
-            </UserMessageBubble>
-          )
-        )}
-        {!editing && actions}
-        {forkError && (
-          <p role="alert" className="mt-1 text-xs">
-            {renderUiMessage(forkError)}
-          </p>
-        )}
+        <ChatMessage align="end">
+          <MessageContent className="gap-1.5">
+            <DocumentPreviews conversationId={conversationId} files={messageFiles(message)} />
+            <ImagePreviews conversationId={conversationId} images={messageImages(message)} />
+            {editing ? (
+              <MessageEditor
+                {...editing}
+                user
+                hasAttachments={Boolean(
+                  messageFiles(message).length || messageImages(message).length,
+                )}
+              />
+            ) : (
+              messageText(message) && (
+                <UserMessageBubble data-search-content={`${message.id}:content`}>
+                  {messageText(message)}
+                </UserMessageBubble>
+              )
+            )}
+            {!editing && <MessageFooter className="px-0">{actions}</MessageFooter>}
+            {forkError && (
+              <p role="alert" className="mt-1 text-xs">
+                {renderUiMessage(forkError)}
+              </p>
+            )}
+          </MessageContent>
+        </ChatMessage>
       </article>
     );
-  const toolErrorVisible = Boolean(
-    message.error &&
-    message.tools?.calls.some(
-      ({ result }) => result?.status === 'failed' && result.error === message.error,
-    ),
-  );
+  const toolErrorVisible = isReportedToolFailure(message);
   return (
     <article
       ref={navigationRef}
@@ -177,63 +187,77 @@ export function MessageView({
       data-live-offset={message.liveOffset ?? message.durableOffset ?? 0}
       className="group min-w-0"
     >
-      <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-        <InfinityIcon className="h-4 w-4 shrink-0" aria-hidden="true" strokeWidth={1.7} />
-        <span className="min-w-0 break-words font-semibold">
-          {providerName && <>{providerName} · </>}
-          {message.modelName || message.model || 'EverChat'}
-        </span>
-        {isActive(message) && (
-          <span className="flex items-center gap-1.5 text-muted-foreground">
-            <Spinner />
-            {message.waitingForSummary
-              ? t(($) => $.waitingSummary)
-              : message.status === 'queued'
-                ? t(($) => $.queued)
-                : t(($) => $.generating)}
-          </span>
-        )}
-        {message.status === 'failed' && toolErrorVisible && (
-          <span>{t(($) => $.generationFailed)}</span>
-        )}
-      </div>
-      <ReasoningContent message={message} />
-      {editing ? (
-        <MessageEditor {...editing} user={false} hasAttachments={false} />
-      ) : messageText(message) ? (
-        <MarkdownContent
-          content={messageText(message)}
-          searchId={`${message.id}:content`}
-          streaming={isActive(message)}
-        />
-      ) : isActive(message) && !messageText(message, 'reasoning') && !message.tools ? (
-        <p className="py-2 text-sm text-muted-foreground">
-          {message.waitingForSummary ? t(($) => $.compactionBeforeAnswer) : t(($) => $.preparing)}
-        </p>
-      ) : null}
-      {(message.status === 'failed' || message.generation?.interrupted) &&
-        (!toolErrorVisible || message.generation?.failure || message.generation?.interrupted) && (
-          <ProviderFailureView
-            summary={
-              message.generation?.interrupted
-                ? uiMessage('chat', 'interruptedRetained')
-                : issueMessage(message.generation?.issue ?? problem('GENERATION_INTERRUPTED'))
-            }
-            failure={message.generation?.failure}
-            showSummary={!toolErrorVisible || message.generation?.interrupted}
-            stateKey={`failure:${message.id}`}
-            onSettings={onProviderSettings}
-          />
-        )}
-      {message.status === 'cancelled' && (
-        <p className="mt-4 text-xs text-muted-foreground">{t(($) => $.stopped)}</p>
-      )}
-      {!editing && actions}
-      {forkError && (
-        <p role="alert" className="mt-1 text-xs">
-          {renderUiMessage(forkError)}
-        </p>
-      )}
+      <ChatMessage>
+        <MessageContent>
+          <MessageHeader className="flex-wrap gap-x-2 gap-y-1 px-0">
+            <InfinityIcon className="h-4 w-4 shrink-0" aria-hidden="true" strokeWidth={1.7} />
+            <span className="min-w-0 break-words font-semibold text-foreground">
+              {providerName && <>{providerName} · </>}
+              {message.modelName || message.model || 'EverChat'}
+            </span>
+            <GenerationMetadata message={message} />
+            {message.revisionOf && !message.generation && <span>{t(($) => $.manuallyEdited)}</span>}
+            {isActive(message) && (
+              <span className="flex items-center gap-1.5 text-muted-foreground">
+                <Spinner />
+                {message.waitingForSummary
+                  ? t(($) => $.waitingSummary)
+                  : message.status === 'queued'
+                    ? t(($) => $.queued)
+                    : t(($) => $.generating)}
+              </span>
+            )}
+            {message.status === 'failed' && toolErrorVisible && (
+              <span>{t(($) => $.generationFailed)}</span>
+            )}
+          </MessageHeader>
+          <ReasoningContent message={message} />
+          {editing ? (
+            <MessageEditor {...editing} user={false} hasAttachments={false} />
+          ) : messageText(message) ? (
+            <Bubble variant="ghost" className="w-full">
+              <BubbleContent className="w-full">
+                <MarkdownContent
+                  content={messageText(message)}
+                  searchId={`${message.id}:content`}
+                  streaming={isActive(message)}
+                />
+              </BubbleContent>
+            </Bubble>
+          ) : isActive(message) && !messageText(message, 'reasoning') && !message.tools ? (
+            <p className="py-2 text-sm text-muted-foreground">
+              {message.waitingForSummary
+                ? t(($) => $.compactionBeforeAnswer)
+                : t(($) => $.preparing)}
+            </p>
+          ) : null}
+          {(message.status === 'failed' || message.generation?.interrupted) &&
+            (!toolErrorVisible ||
+              message.generation?.failure ||
+              message.generation?.interrupted) && (
+              <ProviderFailureView
+                summary={
+                  message.generation?.interrupted
+                    ? uiMessage('chat', 'interruptedRetained')
+                    : issueMessage(message.generation?.issue ?? problem('GENERATION_INTERRUPTED'))
+                }
+                failure={message.generation?.failure}
+                showSummary={Boolean(!toolErrorVisible || message.generation?.interrupted)}
+                stateKey={`failure:${message.id}`}
+                onSettings={onProviderSettings}
+              />
+            )}
+          {message.status === 'cancelled' && (
+            <p className="mt-4 text-xs text-muted-foreground">{t(($) => $.stopped)}</p>
+          )}
+          {!editing && <MessageFooter className="px-0">{actions}</MessageFooter>}
+          {forkError && (
+            <p role="alert" className="mt-1 text-xs">
+              {renderUiMessage(forkError)}
+            </p>
+          )}
+        </MessageContent>
+      </ChatMessage>
     </article>
   );
 }

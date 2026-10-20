@@ -2,6 +2,14 @@ import { useTranslation } from 'react-i18next';
 import './locales';
 import { Modal, ModalTitle } from '../../components/Modal';
 import { Button } from '@/components/ui/button';
+import {
+  Attachment,
+  AttachmentAction,
+  AttachmentActions,
+  AttachmentGroup,
+  AttachmentMedia,
+  AttachmentTrigger,
+} from '@/components/ui/attachment';
 import { useEffect, useId, useState } from 'react';
 import { X } from 'lucide-react';
 import { attachmentUrl } from '../../../shared/attachments/files';
@@ -33,23 +41,25 @@ export function ImagePreviews({
   if (!images.length) return null;
   return (
     <>
-      <div
-        className="flex flex-wrap gap-2"
+      <AttachmentGroup
+        className="gap-2"
         role="group"
         aria-label={remove ? t(($) => $.draftImages) : t(($) => $.messageImages)}
       >
         {images.map((image) => (
-          <div
+          <Attachment
+            size="sm"
+            orientation="vertical"
+            state={failed.has(image.attachmentId) ? 'error' : 'done'}
             key={image.attachmentId}
-            className="relative rounded-lg border border-border bg-background p-1"
+            className="min-w-0"
           >
-            <Button
-              variant="ghost"
+            <AttachmentTrigger
               type="button"
-              className="block max-w-32 overflow-hidden rounded-lg"
               aria-label={t(($) => $.preview, { name: image.name })}
               onClick={() => setPreview(image)}
-            >
+            />
+            <AttachmentMedia variant="image" className="[&_img]:object-contain">
               {failed.has(image.attachmentId) ? (
                 <span className="block p-3 text-xs">{t(($) => $.imageMissing)}</span>
               ) : (
@@ -57,26 +67,26 @@ export function ImagePreviews({
                   src={attachmentUrl(conversationId, image.attachmentId)}
                   alt={image.name}
                   loading="lazy"
-                  className="h-24 w-28 object-contain"
                   onError={() => setFailed((current) => new Set(current).add(image.attachmentId))}
                 />
               )}
-            </Button>
+            </AttachmentMedia>
             {remove && (
-              <Button
-                variant="secondary"
-                size="icon"
-                type="button"
-                className="absolute right-0 top-0"
-                aria-label={t(($) => $.remove, { name: image.name })}
-                onClick={() => remove(image.attachmentId)}
-              >
-                <X className="h-[0.8125rem] w-[0.8125rem]" />
-              </Button>
+              <AttachmentActions>
+                <AttachmentAction
+                  variant="secondary"
+                  size="icon"
+                  type="button"
+                  aria-label={t(($) => $.remove, { name: image.name })}
+                  onClick={() => remove(image.attachmentId)}
+                >
+                  <X className="h-[0.8125rem] w-[0.8125rem]" />
+                </AttachmentAction>
+              </AttachmentActions>
             )}
-          </div>
+          </Attachment>
         ))}
-      </div>
+      </AttachmentGroup>
       {preview && (
         <Modal
           open

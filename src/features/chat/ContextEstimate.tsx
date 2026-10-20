@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import './locales';
 import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
 import type { ContextEstimate } from '../../../shared/conversation/context-budget';
 import { metadataSourceLabel } from '../providers/model-labels';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -28,7 +29,16 @@ export function ContextEstimateView({ estimate }: { estimate: ContextEstimate })
             budget: number.format(estimate.inputBudget),
           })}
         >
-          ≈{compact.format(estimate.totalTokens)}
+          <span className="flex flex-col items-center gap-1">
+            ≈{compact.format(estimate.totalTokens)}
+            {estimate.windowSource !== 'fallback' && estimate.inputBudget > 0 && (
+              <Progress
+                aria-hidden
+                className="w-10"
+                value={Math.min(100, (100 * estimate.totalTokens) / estimate.inputBudget)}
+              />
+            )}
+          </span>
         </Button>
       </PopoverTrigger>
       <PopoverContent
@@ -48,6 +58,17 @@ export function ContextEstimateDetails({ estimate }: { estimate: ContextEstimate
 
   return (
     <>
+      {estimate.windowSource !== 'fallback' && estimate.inputBudget > 0 && (
+        <Progress
+          className="mb-2"
+          aria-label={t(($) => $.contextEstimate)}
+          aria-valuetext={t(($) => $.contextDescription, {
+            total: number.format(estimate.totalTokens),
+            budget: number.format(estimate.inputBudget),
+          })}
+          value={Math.min(100, (100 * estimate.totalTokens) / estimate.inputBudget)}
+        />
+      )}
       <p>
         {t(($) => $.contextTokens, {
           total: number.format(estimate.totalTokens),
