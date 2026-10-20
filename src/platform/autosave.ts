@@ -95,6 +95,7 @@ export class Autosave<T, Input = T> {
   }
   receive(settings: T) {
     if (this.pending || this.revision !== this.savedRevision) return;
+    if (this.snapshot.status === 'saved' && Object.is(this.snapshot.settings, settings)) return;
     this.saved = settings;
     this.emit({ settings, status: 'saved', error: '' });
   }

@@ -10,6 +10,33 @@ import { chooseChatModel, openParameters, openSpaceSettings } from '../../suppor
 
 const origin = 'http://127.0.0.1:5174',
   headers = { Origin: origin };
+
+test('opening a new chat with retired cached settings does not loop or rewrite the cache', async ({
+  page,
+}) => {
+  await page.request.post('/__dev/access/login', { headers });
+  const stored = { ...defaults, systemPrompt: '保留的本机提示词', useSummaries: false };
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.addInitScript((settings) => {
+    localStorage.setItem('everchat:conversation-settings:new', JSON.stringify(settings));
+  }, stored);
+  await page.goto('/');
+  await openParameters(page);
+  const modal = page.getByRole('dialog', { name: '新对话参数', exact: true });
+  await expect(modal.getByLabel('会话系统提示词', { exact: true })).toHaveValue(
+    stored.systemPrompt,
+  );
+  await modal.getByRole('button', { name: '关闭会话参数' }).click();
+  await expect(page.getByLabel('消息', { exact: true })).toBeVisible();
+  expect(errors).toEqual([]);
+  expect(
+    await page.evaluate(() =>
+      JSON.parse(localStorage.getItem('everchat:conversation-settings:new')!),
+    ),
+  ).toEqual(stored);
+});
+
 async function setup(request: APIRequestContext, model = 'alarm-stall') {
   expect((await request.post('/__dev/access/login', { headers })).ok()).toBe(true);
   const original = (await request

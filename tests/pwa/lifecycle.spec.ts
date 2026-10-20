@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { DEFAULT_CONVERSATION_SETTINGS } from '../../shared/conversation/settings';
 
 const id = '00000000-0000-4000-8000-000000000101';
 const control = (request: APIRequestContext, data: unknown) =>
@@ -60,6 +61,33 @@ test.afterEach(async ({ context, request }) => {
     swDelay: 0,
     assetDelay: 0,
   });
+});
+
+test('a production update preserves cached new-chat parameters without an update loop', async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.addInitScript(
+    (settings) => {
+      if (!localStorage.getItem('everchat:conversation-settings:new'))
+        localStorage.setItem('everchat:conversation-settings:new', JSON.stringify(settings));
+    },
+    { ...DEFAULT_CONVERSATION_SETTINGS, systemPrompt: '升级前的本机提示词', useSummaries: false },
+  );
+  await controlled(page);
+  await page.getByLabel('消息', { exact: true }).fill('升级后保留草稿');
+  const panel = await settings(page);
+  await control(page.request, { version: 'b' });
+  await panel.getByRole('button', { name: '检查更新', exact: true }).click();
+  await expect(page.getByTestId('pwa-notice')).toContainText('新版本已就绪');
+  await Promise.all([
+    page.waitForEvent('framenavigated', (frame) => frame === page.mainFrame()),
+    panel.getByRole('button', { name: '更新应用', exact: true }).click(),
+  ]);
+  await expect.poll(() => version(page)).toBe('pwa-test-b');
+  await expect(page.getByLabel('消息', { exact: true })).toHaveValue('升级后保留草稿');
+  expect(errors).toEqual([]);
 });
 
 test('two real production builds wait for unsaved settings in every tab and preserve both drafts when updated', async ({

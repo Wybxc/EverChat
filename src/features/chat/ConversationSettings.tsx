@@ -6,7 +6,15 @@ import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { X } from 'lucide-react';
-import { useEffect, useId, useRef, useState, useSyncExternalStore, type RefObject } from 'react';
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type RefObject,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import * as v from 'valibot';
 import { MAX_SYSTEM_PROMPT_LENGTH } from '../../../shared/conversation/limits';
@@ -138,6 +146,9 @@ export function ConversationSettingsDialog({
   const scroll = useRef<HTMLDivElement>(null);
   const [tab, setTab] = useState<ParameterTab>(focusTools ? 'tools' : 'general');
   const service = useWebToolSettings(open);
+  // Reuse one read-only projection in both the store initializer and receive effect.
+  // Two copies can otherwise bounce through onDraft and the parent's initial prop.
+  const initialSettings = useMemo(() => withContextDefaults(initial), [initial]);
   const draftKey = `conversation-settings-draft:${id ?? 'new'}`;
   const [cached] = useState(() => {
     const value = read<{ settings: ConversationSettings; dirty: boolean } | null>(draftKey, null);
@@ -146,7 +157,7 @@ export function ConversationSettingsDialog({
   const [store] = useState(() => {
     const epoch = storageEpoch();
     const autosave = new Autosave(
-      withContextDefaults(cached?.dirty ? cached.settings : initial),
+      cached?.dirty ? withContextDefaults(cached.settings) : initialSettings,
       async (settings: ConversationSettings) => {
         if (epoch !== storageEpoch()) throw new UiError(uiMessage('chat', 'sessionChanged'));
         if (id) return api<ConversationSettings>(`/conversations/${id}/settings`, 'PUT', settings);
@@ -170,8 +181,8 @@ export function ConversationSettingsDialog({
     if (cached?.dirty) store.update(withContextDefaults(cached.settings));
   }, [cached, store]);
   useEffect(() => {
-    store.receive(withContextDefaults(initial));
-  }, [initial, store]);
+    store.receive(initialSettings);
+  }, [initialSettings, store]);
   useEffect(() => {
     onDraft(settings);
   }, [settings, onDraft]);

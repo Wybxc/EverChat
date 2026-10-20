@@ -192,3 +192,29 @@ test('remote autosave updates never overwrite dirty local settings or a pending 
     store.dispose();
   }
 });
+
+test('receiving the current saved settings keeps the external-store snapshot stable', () => {
+  const store = new Autosave(
+    defaults,
+    async (settings) => settings,
+    () => {},
+    (_saved, draft) => draft,
+  );
+  let notifications = 0;
+  const unsubscribe = store.subscribe(() => notifications++);
+  try {
+    const original = store.getSnapshot();
+    store.receive(defaults);
+    assert.equal(store.getSnapshot(), original);
+    assert.equal(notifications, 0);
+    const remote = { ...defaults, temperature: 0.5 };
+    store.receive(remote);
+    const updated = store.getSnapshot();
+    store.receive(remote);
+    assert.equal(store.getSnapshot(), updated);
+    assert.equal(notifications, 1);
+  } finally {
+    unsubscribe();
+    store.dispose();
+  }
+});
