@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import './locales';
+import { CircleDashed } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import type { ContextEstimate } from '../../../shared/conversation/context-budget';
@@ -8,9 +9,6 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { formatNumber } from '../../platform/i18n/format';
 
 const number = { format: formatNumber };
-const compact = {
-  format: (value: number) => formatNumber(value, { notation: 'compact', maximumFractionDigits: 1 }),
-};
 
 function usageRatio(estimate: ContextEstimate) {
   return estimate.windowSource !== 'fallback' && estimate.inputBudget > 0
@@ -33,20 +31,21 @@ export function ContextEstimateView({ estimate }: { estimate: ContextEstimate })
       <PopoverTrigger asChild>
         <Button
           variant="ghost"
+          size="icon"
           type="button"
           data-testid="context-estimate"
-          className="context-trigger min-w-11 shrink-0 gap-1.5 px-2 text-xs text-muted-foreground"
+          className="context-trigger composer-icon"
           aria-label={t(($) => $.viewContextEstimate)}
           aria-description={t(($) => $.contextDescription, {
             total: number.format(estimate.totalTokens),
             budget: number.format(estimate.inputBudget),
           })}
         >
-          {ratio !== undefined && (
+          {ratio !== undefined ? (
             <Progress aria-hidden shape="circle" value={Math.min(100, ratio * 100)} />
+          ) : (
+            <CircleDashed aria-hidden="true" />
           )}
-          <span>≈{compact.format(estimate.totalTokens)}</span>
-          {ratio !== undefined && <span>{usagePercent(ratio)}</span>}
         </Button>
       </PopoverTrigger>
       <PopoverContent
