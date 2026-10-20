@@ -1,6 +1,7 @@
 import { MAX_MESSAGE_TEXT_BYTES, jsonTextBytes } from '../../shared/conversation/limits';
 import type {
   LanguageModelV4FunctionTool,
+  LanguageModelV4StreamPart,
   LanguageModelV4Prompt,
   LanguageModelV4ReasoningPart,
   LanguageModelV4TextPart,
@@ -8,7 +9,7 @@ import type {
   SharedV4ProviderMetadata,
   SharedV4ProviderOptions,
 } from '@ai-sdk/provider';
-import { ProviderStream, type StreamUsage } from '../../shared/streaming/provider-stream';
+import { type StreamUsage } from '../../shared/streaming/provider-stream';
 import type { ProviderConfig } from '../../shared/providers/types';
 import {
   assertWebToolSupport,
@@ -22,9 +23,7 @@ import {
   type WebToolOutcome,
 } from '../../shared/web-tools/tasks';
 import { ProviderError } from '../generation/errors';
-import { providerCallOptions, providerModel } from './sdk';
 
-export const MAX_TOOL_TURN_WIRE_BYTES = 8 * 1024 * 1024;
 const MAX_TOOL_TURN_CONTEXT_BYTES = 1024 * 1024;
 type AssistantPart =
   LanguageModelV4TextPart | LanguageModelV4ReasoningPart | LanguageModelV4ToolCallPart;
@@ -75,7 +74,7 @@ function toolWireIdentity(config: ProviderConfig, enabled: readonly WebToolName[
       ids.has(value) ||
       slots.size >= MAX_TOOL_CALLS_PER_TURN
     )
-      throw new Error('Ambiguous tool identity');
+      throw new Error('工具调用标识重复、缺失或数量过多。');
     validateWebToolIdentity(value, name, enabled);
     ids.add(value);
     slots.set(slot, { id: value, name });
@@ -90,7 +89,7 @@ function toolWireIdentity(config: ProviderConfig, enabled: readonly WebToolName[
             const call = object(value),
               fn = object(call.function);
             if (!Number.isInteger(call.index) || Number(call.index) < 0)
-              throw new Error('Missing tool index');
+              throw new Error('工具调用缺少索引。');
             add(String(call.index), call.id, fn.name, true);
           }
         }
@@ -177,7 +176,11 @@ function assertPrivateReasoning(config: ProviderConfig, content: AssistantPart[]
           !present(options?.anthropic?.signature) &&
           !present(options?.anthropic?.redactedData)) ||
         (config.provider === 'openai-responses' &&
-          !present(options?.openai?.reasoningEncryptedContent))
+          !Object.values(options ?? {}).some(
+            (value) =>
+              present(value.reasoningEncryptedContent) ||
+              (Array.isArray(value.reasoningContent) && value.reasoningContent.length > 0),
+          ))
       )
         throw new ProviderError('供应商未返回工具续接需要的完整推理资料。');
     }
@@ -232,63 +235,35 @@ export function validateProviderToolTurn(
   if (turn.calls.length) assertPrivateReasoning(config, turn.content);
 }
 
-/** Replays a bounded saved response through the installed SDK; it never calls a provider. */
-export async function collectProviderToolTurn(
-  config: ProviderConfig,
-  enabled: readonly WebToolName[],
-  body: ReadableStream<Uint8Array>,
-  signal: AbortSignal,
-): Promise<ProviderToolTurn> {
-  let replay: ReadableStream<Uint8Array> | undefined;
-  try {
+/** Collects private continuation parts during the single live SDK parse. */
+export class ProviderToolCollector {
+  private readonly content: AssistantPart[] = [];
+  private readonly calls: WebToolCall[] = [];
+  private readonly blocks = new Map<
+    string,
+    LanguageModelV4TextPart | LanguageModelV4ReasoningPart
+  >();
+  private readonly toolBlocks = new Map<
+    string,
+    { part: LanguageModelV4ToolCallPart; inputBytes: number; complete: boolean }
+  >();
+  private finishReason: ProviderToolTurn['finishReason'] | undefined;
+  private textCharacters = 0;
+  private reasoningCharacters = 0;
+  private readonly wireIdentity;
+  constructor(
+    private readonly config: ProviderConfig,
+    private readonly enabled: readonly WebToolName[],
+  ) {
     assertWebToolSupport(config.modelMetadata, enabled);
-    signal.throwIfAborted();
-    const wireIdentity = toolWireIdentity(config, enabled);
-    const guard = new ProviderStream(
-      config.provider,
-      false,
-      undefined,
-      '',
-      '',
-      wireIdentity.observe,
-    );
-    let received = 0,
-      fetched = false;
-    replay = body.pipeThrough(
-      new TransformStream<Uint8Array, Uint8Array>({
-        transform(chunk, controller) {
-          if ((received += chunk.byteLength) > MAX_TOOL_TURN_WIRE_BYTES)
-            throw new ProviderError('工具轮次的供应商响应超过大小限制。');
-          guard.feed(chunk);
-          guard.drainDeltas();
-          if (guard.failed) throw new ProviderError('工具轮次的供应商流格式无效。');
-          controller.enqueue(chunk);
-        },
-        flush() {
-          guard.assertEnded();
-        },
-      }),
-      { signal },
-    );
-    const fetch: typeof globalThis.fetch = async () => {
-      if (fetched) throw new ProviderError('工具响应不能重复回放。');
-      fetched = true;
-      return new Response(replay!, { headers: { 'content-type': 'text/event-stream' } });
-    };
-    const result = await providerModel({ ...config, apiKey: 'local-replay' }, fetch).doStream(
-      providerCallOptions(config, [], signal, webToolDefinitions(enabled)),
-    );
-    const reader = result.stream.getReader(),
-      content: AssistantPart[] = [],
-      calls: WebToolCall[] = [];
-    const blocks = new Map<string, LanguageModelV4TextPart | LanguageModelV4ReasoningPart>();
-    const toolBlocks = new Map<
-      string,
-      { part: LanguageModelV4ToolCallPart; inputBytes: number; complete: boolean }
-    >();
-    let finishReason: ProviderToolTurn['finishReason'] | undefined,
-      textCharacters = 0,
-      reasoningCharacters = 0;
+    this.wireIdentity = toolWireIdentity(config, enabled);
+  }
+  add(part: LanguageModelV4StreamPart) {
+    const { content, calls, blocks, toolBlocks, enabled, config, wireIdentity } = this;
+    if (part.type === 'raw') {
+      wireIdentity.observe(object(part.rawValue));
+      return;
+    }
     const add = (part: AssistantPart) => {
       if (content.length >= 64) throw new ProviderError('工具轮次的内容部分超过限制。');
       content.push(part);
@@ -312,102 +287,93 @@ export async function collectProviderToolTurn(
       if (block.part.toolName !== name) throw new ProviderError('同一工具调用的名称发生变化。');
       return block;
     };
-    try {
-      while (true) {
-        signal.throwIfAborted();
-        const next = await reader.read();
-        if (next.done) break;
-        const part = next.value;
-        if (part.type === 'error') throw new ProviderError('供应商无法完成工具轮次。');
-        if (part.type === 'text-start' || part.type === 'reasoning-start') {
-          const type = part.type === 'text-start' ? 'text' : 'reasoning',
-            key = `${type}:${part.id}`;
-          if (blocks.has(key)) throw new ProviderError('供应商重复开始同一内容部分。');
-          const block: LanguageModelV4TextPart | LanguageModelV4ReasoningPart = { type, text: '' };
-          mergeMetadata(block, part.providerMetadata);
-          blocks.set(key, block);
-          add(block);
-        } else if (
-          part.type === 'text-delta' ||
-          part.type === 'reasoning-delta' ||
-          part.type === 'text-end' ||
-          part.type === 'reasoning-end'
-        ) {
-          const reasoning = part.type.startsWith('reasoning'),
-            block = blocks.get(`${reasoning ? 'reasoning' : 'text'}:${part.id}`);
-          if (!block) throw new ProviderError('供应商内容部分缺少起始状态。');
-          if ('delta' in part) {
-            const joinsPair =
-              /^[\uDC00-\uDFFF]/.test(part.delta) && /[\uD800-\uDBFF]$/.test(block.text);
-            const deltaBytes = jsonTextBytes(part.delta) - (joinsPair ? 8 : 0);
-            if (reasoning) reasoningCharacters += deltaBytes;
-            else textCharacters += deltaBytes;
-            if (textCharacters + reasoningCharacters > MAX_MESSAGE_TEXT_BYTES)
-              throw new ProviderError('工具轮次的正文或思考内容超过限制。');
-            block.text += part.delta;
-          }
-          mergeMetadata(block, part.providerMetadata, part.type === 'reasoning-delta');
-          if (part.type.endsWith('-end'))
-            blocks.delete(`${reasoning ? 'reasoning' : 'text'}:${part.id}`);
-        } else if (part.type === 'tool-input-start') {
-          if (part.providerExecuted || part.dynamic || toolBlocks.has(part.id))
-            throw new ProviderError('供应商返回了不允许的工具调用。');
-          mergeMetadata(toolBlock(part.id, part.toolName).part, part.providerMetadata);
-        } else if (part.type === 'tool-input-delta') {
-          const block = toolBlocks.get(part.id);
-          if (
-            !block ||
-            block.complete ||
-            (block.inputBytes += new TextEncoder().encode(part.delta).byteLength) >
-              MAX_TOOL_INPUT_BYTES
-          )
-            throw new ProviderError('工具参数缺少起始状态或超过大小限制。');
-          mergeMetadata(block.part, part.providerMetadata);
-        } else if (part.type === 'tool-input-end') {
-          const block = toolBlocks.get(part.id);
-          if (block) mergeMetadata(block.part, part.providerMetadata);
-        } else if (part.type === 'tool-call') {
-          if (
-            part.providerExecuted ||
-            part.dynamic ||
-            new TextEncoder().encode(part.input).byteLength > MAX_TOOL_INPUT_BYTES
-          )
-            throw new ProviderError('供应商返回了不允许的工具调用。');
-          const block = toolBlock(part.toolCallId, part.toolName);
-          if (block.complete) throw new ProviderError('供应商重复返回同一工具调用。');
-          const call = validateWebToolCall(
-            { id: part.toolCallId, name: part.toolName, input: JSON.parse(part.input) },
-            enabled,
-          );
-          block.part.input = call.input;
-          mergeMetadata(block.part, part.providerMetadata);
-          block.complete = true;
-          calls.push(call);
-        } else if (part.type === 'finish') {
-          if (finishReason || !['stop', 'length', 'tool-calls'].includes(part.finishReason.unified))
-            throw new ProviderError('供应商未正常完成工具轮次。');
-          finishReason = part.finishReason.unified as ProviderToolTurn['finishReason'];
-        } else if (
-          !(part.type === 'custom' && part.kind === 'anthropic.message_start') &&
-          !['stream-start', 'response-metadata'].includes(part.type)
-        ) {
-          throw new ProviderError('供应商返回了当前不支持的内容或执行权限。');
-        }
+    if (part.type === 'error') throw new ProviderError('供应商无法完成工具轮次。');
+    if (part.type === 'text-start' || part.type === 'reasoning-start') {
+      const type = part.type === 'text-start' ? 'text' : 'reasoning',
+        key = `${type}:${part.id}`;
+      if (blocks.has(key)) throw new ProviderError('供应商重复开始同一内容部分。');
+      const block: LanguageModelV4TextPart | LanguageModelV4ReasoningPart = { type, text: '' };
+      mergeMetadata(block, part.providerMetadata);
+      blocks.set(key, block);
+      add(block);
+    } else if (
+      part.type === 'text-delta' ||
+      part.type === 'reasoning-delta' ||
+      part.type === 'text-end' ||
+      part.type === 'reasoning-end'
+    ) {
+      const reasoning = part.type.startsWith('reasoning'),
+        block = blocks.get(`${reasoning ? 'reasoning' : 'text'}:${part.id}`);
+      if (!block) throw new ProviderError('供应商内容部分缺少起始状态。');
+      if ('delta' in part) {
+        const joinsPair =
+          /^[\uDC00-\uDFFF]/.test(part.delta) && /[\uD800-\uDBFF]$/.test(block.text);
+        const deltaBytes = jsonTextBytes(part.delta) - (joinsPair ? 8 : 0);
+        if (reasoning) this.reasoningCharacters += deltaBytes;
+        else this.textCharacters += deltaBytes;
+        if (this.textCharacters + this.reasoningCharacters > MAX_MESSAGE_TEXT_BYTES)
+          throw new ProviderError('工具轮次的正文或思考内容超过限制。');
+        block.text += part.delta;
       }
-    } catch (error) {
-      // Drain only this bounded saved replay. Early SDK cancellation can discard
-      // protocol-finalization failures; it must never retry or open a live call.
-      try {
-        while (!(await reader.read()).done) {
-          /* Discard the invalid turn. */
-        }
-      } catch {
-        /* Keep the first failure. */
-      }
-      throw error;
-    } finally {
-      reader.releaseLock();
+      mergeMetadata(block, part.providerMetadata, part.type === 'reasoning-delta');
+      if (part.type.endsWith('-end'))
+        blocks.delete(`${reasoning ? 'reasoning' : 'text'}:${part.id}`);
+    } else if (part.type === 'tool-input-start') {
+      if (part.providerExecuted || part.dynamic || toolBlocks.has(part.id))
+        throw new ProviderError('供应商返回了不允许的工具调用。');
+      mergeMetadata(toolBlock(part.id, part.toolName).part, part.providerMetadata);
+    } else if (part.type === 'tool-input-delta') {
+      const block = toolBlocks.get(part.id);
+      if (
+        !block ||
+        block.complete ||
+        (block.inputBytes += new TextEncoder().encode(part.delta).byteLength) > MAX_TOOL_INPUT_BYTES
+      )
+        throw new ProviderError('工具参数缺少起始状态或超过大小限制。');
+      mergeMetadata(block.part, part.providerMetadata);
+    } else if (part.type === 'tool-input-end') {
+      const block = toolBlocks.get(part.id);
+      if (block) mergeMetadata(block.part, part.providerMetadata);
+    } else if (part.type === 'tool-call') {
+      if (
+        part.providerExecuted ||
+        part.dynamic ||
+        new TextEncoder().encode(part.input).byteLength > MAX_TOOL_INPUT_BYTES
+      )
+        throw new ProviderError('供应商返回了不允许的工具调用。');
+      const block = toolBlock(part.toolCallId, part.toolName);
+      if (block.complete) throw new ProviderError('供应商重复返回同一工具调用。');
+      const call = validateWebToolCall(
+        { id: part.toolCallId, name: part.toolName, input: JSON.parse(part.input) },
+        enabled,
+      );
+      block.part.input = call.input;
+      mergeMetadata(block.part, part.providerMetadata);
+      block.complete = true;
+      calls.push(call);
+    } else if (part.type === 'finish') {
+      if (
+        this.finishReason ||
+        !['stop', 'length', 'tool-calls'].includes(part.finishReason.unified)
+      )
+        throw new ProviderError('供应商未正常完成工具轮次。');
+      this.finishReason = part.finishReason.unified as ProviderToolTurn['finishReason'];
+    } else if (
+      !(part.type === 'custom' && part.kind === 'anthropic.message_start') &&
+      !['stream-start', 'response-metadata'].includes(part.type)
+    ) {
+      throw new ProviderError('供应商返回了当前不支持的内容或执行权限。');
     }
+    if (
+      'providerMetadata' in part &&
+      part.providerMetadata &&
+      bytes(content) > MAX_TOOL_TURN_CONTEXT_BYTES
+    )
+      throw new ProviderError('工具续接内容超过保存限制。');
+  }
+  finish(usage: StreamUsage, usageIsFinal: boolean): ProviderToolTurn {
+    const { content, calls, blocks, toolBlocks, finishReason, config, enabled, wireIdentity } =
+      this;
     if (
       !finishReason ||
       blocks.size ||
@@ -418,25 +384,18 @@ export async function collectProviderToolTurn(
       throw new ProviderError('供应商未完整返回工具调用或文字回答。');
     if (calls.length) assertPrivateReasoning(config, content);
     wireIdentity.assertCalls(calls);
-    const state = guard.checkpoint();
     const turn: ProviderToolTurn = {
       identity: providerToolIdentity(config),
       content,
       calls,
       finishReason,
-      usage: state.usage,
-      usageIsFinal: state.usageIsFinal,
+      usage,
+      usageIsFinal,
     };
     if (bytes(turn) > MAX_TOOL_TURN_CONTEXT_BYTES)
       throw new ProviderError('工具续接内容超过保存限制。');
     validateProviderToolTurn(turn, enabled, config);
     return turn;
-  } catch (error) {
-    await (replay ?? body).cancel().catch(() => {});
-    if (error instanceof ProviderError) throw error;
-    throw new ProviderError(
-      signal.aborted ? '工具响应解析已中断。' : '无法验证供应商的完整工具响应。',
-    );
   }
 }
 

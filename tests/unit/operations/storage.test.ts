@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
 import { migrateStorage } from '../../../scripts/operations/migrations';
-import { decodeValue } from '../../../scripts/operations/storage-protocol';
+import { decodeValue, MIGRATION_TABLES } from '../../../scripts/operations/storage-protocol';
+import { DEFAULT_CONVERSATION_SETTINGS } from '../../../shared/conversation/settings';
 import { initializeConversation } from '../../../worker/conversation/schema';
 import {
   initializeStorageSchema,
@@ -47,6 +48,65 @@ const snapshot = (db: DatabaseSync) =>
     .prepare("SELECT name,sql FROM sqlite_master WHERE type='table' ORDER BY name")
     .all()
     .map(({ name, sql }) => ({ name, sql, rows: db.prepare(`SELECT * FROM "${name}"`).all() }));
+
+test('retired summary settings and private wire storage are cleaned only by a replayable offline patch', () => {
+  const local = new DatabaseSync(':memory:'),
+    remote = new DatabaseSync(':memory:');
+  try {
+    for (const table of ['conversation_settings', 'tool_stream_commits'])
+      assert.ok(MIGRATION_TABLES.conversation.includes(table));
+    for (const db of [local, remote]) {
+      initializeConversation(storage(db).sql, false);
+      db.exec("UPDATE conversation_state SET epoch='sdk-fixture'");
+      db.exec('CREATE TABLE tool_stream_commits(runId TEXT,payload TEXT)');
+      db.exec("INSERT INTO tool_stream_commits VALUES ('old','private-wire')");
+      db.prepare('INSERT INTO conversation_settings VALUES (1,?)').run(
+        JSON.stringify({
+          ...DEFAULT_CONVERSATION_SETTINGS,
+          useSummaries: false,
+          contextBudget: 8192,
+        }),
+      );
+    }
+    const before = snapshot(remote);
+    initializeConversation(storage(remote).sql, false);
+    assert.deepEqual(snapshot(remote), before);
+    const patch = migrateStorage(local, 'conversation');
+    for (const statement of patch)
+      remote.prepare(statement.sql).run(...statement.args.map(decodeValue));
+    assert.deepEqual(snapshot(remote), snapshot(local));
+    assert.equal(
+      remote.prepare("SELECT name FROM sqlite_master WHERE name='tool_stream_commits'").get(),
+      undefined,
+    );
+    const settings = JSON.parse(
+      String(remote.prepare('SELECT payload FROM conversation_settings').get()!.payload),
+    );
+    assert.equal('useSummaries' in settings, false);
+    assert.equal(settings.contextBudget, 8192);
+  } finally {
+    local.close();
+    remote.close();
+  }
+});
+
+test('offline conversion refuses active raw supplier streams without modifying the source', () => {
+  const db = new DatabaseSync(':memory:');
+  try {
+    initializeConversation(storage(db).sql, false);
+    db.exec(
+      "INSERT INTO messages(id,role,content,status,createdAt) VALUES ('a','assistant','prefix','running',1)",
+    );
+    db.exec(
+      "INSERT INTO runs(id,conversationId,assistantId,context,updatedAt,streamVersion) VALUES ('r','c','a','[]',1,'raw-sse-v1')",
+    );
+    const before = snapshot(db);
+    assert.throws(() => migrateStorage(db, 'conversation'), /旧版流任务仍在进行/);
+    assert.deepEqual(snapshot(db), before);
+  } finally {
+    db.close();
+  }
+});
 
 test('schema 1 accounting upgrades are offline, including deleted conversations', () => {
   for (const deleted of [false, true]) {

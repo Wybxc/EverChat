@@ -26,6 +26,8 @@ export const MIGRATION_TABLES: Record<StoreKind, string[]> = {
     'submissions',
     'events',
     'stream_commits',
+    'tool_stream_commits',
+    'conversation_settings',
     'runs',
     'message_web_tools',
     'conversation_state',

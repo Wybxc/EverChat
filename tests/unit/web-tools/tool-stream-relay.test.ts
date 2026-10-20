@@ -1,128 +1,65 @@
-import { MAX_TOOL_TURN_WIRE_BYTES } from '../../../worker/providers/tool-turn';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { backupMessage } from '../../../shared/backup/backup';
 import type { Message } from '../../../shared/conversation/types';
 import { resolveModelMetadata } from '../../../shared/models/metadata';
-import type { ProviderConfig } from '../../../shared/providers/types';
 import { addGenerationUsage } from '../../../shared/streaming/generation';
 import { ProviderStream } from '../../../shared/streaming/provider-stream';
-import { collectProviderToolTurn } from '../../../worker/providers/tool-turn';
-import { ToolStreamRelay } from '../../../worker/web-tools/stream-relay';
+import { fixtureStream } from '../../support/providers/tool-turn';
 import {
   fragmentedToolBody,
   toolFinalStream,
   toolStream,
 } from '../../support/providers/tool-streams';
-
-for (const provider of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'] as const)
-  test(`${provider} tool relay preserves private wire bytes and never puts continuation metadata in display frames or partial checkpoints`, async () => {
-    const config: ProviderConfig = {
-      provider,
-      baseUrl: 'https://provider.example/v1',
-      model: 'fixture',
-      systemPrompt: '',
-      maxOutputTokens: null,
-      modelMetadata: resolveModelMetadata(provider, {
-        id: 'fixture',
-        name: 'Fixture',
-        enabled: true,
-        metadataOverrides: { toolCalls: true },
-      }),
-    };
-    const wire = toolStream(provider, { redacted: true, count: 2 }),
-      source: Uint8Array[] = [],
-      output: Uint8Array[] = [];
-    const display = new ProviderStream('openai-chat', true);
-    const relay = new ToolStreamRelay(
-      config,
-      (bytes) => source.push(bytes),
-      (bytes) => {
-        output.push(bytes);
-        display.feed(bytes);
+for (const provider of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'] as const) {
+  for (const final of [false, true])
+    test(`${provider} single SDK parse keeps continuation private (${final ? 'final answer' : 'tool call'})`, async () => {
+      const config = {
+        provider,
+        baseUrl: 'https://fixture.invalid/v1',
+        model: 'fixture',
+        apiKey: 'synthetic-fixture-key',
+        systemPrompt: '',
+        maxOutputTokens: null,
+        modelMetadata: resolveModelMetadata(provider, {
+          id: 'fixture',
+          name: 'Fixture',
+          enabled: true,
+          metadataOverrides: { toolCalls: true },
+        }),
+      };
+      const output = await fixtureStream(
+        config,
+        ['web_search', 'read_webpage'],
+        fragmentedToolBody(
+          final ? toolFinalStream(provider) : toolStream(provider, { redacted: true, count: 2 }),
+          1,
+        ),
+        new AbortController().signal,
+      );
+      const parser = new ProviderStream(provider, true),
+        reader = output.getReader();
+      let wire = '';
+      while (true) {
+        const next = await reader.read();
+        if (next.done) break;
+        wire += new TextDecoder().decode(next.value);
+        parser.feed(next.value);
         assert.doesNotMatch(
-          JSON.stringify(display.checkpoint()),
+          wire + JSON.stringify(parser.checkpoint()),
           /encrypted-fixture|redacted-fixture|fixture-signature|providerOptions|call_0/,
         );
-      },
-    );
-    const encoded = new TextEncoder().encode(wire);
-    for (let offset = 0; offset < encoded.length; offset += 7)
-      relay.add(encoded.subarray(offset, offset + 7));
-    relay.end();
-    display.assertEnded();
-    const original = Buffer.concat(source).toString('utf8');
-    assert.equal(original, wire);
-    assert.equal(display.reasoning, provider !== 'gemini' ? '检索资料🙂' : '');
-    assert.doesNotMatch(
-      Buffer.concat(output).toString('utf8'),
-      /encrypted-fixture|redacted-fixture|signature|"tool_calls":\[|functionCall|call_0/,
-    );
-    const turn = await collectProviderToolTurn(
-      config,
-      ['web_search', 'read_webpage'],
-      fragmentedToolBody(original),
-      new AbortController().signal,
-    );
-    assert.equal(turn.calls.length, 2);
-  });
-
-for (const provider of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'] as const)
-  test(`${provider} final tool display streams retain UTF-8, final usage and a completed answer`, () => {
-    const display = new ProviderStream('openai-chat', true),
-      relay = new ToolStreamRelay(
-        { provider },
-        () => {},
-        (bytes) => display.feed(bytes),
-      );
-    const bytes = new TextEncoder().encode(toolFinalStream(provider));
-    for (const byte of bytes) relay.add(new Uint8Array([byte]));
-    relay.end();
-    display.assertComplete();
-    assert.equal(display.content, '**工具回答🙂**\n结论。');
-    assert.equal(display.checkpoint().usage.inputTokens, 10);
-    assert.equal(display.checkpoint().usage.outputTokens, 5);
-  });
-
-test('large split signatures never enter public pending-event state, and oversize/incomplete private streams cannot invent a completed display', () => {
-  const display = new ProviderStream('openai-chat', true),
-    output: Uint8Array[] = [];
-  const relay = new ToolStreamRelay(
-    { provider: 'anthropic' },
-    () => {},
-    (bytes) => {
-      output.push(bytes);
-      display.feed(bytes);
-    },
-  );
-  const bytes = new TextEncoder().encode(
-    toolStream('anthropic', { signature: Array(6).fill('private-marker-'.repeat(7000)) }),
-  );
-  for (let offset = 0; offset < bytes.length; offset += 16_384) {
-    relay.add(bytes.subarray(offset, offset + 16_384));
-    assert.doesNotMatch(JSON.stringify(display.checkpoint()), /private-marker/);
-  }
-  relay.end();
-  assert.doesNotMatch(new TextDecoder().decode(Buffer.concat(output)), /private-marker/);
-  let writes = 0;
-  const oversized = new ToolStreamRelay(
-    { provider: 'openai-chat' },
-    () => {
-      writes++;
-    },
-    () => {},
-  );
-  assert.throws(() => oversized.add(new Uint8Array(MAX_TOOL_TURN_WIRE_BYTES + 1)), /8 MiB/);
-  assert.equal(writes, 0);
-  const truncated = new ToolStreamRelay(
-    { provider: 'openai-chat' },
-    () => {},
-    () => {},
-  );
-  truncated.add(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"prefix"}}]}\n\n'));
-  assert.throws(() => truncated.end(), /提前结束/);
-});
-
+      }
+      parser.assertEnded();
+      if (final) {
+        parser.assertComplete();
+        assert.equal(parser.content, '**工具回答🙂**\n结论。');
+      } else {
+        assert.equal(output.toolTurn?.calls.length, 2);
+        assert.equal(parser.reasoning, provider === 'gemini' ? '' : '检索资料🙂');
+      }
+    });
+}
 test('multi-step usage and partial backups preserve earlier reported counts and omit overflowing fields', () => {
   assert.deepEqual(
     addGenerationUsage(
@@ -157,7 +94,7 @@ test('multi-step usage and partial backups preserve earlier reported counts and 
   );
   const parser = new ProviderStream('openai-chat', true);
   parser.feed(
-    new TextEncoder().encode('data: {"usage":{"prompt_tokens":10,"completion_tokens":2}}\n\n'),
+    new TextEncoder().encode('{"type":"usage","usage":{"inputTokens":10,"outputTokens":2}}\n'),
   );
   const message: Message = {
     id: crypto.randomUUID(),

@@ -78,6 +78,8 @@ pnpm ops:storage convert --config <private-production-config> --rebuild-search -
 
 新增 SQL 格式或持久化数据格式变更，必须更新版本门禁并先执行本地运维转换。运行时的 `CREATE ... IF NOT EXISTS` 仅声明当前版本结构，不得附加 `ALTER`、历史数据扫描、补字段或旧数据改写。
 
+2026-10-20 的 SDK 流协议发布使用 `events-v1`。发布前在旧版本确认所有 `raw-sse-v1` 生成已完成或停止，不在新解码器中续接原始供应商流。已有完成消息可直接读取，无需重写正文；离线转换会拒绝仍活跃的旧协议任务。`conversation_settings` 与 `tool_stream_commits` 已纳入运维备份清单；废弃的 `useSummaries` 字段和工具原始流表仅在本地 `convert` 中清理，访问页面不会改写旧数据。
+
 若本机通过系统代理访问 Cloudflare，CLI 进程也需要设置现有代理的 `HTTPS_PROXY`／`HTTP_PROXY`；Node 需要时使用 `NODE_USE_ENV_PROXY=1`，`NO_PROXY` 包含本机地址。先通过 `preflight` 验证，不在停机后才排查网络。不要把代理地址或会话令牌写进仓库。
 
 ## 失败恢复

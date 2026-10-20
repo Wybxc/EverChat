@@ -7,7 +7,7 @@ import { ConversationActivityJournal } from '../../../worker/conversation/activi
 import { ConversationMessages } from '../../../worker/conversation/messages';
 import { initializeConversation } from '../../../worker/conversation/schema';
 import { LIBRARY_ACTIVITY_SCHEMA, LibraryActivityIndex } from '../../../worker/library/activity';
-import { StreamJournal } from '../../../worker/streaming/journal';
+import { GenerationCheckpoints } from '../../../worker/streaming/checkpoints';
 import type { SqlQuery } from '../../../worker/generation/metrics';
 
 const conversationId = crypto.randomUUID(),
@@ -42,7 +42,7 @@ function source() {
   const activity = new ConversationActivityJournal(store.query, () => now);
   const messages = new ConversationMessages(
     store.query,
-    new StreamJournal(store.query),
+    new GenerationCheckpoints(store.query),
     () => null,
     () => {},
     activity,

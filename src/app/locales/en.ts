@@ -101,6 +101,7 @@ export default {
   importBackup: 'Import backup',
   manageFiles: 'Manage chat files',
   chatFiles: 'Chat files',
+  historyCompressed: 'History compression',
   compactHistory: 'Compact history',
   shortcuts: 'Keyboard shortcuts',
   offlineHint:
@@ -155,6 +156,5 @@ export default {
   lastSynced: 'Synced · Last synced {{time}}',
   globalSearchShortcut: 'Search all chats ({{shortcut}})',
   findInChatShortcut: 'Search this chat ({{shortcut}})',
-  summaryCount: 'History summaries · {{count}}',
   sendFailedDetail: 'Send failed: {{error}}',
 } as const;

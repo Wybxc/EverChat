@@ -1,3 +1,4 @@
+import { collectProviderToolTurn } from '../../support/providers/tool-turn';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { resolveModelMetadata } from '../../../shared/models/metadata';
@@ -10,12 +11,7 @@ import {
   type WebToolOutcome,
 } from '../../../shared/web-tools/tasks';
 import { openProviderStream } from '../../../worker/providers/stream';
-import {
-  collectProviderToolTurn,
-  MAX_TOOL_TURN_WIRE_BYTES,
-  providerToolPrompt,
-  type ProviderToolExchange,
-} from '../../../worker/providers/tool-turn';
+import { providerToolPrompt, type ProviderToolExchange } from '../../../worker/providers/tool-turn';
 import { fragmentedToolBody, toolQuery, toolStream } from '../../support/providers/tool-streams';
 
 const kinds: ProviderKind[] = ['openai-chat', 'openai-responses', 'anthropic', 'gemini'];
@@ -61,8 +57,9 @@ for (const provider of kinds)
     const first = await openProviderStream(config, initial, signal(), undefined, undefined, {
       enabled,
     });
-    assert.equal(await new Response(first).text(), wire, 'live supplier bytes remain untouched');
-    const turn = await collectProviderToolTurn(config, enabled, fragmentedToolBody(wire), signal());
+    const publicWire = await new Response(first).text();
+    assert.doesNotMatch(publicWire, /encrypted-fixture|redacted-fixture|fixture-signature|call_0/);
+    const turn = first.toolTurn!;
     assert.equal(requests.length, 1, 'saved-response parsing never calls the network');
     assert.equal(turn.finishReason, 'tool-calls');
     assert.equal(turn.usage.inputTokens, 5);
@@ -155,7 +152,7 @@ for (const provider of kinds)
       wire = toolStream(provider);
     await assert.rejects(
       collectProviderToolTurn(config, enabled, fragmentedToolBody(wire.slice(0, -20)), signal()),
-      /完整|格式/,
+      /完整|格式|结束/,
     );
     await assert.rejects(
       collectProviderToolTurn(
@@ -236,7 +233,7 @@ test('bounded replay cancels oversized or stalled bodies and does not fetch remo
   let cancelled = false;
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
-      controller.enqueue(new Uint8Array(MAX_TOOL_TURN_WIRE_BYTES + 1));
+      controller.enqueue(new Uint8Array(1024 * 1024 + 1));
     },
     cancel() {
       cancelled = true;
@@ -244,7 +241,7 @@ test('bounded replay cancels oversized or stalled bodies and does not fetch remo
   });
   await assert.rejects(
     collectProviderToolTurn(configuration('openai-chat'), enabled, body, signal()),
-    /大小限制|完整/,
+    /缓冲|大小|完整|UTF|encoded/,
   );
   assert.equal(cancelled, true);
   for (const provider of kinds) {
@@ -262,7 +259,7 @@ test('bounded replay cancels oversized or stalled bodies and does not fetch remo
       abort.signal,
     );
     abort.abort();
-    await assert.rejects(pending, /中断/);
+    await assert.rejects(pending, /中断|abort/i);
     assert.equal(cancelled, true);
   }
 });
@@ -475,12 +472,12 @@ test('provider-declared tool execution and changed wire identities are rejected'
   );
   await assert.rejects(
     collectProviderToolTurn(config, enabled, fragmentedToolBody(changed), signal()),
-    /格式|验证/,
+    /格式|验证|identity|index|工具/,
   );
   const missing = base.replace('"id":"call_0",', '');
   await assert.rejects(
     collectProviderToolTurn(config, enabled, fragmentedToolBody(missing), signal()),
-    /格式|验证/,
+    /格式|验证|identity|index|工具/,
   );
   const builtIn = toolStream('openai-responses').replace(
     '"type":"function_call","id":"fc_0"',

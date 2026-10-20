@@ -6,7 +6,6 @@ export type ActiveGeneration = {
   runId: string;
   abort: AbortController;
   buffer: GenerationBuffer;
-  privateBuffer?: GenerationBuffer;
   cancelled: boolean;
   endedAt?: number;
   failure?: Error;

@@ -1,5 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import type { ProviderSettings } from '../../../shared/providers/types';
+import type { Snapshot } from '../../../shared/streaming/protocol';
+import { messageText } from '../../../shared/conversation/content';
 import { openSpaceSettings } from '../../support/browser/ui';
 
 const headers = { Origin: 'http://127.0.0.1:5174' };
@@ -200,4 +202,75 @@ test.describe('touch composer', () => {
       await data.cleanup();
     }
   });
+});
+
+test('prompt history recalls the visible branch only and stays locked after any edit until cleared', async ({
+  page,
+}) => {
+  const data = await fixture(page);
+  let id = '';
+  try {
+    await page.goto('/');
+    const input = page.getByRole('textbox', { name: '消息', exact: true });
+    for (const [index, text] of ['历史问题一', '历史问题二\n第二行'].entries()) {
+      await input.fill(text);
+      await page.getByRole('button', { name: '发送消息', exact: true }).click();
+      await expect(page.getByTestId('assistant-message').nth(index)).toHaveAttribute(
+        'data-status',
+        'completed',
+      );
+    }
+    id = new URL(page.url()).pathname.split('/').at(-1)!;
+    const snapshot = async () =>
+      (await page.request
+        .get(`/api/conversations/${id}`)
+        .then((response) => response.json())) as Snapshot;
+    const original = await snapshot();
+    await expect(input).toHaveValue('');
+    for (const composition of [{ isComposing: true }, { keyCode: 229 }]) {
+      await input.dispatchEvent('keydown', { key: 'ArrowUp', ...composition });
+      await expect(input).toHaveValue('');
+    }
+    await input.press('ArrowDown');
+    await expect(input).toHaveValue('');
+    await input.press('ArrowUp');
+    await expect(input).toHaveValue('历史问题二\n第二行');
+    await input.press('ArrowUp');
+    await expect(input).toHaveValue('历史问题一');
+    await input.press('ArrowUp');
+    await expect(input).toHaveValue('历史问题一');
+    await input.press('ArrowDown');
+    await expect(input).toHaveValue('历史问题二\n第二行');
+    // Even reverting an edit to the recalled text must not re-enable navigation.
+    await input.press('End');
+    await input.press('x');
+    await input.press('Backspace');
+    await input.press('ArrowUp');
+    await input.press('ArrowDown');
+    await expect(input).toHaveValue('历史问题二\n第二行');
+    await input.fill('');
+    await input.press('ArrowUp');
+    await expect(input).toHaveValue('历史问题二\n第二行');
+    await input.press('ArrowDown');
+    await expect(input).toHaveValue('');
+    await input.fill('未发送草稿\n仍在编辑');
+    await input.press('ArrowUp');
+    await input.press('ArrowDown');
+    await expect(input).toHaveValue('未发送草稿\n仍在编辑');
+    await input.fill('');
+    await page.goto(`/c/${id}?branch=${original.messages[1].id}`);
+    await expect(page.getByTestId('assistant-message')).toHaveCount(1);
+    await input.press('ArrowUp');
+    await expect(input).toHaveValue('历史问题一');
+    await page.goto('/');
+    await expect(input).toHaveValue('');
+    await input.press('ArrowUp');
+    await expect(input).toHaveValue('');
+    expect((await snapshot()).messages.map((message) => messageText(message))).toEqual(
+      original.messages.map((message) => messageText(message)),
+    );
+  } finally {
+    if (id) await page.request.delete(`/api/conversations/${id}`, { headers });
+    await data.cleanup();
+  }
 });

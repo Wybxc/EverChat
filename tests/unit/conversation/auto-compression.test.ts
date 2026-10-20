@@ -169,7 +169,7 @@ test('raw-tail message counts preserve complete user-led turns without relying o
   assert.equal(historyCountWithinLimit(history, 1), 0);
   assert.equal(historyCountWithinLimit([], null), 0);
 });
-test('automatic settings validate thresholds, model identity and the summary dependency', () => {
+test('automatic settings validate thresholds and model identity and reject the retired summary switch', () => {
   assert.equal(v.safeParse(conversationSettingsSchema, settings).success, true);
   for (const threshold of [49, 96, 80.5, Number.NaN]) {
     assert.equal(

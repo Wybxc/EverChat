@@ -46,11 +46,11 @@ export function useContextPreview({
   const previewSource = contextSource(messages, { content: draft, parentId });
   const previewHistory = useMemo(() => {
     try {
-      return summaryContext(messages, previewSource.parentId, conversationSettings.useSummaries);
+      return summaryContext(messages, previewSource.parentId);
     } catch {
       return null;
     }
-  }, [messages, previewSource.parentId, conversationSettings.useSummaries]);
+  }, [messages, previewSource.parentId]);
   const contextPreview = useMemo(() => {
     if (!selectedModel || !previewHistory) return null;
     const settings = v.safeParse(conversationSettingsSchema, conversationSettings);

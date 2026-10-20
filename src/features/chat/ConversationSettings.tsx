@@ -13,6 +13,7 @@ import { MAX_SYSTEM_PROMPT_LENGTH } from '../../../shared/conversation/limits';
 import {
   conversationSettingsSchema,
   DEFAULT_CONVERSATION_SETTINGS,
+  conversationSettingsDefaults,
   samplingSupport,
 } from '../../../shared/conversation/settings';
 import type { ConversationSettings } from '../../../shared/conversation/types';
@@ -31,14 +32,7 @@ import { useWebToolSettings } from '../web-tools/web-tool-settings';
 import { writeChatCache as write } from './cache';
 import './locales';
 
-const withContextDefaults = (settings: ConversationSettings) =>
-  settings.recentMessages === undefined ||
-  settings.contextBudget === undefined ||
-  settings.useSummaries === undefined ||
-  settings.autoCompression === undefined ||
-  settings.tools === undefined
-    ? { ...DEFAULT_CONVERSATION_SETTINGS, ...settings }
-    : settings;
+const withContextDefaults = conversationSettingsDefaults;
 
 const parameterTabs = [
   { id: 'general', label: 'general' },
@@ -415,20 +409,6 @@ export function ConversationSettingsDialog({
                   change={(maxOutputTokens) => update({ maxOutputTokens })}
                 />
               )}
-              <label className="flex min-h-11 items-center gap-2 text-sm">
-                <Checkbox
-                  checked={settings.useSummaries}
-                  onCheckedChange={(checked) =>
-                    update({
-                      useSummaries: checked === true,
-                      ...(!(checked === true)
-                        ? { autoCompression: { ...compression, enabled: false } }
-                        : {}),
-                    })
-                  }
-                />
-                {t(($) => $.useSummaries)}
-              </label>
               <div className="grid gap-3 sm:grid-cols-2">
                 <NumberSetting
                   label={t(($) => $.contextTokenBudget)}
@@ -453,7 +433,6 @@ export function ConversationSettingsDialog({
                   checked={compression.enabled}
                   onCheckedChange={(checked) =>
                     update({
-                      useSummaries: checked === true || settings.useSummaries,
                       autoCompression: { ...compression, enabled: checked === true },
                     })
                   }

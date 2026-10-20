@@ -72,9 +72,9 @@ export function summaryForPath(
   return selected;
 }
 
-export function summaryContext(messages: Message[], parentId: string | null, enabled: boolean) {
+export function summaryContext(messages: Message[], parentId: string | null) {
   const path = parentId ? branchPath(messages, parentId) : [];
-  const summary = enabled ? summaryForPath(messages, path) : undefined;
+  const summary = summaryForPath(messages, path);
   if (!summary) return { history: contextHistory(messages, parentId) };
   // Keep deletion rules from the full path, even when its deleted question is in the covered prefix.
   const deletedUsers = new Set(
@@ -107,11 +107,11 @@ export function prepareChatContext(
   images: ImagePart[] = [],
   files: DocumentPart[] = [],
 ) {
-  const prepared = summaryContext(messages, parentId, settings.useSummaries),
+  const prepared = summaryContext(messages, parentId),
     prefix = prepared.summary ? summaryPrefix(prepared.summary) : undefined;
   const built = buildContext(prepared.history, content, config, settings, prefix, images, files);
   let automatic: { throughId: string; demand: ReturnType<typeof measureContextDemand> } | undefined;
-  if (settings.useSummaries && settings.autoCompression.enabled) {
+  if (settings.autoCompression.enabled) {
     // Compression cannot reduce the current question or the system instructions.
     assertContextFits(
       buildContext([], content, config, settings, undefined, images, files).estimate,
@@ -195,7 +195,6 @@ export function summaryGeneration(messages: Message[], throughId: string, config
           (message) => !message.summary || message.summary.sourceIds.length < path.length,
         ),
         throughId,
-        true,
       )
     : { history };
   const metadata = config.modelMetadata ?? FALLBACK_MODEL_METADATA;

@@ -201,7 +201,11 @@ const deepseekResponses = (
       content: [{ type: 'reasoning_text', text: '**先分析。**' }],
     },
   },
-  { type: 'response.output_item.added', output_index: 1, item: { type: 'message', id: 'answer' } },
+  {
+    type: 'response.output_item.added',
+    output_index: 1,
+    item: { type: 'message', id: 'answer', content: [] },
+  },
   {
     type: 'response.output_text.delta',
     item_id: 'answer',
@@ -209,7 +213,11 @@ const deepseekResponses = (
     content_index: 0,
     delta: '答案。',
   },
-  { type: 'response.output_item.done', output_index: 1, item: { type: 'message', id: 'answer' } },
+  {
+    type: 'response.output_item.done',
+    output_index: 1,
+    item: { type: 'message', id: 'answer', content: [] },
+  },
   {
     type: terminal,
     response: {

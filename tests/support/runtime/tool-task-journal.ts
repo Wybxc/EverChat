@@ -1,7 +1,7 @@
 import { resolveModelMetadata } from '../../../shared/models/metadata';
 import type { ProviderConfig } from '../../../shared/providers/types';
 import type { SqlQuery } from '../../../worker/generation/metrics';
-import { collectProviderToolTurn } from '../../../worker/providers/tool-turn';
+import { collectProviderToolTurn } from '../providers/tool-turn';
 import { ToolTaskJournal, type StartToolTask } from '../../../worker/web-tools/task-journal';
 import { fragmentedToolBody, toolStream } from '../providers/tool-streams';
 

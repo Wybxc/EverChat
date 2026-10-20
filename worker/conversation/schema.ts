@@ -1,4 +1,3 @@
-import { PRIVATE_TOOL_STREAM_SCHEMA } from '../streaming/journal';
 import { CHECKPOINT_SCHEMA, CONTENT_CHUNKS_SCHEMA } from '../streaming/checkpoints';
 import { initializeStorageSchema } from '../platform/storage-schema';
 import { CONVERSATION_ACTIVITY_SCHEMA } from './activity';
@@ -39,7 +38,6 @@ export function initializeConversation(sql: SqlStorage, metrics: boolean) {
   sql.exec(
     "CREATE INDEX IF NOT EXISTS messages_activity ON messages(status) WHERE role = 'assistant'",
   );
-  sql.exec(PRIVATE_TOOL_STREAM_SCHEMA);
   sql.exec(
     'CREATE TABLE IF NOT EXISTS message_generations (messageId TEXT PRIMARY KEY, payload TEXT NOT NULL)',
   );

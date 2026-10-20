@@ -8,7 +8,6 @@ import { payloadBytes, validateBatch, validateCommit } from '../../shared/stream
 import type { StreamCommit } from '../../shared/streaming/protocol';
 import { ProviderStream, type StreamState } from '../../shared/streaming/provider-stream';
 import type { SqlQuery } from '../generation/metrics';
-import { StreamJournal } from './journal';
 
 export const CHECKPOINT_SCHEMA = `CREATE TABLE IF NOT EXISTS generation_checkpoints (
   runId TEXT PRIMARY KEY, messageId TEXT NOT NULL, chunkSeq INTEGER NOT NULL,
@@ -30,11 +29,9 @@ type Checkpoint = {
 
 // The public stream has one canonical semantic representation. Only the unfinished
 // protocol state survives alongside it; the wire history is never persisted.
-export class GenerationCheckpoints extends StreamJournal {
+export class GenerationCheckpoints {
   private parsers = new Map<string, { offset: number; parser: ProviderStream }>();
-  constructor(private readonly store: SqlQuery) {
-    super(store);
-  }
+  constructor(private readonly store: SqlQuery) {}
   read(messageId: string, content = '', reasoning = '') {
     const chunks = this.store<{ channel: string; payload: string }>(
       'SELECT channel, payload FROM message_content_chunks WHERE messageId = ? ORDER BY channel, ordinal',
@@ -55,7 +52,7 @@ export class GenerationCheckpoints extends StreamJournal {
   forget(runId: string) {
     this.parsers.delete(runId);
   }
-  override append(commit: StreamCommit, descriptor?: { protocol: ProviderKind }) {
+  append(commit: StreamCommit, descriptor?: { protocol: ProviderKind }) {
     const payload = validateCommit(commit),
       first = commit.batches[0],
       last = commit.batches.at(-1)!;
@@ -175,7 +172,7 @@ export class GenerationCheckpoints extends StreamJournal {
         JSON.stringify(after.slice(index, index + CHUNK_CHARACTERS)),
       );
   }
-  override materialize(message: Message, descriptor: { protocol: ProviderKind }): Message {
+  materialize(message: Message, descriptor: { protocol: ProviderKind }): Message {
     const checkpoint = message.runId ? this.row(message.runId) : undefined;
     return {
       ...message,
@@ -185,7 +182,7 @@ export class GenerationCheckpoints extends StreamJournal {
       durableOffset: checkpoint?.rawOffset ?? message.durableOffset ?? 0,
     };
   }
-  override compact(message: Message) {
+  compact(message: Message) {
     const before = this.read(message.id);
     this.writeChannel(message.id, 'content', before.content, messageText(message));
     this.writeChannel(message.id, 'reasoning', before.reasoning, messageText(message, 'reasoning'));
@@ -198,7 +195,7 @@ export class GenerationCheckpoints extends StreamJournal {
     );
     this.purge(message.runId!);
   }
-  override purge(runId: string) {
+  purge(runId: string) {
     this.store('DELETE FROM generation_checkpoints WHERE runId = ?', runId);
     this.forget(runId);
   }

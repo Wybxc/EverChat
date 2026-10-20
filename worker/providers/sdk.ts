@@ -3,6 +3,7 @@ import type {
   LanguageModelV4CallOptions,
   LanguageModelV4Prompt,
 } from '@ai-sdk/provider';
+import { createOpenResponses } from '@ai-sdk/open-responses';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { createAnthropic } from '@ai-sdk/anthropic';
@@ -30,7 +31,14 @@ export function providerModel(
             config.model,
           );
     case 'openai-responses':
-      return createOpenAI(options).responses(config.model);
+      return new URL(baseURL).hostname === 'api.openai.com'
+        ? createOpenAI(options).responses(config.model)
+        : createOpenResponses({
+            name: 'compatible',
+            url: `${baseURL}/responses`,
+            apiKey: config.apiKey,
+            fetch,
+          })(config.model);
     case 'anthropic':
       return createAnthropic(options)(config.model);
     case 'gemini':
@@ -47,8 +55,11 @@ export function providerCallOptions(
   tools?: LanguageModelV4CallOptions['tools'],
 ): LanguageModelV4CallOptions {
   const compatible =
-    config.provider === 'openai-chat' && new URL(config.baseUrl).hostname !== 'api.openai.com';
-  const deepseek = compatible && new URL(config.baseUrl).hostname === 'api.deepseek.com';
+    config.provider.startsWith('openai-') && new URL(config.baseUrl).hostname !== 'api.openai.com';
+  const deepseek =
+    config.provider === 'openai-chat' &&
+    compatible &&
+    new URL(config.baseUrl).hostname === 'api.deepseek.com';
   // Recognizing thought output does not establish how to enable/control it.
   const controlReasoning =
     config.reasoningEnabled &&
@@ -57,6 +68,7 @@ export function providerCallOptions(
   const toolMode = Boolean(tools?.length);
   return {
     prompt,
+    includeRawChunks: true,
     tools,
     ...(toolMode ? { toolChoice: { type: 'auto' as const } } : {}),
     maxOutputTokens: config.maxOutputTokens ?? undefined,
@@ -67,6 +79,9 @@ export function providerCallOptions(
       ? {
           compatible: {
             store: false,
+            ...(config.provider === 'openai-responses' && controlReasoning
+              ? { reasoningSummary: 'auto' }
+              : {}),
             ...(deepseek && controlReasoning
               ? effort === 'none'
                 ? { thinking: { type: 'disabled' } }

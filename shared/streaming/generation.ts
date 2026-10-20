@@ -11,6 +11,8 @@ export interface GenerationTiming {
 }
 export interface GenerationResult {
   finishReason?: StreamState['finishReason'];
+  rawFinishReason?: string;
+  finishMessage?: string;
   /** A retained ordinary answer whose supplier stream ended before successful completion. */
   interrupted?: true;
   usage: StreamUsage;
@@ -50,7 +52,11 @@ const count = v.optional(
   v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(Number.MAX_SAFE_INTEGER)),
 );
 export const generationSchema = v.strictObject({
-  finishReason: v.optional(v.picklist(['stop', 'length', 'other'])),
+  finishReason: v.optional(
+    v.picklist(['stop', 'length', 'content-filter', 'tool-calls', 'error', 'other']),
+  ),
+  rawFinishReason: v.optional(v.pipe(v.string(), v.maxLength(128))),
+  finishMessage: v.optional(v.pipe(v.string(), v.maxLength(4096))),
   interrupted: v.optional(v.literal(true)),
   usage: v.strictObject({
     inputTokens: count,

@@ -719,8 +719,8 @@ test('automatic compression preferences autosave with fee disclosure, offline ed
       .poll(async () => (await fixture.snapshot()).messages.at(-1)!.status)
       .toBe('cancelled');
     await openParameters(page, '上下文');
-    await modal.getByLabel('使用历史摘要', { exact: true }).uncheck();
-    await expect(modal.getByLabel('自动压缩历史', { exact: true })).not.toBeChecked();
+    await expect(modal.getByLabel('使用历史摘要', { exact: true })).toHaveCount(0);
+    await modal.getByLabel('自动压缩历史', { exact: true }).uncheck();
     await expect(modal.getByRole('status')).toHaveText('已保存');
     expect((await fixture.snapshot()).settings?.autoCompression.enabled).toBe(false);
   } finally {
@@ -878,7 +878,7 @@ test('invalid and too-large summaries do not write or call a supplier; cancellat
   }
 });
 
-test('summary boundaries are branch-specific, incremental compression reuses only earlier coverage, and disabling uses raw history', async ({
+test('summary boundaries are branch-specific, incremental compression reuses only earlier coverage, and subsequent requests always use matching summaries', async ({
   request,
 }) => {
   const fixture = await setup(request, true);
@@ -896,15 +896,14 @@ test('summary boundaries are branch-specific, incremental compression reuses onl
       fixture.seeded.messages.slice(0, 4).map(({ id }) => id),
     );
     expect(wider.generation!.context!.summaryId).toBe(early.id);
-    for (const [head, enabled, expected] of [
-      [fixture.seeded.messages[5].id, true, wider.id],
-      [fixture.seeded.messages[7].id, true, undefined],
-      [fixture.seeded.messages[5].id, false, undefined],
+    for (const [head, expected] of [
+      [fixture.seeded.messages[5].id, wider.id],
+      [fixture.seeded.messages[7].id, undefined],
     ] as const) {
       const response = await fixture.submit({
         content: 'next',
         parentId: head,
-        settings: { ...defaults, contextBudget: 400, useSummaries: enabled },
+        settings: { ...defaults, contextBudget: 400 },
       });
       expect(response.status()).toBe(202);
       const task = (await response.json()) as Submission,
@@ -983,7 +982,7 @@ test('copies and backups remap coverage and generation references; deleting a so
         originals.find((message) => message.role === 'assistant' && message.status === 'cancelled')!
           .generation!.context!.summaryId,
       ).toBe(copiedSummary.id);
-      expect(snapshot.settings!.useSummaries).toBe(true);
+      expect(snapshot.settings).not.toHaveProperty('useSummaries');
     };
     const copied = await request.post(
       `/api/conversations/${fixture.id}/messages/${answer.assistantId}/duplicate`,
@@ -1082,16 +1081,7 @@ test('summary controls stream Markdown, preserve the draft and URL, sync another
     await page.close();
     await expect(second.getByTestId('summary-message')).toHaveAttribute('data-status', 'completed');
     const persisted = second.getByTestId('summary-message');
-    const group = second.getByTestId('branch-summaries').locator('details').first();
-    if (!(await group.evaluate((element: HTMLDetailsElement) => element.open)))
-      await group.locator('summary').first().click();
-    if (
-      !(await persisted
-        .locator('details')
-        .first()
-        .evaluate((element: HTMLDetailsElement) => element.open))
-    )
-      await persisted.locator('summary').first().click();
+    await expect(second.getByRole('separator', { name: '历史压缩' })).toBeVisible();
     await expect(
       persisted.locator('[data-streamdown="strong"]').filter({ hasText: /^42 元$/ }),
     ).toHaveText('42 元');
@@ -1106,15 +1096,14 @@ test('summary controls stream Markdown, preserve the draft and URL, sync another
     expect((await fixture.resources()).calls).toBe(1);
     await openParameters(second, '上下文');
     const settings = second.getByRole('dialog', { name: '会话参数', exact: true });
-    await settings.getByLabel('使用历史摘要', { exact: true }).uncheck();
-    await expect(settings.getByRole('status')).toHaveText('已保存');
+    await expect(settings.getByLabel('使用历史摘要', { exact: true })).toHaveCount(0);
     await settings.getByRole('button', { name: '关闭会话参数' }).click();
     await second.getByRole('button', { name: '查看上下文估算' }).click();
-    await expect(second.getByRole('dialog', { name: '上下文估算', exact: true })).not.toContainText(
+    await expect(second.getByRole('dialog', { name: '上下文估算', exact: true })).toContainText(
       '覆盖 2 条',
     );
     await second.keyboard.press('Escape');
-    expect((await fixture.snapshot()).settings!.useSummaries).toBe(false);
+    expect((await fixture.snapshot()).settings).not.toHaveProperty('useSummaries');
   } finally {
     await other.close();
     await fixture.cleanup();
@@ -1171,7 +1160,6 @@ test('summary regeneration and deletion controls keep originals and drafts, and 
     await composer.fill('保留草稿');
     const first = page.getByTestId('summary-message').first();
     await expect(first).toHaveAttribute('data-status', 'completed');
-    await page.getByTestId('branch-summaries').locator('summary').first().click();
     await first.getByRole('button', { name: '生成信息', exact: true }).click();
     const information = page.getByRole('dialog', { name: '生成信息', exact: true });
     await expect(information).toContainText('云端生成');

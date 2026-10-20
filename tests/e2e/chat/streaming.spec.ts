@@ -234,7 +234,7 @@ test('previews precede commits and reconnecting subscribers recover the same dur
     await expect.poll(() => second.snapshot()).toEqual(stored);
     expect(resumed.snapshot()).toEqual(stored);
     expect(answer(stored)).toMatchObject({
-      streamVersion: 'raw-sse-v1',
+      streamVersion: 'events-v1',
       parts: messageParts('正文🙂'.repeat(2000), '思考🙂'.repeat(2000)),
     });
     expect(answer(stored)!.durableOffset).toBeGreaterThan(0);
@@ -709,7 +709,7 @@ test('logging out clears cached messages even when a delayed durable snapshot wr
 });
 
 for (const protocol of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'] as const) {
-  test(`${protocol} resumes a committed partial UTF-8 SSE event and matches server-verified output and usage`, async ({
+  test(`${protocol} resumes normalized events after a fragmented native UTF-8 event and matches server-verified output and usage`, async ({
     request,
   }) => {
     expect((await request.post('/__dev/access/login', { headers })).ok()).toBe(true);
@@ -769,18 +769,18 @@ for (const protocol of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
         ).status(),
       ).toBe(202);
       await expect
-        .poll(() => live.snapshot().messages[1]?.durableOffset ?? 0, { intervals: [50] })
-        .toBeGreaterThan(0);
+        .poll(() => messageText(live.snapshot().messages[1] ?? { parts: [] }), { intervals: [50] })
+        .toBe('**正文🙂**\n');
       const prefix = live.snapshot();
-      expect(messageText(prefix.messages[1])).toBe('');
-      expect(prefix.messages[1].streamState?.utf8).toBeTruthy();
-      expect(prefix.messages[1].streamState?.tail).toContain('data:');
+      expect(messageText(prefix.messages[1])).toBe('**正文🙂**\n');
+      expect(JSON.stringify(prefix.messages[1].streamState)).not.toContain('data:');
+      expect(JSON.stringify(prefix.messages[1].streamState)).not.toContain('signature');
       const saved = (await request
         .get(`/api/conversations/${id}`)
         .then((response) => response.json())) as Snapshot;
       expect(saved).toEqual(prefix);
       live.socket.terminate();
-      // Resume from an API snapshot, whose parser state must include the two pending emoji bytes.
+      // SDK framing stays server-side; reconnect uses only confirmed application state.
       const resumed = await subscribe(request, id, saved);
       sockets.push(resumed.socket);
       await expect

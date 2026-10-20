@@ -80,7 +80,10 @@ function body(value = '"一个标题"') {
     start(controller) {
       controller.enqueue(
         new TextEncoder().encode(
-          `data: ${JSON.stringify({ choices: [{ delta: { content: value }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`,
+          JSON.stringify({ type: 'text', text: value }) +
+            '\n' +
+            JSON.stringify({ type: 'finish', reason: 'stop', usage: {}, usageIsFinal: false }) +
+            '\n',
         ),
       );
       controller.close();

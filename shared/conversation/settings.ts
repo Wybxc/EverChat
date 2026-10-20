@@ -14,7 +14,6 @@ export const DEFAULT_CONVERSATION_SETTINGS: ConversationSettings = {
   maxOutputTokens: null,
   recentMessages: null,
   contextBudget: null,
-  useSummaries: true,
   tools: [],
   autoCompression: { enabled: false, threshold: 80, model: null },
 };
@@ -31,7 +30,6 @@ export const conversationSettingsSchema = v.pipe(
     contextBudget: v.nullable(
       v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(10_000_000)),
     ),
-    useSummaries: v.boolean(),
     tools: v.pipe(
       v.array(v.picklist(WEB_TOOL_NAMES)),
       v.maxLength(WEB_TOOL_NAMES.length),
@@ -48,11 +46,23 @@ export const conversationSettingsSchema = v.pipe(
       ),
     }),
   }),
-  v.check(
-    (settings) => !settings.autoCompression.enabled || settings.useSummaries,
-    '自动压缩需要启用历史摘要。',
-  ),
 );
+
+// Project saved values onto the current public settings. Retired fields stay
+// untouched in storage until offline cleanup; reading settings never rewrites it.
+export function conversationSettingsDefaults(
+  value: Partial<ConversationSettings> = {},
+): ConversationSettings {
+  const entries = Object.entries(DEFAULT_CONVERSATION_SETTINGS);
+  if (
+    Object.keys(value).length === entries.length &&
+    entries.every(([key]) => value[key as keyof ConversationSettings] !== undefined)
+  )
+    return value as ConversationSettings;
+  return Object.fromEntries(
+    entries.map(([key, fallback]) => [key, value[key as keyof ConversationSettings] ?? fallback]),
+  ) as unknown as ConversationSettings;
+}
 
 // These gates also run on the server. Hidden settings remain available when switching back to a supported model.
 export function samplingSupport(

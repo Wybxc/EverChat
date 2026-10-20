@@ -1,76 +1,43 @@
-import { MAX_MESSAGE_TEXT_BYTES } from '../../../shared/conversation/limits';
-import { messageParts, messagePartsSchema } from '../../../shared/conversation/content';
-import * as v from 'valibot';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import * as v from 'valibot';
+import { MAX_MESSAGE_TEXT_BYTES } from '../../../shared/conversation/limits';
+import { messageParts, messagePartsSchema } from '../../../shared/conversation/content';
 import type { ProviderKind } from '../../../shared/providers/types';
-import { MAX_EVENT_CHARACTERS, ProviderStream } from '../../../shared/streaming/provider-stream';
-import { providerStreams } from '../../support/providers/streams';
+import {
+  encodeGenerationEvent,
+  MAX_EVENT_CHARACTERS,
+  ProviderStream,
+} from '../../../shared/streaming/provider-stream';
+import { applicationStreams } from '../../support/providers/streams';
 const encoder = new TextEncoder();
 
-test('streaming and restored checkpoints share a combined escaped-text budget without splitting emoji', () => {
-  let parser = new ProviderStream('openai-chat', true);
-  const feed = (delta: Record<string, string>) =>
-    parser.feed(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta }] })}\n\n`));
-  feed({ reasoning_content: 'r'.repeat(200_000) });
-  feed({ content: 'x'.repeat(MAX_MESSAGE_TEXT_BYTES - 200_000 - 6) + '\ud83d' });
-  parser = new ProviderStream(
-    'openai-chat',
-    true,
-    parser.checkpoint(),
-    parser.content,
-    parser.reasoning,
-  );
-  feed({ content: '\ude42zz' });
-  assert.ok(parser.content.endsWith('🙂zz'));
-  assert.equal(parser.failed, false);
-  feed({ content: 'overflow' });
-  assert.ok(parser.failed);
-  assert.ok(
-    v.safeParse(messagePartsSchema, messageParts(parser.content, parser.reasoning)).success,
-  );
-  assert.ok(parser.content.endsWith('🙂zz'));
-});
-
-test('Responses bounds thought identities while retaining an already decoded prefix', () => {
-  const parser = new ProviderStream('openai-responses', true);
-  for (const event of [
-    { type: 'response.reasoning_text.delta', item_id: 'thought', delta: '已保存思考' },
-    { type: 'response.reasoning_text.delta', item_id: 'x'.repeat(201), delta: '超限片段' },
-  ])
-    parser.feed(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
-  assert.equal(parser.reasoning, '已保存思考');
-  assert.match(parser.checkpoint().failure ?? '', /标识超过/);
-  assert.deepEqual(parser.checkpoint().thoughts, [
-    { id: 'thought:0', raw: '已保存思考', summary: '' },
-  ]);
-});
-
-for (const [protocol, fixture] of Object.entries(providerStreams)) {
+for (const [protocol, fixture] of Object.entries(applicationStreams)) {
   const kind = protocol as ProviderKind;
-  test(`${kind} restores across every raw byte boundary, including partial UTF-8, CRLF and JSON`, () => {
-    const bytes = encoder.encode('\ufeff: keepalive\r\n\r\n' + fixture.partial + fixture.finish);
+  test(`${kind} application checkpoint restores across every byte boundary, including UTF-8 and JSON`, () => {
+    const bytes = encoder.encode(fixture.partial + fixture.finish);
     for (let split = 0; split <= bytes.length; split++) {
       let parser = new ProviderStream(kind, true);
       parser.feed(bytes.subarray(0, split));
-      const checkpoint = parser.checkpoint();
-      assert.ok(checkpoint.tail.length <= MAX_EVENT_CHARACTERS);
-      parser = new ProviderStream(kind, true, checkpoint, parser.content, parser.reasoning);
+      parser = new ProviderStream(
+        kind,
+        true,
+        parser.checkpoint(),
+        parser.content,
+        parser.reasoning,
+      );
       parser.feed(bytes.subarray(split));
       parser.assertComplete();
       assert.equal(parser.content, '**正文🙂**\n答案。');
       assert.equal(parser.reasoning, '**思考🙂**\n结论。');
       assert.equal(parser.checkpoint().usage.inputTokens, kind === 'anthropic' ? 14 : 10);
-      assert.equal(parser.checkpoint().usage.outputTokens, kind === 'gemini' ? 7 : 5);
-      assert.equal(parser.checkpoint().usage.cachedInputTokens, 4);
       assert.equal(parser.checkpoint().textDeltas, 2);
       assert.equal(parser.checkpoint().reasoningDeltas, 2);
     }
   });
-  test(`${kind} resumes one byte at a time and its confirmed prefix never includes a partial frame`, () => {
-    const bytes = encoder.encode(fixture.partial + fixture.finish);
+  test(`${kind} one-byte restoration and absent terminal detection retain the confirmed prefix`, () => {
     let parser = new ProviderStream(kind, true);
-    for (const byte of bytes) {
+    for (const byte of encoder.encode(fixture.partial)) {
       parser.feed(Uint8Array.of(byte));
       parser = new ProviderStream(
         kind,
@@ -80,113 +47,86 @@ for (const [protocol, fixture] of Object.entries(providerStreams)) {
         parser.reasoning,
       );
     }
-    parser.assertComplete();
-    assert.equal(parser.content, '**正文🙂**\n答案。');
-    assert.equal(parser.reasoning, '**思考🙂**\n结论。');
-  });
-  test(`${kind} rejects missing completion markers and supplier errors while retaining the text prefix`, () => {
-    const parser = new ProviderStream(kind, true);
-    parser.feed(encoder.encode(fixture.partial));
-    assert.equal(parser.content, '**正文🙂**\n');
     assert.throws(() => parser.assertComplete(), /提前结束/);
-    parser.feed(encoder.encode('data: {"error":{"message":"private-key diagnostic"}}\n\n'));
-    assert.throws(
-      () => parser.assertComplete(),
-      (error: Error) => /返回错误/.test(error.message) && !error.message.includes('private-key'),
-    );
     assert.equal(parser.content, '**正文🙂**\n');
-  });
-  test(`${kind} can hide thoughts without changing the visible answer or protocol completion`, () => {
-    const parser = new ProviderStream(kind, false);
-    parser.feed(encoder.encode(fixture.partial + fixture.finish));
+    parser.feed(encoder.encode(fixture.finish));
     parser.assertComplete();
-    assert.equal(parser.reasoning, '');
-    assert.equal(parser.checkpoint().reasoningDeltas, 0);
-    assert.equal(parser.content, '**正文🙂**\n答案。');
   });
 }
 
-test('SSE comments, multiple data lines and CR-only line endings use the same checkpoint boundaries', () => {
-  const wire =
-    ': ping\r\rdata: {"choices":\rdata: [{"delta":{"content":"你好🙂"},"finish_reason":"stop"}]}\r\rdata: [DONE]\r\r';
-  const bytes = encoder.encode(wire);
-  for (let split = 0; split < bytes.length; split++) {
-    let parser = new ProviderStream('openai-chat', true);
-    parser.feed(bytes.subarray(0, split));
-    parser = new ProviderStream(
-      'openai-chat',
-      true,
-      parser.checkpoint(),
-      parser.content,
-      parser.reasoning,
-    );
-    parser.feed(bytes.subarray(split));
-    parser.assertComplete();
-    assert.equal(parser.content, '你好🙂');
-  }
+test('application events replace a displayed summary, including after a restored checkpoint', () => {
+  let parser = new ProviderStream('openai-responses', true);
+  parser.feed(encodeGenerationEvent({ type: 'reasoning', text: '摘要' }));
+  parser = new ProviderStream('openai-responses', true, parser.checkpoint(), '', parser.reasoning);
+  parser.feed(encodeGenerationEvent({ type: 'reasoning', text: '**完整思考🙂**', replace: true }));
+  assert.equal(parser.reasoning, '**完整思考🙂**');
+  assert.deepEqual(parser.drainDeltas(), [
+    { kind: 'reasoning', text: '**完整思考🙂**', replace: true },
+  ]);
+  assert.doesNotMatch(JSON.stringify(parser.checkpoint()), /摘要|完整思考|providerOptions/);
 });
 
-test('Responses prefers raw thoughts over duplicated summaries in either arrival order and ignores done echoes', () => {
-  for (const channels of [
-    ['raw', 'summary'],
-    ['summary', 'raw'],
-  ]) {
-    const parser = new ProviderStream('openai-responses', true);
-    for (const channel of channels)
-      parser.feed(
-        encoder.encode(
-          `data: ${JSON.stringify({ type: channel === 'raw' ? 'response.reasoning_text.delta' : 'response.reasoning_summary_text.delta', item_id: 'r', content_index: 0, summary_index: 0, delta: '**思考🙂**' })}\n\n`,
-        ),
-      );
-    parser.feed(
-      encoder.encode('data: {"type":"response.reasoning_text.done","text":"**思考🙂**"}\n\n'),
-    );
-    assert.equal(parser.reasoning, '**思考🙂**');
-  }
-});
-
-test('malformed UTF-8, oversized incomplete frames and output limits fail explicitly with bounded state', () => {
-  const invalid = new ProviderStream('openai-chat', true);
-  invalid.feed(Uint8Array.of(0xc0, 0xaf));
-  assert.throws(() => invalid.assertComplete(), /格式无效/);
-  const huge = new ProviderStream('openai-chat', true);
-  huge.feed(encoder.encode('data: ' + 'x'.repeat(MAX_EVENT_CHARACTERS + 1)));
-  assert.throws(() => huge.assertComplete(), /超过解析缓冲大小/);
-  assert.equal(huge.checkpoint().tail, '');
-  const limited = new ProviderStream('openai-chat', true);
-  limited.feed(
-    encoder.encode(
-      `data: ${JSON.stringify({ choices: [{ delta: { content: '文'.repeat(Math.floor(MAX_MESSAGE_TEXT_BYTES / 3)) + '🙂' } }] })}\n\n`,
-    ),
-  );
-  assert.equal(limited.content, '文'.repeat(Math.floor(MAX_MESSAGE_TEXT_BYTES / 3)));
-  assert.throws(() => limited.assertComplete(), /768 KiB/);
-});
-
-test('an oversized complete event is rejected before its JSON payload is materialized', () => {
-  const parser = new ProviderStream('openai-chat', true);
+test('escaped-text budget preserves a split surrogate pair and a usable prefix', () => {
+  let parser = new ProviderStream('openai-chat', true);
+  parser.feed(encodeGenerationEvent({ type: 'reasoning', text: 'r'.repeat(200_000) }));
   parser.feed(
-    encoder.encode(
-      `data: ${JSON.stringify({ diagnostic: 'x'.repeat(MAX_EVENT_CHARACTERS + 1) })}\n\n`,
-    ),
+    encodeGenerationEvent({
+      type: 'text',
+      text: 'x'.repeat(MAX_MESSAGE_TEXT_BYTES - 200_000 - 6) + '\ud83d',
+    }),
   );
-  assert.throws(() => parser.assertComplete(), /超过解析缓冲大小/);
-  assert.equal(parser.content, '');
-  assert.equal(parser.checkpoint().tail, '');
+  parser = new ProviderStream(
+    'openai-chat',
+    true,
+    parser.checkpoint(),
+    parser.content,
+    parser.reasoning,
+  );
+  parser.feed(encodeGenerationEvent({ type: 'text', text: '\ude42zz' }));
+  assert.ok(parser.content.endsWith('🙂zz'));
+  assert.equal(parser.failed, false);
+  parser.feed(encodeGenerationEvent({ type: 'text', text: 'overflow' }));
+  assert.equal(parser.failed, true);
+  assert.ok(
+    v.safeParse(messagePartsSchema, messageParts(parser.content, parser.reasoning)).success,
+  );
 });
 
-test('Responses replaces a previous summary with raw thoughts and preserves Unicode at its limit', () => {
-  const parser = new ProviderStream('openai-responses', true);
-  const event = (channel: string, delta: string) =>
-    encoder.encode(
-      `data: ${JSON.stringify({ type: `response.${channel}.delta`, item_id: 'r', content_index: 0, summary_index: 0, delta })}\n\n`,
-    );
-  parser.feed(event('reasoning_summary_text', '简短摘要'));
-  parser.feed(event('reasoning_text', '完整的思考'));
-  assert.equal(parser.reasoning, '完整的思考');
-  assert.equal(parser.checkpoint().thoughts[0].summary, '');
-  const limited = new ProviderStream('openai-responses', true);
-  limited.feed(event('reasoning_text', '文'.repeat(Math.floor(MAX_MESSAGE_TEXT_BYTES / 3)) + '🙂'));
-  assert.equal(limited.reasoning, '文'.repeat(Math.floor(MAX_MESSAGE_TEXT_BYTES / 3)));
-  assert.throws(() => limited.assertComplete(), /768 KiB/);
+test('malformed events, native SSE, invalid UTF-8 and oversized partial frames never become completed responses', () => {
+  for (const bytes of [
+    encoder.encode('data: {}\n\n'),
+    Uint8Array.of(0xff),
+    encoder.encode('x'.repeat(MAX_EVENT_CHARACTERS + 1)),
+    encoder.encode('{"type":"usage","usage":{"inputTokens":-1}}\n'),
+  ]) {
+    const parser = new ProviderStream('openai-chat', true);
+    parser.feed(encodeGenerationEvent({ type: 'text', text: 'prefix' }));
+    parser.feed(bytes);
+    assert.throws(() => parser.assertComplete());
+    assert.equal(parser.content, 'prefix');
+  }
+  const parser = new ProviderStream('openai-chat', true);
+  parser.feed(encodeGenerationEvent({ type: 'text', text: 'prefix' }));
+  parser.feed(Uint8Array.of(0xf0, 0x9f));
+  assert.throws(() => parser.assertComplete());
+});
+
+test('finish classifications preserve raw reasons and provider messages while partial counts remain non-final', () => {
+  const parser = new ProviderStream('gemini', true);
+  parser.feed(encodeGenerationEvent({ type: 'text', text: 'prefix' }));
+  parser.feed(encodeGenerationEvent({ type: 'usage', usage: { inputTokens: 4 } }));
+  assert.equal(parser.checkpoint().usageIsFinal, false);
+  parser.feed(
+    encodeGenerationEvent({
+      type: 'finish',
+      reason: 'content-filter',
+      rawReason: 'SAFETY',
+      message: 'Blocked',
+      usage: { outputTokens: 2 },
+      usageIsFinal: false,
+    }),
+  );
+  assert.throws(() => parser.assertComplete(), /Blocked/);
+  assert.equal(parser.checkpoint().rawFinishReason, 'SAFETY');
+  assert.deepEqual(parser.checkpoint().usage, { inputTokens: 4, outputTokens: 2 });
 });

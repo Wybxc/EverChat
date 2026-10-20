@@ -24,7 +24,7 @@ export interface Change {
 }
 
 export interface StreamBatch {
-  version: 'raw-sse-v1';
+  version: 'events-v1';
   runId: string;
   messageId: string;
   chunkSeq: number;

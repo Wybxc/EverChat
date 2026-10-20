@@ -99,6 +99,7 @@ export default {
   importBackup: '导入备份',
   manageFiles: '管理对话文件',
   chatFiles: '对话文件',
+  historyCompressed: '历史压缩',
   compactHistory: '压缩历史',
   shortcuts: '快捷键',
   offlineHint: '你现在离线，已保存的对话仍可阅读。新消息将在联网后发送。',
@@ -152,6 +153,5 @@ export default {
   lastSynced: '已同步 · 上次同步 {{time}}',
   globalSearchShortcut: '全局搜索（{{shortcut}}）',
   findInChatShortcut: '搜索当前对话（{{shortcut}}）',
-  summaryCount: '历史摘要 · {{count}}',
   sendFailedDetail: '发送失败：{{error}}',
 } as const;

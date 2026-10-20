@@ -40,7 +40,7 @@ const streams: Record<
       frame({
         type: 'response.output_item.added',
         output_index: 0,
-        item: { type: 'message', id: 'message' },
+        item: { type: 'message', id: 'message', content: [] },
       }) +
       frame({
         type: 'response.output_text.delta',
@@ -115,7 +115,7 @@ for (const [kind, fixture] of Object.entries(streams)) {
         assert.equal(body.max_tokens, 128);
       } else if (provider === 'openai-responses') {
         assert.equal(body.store, false);
-        assert.ok(JSON.stringify(body.input).includes(config.systemPrompt));
+        assert.equal(body.instructions, config.systemPrompt);
         assert.ok(JSON.stringify(body.input).includes('历史回答'));
         assert.equal(body.max_output_tokens, 128);
       } else {

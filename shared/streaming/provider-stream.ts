@@ -1,4 +1,3 @@
-import { createParser, type EventSourceParser } from 'eventsource-parser';
 import {
   MAX_MESSAGE_TEXT_BYTES,
   MESSAGE_TEXT_LIMIT_MESSAGE,
@@ -9,8 +8,15 @@ import { AppError, problem } from '../errors/descriptor';
 import type { ProviderKind } from '../providers/types';
 
 export const MAX_EVENT_CHARACTERS = 1024 * 1024;
-const MAX_TAIL_JSON_BYTES = 1024 * 1024;
-const EVENT_LIMIT_MESSAGE = '供应商单个流事件超过解析缓冲大小，已保留可解析的内容。';
+export const FINISH_REASONS = [
+  'stop',
+  'length',
+  'content-filter',
+  'tool-calls',
+  'error',
+  'other',
+] as const;
+export type FinishReason = (typeof FINISH_REASONS)[number];
 export interface StreamUsage {
   inputTokens?: number;
   outputTokens?: number;
@@ -22,6 +28,17 @@ export interface StreamUsage {
   textOutputTokens?: number;
   toolInputTokens?: number;
 }
+export type GenerationEvent =
+  | { type: 'text' | 'reasoning'; text: string; replace?: true }
+  | { type: 'usage'; usage: StreamUsage }
+  | {
+      type: 'finish';
+      reason: FinishReason;
+      rawReason?: string;
+      message?: string;
+      usage: StreamUsage;
+      usageIsFinal: boolean;
+    };
 export interface StreamState {
   protocol: ProviderKind;
   showReasoning: boolean;
@@ -29,24 +46,27 @@ export interface StreamState {
   utf8: string;
   started: boolean;
   done: boolean;
-  finishReason?: 'stop' | 'length' | 'other';
+  finishReason?: FinishReason;
+  rawFinishReason?: string;
+  finishMessage?: string;
   failure?: string;
   textDeltas: number;
   reasoningDeltas: number;
   usage: StreamUsage;
   usageIsFinal: boolean;
-  promptInputTokens?: number;
-  thoughts: { id: string; raw: string; summary: string }[];
 }
-type ParsedDelta = { kind: 'content' | 'reasoning'; text: string };
-const object = (value: unknown): Record<string, unknown> =>
-  value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-const array = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
-const string = (value: unknown) => (typeof value === 'string' ? value : '');
-const number = (value: unknown) =>
-  typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+type ParsedDelta = { kind: 'content' | 'reasoning'; text: string; replace?: true };
+const usageKeys = new Set<keyof StreamUsage>([
+  'inputTokens',
+  'outputTokens',
+  'totalTokens',
+  'cachedInputTokens',
+  'cacheWriteInputTokens',
+  'reasoningTokens',
+  'uncachedInputTokens',
+  'textOutputTokens',
+  'toolInputTokens',
+]);
 export const encodeBytes = (bytes: Uint8Array): string => {
   let value = '';
   for (let i = 0; i < bytes.length; i += 8192)
@@ -55,33 +75,20 @@ export const encodeBytes = (bytes: Uint8Array): string => {
 };
 export const decodeBytes = (base64: string): Uint8Array =>
   Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
-
+export const encodeGenerationEvent = (event: GenerationEvent) =>
+  new TextEncoder().encode(JSON.stringify(event) + '\n');
 export class StreamParseError extends AppError {
   constructor(message: string) {
     super(problem('STREAM_INVALID'), message);
   }
 }
 
-function unfinishedSseTail(text: string) {
-  let lineStart = 0,
-    boundary = 0;
-  const endings = /\r\n|\r|\n/g;
-  for (let match = endings.exec(text); match; match = endings.exec(text)) {
-    if (match[0] === '\r' && match.index === text.length - 1) break;
-    const end = match.index + match[0].length;
-    if (match.index === lineStart) boundary = end;
-    lineStart = end;
-  }
-  return text.slice(boundary);
-}
-
-// This checkpoint records only the incomplete SSE frame and protocol state, not the whole wire log.
-// Both browser previews and server snapshot/final replay use this exact decoder.
+// This decodes EverChat events only. Provider protocols and private SDK metadata
+// never enter the browser or a public generation checkpoint.
 export class ProviderStream {
   content: string;
   reasoning: string;
   private state: StreamState;
-  private readonly parser: EventSourceParser;
   private deltas: ParsedDelta[] = [];
   private contentBytes: number;
   private reasoningBytes: number;
@@ -91,7 +98,6 @@ export class ProviderStream {
     checkpoint?: StreamState,
     content = '',
     reasoning = '',
-    private readonly observeEvent?: (event: Readonly<Record<string, unknown>>) => void,
   ) {
     this.content = content;
     this.reasoning = reasoning;
@@ -110,18 +116,9 @@ export class ProviderStream {
           reasoningDeltas: 0,
           usage: {},
           usageIsFinal: false,
-          thoughts: [],
         };
     if (this.state.protocol !== protocol || this.state.showReasoning !== showReasoning)
       throw new StreamParseError('流协议状态不一致。');
-    this.parser = createParser({
-      maxBufferSize: MAX_EVENT_CHARACTERS,
-      onEvent: (event) => this.event(event.data),
-      onError: (error) => {
-        if (error.type === 'max-buffer-size-exceeded') this.fail(EVENT_LIMIT_MESSAGE);
-      },
-    });
-    if (this.state.tail) this.parser.feed(this.state.tail);
   }
   checkpoint(): StreamState {
     return structuredClone(this.state);
@@ -135,7 +132,7 @@ export class ProviderStream {
     return deltas;
   }
   feed(bytes: Uint8Array) {
-    if (this.state.failure) return;
+    if (this.failed) return;
     try {
       const pending = decodeBytes(this.state.utf8),
         input = new Uint8Array(pending.length + bytes.length);
@@ -156,49 +153,43 @@ export class ProviderStream {
                   : 1;
         if (input.length - start < expected) cut = start;
       }
-      let text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(
-        input.subarray(0, cut),
-      );
+      const text =
+        this.state.tail +
+        new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(input.subarray(0, cut));
       this.state.utf8 = encodeBytes(input.subarray(cut));
-      if (!text) return;
-      if (!this.state.started) {
-        this.state.started = true;
-        if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+      let at = 0;
+      for (let end = text.indexOf('\n'); end !== -1 && !this.failed; end = text.indexOf('\n', at)) {
+        if (end - at > MAX_EVENT_CHARACTERS) {
+          this.fail('应用流事件超过解析缓冲大小。');
+          break;
+        }
+        this.event(JSON.parse(text.slice(at, end)));
+        at = end + 1;
       }
-      this.parser.feed(text);
-      if (this.state.failure) return;
-      this.state.tail = unfinishedSseTail(this.state.tail + text);
+      this.state.tail = this.failed ? '' : text.slice(at);
       if (
         this.state.tail.length > MAX_EVENT_CHARACTERS ||
-        jsonTextBytes(this.state.tail) > MAX_TAIL_JSON_BYTES
+        jsonTextBytes(this.state.tail) > MAX_EVENT_CHARACTERS
       )
-        this.fail(EVENT_LIMIT_MESSAGE);
+        this.fail('应用流事件超过解析缓冲大小。');
     } catch {
-      this.fail('供应商流格式无效。已保存部分内容，请主动重新生成。');
+      this.fail('回答数据格式无效。已保存部分内容，请主动重新生成。');
     }
   }
-  end() {
-    // At EOF a pending CR is a complete line ending. Resolve it without inventing an extra blank line.
-    if (this.state.tail.endsWith('\r') && !this.state.utf8) this.feed(new Uint8Array([10]));
-  }
+  end() {}
   assertEnded() {
-    this.end();
-    if (this.state.failure) throw new StreamParseError(this.state.failure);
-    if (
-      this.state.utf8 ||
-      this.state.tail.split(/\r\n|\r|\n/).some((line) => line.trim() && !line.startsWith(':')) ||
-      !this.state.done
-    ) {
+    if (this.failed) throw new StreamParseError(this.state.failure!);
+    if (this.state.utf8 || this.state.tail || !this.state.done)
       throw new StreamParseError(
         '与模型供应商的连接提前结束或未正常完成回答。已保存部分内容，请主动重新生成。',
       );
-    }
   }
   assertComplete() {
     this.assertEnded();
     if (!['stop', 'length'].includes(this.state.finishReason ?? ''))
       throw new StreamParseError(
-        '与模型供应商的连接提前结束或未正常完成回答。已保存部分内容，请主动重新生成。',
+        this.state.finishMessage ??
+          `模型供应商未正常完成回答${this.state.rawFinishReason ? `（${this.state.rawFinishReason}）` : ''}。已保存部分内容。`,
       );
     if (!this.content) throw new StreamParseError('模型供应商未返回文字回答。');
   }
@@ -207,217 +198,67 @@ export class ProviderStream {
     this.state.tail = '';
     this.state.utf8 = '';
   }
-  private append(kind: 'content' | 'reasoning', value: unknown): string {
-    if (this.state.failure) return '';
-    const text = string(value);
-    if (!text) return '';
-    if (kind === 'reasoning' && !this.state.showReasoning) return '';
-    this.state[kind === 'content' ? 'textDeltas' : 'reasoningDeltas']++;
-    // Joining split surrogate pairs changes their JSON byte cost from 12 to 4.
-    const joinsPair = /^[\uDC00-\uDFFF]/.test(text) && /[\uD800-\uDBFF]$/.test(this[kind]);
-    const available =
-      MAX_MESSAGE_TEXT_BYTES - this.contentBytes - this.reasoningBytes + (joinsPair ? 8 : 0);
-    const deltaBytes = jsonTextBytes(text);
-    const accepted = deltaBytes <= available ? text : textWithinBytes(text, available);
-    const bytes =
-      (accepted === text ? deltaBytes : jsonTextBytes(accepted)) - (joinsPair && accepted ? 8 : 0);
-    this[kind] += accepted;
-    if (kind === 'content') this.contentBytes += bytes;
-    else this.reasoningBytes += bytes;
-    if (accepted) this.deltas.push({ kind, text: accepted });
-    if (accepted.length !== text.length) this.fail(MESSAGE_TEXT_LIMIT_MESSAGE);
-    return accepted;
-  }
-
-  private usage(value: unknown, kind: ProviderKind) {
-    const usage = object(value),
-      inputDetails = object(usage.input_tokens_details ?? usage.prompt_tokens_details),
-      outputDetails = object(usage.output_tokens_details ?? usage.completion_tokens_details);
-    const next: StreamUsage =
-      kind === 'gemini'
-        ? {
-            textOutputTokens: number(usage.candidatesTokenCount),
-            totalTokens: number(usage.totalTokenCount),
-            cachedInputTokens: number(usage.cachedContentTokenCount),
-            reasoningTokens: number(usage.thoughtsTokenCount),
-            toolInputTokens: number(usage.toolUsePromptTokenCount),
-          }
-        : kind === 'anthropic'
-          ? {
-              uncachedInputTokens: number(usage.input_tokens),
-              outputTokens: number(usage.output_tokens),
-              cachedInputTokens: number(usage.cache_read_input_tokens),
-              cacheWriteInputTokens: number(usage.cache_creation_input_tokens),
-              reasoningTokens: number(outputDetails.thinking_tokens),
-            }
-          : {
-              inputTokens: number(usage.input_tokens) ?? number(usage.prompt_tokens),
-              outputTokens: number(usage.output_tokens) ?? number(usage.completion_tokens),
-              totalTokens: number(usage.total_tokens),
-              cachedInputTokens:
-                number(inputDetails.cached_tokens) ?? number(usage.prompt_cache_hit_tokens),
-              cacheWriteInputTokens: number(inputDetails.cache_write_tokens),
-              reasoningTokens: number(outputDetails.reasoning_tokens),
-            };
-    for (const [key, value] of Object.entries(next))
-      if (value !== undefined) this.state.usage[key as keyof StreamUsage] = value;
-    const report = this.state.usage;
-    if (kind === 'anthropic' && report.uncachedInputTokens !== undefined) {
-      report.inputTokens = number(
-        report.uncachedInputTokens +
-          (report.cachedInputTokens ?? 0) +
-          (report.cacheWriteInputTokens ?? 0),
-      );
-    }
-    if (kind === 'gemini') {
-      // These API counters are disjoint. Keep the reported total; never invent one.
-      this.state.promptInputTokens = number(usage.promptTokenCount) ?? this.state.promptInputTokens;
-      if (this.state.promptInputTokens !== undefined)
-        report.inputTokens = number(this.state.promptInputTokens + (report.toolInputTokens ?? 0));
-      if (report.textOutputTokens !== undefined)
-        report.outputTokens = number(report.textOutputTokens + (report.reasoningTokens ?? 0));
-    }
-    return Object.values(next).some((value) => value !== undefined);
-  }
-  private finish(reason: unknown, accepted: string[], length: string[]) {
-    const value = string(reason);
-    this.state.finishReason = accepted.includes(value)
-      ? 'stop'
-      : length.includes(value)
-        ? 'length'
-        : 'other';
-  }
-  private event(data: string) {
-    if (this.state.failure) return;
-    if (data.length > MAX_EVENT_CHARACTERS) {
-      this.fail(EVENT_LIMIT_MESSAGE);
-      return;
-    }
-    if (data === '[DONE]') {
-      if (this.state.protocol === 'openai-chat') this.state.done = true;
-      return;
-    }
-    try {
-      const event = object(JSON.parse(data)),
-        kind = this.state.protocol;
-      this.observeEvent?.(event);
-      if (event.error || event.type === 'error' || event.type === 'response.failed') {
-        this.fail('模型供应商在生成期间返回错误。已保存部分内容。');
-        return;
+  private event(value: unknown) {
+    if (!value || typeof value !== 'object' || Array.isArray(value) || this.state.done)
+      throw new Error('Invalid application event');
+    const event = value as GenerationEvent;
+    this.state.started = true;
+    if (event.type === 'text' || event.type === 'reasoning') {
+      if (typeof event.text !== 'string' || (event.replace !== undefined && event.replace !== true))
+        throw new Error('Invalid text event');
+      if (!event.text && !event.replace) return;
+      const kind = event.type === 'text' ? 'content' : 'reasoning';
+      if (kind === 'reasoning' && !this.state.showReasoning) return;
+      const before = this[kind],
+        next = event.replace ? event.text : before + event.text;
+      const budget =
+        MAX_MESSAGE_TEXT_BYTES - (kind === 'content' ? this.reasoningBytes : this.contentBytes);
+      // Only replacements encode the entire channel; appends count the new suffix.
+      const joinsPair =
+        !event.replace && /^[\uDC00-\uDFFF]/.test(event.text) && /[\uD800-\uDBFF]$/.test(before);
+      const needed = event.replace
+        ? jsonTextBytes(next)
+        : (kind === 'content' ? this.contentBytes : this.reasoningBytes) +
+          jsonTextBytes(event.text) -
+          (joinsPair ? 8 : 0);
+      const accepted = needed <= budget ? next : textWithinBytes(next, budget);
+      this[kind] = accepted;
+      const size = needed <= budget ? needed : jsonTextBytes(accepted);
+      if (kind === 'content') {
+        this.contentBytes = size;
+        this.state.textDeltas++;
+      } else {
+        this.reasoningBytes = size;
+        this.state.reasoningDeltas++;
       }
-      if (kind === 'openai-chat') {
-        const reported = this.usage(event.usage, kind),
-          choices = array(event.choices);
+      if (event.replace) this.deltas.push({ kind, text: accepted, replace: true });
+      else if (accepted.length > before.length)
+        this.deltas.push({ kind, text: accepted.slice(before.length) });
+      if (accepted.length !== next.length) this.fail(MESSAGE_TEXT_LIMIT_MESSAGE);
+    } else if (event.type === 'usage' || event.type === 'finish') {
+      if (!event.usage || typeof event.usage !== 'object' || Array.isArray(event.usage))
+        throw new Error('Invalid usage');
+      for (const [key, count] of Object.entries(event.usage)) {
+        if (!usageKeys.has(key as keyof StreamUsage) || !Number.isSafeInteger(count) || count < 0)
+          throw new Error('Invalid usage count');
+        this.state.usage[key as keyof StreamUsage] = count;
+      }
+      if (event.type === 'finish') {
         if (
-          reported &&
-          (choices.length === 0 || choices.some((value) => object(value).finish_reason != null))
+          !FINISH_REASONS.includes(event.reason) ||
+          typeof event.usageIsFinal !== 'boolean' ||
+          (event.rawReason !== undefined &&
+            (typeof event.rawReason !== 'string' || event.rawReason.length > 128)) ||
+          (event.message !== undefined &&
+            (typeof event.message !== 'string' || event.message.length > 4096))
         )
-          this.state.usageIsFinal = true;
-        for (const value of choices) {
-          const choice = object(value);
-          if (choice.index !== undefined && choice.index !== 0) continue;
-          const delta = object(choice.delta);
-          this.append('reasoning', delta.reasoning_content ?? delta.reasoning);
-          this.append('content', delta.content);
-          if (choice.finish_reason != null) this.finish(choice.finish_reason, ['stop'], ['length']);
-        }
-      } else if (kind === 'openai-responses') {
-        const type = string(event.type);
-        if (type === 'response.output_text.delta') this.append('content', event.delta);
-        if (
-          type === 'response.reasoning_text.delta' ||
-          type === 'response.reasoning_summary_text.delta'
-        )
-          this.responseThought(event, type === 'response.reasoning_text.delta' ? 'raw' : 'summary');
-        if (type === 'response.completed' || type === 'response.incomplete') {
-          const response = object(event.response);
-          this.state.usageIsFinal = this.usage(response.usage, kind);
-          this.finish(
-            type === 'response.completed' ? 'stop' : object(response.incomplete_details).reason,
-            ['stop'],
-            ['max_output_tokens'],
-          );
-          this.state.done = true;
-        }
-      } else if (kind === 'anthropic') {
-        const type = string(event.type),
-          delta = object(event.delta);
-        if (type === 'message_start') this.usage(object(event.message).usage, kind);
-        if (type === 'content_block_start') {
-          const block = object(event.content_block);
-          if (block.type === 'text') this.append('content', block.text);
-          if (block.type === 'thinking') this.append('reasoning', block.thinking);
-        }
-        if (type === 'content_block_delta') {
-          if (delta.type === 'text_delta') this.append('content', delta.text);
-          if (delta.type === 'thinking_delta') this.append('reasoning', delta.thinking);
-        }
-        if (type === 'message_delta') {
-          this.usage(event.usage, kind);
-          if (delta.stop_reason != null)
-            this.finish(delta.stop_reason, ['end_turn', 'stop_sequence'], ['max_tokens']);
-          if (this.state.finishReason && number(object(event.usage).output_tokens) !== undefined)
-            this.state.usageIsFinal = true;
-        }
-        if (type === 'message_stop') this.state.done = true;
-      } else if (kind === 'gemini') {
-        const reported = this.usage(event.usageMetadata, kind);
-        if (object(event.promptFeedback).blockReason)
-          this.fail('模型供应商未正常完成回答。已保存部分内容，请主动重新生成。');
-        for (const value of array(event.candidates)) {
-          const candidate = object(value);
-          if (candidate.index !== undefined && candidate.index !== 0) continue;
-          for (const part of array(object(candidate.content).parts)) {
-            const value = object(part);
-            this.append(value.thought === true ? 'reasoning' : 'content', value.text);
-          }
-          if (candidate.finishReason) {
-            this.finish(candidate.finishReason, ['STOP'], ['MAX_TOKENS']);
-            this.state.done = true;
-          }
-        }
-        if (reported && this.state.done) this.state.usageIsFinal = true;
+          throw new Error('Invalid finish');
+        this.state.done = true;
+        this.state.finishReason = event.reason;
+        this.state.rawFinishReason = event.rawReason;
+        this.state.finishMessage = event.message;
+        this.state.usageIsFinal = event.usageIsFinal;
       }
-    } catch {
-      this.fail('供应商流格式无效。已保存部分内容，请主动重新生成。');
-    }
-  }
-  private responseThought(event: Record<string, unknown>, channel: 'raw' | 'summary') {
-    if (!this.state.showReasoning) return;
-    if (string(event.item_id).length > 200) {
-      this.fail('供应商思考片段标识超过长度保护。');
-      return;
-    }
-    const id = `${string(event.item_id)}:${number(event.content_index ?? event.summary_index) ?? 0}`;
-    let part = this.state.thoughts.find((part) => part.id === id);
-    if (!part) {
-      if (this.state.thoughts.length >= 256) {
-        this.fail('供应商思考片段数量超过解析状态容量。');
-        return;
-      }
-      part = { id, raw: '', summary: '' };
-      this.state.thoughts.push(part);
-    }
-    const delta = string(event.delta);
-    if (!delta) return;
-    if (channel === 'summary' && part.raw) return;
-    if (part === this.state.thoughts.at(-1) && !(channel === 'raw' && part.summary)) {
-      // The usual ordered stream only appends. Avoid re-encoding and joining the
-      // entire growing thought on every token; replacement/reordering uses the path below.
-      part[channel] += this.append('reasoning', delta);
-      return;
-    }
-    const previous = this.reasoning;
-    const otherBytes = this.reasoningBytes - jsonTextBytes(part.raw || part.summary);
-    if (channel === 'raw') part.summary = '';
-    const next = part[channel] + delta;
-    part[channel] = textWithinBytes(next, MAX_MESSAGE_TEXT_BYTES - this.contentBytes - otherBytes);
-    this.state.reasoningDeltas++;
-    this.reasoning = this.state.thoughts.map((part) => part.raw || part.summary).join('');
-    this.reasoningBytes = jsonTextBytes(this.reasoning);
-    if (part[channel].length !== next.length) this.fail(MESSAGE_TEXT_LIMIT_MESSAGE);
-    // Consumers that append deltas only are used for supplier tests; the UI uses the full decoded view.
-    if (this.reasoning.startsWith(previous))
-      this.deltas.push({ kind: 'reasoning', text: this.reasoning.slice(previous.length) });
+    } else throw new Error('Unknown application event');
   }
 }

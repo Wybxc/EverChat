@@ -8,7 +8,7 @@ import type { ProviderConfig } from '../../../shared/providers/types';
 import { ProviderError } from '../../../worker/generation/errors';
 import { httpProviderError, providerFailure } from '../../../worker/providers/failure';
 import { openProviderStream } from '../../../worker/providers/stream';
-import { safeProviderStream } from '../../../worker/providers/stream-errors';
+import { ProviderWireGuard } from '../../../worker/providers/stream-errors';
 import { providerStreams } from '../../support/providers/streams';
 import { failureDiagnosticText } from '../../../src/features/providers/failure-details';
 
@@ -193,14 +193,14 @@ test('response body formatting and JSON escaping respect the total diagnostic bu
 });
 
 for (const protocol of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'] as const) {
-  test(`${protocol} forwards normal events byte for byte across CR/LF and arbitrary UTF-8 splits`, async () => {
+  test(`${protocol} normalizes SSE framing across CR/LF and arbitrary UTF-8 splits`, async () => {
     for (const ending of ['\n', '\r', '\r\n']) {
       for (const width of [1, 2, 7, 1024]) {
         const wire =
           ': heartbeat\n\n' + providerStreams[protocol].partial + providerStreams[protocol].finish;
         const bytes = new TextEncoder().encode(wire.replace(/\r\n|\r|\n/g, ending));
         let offset = 0;
-        const safe = safeProviderStream(
+        const safe = new ProviderWireGuard().wrap(
           new ReadableStream({
             pull(controller) {
               if (offset === bytes.length) controller.close();
@@ -210,11 +210,12 @@ for (const protocol of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
               }
             },
           }),
-          { ...config, provider: protocol },
-          [],
         );
         const output = new Uint8Array(await new Response(safe).arrayBuffer());
-        assert.deepEqual(output, bytes);
+        assert.equal(
+          new TextDecoder().decode(output),
+          new TextDecoder().decode(bytes).replace(/\r\n|\r/g, '\n'),
+        );
       }
     }
   });

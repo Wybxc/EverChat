@@ -32,11 +32,28 @@ export const providerStreams: Record<ProviderKind, { partial: string; finish: st
   'openai-responses': {
     partial:
       frame({
+        type: 'response.output_item.added',
+        output_index: 0,
+        item: { type: 'reasoning', id: 'thought', summary: [], content: [] },
+      }) +
+      frame({
+        type: 'response.output_item.added',
+        output_index: 1,
+        item: { type: 'message', id: 'answer', content: [] },
+      }) +
+      frame({
         type: 'response.reasoning_text.delta',
         item_id: 'thought',
         content_index: 0,
         delta: '**思考🙂**\n',
-      }) + frame({ type: 'response.output_text.delta', delta: '**正文🙂**\n' }),
+      }) +
+      frame({
+        type: 'response.output_text.delta',
+        item_id: 'answer',
+        output_index: 1,
+        content_index: 0,
+        delta: '**正文🙂**\n',
+      }),
     finish:
       frame({
         type: 'response.reasoning_text.delta',
@@ -50,8 +67,20 @@ export const providerStreams: Record<ProviderKind, { partial: string; finish: st
         content_index: 0,
         text: '**思考🙂**\n结论。',
       }) +
-      frame({ type: 'response.output_text.delta', delta: '答案。' }) +
-      frame({ type: 'response.output_text.done', text: '**正文🙂**\n答案。' }) +
+      frame({
+        type: 'response.output_text.delta',
+        item_id: 'answer',
+        output_index: 1,
+        content_index: 0,
+        delta: '答案。',
+      }) +
+      frame({
+        type: 'response.output_text.done',
+        item_id: 'answer',
+        output_index: 1,
+        content_index: 0,
+        text: '**正文🙂**\n答案。',
+      }) +
       frame({
         type: 'response.completed',
         response: {
@@ -104,6 +133,8 @@ export const providerStreams: Record<ProviderKind, { partial: string; finish: st
         index: 0,
         delta: { type: 'signature_delta', signature: 'not-displayed' },
       }) +
+      frame({ type: 'content_block_stop', index: 0 }) +
+      frame({ type: 'content_block_stop', index: 1 }) +
       frame({
         type: 'message_delta',
         delta: { stop_reason: 'end_turn' },
@@ -138,3 +169,31 @@ export const providerStreams: Record<ProviderKind, { partial: string; finish: st
     }),
   },
 };
+
+// Public application events, intentionally independent of native supplier wires.
+export const applicationStreams = Object.fromEntries(
+  Object.keys(providerStreams).map((kind) => {
+    const event = (value: unknown) => JSON.stringify(value) + '\n';
+    return [
+      kind,
+      {
+        partial:
+          event({ type: 'text', text: '**正文🙂**\n' }) +
+          event({ type: 'reasoning', text: '**思考🙂**\n' }),
+        finish:
+          event({ type: 'reasoning', text: '结论。' }) +
+          event({ type: 'text', text: '答案。' }) +
+          event({
+            type: 'finish',
+            reason: 'stop',
+            usage: {
+              inputTokens: kind === 'anthropic' ? 14 : 10,
+              outputTokens: kind === 'gemini' ? 7 : 5,
+              cachedInputTokens: 4,
+            },
+            usageIsFinal: true,
+          }),
+      },
+    ];
+  }),
+) as typeof providerStreams;

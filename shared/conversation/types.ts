@@ -22,7 +22,7 @@ export interface Message {
   providerId?: string | null;
   model?: string | null;
   modelName?: string | null;
-  streamVersion?: 'raw-sse-v1' | null;
+  streamVersion?: 'events-v1' | null;
   streamState?: StreamState;
   generation?: GenerationResult;
   summary?: SummaryCoverage;
@@ -58,7 +58,6 @@ export interface ConversationSettings {
   maxOutputTokens: number | null;
   recentMessages: number | null;
   contextBudget: number | null;
-  useSummaries: boolean;
   tools: WebToolName[];
   autoCompression: { enabled: boolean; threshold: number; model: ModelSelection | null };
 }

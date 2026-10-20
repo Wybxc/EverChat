@@ -57,7 +57,7 @@ test('an unfinished backup retains only the supplier usage observed in its durab
   const parser = new ProviderStream('anthropic', false);
   parser.feed(
     new TextEncoder().encode(
-      'data: {"type":"message_start","message":{"usage":{"input_tokens":3,"cache_creation_input_tokens":2}}}\n\n',
+      '{"type":"usage","usage":{"inputTokens":5,"uncachedInputTokens":3,"cacheWriteInputTokens":2}}\n',
     ),
   );
   const result = backupMessage({ ...assistant, streamState: parser.checkpoint() });

@@ -1,3 +1,4 @@
+import { collectProviderToolTurn } from '../../support/providers/tool-turn';
 import { MAX_MESSAGE_TEXT_BYTES } from '../../../shared/conversation/limits';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
@@ -11,11 +12,7 @@ import {
 } from '../../../shared/web-tools/tasks';
 import * as v from 'valibot';
 import type { SqlQuery } from '../../../worker/generation/metrics';
-import {
-  collectProviderToolTurn,
-  providerToolIdentity,
-  type ProviderToolTurn,
-} from '../../../worker/providers/tool-turn';
+import { providerToolIdentity, type ProviderToolTurn } from '../../../worker/providers/tool-turn';
 import {
   MAX_TOOL_TASKS,
   TOOL_DEFINITION_TOKENS,

@@ -87,7 +87,6 @@ export default {
   unset: '不设置',
   custom: '自定义',
   outputTokenBudget: '输出 Token 预算',
-  useSummaries: '使用历史摘要',
   contextTokenBudget: '上下文 Token 预算',
   recentMessages: '最近历史消息条数',
   contextBudgetHint: '留空按模型窗口；预算包含系统提示词和本次输入，历史按完整轮次选取。',

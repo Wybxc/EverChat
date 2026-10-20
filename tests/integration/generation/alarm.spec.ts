@@ -257,7 +257,7 @@ test('cancellation finalizes the last complete CR-delimited SSE event without in
     await expect
       .poll(async () => (await fixture.snapshot()).messages[1].durableOffset ?? 0)
       .toBeGreaterThan(0);
-    expect(messageText((await fixture.snapshot()).messages[1])).toBe('');
+    expect(messageText((await fixture.snapshot()).messages[1])).toBe('等待上游的正文');
     expect(
       (
         await request.post(`/api/conversations/${fixture.id}/cancel`, {

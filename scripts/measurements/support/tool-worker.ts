@@ -71,7 +71,7 @@ export class Conversation extends BaseConversation {
       workflowStatus,
       pendingSearch: count('search_outbox'),
       pendingNotifications: count('web_tool_notifications'),
-      privateStreams: count('tool_stream_commits'),
+      privateStreams: exists('tool_stream_commits') ? count('tool_stream_commits') : 0,
       privatePayloads: count('web_tool_models', 'WHERE turn IS NOT NULL'),
       retainedContexts: count('runs', "WHERE config IS NOT NULL OR context != '[]'"),
       modelCalls: exists('fixture_calls')

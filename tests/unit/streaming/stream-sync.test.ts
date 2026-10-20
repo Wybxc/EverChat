@@ -19,13 +19,16 @@ const message: Message = {
   parentId: 'user',
   revisionOf: null,
   error: null,
-  streamVersion: 'raw-sse-v1',
+  streamVersion: 'events-v1',
   durableOffset: 0,
   streamState: new ProviderStream('openai-chat', true).checkpoint(),
 };
 const wire = (content: string, reasoning: string) =>
   new TextEncoder().encode(
-    `data: ${JSON.stringify({ choices: [{ delta: { content, reasoning_content: reasoning } }] })}\n\n`,
+    JSON.stringify({ type: 'text', text: content }) +
+      '\n' +
+      JSON.stringify({ type: 'reasoning', text: reasoning }) +
+      '\n',
   );
 const first = [...streamBatches('run', 'answer', 0, 0, wire('**正文🙂**', '先思考'))][0];
 const second = [

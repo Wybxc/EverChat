@@ -101,6 +101,7 @@ import { useChatDraft } from '../features/chat/useChatDraft';
 import { useChatModel } from '../features/chat/useChatModel';
 import { useComposerLayout } from '../features/chat/useComposerLayout';
 import { useComposerSize } from '../features/chat/useComposerSize';
+import { usePromptHistory } from '../features/chat/usePromptHistory';
 import { useContextPreview } from '../features/chat/useContextPreview';
 import { useConversation } from '../features/chat/useConversation';
 import {
@@ -624,6 +625,11 @@ export function App({
     );
   }, [selectedModel]);
   useComposerSize(editor, draft);
+  const promptHistory = usePromptHistory(
+    `${selected ?? 'new'}:${branches.head ?? ''}`,
+    branches.path,
+    updateDraft,
+  );
   const {
     imageUpload,
     imageProgress,
@@ -1833,40 +1839,36 @@ export function App({
                           (summary) => summary.summary!.throughId === message.id,
                         ) && (
                           <div data-testid="branch-summaries">
-                            <Disclosure
-                              stateKey={`summaries:${message.id}`}
-                              forceOpen={branchSummaries.some(
-                                (summary) =>
-                                  summary.summary!.throughId === message.id && isActive(summary),
-                              )}
-                              title={t(($) => $.summaryCount, {
-                                count: branchSummaries.filter(
-                                  (summary) => summary.summary!.throughId === message.id,
-                                ).length,
-                              })}
+                            <div
+                              className="my-4 flex items-center gap-3 text-xs text-muted-foreground"
+                              role="separator"
+                              aria-label={t(($) => $.historyCompressed)}
                             >
-                              <div className="space-y-3">
-                                {branchSummaries
-                                  .filter((summary) => summary.summary!.throughId === message.id)
-                                  .map((summary) => (
-                                    <SummaryView
-                                      key={summary.id}
-                                      message={summary}
-                                      busy={generationBlocked}
-                                      onRetry={() => void retry(summary)}
-                                      onProviderSettings={() => {
-                                        setRequestedProviderId(summary.providerId ?? undefined);
-                                        setRequestedSettingsTab('providers');
-                                        openSettings();
-                                      }}
-                                      onDelete={() =>
-                                        setMessageMutation({ id: summary.id, mode: 'delete' })
-                                      }
-                                      selected={previewHistory?.summary?.id === summary.id}
-                                    />
-                                  ))}
-                              </div>
-                            </Disclosure>
+                              <div className="h-px flex-1 bg-border" />
+                              <span>{t(($) => $.historyCompressed)}</span>
+                              <div className="h-px flex-1 bg-border" />
+                            </div>
+                            <div className="space-y-4">
+                              {branchSummaries
+                                .filter((summary) => summary.summary!.throughId === message.id)
+                                .map((summary) => (
+                                  <SummaryView
+                                    key={summary.id}
+                                    message={summary}
+                                    busy={generationBlocked}
+                                    onRetry={() => void retry(summary)}
+                                    onProviderSettings={() => {
+                                      setRequestedProviderId(summary.providerId ?? undefined);
+                                      setRequestedSettingsTab('providers');
+                                      openSettings();
+                                    }}
+                                    onDelete={() =>
+                                      setMessageMutation({ id: summary.id, mode: 'delete' })
+                                    }
+                                    selected={previewHistory?.summary?.id === summary.id}
+                                  />
+                                ))}
+                            </div>
                           </div>
                         )}
                       </Fragment>
@@ -2149,8 +2151,9 @@ export function App({
                   maxLength={MAX_MESSAGE_TEXT_BYTES}
                   rows={1}
                   enterKeyHint={touchPrimary ? 'enter' : 'send'}
-                  onChange={(event) => updateDraft(event.target.value)}
+                  onChange={promptHistory.onChange}
                   onKeyDown={(event) => {
+                    if (promptHistory.onKeyDown(event)) return;
                     if (
                       !touchPrimary &&
                       event.key === 'Enter' &&

@@ -9,7 +9,8 @@ import { ConversationMessages } from '../../../worker/conversation/messages';
 import { ConversationState, requestFingerprint } from '../../../worker/conversation/state';
 import type { SqlQuery } from '../../../worker/generation/metrics';
 import { GenerationCheckpoints } from '../../../worker/streaming/checkpoints';
-import { STREAM_JOURNAL_SCHEMA } from '../../../worker/streaming/journal';
+const STREAM_JOURNAL_SCHEMA =
+  'CREATE TABLE stream_commits (runId TEXT, chunkSeq INTEGER, endSeq INTEGER, startOffset INTEGER, endOffset INTEGER, payload TEXT)';
 import { migrateStorage } from '../../../scripts/operations/migrations';
 
 function fixture() {
@@ -57,7 +58,10 @@ function fixture() {
 }
 const wire = (text: string, reasoning = '') =>
   new TextEncoder().encode(
-    `data: ${JSON.stringify({ choices: [{ delta: { content: text, reasoning_content: reasoning } }] })}\n\n`,
+    JSON.stringify({ type: 'text', text }) +
+      '\n' +
+      JSON.stringify({ type: 'reasoning', text: reasoning }) +
+      '\n',
   );
 
 test('context reads only the selected parent path and applicable summaries, retaining the full graph for admission', () => {

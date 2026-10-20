@@ -166,6 +166,7 @@ for (const [provider, native] of [
       if (provider === 'openai-responses')
         assert.deepEqual(body.input[0].content[0], {
           type: 'input_image',
+          detail: 'auto',
           image_url: `data:image/png;base64,${encoded}`,
         });
       if (provider === 'anthropic')
@@ -235,7 +236,7 @@ test('history summaries require a vision model and retain image-only source mess
   const prepared = summaryGeneration([user, answer], answer.id, config);
   assert.deepEqual(prepared.context[0].images, [image]);
   assert.equal(prepared.estimate.imageTokens, IMAGE_TOKEN_ALLOWANCE);
-  assert.deepEqual(summaryContext([user, answer], answer.id, false).history[0].images, [image]);
+  assert.deepEqual(summaryContext([user, answer], answer.id).history[0].images, [image]);
   assert.throws(
     () => summaryGeneration([user, answer], answer.id, { ...config, modelMetadata: undefined }),
     /不支持图片/,

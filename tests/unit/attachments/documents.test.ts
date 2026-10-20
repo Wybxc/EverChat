@@ -161,7 +161,7 @@ test('file-only questions retain their references through retries, branches, sum
     /超过/,
   );
   assert.deepEqual(summaryGeneration(messages, answer.id, config).context[0].files, [file]);
-  assert.deepEqual(summaryContext(messages, answer.id, false).history[0].files, [file]);
+  assert.deepEqual(summaryContext(messages, answer.id).history[0].files, [file]);
   assert.deepEqual(contextHistory([{ ...user, deletedAt: 2 }, answer], answer.id), []);
   assert.ok(!JSON.stringify(built).includes(text));
 });

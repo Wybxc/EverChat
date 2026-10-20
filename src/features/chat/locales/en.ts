@@ -91,7 +91,6 @@ export default {
   unset: 'Not set',
   custom: 'Custom',
   outputTokenBudget: 'Output token budget',
-  useSummaries: 'Use history summaries',
   contextTokenBudget: 'Context token budget',
   recentMessages: 'Recent history message count',
   contextBudgetHint:

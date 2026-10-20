@@ -784,7 +784,7 @@ export function installMockUpstream() {
         {
           type: 'response.output_item.added',
           output_index: 1,
-          item: { type: 'message', id: 'answer' },
+          item: { type: 'message', id: 'answer', content: [] },
         },
         ...[
           '**集成测试回答。**\n\n',
@@ -800,7 +800,7 @@ export function installMockUpstream() {
         {
           type: 'response.output_item.done',
           output_index: 1,
-          item: { type: 'message', id: 'answer' },
+          item: { type: 'message', id: 'answer', content: [] },
         },
         { type: 'response.completed', response: { incomplete_details: null } },
       ];

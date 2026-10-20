@@ -18,8 +18,9 @@ import {
 import { providerCallOptions, providerModel } from './sdk';
 import { providerToolPrompt, webToolDefinitions, type ProviderToolRequest } from './tool-turn';
 import { assertWebToolSupport } from '../../shared/web-tools/tasks';
-import { httpProviderError, providerFailure } from './failure';
-import { safeProviderStream } from './stream-errors';
+import { httpProviderError, providerFailure, providerErrorSummary } from './failure';
+import { ProviderWireGuard } from './stream-errors';
+import { providerEvents, type ProviderResponse } from './events';
 
 export { GenerationCancelled, ProviderError } from '../generation/errors';
 
@@ -31,16 +32,51 @@ export async function openProviderStream(
   loadDocument?: (file: DocumentPart) => Promise<string>,
   toolRequest?: ProviderToolRequest,
   beforeRequest?: () => Promise<void>,
-): Promise<ReadableStream<Uint8Array>> {
+): Promise<ProviderResponse> {
   if (!config.apiKey)
     throw new ProviderError('尚未配置供应商 API 密钥。', providerFailure(config, 'connect'));
   const secrets = context.map((message) => message.content);
-  let prepared: { input: Parameters<typeof fetch>[0]; init?: RequestInit } | undefined;
-  // Use the SDK to construct the request, without giving its parser the live supplier body.
-  const capture: typeof fetch = async (input, init) => {
-    if (prepared) throw new Error('Unexpected second provider request');
-    prepared = { input, init };
-    return new Response('', { headers: { 'Content-Type': 'text/event-stream' } });
+  const guard = new ProviderWireGuard();
+  let responseHeaders: Headers | undefined;
+  let requested = false;
+  const request: typeof fetch = async (input, init) => {
+    if (requested) throw new ProviderError('供应商请求不能重复发送。');
+    requested = true;
+    signal.throwIfAborted();
+    await beforeRequest?.();
+    signal.throwIfAborted();
+    // Open Responses exposes reasoning options, but not store/include yet.
+    if (
+      config.provider === 'openai-responses' &&
+      new URL(config.baseUrl).hostname !== 'api.openai.com' &&
+      typeof init?.body === 'string'
+    ) {
+      const payload = JSON.parse(init.body);
+      payload.store = false;
+      if (toolRequest) payload.include = ['reasoning.encrypted_content'];
+      init = { ...init, body: JSON.stringify(payload) };
+    }
+    const response = await globalThis.fetch(input, { ...init, signal, redirect: 'manual' });
+    responseHeaders = response.headers;
+    if (!response.ok) throw await httpProviderError(response, config, secrets);
+    if (
+      !response.body ||
+      !response.headers.get('Content-Type')?.toLowerCase().includes('text/event-stream')
+    ) {
+      await response.body?.cancel().catch(() => {});
+      throw new ProviderError(
+        '模型供应商未返回有效的流式响应。',
+        providerFailure(config, 'protocol', undefined, {
+          status: response.status,
+          headers: response.headers,
+          secrets,
+        }),
+      );
+    }
+    return new Response(guard.wrap(response.body, signal), {
+      status: response.status,
+      headers: response.headers,
+    });
   };
   try {
     if (toolRequest) {
@@ -108,7 +144,7 @@ export async function openProviderStream(
     ];
     if (toolRequest)
       prompt.push(...providerToolPrompt(toolRequest.exchanges ?? [], toolRequest.enabled, config));
-    const placeholder = await providerModel(config, capture).doStream(
+    const result = await providerModel(config, request).doStream(
       providerCallOptions(
         config,
         prompt,
@@ -116,47 +152,46 @@ export async function openProviderStream(
         toolRequest ? webToolDefinitions(toolRequest.enabled) : undefined,
       ),
     );
-    const reader = placeholder.stream.getReader();
-    try {
-      while (!(await reader.read()).done) {
-        /* Empty local response, never the supplier stream. */
-      }
-    } finally {
-      reader.releaseLock();
-    }
-    if (!prepared) throw new Error('Missing provider request');
-    signal.throwIfAborted();
-    await beforeRequest?.();
-    signal.throwIfAborted();
-    const response = await globalThis.fetch(prepared.input, {
-      ...prepared.init,
+    return providerEvents(
+      result.stream,
+      config,
+      guard,
       signal,
-      redirect: 'manual',
-    });
-    if (!response.ok) {
-      throw await httpProviderError(response, config, secrets);
-    }
-    if (
-      !response.body ||
-      !response.headers.get('Content-Type')?.toLowerCase().includes('text/event-stream')
-    ) {
-      await response.body?.cancel().catch(() => {});
-      throw new ProviderError(
-        '模型供应商未返回有效的流式响应。',
-        providerFailure(config, 'protocol', undefined, {
-          status: response.status,
-          headers: response.headers,
-          secrets,
-        }),
-      );
-    }
-    return safeProviderStream(response.body, config, secrets);
+      secrets,
+      responseHeaders,
+      toolRequest,
+    );
   } catch (error) {
+    await guard.cancel();
     if (error instanceof ImageContextError || error instanceof DocumentError)
       throw new ProviderError(error.message);
     if (error instanceof ProviderError || error instanceof GenerationCancelled) throw error;
     if (signal.aborted)
       throw new ProviderError('模型供应商连接已中断。', providerFailure(config, 'connect'));
+    // Anthropic may report its initial stream error from doStream() itself.
+    if (error && typeof error === 'object' && 'statusCode' in error) {
+      const detail = error as {
+        statusCode: number;
+        responseBody?: string;
+        data?: unknown;
+        message?: string;
+      };
+      let value: unknown = detail.data ?? { message: detail.message };
+      if (detail.responseBody) {
+        try {
+          value = JSON.parse(detail.responseBody);
+        } catch {
+          /* Keep the SDK error. */
+        }
+      }
+      const failure = providerFailure(config, 'response', value, {
+        status: detail.statusCode,
+        headers: responseHeaders,
+        secrets,
+        responseBody: detail.responseBody,
+      });
+      throw new ProviderError(providerErrorSummary(failure), failure);
+    }
     throw new ProviderError(
       '无法连接模型供应商，请检查服务地址和网络。',
       providerFailure(config, 'connect'),

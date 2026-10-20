@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import * as v from 'valibot';
 import {
   applyConversationSettings,
+  conversationSettingsDefaults,
   conversationSettingsSchema,
   DEFAULT_CONVERSATION_SETTINGS as defaults,
   samplingSupport,
@@ -19,6 +20,17 @@ const config: ProviderConfig = {
   systemPrompt: 'model prompt',
   maxOutputTokens: 128,
 };
+
+test('settings projection preserves current references and removes retired fields without mutating stored values', () => {
+  assert.equal(conversationSettingsDefaults(defaults), defaults);
+  const stored = { ...defaults, useSummaries: false, temperature: 0 };
+  const projected = conversationSettingsDefaults(stored);
+  assert.equal(projected.temperature, 0);
+  assert.equal('useSummaries' in projected, false);
+  assert.equal(stored.useSummaries, false);
+  assert.equal(conversationSettingsDefaults(projected), projected);
+  assert.deepEqual(conversationSettingsDefaults({}), defaults);
+});
 
 test('conversation settings distinguish inherited, empty and unset values, including zero temperature', () => {
   assert.equal(applyConversationSettings(config, defaults).systemPrompt, 'model prompt');

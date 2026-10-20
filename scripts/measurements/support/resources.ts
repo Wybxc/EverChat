@@ -14,6 +14,7 @@ export interface ToolResourceWindow {
   alarms: { set: number; delete: number };
   upstream: {
     modelRequests: number;
+    // SDK-era fixtures count the normalized model event stream, not provider SSE.
     modelBytes: number;
     toolRequests: number;
     toolResponseBytes: number;

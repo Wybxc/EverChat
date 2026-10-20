@@ -237,7 +237,11 @@ try {
       answer = snapshot.messages[1];
     const expectedModels = scenario.mode === 'multi' ? 6 : scenario.mode === 'rejected' ? 1 : 2;
     const expectedTools = scenario.mode === 'multi' ? 10 : scenario.mode === 'rejected' ? 1 : 2;
-    assert.equal(answer.status, scenario.mode === 'rejected' ? 'failed' : 'completed');
+    assert.equal(
+      answer.status,
+      scenario.mode === 'rejected' ? 'failed' : 'completed',
+      `${scenario.name}: ${answer.error ?? 'unexpected terminal status'}`,
+    );
     if (scenario.mode !== 'rejected')
       assert.equal(
         messageText(answer),
@@ -307,8 +311,8 @@ try {
     );
     assert.equal(
       sample.report.streams.private.wireBytes,
-      sample.report.upstream.modelBytes,
-      'Every upstream byte must enter the private journal exactly once',
+      0,
+      'Live SDK parsing must not persist a private raw-byte journal',
     );
     assert.ok(sample.report.streams.public.wireBytes > 0);
     assert.equal(
@@ -336,7 +340,7 @@ try {
         librarySqlRowsWritten: total(library.report),
         workflowSteps: workflow.steps.length,
         workflowWaits: workflow.waits.length,
-        upstreamBytes: sample.report.upstream.modelBytes,
+        modelEventBytes: sample.report.upstream.modelBytes,
         privateStreamBytes: sample.report.streams.private.wireBytes,
         publicStreamBytes: sample.report.streams.public.wireBytes,
       }),
@@ -344,8 +348,9 @@ try {
   }
   const output = resolve(values.output!);
   await writeReport(output, {
-    version: 1,
+    version: 2,
     runtime: 'local Cloudflare fixture',
+    modelBytesSource: 'normalized events-v1, not provider SSE',
     capturedAt: new Date().toISOString(),
     workload: {
       chunks,

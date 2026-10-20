@@ -133,7 +133,6 @@ async function generationSource(request: APIRequestContext, model = 'metadata-co
     maxOutputTokens: 42,
     recentMessages: null,
     contextBudget: null,
-    useSummaries: true,
     tools: [],
     autoCompression: { enabled: false, threshold: 80, model: null },
   };

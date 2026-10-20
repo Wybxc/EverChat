@@ -60,7 +60,11 @@ export class Conversation extends ProductionConversation {
       alarmAt,
       pendingSearch: count('search_outbox'),
       pendingNotifications: count('web_tool_notifications'),
-      privateStreams: count('tool_stream_commits'),
+      privateStreams: sql
+        .exec("SELECT name FROM sqlite_master WHERE name='tool_stream_commits'")
+        .toArray().length
+        ? count('tool_stream_commits')
+        : 0,
       privatePayloads: count('web_tool_models', 'WHERE turn IS NOT NULL'),
       retainedContexts: count('runs', "WHERE config IS NOT NULL OR context != '[]'"),
       task:
@@ -267,8 +271,11 @@ export class Conversation extends ProductionConversation {
             .calls
         : 0,
       privateStreams: sql
-        .exec<{ count: number }>('SELECT COUNT(*) AS count FROM tool_stream_commits')
-        .one().count,
+        .exec("SELECT name FROM sqlite_master WHERE name='tool_stream_commits'")
+        .toArray().length
+        ? sql.exec<{ count: number }>('SELECT COUNT(*) AS count FROM tool_stream_commits').one()
+            .count
+        : 0,
       pendingNotifications: sql
         .exec<{ count: number }>('SELECT COUNT(*) AS count FROM web_tool_notifications')
         .one().count,
@@ -447,7 +454,7 @@ export class Conversation extends ProductionConversation {
             if (step++ === 0) {
               controller.enqueue(
                 new TextEncoder().encode(
-                  `data: ${JSON.stringify({ choices: [{ delta: { content: '停止前的内容'.repeat(200) } }] })}\n\n`,
+                  JSON.stringify({ type: 'text', text: '停止前的内容'.repeat(200) }) + '\n',
                 ),
               );
               return;
@@ -456,7 +463,7 @@ export class Conversation extends ProductionConversation {
             await new Promise((resolve) => setTimeout(resolve, 1700));
             controller.enqueue(
               new TextEncoder().encode(
-                `data: ${JSON.stringify({ choices: [{ delta: { content: '尚未保存的尾部' } }] })}\n\n`,
+                JSON.stringify({ type: 'text', text: '尚未保存的尾部' }) + '\n',
               ),
             );
             await new Promise((resolve) => setTimeout(resolve, 150));
@@ -474,7 +481,7 @@ export class Conversation extends ProductionConversation {
     const stream = await super.openModelStream(...args);
     if (!this.resourceMeter) return stream;
     this.resourceMeter.upstream('modelRequests');
-    return stream.pipeThrough(
+    const measured = stream.pipeThrough(
       new TransformStream<Uint8Array, Uint8Array>({
         transform: (bytes, controller) => {
           this.resourceMeter!.upstream('modelBytes', bytes.byteLength);
@@ -482,6 +489,8 @@ export class Conversation extends ProductionConversation {
         },
       }),
     );
+    // The collector fills this only after the stream has been consumed.
+    return Object.defineProperty(measured, 'toolTurn', { get: () => stream.toolTurn });
   }
   override commit(runId: string, batches: StreamBatch[]) {
     if (this.failNextCommit) {

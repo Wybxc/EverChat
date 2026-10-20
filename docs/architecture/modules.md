@@ -26,7 +26,7 @@
 - `platform/storage` 持有唯一的 IndexedDB／内存／localStorage 缓存和退出 epoch；`features/chat/cache` 管理聊天墓碑、快照键与延迟写入检查，不复制缓存。
 - `SettingsPanel` 持有唯一的 `SettingsAutosave`，其生命周期独立于弹窗内容；切换 Tab、关闭再打开窗口不会重建保存实例。供应商编辑器与模型选项接受同一个实例，身份变化时仍按原有 epoch 和退出规则失效。
 - `AppFrame` 复用身份确认前后的页面布局；私密内容仍等待身份验证与缓存归属检查。设置 Tab 和本地主题不依赖供应商查询，远程表单分别管理读取与重试。静态启动占位与 React 启动框架覆盖脚本和本地存储初始化期间的等待。
-- `ConversationMessages` 在所属 DO 的已有事务中执行，不自行打开事务、发送 RPC 或调度 Alarm。消息、事件、搜索 outbox 与流日志的原子关系保留。
+- `ConversationMessages` 在所属 DO 的已有事务中执行，不自行打开事务、发送 RPC 或调度 Alarm。消息状态、搜索 outbox 与生成检查点的原子关系保留。
 - 订阅模块只负责同一 DO 的 WebSocket 背压、会话到期和确认；DO 决定删除、握手、重放及何时广播。流读取模块保留读取间的取消与持久化屏障；DO 持有 active generation、提交、结束和 Alarm。
 - `ProviderSettingsStore` 和 `ArchiveRestorer` 使用 Library 原有的存储与功能实例。恢复步骤、清理与维护通过同一 DO 协调，未新增数据库、序列化层或跨 DO 请求。
 

@@ -76,7 +76,6 @@ import { initializeStorageSchema } from '../platform/storage-schema';
 import { openProviderStream } from '../providers/stream';
 import { searchRetryDelay } from '../search/index';
 import { GenerationCheckpoints } from '../streaming/checkpoints';
-import { StreamJournal } from '../streaming/journal';
 import {
   ConversationSubscribers,
   validSubscription,
@@ -107,10 +106,9 @@ import {
   type WebToolOutcome,
 } from '../../shared/web-tools/tasks';
 import { providerFailure } from '../providers/failure';
-import { collectProviderToolTurn, type ProviderToolTurn } from '../providers/tool-turn';
+import { type ProviderToolTurn } from '../providers/tool-turn';
 import { executeWebTool, terminalWebToolError, type WebToolFetch } from '../web-tools/service';
 import { WEB_TOOL_QUOTA_ERROR } from '../web-tools/settings';
-import { ToolStreamRelay } from '../web-tools/stream-relay';
 import { ToolTaskJournal, type ToolTaskState } from '../web-tools/task-journal';
 import { toolWorkflowId, type ToolWorkflowParams } from '../web-tools/workflow';
 type Run = {
@@ -170,7 +168,6 @@ export class Conversation extends DurableObject<Env> {
   private readonly subscribers: ConversationSubscribers;
   private readonly messages: ConversationMessages;
   private readonly journal: GenerationCheckpoints;
-  private readonly privateToolStreams: StreamJournal;
   private readonly tools!: ToolTaskJournal;
   private readonly activeTools = new Map<
     string,
@@ -220,7 +217,6 @@ export class Conversation extends DurableObject<Env> {
       (payload) => this.meter?.event(payload),
       this.activity,
     );
-    this.privateToolStreams = new StreamJournal(this.query.bind(this), 'tool_stream_commits');
     // Reuse the existing parser checkpoint; never duplicate per-token accounting writes.
     ctx.storage.transactionSync(() =>
       this.accounting.recover(new Set(), (attempt) => {
@@ -503,7 +499,7 @@ export class Conversation extends DurableObject<Env> {
           'length(CAST(content AS BLOB)) + COALESCE(length(CAST(reasoning AS BLOB)), 0)',
         ) + sum('message_content_chunks', 'length(CAST(payload AS BLOB))'),
       checkpointBytes: sum('generation_checkpoints', 'length(CAST(state AS BLOB))'),
-      privateStreamBytes: sum('tool_stream_commits', 'length(CAST(payload AS BLOB))'),
+      privateStreamBytes: 0,
       activeTaskBytes: sum(
         'runs',
         'length(CAST(context AS BLOB)) + COALESCE(length(CAST(config AS BLOB)), 0)',
@@ -1896,41 +1892,6 @@ export class Conversation extends DurableObject<Env> {
     };
     this.activeGeneration = active;
     this.activeAlarmAt = toolModel ? deadline : Date.now() + 15 * 60_000;
-    if (toolModel)
-      active.privateBuffer = new GenerationBuffer(runId, claim.assistantId!, (batches) => {
-        if (
-          this.deletedAt ||
-          !isActive(this.messages.rawMessage(claim.assistantId!) ?? { status: 'completed' })
-        )
-          return false;
-        this.ctx.storage.transactionSync(() => {
-          this.privateToolStreams.append({ runId, messageId: claim.assistantId!, batches });
-          if (this.capacityBytes(MAX_DATABASE_WRITE_BYTES) > MAX_DATABASE_WRITE_BYTES)
-            throw capacityError('write');
-        });
-        const barrier = (active.persistence ?? Promise.resolve()).then(() =>
-          this.ctx.storage.sync(),
-        );
-        active.persistence = barrier;
-        void barrier.then(
-          () => {
-            if (active.persistence === barrier) active.persistence = undefined;
-          },
-          (error) => {
-            active.failure = error instanceof Error ? error : new Error('Tool persistence failed');
-            abort.abort();
-          },
-        );
-        return true;
-      });
-    const relay =
-      toolModel && claim.config
-        ? new ToolStreamRelay(
-            claim.config,
-            (bytes) => active.privateBuffer!.add(bytes),
-            (bytes) => active.buffer.add(bytes),
-          )
-        : undefined;
     const timeout = setTimeout(
       () => abort.abort(),
       Math.max(1, Math.min(14 * 60_000, deadline - Date.now())),
@@ -1944,7 +1905,6 @@ export class Conversation extends DurableObject<Env> {
       active.timer = setInterval(() => {
         if (active.cancelled || active.persistence) return;
         try {
-          active.privateBuffer?.tick();
           active.buffer.tick();
         } catch (error) {
           active.failure =
@@ -2009,23 +1969,10 @@ export class Conversation extends DurableObject<Env> {
           this.ctx.waitUntil(this.accounting.deliver().finally(() => this.scheduleAlarm()));
         },
       );
-      await consumeModelStream(body, active, probe, (bytes) => {
-        if (relay) relay.add(bytes);
-        else active.buffer.add(bytes);
-      });
-      relay?.end();
-      active.privateBuffer?.flush();
+      await consumeModelStream(body, active, probe, (bytes) => active.buffer.add(bytes));
       active.buffer.flush();
       await active.persistence;
-      const turn =
-        toolModel && !active.cancelled
-          ? await collectProviderToolTurn(
-              claim.config,
-              this.tools.enabled(toolModel.rootId),
-              this.privateToolStreams.replay(runId, claim.assistantId!),
-              abort.signal,
-            )
-          : undefined;
+      const turn = toolModel && !active.cancelled ? body.toolTurn : undefined;
       this.finish(runId, active.cancelled ? 'cancelled' : 'completed', null, turn);
     } catch (error) {
       active.endedAt ??= Date.now();
@@ -2200,6 +2147,12 @@ export class Conversation extends DurableObject<Env> {
           status = 'failed';
           error = failure instanceof StreamParseError ? failure.message : '无法验证供应商回答。';
           retainPartial = failure instanceof StreamParseError;
+          failureDetails ??= providerFailure(
+            run.config ? JSON.parse(run.config) : undefined,
+            'protocol',
+            error,
+          );
+          failureIssue ??= issueOf(failure, 'GENERATION_INTERRUPTED');
         }
       }
       message.parts = messageParts(parser.content, parser.reasoning);
@@ -2207,12 +2160,14 @@ export class Conversation extends DurableObject<Env> {
       message.generation = {
         ...message.generation,
         finishReason: message.streamState.finishReason,
+        rawFinishReason: message.streamState.rawFinishReason,
+        finishMessage: message.streamState.finishMessage,
         usage: message.streamState.usage,
         usageIsFinal:
           message.streamState.usageIsFinal &&
           message.streamState.done &&
           !message.streamState.failure &&
-          ['stop', 'length'].includes(message.streamState.finishReason ?? ''),
+          ['stop', 'length', 'tool-calls'].includes(message.streamState.finishReason ?? ''),
       };
       roundUsage = {
         usage: toolTurn?.usage ?? message.streamState.usage,
@@ -2317,7 +2272,6 @@ export class Conversation extends DurableObject<Env> {
           calls: [],
         });
       if (message.streamVersion === STREAM_VERSION) this.journal.compact(message);
-      if (toolRequest) this.privateToolStreams.purge(runId);
       if (finalStatus === 'failed') {
         message.generation!.issue =
           failureIssue ??
@@ -2448,7 +2402,7 @@ export class Conversation extends DurableObject<Env> {
             files: DocumentPart[];
           };
           if (!run.config) throw new AppError(problem('INVALID_REQUEST'), '回答配置已丢失。');
-          const prepared = summaryContext(this.messages.forHead(parentId), parentId, true);
+          const prepared = summaryContext(this.messages.forHead(parentId), parentId);
           if (prepared.summary?.id !== dependency.summaryId)
             throw new AppError(problem('INVALID_REQUEST'), '自动摘要覆盖范围不匹配。');
           const built = buildContext(

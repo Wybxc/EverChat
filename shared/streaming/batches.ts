@@ -2,13 +2,13 @@ import type { Commit, CommitAck, StreamBatch, StreamCommit } from './protocol';
 
 import { decodeBytes, encodeBytes } from './provider-stream';
 
-export const STREAM_VERSION = 'raw-sse-v1' as const;
+export const STREAM_VERSION = 'events-v1' as const;
 export const MAX_BATCH_BYTES = 8192;
 export const MAX_COMMIT_BYTES = 64 * 1024;
 const encoder = new TextEncoder();
 export const payloadBytes = (payload: string) => encoder.encode(payload).byteLength;
 
-// Offsets count original supplier bytes, including partial UTF-8 and partial SSE events.
+// Offsets count encoded EverChat events, including partial UTF-8 and JSON boundaries.
 export function* streamBatches(
   runId: string,
   messageId: string,

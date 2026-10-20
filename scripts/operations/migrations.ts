@@ -76,6 +76,26 @@ export function migrateStorage(db: DatabaseSync, kind: StoreKind): Statement[] {
       // missing empty feature tables. The remote version marker is written last.
       db.prepare('INSERT INTO storage_schema VALUES (1, ?)').run(STORAGE_SCHEMA_VERSION);
       initializeConversation({ exec: query } as unknown as SqlStorage, false);
+      const oldActive = db
+        .prepare(
+          "SELECT COUNT(*) AS count FROM runs JOIN messages ON messages.id=runs.assistantId WHERE messages.status IN ('queued','running') AND runs.streamVersion='raw-sse-v1'",
+        )
+        .get()!.count;
+      assert.equal(oldActive, 0, '旧版流任务仍在进行，请在旧版本完成或停止后重新备份迁移。');
+      if (exists('conversation_settings')) {
+        for (const row of db.prepare('SELECT id,payload FROM conversation_settings').all()) {
+          const value = JSON.parse(String(row.payload));
+          if ('useSummaries' in value) {
+            delete value.useSummaries;
+            query(
+              'UPDATE conversation_settings SET payload=? WHERE id=?',
+              JSON.stringify(value),
+              row.id as number,
+            );
+          }
+        }
+      }
+      if (exists('tool_stream_commits')) query('DROP TABLE tool_stream_commits');
       if (exists('stream_commits')) {
         const checkpoints = new GenerationCheckpoints(query);
         for (const run of db

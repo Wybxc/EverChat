@@ -8,7 +8,7 @@ import {
 } from '../../shared/conversation/content';
 import { isActive } from '../../shared/conversation/message-state';
 import { branchPath } from '../../shared/conversation/branch-path';
-import { DEFAULT_CONVERSATION_SETTINGS } from '../../shared/conversation/settings';
+import { conversationSettingsDefaults } from '../../shared/conversation/settings';
 import type { ConversationSettings, Message } from '../../shared/conversation/types';
 import type { ProviderConfig } from '../../shared/providers/types';
 import type { SearchDocument } from '../../shared/search/query';
@@ -17,7 +17,6 @@ import type { Change, Snapshot } from '../../shared/streaming/protocol';
 import { type PublicToolTask } from '../../shared/web-tools/tasks';
 import type { SqlQuery } from '../generation/metrics';
 import type { ConversationActivityJournal } from './activity';
-import { StreamJournal } from '../streaming/journal';
 import { ConversationState } from './state';
 import { GenerationCheckpoints } from '../streaming/checkpoints';
 
@@ -36,7 +35,7 @@ export type Row = Omit<Message, 'parts' | 'waitingForSummary'> & {
 export class ConversationMessages {
   constructor(
     private readonly query: SqlQuery,
-    private readonly journal: StreamJournal,
+    private readonly journal: GenerationCheckpoints,
     private readonly runConfig: (id: string) => string | null | undefined,
     _onEvent: (payload: string) => void,
     private readonly activity?: ConversationActivityJournal,
@@ -133,10 +132,7 @@ export class ConversationMessages {
     const row = this.query<{ payload: string }>(
       'SELECT payload FROM conversation_settings WHERE id = 1',
     ).toArray()[0];
-    return {
-      ...DEFAULT_CONVERSATION_SETTINGS,
-      ...(row ? (JSON.parse(row.payload) as ConversationSettings) : {}),
-    };
+    return conversationSettingsDefaults(row ? JSON.parse(row.payload) : {});
   }
 
   writeSettings(settings: ConversationSettings) {

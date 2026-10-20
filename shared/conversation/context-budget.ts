@@ -227,7 +227,7 @@ export function assertStoredContextFits(
 export function assertContextFits(estimate: ContextEstimate) {
   if (estimate.totalTokens > estimate.inputBudget)
     throw new ContextBudgetError(
-      `${estimate.summaryTokens ? '系统提示词、摘要与本次输入' : '系统提示词与本次输入'}约需 ${estimate.totalTokens.toLocaleString('zh-CN')} Tokens，超过上下文预算 ${estimate.inputBudget.toLocaleString('zh-CN')}。请缩短输入${estimate.summaryTokens ? '、停用历史摘要' : ''}或调整预算／输出预留。`,
+      `${estimate.summaryTokens ? '系统提示词、摘要与本次输入' : '系统提示词与本次输入'}约需 ${estimate.totalTokens.toLocaleString('zh-CN')} Tokens，超过上下文预算 ${estimate.inputBudget.toLocaleString('zh-CN')}。请缩短输入${estimate.summaryTokens ? '、重新压缩历史' : ''}或调整预算／输出预留。`,
       problem('CONTEXT_BUDGET_EXCEEDED', {
         estimatedTokens: estimate.totalTokens,
         budgetTokens: estimate.inputBudget,

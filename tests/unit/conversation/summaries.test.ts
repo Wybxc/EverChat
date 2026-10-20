@@ -120,7 +120,7 @@ test('queued, partial, failed, cancelled, deleted, empty and truncated summaries
     { ...candidate, generation: { usage: {}, usageIsFinal: false, finishReason: 'length' } },
   );
   for (const invalid of variants) {
-    const prepared = summaryContext([...path, invalid], path.at(-1)!.id, true);
+    const prepared = summaryContext([...path, invalid], path.at(-1)!.id);
     assert.equal(prepared.summary, undefined);
     assert.equal(prepared.history.length, path.length);
   }
@@ -131,7 +131,7 @@ test('a summary replaces only its covered prefix and is a budgeted historical us
     saved = summary(path.slice(0, 2)),
     messages = [...path, saved],
     before = structuredClone(messages);
-  const prepared = summaryContext(messages, path.at(-1)!.id, true);
+  const prepared = summaryContext(messages, path.at(-1)!.id);
   assert.deepEqual(
     prepared.history.map(({ content }) => content),
     path.slice(2).map((message) => messageText(message)),
@@ -156,10 +156,10 @@ test('a summary replaces only its covered prefix and is a budgeted historical us
     { ...defaults, contextBudget: 1 },
     summaryPrefix(saved),
   );
-  assert.throws(() => assertContextFits(oversized.estimate), /停用历史摘要/);
-  const disabled = summaryContext(messages, path.at(-1)!.id, false);
-  assert.equal(disabled.summary, undefined);
-  assert.equal(disabled.history.length, path.length);
+  assert.throws(() => assertContextFits(oversized.estimate), /重新压缩历史/);
+  const alwaysUsed = summaryContext(messages, path.at(-1)!.id);
+  assert.equal(alwaysUsed.summary?.id, saved.id);
+  assert.equal(alwaysUsed.history.length, path.length - 2);
   assert.deepEqual(messages, before);
 });
 
@@ -206,7 +206,7 @@ test('summary suffixes preserve deleted-question filtering even when the questio
   const path = history(),
     saved = summary(path.slice(0, 2));
   path[2].deletedAt = 123;
-  const prepared = summaryContext([...path, saved], path.at(-1)!.id, true);
+  const prepared = summaryContext([...path, saved], path.at(-1)!.id);
   assert.deepEqual(
     prepared.history.map(({ content }) => content),
     path.slice(4).map((message) => messageText(message)),
