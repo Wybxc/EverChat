@@ -53,7 +53,7 @@ test('a narrow viewport folds parameters and preserves them across resizing and 
                     name: '一个很长的模型显示名用于验证窄屏仍然可以发送消息',
                     enabled: true,
                     reasoningSupport: 'supported',
-                    metadataOverrides: { contextWindow: 128000 },
+                    metadataOverrides: { contextWindow: 1000000 },
                   },
                 ],
               },
@@ -102,12 +102,16 @@ test('a narrow viewport folds parameters and preserves them across resizing and 
     const context = page.getByRole('button', { name: '查看上下文估算' });
     await expect(context).toBeVisible();
     await expect(context.locator('[data-slot=progress]')).toBeVisible();
-    // The label remains centered even when the budget meter is present.
-    const labelCenter = await context.locator(':scope > span').evaluate((node) => {
-      const label = node.getBoundingClientRect(),
-        button = node.parentElement!.getBoundingClientRect();
-      return Math.abs(label.y + label.height / 2 - button.y - button.height / 2);
-    });
+    await expect(context).toContainText('<0.01%');
+    // The token label stays centered beside the radial meter and nonzero percentage.
+    const labelCenter = await context
+      .locator(':scope > span')
+      .first()
+      .evaluate((node) => {
+        const label = node.getBoundingClientRect(),
+          button = node.parentElement!.getBoundingClientRect();
+        return Math.abs(label.y + label.height / 2 - button.y - button.height / 2);
+      });
     expect(labelCenter).toBeLessThanOrEqual(1);
     for (const theme of ['light', 'dark']) {
       await page
@@ -124,6 +128,7 @@ test('a narrow viewport folds parameters and preserves them across resizing and 
           ),
         )
         .toBe(true);
+      await page.screenshot({ path: test.info().outputPath(`context-meter-${theme}.png`) });
       await page.getByLabel('消息', { exact: true }).fill('');
       await expect(sendButton).toBeDisabled();
     }

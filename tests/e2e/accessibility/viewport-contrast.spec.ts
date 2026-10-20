@@ -29,6 +29,7 @@ async function fixture(page: Page) {
               name: '一个用于检查窄屏和长名称截断的模型显示名',
               enabled: true,
               reasoningSupport: 'supported',
+              metadataOverrides: { contextWindow: 128000 },
             },
           ],
         },
@@ -164,7 +165,7 @@ async function contrast(
   page: Page,
   samples: {
     selector: string;
-    property?: 'color' | 'borderTopColor' | 'outlineColor';
+    property?: 'color' | 'borderTopColor' | 'outlineColor' | 'stroke';
     pseudo?: string;
     minimum?: number;
   }[],
@@ -240,6 +241,12 @@ test('semantic theme text, selected navigation, placeholders and focus meet cont
         { selector: '[data-testid="chat-composer"]', property: 'outlineColor', minimum: 3 },
         { selector: '[aria-label="发送消息"]' },
         { selector: '.context-trigger' },
+        { selector: '.context-trigger [data-slot=progress-track]', property: 'stroke', minimum: 3 },
+        {
+          selector: '.context-trigger [data-slot=progress-indicator]',
+          property: 'stroke',
+          minimum: 3,
+        },
       ]);
       await page.getByRole('button', { name: '发送消息', exact: true }).hover();
       await contrast(page, [{ selector: '[aria-label="发送消息"]' }]);

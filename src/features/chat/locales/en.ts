@@ -226,6 +226,7 @@ export default {
   chatName: 'Chat name',
   delete: 'Delete',
   save: 'Save',
+  contextUsage: '{{percent}} used',
   contextDescription: 'Context approximately {{total}} / {{budget}} tokens',
   contextTokens: 'Context ≈{{total}} / {{budget}} tokens',
   inputTokens: 'Input ≈{{tokens}} tokens',

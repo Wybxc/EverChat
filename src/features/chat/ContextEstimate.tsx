@@ -12,8 +12,21 @@ const compact = {
   format: (value: number) => formatNumber(value, { notation: 'compact', maximumFractionDigits: 1 }),
 };
 
+function usageRatio(estimate: ContextEstimate) {
+  return estimate.windowSource !== 'fallback' && estimate.inputBudget > 0
+    ? estimate.totalTokens / estimate.inputBudget
+    : undefined;
+}
+
+function usagePercent(ratio: number) {
+  const percent = (value: number) =>
+    formatNumber(value, { style: 'percent', maximumFractionDigits: 2 });
+  return ratio > 0 && ratio < 0.0001 ? `<${percent(0.0001)}` : percent(ratio);
+}
+
 export function ContextEstimateView({ estimate }: { estimate: ContextEstimate }) {
   const { t } = useTranslation('chat', { useSuspense: false });
+  const ratio = usageRatio(estimate);
 
   return (
     <Popover>
@@ -22,21 +35,18 @@ export function ContextEstimateView({ estimate }: { estimate: ContextEstimate })
           variant="ghost"
           type="button"
           data-testid="context-estimate"
-          className="context-trigger relative min-w-11 shrink-0 px-2 text-xs text-muted-foreground"
+          className="context-trigger min-w-11 shrink-0 gap-1.5 px-2 text-xs text-muted-foreground"
           aria-label={t(($) => $.viewContextEstimate)}
           aria-description={t(($) => $.contextDescription, {
             total: number.format(estimate.totalTokens),
             budget: number.format(estimate.inputBudget),
           })}
         >
-          <span>≈{compact.format(estimate.totalTokens)}</span>
-          {estimate.windowSource !== 'fallback' && estimate.inputBudget > 0 && (
-            <Progress
-              aria-hidden
-              className="absolute bottom-1 left-1/2 w-10 -translate-x-1/2"
-              value={Math.min(100, (100 * estimate.totalTokens) / estimate.inputBudget)}
-            />
+          {ratio !== undefined && (
+            <Progress aria-hidden shape="circle" value={Math.min(100, ratio * 100)} />
           )}
+          <span>≈{compact.format(estimate.totalTokens)}</span>
+          {ratio !== undefined && <span>{usagePercent(ratio)}</span>}
         </Button>
       </PopoverTrigger>
       <PopoverContent
@@ -54,18 +64,23 @@ export function ContextEstimateView({ estimate }: { estimate: ContextEstimate })
 export function ContextEstimateDetails({ estimate }: { estimate: ContextEstimate }) {
   const { t } = useTranslation('chat', { useSuspense: false });
 
+  const ratio = usageRatio(estimate);
   return (
     <>
-      {estimate.windowSource !== 'fallback' && estimate.inputBudget > 0 && (
-        <Progress
-          className="mb-2"
-          aria-label={t(($) => $.contextEstimate)}
-          aria-valuetext={t(($) => $.contextDescription, {
-            total: number.format(estimate.totalTokens),
-            budget: number.format(estimate.inputBudget),
-          })}
-          value={Math.min(100, (100 * estimate.totalTokens) / estimate.inputBudget)}
-        />
+      {ratio !== undefined && (
+        <div className="mb-2 flex items-center gap-2">
+          <Progress
+            shape="circle"
+            className="size-6"
+            aria-label={t(($) => $.contextEstimate)}
+            aria-valuetext={t(($) => $.contextDescription, {
+              total: number.format(estimate.totalTokens),
+              budget: number.format(estimate.inputBudget),
+            })}
+            value={Math.min(100, ratio * 100)}
+          />
+          <span>{t(($) => $.contextUsage, { percent: usagePercent(ratio) })}</span>
+        </div>
       )}
       <p>
         {t(($) => $.contextTokens, {

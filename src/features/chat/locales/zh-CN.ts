@@ -215,6 +215,7 @@ export default {
   chatName: '对话名称',
   delete: '删除',
   save: '保存',
+  contextUsage: '占用 {{percent}}',
   contextDescription: '上下文约 {{total}} / {{budget}} Tokens',
   contextTokens: '上下文 ≈{{total}} / {{budget}} Tokens',
   inputTokens: '输入 ≈{{tokens}} Tokens',
