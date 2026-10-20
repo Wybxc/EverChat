@@ -1,6 +1,7 @@
 /** Local to each scroll viewport, including nested reasoning panes. */
 export const SCROLL_INTENT_EVENT = 'everchat:scroll-intent';
 export const SCROLL_LAYOUT_EVENT = 'everchat:scroll-layout';
+export const PAUSE_FOLLOW_EVENT = 'everchat:pause-follow';
 
 export function isScrollKey(event: Event) {
   return (

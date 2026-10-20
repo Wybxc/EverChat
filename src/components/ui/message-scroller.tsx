@@ -36,6 +36,9 @@ function MessageScroller({
 
 function MessageScrollerViewport({
   className,
+  onWheel,
+  onTouchMove,
+  onKeyDown,
   ...props
 }: React.ComponentProps<typeof MessageScrollerPrimitive.Viewport>) {
   return (
@@ -46,6 +49,19 @@ function MessageScrollerViewport({
         className,
       )}
       {...props}
+      onWheel={(event) => {
+        event.stopPropagation();
+        onWheel?.(event);
+      }}
+      onTouchMove={(event) => {
+        event.stopPropagation();
+        onTouchMove?.(event);
+      }}
+      onKeyDown={(event) => {
+        if (['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End', ' '].includes(event.key))
+          event.stopPropagation();
+        onKeyDown?.(event);
+      }}
     />
   );
 }
@@ -72,10 +88,7 @@ function MessageScrollerItem({
     <MessageScrollerPrimitive.Item
       data-slot="message-scroller-item"
       scrollAnchor={scrollAnchor}
-      className={cn(
-        'min-w-0 shrink-0 [contain-intrinsic-size:auto_10rem] [content-visibility:auto]',
-        className,
-      )}
+      className={cn('min-w-0 shrink-0', className)}
       {...props}
     />
   );

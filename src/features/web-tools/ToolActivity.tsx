@@ -15,7 +15,7 @@ import { problem } from '../../../shared/errors/descriptor';
 import type { PublicToolCall } from '../../../shared/web-tools/tasks';
 import { useDisclosureController, useDisclosureState } from '../../components/Disclosure';
 import { issueMessage, renderUiMessage } from '../../platform/i18n/messages';
-import { PAUSE_FOLLOW_EVENT } from '../chat/useFollowScroll';
+import { PAUSE_FOLLOW_EVENT } from '../chat/scroll-intent';
 import './locales';
 
 const labels = {

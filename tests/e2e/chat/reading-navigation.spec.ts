@@ -44,6 +44,13 @@ test('button navigation animates, yields to manual scrolling and respects reduce
 }) => {
   const fixture = await setup(page);
   try {
+    // Lazy Mermaid/code layout has its own anchoring coverage below. Settle it
+    // here so a shrinking scroll range does not masquerade as failed interruption.
+    await page.locator('[data-streamdown="mermaid-block"]').scrollIntoViewIfNeeded();
+    await expect(
+      page.locator('[data-streamdown="mermaid"] svg[aria-roledescription]'),
+    ).toBeVisible();
+    await page.evaluate(() => document.fonts.ready);
     await page.emulateMedia({ reducedMotion: 'no-preference' });
     await button(page, '跳到底部').press('Space');
     await expect.poll(() => gap(page)).toBeLessThan(2);
@@ -89,13 +96,22 @@ test('button navigation animates, yields to manual scrolling and respects reduce
       await expect.poll(() => gap(page)).toBeLessThan(2);
     });
 
-    const start = await top(page);
-    await button(page, '跳到顶部').click();
-    await expect.poll(() => top(page), { intervals: [10] }).toBeLessThan(start - 10);
-    const stopped = await pane(page).evaluate((node) => {
-      node.dispatchEvent(new WheelEvent('wheel'));
-      return node.scrollTop;
-    });
+    // Interrupt within a browser scroll event. Protocol latency can otherwise let
+    // WebKit finish a short native animation before the next evaluate reaches it.
+    const stopped = await pane(page).evaluate(
+      (node) =>
+        new Promise<number>((resolve) => {
+          const start = node.scrollTop;
+          const interrupt = () => {
+            if (node.scrollTop <= 0 || node.scrollTop >= start - 10) return;
+            node.removeEventListener('scroll', interrupt);
+            node.dispatchEvent(new WheelEvent('wheel'));
+            resolve(node.scrollTop);
+          };
+          node.addEventListener('scroll', interrupt);
+          document.querySelector<HTMLButtonElement>('button[aria-label="跳到顶部"]')!.click();
+        }),
+    );
     expect(stopped).toBeGreaterThan(0);
     // Wait beyond the animation's maximum duration to ensure it does not reclaim the viewport.
     await page.waitForTimeout(450);
@@ -207,6 +223,16 @@ test('four buttons navigate actual answer starts, handle clamped ends and keep U
 }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const fixture = await setup(page);
+  const privateCalls: string[] = [];
+  const subscriptions: string[] = [];
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname.startsWith(`/api/conversations/${fixture.id}`))
+      privateCalls.push(request.method() + ' ' + request.url());
+  });
+  page.on('websocket', (socket) => {
+    if (new URL(socket.url()).pathname === `/api/conversations/${fixture.id}/sync`)
+      subscriptions.push(socket.url());
+  });
   try {
     const url = page.url();
     await page.getByLabel('消息', { exact: true }).fill('导航时保留草稿');
@@ -302,6 +328,8 @@ test('four buttons navigate actual answer starts, handle clamped ends and keep U
         .toBeGreaterThanOrEqual(3);
       await page.screenshot({ path: testInfo.outputPath(`desktop-${theme}.png`) });
     }
+    expect(privateCalls).toEqual([]);
+    expect(subscriptions).toEqual([]);
   } finally {
     await fixture.cleanup();
   }

@@ -939,6 +939,16 @@ test('long Markdown switches keep the navigation anchor and editing another bran
     await page.setViewportSize({ width: 1000, height: 700 });
     await page.goto(`/c/${f.id}?branch=${m[3].id}`);
     await expect(at(page, m[1].id).locator('pre code')).toContainText('value79');
+    // Streamdown can defer offscreen code with an intrinsic placeholder height.
+    // Reveal it and wait for tokenized code before measuring the operation row.
+    await at(page, m[1].id).locator('pre code').scrollIntoViewIfNeeded();
+    await expect(
+      at(page, m[1].id)
+        .locator('pre code span')
+        .filter({ hasText: /^const$/ })
+        .first(),
+    ).toBeAttached();
+    await page.evaluate(() => document.fonts.ready);
     await at(page, m[1].id).getByRole('button', { name: '下一个回答版本', exact: true }).click();
     const back = at(page, m[4].id).getByRole('button', { name: '上一个回答版本', exact: true });
     await expect(back).toBeInViewport();
@@ -946,6 +956,12 @@ test('long Markdown switches keep the navigation anchor and editing another bran
     await back.click();
     const forward = at(page, m[1].id).getByRole('button', { name: '下一个回答版本', exact: true });
     await expect(at(page, m[1].id).locator('pre code')).toContainText('value79');
+    await expect(
+      at(page, m[1].id)
+        .locator('pre code span')
+        .filter({ hasText: /^const$/ })
+        .first(),
+    ).toBeAttached();
     await page.evaluate(async () => {
       await new Promise(requestAnimationFrame);
       await new Promise(requestAnimationFrame);

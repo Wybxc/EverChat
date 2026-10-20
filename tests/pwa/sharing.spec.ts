@@ -56,10 +56,10 @@ test('controlled public shares stay network-only, skip private startup and do no
   expect(publicCalls.length - previousCalls).toBe(1);
   await expect(shared.getByRole('button', { name: '继续阅读' })).toHaveCount(0);
   const user = shared.getByTestId('user-message').first(),
-    thought = shared.getByTestId('assistant-message').first().locator('details');
-  await expect(user.locator('.bg-user-message')).toHaveText('公开提问\n第二行');
-  expect(await thought.evaluate((element: HTMLDetailsElement) => element.open)).toBe(false);
-  await thought.locator('summary').click();
+    thought = shared.getByTestId('assistant-message').first().getByTestId('share-reasoning');
+  await expect(user.locator('[data-slot="bubble-content"]')).toHaveText('公开提问\n第二行');
+  await expect(thought).toHaveAttribute('data-state', 'closed');
+  await thought.getByRole('button', { name: '思考内容', exact: true }).click();
   await expect(thought.getByText('公开思考', { exact: true })).toBeVisible();
   await shared.setViewportSize({ width: 390, height: 740 });
   await shared.getByLabel('颜色模式').selectOption('dark');

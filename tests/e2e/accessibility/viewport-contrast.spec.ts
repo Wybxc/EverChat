@@ -232,6 +232,12 @@ test('semantic theme text, selected navigation, placeholders and focus meet cont
       await page.setViewportSize({ width: 1280, height: 720 });
       await theme(page, mode);
       await page.getByLabel('消息', { exact: true }).focus();
+      // WebKit may report the previous inherited text color for the first
+      // transition frame, even with reduced motion. Verify the endpoint first.
+      await expect(page.getByLabel('消息', { exact: true })).toHaveCSS(
+        'color',
+        await page.locator('body').evaluate((node) => getComputedStyle(node).color),
+      );
       await contrast(page, [
         { selector: '[data-testid="conversation-title"]' },
         { selector: 'aside [aria-current="page"]' },

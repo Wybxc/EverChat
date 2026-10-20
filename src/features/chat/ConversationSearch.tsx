@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, Search, X } from 'lucide-react';
 import { countMatches, matchAt, renderedText, textRanges, type SearchText } from './search';
-import { PAUSE_FOLLOW_EVENT } from './useFollowScroll';
+import { PAUSE_FOLLOW_EVENT } from './scroll-intent';
 
 interface Field {
   key: string;

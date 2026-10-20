@@ -1081,7 +1081,8 @@ test('summary controls stream Markdown, preserve the draft and URL, sync another
     await page.close();
     await expect(second.getByTestId('summary-message')).toHaveAttribute('data-status', 'completed');
     const persisted = second.getByTestId('summary-message');
-    await expect(second.getByRole('separator', { name: '历史压缩' })).toBeVisible();
+    await expect(second.getByTestId('history-compressed')).toBeVisible();
+    await expect(second.getByTestId('history-compressed')).toHaveText('历史压缩');
     await expect(
       persisted.locator('[data-streamdown="strong"]').filter({ hasText: /^42 元$/ }),
     ).toHaveText('42 元');

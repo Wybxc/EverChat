@@ -302,7 +302,7 @@ for (const provider of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
       ]);
       expect(
         await reasoning
-          .locator('[data-search-content] > *')
+          .locator('[data-search-content] > [data-slot="message-scroller-item"] > *')
           .evaluateAll((nodes) =>
             nodes
               .filter((node) => node.textContent)

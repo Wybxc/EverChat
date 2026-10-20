@@ -74,7 +74,9 @@ async function settingsTab(page: Page, name: string) {
 test('font changes resize an existing draft and browser default font preferences keep navigation aligned and controls reachable', async ({
   page,
   context,
+  browserName,
 }) => {
+  test.skip(browserName !== 'chromium', 'Browser default font overrides require Chromium CDP.');
   const source = await fixture(page);
   const cdp = await context.newCDPSession(page);
   const errors: string[] = [];

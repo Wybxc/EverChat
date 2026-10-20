@@ -266,6 +266,9 @@ test('comparison charts rank existing report data without extra requests and pre
   await expect.poll(() => chart.count()).toBe(0);
   const modelChart = page.getByRole('figure', { name: '模型比较' });
   await expect.poll(() => modelChart.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+  const dialog = page.getByRole('dialog', { name: '设置', exact: true });
+  await expect.poll(async () => Math.round((await dialog.boundingBox())!.x)).toBe(0);
+  await expect.poll(async () => Math.round((await dialog.boundingBox())!.y)).toBe(0);
   await page.screenshot({ path: '/tmp/everchat-ai-elements-comparison-phone.png' });
 });
 for (const mobile of [false, true])

@@ -816,7 +816,7 @@ export function installMockUpstream() {
         { headers: { 'Content-Type': 'text/event-stream' } },
       );
     }
-    const scrollTest = requestBody.model === 'scroll-test';
+    const scrollTest = ['scroll-test', 'scroll-test-error'].includes(requestBody.model);
     const tokens = scrollTest
       ? Array.from({ length: 60 }, (_, i) => `段落 ${i + 1}：持续生成的内容。\n\n`)
       : ['**集成测试回答。**\n\n', ...Array<string>(28).fill('持续输出，'), '服务端生成完成。'];
@@ -825,6 +825,18 @@ export function installMockUpstream() {
       async pull(controller) {
         await new Promise((resolve) => setTimeout(resolve, 400));
         const content = tokens[index++];
+        if (!content && requestBody.model === 'scroll-test-error') {
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({
+                type: 'error',
+                error: { code: 'overloaded_error', message: 'Fixture failed after streaming' },
+              })}\n\n`,
+            ),
+          );
+          controller.close();
+          return;
+        }
         const delta = content
           ? {
               ...(scrollTest

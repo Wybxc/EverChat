@@ -149,12 +149,12 @@ test('immutable selected-branch sharing stays anonymous, fully readable and dele
     await expect(page.locator('.katex').first()).toBeVisible();
     await expect(page.locator('code').first()).toBeVisible();
     const userBubble = page.getByTestId('user-message').first();
-    await expect(userBubble.locator('.bg-user-message')).toHaveText(
+    await expect(userBubble.locator('[data-slot="bubble-content"]')).toHaveText(
       '第一行\n第二行\n请检查分享 Markdown',
     );
     expect(
       await userBubble
-        .locator('.bg-user-message')
+        .locator('[data-slot="bubble-content"]')
         .evaluate((element) => getComputedStyle(element).whiteSpace),
     ).toBe('pre-wrap');
     await expect(page.getByRole('button', { name: '继续阅读', exact: true })).toHaveCount(0);
@@ -193,7 +193,7 @@ test('immutable selected-branch sharing stays anonymous, fully readable and dele
     );
     // Reasoning is always in the snapshot, but remains collapsed in the public UI.
     await page.goto(`/s/${included.share.id}#${includedPublished.secret}`);
-    const thought = page.getByTestId('assistant-message').locator('details');
+    const thought = page.getByTestId('assistant-message').getByTestId('share-reasoning');
     await expect(
       page.getByTestId('assistant-message').getByRole('heading', { name: modelName, exact: true }),
     ).toBeVisible();
@@ -206,9 +206,11 @@ test('immutable selected-branch sharing stays anonymous, fully readable and dele
         (block: object) => !('providerId' in block) && !('providerName' in block),
       ),
     ).toBe(true);
-    await expect(thought.locator('summary')).toHaveText('思考内容');
-    expect(await thought.evaluate((element: HTMLDetailsElement) => element.open)).toBe(false);
-    await thought.locator('summary').click();
+    await expect(thought.getByRole('button', { name: '思考内容', exact: true })).toHaveText(
+      '思考内容',
+    );
+    await expect(thought).toHaveAttribute('data-state', 'closed');
+    await thought.getByRole('button', { name: '思考内容', exact: true }).click();
     await expect(thought).toContainText('思考🙂');
     const timed = await preview(first.assistantId);
     expect(

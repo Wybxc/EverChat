@@ -404,14 +404,14 @@ test('DeepSeek-compatible Responses streams Markdown thoughts, persists them and
   await expect(thoughts.locator('[data-streamdown="strong"]')).toBeVisible();
 });
 
-async function startScrollTest(page: Page) {
+async function startScrollTest(page: Page, model = 'scroll-test') {
   await page.setViewportSize({ width: 900, height: 700 });
   await login(page);
   const settings = await page.request
     .get('/api/settings/providers')
     .then((response) => response.json());
-  settings.providers[0].models = [{ id: 'scroll-test', name: '滚动测试', enabled: true }];
-  settings.activeModel = 'scroll-test';
+  settings.providers[0].models = [{ id: model, name: '滚动测试', enabled: true }];
+  settings.activeModel = model;
   expect(
     (
       await page.request.put('/api/settings/providers', {
@@ -424,7 +424,7 @@ async function startScrollTest(page: Page) {
   await page.getByLabel('消息', { exact: true }).fill('持续生成，验证滚动');
   await page.getByRole('button', { name: '发送消息', exact: true }).click();
   const answer = page.getByTestId('assistant-message');
-  const conversation = page.getByRole('region', { name: '对话消息' }).locator('..');
+  const conversation = page.getByTestId('message-viewport');
   const thoughts = answer.getByTestId('message-reasoning').locator('.overflow-y-auto');
   return { answer, conversation, thoughts };
 }
@@ -502,9 +502,13 @@ test('streaming answers and thoughts follow the bottom, pause when scrolled up a
   await expect(page.getByRole('button', { name: '跳到底部' })).toHaveCount(0);
 });
 
-for (const status of ['completed', 'cancelled'] as const) {
-  test(`streaming answers preserve both reading positions when ${status}`, async ({ page }) => {
-    const { answer, conversation, thoughts } = await startScrollTest(page);
+for (const outcome of ['completed', 'cancelled', 'interrupted'] as const) {
+  test(`streaming answers preserve both reading positions when ${outcome}`, async ({ page }) => {
+    const status = outcome === 'interrupted' ? 'completed' : outcome;
+    const { answer, conversation, thoughts } = await startScrollTest(
+      page,
+      outcome === 'interrupted' ? 'scroll-test-error' : 'scroll-test',
+    );
     await expect.poll(async () => (await metrics(conversation)).overflow).toBeGreaterThan(700);
     await expect.poll(async () => (await metrics(thoughts)).overflow).toBeGreaterThan(700);
     for (const pane of [thoughts, conversation]) {
@@ -526,9 +530,43 @@ for (const status of ['completed', 'cancelled'] as const) {
     await expect(answer).toHaveAttribute('data-status', 'running');
     if (status === 'cancelled') await page.getByRole('button', { name: '停止生成' }).click();
     await expect(answer).toHaveAttribute('data-status', status, { timeout: 30_000 });
+    if (outcome === 'interrupted')
+      await expect(answer.getByTestId('provider-failure')).toBeVisible();
     await expect.poll(async () => (await metrics(conversation)).top).toBeCloseTo(reading.top, 0);
     await expect
       .poll(async () => (await metrics(thoughts)).top)
       .toBeCloseTo(readingThoughts.top, 0);
   });
 }
+
+test('selecting streamed text pauses following until the reader explicitly returns to the bottom', async ({
+  page,
+}) => {
+  const { answer, conversation } = await startScrollTest(page);
+  await expect.poll(async () => (await metrics(conversation)).overflow).toBeGreaterThan(500);
+  await answer
+    .locator('[data-search-content$=":content"] p')
+    .last()
+    .evaluate((node) => {
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      const selection = document.getSelection()!;
+      selection.removeAllRanges();
+      selection.addRange(range);
+    });
+  await expect
+    .poll(() => page.evaluate(() => document.getSelection()?.toString().length ?? 0))
+    .toBeGreaterThan(0);
+  await conversation.evaluate(async () => {
+    await new Promise(requestAnimationFrame);
+  });
+  const reading = await metrics(conversation);
+  await expect
+    .poll(async () => (await metrics(conversation)).height)
+    .toBeGreaterThan(reading.height + 100);
+  expect((await metrics(conversation)).top).toBeCloseTo(reading.top, 0);
+  await page.evaluate(() => document.getSelection()?.removeAllRanges());
+  await page.getByRole('button', { name: '跳到底部', exact: true }).click();
+  await expect.poll(async () => (await metrics(conversation)).gap).toBeLessThan(2);
+  await page.getByRole('button', { name: '停止生成', exact: true }).click();
+});

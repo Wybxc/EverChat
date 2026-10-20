@@ -343,9 +343,7 @@ html.public-share-document,
   --navigation-clearance: 0px;
   --message-end-space: 1rem;
   padding-top: var(--message-end-space);
-  padding-bottom: calc(
-    var(--message-end-space) + var(--navigation-clearance) + var(--branch-anchor-space, 0px)
-  );
+  padding-bottom: calc(var(--message-end-space) + var(--navigation-clearance));
 }
 .conversation-viewport[data-navigation='true'] .conversation-messages {
   --navigation-clearance: calc(var(--navigation-button-size) + 0.75rem);

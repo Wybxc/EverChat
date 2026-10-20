@@ -112,7 +112,13 @@ import {
   useConversationActions,
 } from '../features/chat/useConversationActions';
 import { useConversationBranches } from '../features/chat/useConversationBranches';
-import { useFollowScroll } from '../features/chat/useFollowScroll';
+import { ChatScrollProvider, messageScrollId, useChatScroll } from '../features/chat/ChatScroll';
+import {
+  MessageScroller,
+  MessageScrollerViewport,
+  MessageScrollerContent,
+  MessageScrollerItem,
+} from '@/components/ui/message-scroller';
 import { useMessageNavigation } from '../features/chat/useMessageNavigation';
 import { useMutationFocus } from '../features/chat/useMutationFocus';
 import { useOutbox } from '../features/chat/useOutbox';
@@ -165,9 +171,17 @@ import { useSidebar } from './useSidebar';
 
 const ShareDialog = lazy(() => import('../features/sharing/ShareDialog'));
 
-export function App({
-  initialSettings,
-}: { initialSettings?: { open: boolean; tab?: SettingsTab } } = {}) {
+type AppProps = { initialSettings?: { open: boolean; tab?: SettingsTab } };
+
+export function App(props: AppProps = {}) {
+  return (
+    <ChatScrollProvider>
+      <AppContent {...props} />
+    </ChatScrollProvider>
+  );
+}
+
+function AppContent({ initialSettings }: AppProps) {
   const { t } = useTranslation('app', { useSuspense: false });
   useLocale();
 
@@ -257,7 +271,7 @@ export function App({
   const searchNavigated = useRef(false);
   const [sending, setSending] = useState(false);
   const { viewportRef, contentRef, viewport, content, scrollToBottom, pauseFollowing } =
-    useFollowScroll(selected);
+    useChatScroll(selected);
   const anchorBranch = useBranchScrollAnchor(viewport, content, selected);
   const [conversationSearchFor, setConversationSearchFor] = useState<string | null>(null);
   const [searchJump, setSearchJump] = useState<{
@@ -1737,124 +1751,137 @@ export function App({
           </div>
         )}
         <div className="conversation-body" data-welcome={welcome}>
-          <div
+          <MessageScroller
             className="conversation-viewport relative min-h-0 flex-1"
             data-navigation={readingNavigation.visible || undefined}
           >
-            <div
+            <MessageScrollerViewport
               ref={viewportRef}
+              aria-label={t(($) => $.chatMessages)}
               data-testid="message-viewport"
               className="relative h-full min-h-0 overflow-y-auto overscroll-contain"
             >
               <DisclosureScope key={selected ?? 'new'}>
                 {welcome ? (
-                  <div ref={contentRef} />
+                  <MessageScrollerContent ref={contentRef} role="presentation" />
                 ) : (
-                  <section
+                  <MessageScrollerContent
                     ref={contentRef}
-                    aria-label={t(($) => $.chatMessages)}
-                    className="conversation-messages mx-auto w-full max-w-[49rem] space-y-6 px-4"
+                    role="presentation"
+                    className="conversation-messages mx-auto w-full max-w-[49rem] gap-6 px-4"
                   >
                     {loading && !snapshot.messages.length && (
-                      <LoadingContent label={t(($) => $.loadingChat)} />
+                      <MessageScrollerItem messageId="loading">
+                        <LoadingContent label={t(($) => $.loadingChat)} />
+                      </MessageScrollerItem>
                     )}
                     {branches.path.map((message) => (
                       <Fragment key={message.id}>
-                        <MessageView
-                          navigationRef={
-                            message.role === 'assistant' && !message.deletedAt
-                              ? readingNavigation.refFor(message.id)
-                              : undefined
-                          }
-                          conversationId={selected!}
-                          message={message}
-                          providerName={session?.providerNames?.[message.providerId ?? '']}
-                          busy={messageBlocked || Boolean(messageMutation)}
-                          onRetry={() => void retry(message)}
-                          onProviderSettings={() => {
-                            setRequestedProviderId(message.providerId ?? undefined);
-                            setRequestedSettingsTab('providers');
-                            openSettings();
-                          }}
-                          onEdit={() => edit(message)}
-                          editing={
-                            messageMutation?.mode === 'edit' && messageMutation.id === message.id
-                              ? {
-                                  content: messageMutation.content,
-                                  change: (content) => {
-                                    const value = {
-                                      ...messageMutation,
-                                      content,
-                                      requestId: crypto.randomUUID(),
-                                    };
-                                    setMessageMutation(value);
-                                    writeChatCache(`message-edit:${selected}`, value);
-                                  },
-                                  save: async () => {
-                                    await confirmMessageMutation(
-                                      messageMutation.content,
-                                      messageMutation.requestId,
-                                    );
-                                    if (
-                                      read<{ requestId?: string }>(`message-edit:${selected}`, {})
-                                        .requestId === messageMutation.requestId
-                                    )
-                                      remove([`message-edit:${selected}`]);
-                                    if (
-                                      selectedRef.current === selected &&
-                                      messageMutationRef.current?.mode === 'edit' &&
-                                      messageMutationRef.current.requestId ===
-                                        messageMutation.requestId
-                                    ) {
-                                      setMessageMutation(null);
-                                    }
-                                    closeMutationFocus();
-                                  },
-                                  cancel: closeMessageEdit,
-                                }
-                              : undefined
-                          }
-                          onQuote={() => quote(message)}
-                          onDelete={() => setMessageMutation({ id: message.id, mode: 'delete' })}
-                          canRetry={liveUserIds.has(message.parentId ?? '')}
-                          branch={branchNavigation(message)}
-                          hasFollowing={
-                            message.id === branches.head &&
-                            (branches.index.children.get(message.id) ?? []).some((id) =>
-                              branches.index.browsable.has(id),
-                            )
-                          }
-                          onSelectBranch={() => selectBranch(message)}
-                          onShowFollowing={() => {
-                            pauseFollowing();
-                            branches.choose(message.id, { descend: true });
-                          }}
-                          canFork={Boolean(
-                            selected && connection !== 'offline' && !syncError && !loading,
-                          )}
-                          onFork={() =>
-                            selected
-                              ? duplicateConversation(selected, message.id)
-                              : Promise.resolve()
-                          }
-                        />
+                        <MessageScrollerItem
+                          messageId={messageScrollId(message.id)}
+                          data-scroll-id={messageScrollId(message.id)}
+                        >
+                          <MessageView
+                            navigationRef={
+                              message.role === 'assistant' && !message.deletedAt
+                                ? readingNavigation.refFor(message.id)
+                                : undefined
+                            }
+                            conversationId={selected!}
+                            message={message}
+                            providerName={session?.providerNames?.[message.providerId ?? '']}
+                            busy={messageBlocked || Boolean(messageMutation)}
+                            onRetry={() => void retry(message)}
+                            onProviderSettings={() => {
+                              setRequestedProviderId(message.providerId ?? undefined);
+                              setRequestedSettingsTab('providers');
+                              openSettings();
+                            }}
+                            onEdit={() => edit(message)}
+                            editing={
+                              messageMutation?.mode === 'edit' && messageMutation.id === message.id
+                                ? {
+                                    content: messageMutation.content,
+                                    change: (content) => {
+                                      const value = {
+                                        ...messageMutation,
+                                        content,
+                                        requestId: crypto.randomUUID(),
+                                      };
+                                      setMessageMutation(value);
+                                      writeChatCache(`message-edit:${selected}`, value);
+                                    },
+                                    save: async () => {
+                                      await confirmMessageMutation(
+                                        messageMutation.content,
+                                        messageMutation.requestId,
+                                      );
+                                      if (
+                                        read<{ requestId?: string }>(`message-edit:${selected}`, {})
+                                          .requestId === messageMutation.requestId
+                                      )
+                                        remove([`message-edit:${selected}`]);
+                                      if (
+                                        selectedRef.current === selected &&
+                                        messageMutationRef.current?.mode === 'edit' &&
+                                        messageMutationRef.current.requestId ===
+                                          messageMutation.requestId
+                                      ) {
+                                        setMessageMutation(null);
+                                      }
+                                      closeMutationFocus();
+                                    },
+                                    cancel: closeMessageEdit,
+                                  }
+                                : undefined
+                            }
+                            onQuote={() => quote(message)}
+                            onDelete={() => setMessageMutation({ id: message.id, mode: 'delete' })}
+                            canRetry={liveUserIds.has(message.parentId ?? '')}
+                            branch={branchNavigation(message)}
+                            hasFollowing={
+                              message.id === branches.head &&
+                              (branches.index.children.get(message.id) ?? []).some((id) =>
+                                branches.index.browsable.has(id),
+                              )
+                            }
+                            onSelectBranch={() => selectBranch(message)}
+                            onShowFollowing={() => {
+                              pauseFollowing();
+                              branches.choose(message.id, { descend: true });
+                            }}
+                            canFork={Boolean(
+                              selected && connection !== 'offline' && !syncError && !loading,
+                            )}
+                            onFork={() =>
+                              selected
+                                ? duplicateConversation(selected, message.id)
+                                : Promise.resolve()
+                            }
+                          />
+                        </MessageScrollerItem>
                         {branchSummaries.some(
                           (summary) => summary.summary!.throughId === message.id,
                         ) && (
-                          <div data-testid="branch-summaries">
-                            <Marker
-                              variant="separator"
-                              className="my-3"
-                              data-testid="history-compressed"
-                            >
-                              <MarkerContent>{t(($) => $.historyCompressed)}</MarkerContent>
-                            </Marker>
-                            <div className="space-y-4">
-                              {branchSummaries
-                                .filter((summary) => summary.summary!.throughId === message.id)
-                                .map((summary) => (
+                          <>
+                            <MessageScrollerItem messageId={`marker:${message.id}`}>
+                              <Marker
+                                variant="separator"
+                                className="my-3"
+                                data-testid="history-compressed"
+                              >
+                                <MarkerContent>{t(($) => $.historyCompressed)}</MarkerContent>
+                              </Marker>
+                            </MessageScrollerItem>
+                            {branchSummaries
+                              .filter((summary) => summary.summary!.throughId === message.id)
+                              .map((summary) => (
+                                <MessageScrollerItem
+                                  key={summary.id}
+                                  messageId={`summary:${summary.id}`}
+                                  data-scroll-id={`summary:${summary.id}`}
+                                >
                                   <SummaryView
-                                    key={summary.id}
                                     message={summary}
                                     busy={generationBlocked}
                                     onRetry={() => void retry(summary)}
@@ -1868,79 +1895,81 @@ export function App({
                                     }
                                     selected={previewHistory?.summary?.id === summary.id}
                                   />
-                                ))}
-                            </div>
-                          </div>
+                                </MessageScrollerItem>
+                              ))}
+                          </>
                         )}
                       </Fragment>
                     ))}
                     {currentPending && pendingVisible && (
-                      <article
-                        data-testid="pending-message"
-                        className="ml-auto max-w-[90%] rounded-2xl border border-dashed border-input bg-muted px-5 py-4"
-                      >
-                        <DocumentPreviews
-                          conversationId={currentPending.conversation.id}
-                          files={currentPending.files ?? []}
-                        />
-                        <ImagePreviews
-                          conversationId={currentPending.conversation.id}
-                          images={currentPending.images ?? []}
-                        />
-                        <p className="text-sm leading-7 whitespace-pre-wrap">
-                          {currentPending.input.summaryThrough
-                            ? t(($) => $.summaryRequest)
-                            : (currentPending.input.content ?? t(($) => $.newVersion))}
-                        </p>
-                        <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-                          <CloudOff className="h-[0.75rem] w-[0.75rem]" />
-                          <span>
-                            {currentPending.error
-                              ? t(($) => $.sendFailed)
-                              : t(($) => $.waitingToSend)}
-                          </span>
-                          {currentPending.modelLabel && <span>{currentPending.modelLabel}</span>}
-                        </div>
-                        {currentPending.error && (
-                          <p className="mt-2 text-xs font-medium leading-5 text-foreground">
-                            {renderUiMessage(currentPending.error)}
+                      <MessageScrollerItem messageId={`pending:${currentPending.input.requestId}`}>
+                        <article
+                          data-testid="pending-message"
+                          className="ml-auto max-w-[90%] rounded-2xl border border-dashed border-input bg-muted px-5 py-4"
+                        >
+                          <DocumentPreviews
+                            conversationId={currentPending.conversation.id}
+                            files={currentPending.files ?? []}
+                          />
+                          <ImagePreviews
+                            conversationId={currentPending.conversation.id}
+                            images={currentPending.images ?? []}
+                          />
+                          <p className="text-sm leading-7 whitespace-pre-wrap">
+                            {currentPending.input.summaryThrough
+                              ? t(($) => $.summaryRequest)
+                              : (currentPending.input.content ?? t(($) => $.newVersion))}
                           </p>
-                        )}
-                        <div className="mt-2 flex gap-1">
-                          <Button
-                            variant="ghost"
-                            onClick={() => {
-                              const clean = { ...currentPending, error: undefined };
-                              commitPending(
-                                pendingRef.current.map((item) =>
-                                  item.input.requestId === clean.input.requestId ? clean : item,
-                                ),
-                              );
-                              void deliver(clean);
-                            }}
-                          >
-                            {t(($) => $.retry)}
-                          </Button>
-                          {(!currentPending.input.summaryThrough || currentPending.error) && (
-                            <Button variant="ghost" onClick={() => editPending(currentPending)}>
-                              {currentPending.input.summaryThrough
-                                ? t(($) => $.cancelRequest)
-                                : t(($) => $.edit)}
-                            </Button>
+                          <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                            <CloudOff className="h-[0.75rem] w-[0.75rem]" />
+                            <span>
+                              {currentPending.error
+                                ? t(($) => $.sendFailed)
+                                : t(($) => $.waitingToSend)}
+                            </span>
+                            {currentPending.modelLabel && <span>{currentPending.modelLabel}</span>}
+                          </div>
+                          {currentPending.error && (
+                            <p className="mt-2 text-xs font-medium leading-5 text-foreground">
+                              {renderUiMessage(currentPending.error)}
+                            </p>
                           )}
-                        </div>
-                      </article>
+                          <div className="mt-2 flex gap-1">
+                            <Button
+                              variant="ghost"
+                              onClick={() => {
+                                const clean = { ...currentPending, error: undefined };
+                                commitPending(
+                                  pendingRef.current.map((item) =>
+                                    item.input.requestId === clean.input.requestId ? clean : item,
+                                  ),
+                                );
+                                void deliver(clean);
+                              }}
+                            >
+                              {t(($) => $.retry)}
+                            </Button>
+                            {(!currentPending.input.summaryThrough || currentPending.error) && (
+                              <Button variant="ghost" onClick={() => editPending(currentPending)}>
+                                {currentPending.input.summaryThrough
+                                  ? t(($) => $.cancelRequest)
+                                  : t(($) => $.edit)}
+                              </Button>
+                            )}
+                          </div>
+                        </article>
+                      </MessageScrollerItem>
                     )}
-                  </section>
+                  </MessageScrollerContent>
                 )}
               </DisclosureScope>
-            </div>
+            </MessageScrollerViewport>
             <ConversationNavigation
               key={selected ?? 'new'}
               viewport={viewport}
               {...readingNavigation}
             />
-          </div>
+          </MessageScroller>
 
           <div
             className="composer-region relative shrink-0 pt-2 pb-3"

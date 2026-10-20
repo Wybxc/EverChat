@@ -17,12 +17,26 @@ import { reasoningBlocks } from '../../../shared/web-tools/reasoning-flow';
 import { useDisclosureState } from '../../components/Disclosure';
 import { ToolActivity, ToolFailures } from '../web-tools/ToolActivity';
 import { MarkdownContent } from './rendering/MarkdownContent';
-import { useFollowScroll } from './useFollowScroll';
+import { ChatScrollProvider, useChatScroll } from './ChatScroll';
+import {
+  MessageScroller,
+  MessageScrollerViewport,
+  MessageScrollerContent,
+  MessageScrollerItem,
+} from '@/components/ui/message-scroller';
 
 export function ReasoningContent({ message }: { message: Message }) {
-  const { t } = useTranslation('chat', { useSuspense: false });
+  if (!messageText(message, 'reasoning') && !message.tools?.calls.length) return null;
+  return (
+    <ChatScrollProvider>
+      <ReasoningPane message={message} />
+    </ChatScrollProvider>
+  );
+}
 
-  const scroll = useFollowScroll(message.id);
+function ReasoningPane({ message }: { message: Message }) {
+  const { t } = useTranslation('chat', { useSuspense: false });
+  const scroll = useChatScroll(message.id);
   const [open, setOpen] = useDisclosureState(`reasoning:${message.id}`, true);
   const reasoning = messageText(message, 'reasoning');
   if (!reasoning && !message.tools?.calls.length) return null;
@@ -45,41 +59,52 @@ export function ReasoningContent({ message }: { message: Message }) {
             </TraceLine>
           </TraceCollapsibleTrigger>
           <TraceCollapsibleContent forceMount hidden={!open} className="ml-0 pl-3 pr-0">
-            <div
-              ref={scroll.viewportRef}
-              className="reasoning-content max-h-[min(22rem,40dvh)] overflow-y-auto overscroll-contain break-words"
-            >
-              <div
-                ref={scroll.contentRef}
-                data-search-content={`${message.id}:reasoning`}
-                className="flex flex-col gap-2"
+            <MessageScroller className="h-auto">
+              <MessageScrollerViewport
+                aria-label={t(($) => $.reasoningProcess)}
+                ref={scroll.viewportRef}
+                className="reasoning-content h-auto max-h-[min(22rem,40dvh)] overflow-y-auto overscroll-contain break-words"
               >
-                {blocks.map((block) =>
-                  block.type === 'reasoning' ? (
-                    <div
-                      key={`reasoning:${block.round}`}
-                      data-reasoning-part={block.round}
-                      hidden={!block.text}
+                <MessageScrollerContent
+                  role="presentation"
+                  ref={scroll.contentRef}
+                  data-search-content={`${message.id}:reasoning`}
+                  className="flex flex-col gap-2"
+                >
+                  {blocks.map((block) => (
+                    <MessageScrollerItem
+                      key={`${block.type}:${block.round}`}
+                      messageId={`${block.type}:${block.round}`}
                     >
-                      {block.text && (
-                        <MarkdownContent
-                          content={block.text}
-                          streaming={
-                            !block.complete && isActive(message) && message.streamVersion != null
-                          }
+                      {block.type === 'reasoning' ? (
+                        <div
+                          key={`reasoning:${block.round}`}
+                          data-reasoning-part={block.round}
+                          hidden={!block.text}
+                        >
+                          {block.text && (
+                            <MarkdownContent
+                              content={block.text}
+                              streaming={
+                                !block.complete &&
+                                isActive(message) &&
+                                message.streamVersion != null
+                              }
+                            />
+                          )}
+                        </div>
+                      ) : (
+                        <ToolActivity
+                          key={`tools:${block.round}`}
+                          calls={block.calls}
+                          messageId={message.id}
                         />
                       )}
-                    </div>
-                  ) : (
-                    <ToolActivity
-                      key={`tools:${block.round}`}
-                      calls={block.calls}
-                      messageId={message.id}
-                    />
-                  ),
-                )}
-              </div>
-            </div>
+                    </MessageScrollerItem>
+                  ))}
+                </MessageScrollerContent>
+              </MessageScrollerViewport>
+            </MessageScroller>
           </TraceCollapsibleContent>
         </TraceCollapsible>
       </Trace>

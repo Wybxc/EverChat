@@ -408,6 +408,7 @@ test('a simulated notification click enters the completed branch through SPA nav
   await clickNotification(worker);
   await expect(page).toHaveURL(`/c/${conversationId}?branch=${messageId}`);
   await expect(page.getByTestId('assistant-message')).toContainText('已保存的正文');
+  await expect(page.getByTestId('assistant-message')).toBeInViewport();
   await expect(page.locator('html')).toHaveAttribute('data-notification-document', marker);
   await page.getByRole('button', { name: '开启新对话', exact: true }).click();
   await expect(page.getByLabel('消息', { exact: true })).toHaveValue('通知前正在输入的草稿');
@@ -452,6 +453,7 @@ test('notification clicks retain the destination branch and draft through an exp
   await page.getByRole('button', { name: '重新登录', exact: true }).click();
   await expect(page).toHaveURL(target);
   await expect(page.getByTestId('assistant-message')).toContainText('已保存的正文');
+  await expect(page.getByTestId('assistant-message')).toBeInViewport();
   expect(resumed).toBe(target);
   await page.getByRole('button', { name: '开启新对话', exact: true }).click();
   await expect(page.getByLabel('消息', { exact: true })).toHaveValue('登录过期前的通知草稿');

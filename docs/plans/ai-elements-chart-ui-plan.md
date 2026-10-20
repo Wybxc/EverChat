@@ -1,6 +1,6 @@
 # AI Elements 与 Chart 界面优化方案
 
-日期：2026-10-20。状态：实施中。代码基线：`fc2a1b6`。进度与验证见 [实施记录](../measurements/ai-elements-chart-2026-10-20.md)。
+日期：2026-10-20。状态：P0–P4 完成；P5 自动化完成，本轮真机验收待确认。代码基线：`fc2a1b6`。进度与验证见 [实施记录](../measurements/ai-elements-chart-2026-10-20.md)。
 
 目标：采用 shadcn/ui 官方 AI Elements 组合模式和 Chart 组件，统一消息、思考／联网过程、输入区与用量图表的表现，减少自制展示结构与重复样式。延续 EverChat 的紧凑布局、初音未来主题色、必要文案和移动端交互。
 
@@ -14,7 +14,7 @@
 
 [Chart](https://ui.shadcn.com/docs/components/radix/chart) 与 Recharts 组合使用，提供图表配置、主题、提示框和图例。EverChat 已使用 Recharts 3.10，因此主要收益是统一这些公共展示能力，不需要另换图表引擎。
 
-已读取本地 shadcn skill、`components.json`、组件与业务源码，并核对官方文档。尝试用 `pnpm dlx shadcn@latest` 查询 `info`、`docs`，CLI 解析版本为 4.22.1，但访问官方 `r/index.json` 连接超时，代理重试也未成功。因此本方案的 API 依据是官方文档；注册表文件、实际依赖和生成差异尚未核实，列为实施前置检查，不记为已完成安装验证。
+规划时已读取本地 shadcn skill、`components.json`、组件与业务源码，并核对官方文档。尝试用 `pnpm dlx shadcn@latest` 查询 `info`、`docs`，CLI 解析版本为 4.22.1，但访问官方 `r/index.json` 连接超时，代理重试也未成功。规划阶段以官方文档为 API 依据。实施时已恢复 CLI 注册表访问并完成 Radix 文件、依赖和差异检查，见实施记录。
 
 本轮范围不包含 Base UI 迁移、生成协议或数据库重构。AI Elements 展示已有思考与工具数据，不新增 Agent、MCP、知识库等功能；也不引入在线数据迁移或旧组件兼容层。
 
@@ -32,7 +32,7 @@
 | 公开分享       | `ShareContent.tsx` 单独组合气泡、标题和 details                                 | 与私有页共享纯展示的 Message／Bubble／思考组合                                                                                                | 全文加载、思考默认折叠、仅模型名、匿名只读、原有内容安全策略                     |
 | 趋势图         | `UsageChart.tsx` 直接使用 ResponsiveContainer、Tooltip、LineChart、Brush        | ChartContainer、ChartConfig、ChartTooltipContent，按需使用 ChartLegendContent                                                                 | 折线、点击／键盘查看、小时／日、指标切换、范围选择、币种和精确金额               |
 
-当前 `src/components/ui/input-group.tsx` 只导出 Group 与 Addon，不能直接引用尚不存在的 InputGroupTextarea 或 InputGroupButton。实施时应通过 CLI 差异检查补全，保留密钥输入框等现有调用与本地控件尺寸；不直接覆盖整个文件。
+规划时 `src/components/ui/input-group.tsx` 只导出 Group 与 Addon。实施已通过 CLI 差异检查补全 InputGroupTextarea 与 InputGroupButton，并保留密钥输入框等现有调用与本地控件尺寸；没有覆盖整个文件。
 
 ## 3. 聊天界面的目标表现
 
@@ -121,6 +121,8 @@ ChartConfig 统一系列名称与颜色；名称来自当前 i18n，金额与日
 本轮没有新增 Cloudflare 查询、轮询、事件持久化、生成 checkpoint 或附件副本；图表和折叠状态只使用客户端展示状态。实际验收应对照迁移前后的请求与订阅次数，确认新增纯 UI 交互没有触发模型调用或网络统计刷新。Workers Free 的预算与现有生成架构保持不变。
 
 ## 7. 实施顺序与交付门槛
+
+2026-10-21：P1–P3 已分阶段发布；P4 已由 Message Scroller 接管通用滚动职责，删除旧跟随 hook、导航动画和分支补白。P5 的清理、类型检查、生产构建和 54 项 PWA 自动化通过。浏览器调试与复验、产物差异详见实施记录。目标仍保留本轮发布后的 iOS／macOS PWA 真机验收，不能以自动化代替。
 
 | 阶段           | 工作                                                                                                         | 完成条件                                                                           |
 | -------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |

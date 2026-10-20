@@ -361,8 +361,11 @@ test('tool process sync survives page closure and a second device, with no priva
       'data-status',
       'completed',
     );
-    for (const summary of await other.getByTestId('tool-call').locator(':scope > summary').all())
-      await summary.click();
+    for (const trigger of await other
+      .getByTestId('tool-call')
+      .locator(':scope > [data-slot="trace-collapsible-trigger"]')
+      .all())
+      await trigger.click();
     await expect(other.getByTestId('tool-activity').getByRole('link')).toHaveCount(2);
     await other
       .getByTestId('assistant-message')

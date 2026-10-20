@@ -32,7 +32,7 @@ test('production PWA restores a conversation URL offline without caching API res
   await expect(page.getByTestId('user-message')).toContainText('离线 URL 验证');
   await expect(page.getByTestId('assistant-message')).toContainText('已保存的正文');
   await expect(page.getByTestId('message-reasoning')).toContainText('已保存的思考');
-  await expect(page.getByRole('status')).toContainText('离线');
+  await expect(page.getByRole('status').filter({ hasText: '离线' })).toContainText('离线');
   expect(
     await page.evaluate(async () => {
       try {

@@ -62,7 +62,7 @@ const input = (page: Page) =>
 const status = (page: Page) => toolbar(page).getByRole('status');
 const highlighted = (page: Page) =>
   page.evaluate(() => String(CSS.highlights.get('everchat-search')?.values().next().value ?? ''));
-const pane = (page: Page) => page.getByRole('region', { name: '对话消息' }).locator('..');
+const pane = (page: Page) => page.getByTestId('message-viewport');
 const metrics = (page: Page) =>
   pane(page).evaluate((node) => ({
     top: node.scrollTop,
@@ -231,7 +231,7 @@ test('search reveals collapsed thoughts and locates matches in both nested and o
     await expect
       .poll(() =>
         details.locator(':scope > [data-slot=trace-collapsible-trigger]').evaluate((node) => {
-          const parent = node.closest('section')!.parentElement!.getBoundingClientRect();
+          const parent = node.closest('[data-testid="message-viewport"]')!.getBoundingClientRect();
           return node.getBoundingClientRect().top >= parent.top;
         }),
       )
@@ -347,13 +347,18 @@ test('streaming search updates its count while retaining the active occurrence a
   }
 });
 
-test('returning to the bottom resumes following when content grows before the scroll event is delivered', async ({
+test('returning to the bottom resumes following through growth, and scrolling away cancels queued repairs', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 900, height: 650 });
   const fixture = await setup(page.request);
   try {
     await page.goto(`/c/${fixture.id}`);
+    // This case measures an exact offset; late rich-content reflow has separate
+    // anchoring coverage and must settle before the same-frame race below.
+    await page.locator('[data-streamdown="mermaid-block"]').scrollIntoViewIfNeeded();
+    await expect(page.locator('[data-streamdown="mermaid"] svg').first()).toBeVisible();
+    await page.evaluate(() => document.fonts.ready);
     const thoughts = page.getByTestId('message-reasoning').locator('.overflow-y-auto');
     await thoughts.hover();
     await page.mouse.wheel(0, -250);
@@ -377,6 +382,27 @@ test('returning to the bottom resumes following when content grows before the sc
         { timeout: 2000 },
       )
       .toBeLessThan(2);
+    for (const pane of [thoughts, page.getByTestId('message-viewport')]) {
+      const reading = await pane.evaluate((node) => {
+        // A reader can leave the live edge again before a queued repair runs.
+        node.scrollTop -= 250;
+        node.dispatchEvent(new Event('scroll'));
+        node.scrollTop = node.scrollHeight;
+        node.dispatchEvent(new Event('scroll'));
+        node.scrollTop -= 250;
+        node.dispatchEvent(new Event('scroll'));
+        return { top: node.scrollTop, height: node.scrollHeight };
+      });
+      await pane.evaluate(async () => {
+        await new Promise(requestAnimationFrame);
+        await new Promise(requestAnimationFrame);
+      });
+      const actual = await pane.evaluate((node) => ({
+        top: node.scrollTop,
+        height: node.scrollHeight,
+      }));
+      expect(actual.top, JSON.stringify({ reading, actual })).toBeCloseTo(reading.top, 0);
+    }
   } finally {
     await fixture.cleanup();
   }
