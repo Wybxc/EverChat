@@ -13,6 +13,7 @@ import {
   type WebToolServiceSettings,
 } from '../../../shared/web-tools/service';
 import { ApiKeyInput } from '../../components/ApiKeyInput';
+import { AutosaveToast } from '../../components/AutosaveToast';
 import { api } from '../../platform/api';
 import { Autosave } from '../../platform/autosave';
 import {
@@ -79,7 +80,7 @@ function ServiceEditor({ initial, active }: { initial: WebToolServiceSettings; a
         },
       ),
   );
-  const { settings, status, error } = useSyncExternalStore(store.subscribe, store.getSnapshot);
+  const { settings } = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const [switching, setSwitching] = useState(false);
   const [revealed, setRevealed] = useState<string | null>(null),
     [reading, setReading] = useState(false),
@@ -245,26 +246,7 @@ function ServiceEditor({ initial, active }: { initial: WebToolServiceSettings; a
         </Button>
       </div>
       <p className="text-xs text-muted-foreground">{t(($) => $.usageHint)}</p>
-      <div className="flex items-center gap-3 text-xs text-muted-foreground">
-        <span data-testid="web-tool-save-status" role={status === 'error' ? 'alert' : 'status'}>
-          {status === 'error'
-            ? renderUiMessage(error)
-            : status === 'saving'
-              ? t(($) => $.saving)
-              : status === 'waiting'
-                ? t(($) => $.saving)
-                : t(($) => $.saved)}
-        </span>
-        {status === 'error' && (
-          <Button
-            variant="secondary"
-            type="button"
-            onClick={() => void store.flush().catch(() => {})}
-          >
-            {t(($) => $.retrySave)}
-          </Button>
-        )}
-      </div>
+      <AutosaveToast store={store} testId="web-tool-save-status" />
       {readError && (
         <p role="alert" className="text-sm">
           {renderUiMessage(readError)}

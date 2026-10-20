@@ -85,3 +85,99 @@ test('settings use vertical desktop tabs, horizontal mobile tabs, persistent dra
     await data.cleanup();
   }
 });
+
+test('autosave uses one nonblocking toast, keeps fields stable, then dismisses success', async ({
+  page,
+}) => {
+  const data = await fixture(page);
+  let release!: () => void;
+  const hold = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  try {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/');
+    await openSpaceSettings(page);
+    await page.getByRole('tab', { name: '供应商', exact: true }).click();
+    await page.getByRole('button', { name: 'UI Test', exact: false }).click();
+    const name = page.getByLabel('名称', { exact: true });
+    const status = page.getByTestId('settings-save-status');
+    await expect(status).toHaveCount(0);
+    const before = await name.boundingBox();
+    await page.route('**/api/settings/providers', async (route) => {
+      if (route.request().method() === 'PUT') await hold;
+      await route.continue();
+    });
+    await name.fill('第一次修改');
+    await expect(status).toHaveText('保存中…');
+    await name.fill('最终修改');
+    await expect(page.locator('[data-slot="toast"]')).toHaveCount(1);
+    await expect(name).toBeFocused();
+    expect(await name.boundingBox()).toEqual(before);
+    await expect(status).toBeInViewport();
+    await page.screenshot({
+      path: test.info().outputPath('autosave-toast-mobile.png'),
+      animations: 'disabled',
+    });
+    release();
+    await expect(status).toHaveText('已保存');
+    await expect(name).toBeFocused();
+    await expect(status).toHaveCount(0);
+    await expect(name).toHaveValue('最终修改');
+    expect(
+      (await page.request.get('/api/settings/providers').then((r) => r.json())).providers[0].name,
+    ).toBe('最终修改');
+  } finally {
+    release();
+    await page.unroute('**/api/settings/providers');
+    await data.cleanup();
+  }
+});
+
+test('failed autosave stays visible across tabs and supports keyboard retry inside the dialog', async ({
+  page,
+}) => {
+  const data = await fixture(page);
+  try {
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await page.goto('/');
+    await openSpaceSettings(page);
+    await page.getByRole('tab', { name: '供应商', exact: true }).click();
+    await page.route('**/api/settings/providers', async (route) => {
+      if (route.request().method() !== 'PUT') return route.continue();
+      await route.fulfill({ status: 503, json: { error: '测试保存失败' } });
+    });
+    await page.getByLabel('名称', { exact: true }).fill('失败后重试');
+    const status = page.getByTestId('settings-save-status');
+    await expect(status).toContainText('服务暂时不可用');
+    await page.getByRole('tab', { name: '通用', exact: true }).click();
+    await expect(status).toBeVisible();
+    await page.waitForTimeout(2800);
+    await expect(status).toBeVisible();
+    await page.screenshot({
+      path: test.info().outputPath('autosave-error-toast-dark.png'),
+      animations: 'disabled',
+    });
+    await page.unroute('**/api/settings/providers');
+    const retry = page
+      .getByRole('dialog', { name: '设置', exact: true })
+      .getByRole('button', { name: '重试', exact: true });
+    await retry.focus();
+    await expect(retry).toBeFocused();
+    await retry.press('Enter');
+    await expect(status).toHaveText('已保存');
+    await expect
+      .poll(() =>
+        page
+          .getByRole('dialog', { name: '设置', exact: true })
+          .evaluate((dialog) => dialog.contains(document.activeElement)),
+      )
+      .toBe(true);
+    expect(
+      (await page.request.get('/api/settings/providers').then((r) => r.json())).providers[0].name,
+    ).toBe('失败后重试');
+  } finally {
+    await page.unroute('**/api/settings/providers');
+    await data.cleanup();
+  }
+});

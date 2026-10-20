@@ -690,7 +690,7 @@ test('automatic compression preferences autosave with fee disclosure, offline ed
       .selectOption(
         modelSelectionKey({ providerId: fixture.providerId, model: 'benchmark-summary-slow' }),
       );
-    await expect(modal.getByRole('status')).toHaveText('已保存');
+    await expect(modal.getByTestId('conversation-save-status')).toHaveText('已保存');
     await other.request.post('/__dev/access/login', { headers });
     const second = await other.newPage();
     await second.goto(`/c/${fixture.id}`);
@@ -721,7 +721,7 @@ test('automatic compression preferences autosave with fee disclosure, offline ed
     await openParameters(page, '上下文');
     await expect(modal.getByLabel('使用历史摘要', { exact: true })).toHaveCount(0);
     await modal.getByLabel('自动压缩历史', { exact: true }).uncheck();
-    await expect(modal.getByRole('status')).toHaveText('已保存');
+    await expect(modal.getByTestId('conversation-save-status')).toHaveText('已保存');
     expect((await fixture.snapshot()).settings?.autoCompression.enabled).toBe(false);
   } finally {
     await context.setOffline(false);

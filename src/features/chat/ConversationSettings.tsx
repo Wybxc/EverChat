@@ -5,6 +5,7 @@ import { NativeSelect } from '@/components/ui/native-select';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import { ToastRegion } from '@/components/ui/toast';
 import { X } from 'lucide-react';
 import {
   useEffect,
@@ -30,10 +31,11 @@ import { modelSelectionKey } from '../../../shared/models/selection';
 import type { ChatModel, ReasoningEffort } from '../../../shared/models/types';
 import { WEB_TOOL_NAMES } from '../../../shared/web-tools/tasks';
 import { Modal, ModalTitle } from '../../components/Modal';
+import { AutosaveToast } from '../../components/AutosaveToast';
 import { api } from '../../platform/api';
 import { Autosave } from '../../platform/autosave';
 import { formatNumber } from '../../platform/i18n/format';
-import { renderUiMessage, UiError, uiMessage } from '../../platform/i18n/messages';
+import { UiError, uiMessage } from '../../platform/i18n/messages';
 import { read, storageEpoch } from '../../platform/storage';
 import { PromptPresetPicker } from '../presets/PromptPresets';
 import { useWebToolSettings } from '../web-tools/web-tool-settings';
@@ -176,7 +178,7 @@ export function ConversationSettingsDialog({
     );
     return autosave;
   });
-  const { settings, status, error } = useSyncExternalStore(store.subscribe, store.getSnapshot);
+  const { settings } = useSyncExternalStore(store.subscribe, store.getSnapshot);
   useEffect(() => {
     if (cached?.dirty) store.update(withContextDefaults(cached.settings));
   }, [cached, store]);
@@ -263,308 +265,322 @@ export function ConversationSettingsDialog({
       aria-labelledby={titleId}
     >
       <div className="settings-dialog settings-fields flex h-[38rem] max-h-[85dvh] w-full max-w-xl flex-col overflow-hidden p-0">
-        <div className="flex shrink-0 items-center justify-between gap-3 px-3 py-1.5 sm:px-4">
-          <ModalTitle id={titleId} className="text-lg font-semibold">
-            {id ? t(($) => $.chatParameters) : t(($) => $.newChatParameters)}
-          </ModalTitle>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={close}
-            aria-label={t(($) => $.closeParameters)}
-          >
-            <X className="h-[1.125rem] w-[1.125rem]" />
-          </Button>
-        </div>
-        <Tabs
-          value={tab}
-          onValueChange={(value) => setTab(value as ParameterTab)}
-          className="min-h-0 flex-1 flex-col gap-0"
-        >
-          <TabsList
-            variant="line"
-            aria-label={t(($) => $.parameterCategories)}
-            className="mx-3 w-auto shrink-0 self-stretch justify-start px-0 aria-[orientation=horizontal]:h-auto sm:mx-4"
-          >
-            {parameterTabs.map((item) => (
-              <TabsTrigger
-                key={item.id}
-                id={`${titleId}-tab-${item.id}`}
-                value={item.id}
-                aria-controls={`${titleId}-panel-${item.id}`}
-              >
-                {t(($) => $[item.label])}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-          <div
-            ref={scroll}
-            data-testid="conversation-settings-scroll"
-            className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3 sm:px-4"
-            onBlur={() => void store.flush().catch(() => {})}
-          >
-            <section
-              role="tabpanel"
-              id={`${titleId}-panel-general`}
-              aria-labelledby={`${titleId}-tab-general`}
-              hidden={tab !== 'general'}
-              className="space-y-4"
+        <ToastRegion>
+          <div className="flex shrink-0 items-center justify-between gap-3 px-3 py-1.5 sm:px-4">
+            <ModalTitle id={titleId} className="text-lg font-semibold">
+              {id ? t(($) => $.chatParameters) : t(($) => $.newChatParameters)}
+            </ModalTitle>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={close}
+              aria-label={t(($) => $.closeParameters)}
             >
-              <div className="space-y-3">
-                <PromptPresetPicker
-                  open={open}
-                  prompt={settings.systemPrompt}
-                  apply={(systemPrompt) => update({ systemPrompt })}
-                  manage={() => {
-                    close();
-                    managePresets();
-                  }}
-                />
-                {settings.systemPrompt !== null && (
-                  <label className="block space-y-1 text-sm">
-                    <span>{t(($) => $.systemPrompt)}</span>
-                    <Textarea
-                      className="min-h-32 w-full border-input"
-                      aria-label={t(($) => $.systemPrompt)}
-                      maxLength={MAX_SYSTEM_PROMPT_LENGTH}
-                      value={settings.systemPrompt}
-                      onChange={(event) => update({ systemPrompt: event.currentTarget.value })}
-                    />
-                  </label>
-                )}
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <NumberSetting
-                  label="Temperature"
-                  value={settings.temperature}
-                  min={0}
-                  max={support?.temperatureMax ?? 2}
-                  disabled={!support || support.temperatureMax === null}
-                  change={(temperature) =>
-                    update({
-                      temperature,
-                      ...(support?.exclusive && temperature !== null ? { topP: null } : {}),
-                    })
-                  }
-                />
-                <NumberSetting
-                  label="Top P"
-                  value={settings.topP}
-                  min={support?.topPMin ?? 0}
-                  max={1}
-                  disabled={!support || support.topPMin === null}
-                  change={(topP) =>
-                    update({
-                      topP,
-                      ...(support?.exclusive && topP !== null ? { temperature: null } : {}),
-                    })
-                  }
-                />
-              </div>
-              {(!support || support.temperatureMax === null || support.topPMin === null) && (
-                <p className="text-xs text-muted-foreground">
-                  {!support
-                    ? t(($) => $.chooseModel)
-                    : t(($) => $.unsupportedSampling, {
-                        parameters: [
-                          support.temperatureMax === null ? 'Temperature' : '',
-                          support.topPMin === null ? 'Top P' : '',
-                        ]
-                          .filter(Boolean)
-                          .join(', '),
-                      })}
-                </p>
-              )}
-            </section>
-            <section
-              role="tabpanel"
-              id={`${titleId}-panel-context`}
-              aria-labelledby={`${titleId}-tab-context`}
-              hidden={tab !== 'context'}
-              className="space-y-3"
+              <X className="h-[1.125rem] w-[1.125rem]" />
+            </Button>
+          </div>
+          <Tabs
+            value={tab}
+            onValueChange={(value) => setTab(value as ParameterTab)}
+            className="min-h-0 flex-1 flex-col gap-0"
+          >
+            <TabsList
+              variant="line"
+              aria-label={t(($) => $.parameterCategories)}
+              className="mx-3 w-auto shrink-0 self-stretch justify-start px-0 aria-[orientation=horizontal]:h-auto sm:mx-4"
             >
-              <label className="block space-y-1 text-sm">
-                <span>{t(($) => $.outputBudget)}</span>
-                <NativeSelect
-                  className="w-full border-input"
-                  aria-label={t(($) => $.outputBudgetMode)}
-                  value={limitMode}
-                  onChange={(event) =>
-                    update({
-                      useGlobalMaxOutputTokens: event.currentTarget.value === 'inherit',
-                      maxOutputTokens:
-                        event.currentTarget.value === 'custom'
-                          ? (settings.maxOutputTokens ?? 4096)
-                          : null,
-                    })
-                  }
+              {parameterTabs.map((item) => (
+                <TabsTrigger
+                  key={item.id}
+                  id={`${titleId}-tab-${item.id}`}
+                  value={item.id}
+                  aria-controls={`${titleId}-panel-${item.id}`}
                 >
-                  <option value="inherit">
-                    {defaultOutputBudget
-                      ? t(($) => $.defaultOutputBudget, {
-                          tokens: formatNumber(defaultOutputBudget),
-                        })
-                      : t(($) => $.default)}
-                  </option>
-                  <option value="unset">{t(($) => $.unset)}</option>
-                  <option value="custom">{t(($) => $.custom)}</option>
-                </NativeSelect>
-              </label>
-              {limitMode === 'custom' && (
-                <NumberSetting
-                  label={t(($) => $.outputTokenBudget)}
-                  value={settings.maxOutputTokens}
-                  min={1}
-                  max={MAX_MODEL_TOKENS}
-                  integer
-                  change={(maxOutputTokens) => update({ maxOutputTokens })}
-                />
-              )}
-              <div className="grid gap-3 sm:grid-cols-2">
-                <NumberSetting
-                  label={t(($) => $.contextTokenBudget)}
-                  value={settings.contextBudget}
-                  min={1}
-                  max={10000000}
-                  integer
-                  change={(contextBudget) => update({ contextBudget })}
-                />
-                <NumberSetting
-                  label={t(($) => $.recentMessages)}
-                  value={settings.recentMessages}
-                  min={1}
-                  max={1000}
-                  integer
-                  change={(recentMessages) => update({ recentMessages })}
-                />
-              </div>
-              <p className="text-xs text-muted-foreground">{t(($) => $.contextBudgetHint)}</p>
-              <label className="flex min-h-11 items-center gap-2 text-sm">
-                <Checkbox
-                  checked={compression.enabled}
-                  onCheckedChange={(checked) =>
-                    update({
-                      autoCompression: { ...compression, enabled: checked === true },
-                    })
-                  }
-                />
-                {t(($) => $.autoCompaction)}
-              </label>
-              {compression.enabled && (
+                  {t(($) => $[item.label])}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+            <div
+              ref={scroll}
+              data-testid="conversation-settings-scroll"
+              className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3 sm:px-4"
+              onBlur={() => void store.flush().catch(() => {})}
+            >
+              <section
+                role="tabpanel"
+                id={`${titleId}-panel-general`}
+                aria-labelledby={`${titleId}-tab-general`}
+                hidden={tab !== 'general'}
+                className="space-y-4"
+              >
                 <div className="space-y-3">
+                  <PromptPresetPicker
+                    open={open}
+                    prompt={settings.systemPrompt}
+                    apply={(systemPrompt) => update({ systemPrompt })}
+                    manage={() => {
+                      close();
+                      managePresets();
+                    }}
+                  />
+                  {settings.systemPrompt !== null && (
+                    <label className="block space-y-1 text-sm">
+                      <span>{t(($) => $.systemPrompt)}</span>
+                      <Textarea
+                        className="min-h-32 w-full border-input"
+                        aria-label={t(($) => $.systemPrompt)}
+                        maxLength={MAX_SYSTEM_PROMPT_LENGTH}
+                        value={settings.systemPrompt}
+                        onChange={(event) => update({ systemPrompt: event.currentTarget.value })}
+                      />
+                    </label>
+                  )}
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
                   <NumberSetting
-                    label={t(($) => $.compactionThreshold)}
-                    value={compression.threshold}
-                    min={50}
-                    max={95}
-                    integer
-                    change={(threshold) =>
+                    label="Temperature"
+                    value={settings.temperature}
+                    min={0}
+                    max={support?.temperatureMax ?? 2}
+                    disabled={!support || support.temperatureMax === null}
+                    change={(temperature) =>
                       update({
-                        autoCompression: { ...compression, threshold: threshold ?? Number.NaN },
+                        temperature,
+                        ...(support?.exclusive && temperature !== null ? { topP: null } : {}),
                       })
                     }
                   />
-                  <label className="block space-y-1 text-sm">
-                    <span>{t(($) => $.autoSummaryModel)}</span>
-                    <NativeSelect
-                      className="w-full border-input"
-                      aria-label={t(($) => $.autoSummaryModel)}
-                      value={compressionModel}
-                      onChange={(event) => {
-                        const selected = models.find(
-                          (item) => modelSelectionKey(item) === event.currentTarget.value,
-                        );
-                        update({
-                          autoCompression: {
-                            ...compression,
-                            model: selected
-                              ? { providerId: selected.providerId, model: selected.model }
-                              : null,
-                          },
-                        });
-                      }}
-                    >
-                      <option value="">{t(($) => $.currentModel)}</option>
-                      {!compressionModelAvailable && (
-                        <option value={compressionModel}>{t(($) => $.modelUnavailable)}</option>
-                      )}
-                      {models.map((item) => (
-                        <option key={modelSelectionKey(item)} value={modelSelectionKey(item)}>
-                          {item.providerName} · {item.name}
-                        </option>
-                      ))}
-                    </NativeSelect>
-                  </label>
-                  <p className="text-xs text-muted-foreground">
-                    {t(($) => $.compactionThresholdHint)}
-                  </p>
-                </div>
-              )}
-              <p className="text-xs text-muted-foreground">{t(($) => $.compactionCostHint)}</p>
-            </section>
-            <section
-              role="tabpanel"
-              id={`${titleId}-panel-tools`}
-              aria-labelledby={`${titleId}-tab-tools`}
-              hidden={tab !== 'tools'}
-              className="space-y-3"
-            >
-              <div className="space-y-2">
-                <label className="flex min-h-11 items-center justify-between gap-3 text-sm">
-                  <span>{t(($) => $.webSearch)}</span>
-                  <Switch
-                    checked={settings.tools.length > 0}
-                    disabled={
-                      !settings.tools.length && !canAttemptCapability(model?.metadata, 'toolCalls')
-                    }
-                    onCheckedChange={(checked) =>
-                      update({ tools: checked ? [...WEB_TOOL_NAMES] : [] })
+                  <NumberSetting
+                    label="Top P"
+                    value={settings.topP}
+                    min={support?.topPMin ?? 0}
+                    max={1}
+                    disabled={!support || support.topPMin === null}
+                    change={(topP) =>
+                      update({
+                        topP,
+                        ...(support?.exclusive && topP !== null ? { temperature: null } : {}),
+                      })
                     }
                   />
-                </label>
-                {!canAttemptCapability(model?.metadata, 'toolCalls') && (
-                  <p className="text-xs text-muted-foreground">{t(($) => $.toolsUnsupported)}</p>
-                )}
-                {model?.metadata.sources.toolCalls === 'fallback' && (
-                  <p className="text-xs text-muted-foreground">{t(($) => $.toolsUnknown)}</p>
-                )}
-                <Button
-                  variant="secondary"
-                  type="button"
-                  className="w-fit"
-                  onClick={() => {
-                    close();
-                    manageWebTools();
-                  }}
-                >
-                  {service.data?.hasApiKey
-                    ? t(($) => $.webServiceSettings)
-                    : t(($) => $.configureWebService)}
-                </Button>
-              </div>{' '}
-              {service.isError && !service.data && (
-                <div className="flex items-center gap-2 text-xs">
-                  <span role="alert">{t(($) => $.webSettingsFailed)}</span>
-                  <Button variant="secondary" type="button" onClick={() => void service.refetch()}>
-                    {t(($) => $.reload)}
-                  </Button>
                 </div>
-              )}
-              <p className="text-xs text-muted-foreground">{t(($) => $.webCostHint)}</p>
-            </section>
+                {(!support || support.temperatureMax === null || support.topPMin === null) && (
+                  <p className="text-xs text-muted-foreground">
+                    {!support
+                      ? t(($) => $.chooseModel)
+                      : t(($) => $.unsupportedSampling, {
+                          parameters: [
+                            support.temperatureMax === null ? 'Temperature' : '',
+                            support.topPMin === null ? 'Top P' : '',
+                          ]
+                            .filter(Boolean)
+                            .join(', '),
+                        })}
+                  </p>
+                )}
+              </section>
+              <section
+                role="tabpanel"
+                id={`${titleId}-panel-context`}
+                aria-labelledby={`${titleId}-tab-context`}
+                hidden={tab !== 'context'}
+                className="space-y-3"
+              >
+                <label className="block space-y-1 text-sm">
+                  <span>{t(($) => $.outputBudget)}</span>
+                  <NativeSelect
+                    className="w-full border-input"
+                    aria-label={t(($) => $.outputBudgetMode)}
+                    value={limitMode}
+                    onChange={(event) =>
+                      update({
+                        useGlobalMaxOutputTokens: event.currentTarget.value === 'inherit',
+                        maxOutputTokens:
+                          event.currentTarget.value === 'custom'
+                            ? (settings.maxOutputTokens ?? 4096)
+                            : null,
+                      })
+                    }
+                  >
+                    <option value="inherit">
+                      {defaultOutputBudget
+                        ? t(($) => $.defaultOutputBudget, {
+                            tokens: formatNumber(defaultOutputBudget),
+                          })
+                        : t(($) => $.default)}
+                    </option>
+                    <option value="unset">{t(($) => $.unset)}</option>
+                    <option value="custom">{t(($) => $.custom)}</option>
+                  </NativeSelect>
+                </label>
+                {limitMode === 'custom' && (
+                  <NumberSetting
+                    label={t(($) => $.outputTokenBudget)}
+                    value={settings.maxOutputTokens}
+                    min={1}
+                    max={MAX_MODEL_TOKENS}
+                    integer
+                    change={(maxOutputTokens) => update({ maxOutputTokens })}
+                  />
+                )}
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <NumberSetting
+                    label={t(($) => $.contextTokenBudget)}
+                    value={settings.contextBudget}
+                    min={1}
+                    max={10000000}
+                    integer
+                    change={(contextBudget) => update({ contextBudget })}
+                  />
+                  <NumberSetting
+                    label={t(($) => $.recentMessages)}
+                    value={settings.recentMessages}
+                    min={1}
+                    max={1000}
+                    integer
+                    change={(recentMessages) => update({ recentMessages })}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">{t(($) => $.contextBudgetHint)}</p>
+                <label className="flex min-h-11 items-center gap-2 text-sm">
+                  <Checkbox
+                    checked={compression.enabled}
+                    onCheckedChange={(checked) =>
+                      update({
+                        autoCompression: { ...compression, enabled: checked === true },
+                      })
+                    }
+                  />
+                  {t(($) => $.autoCompaction)}
+                </label>
+                {compression.enabled && (
+                  <div className="space-y-3">
+                    <NumberSetting
+                      label={t(($) => $.compactionThreshold)}
+                      value={compression.threshold}
+                      min={50}
+                      max={95}
+                      integer
+                      change={(threshold) =>
+                        update({
+                          autoCompression: { ...compression, threshold: threshold ?? Number.NaN },
+                        })
+                      }
+                    />
+                    <label className="block space-y-1 text-sm">
+                      <span>{t(($) => $.autoSummaryModel)}</span>
+                      <NativeSelect
+                        className="w-full border-input"
+                        aria-label={t(($) => $.autoSummaryModel)}
+                        value={compressionModel}
+                        onChange={(event) => {
+                          const selected = models.find(
+                            (item) => modelSelectionKey(item) === event.currentTarget.value,
+                          );
+                          update({
+                            autoCompression: {
+                              ...compression,
+                              model: selected
+                                ? { providerId: selected.providerId, model: selected.model }
+                                : null,
+                            },
+                          });
+                        }}
+                      >
+                        <option value="">{t(($) => $.currentModel)}</option>
+                        {!compressionModelAvailable && (
+                          <option value={compressionModel}>{t(($) => $.modelUnavailable)}</option>
+                        )}
+                        {models.map((item) => (
+                          <option key={modelSelectionKey(item)} value={modelSelectionKey(item)}>
+                            {item.providerName} · {item.name}
+                          </option>
+                        ))}
+                      </NativeSelect>
+                    </label>
+                    <p className="text-xs text-muted-foreground">
+                      {t(($) => $.compactionThresholdHint)}
+                    </p>
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground">{t(($) => $.compactionCostHint)}</p>
+              </section>
+              <section
+                role="tabpanel"
+                id={`${titleId}-panel-tools`}
+                aria-labelledby={`${titleId}-tab-tools`}
+                hidden={tab !== 'tools'}
+                className="space-y-3"
+              >
+                <div className="space-y-2">
+                  <label className="flex min-h-11 items-center justify-between gap-3 text-sm">
+                    <span>{t(($) => $.webSearch)}</span>
+                    <Switch
+                      checked={settings.tools.length > 0}
+                      disabled={
+                        !settings.tools.length &&
+                        !canAttemptCapability(model?.metadata, 'toolCalls')
+                      }
+                      onCheckedChange={(checked) =>
+                        update({ tools: checked ? [...WEB_TOOL_NAMES] : [] })
+                      }
+                    />
+                  </label>
+                  {!canAttemptCapability(model?.metadata, 'toolCalls') && (
+                    <p className="text-xs text-muted-foreground">{t(($) => $.toolsUnsupported)}</p>
+                  )}
+                  {model?.metadata.sources.toolCalls === 'fallback' && (
+                    <p className="text-xs text-muted-foreground">{t(($) => $.toolsUnknown)}</p>
+                  )}
+                  <Button
+                    variant="secondary"
+                    type="button"
+                    className="w-fit"
+                    onClick={() => {
+                      close();
+                      manageWebTools();
+                    }}
+                  >
+                    {service.data?.hasApiKey
+                      ? t(($) => $.webServiceSettings)
+                      : t(($) => $.configureWebService)}
+                  </Button>
+                </div>{' '}
+                {service.isError && !service.data && (
+                  <div className="flex items-center gap-2 text-xs">
+                    <span role="alert">{t(($) => $.webSettingsFailed)}</span>
+                    <Button
+                      variant="secondary"
+                      type="button"
+                      onClick={() => void service.refetch()}
+                    >
+                      {t(($) => $.reload)}
+                    </Button>
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground">{t(($) => $.webCostHint)}</p>
+              </section>
+            </div>
+          </Tabs>
+          <div className="shrink-0 border-t border-border px-3 py-2 sm:px-4">
+            <Button
+              variant="secondary"
+              type="button"
+              onClick={() => update({ ...DEFAULT_CONVERSATION_SETTINGS })}
+            >
+              {t(($) => $.restoreInherited)}
+            </Button>
           </div>
-        </Tabs>
-        <div className="shrink-0 space-y-2 border-t border-border px-3 py-2 sm:px-4">
-          {error && (
-            <div className="flex items-center justify-between gap-2">
-              <p role="alert" className="text-sm">
-                {renderUiMessage(error)}
-              </p>
-              {invalidTab && invalidTab !== tab && (
+          <AutosaveToast
+            store={store}
+            local={!id}
+            testId="conversation-save-status"
+            errorAction={
+              invalidTab &&
+              invalidTab !== tab && (
                 <Button
                   variant="ghost"
                   type="button"
-                  className="shrink-0"
                   onClick={() => {
                     setTab(invalidTab);
                     requestAnimationFrame(() =>
@@ -578,41 +594,10 @@ export function ConversationSettingsDialog({
                 >
                   {t(($) => $.viewError)}
                 </Button>
-              )}
-            </div>
-          )}
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span role="status" className="text-xs text-muted-foreground">
-              {status === 'saved'
-                ? id
-                  ? t(($) => $.saved)
-                  : t(($) => $.savedLocally)
-                : status === 'saving'
-                  ? t(($) => $.saving)
-                  : status === 'waiting'
-                    ? t(($) => $.saving)
-                    : t(($) => $.notSaved)}
-            </span>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="secondary"
-                type="button"
-                onClick={() => update({ ...DEFAULT_CONVERSATION_SETTINGS })}
-              >
-                {t(($) => $.restoreInherited)}
-              </Button>
-              {status === 'error' && (
-                <Button
-                  variant="secondary"
-                  type="button"
-                  onClick={() => void store.flush().catch(() => {})}
-                >
-                  {t(($) => $.retrySave)}
-                </Button>
-              )}
-            </div>
-          </div>
-        </div>
+              )
+            }
+          />
+        </ToastRegion>
       </div>
     </Modal>
   );

@@ -366,7 +366,7 @@ test('logging out cannot restore parameter drafts when an earlier autosave respo
     const local = page.getByRole('dialog', { name: '新对话参数', exact: true });
     await local.getByLabel('提示词预设', { exact: true }).selectOption('custom');
     await local.getByLabel('会话系统提示词', { exact: true }).fill('清除新对话本机参数');
-    await expect(local.getByRole('status')).toHaveText('已保存到本机');
+    await expect(local.getByTestId('conversation-save-status')).toHaveText('已保存到本机');
     await local.getByRole('button', { name: '关闭会话参数' }).click();
     await page.route('**/api/conversations/*/settings', async (route) => {
       if (route.request().postDataJSON()?.systemPrompt !== prompt) {
@@ -449,8 +449,8 @@ test('conversation settings autosave, preserve failed and invalid drafts, sync d
     );
     await expect(modal.getByRole('alert')).toContainText('服务暂时不可用');
     await page.unroute('**/api/conversations/*/settings');
-    await modal.getByRole('button', { name: '重试保存' }).click();
-    await expect(modal.getByRole('status')).toHaveText('已保存');
+    await modal.getByRole('button', { name: '重试', exact: true }).click();
+    await expect(modal.getByTestId('conversation-save-status')).toHaveText('已保存');
     await expect(remote.getByLabel('会话系统提示词', { exact: true })).toHaveValue(
       '保留未保存的会话提示',
     );
@@ -510,7 +510,7 @@ test('an offline new conversation pins its parameters without overwriting anothe
     await modal.getByLabel('Temperature', { exact: true }).fill('0.3');
     await modal.getByRole('tab', { name: '上下文', exact: true }).click();
     await modal.getByLabel('输出预算方式').selectOption('unset');
-    await expect(modal.getByRole('status')).toHaveText('已保存到本机');
+    await expect(modal.getByTestId('conversation-save-status')).toHaveText('已保存到本机');
     await modal.getByRole('button', { name: '关闭会话参数' }).click();
     await context.setOffline(true);
     await page.getByRole('textbox', { name: '消息', exact: true }).fill('离线发送会话参数');

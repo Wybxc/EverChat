@@ -3,6 +3,12 @@ export default {
   modelLimit: '模型列表超过 {{count}} 个，请按供应商拆分配置或手动添加需要的模型。',
 
   saveFailed: '保存失败，请重试。',
+  saving: '保存中…',
+  saved: '已保存',
+  savedLocally: '已保存到本机',
+  notSaved: '未保存 · {{error}}',
+  saveNotification: '保存通知',
+  saveNotificationsShortcut: '保存通知（{hotkey}）',
   language: '语言',
   system: '跟随系统',
   close: '关闭',

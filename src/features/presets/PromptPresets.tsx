@@ -11,6 +11,7 @@ import { MAX_SYSTEM_PROMPT_LENGTH } from '../../../shared/conversation/limits';
 import { MAX_PROMPT_PRESETS, promptPresetInputSchema } from '../../../shared/presets/schema';
 import { DEFAULT_PROMPT_PRESET_ID, type PromptPreset } from '../../../shared/presets/types';
 import { Modal, ModalTitle } from '../../components/Modal';
+import { AutosaveToast } from '../../components/AutosaveToast';
 import { api } from '../../platform/api';
 import { Autosave } from '../../platform/autosave';
 import {
@@ -320,7 +321,7 @@ function PresetEditor({
         (_saved, draft) => draft,
       ),
   );
-  const { settings, status, error } = useSyncExternalStore(store.subscribe, store.getSnapshot);
+  const { settings, status } = useSyncExternalStore(store.subscribe, store.getSnapshot);
   useEffect(() => {
     if (cached) store.update(cached);
   }, [cached, store]);
@@ -414,40 +415,16 @@ function PresetEditor({
           onChange={(event) => update({ systemPrompt: event.currentTarget.value })}
         />
       </label>
-      {error && (
-        <p role="alert" className="text-sm">
-          {renderUiMessage(error)}
-        </p>
-      )}
+      <AutosaveToast store={store} testId="preset-save-status" />
       {removeError && !confirming && (
         <p role="alert" className="text-sm">
           {renderUiMessage(removeError)}
         </p>
       )}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <span
-          role="status"
-          data-testid="preset-save-status"
-          className="text-xs text-muted-foreground"
-        >
-          {status === 'saved'
-            ? t(($) => $.saved)
-            : status === 'saving'
-              ? t(($) => $.saving)
-              : status === 'waiting'
-                ? t(($) => $.saving)
-                : t(($) => $.unsaved)}
-        </span>
+      <div className="flex flex-wrap items-center justify-end gap-3">
         <div className="flex flex-wrap gap-2">
           {status === 'error' && (
             <>
-              <Button
-                variant="secondary"
-                type="button"
-                onClick={() => void store.flush().catch(() => {})}
-              >
-                {t(($) => $.retrySave)}
-              </Button>
               <Button
                 variant="secondary"
                 type="button"

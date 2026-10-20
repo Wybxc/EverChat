@@ -266,10 +266,10 @@ test('composer estimates reflect model prompts and autosaved budgets across devi
     await openParameters(page, '上下文');
     const modal = page.getByRole('dialog', { name: '会话参数', exact: true });
     await modal.getByLabel('上下文 Token 预算', { exact: true }).fill('350');
-    await expect(modal.getByRole('status')).toHaveText('已保存');
+    await expect(modal.getByTestId('conversation-save-status')).toHaveText('已保存');
     await expect(second.getByLabel('上下文 Token 预算', { exact: true })).toHaveValue('350');
     await modal.getByLabel('最近历史消息条数', { exact: true }).fill('1');
-    await expect(modal.getByRole('status')).toHaveText('已保存');
+    await expect(modal.getByTestId('conversation-save-status')).toHaveText('已保存');
     await modal.getByRole('button', { name: '关闭会话参数' }).click();
     await expect(estimate).toHaveAttribute('aria-description', /\/ 350 Tokens/);
     await expect(page.getByTestId('context-omission')).toContainText('将省略 4 条');
@@ -327,7 +327,7 @@ test('an unknown model displays fallback capacity and an over-budget draft stays
     await openParameters(page, '上下文');
     const modal = page.getByRole('dialog', { name: '新对话参数', exact: true });
     await modal.getByLabel('上下文 Token 预算', { exact: true }).fill('1');
-    await expect(modal.getByRole('status')).toHaveText('已保存到本机');
+    await expect(modal.getByTestId('conversation-save-status')).toHaveText('已保存到本机');
     await modal.getByRole('button', { name: '关闭会话参数' }).click();
     await expect(page.getByTestId('context-budget-warning')).toContainText('超过预算');
     await composer.press('Enter');

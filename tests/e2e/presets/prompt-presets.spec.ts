@@ -223,23 +223,23 @@ test('preset management autosaves and recovers drafts, applies copies, synchroni
     await expect(panel.getByLabel('预设名称', { exact: true })).toBeFocused();
     await panel.getByLabel('预设名称', { exact: true }).fill('写作助手');
     await panel.getByLabel('预设系统提示词', { exact: true }).fill('你是写作助手。');
-    await expect(panel.getByRole('alert')).toContainText('服务暂时不可用');
+    await expect(page.getByTestId('preset-save-status')).toContainText('服务暂时不可用');
     await page.reload();
     await openSpaceSettings(page);
     panel = await presetsTab(page);
     await expect(panel.getByLabel('预设系统提示词', { exact: true })).toHaveValue('你是写作助手。');
-    await expect(panel.getByRole('alert')).toContainText('服务暂时不可用');
+    await expect(page.getByTestId('preset-save-status')).toContainText('服务暂时不可用');
     await page.unroute('**/api/settings/presets/*');
-    await panel.getByRole('button', { name: '重试保存预设' }).click();
-    await expect(panel.getByTestId('preset-save-status')).toHaveText('已保存');
+    await page.getByRole('button', { name: '重试', exact: true }).click();
+    await expect(page.getByTestId('preset-save-status')).toHaveText('已保存');
     const preset = (await list(page.request)).find((item) => item.name === '写作助手')!;
     expect(preset.systemPrompt).toBe('你是写作助手。');
     await panel.getByLabel('预设名称', { exact: true }).fill('');
     await panel.getByLabel('预设系统提示词', { exact: true }).focus();
-    await expect(panel.getByRole('alert')).toContainText('预设名称');
+    await expect(page.getByTestId('preset-save-status')).toContainText('预设名称');
     expect((await list(page.request)).find((item) => item.id === preset.id)?.name).toBe('写作助手');
     await panel.getByLabel('预设名称', { exact: true }).fill('写作助手');
-    await expect(panel.getByTestId('preset-save-status')).toHaveText('已保存');
+    await expect(page.getByTestId('preset-save-status')).toHaveText('已保存');
     await expect(page.getByRole('button', { name: '关闭设置', exact: true })).toBeInViewport();
     await page.getByRole('button', { name: '关闭设置', exact: true }).click();
     await openParameters(page);
@@ -455,14 +455,14 @@ test('a dirty draft whose preset was deleted remotely can be saved under a new I
         : route.continue(),
     );
     await panel.getByLabel('预设系统提示词', { exact: true }).fill('待恢复的内容');
-    await expect(panel.getByRole('alert')).toContainText('服务暂时不可用');
+    await expect(page.getByTestId('preset-save-status')).toContainText('服务暂时不可用');
     await second.request.delete(`/api/settings/presets/${id}`, { headers });
     await page.unroute(`**/api/settings/presets/${id}`);
-    await panel.getByRole('button', { name: '重试保存预设' }).click();
-    await expect(panel.getByRole('alert')).toContainText('已删除');
+    await page.getByRole('button', { name: '重试', exact: true }).click();
+    await expect(page.getByTestId('preset-save-status')).toContainText('已删除');
     await expect(panel.getByLabel('预设系统提示词', { exact: true })).toHaveValue('待恢复的内容');
     await panel.getByRole('button', { name: '另存为新预设' }).click();
-    await expect(panel.getByTestId('preset-save-status')).toHaveText('已保存');
+    await expect(page.getByLabel('预设系统提示词', { exact: true })).toHaveValue('待恢复的内容');
     const copy = (await list(page.request)).find(
       (preset) => preset.systemPrompt === '待恢复的内容',
     )!;

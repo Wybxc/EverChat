@@ -4,6 +4,12 @@ export default {
     'The model list exceeds {{count}} models. Split it across providers or add the models you need manually.',
 
   saveFailed: 'Could not save. Try again.',
+  saving: 'Saving…',
+  saved: 'Saved',
+  savedLocally: 'Saved on this device',
+  notSaved: 'Not saved · {{error}}',
+  saveNotification: 'Save notification',
+  saveNotificationsShortcut: 'Save notifications ({hotkey})',
   language: 'Language',
   system: 'Follow system',
   close: 'Close',

@@ -249,6 +249,7 @@ test('semantic theme text, selected navigation, placeholders and focus meet cont
       ]);
       await openSpaceSettings(page);
       await page.getByRole('tab', { name: '供应商', exact: true }).click();
+      await page.getByLabel('名称', { exact: true }).fill(`对比度 ${mode}`);
       await expect(page.getByTestId('settings-save-status')).toBeVisible();
       await contrast(page, [
         { selector: '#space-settings-title' },

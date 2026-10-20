@@ -204,9 +204,9 @@ for (const width of [1280, 390])
       await expect(limit).toBeFocused();
       await limit.fill('64');
       await dialog.getByLabel('自动压缩历史', { exact: true }).check();
-      await expect(dialog.getByRole('status')).toHaveText('已保存');
+      await expect(dialog.getByTestId('conversation-save-status')).toHaveText('已保存');
       await dialog.getByLabel('自动压缩阈值（%）', { exact: true }).fill('70');
-      await expect(dialog.getByRole('status')).toHaveText('已保存');
+      await expect(dialog.getByTestId('conversation-save-status')).toHaveText('已保存');
       await dialog.getByTestId('conversation-settings-scroll').evaluate((el) => {
         el.scrollTop = el.scrollHeight;
       });

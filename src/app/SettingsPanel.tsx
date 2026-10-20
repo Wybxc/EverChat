@@ -2,6 +2,7 @@ import { Button } from '@/components/ui/button';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ToastRegion } from '@/components/ui/toast';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { LogOut } from 'lucide-react';
 import {
@@ -17,6 +18,7 @@ import { useTranslation } from 'react-i18next';
 import { DEFAULT_TITLE_SETTINGS } from '../../shared/conversation/titles';
 import type { ProviderSettings } from '../../shared/providers/types';
 import { DisclosureScope } from '../components/Disclosure';
+import { AutosaveToast } from '../components/AutosaveToast';
 import { NotificationSettings } from '../features/notifications/NotificationSettings';
 import { PromptPresetsPanel } from '../features/presets/PromptPresets';
 import { ProviderEditor } from '../features/providers/ProviderEditor';
@@ -115,159 +117,161 @@ export function SettingsPanel(props: PanelProps) {
     return () => window.removeEventListener('everchat:network-ready', retry);
   }, [store]);
   return props.render(
-    <DisclosureScope>
-      <div className="settings-fields flex min-h-0 flex-1 flex-col">
-        <Tabs
-          orientation={verticalTabs ? 'vertical' : 'horizontal'}
-          value={tab}
-          onValueChange={(value) => {
-            setTab(value as SettingsTab);
-            props.onTabChange?.(value as SettingsTab);
-          }}
-          className="settings-tabs"
-        >
-          <TabsList aria-label={t(($) => $.settingsCategories)} className="settings-tab-list">
-            {tabs.map((item) => (
-              <TabsTrigger
-                key={item.id}
-                id={`settings-tab-${item.id}`}
-                value={item.id}
-                aria-controls={`settings-panel-${item.id}`}
-                onFocus={(event) =>
-                  event.currentTarget.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-                }
-              >
-                {t(($) => $[item.label])}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-          <div
-            data-testid="settings-scroll"
-            className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 pb-0 sm:p-4 sm:pb-0"
+    <ToastRegion>
+      <DisclosureScope>
+        <div className="settings-fields flex min-h-0 flex-1 flex-col">
+          <Tabs
+            orientation={verticalTabs ? 'vertical' : 'horizontal'}
+            value={tab}
+            onValueChange={(value) => {
+              setTab(value as SettingsTab);
+              props.onTabChange?.(value as SettingsTab);
+            }}
+            className="settings-tabs"
           >
-            <section
-              id="settings-panel-general"
-              role="tabpanel"
-              aria-labelledby="settings-tab-general"
-              hidden={tab !== 'general'}
-              className="space-y-4"
-            >
-              <LanguageControl />
-              {props.themeControl}
-              <NotificationSettings />
-              <PwaSettings />
-              {props.onLogout && (
-                <>
-                  <Button
-                    variant="secondary"
-                    type="button"
-                    className="gap-2"
-                    onClick={props.onLogout}
-                  >
-                    <LogOut className="size-4" />
-                    {t(($) => $.signOut)}
-                  </Button>
-                  <p className="text-xs text-muted-foreground">{t(($) => $.accessSignOutHint)}</p>
-                </>
-              )}
-            </section>
-            {!authenticated ? (
-              tab !== 'general' && (
-                <section
-                  id={`settings-panel-${tab}`}
-                  role="tabpanel"
-                  aria-labelledby={`settings-tab-${tab}`}
+            <TabsList aria-label={t(($) => $.settingsCategories)} className="settings-tab-list">
+              {tabs.map((item) => (
+                <TabsTrigger
+                  key={item.id}
+                  id={`settings-tab-${item.id}`}
+                  value={item.id}
+                  aria-controls={`settings-panel-${item.id}`}
+                  onFocus={(event) =>
+                    event.currentTarget.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+                  }
                 >
-                  <p role="status" className="py-4 text-sm text-muted-foreground">
-                    {t(($) => $.availableAfterSignIn)}
-                  </p>
-                </section>
-              )
-            ) : (
-              <>
-                <div hidden={!providerTab}>
-                  {store ? (
-                    <SettingsForm
-                      store={store}
-                      open={open}
-                      tab={tab}
-                      requestedProviderId={props.requestedProviderId}
-                    />
-                  ) : (
-                    <section
-                      role="tabpanel"
-                      id={`settings-panel-${providerTab ? tab : 'providers'}`}
-                      aria-labelledby={`settings-tab-${providerTab ? tab : 'providers'}`}
+                  {t(($) => $[item.label])}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+            <div
+              data-testid="settings-scroll"
+              className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 pb-0 sm:p-4 sm:pb-0"
+            >
+              <section
+                id="settings-panel-general"
+                role="tabpanel"
+                aria-labelledby="settings-tab-general"
+                hidden={tab !== 'general'}
+                className="space-y-4"
+              >
+                <LanguageControl />
+                {props.themeControl}
+                <NotificationSettings />
+                <PwaSettings />
+                {props.onLogout && (
+                  <>
+                    <Button
+                      variant="secondary"
+                      type="button"
+                      className="gap-2"
+                      onClick={props.onLogout}
                     >
-                      {query.isError ? (
-                        <div className="space-y-3 py-4">
-                          <p role="alert" className="text-sm">
-                            {renderUiMessage(errorMessage(query.error))}
-                          </p>
-                          <Button variant="secondary" onClick={() => void query.refetch()}>
-                            {t(($) => $.reload)}
-                          </Button>
-                        </div>
-                      ) : (
-                        <LoadingContent label={t(($) => $.loadingSettings)} />
-                      )}
+                      <LogOut className="size-4" />
+                      {t(($) => $.signOut)}
+                    </Button>
+                    <p className="text-xs text-muted-foreground">{t(($) => $.accessSignOutHint)}</p>
+                  </>
+                )}
+              </section>
+              {!authenticated ? (
+                tab !== 'general' && (
+                  <section
+                    id={`settings-panel-${tab}`}
+                    role="tabpanel"
+                    aria-labelledby={`settings-tab-${tab}`}
+                  >
+                    <p role="status" className="py-4 text-sm text-muted-foreground">
+                      {t(($) => $.availableAfterSignIn)}
+                    </p>
+                  </section>
+                )
+              ) : (
+                <>
+                  <div hidden={!providerTab}>
+                    {store ? (
+                      <SettingsForm
+                        store={store}
+                        open={open}
+                        tab={tab}
+                        requestedProviderId={props.requestedProviderId}
+                      />
+                    ) : (
+                      <section
+                        role="tabpanel"
+                        id={`settings-panel-${providerTab ? tab : 'providers'}`}
+                        aria-labelledby={`settings-tab-${providerTab ? tab : 'providers'}`}
+                      >
+                        {query.isError ? (
+                          <div className="space-y-3 py-4">
+                            <p role="alert" className="text-sm">
+                              {renderUiMessage(errorMessage(query.error))}
+                            </p>
+                            <Button variant="secondary" onClick={() => void query.refetch()}>
+                              {t(($) => $.reload)}
+                            </Button>
+                          </div>
+                        ) : (
+                          <LoadingContent label={t(($) => $.loadingSettings)} />
+                        )}
+                      </section>
+                    )}
+                  </div>
+                  <section
+                    id="settings-panel-presets"
+                    role="tabpanel"
+                    aria-labelledby="settings-tab-presets"
+                    hidden={tab !== 'presets'}
+                  >
+                    <PromptPresetsPanel
+                      open={open && tab === 'presets'}
+                      beforeDefaultSave={() => store?.flush() ?? Promise.resolve()}
+                      onDefaultSaved={async () => {
+                        const config = await api<ProviderSettings>('/settings/providers');
+                        if (epoch !== storageEpoch()) return;
+                        store?.receive(config);
+                        queryClient.setQueryData(['provider-settings'], config);
+                        onSavedRef.current?.(config);
+                      }}
+                    />
+                  </section>
+                  {open && tab === 'shares' && (
+                    <section
+                      id="settings-panel-shares"
+                      role="tabpanel"
+                      aria-labelledby="settings-tab-shares"
+                    >
+                      <Suspense fallback={<LoadingContent label={t(($) => $.loadingShares)} />}>
+                        <ShareManagement active />
+                      </Suspense>
                     </section>
                   )}
-                </div>
-                <section
-                  id="settings-panel-presets"
-                  role="tabpanel"
-                  aria-labelledby="settings-tab-presets"
-                  hidden={tab !== 'presets'}
-                >
-                  <PromptPresetsPanel
-                    open={open && tab === 'presets'}
-                    beforeDefaultSave={() => store?.flush() ?? Promise.resolve()}
-                    onDefaultSaved={async () => {
-                      const config = await api<ProviderSettings>('/settings/providers');
-                      if (epoch !== storageEpoch()) return;
-                      store?.receive(config);
-                      queryClient.setQueryData(['provider-settings'], config);
-                      onSavedRef.current?.(config);
-                    }}
-                  />
-                </section>
-                {open && tab === 'shares' && (
+                  {open && tab === 'usage' && (
+                    <section
+                      id="settings-panel-usage"
+                      role="tabpanel"
+                      aria-labelledby="settings-tab-usage"
+                    >
+                      <Suspense fallback={<LoadingContent label={t(($) => $.loadingUsage)} />}>
+                        <UsageSettings onLocate={props.onLocate} />
+                      </Suspense>
+                    </section>
+                  )}
                   <section
-                    id="settings-panel-shares"
+                    id="settings-panel-web-tools"
                     role="tabpanel"
-                    aria-labelledby="settings-tab-shares"
+                    aria-labelledby="settings-tab-web-tools"
+                    hidden={tab !== 'web-tools'}
                   >
-                    <Suspense fallback={<LoadingContent label={t(($) => $.loadingShares)} />}>
-                      <ShareManagement active />
-                    </Suspense>
+                    <WebToolSettingsPanel active={open && tab === 'web-tools'} />
                   </section>
-                )}
-                {open && tab === 'usage' && (
-                  <section
-                    id="settings-panel-usage"
-                    role="tabpanel"
-                    aria-labelledby="settings-tab-usage"
-                  >
-                    <Suspense fallback={<LoadingContent label={t(($) => $.loadingUsage)} />}>
-                      <UsageSettings onLocate={props.onLocate} />
-                    </Suspense>
-                  </section>
-                )}
-                <section
-                  id="settings-panel-web-tools"
-                  role="tabpanel"
-                  aria-labelledby="settings-tab-web-tools"
-                  hidden={tab !== 'web-tools'}
-                >
-                  <WebToolSettingsPanel active={open && tab === 'web-tools'} />
-                </section>
-              </>
-            )}
-          </div>
-        </Tabs>
-      </div>
-    </DisclosureScope>,
+                </>
+              )}
+            </div>
+          </Tabs>
+        </div>
+      </DisclosureScope>
+    </ToastRegion>,
   );
 }
 
@@ -284,7 +288,7 @@ function SettingsForm({
 }) {
   const { t } = useTranslation('app', { useSuspense: false });
 
-  const { settings, status, error } = useSyncExternalStore(store.subscribe, store.getSnapshot);
+  const { settings } = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const update = (next: ProviderSettings) => store.update(reconcile(next));
   const enabled = availableModels(settings);
   return (
@@ -423,28 +427,7 @@ function SettingsForm({
         </section>
       </section>
 
-      <div className="sticky bottom-0 z-10 flex shrink-0 items-center justify-between gap-3 border-t border-border bg-background px-3 py-2 text-xs sm:px-4 text-muted-foreground">
-        <p data-testid="settings-save-status" role={status === 'error' ? 'alert' : 'status'}>
-          {status === 'error'
-            ? t(($) => $.notSaved, { error: renderUiMessage(error) })
-            : status === 'saving'
-              ? t(($) => $.saving)
-              : status === 'waiting'
-                ? t(($) => $.saving)
-                : t(($) => $.saved)}
-        </p>
-        {status === 'error' && (
-          <Button
-            variant="ghost"
-            type="button"
-            onClick={() => {
-              void store.flush().catch(() => {});
-            }}
-          >
-            {t(($) => $.retry)}
-          </Button>
-        )}
-      </div>
+      <AutosaveToast store={store} testId="settings-save-status" />
     </div>
   );
 }
