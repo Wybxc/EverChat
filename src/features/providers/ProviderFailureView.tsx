@@ -44,6 +44,19 @@ export function ProviderFailureView({
               </div>
             ))}
           </dl>
+          {failure.responseBody && (
+            <div className="mt-2 min-w-0">
+              <p className="text-muted-foreground">{t(($) => $.failureResponseBody)}</p>
+              <pre
+                data-testid="provider-response-body"
+                aria-label={t(($) => $.failureResponseBody)}
+                tabIndex={0}
+                className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/50 p-2 font-mono text-xs leading-5"
+              >
+                {failure.responseBody}
+              </pre>
+            </div>
+          )}
           <div className="mt-2 flex flex-wrap gap-1">
             <Button
               type="button"

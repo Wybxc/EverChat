@@ -34,7 +34,11 @@ export function failureEntries(failure: ProviderFailure): [string, string][] {
   ].filter((entry): entry is [string, string] => typeof entry[1] === 'string' && Boolean(entry[1]));
 }
 export function failureDiagnosticText(summary: string, failure: ProviderFailure) {
-  return [summary, ...failureEntries(failure).map(([label, value]) => `${label}: ${value}`)].join(
-    '\n',
-  );
+  return [
+    summary,
+    ...failureEntries(failure).map(([label, value]) => `${label}: ${value}`),
+    ...(failure.responseBody
+      ? [`${t(($) => $.failureResponseBody)}:\n${failure.responseBody}`]
+      : []),
+  ].join('\n');
 }

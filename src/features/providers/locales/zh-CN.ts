@@ -121,6 +121,7 @@ export default {
   failureCode: '错误代码',
   failureType: '错误类型',
   failureMessage: '供应商信息',
+  failureResponseBody: '响应正文',
   failureRequestId: '请求 ID',
   failureTime: '时间',
   failureTruncated: '截断',

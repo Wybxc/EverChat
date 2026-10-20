@@ -175,6 +175,8 @@ export function installMockUpstream() {
             type: 'authentication_error',
             message: 'Invalid integration-test-key. request: {"messages":["private question"]}',
           },
+          detail: 'Authentication failed at the upstream gateway',
+          markup: '<script>window.providerBodyExecuted = true</script>',
         },
         {
           status: 401,

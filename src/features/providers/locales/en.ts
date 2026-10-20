@@ -124,6 +124,7 @@ export default {
   failureCode: 'Error code',
   failureType: 'Error type',
   failureMessage: 'Provider message',
+  failureResponseBody: 'Response body',
   failureRequestId: 'Request ID',
   failureTime: 'Time',
   failureTruncated: 'Truncated',

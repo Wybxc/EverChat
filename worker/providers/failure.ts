@@ -26,7 +26,11 @@ export function redactDiagnostic(
 ): string {
   let safe = value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '');
   for (const secret of secrets.filter(Boolean).sort((a, b) => b.length - a.length)) {
-    for (const token of new Set([secret, encodeURIComponent(secret)]))
+    for (const token of new Set([
+      secret,
+      encodeURIComponent(secret),
+      JSON.stringify(secret).slice(1, -1),
+    ]))
       safe = safe.split(token).join('[已隐藏]');
   }
   safe = safe
@@ -56,6 +60,42 @@ function safeEndpoint(value: string): string | undefined {
   }
 }
 
+function diagnosticBody(value: string, secrets: readonly string[]) {
+  let safe: string;
+  try {
+    safe = JSON.stringify(
+      JSON.parse(value),
+      (key, entry: unknown) => {
+        if (
+          /^(?:(?:x[-_])?api[-_ ]?key|authorization|access[-_ ]?token|secret|password)$/i.test(key)
+        )
+          return '[已隐藏]';
+        if (
+          /^(?:request(?:[-_]?body)?|(?:system[-_]?)?prompt|messages|input|contents|headers)$/i.test(
+            key,
+          )
+        )
+          return '[已省略请求内容]';
+        return typeof entry === 'string' ? redactDiagnostic(entry, secrets, 16 * 1024) : entry;
+      },
+      2,
+    );
+  } catch {
+    // A truncated JSON body cannot be parsed; omit any remaining request echo.
+    const dump =
+      /\b(?:request(?:[-_]?body)?|(?:system[-_]?)?prompt|messages|input|contents|headers)\s*["']?\s*[:=]/i.exec(
+        value,
+      );
+    safe = redactDiagnostic(
+      dump ? `${value.slice(0, dump.index)}[已省略请求内容]` : value,
+      secrets,
+      16 * 1024,
+    );
+  }
+  const text = bounded(safe.trim(), 4096);
+  return { text, truncated: text !== safe.trim() };
+}
+
 export function providerFailure(
   config: ProviderConfig | undefined,
   stage: ProviderFailure['stage'],
@@ -65,6 +105,7 @@ export function providerFailure(
     headers?: Headers;
     secrets?: readonly string[];
     truncated?: boolean;
+    responseBody?: string;
   } = {},
 ): ProviderFailure {
   const event = record(value),
@@ -84,6 +125,7 @@ export function providerFailure(
   const candidate = config?.baseUrl
     ? redactDiagnostic(safeEndpoint(config.baseUrl) ?? '', secrets, 2048)
     : '';
+  const body = options.responseBody ? diagnosticBody(options.responseBody, secrets) : undefined;
   const failure: ProviderFailure = {
     stage,
     occurredAt: Date.now(),
@@ -101,6 +143,7 @@ export function providerFailure(
     code: clean(error.code ?? event.code, 128),
     type: clean(error.type ?? error.status, 128),
     message: clean(error.message ?? (typeof raw === 'string' ? raw : undefined), 4096),
+    ...(body?.text ? { responseBody: body.text } : {}),
     requestId: clean(
       options.headers?.get('x-request-id') ??
         options.headers?.get('request-id') ??
@@ -108,12 +151,20 @@ export function providerFailure(
       200,
     ),
     retryAfter: clean(options.headers?.get('retry-after'), 100),
-    ...(options.truncated ? { truncated: true } : {}),
+    ...(options.truncated || body?.truncated ? { truncated: true } : {}),
   };
-  while (encoder.encode(JSON.stringify(failure)).length > 8192 && failure.message) {
-    failure.message = bounded(
-      failure.message,
-      Math.floor(encoder.encode(failure.message).length / 2),
+  while (
+    encoder.encode(JSON.stringify(failure)).length > 8192 &&
+    (failure.message || failure.responseBody)
+  ) {
+    const field =
+      encoder.encode(failure.responseBody ?? '').length >
+      encoder.encode(failure.message ?? '').length
+        ? 'responseBody'
+        : 'message';
+    failure[field] = bounded(
+      failure[field]!,
+      Math.floor(encoder.encode(failure[field]!).length / 2),
     );
     failure.truncated = true;
   }
@@ -185,7 +236,8 @@ export async function httpProviderError(
     status: response.status,
     headers: response.headers,
     secrets,
-    truncated: body.truncated || encoder.encode(body.text).length > 4096,
+    truncated: body.truncated,
+    responseBody: body.text,
   });
   return new ProviderError(providerErrorSummary(failure), failure);
 }

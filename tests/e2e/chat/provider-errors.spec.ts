@@ -119,19 +119,38 @@ for (const protocol of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
         } else {
           expect(failure?.status).toBe(401);
           expect(failure?.requestId).toBe('req-diagnostic-http');
+          expect(failure?.responseBody).toContain('Authentication failed at the upstream gateway');
         }
         await page.getByTestId('provider-failure').locator('summary').click();
         await expect(page.getByTestId('provider-failure')).toContainText(failure?.code ?? model);
+        if (mode === 'http') {
+          await expect(page.getByTestId('provider-response-body')).toHaveText(
+            failure!.responseBody!,
+          );
+          expect(
+            await page.evaluate(() => Reflect.get(window, 'providerBodyExecuted')),
+          ).toBeUndefined();
+          await expect(page.getByTestId('provider-response-body').locator('script')).toHaveCount(0);
+        }
         await page.getByRole('button', { name: '复制诊断信息', exact: true }).click();
         const copied = await page.evaluate(
           () => (window as unknown as { diagnosticCopy: string }).diagnosticCopy,
         );
         expect(copied).toContain(failure?.code ?? model);
         expect(copied).not.toContain('integration-test-key');
+        if (mode === 'http') expect(copied).toContain(failure!.responseBody!);
         await page.screenshot({ path: info.outputPath(`provider-error-${mode}-${protocol}.png`) });
         await page.reload();
         await expect(page.getByTestId('provider-failure')).toBeVisible();
         expect((await snapshot()).messages[1].generation?.failure).toEqual(failure);
+        if (mode === 'http') {
+          const details = page.getByTestId('provider-failure').locator('summary');
+          if (!(await page.getByTestId('provider-response-body').isVisible()))
+            await details.click();
+          await expect(page.getByTestId('provider-response-body')).toHaveText(
+            failure!.responseBody!,
+          );
+        }
         if (mode !== 'http') {
           await expect(page.getByTestId('assistant-message')).toHaveAttribute(
             'data-status',
@@ -187,8 +206,10 @@ for (const protocol of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
         expect(restored.snapshot.messages[1].generation.interrupted).toBe(
           message.generation?.interrupted,
         );
-        await page.getByTestId('provider-failure').locator('summary').click();
-        await page.getByRole('button', { name: '供应商设置', exact: true }).click();
+        const settingsButton = page.getByRole('button', { name: '供应商设置', exact: true });
+        if (!(await settingsButton.isVisible()))
+          await page.getByTestId('provider-failure').locator('summary').click();
+        await settingsButton.click();
         await expect(page.getByRole('dialog', { name: '设置', exact: true })).toBeVisible();
         await expect(page.getByLabel('名称', { exact: true })).toHaveValue('错误诊断供应商');
       } finally {
@@ -237,6 +258,7 @@ test('a provider model-list 401 keeps the Access session and exposes diagnostics
     await failure.locator('summary').click();
     await expect(failure.locator('dd').filter({ hasText: /^401$/ })).toBeVisible();
     await expect(failure).toContainText('Unauthorized');
+    await expect(page.getByTestId('provider-response-body')).toContainText('Unauthorized');
     expect((await page.request.get('/api/session')).ok()).toBe(true);
     await expect(page.getByRole('dialog', { name: '设置', exact: true })).toBeVisible();
   } finally {

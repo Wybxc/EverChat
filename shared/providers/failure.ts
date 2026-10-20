@@ -32,6 +32,7 @@ export const providerFailureSchema = v.strictObject({
   code: v.optional(text(128)),
   type: v.optional(text(128)),
   message: v.optional(text(4096)),
+  responseBody: v.optional(text(4096)),
   requestId: v.optional(text(200)),
   retryAfter: v.optional(text(100)),
   truncated: v.optional(v.boolean()),
