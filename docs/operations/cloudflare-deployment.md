@@ -1,6 +1,6 @@
 # Cloudflare 生产部署与用量告警
 
-更新日期：2026-10-19。以下为已保存并验证的实际配置；费用以账户账单和 Cloudflare 当前规则为准。
+更新日期：2026-10-20。以下为已保存并验证的实际配置；费用以账户账单和 Cloudflare 当前规则为准。
 
 2026-10-20 配置整理：仓库 `wrangler.jsonc` 不再包含本部署的域名、AUD、团队域名或允许邮箱。已有参数保留在生产 Worker 的变量中，`keep_vars: true` 防止后续发布清除；自定义域名由控制台管理。Worker、DO、Workflow、R2 的名称和绑定保持不变，自动构建命令无需调整。下文的个人站点信息为本次部署记录，不是其他部署者的默认配置。
 
@@ -22,6 +22,16 @@
 原 `chat` CNAME 指向已下线的 Tunnel；经用户授权已切换到 Worker Custom Domain。Access 在域名切换前已启用。R2 不开放公共桶或 `r2.dev`，附件由受保护的 Worker 路由读取。
 
 生产空间首次启动为空；模型供应商由用户在网页配置。开发密钥、`.dev.vars`、本地数据、临时签名夹具和测试接口没有上传到 GitHub 或生产 Worker。
+
+## GitHub 登录（2026-10-20）
+
+Access 应用 EverChat 已保存为只提供 GitHub 登录，关闭「接受所有可用的标识提供程序」，开启「应用即时身份验证」。现有所有者邮箱 `wybxc@qq.com`、四个受保护路径、AUD 和 24 小时应用会话时长不变，前端、SW 和公开分享仍可匿名访问。账户级 One-time PIN 身份提供商保留，但不在 EverChat 的可选登录方式中。
+
+GitHub 专用 OAuth 应用为 Wybxc 账户下的 [EverChat Access](https://github.com/settings/applications/3947872)，回调为 `https://wybxc.cloudflareaccess.com/cdn-cgi/access/callback`。Cloudflare 身份提供商为 `GitHub`，只授权 `user:email`、`read:org`；未为受限组织额外授权。客户端密钥仅保存到 Cloudflare Access，未写入仓库、Worker 变量或前端。
+
+Cloudflare 身份提供商测试显示「Your connection works!」，GitHub 返回邮箱 `wybxc@qq.com`，与现有 Allow 规则一致。保存后重新打开应用配置，确认仅选择 GitHub；正式站点可正常加载并同步。浏览器现有应用令牌的身份仍为 One-time PIN，因此本次未把已有会话的正常访问算作全新 GitHub 应用登录验收，也未撤销用户其他设备的会话。后续重新认证使用新的登录入口。
+
+本次仅修改 Access 与 GitHub 配置，无需发布认证代码或迁移数据。要使用通行密钥，应在 GitHub 账户中配置并在 GitHub 登录时选择；接入 GitHub 本身不强制每次使用通行密钥。配置依据见 [Cloudflare GitHub 集成](https://developers.cloudflare.com/cloudflare-one/integrations/identity-providers/github/)、[GitHub 通行密钥登录](https://docs.github.com/en/authentication/authenticating-with-a-passkey/signing-in-with-a-passkey)。
 
 ## GitHub 自动部署
 

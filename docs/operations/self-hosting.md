@@ -40,6 +40,12 @@ Worker 会再次校验 JWT 的签名、issuer、audience、有效期和允许身
 
 保留 `workers_dev: false`、`preview_urls: false`，避免出现未纳入域名访问规则的备用入口。域名在控制台管理，仓库不声明 `routes`；普通部署不重新分配已绑定的自定义域名。静态资源保留 SPA 回退、`html_handling: none` 及 `/api`、`/auth`、`/public` 的 `run_worker_first` 配置。
 
+### 可选：使用 GitHub 登录
+
+按照 [Cloudflare GitHub 集成文档](https://developers.cloudflare.com/cloudflare-one/integrations/identity-providers/github/)创建专用 GitHub OAuth 应用，回调地址使用 `https://<你的团队域名>/cdn-cgi/access/callback`。将客户端 ID 和密钥填入 Cloudflare 身份提供商，密钥不写入仓库或前端。
+
+先通过身份提供商的测试入口核对返回邮箱，与 Access Allow 规则和 `ACCESS_ALLOWED_EMAILS` 一致，再在 EverChat 应用中选择 GitHub。只使用 GitHub 时，关闭「接受所有可用的标识提供程序」并开启「应用即时身份验证」。应用认证代码无需修改，已有会话不等于一次新的登录验证。
+
 ## 3. 创建附件桶并部署
 
 ```sh
