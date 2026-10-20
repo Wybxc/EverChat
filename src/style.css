@@ -758,6 +758,7 @@ html.public-share-document,
 }
 @media (any-pointer: coarse) {
   [data-slot='input'],
+  [data-slot='input-group-control'],
   [data-slot='command-input'],
   [data-slot='native-select'],
   [data-slot='textarea'],
