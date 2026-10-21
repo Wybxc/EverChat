@@ -22,15 +22,27 @@
 | 管理页 Chromium／WebKit   | 桌面浅色与手机深色创建、一次性显示、重命名、空名拒绝、取消删除、删除后 401、焦点与无横向溢出通过             |
 | 官方 MCP Inspector 2.11.0 | auto／legacy 发现四工具，模型列表、正常问答、思考取回、完成任务取消、撤销拒绝通过                            |
 | `pnpm build`              | 类型检查、双 HTML 及 SW 构建通过                                                                             |
-| Wrangler dry-run          | 仅本地打包，Worker gzip 758.47 KiB；未上传或部署                                                             |
+| Wrangler dry-run          | 本地打包通过，Worker gzip 758.47 KiB                                                                         |
 | MCP PWA 回归              | Chromium／WebKit 下导航 `/mcp` 取得原 JSON 401，不被 SPA 替换，不进入预缓存或模块缓存                        |
 
 真实 Worker 使用本地 workerd 和模拟供应商，未为这些检查发起实际付费模型请求。Inspector 的密钥配置保存在权限受限的临时文件中，完成后删除并撤销测试密钥。另一客户端是官方 `@modelcontextprotocol/client` 2.3.1；未修改用户现有客户端配置。
 
-## 发布边界
+## 生产迁移与发布
 
-当前未发布生产。Conversation／Library 版本从 2 升至 3，需要先完成[离线维护](../operations/offline-storage-migration.md#mcp-存储版本-3)，再部署业务构建。不能将此分支直接部署到仍为版本 2 的数据库。
+已完成[离线维护](../operations/offline-storage-migration.md#mcp-存储版本-3)后发布到 `https://chat.wybxc.cc`。101 个 Conversation 和 1 个 Library 从版本 2 升至 3，676 条消息及分支保留，线上结构、索引和逐行值与本地结果全部一致。私有备份已转存并逐文件校验 SHA-256；临时维护入口、批次回执和 `OPS_*` 变量已清除，原 Access 参数、分享及通知 Secrets 保留。
 
-已验证的是本地协议、业务与浏览器行为；真实 Cloudflare Workers Free 的 CPU／活跃时长、线上 Access 路径及真实供应商调用尚未单独测量。现有每次工具请求会消耗 Worker 与有限次数 DO RPC；等待采用 1／2／4 秒退避，DO 不持有等待请求，也不轮询全文。
+首次业务恢复版本 `399662d1-4196-42b1-bb9f-391b15f988d8`，代码提交 `5d56e0b`，前端版本 `5d56e0b-mcp`。生产只读及短期测试密钥验收：
+
+- 官方客户端 auto／legacy 均连接同域 `/mcp`，发现四个工具和 8 个已启用模型，结构化错误返回正常。
+- 创建、重命名、脱敏列表和最近使用时间正常；测试密钥在完成后删除，再次访问返回 401。完整密钥仅留在验收进程内存，没有写入文件。
+- 无密钥返回 401、跨源调用返回 403；原 `/api` 仍受 Access 保护，临时 `/api/__operations/identity` 返回 404。
+- 桌面浅色／手机深色的真实生产前端可打开「设置 → MCP」，接口地址正确，无 JavaScript 异常和横向溢出。
+- 逐页读回维护前 99 个可见对话的 672 条消息，所有消息 ID 和内容摘要保持一致。恢复后新增的正常对话单独计数，不纳入旧数据等同比较。
+
+本轮生产验收没有调用付费模型，也没有修改现有客户端配置、用户供应商设置或 Access 规则。
+
+## 验证边界
+
+已验证本地完整聊天行为和生产协议、鉴权与界面；真实 Cloudflare Workers Free 的 CPU／活跃时长以及通过 MCP 发起的真实供应商问答尚未单独测量。现有每次工具请求会消耗 Worker 与有限次数 DO RPC；等待采用 1／2／4 秒退避，DO 不持有等待请求，也不轮询全文。
 
 附件输入、显式 messages 历史、工作区管理、标准 Tasks 与 OAuth 只保留为后续扩展，未当作本轮已交付能力。

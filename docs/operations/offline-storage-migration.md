@@ -145,3 +145,15 @@ MCP 发布要求 Conversation／Library 的 `storage_schema` 从 2 升至 3；Us
 必须使用上文维护窗口的完整流程：暂停自动构建和新生成，确认现有任务结束，`prepare → preflight → backup → convert → apply → verify → cleanup` 后再部署新业务构建。备份及转换清单已纳入两张 MCP 表；转换在本地 Node/SQLite 中完成，不在业务请求、首次 MCP 访问或 Alarm 中迁移。
 
 旧业务版本不能读取版本 3；需要回滚时，先按原始备份恢复数据库并校验，再恢复旧业务版本。新部署使用空数据库时直接创建当前结构，不需要历史迁移。
+
+### 生产执行（2026-10-21）
+
+已在维护窗口完成 `prepare → preflight → backup → convert → apply → verify → cleanup`。控制面发现 101 个对象，合并 Library 引用后共 102 个：101 个 Conversation 和 1 个 Library，全部从版本 2 升至 3。线上表结构、索引／触发器和逐行值于 `2026-10-21T06:07:45Z` 与本地预期比较通过。
+
+共保留 676 条消息，包含已删除对象中的记录；维护前的 99 个可见对话含 672 条消息。消息、分支、运行记录及其他有效设置均未改写。Library 新增空的 `mcp_keys`、`mcp_requests`；本地同时清除 81 份设置中已废弃的 `useSummaries` 字段和 81 张空的 `tool_stream_commits` 表，未删除正文、思考或历史摘要。备份确认没有活跃生成、复制或导入任务。UsageStore、ShareStore、DO KV 和 R2 附件不在本次补丁范围内。
+
+维护前业务版本为 `a0dc77bf-8013-4efd-b529-27da485e1dbe`，维护版本为 `4c7fc2f1-ca9a-44f3-9d29-eb12c8dd89b9`，首次正式恢复版本为 `399662d1-4196-42b1-bb9f-391b15f988d8`，代码提交 `5d56e0b`。回滚仍须先使用本批原始备份恢复数据库，再恢复旧业务代码。
+
+私有备份转存到 `.wrangler/operations/storage-2026-10-21-mcp`，目录 0700、文件 0600，逐文件核对 SHA-256。备份不包含 Access 会话令牌、认证日志或附件文件。首次备份遇到网络超时后沿用同一目录续做，未覆盖已经完成的原始备份。独立对象／表的备份和核验读取最多各 4 路并发；写回、回滚及单表分页保持串行。
+
+正式恢复使用本机私有构建配置，显式包含维护前的全部普通部署变量，设置 `keep_vars: false`，以移除临时 `OPS_RUN_ID`、`OPS_ADMIN_EMAIL`；Wrangler 保留已有 Secrets。不能直接关闭 `keep_vars` 却遗漏 Access 身份参数。普通自动部署继续使用仓库的 `keep_vars: true`，私有值不进入 Git。
