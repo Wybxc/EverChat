@@ -32,33 +32,36 @@ export function ModelPicker({
   const selectedInMenu = useRef(false);
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          role="combobox"
-          data-model-key={modelSelectionKey(selected)}
-          aria-label={t(($) => $.chatModel)}
-          aria-expanded={open}
-          className="min-w-11 flex-1 justify-between gap-1 px-2 sm:max-w-80"
-          title={`${selected.providerName} · ${selected.name}`}
-        >
-          <span className="truncate">
-            {selected.providerName} · {selected.name}
-          </span>
-          <ChevronDown className="size-3.5 shrink-0" />
-        </Button>
+      <PopoverTrigger
+        render={
+          <Button
+            type="button"
+            variant="ghost"
+            role="combobox"
+            data-model-key={modelSelectionKey(selected)}
+            aria-label={t(($) => $.chatModel)}
+            aria-expanded={open}
+            className="min-w-11 flex-1 justify-between gap-1 px-2 sm:max-w-80"
+            title={`${selected.providerName} · ${selected.name}`}
+          />
+        }
+      >
+        <span className="truncate">
+          {selected.providerName} · {selected.name}
+        </span>
+        <ChevronDown className="size-3.5 shrink-0" />
       </PopoverTrigger>
       <PopoverContent
         side="top"
         align="start"
         className="w-80 max-w-[calc(100vw-2rem)] p-0"
-        onCloseAutoFocus={(event) => {
+        finalFocus={() => {
           if (selectedInMenu.current) {
-            event.preventDefault();
             selectedInMenu.current = false;
             focusComposer();
+            return false;
           }
+          return true;
         }}
       >
         <Command>
