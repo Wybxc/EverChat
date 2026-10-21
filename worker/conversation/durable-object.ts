@@ -1924,7 +1924,7 @@ export class Conversation extends DurableObject<Env> {
         runId,
         claim.assistantId!,
         async (batches) => {
-          const saved = this.commit(runId, batches);
+          const saved = await this.commit(runId, batches);
           if (saved) await this.ctx.storage.sync();
           return saved;
         },
@@ -2091,7 +2091,7 @@ export class Conversation extends DurableObject<Env> {
       assistantId: run.assistantId,
     };
   }
-  commit(runId: string, batches: StreamBatch[]): boolean {
+  async commit(runId: string, batches: StreamBatch[]): Promise<boolean> {
     if (this.deletedAt) return false;
     const run = this.run(runId),
       message = run && this.messages.rawMessage(run.assistantId);
@@ -2101,29 +2101,54 @@ export class Conversation extends DurableObject<Env> {
     validateCommit(commit);
     const first = batches[0],
       last = batches.at(-1)!;
-    if (last.chunkSeq <= run.chunkSeq) {
-      this.ctx.storage.transactionSync(() => {
-        if (this.journal.append(commit)) throw new Error('Missing acknowledged stream commit');
-      });
-      return true;
-    }
-    if (first.chunkSeq !== run.chunkSeq + 1 || first.startOffset !== run.durableOffset)
+    if (
+      last.chunkSeq > run.chunkSeq &&
+      (first.chunkSeq !== run.chunkSeq + 1 || first.startOffset !== run.durableOffset)
+    )
       throw new Error('Stream sequence or offset gap');
-    if (this.env.GENERATION_METRICS === '1' && !this.meter)
-      this.meter = new GenerationMeter(runId, Date.now, 'since-last-resume', 'do-v1');
-    if (this.capacityBytes(MAX_DATABASE_WRITE_BYTES) > MAX_DATABASE_WRITE_BYTES)
-      throw capacityError('write');
+    const prepared = await this.journal.prepare(commit, {
+      protocol: message.tools
+        ? 'openai-chat'
+        : (JSON.parse(run.config!) as ProviderConfig).provider,
+    });
     let change: Commit;
     try {
+      // Preparation may yield to the SDK. Deletion, a watchdog or a terminal
+      // cancellation must not be overwritten by the subsequently prepared tail.
+      const current = this.deletedAt ? undefined : this.run(runId);
+      const currentMessage = current
+        ? this.query<{ status: string; runId: string | null }>(
+            'SELECT status, runId FROM messages WHERE id = ?',
+            current.assistantId,
+          ).toArray()[0]
+        : undefined;
+      if (
+        !current ||
+        current.assistantId !== message.id ||
+        currentMessage?.status !== 'running' ||
+        currentMessage.runId !== runId
+      ) {
+        prepared.discard();
+        return false;
+      }
+      if (last.chunkSeq <= current.chunkSeq) {
+        this.ctx.storage.transactionSync(() => {
+          if (prepared.apply()) throw new Error('Missing acknowledged stream commit');
+        });
+        return true;
+      }
+      if (
+        current.streamVersion !== STREAM_VERSION ||
+        first.chunkSeq !== current.chunkSeq + 1 ||
+        first.startOffset !== current.durableOffset
+      )
+        throw new Error('Stream sequence or offset gap');
+      if (this.env.GENERATION_METRICS === '1' && !this.meter)
+        this.meter = new GenerationMeter(runId, Date.now, 'since-last-resume', 'do-v1');
+      if (this.capacityBytes(MAX_DATABASE_WRITE_BYTES) > MAX_DATABASE_WRITE_BYTES)
+        throw capacityError('write');
       change = this.ctx.storage.transactionSync(() => {
-        if (
-          !this.journal.append(commit, {
-            protocol: message.tools
-              ? 'openai-chat'
-              : (JSON.parse(run.config!) as ProviderConfig).provider,
-          })
-        )
-          throw new Error('Conflicting stream sequence');
+        if (!prepared.apply()) throw new Error('Conflicting stream sequence');
         this.query(
           'UPDATE runs SET chunkSeq = ?, durableOffset = ?, updatedAt = ? WHERE id = ?',
           last.chunkSeq,
@@ -2137,6 +2162,7 @@ export class Conversation extends DurableObject<Env> {
         return { type: 'commit', ...commit, seq };
       });
     } catch (error) {
+      prepared.discard();
       this.journal.forget(runId);
       throw error;
     }

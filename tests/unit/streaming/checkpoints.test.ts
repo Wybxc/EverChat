@@ -106,7 +106,7 @@ test('context reads only the selected parent path and applicable summaries, reta
   }
 });
 
-test('canonical checkpoints recover split UTF-8 and SSE across restarts without a persistent wire log', () => {
+test('canonical checkpoints recover split UTF-8 and SSE across restarts without a persistent wire log', async () => {
   const f = fixture();
   try {
     const text = '🙂正文'.repeat(3000),
@@ -117,10 +117,11 @@ test('canonical checkpoints recover split UTF-8 and SSE across restarts without 
     for (let i = 0; i < raw.length; i += 113) {
       const batches = [...streamBatches('r', 'a', seq, offset, raw.slice(i, i + 113))];
       // Every checkpoint gets a cold decoder, including unfinished multibyte input.
-      new GenerationCheckpoints(f.query).append(
+      const prepared = await new GenerationCheckpoints(f.query).prepare(
         { runId: 'r', messageId: 'a', batches },
         { protocol: 'openai-chat' },
       );
+      prepared.apply();
       seq = batches.at(-1)!.chunkSeq;
       offset = batches.at(-1)!.endOffset;
     }
@@ -145,23 +146,25 @@ test('canonical checkpoints recover split UTF-8 and SSE across restarts without 
   }
 });
 
-test('rollback discards the decoder and retry saves exactly once; canonical chunks preserve surrogate boundaries', () => {
+test('rollback discards the decoder and retry saves exactly once; canonical chunks preserve surrogate boundaries', async () => {
   const f = fixture();
   try {
     const prefix = 'x'.repeat(4095) + '🙂';
     const first = [...streamBatches('r', 'a', 0, 0, wire(prefix, '思考'))];
     const commit = { runId: 'r', messageId: 'a', batches: first };
+    const prepared = await f.journal.prepare(commit, { protocol: 'openai-chat' });
+    assert.deepEqual(f.journal.read('a'), { content: '', reasoning: '' });
     f.db.exec('BEGIN');
-    f.journal.append(commit, { protocol: 'openai-chat' });
+    prepared.apply();
     f.db.exec('ROLLBACK');
-    f.journal.forget('r');
-    assert.equal(f.journal.append(commit, { protocol: 'openai-chat' }), true);
-    assert.equal(f.journal.append(commit), false);
+    prepared.discard();
+    assert.equal((await f.journal.prepare(commit, { protocol: 'openai-chat' })).apply(), true);
+    assert.equal((await f.journal.prepare(commit)).apply(), false);
     const last = first.at(-1)!;
     const second = [
       ...streamBatches('r', 'a', last.chunkSeq, last.endOffset, wire('末尾', '结束')),
     ];
-    f.journal.append({ ...commit, batches: second });
+    (await f.journal.prepare({ ...commit, batches: second })).apply();
     assert.deepEqual(f.journal.read('a'), { content: prefix + '末尾', reasoning: '思考结束' });
     f.journal.erase('a');
     assert.deepEqual(f.journal.read('a'), { content: '', reasoning: '' });
@@ -170,7 +173,74 @@ test('rollback discards the decoder and retry saves exactly once; canonical chun
   }
 });
 
-test('offline operations remove wire and event duplicates while preserving prefixes, versions and idempotency', () => {
+test('preparation leaves snapshots durable and discarding a prepared tail does not leak it into the next checkpoint', async () => {
+  const f = fixture();
+  try {
+    const batches = [...streamBatches('r', 'a', 0, 0, wire('已确认前缀', '思考'))];
+    const commit = { runId: 'r', messageId: 'a', batches };
+    const first = await f.journal.prepare(commit);
+    assert.equal(f.messages.message('a')!.durableOffset, 0);
+    assert.deepEqual(f.messages.message('a')!.parts, []);
+    assert.equal(f.query('SELECT * FROM generation_checkpoints').toArray().length, 0);
+    await assert.rejects(f.journal.prepare(commit), /Await the previous/);
+    first.apply();
+    const saved = f.messages.message('a')!;
+    const last = batches.at(-1)!;
+    const pending = await f.journal.prepare({
+      ...commit,
+      batches: [...streamBatches('r', 'a', last.chunkSeq, last.endOffset, wire('丢弃的尾部'))],
+    });
+    assert.deepEqual(f.messages.message('a'), saved);
+    pending.discard();
+    assert.throws(() => pending.apply(), /changed during preparation/);
+    const replacement = await f.journal.prepare({
+      ...commit,
+      batches: [...streamBatches('r', 'a', last.chunkSeq, last.endOffset, wire('新的尾部'))],
+    });
+    replacement.apply();
+    assert.deepEqual(f.journal.read('a'), {
+      content: '已确认前缀新的尾部',
+      reasoning: '思考',
+    });
+    assert.throws(() => replacement.apply(), /changed during preparation/);
+  } finally {
+    f.db.close();
+  }
+});
+
+test('a stale prepared checkpoint cannot overwrite a newer checkpoint or a forgotten decoder', async () => {
+  const f = fixture();
+  try {
+    const batches = [...streamBatches('r', 'a', 0, 0, wire('第一个版本'))];
+    const commit = { runId: 'r', messageId: 'a', batches };
+    const cold = new GenerationCheckpoints(f.query);
+    const first = await f.journal.prepare(commit);
+    const stale = await cold.prepare({
+      ...commit,
+      batches: [...streamBatches('r', 'a', 0, 0, wire('过期的版本'))],
+    });
+    first.apply();
+    assert.throws(() => stale.apply(), /changed during preparation/);
+    stale.discard();
+    assert.equal(f.journal.read('a').content, '第一个版本');
+    assert.equal((await cold.prepare(commit)).apply(), false);
+    await assert.rejects(cold.prepare({ ...commit, messageId: 'different' }), /identity/);
+    const last = batches.at(-1)!;
+    const next = {
+      ...commit,
+      batches: [...streamBatches('r', 'a', last.chunkSeq, last.endOffset, wire('尾部'))],
+    };
+    const forgotten = await f.journal.prepare(next);
+    f.journal.forget('r');
+    assert.throws(() => forgotten.apply(), /changed during preparation/);
+    (await f.journal.prepare(next)).apply();
+    assert.equal(f.journal.read('a').content, '第一个版本尾部');
+  } finally {
+    f.db.close();
+  }
+});
+
+test('offline operations remove wire and event duplicates while preserving prefixes, versions and idempotency', async () => {
   const f = fixture();
   try {
     f.query('DROP TABLE conversation_state');
@@ -205,8 +275,8 @@ test('offline operations remove wire and event duplicates while preserving prefi
       last.endOffset,
       JSON.stringify(batches),
     );
-    migrateStorage(f.db, 'conversation');
-    migrateStorage(f.db, 'conversation');
+    await migrateStorage(f.db, 'conversation');
+    await migrateStorage(f.db, 'conversation');
     assert.equal(f.messages.seq(), 501);
     assert.equal(f.messages.changes(0).messages[0].id, 'a');
     assert.equal(messageText(f.messages.message('a')!), '已保存正文');
@@ -245,7 +315,7 @@ test('latest state versions collapse notifications and retain tombstones for dis
   }
 });
 
-test('ten sibling versions retain semantic content once and stay below the former early database ceiling', () => {
+test('ten sibling versions retain semantic content once and stay below the former early database ceiling', async () => {
   const f = fixture();
   try {
     const frame = new TextDecoder().decode(wire('', '思考'));
@@ -266,7 +336,9 @@ test('ten sibling versions retain semantic content once and stay below the forme
         const batches = [
           ...streamBatches(runId, id, seq, offset, bytes.subarray(at, at + 24 * 1024)),
         ];
-        f.journal.append({ runId, messageId: id, batches }, { protocol: 'openai-chat' });
+        (
+          await f.journal.prepare({ runId, messageId: id, batches }, { protocol: 'openai-chat' })
+        ).apply();
         seq = batches.at(-1)!.chunkSeq;
         offset = batches.at(-1)!.endOffset;
         f.messages.advance([id]);

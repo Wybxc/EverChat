@@ -137,7 +137,7 @@ test('native maintenance transport rejects anonymous HTTP, preserves unrelated s
         method: 'POST',
         body: JSON.stringify({ runId, kind: 'library', id, action, ...more }),
       });
-    const patch = migrateStorage(local, 'library');
+    const patch = await migrateStorage(local, 'library');
     await assert.rejects(
       request('apply', { job: 'test-job', page: 1, statements: [patch[0]] }),
       /Patch page gap/,

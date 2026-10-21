@@ -49,7 +49,7 @@ const snapshot = (db: DatabaseSync) =>
     .all()
     .map(({ name, sql }) => ({ name, sql, rows: db.prepare(`SELECT * FROM "${name}"`).all() }));
 
-test('retired summary settings and private wire storage are cleaned only by a replayable offline patch', () => {
+test('retired summary settings and private wire storage are cleaned only by a replayable offline patch', async () => {
   const local = new DatabaseSync(':memory:'),
     remote = new DatabaseSync(':memory:');
   try {
@@ -71,7 +71,7 @@ test('retired summary settings and private wire storage are cleaned only by a re
     const before = snapshot(remote);
     initializeConversation(storage(remote).sql, false);
     assert.deepEqual(snapshot(remote), before);
-    const patch = migrateStorage(local, 'conversation');
+    const patch = await migrateStorage(local, 'conversation');
     for (const statement of patch)
       remote.prepare(statement.sql).run(...statement.args.map(decodeValue));
     assert.deepEqual(snapshot(remote), snapshot(local));
@@ -90,7 +90,7 @@ test('retired summary settings and private wire storage are cleaned only by a re
   }
 });
 
-test('offline conversion refuses active raw supplier streams without modifying the source', () => {
+test('offline conversion refuses active raw supplier streams without modifying the source', async () => {
   const db = new DatabaseSync(':memory:');
   try {
     initializeConversation(storage(db).sql, false);
@@ -101,14 +101,14 @@ test('offline conversion refuses active raw supplier streams without modifying t
       "INSERT INTO runs(id,conversationId,assistantId,context,updatedAt,streamVersion) VALUES ('r','c','a','[]',1,'raw-sse-v1')",
     );
     const before = snapshot(db);
-    assert.throws(() => migrateStorage(db, 'conversation'), /旧版流任务仍在进行/);
+    await assert.rejects(migrateStorage(db, 'conversation'), /旧版流任务仍在进行/);
     assert.deepEqual(snapshot(db), before);
   } finally {
     db.close();
   }
 });
 
-test('schema 1 accounting upgrades are offline, including deleted conversations', () => {
+test('schema 1 accounting upgrades are offline, including deleted conversations', async () => {
   for (const deleted of [false, true]) {
     const local = new DatabaseSync(':memory:'),
       remote = new DatabaseSync(':memory:');
@@ -122,7 +122,7 @@ test('schema 1 accounting upgrades are offline, including deleted conversations'
       const original = snapshot(remote);
       assert.throws(() => initializeConversation(storage(remote).sql, false), /本地运维迁移/);
       assert.deepEqual(snapshot(remote), original);
-      const patch = migrateStorage(local, 'conversation');
+      const patch = await migrateStorage(local, 'conversation');
       for (const statement of patch)
         remote.prepare(statement.sql).run(...statement.args.map(decodeValue));
       assert.deepEqual(snapshot(remote), snapshot(local));
@@ -144,7 +144,7 @@ test('schema 1 accounting upgrades are offline, including deleted conversations'
   }
 });
 
-test('application startup initializes a fresh schema repeatedly and rejects old or future databases without modifying them', () => {
+test('application startup initializes a fresh schema repeatedly and rejects old or future databases without modifying them', async () => {
   const db = new DatabaseSync(':memory:');
   try {
     // Vite/Miniflare records an object's name before invoking its constructor.
@@ -173,18 +173,18 @@ test('application startup initializes a fresh schema repeatedly and rejects old 
     );
     const future = snapshot(db);
     assert.throws(() => initializeConversation(storage(db).sql, false), /本地运维迁移/);
-    assert.throws(() => migrateStorage(db, 'conversation'), /Unsupported/);
+    await assert.rejects(migrateStorage(db, 'conversation'), /Unsupported/);
     assert.deepEqual(snapshot(db), future);
   } finally {
     db.close();
   }
 });
 
-test('local conversion emits a replayable patch, preserving IDs, timestamps, pins, copies and service credentials', () => {
+test('local conversion emits a replayable patch, preserving IDs, timestamps, pins, copies and service credentials', async () => {
   const local = legacyLibrary(),
     remote = legacyLibrary();
   try {
-    const patch = migrateStorage(local, 'library');
+    const patch = await migrateStorage(local, 'library');
     // Simulate a missing acknowledgement: each acknowledged batch is applied only
     // once by the maintenance bridge. Normal startup never executes this patch.
     remote.exec('BEGIN');
@@ -216,7 +216,7 @@ test('local conversion emits a replayable patch, preserving IDs, timestamps, pin
     initializeStorageSchema(storage(remote).query);
     initializeConversationMetadata(storage(remote));
     const before = snapshot(remote);
-    migrateStorage(remote, 'library');
+    await migrateStorage(remote, 'library');
     assert.deepEqual(snapshot(remote), before);
   } finally {
     local.close();
@@ -224,7 +224,7 @@ test('local conversion emits a replayable patch, preserving IDs, timestamps, pin
   }
 });
 
-test('failed offline conversions roll back all changes and leave the source intact for retry', () => {
+test('failed offline conversions roll back all changes and leave the source intact for retry', async () => {
   const db = new DatabaseSync(':memory:');
   try {
     initializeConversation(storage(db).sql, false);
@@ -235,10 +235,10 @@ test('failed offline conversions roll back all changes and leave the source inta
       CREATE TABLE stream_commits(runId TEXT,chunkSeq INTEGER,payload TEXT);
       INSERT INTO stream_commits VALUES ('r',1,'malformed');`);
     const before = snapshot(db);
-    assert.throws(() => migrateStorage(db, 'conversation'));
+    await assert.rejects(migrateStorage(db, 'conversation'));
     assert.deepEqual(snapshot(db), before);
     db.exec('DELETE FROM stream_commits');
-    migrateStorage(db, 'conversation');
+    await migrateStorage(db, 'conversation');
     initializeConversation(storage(db).sql, false);
   } finally {
     db.close();

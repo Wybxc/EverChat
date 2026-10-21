@@ -27,10 +27,26 @@ type Checkpoint = {
   digest: string;
 } & Record<string, SqlStorageValue>;
 
+export interface PreparedCheckpoint {
+  /** Synchronous writes only; the owning DO calls this inside transactionSync. */
+  apply(): boolean;
+  /** Also required after a failed transaction: an advanced decoder is not durable. */
+  discard(): void;
+}
+
+const sameCheckpoint = (a: Checkpoint | undefined, b: Checkpoint | undefined) =>
+  !a || !b
+    ? a === b
+    : a.messageId === b.messageId &&
+      a.chunkSeq === b.chunkSeq &&
+      a.rawOffset === b.rawOffset &&
+      a.digest === b.digest;
+
 // The public stream has one canonical semantic representation. Only the unfinished
 // protocol state survives alongside it; the wire history is never persisted.
 export class GenerationCheckpoints {
   private parsers = new Map<string, { offset: number; parser: ProviderStream }>();
+  private preparing = new Map<string, symbol>();
   constructor(private readonly store: SqlQuery) {}
   page(messageId: string, channel: 'content' | 'reasoning', offset: number, limit = 8192) {
     const ordinal = Math.floor(offset / CHUNK_CHARACTERS);
@@ -78,56 +94,74 @@ export class GenerationCheckpoints {
   }
   forget(runId: string) {
     this.parsers.delete(runId);
+    this.preparing.delete(runId);
   }
-  append(commit: StreamCommit, descriptor?: { protocol: ProviderKind }) {
+  async prepare(
+    commit: StreamCommit,
+    descriptor?: { protocol: ProviderKind },
+  ): Promise<PreparedCheckpoint> {
     const payload = validateCommit(commit),
       first = commit.batches[0],
       last = commit.batches.at(-1)!;
     const digest = createHash('sha256').update(payload).digest('hex');
     const previous = this.row(commit.runId);
+    if (previous && previous.messageId !== commit.messageId)
+      throw new Error('Stream checkpoint identity mismatch');
     if (previous && last.chunkSeq <= previous.chunkSeq) {
       if (
         last.chunkSeq === previous.chunkSeq &&
         (last.endOffset !== previous.rawOffset || previous.digest !== digest)
       )
         throw new Error('Conflicting stream commit');
-      return false;
+      return {
+        apply: () => {
+          if (!sameCheckpoint(previous, this.row(commit.runId)))
+            throw new Error('Stream checkpoint changed during preparation');
+          return false;
+        },
+        discard() {},
+      };
     }
     if (
       first.chunkSeq !== (previous?.chunkSeq ?? 0) + 1 ||
       first.startOffset !== (previous?.rawOffset ?? 0)
     )
       throw new Error('Stream sequence or offset gap');
+    if (this.preparing.has(commit.runId)) throw new Error('Await the previous stream checkpoint');
+    const token = Symbol(commit.runId);
+    this.preparing.set(commit.runId, token);
     let cached = this.parsers.get(commit.runId);
-    let before: { content: string; reasoning: string };
-    if (cached && cached.offset === (previous?.rawOffset ?? 0)) {
-      before = { content: cached.parser.content, reasoning: cached.parser.reasoning };
-    } else {
-      const raw = this.store<{ content: string; reasoning: string | null }>(
-        'SELECT content, reasoning FROM messages WHERE id = ?',
-        commit.messageId,
-      ).one();
-      before = this.read(commit.messageId, raw.content, raw.reasoning ?? '');
-    }
-    if (!cached || cached.offset !== (previous?.rawOffset ?? 0)) {
-      const state = previous ? (JSON.parse(previous.state) as StreamState) : undefined;
-      cached = {
-        offset: previous?.rawOffset ?? 0,
-        parser: new ProviderStream(
-          state?.protocol ?? descriptor?.protocol ?? 'openai-chat',
-          true,
-          state,
-          before.content,
-          before.reasoning,
-        ),
-      };
-    }
+    // The decoder being advanced is exclusively owned by this preparation. A
+    // snapshot read can only see SQLite's last confirmed content and state.
+    this.parsers.delete(commit.runId);
     try {
-      for (const batch of commit.batches) {
-        cached.parser.feed(validateBatch(batch));
-        cached.parser.drainDeltas();
+      let before: { content: string; reasoning: string };
+      if (cached && cached.offset === (previous?.rawOffset ?? 0)) {
+        before = { content: cached.parser.content, reasoning: cached.parser.reasoning };
+      } else {
+        const raw = this.store<{ content: string; reasoning: string | null }>(
+          'SELECT content, reasoning FROM messages WHERE id = ?',
+          commit.messageId,
+        ).one();
+        before = this.read(commit.messageId, raw.content, raw.reasoning ?? '');
+        const state = previous ? (JSON.parse(previous.state) as StreamState) : undefined;
+        cached = {
+          offset: previous?.rawOffset ?? 0,
+          parser: new ProviderStream(
+            state?.protocol ?? descriptor?.protocol ?? 'openai-chat',
+            true,
+            state,
+            before.content,
+            before.reasoning,
+          ),
+        };
       }
-      const state = JSON.stringify(cached.parser.checkpoint());
+      const parser = cached.parser;
+      for (const batch of commit.batches) {
+        parser.feed(validateBatch(batch));
+        parser.drainDeltas();
+      }
+      const state = JSON.stringify(parser.checkpoint());
       if (payloadBytes(state) > MAX_SQL_PAYLOAD_BYTES - 4096)
         throw new AppError(problem('REQUEST_TOO_LARGE'), '生成解析检查点超过存储保护大小。');
       const fromChunks =
@@ -135,36 +169,61 @@ export class GenerationCheckpoints {
           'SELECT 1 FROM message_content_chunks WHERE messageId = ? LIMIT 1',
           commit.messageId,
         ).toArray().length > 0;
-      this.writeChannel(
-        commit.messageId,
-        'content',
-        fromChunks ? before.content : '',
-        cached.parser.content,
-      );
-      this.writeChannel(
-        commit.messageId,
-        'reasoning',
-        fromChunks ? before.reasoning : '',
-        cached.parser.reasoning,
-      );
-      this.store(
-        'UPDATE messages SET content = ?, reasoning = ?, durableOffset = ? WHERE id = ?',
-        '',
-        '',
-        last.endOffset,
-        commit.messageId,
-      );
-      this.store(
-        'INSERT INTO generation_checkpoints VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(runId) DO UPDATE SET chunkSeq = excluded.chunkSeq, rawOffset = excluded.rawOffset, state = excluded.state, digest = excluded.digest',
-        commit.runId,
-        commit.messageId,
-        last.chunkSeq,
-        last.endOffset,
-        state,
-        digest,
-      );
-      this.parsers.set(commit.runId, { offset: last.endOffset, parser: cached.parser });
-      return true;
+      let applied = false;
+      return {
+        apply: () => {
+          if (
+            applied ||
+            this.preparing.get(commit.runId) !== token ||
+            !sameCheckpoint(previous, this.row(commit.runId))
+          )
+            throw new Error('Stream checkpoint changed during preparation');
+          try {
+            this.writeChannel(
+              commit.messageId,
+              'content',
+              fromChunks ? before.content : '',
+              parser.content,
+            );
+            this.writeChannel(
+              commit.messageId,
+              'reasoning',
+              fromChunks ? before.reasoning : '',
+              parser.reasoning,
+            );
+            this.store(
+              'UPDATE messages SET content = ?, reasoning = ?, durableOffset = ? WHERE id = ?',
+              '',
+              '',
+              last.endOffset,
+              commit.messageId,
+            );
+            this.store(
+              'INSERT INTO generation_checkpoints VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(runId) DO UPDATE SET chunkSeq = excluded.chunkSeq, rawOffset = excluded.rawOffset, state = excluded.state, digest = excluded.digest',
+              commit.runId,
+              commit.messageId,
+              last.chunkSeq,
+              last.endOffset,
+              state,
+              digest,
+            );
+            this.parsers.set(commit.runId, { offset: last.endOffset, parser });
+            this.preparing.delete(commit.runId);
+            applied = true;
+            return true;
+          } catch (error) {
+            this.forget(commit.runId);
+            throw error;
+          }
+        },
+        discard: () => {
+          if (
+            this.preparing.get(commit.runId) === token ||
+            this.parsers.get(commit.runId)?.parser === parser
+          )
+            this.forget(commit.runId);
+        },
+      };
     } catch (error) {
       this.forget(commit.runId);
       throw error;
