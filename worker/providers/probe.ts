@@ -3,7 +3,7 @@ import { valibotSchema } from '@ai-sdk/valibot';
 import * as v from 'valibot';
 import type { ProviderConfig } from '../../shared/providers/types';
 import type { ModelProbeResult, ProbeCapability } from '../../shared/models/probe';
-import { providerCallOptions, providerModel, providerRequestInit } from './sdk';
+import { providerGenerationOptions, providerModel, providerRequestInit } from './sdk';
 import { probeImage } from './probe-image';
 import { sdkProviderError } from './sdk-diagnostics';
 import { httpProviderError } from './failure';
@@ -111,7 +111,6 @@ export async function probeModelCapability(
       maxOutputTokens: 256,
       reasoningEnabled: false,
     };
-    const options = providerCallOptions(probeConfig, [], abort);
     // A tool-capable model must make the actual call. No returned tool is executed.
     const response = await generateText({
       model: providerModel(probeConfig, boundedFetch),
@@ -120,8 +119,7 @@ export async function probeModelCapability(
       ...(tools ? { toolChoice: 'required' } : {}),
       maxRetries: 0,
       abortSignal: abort,
-      maxOutputTokens: options.maxOutputTokens,
-      providerOptions: options.providerOptions,
+      ...providerGenerationOptions(probeConfig),
       telemetry: { isEnabled: false },
       onLanguageModelCallEnd(event) {
         // A valid response is billable even if Core subsequently rejects its

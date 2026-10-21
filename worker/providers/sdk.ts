@@ -1,8 +1,4 @@
-import type {
-  LanguageModelV4,
-  LanguageModelV4CallOptions,
-  LanguageModelV4Prompt,
-} from '@ai-sdk/provider';
+import type { LanguageModelV4, LanguageModelV4CallOptions } from '@ai-sdk/provider';
 import { createOpenResponses } from '@ai-sdk/open-responses';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
@@ -70,12 +66,14 @@ export function providerModel(
   }
 }
 
-export function providerCallOptions(
+/** Provider controls shared by Core streaming, titles and capability probes. */
+export function providerGenerationOptions(
   config: ProviderConfig,
-  prompt: LanguageModelV4Prompt,
-  signal: AbortSignal,
-  tools?: LanguageModelV4CallOptions['tools'],
-): LanguageModelV4CallOptions {
+  toolMode = false,
+): Pick<
+  LanguageModelV4CallOptions,
+  'maxOutputTokens' | 'temperature' | 'topP' | 'reasoning' | 'providerOptions'
+> {
   const compatible =
     config.provider.startsWith('openai-') && new URL(config.baseUrl).hostname !== 'api.openai.com';
   const deepseek =
@@ -87,12 +85,7 @@ export function providerCallOptions(
     config.reasoningEnabled &&
     (!config.modelMetadata || config.modelMetadata.reasoningEfforts.length > 0);
   const effort = controlReasoning ? config.reasoningEffort : undefined;
-  const toolMode = Boolean(tools?.length);
   return {
-    prompt,
-    includeRawChunks: true,
-    tools,
-    ...(toolMode ? { toolChoice: { type: 'auto' as const } } : {}),
     maxOutputTokens: config.maxOutputTokens ?? undefined,
     temperature: config.temperature,
     topP: config.topP,
@@ -135,6 +128,5 @@ export function providerCallOptions(
           : config.provider === 'gemini' && config.reasoningEnabled
             ? { google: { thinkingConfig: { includeThoughts: true } } }
             : undefined,
-    abortSignal: signal,
   };
 }

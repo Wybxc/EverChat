@@ -65,7 +65,7 @@ const continuationInput = (call: WebToolCandidate) =>
 
 // Some SDKs synthesize missing or duplicate call IDs. Reject ambiguous wire IDs
 // before decoding so a saved result cannot accidentally answer a different call.
-function toolWireIdentity(config: ProviderConfig, enabled: readonly WebToolName[]) {
+function toolWireIdentity(config: ProviderConfig) {
   const ids = new Set<string>(),
     slots = new Map<string, { id: string; name: string }>();
   const add = (slot: string, value: unknown, name: unknown, partial = false) => {
@@ -309,10 +309,10 @@ export class ProviderToolCollector {
     private readonly enabled: readonly WebToolName[],
   ) {
     assertWebToolSupport(config.modelMetadata, enabled);
-    this.wireIdentity = toolWireIdentity(config, enabled);
+    this.wireIdentity = toolWireIdentity(config);
   }
   add(part: LanguageModelV4StreamPart) {
-    const { content, calls, blocks, toolBlocks, enabled, config, wireIdentity } = this;
+    const { content, blocks, toolBlocks, wireIdentity } = this;
     if (part.type === 'raw') {
       wireIdentity.observe(object(part.rawValue));
       return;
@@ -497,7 +497,6 @@ export function providerToolPrompt(
       if (turn.finishReason !== 'tool-calls' || outcomes.length !== turn.calls.length)
         throw new Error();
       const actual = turn.content.filter((part) => part.type === 'tool-call');
-      if (actual.length !== turn.calls.length) throw new Error();
       const results = turn.calls.map((candidate) => {
         const call = validateWebToolCandidate(candidate, enabled),
           matching = actual.find((part) => part.toolCallId === call.id);

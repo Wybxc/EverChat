@@ -6,7 +6,7 @@ import { experimental_streamTextLowMemory as streamText, tool, wrapLanguageModel
 import { resolveModelMetadata } from '../../../shared/models/metadata';
 import type { ProviderConfig, ProviderKind } from '../../../shared/providers/types';
 import { webToolInputSchemas } from '../../../shared/web-tools/tasks';
-import { providerCallOptions, providerModel } from '../../../worker/providers/sdk';
+import { providerGenerationOptions, providerModel } from '../../../worker/providers/sdk';
 import { ProviderToolCollector } from '../../../worker/providers/tool-turn';
 import { ProviderWireGuard } from '../../../worker/providers/stream-errors';
 import { toolQuery, toolStream } from '../../support/providers/tool-streams';
@@ -68,7 +68,7 @@ for (const provider of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
         },
       },
     });
-    const options = providerCallOptions(config, [], signal);
+    const options = providerGenerationOptions(config);
     const result = streamText({
       model,
       messages: [{ role: 'user', content: 'Find sources' }],

@@ -15,7 +15,7 @@ import type { ProviderModel } from '../../../shared/models/types';
 import { mergeProviderSettings, modelSchema } from '../../../shared/providers/settings';
 import type { ProviderSettingsInput } from '../../../shared/providers/types';
 import { assertWebToolSupport } from '../../../shared/web-tools/tasks';
-import { providerCallOptions } from '../../../worker/providers/sdk';
+import { providerGenerationOptions } from '../../../worker/providers/sdk';
 
 const model: ProviderModel = { id: 'catalog-fixture', name: 'My model', enabled: true };
 const raw = {
@@ -120,19 +120,15 @@ test('new directory models are usable offline and have explicit sources; aliases
     ['openai-responses', 'gateway/gpt-5.4', 'https://provider.test/v1'],
   ] as const) {
     const modelMetadata = resolveModelMetadata(provider, { ...model, id });
-    const options = providerCallOptions(
-      {
-        provider,
-        model: id,
-        baseUrl,
-        modelMetadata,
-        reasoningEnabled: true,
-        systemPrompt: '',
-        maxOutputTokens: null,
-      },
-      [],
-      new AbortController().signal,
-    );
+    const options = providerGenerationOptions({
+      provider,
+      model: id,
+      baseUrl,
+      modelMetadata,
+      reasoningEnabled: true,
+      systemPrompt: '',
+      maxOutputTokens: null,
+    });
     const serialized = JSON.stringify(options);
     assert.equal(options.reasoning, undefined);
     assert.ok(!serialized.includes('adaptive'));

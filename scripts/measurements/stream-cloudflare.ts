@@ -4,6 +4,7 @@ import { Agent } from 'node:https';
 import { resolve } from 'node:path';
 import { setTimeout as pause } from 'node:timers/promises';
 import { parseArgs } from 'node:util';
+import { EnvHttpProxyAgent, getGlobalDispatcher, setGlobalDispatcher } from 'undici';
 import WebSocket from 'ws';
 import { messageText } from '../../shared/conversation/content';
 import type { Submission } from '../../shared/conversation/types';
@@ -41,10 +42,21 @@ assert.ok(
 );
 const origin = url.origin;
 const access = await measurementAccess(values.credentials, origin);
+// Node fetch otherwise has a separate 10s connection timeout despite the 90s request signal.
+const previousDispatcher = getGlobalDispatcher();
+const dispatcher = new EnvHttpProxyAgent({
+  connect: { timeout: 90_000, autoSelectFamily: true, autoSelectFamilyAttemptTimeout: 500 },
+});
+setGlobalDispatcher(dispatcher);
 const sockets = new Set<WebSocket>();
 // ws overrides the default connector; supply an explicit agent to honor configured proxies.
 const agent = new Agent({ proxyEnv: process.env });
-const { api } = measurementApi({ origin, headers: () => access.headers, timeout: 90_000 });
+const { api } = measurementApi({
+  origin,
+  headers: () => access.headers,
+  timeout: 90_000,
+  readAttempts: 3,
+});
 async function subscriber(id: string, initial?: Snapshot, acknowledge = true) {
   const baseline = initial?.epoch ? initial : await api<Snapshot>(`/conversations/${id}`);
   const result = await subscribe({
@@ -62,6 +74,9 @@ async function subscriber(id: string, initial?: Snapshot, acknowledge = true) {
 
 const startedAt = new Date().toISOString();
 const results: Record<string, unknown>[] = [];
+let phase = 'preflight',
+  currentScenario: string | undefined;
+let failure: { phase: string; scenario?: string; name: string; code?: string } | undefined;
 try {
   assert.equal(
     (
@@ -97,6 +112,8 @@ try {
     assert.equal(messageText(stored.messages[1]).length, item.contentCharacters);
     assert.equal(messageText(stored.messages[1], 'reasoning').length, item.reasoningCharacters);
     for (let index = 0; index < expectedScenarios; index++) {
+      currentScenario = `reconnect-${index + 1}`;
+      phase = 'completed-stream-replay';
       let live: Awaited<ReturnType<typeof subscriber>> | undefined,
         handshakeAttempts = 0;
       while (!live) {
@@ -156,17 +173,6 @@ try {
             : []),
         ],
       }),
-    );
-    await api(
-      '/settings/providers',
-      {
-        providers: profiles,
-        activeProviderId: profiles[0].id,
-        activeModel: profiles[0].models[0].id,
-        systemPrompt: '',
-        maxOutputTokens: null,
-      },
-      'PUT',
     );
     let cases: {
       name: string;
@@ -263,10 +269,25 @@ try {
       cases = cases.filter((item) => selectedScenarios.includes(item.name));
       expectedScenarios = cases.length;
     }
+    phase = 'configure-mock-providers';
+    await api(
+      '/settings/providers',
+      {
+        providers: profiles,
+        activeProviderId: profiles[0].id,
+        activeModel: profiles[0].models[0].id,
+        systemPrompt: '',
+        maxOutputTokens: null,
+      },
+      'PUT',
+    );
     for (const item of cases) {
+      currentScenario = item.name;
+      phase = 'create-conversation';
       const id = crypto.randomUUID(),
         begin = Date.now();
       await api('/conversations', { id, title: item.name });
+      phase = 'connect-subscribers';
       let live = await subscriber(id);
       const earlierClient = { frames: 0, bytes: 0 };
       let shadow = item.name.includes('reasoning') ? await subscriber(id) : undefined;
@@ -281,15 +302,22 @@ try {
         content: sustained ? '长输入。'.repeat(4000) : 'Platform stream validation',
         selection,
       };
+      phase = 'submit-generation';
       const accepted = await api<Submission>(`/conversations/${id}/messages`, input);
+      phase = 'verify-idempotent-submission';
       assert.deepEqual(await api(`/conversations/${id}/messages`, input), accepted);
       const acceptedAt = Date.now();
+      phase = 'observe-generation';
       let reconnects = 0;
       async function recoverBoundedSubscriber(
         connection: Awaited<ReturnType<typeof subscriber>>,
         countClient = true,
       ) {
-        assert.equal(connection.code(), 4002, 'Only a bounded subscriber can resume automatically');
+        assert.ok(
+          connection.recoverable(),
+          'Only network or bounded-subscriber closure can resume',
+        );
+        connection.socket.terminate();
         if (countClient) {
           earlierClient.frames += connection.received.frames;
           earlierClient.bytes += connection.received.bytes;
@@ -316,9 +344,13 @@ try {
         live = await subscriber(id, snapshot);
         reconnects++;
       } else if (item.mode === 'reconnect') {
+        const deadline = Date.now() + 240_000;
         for (let index = 0; index < 20; index++) {
+          assert.ok(Date.now() < deadline, 'Repeated reconnects: timed out');
           await pause(1500);
+          if (live.recoverable()) live = await recoverBoundedSubscriber(live);
           live.check();
+          if (['completed', 'failed'].includes(live.sync.durable.messages[1]?.status ?? '')) break;
           live.socket.close();
           await until(() => live.code() !== undefined, 'close before reconnect');
           const snapshot = await api<Snapshot>(`/conversations/${id}`);
@@ -329,6 +361,7 @@ try {
           assert.ok(live.sync.durable.seq >= snapshot.seq);
           assert.equal(live.sync.view.messages[1]?.runId, accepted.runId);
         }
+        assert.ok(reconnects >= 2, 'Exercise repeated recovery during sustained generation');
       } else if (item.mode === 'disconnect' || item.mode === 'cancel') {
         await until(() => {
           live.check();
@@ -351,10 +384,12 @@ try {
       } else {
         await until(
           async () => {
+            if (live.recoverable()) live = await recoverBoundedSubscriber(live);
             live.check();
             // High RTT can exhaust the preview window of an acknowledging
             // client too. Resume confirmed state; never restart generation.
-            if (live.code() !== undefined) live = await recoverBoundedSubscriber(live);
+            if (live.code() !== undefined)
+              throw new Error(`Unexpected subscription close: ${live.code()}`);
             return ['completed', 'failed', 'cancelled'].includes(
               live.sync.durable.messages[1]?.status ?? '',
             );
@@ -363,12 +398,14 @@ try {
           sustained ? 150000 : 90000,
         );
       }
+      phase = 'verify-durable-result';
       stored = await api<Snapshot>(`/conversations/${id}`);
       const answer = stored.messages[1];
-      const generationElapsedMs = Date.now() - acceptedAt;
+      const observationElapsedMs = Date.now() - acceptedAt;
+      const generationElapsedMs = answer.generation?.timing?.durationMs;
       if (sustained)
         assert.ok(
-          generationElapsedMs >= 60000,
+          generationElapsedMs !== undefined && generationElapsedMs >= 60000,
           `${item.name}: exercise at least one minute of generation`,
         );
       assert.equal(
@@ -386,9 +423,10 @@ try {
       if (shadow) {
         await until(
           async () => {
+            if (shadow!.recoverable()) shadow = await recoverBoundedSubscriber(shadow!, false);
             shadow!.check();
             if (shadow!.code() !== undefined)
-              shadow = await recoverBoundedSubscriber(shadow!, false);
+              throw new Error(`Unexpected second-device close: ${shadow!.code()}`);
             return shadow!.sync.durable.seq === stored.seq;
           },
           'second device',
@@ -417,6 +455,7 @@ try {
         reasoningCharacters: messageText(answer, 'reasoning').length,
         elapsedMs: Date.now() - begin,
         generationElapsedMs,
+        observationElapsedMs,
         reconnects,
         client: {
           frames: earlierClient.frames + live.received.frames,
@@ -426,9 +465,20 @@ try {
       console.log(JSON.stringify(results.at(-1)));
     }
   }
+} catch (error) {
+  const value = error as { name?: string; code?: string; cause?: { code?: string } };
+  failure = {
+    phase,
+    scenario: currentScenario,
+    name: value.name ?? 'Error',
+    code: value.code ?? value.cause?.code,
+  };
+  throw error;
 } finally {
   for (const socket of sockets) socket.terminate();
   agent.destroy();
+  setGlobalDispatcher(previousDispatcher);
+  await dispatcher.destroy();
   const output = resolve(values.output!);
   await writeReport(output, {
     version: 1,
@@ -442,6 +492,7 @@ try {
     complete: results.length === expectedScenarios,
     startedAt,
     finishedAt: new Date().toISOString(),
+    failure,
     results,
     scope:
       'Functional cases with mock suppliers; platform analytics collected separately. No real model calls or production data.',

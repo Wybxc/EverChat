@@ -11,7 +11,7 @@ import {
 import * as v from 'valibot';
 import type { ProviderConfig } from '../../shared/providers/types';
 import { webToolInputSchemasFor } from '../../shared/web-tools/tasks';
-import { providerCallOptions } from './sdk';
+import { providerGenerationOptions } from './sdk';
 import {
   ProviderToolCollector,
   webToolDefinitions,
@@ -80,7 +80,6 @@ export async function coreProviderStream(
   });
   const inputSchemas = webToolInputSchemasFor(config.webTools?.provider);
   const definitions = request ? webToolDefinitions(request.enabled, config) : undefined;
-  const options = providerCallOptions(config, [], signal, definitions);
   const tools = definitions
     ? Object.fromEntries(
         definitions.map((definition) => [
@@ -115,11 +114,7 @@ export async function coreProviderStream(
     maxRetries: 0,
     includeRawChunks: true,
     abortSignal: signal,
-    maxOutputTokens: options.maxOutputTokens,
-    temperature: options.temperature,
-    topP: options.topP,
-    reasoning: options.reasoning,
-    providerOptions: options.providerOptions,
+    ...providerGenerationOptions(config, Boolean(definitions?.length)),
     telemetry: { isEnabled: false },
     // A provider stream error is observed by providerEvents, never retried or logged raw.
     onError() {},

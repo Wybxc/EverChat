@@ -5,7 +5,7 @@ import { coreUsage } from '../../shared/usage/normalize';
 import { ProviderError } from '../generation/errors';
 import { httpProviderError, providerFailure } from './failure';
 import { boundedJsonResponse } from './response-body';
-import { providerCallOptions, providerModel, providerRequestInit } from './sdk';
+import { providerGenerationOptions, providerModel, providerRequestInit } from './sdk';
 import { sdkProviderError } from './sdk-diagnostics';
 
 export interface ProviderTextResult {
@@ -51,18 +51,13 @@ export async function generateProviderText(
       ...(config.systemPrompt ? [{ role: 'system' as const, content: config.systemPrompt }] : []),
       ...context.map(({ role, content }) => ({ role, content })),
     ];
-    const options = providerCallOptions(config, [], signal);
     const result = await generateText({
       model: providerModel(config, request),
       messages,
       allowSystemInMessages: true,
       maxRetries: 0,
       abortSignal: signal,
-      maxOutputTokens: options.maxOutputTokens,
-      temperature: options.temperature,
-      topP: options.topP,
-      reasoning: options.reasoning,
-      providerOptions: options.providerOptions,
+      ...providerGenerationOptions(config),
       telemetry: { isEnabled: false },
       onLanguageModelCallEnd(event) {
         onResponse?.({
