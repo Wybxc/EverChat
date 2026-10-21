@@ -2,13 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { LanguageModelV4StreamPart } from '@ai-sdk/provider';
 import { valibotSchema } from '@ai-sdk/valibot';
-import {
-  experimental_streamTextLowMemory as streamText,
-  tool,
-  wrapLanguageModel,
-  type UIMessageChunk,
-} from 'ai';
-import { Chat } from '@ai-sdk/react';
+import { experimental_streamTextLowMemory as streamText, tool, wrapLanguageModel } from 'ai';
 import { resolveModelMetadata } from '../../../shared/models/metadata';
 import type { ProviderConfig, ProviderKind } from '../../../shared/providers/types';
 import { webToolInputSchemas } from '../../../shared/web-tools/tasks';
@@ -107,61 +101,3 @@ for (const provider of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
     assert.ok(native.some((part) => part.type === 'raw'));
     await guard.cancel();
   });
-
-const chunks = (values: UIMessageChunk[]) =>
-  new ReadableStream<UIMessageChunk>({
-    start(controller) {
-      values.forEach((value) => controller.enqueue(value));
-      controller.close();
-    },
-  });
-test('SDK Chat resumes a durable checkpoint by explicit replay, without duplicate prefixes or submitting another generation', async () => {
-  let sends = 0,
-    resumes = 0;
-  const chat = new Chat({
-    id: 'conversation',
-    messages: [
-      {
-        id: 'answer',
-        role: 'assistant',
-        parts: [{ type: 'text', text: 'saved', state: 'streaming' }],
-      },
-    ],
-    transport: {
-      resumeStreamIsReplay: true,
-      async sendMessages() {
-        sends++;
-        throw new Error('Resume must not send');
-      },
-      async reconnectToStream() {
-        resumes++;
-        return chunks([
-          { type: 'start', messageId: 'answer' },
-          { type: 'reasoning-start', id: 'reason' },
-          { type: 'reasoning-delta', id: 'reason', delta: 'thinking' },
-          { type: 'reasoning-end', id: 'reason' },
-          { type: 'text-start', id: 'text' },
-          { type: 'text-delta', id: 'text', delta: 'saved' },
-          { type: 'text-delta', id: 'text', delta: ' suffix' },
-          { type: 'text-end', id: 'text' },
-          { type: 'finish', finishReason: 'stop' },
-        ]);
-      },
-    },
-  });
-  await chat.resumeStream();
-  assert.equal(sends, 0);
-  assert.equal(resumes, 1);
-  assert.equal(chat.status, 'ready');
-  assert.deepEqual(chat.messages[0].parts, [
-    {
-      type: 'reasoning',
-      id: 'reason',
-      text: 'thinking',
-      state: 'done',
-      providerMetadata: undefined,
-    },
-    { type: 'text', text: 'saved suffix', state: 'done', providerMetadata: undefined },
-  ]);
-  await chat.dispose();
-});

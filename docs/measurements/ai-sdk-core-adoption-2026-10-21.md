@@ -1,10 +1,10 @@
-# AI SDK Core／UI 集成：阶段 0–2 本地记录
+# AI SDK Core 深度集成与 UI 采用范围验证
 
-日期：2026-10-21。对应[深度集成计划](../plans/ai-sdk-core-ui-adoption-plan.md)。状态：Core 与工具容错已接入，本地验证通过；前端 UI 状态迁移、离线维护切换和平台资源验收尚未完成，未部署。
+日期：2026-10-21。对应[深度集成计划](../plans/ai-sdk-core-ui-adoption-plan.md)。状态：Core 与工具容错已接入；用户已确认 UI 选择性采用，撤销全量状态迁移，未部署。平台资源与发布验收仍单独记录。
 
 ## 调用边界
 
-安装并精确锁定 `ai@7.0.145`、`@ai-sdk/react@4.0.149`；后者依赖同版本 Core。现有 Provider V4 适配器继续负责四种原生协议。普通回答、摘要与工具模型轮次经统一 Core 流入口；标题与能力探测改用 `generateText`。不提供自动执行的工具 `execute`，不启用 Core 多步循环、请求重试或流内重试。
+安装并精确锁定 `ai@7.0.145`；试接入使用过的 `@ai-sdk/react@4.0.149` 已在范围调整后移除。现有 Provider V4 适配器继续负责四种原生协议。普通回答、摘要与工具模型轮次经统一 Core 流入口；标题与能力探测改用 `generateText`。不提供自动执行的工具 `execute`，不启用 Core 多步循环、请求重试或流内重试。
 
 流入口使用公开的 `experimental_streamTextLowMemory`，它与 `streamText` 共用引擎，只有一个消费者，不保留可供再次读取的完整流。该版本在声明 tools／toolChoice 时仍收集本轮内容，不能宣称工具场景完全没有 Core 聚合开销。没有使用 `_internal` 配置、SDK 内部导入或另一个原始响应 tee；升级此实验 API 必须重做资源与协议验证。
 
@@ -75,7 +75,9 @@ SDK `Chat` 架构测试将已有检查点作为显式重放，再追加后续 Ch
 
 PWA 仍为 16 项必需预缓存，约 1335.58 KiB。React SDK 尚未进入生产 UI，不能据此宣称完整 UI 集成后的包体或预缓存已经验收。
 
-## 有序消息与存储准备
+## 已撤销的 UI 全量迁移试验
+
+本节保留试验结论。下述 UI 契约、校验、存储与重放代码均在用户确认新范围后删除，未进入生产 schema；不再作为后续待实施项。
 
 新增 `shared/conversation/ui-message.ts` 和 `ui-validation.ts`：定义 `UIMessage<PublicMessageMetadata, EverChatDataParts, EverChatTools>`，让 SDK 验证标准 parts；EverChat 约束公开字段、附件引用、单轮工具数量、调用／结果身份和正文／思考合计容量。工具执行失败、参数失败和取消各保留状态；部分参数不作为持久内容。拒绝 provider metadata、私有续接字段、原始附件 URL、系统消息和未注册的 data part。附件 Schema 验证只证明引用形状正确，不能替代服务端授权或验证客户端上传历史的真实性。
 
@@ -87,6 +89,22 @@ SDK 的内存应用上限由最初证明中的 64 KiB 调整为 128 KiB：既有
 
 13 项针对性测试及全套 **521 项单元测试**、构建通过；包括真实 SQLite 写入／回滚后恢复 SDK 的 text／reasoning 活动 ID 并精确追加。新表尚未加入生产 schema，生产仍使用原有消息／wire 格式。以上是阶段 3 的模块实现与本地证据，尚未证明原生四协议到新存储的全链路、前端 Transport、离线旧数据转换或新格式平台资源表现。
 
-## 后续门槛
+## 范围调整与最终边界
 
-继续实施计划阶段 3–5：有序 `UIMessage` 单一内容、公开 `UIMessageChunk` 与恢复检查点、可靠性去重、单连接 Transport、`Chat`／`useChat`、备份／分享投影与本地离线迁移。删除对应旧 reducer，完成完整 E2E／PWA 与平台测量后，再进行维护切换；本阶段不推送中间格式变更触发自动部署。
+用户确认 Core 深度集成、UI 选择性采用。删除试验的 `AbstractChat` 状态引擎、批次确认、活动块重放、新 SDK Chunk wire、有序内容表、整消息投影／验证和专用测试，移除 React SDK。正文／思考直接 type import SDK 公开字段，业务校验继续验证真实的 EverChat 数据，不为调用 validator 先转换一份 UIMessage。
+
+试验暴露了 Responses 摘要被全文替换时与 SDK 追加语义的差异，以及中途检查点不能保存半次 reset／重放的问题。可通过额外适配解决，但这正是放弃全面接管的成本依据，不在生产留下未使用的解决方案。
+
+保留异步背压、事务前 prepare／事务内 apply、回滚重建；它们已有生产恢复回归和相同负载计数证据。生产 SQL／wire／浏览器缓存格式不变，无需数据迁移，不新增在线兼容路径。
+
+后续仍须完成当前范围的最终回归、Cloudflare 平台资源与发布验证，不再要求 Chat/useChat、Transport 或 UI 格式离线迁移。平台实测没有完成的项目不记为通过。
+
+## 调整范围后的复核
+
+当前工作树的 500 项单元测试全部通过；减少的测试属于已删除的 UI 状态／存储试验，四协议生产调用与业务恢复测试保留。本地运维原生测试、完整类型检查和构建通过；运维测试在允许监听本机端口后复测成功，没有连接线上数据。变更文件的 Prettier 与 diff 检查通过。
+
+PWA 的 lifecycle、caching、math 三个套件在 Chromium／WebKit 共 36 项全部通过，覆盖更新、草稿与离线队列保留、可选模块按需缓存、Access HTML 不污染缓存、离线公式字体及缓存修复失败重试。它们使用本地生产构建，不充当已安装真机或线上部署验收。
+
+流式、工具 Workflow 与原生任务账本三个套件共 32 项全部通过（3.8 分钟）：预览与持久确认、四协议续接、中断保留、无客户端后台生成、DO 重启、不确定请求不重发、跨设备与页面关闭、指定 run 停止／过期，以及备份／复制后的工具结果。全部使用本地模拟模型与工具，没有调用真实付费供应商。
+
+当前构建 PWA 必需预缓存为 16 项、1335.61 KiB。`wrangler deploy --dry-run` 仅本地打包：未压缩 4608.56 KiB、gzip 881.13 KiB。2026-10-21 复核[官方限制](https://developers.cloudflare.com/workers/platform/limits/#worker-size)，当前限制为未压缩 64 MiB，gzip 仅作参考；构建尺寸通过不代表 CPU、启动或内存峰值通过。未执行生产部署。
