@@ -10,4 +10,4 @@ Control density: secondary buttons, Tabs and menu items have a 32 CSS px minimum
 
 Toast uses the Base UI manager and keeps its viewport and announcements inside the active dialog. Autosave lifecycle and retry behavior live in `src/components/AutosaveToast.tsx`. F6 focuses notifications. Tabs use manual keyboard activation: arrows move focus; Enter/Space activates. Tooltips are supplementary visual labels; matching accessible names remain on their triggers.
 
-cmdk, Recharts, Streamdown and the `@shadcn/react` Message Scroller are intentionally unchanged. cmdk still has indirect Radix dependencies; there are no direct Radix imports in the UI wrappers.
+Model selection uses Base UI Combobox; global search uses inline Autocomplete inside the existing Modal. Model fuzzy matching uses match-sorter. cmdk and all transitive Radix packages have been removed; see [the Command replacement report](../../../docs/migrations/base-ui/command.md). Recharts, Streamdown and the `@shadcn/react` Message Scroller retain their existing implementations.

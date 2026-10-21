@@ -97,7 +97,7 @@ test('cross-conversation search uses paginated literal text and jumps to the mat
     await page.getByRole('combobox', { name: '搜索对话', exact: true }).fill('跨对话');
     await expect(page.locator('[data-testid="global-search"] mark').first()).toHaveText('跨对话');
     await page.getByRole('combobox', { name: '搜索对话', exact: true }).fill('全文TOKEN');
-    const results = page.getByRole('region', { name: '正文搜索结果' });
+    const results = page.getByRole('dialog', { name: '全局搜索', exact: true });
     await expect(results.getByRole('link')).toHaveCount(20);
     await expect(results.getByRole('link').first().locator('mark')).toHaveText('全文TOKEN');
     await results.getByRole('button', { name: '加载更多结果' }).focus();
@@ -186,7 +186,7 @@ test('mobile search closes the sidebar for navigation, shows offline status and 
     await expect(page.getByRole('dialog', { name: '对话列表', exact: true })).toHaveCount(0);
     const input = page.getByRole('combobox', { name: '搜索对话', exact: true });
     await input.pressSequentially('全文TOKEN', { delay: 15 });
-    const results = page.getByRole('region', { name: '正文搜索结果' });
+    const results = page.getByRole('dialog', { name: '全局搜索', exact: true });
     await expect(results.getByRole('link')).toHaveCount(1);
     expect(calls).toBe(1);
     await results.getByRole('link').click();
@@ -294,5 +294,63 @@ test('durable search outbox survives an RPC failure and object reset without ano
     await control(request, { fail: false });
     await request.delete(`/api/conversations/${id}`, { headers });
     await request.put('/api/settings/providers', { headers, data: settings });
+  }
+});
+
+test('keyboard navigation crosses title and asynchronous body groups and preserves native body links', async ({
+  page,
+  context,
+  browserName,
+}) => {
+  const id = await seed(page.request, 2);
+  try {
+    expect(
+      (
+        await page.request.patch(`/api/conversations/${id}`, {
+          headers,
+          data: { title: '全文TOKEN keyboard' },
+        })
+      ).ok(),
+    ).toBe(true);
+    await page.goto('/');
+    await expect(page.getByRole('button', { name: '全局搜索', exact: true })).toBeVisible();
+    await page.keyboard.press('ControlOrMeta+k');
+    const dialog = page.getByRole('dialog', { name: '全局搜索', exact: true });
+    const input = dialog.getByRole('combobox');
+    await input.fill('全文TOKEN');
+    await expect(dialog.getByRole('option')).toHaveCount(3);
+    const body = dialog.getByRole('group', { name: '正文与思考', exact: true });
+    await expect(body.getByRole('link')).toHaveCount(2);
+    for (const options of [
+      { modifiers: ['ControlOrMeta'] as 'ControlOrMeta'[] },
+      // Playwright WebKit does not open even a plain HTML link on middle-click.
+      ...(browserName === 'chromium' ? [{ button: 'middle' as const }] : []),
+    ]) {
+      const opened = context.waitForEvent('page');
+      await body.getByRole('link').first().click(options);
+      const other = await opened;
+      await other.waitForURL(
+        (url) => url.pathname === `/c/${id}` && url.searchParams.has('branch'),
+      );
+      await other.close();
+      await expect(dialog).toBeVisible();
+      await expect(input).toHaveValue('全文TOKEN');
+    }
+    await input.focus();
+    await input.press('ArrowUp');
+    await input.press('ArrowUp');
+    await input.press('ArrowDown');
+    const active = () => input.getAttribute('aria-activedescendant');
+    await expect
+      .poll(async () => dialog.getByRole('option').nth(1).getAttribute('id'))
+      .toBe(await active());
+    await input.press('Enter');
+    await expect(page).toHaveURL(
+      (url) => url.pathname === `/c/${id}` && url.searchParams.has('branch'),
+    );
+    await expect(dialog).toHaveCount(0);
+    await expect(page.locator('[data-search-current]')).toHaveCount(1);
+  } finally {
+    await page.request.delete(`/api/conversations/${id}`, { headers });
   }
 });

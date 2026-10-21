@@ -17,7 +17,7 @@ EverChat 的交互基础层由 Radix UI 切换为 Base UI 1.9.0，shadcn 配置�
 
 ## Left alone
 
-cmdk、Recharts、Streamdown／Markdown、`@shadcn/react` Message Scroller 不在迁移范围内。cmdk 的间接 `@radix-ui/react-dialog` 依赖仍保留；不能据此宣称依赖树完全没有 Radix。数据模型、Worker、同步与供应商协议均未修改。历史迁移方案保留为历史记录。
+用户后续要求在 PR #2 一并替换 cmdk，现已改用 Base UI Combobox／Autocomplete，并删除 cmdk 及所有间接 Radix 包；详见 [Command 替换记录](command.md)。Recharts、Streamdown／Markdown、`@shadcn/react` Message Scroller 保持原实现。数据模型、Worker、同步与供应商协议均未修改。历史迁移方案保留为历史记录。
 
 迁移工作位于独立工作树。用户随后要求调查原版 WebKit Markdown 失败，因此基于未迁移的 `921ec05` 单独提交修复 `dc28c07`、`5ade458`（[PR #1](https://github.com/Wybxc/EverChat/pull/1)），再合入迁移分支。PR #1 已于核对期间合入 main（86e8ccb），本迁移分支同步了最新 main，迁移 PR 直接面向 main。迁移版本尚未合并到 main，本次未发布迁移版本或变更线上配置。
 
@@ -31,10 +31,10 @@ cmdk、Recharts、Streamdown／Markdown、`@shadcn/react` Message Scroller 不�
 | 指标               | 原版 921ec05 |      迁移后 |                      增量 |
 | ------------------ | -----------: | ----------: | ------------------------: |
 | JS/CSS 文件数      |          432 |         433 |                         1 |
-| JS/CSS 原始字节    |   16,342,886 |  16,456,262 |                   113,376 |
-| 逐文件 gzip 字节   |    3,675,396 |   3,716,997 | 41,601（40.6 KiB，1.13%） |
+| JS/CSS 原始字节    |   16,342,886 |  16,451,893 |                   109,007 |
+| 逐文件 gzip 字节   |    3,675,396 |   3,717,303 | 41,907（40.9 KiB，1.14%） |
 | 必需预缓存项       |           12 |          13 |                         1 |
-| 必需预缓存原始大小 |  1211.81 KiB | 1323.25 KiB |                111.44 KiB |
+| 必需预缓存原始大小 |  1211.81 KiB | 1318.97 KiB |                107.16 KiB |
 
 ## Verify by hand
 
@@ -52,4 +52,29 @@ cmdk、Recharts、Streamdown／Markdown、`@shadcn/react` Message Scroller 不�
 
 审查时重点检查：鼠标与键盘打开菜单／模型选择、设置 Tab 手动激活、搜索恢复焦点、确认框取消焦点、输入法 Escape、后台保存与错误重试、移动端侧栏／设置关闭、思考展开及搜索定位。浏览器自动化不能替代已安装 iOS／macOS PWA 的真机验收，本分支未操作生产 PWA。
 
-直接使用 Radix 的 UI 封装剩余数：0（src/components/ui 共 28 个 TSX 封装，其中 17 个直接使用 Base UI）。
+直接使用 Radix 的 UI 封装剩余数：0；当前依赖树中的 `@radix-ui/*` 包数也为 0（src/components/ui 共 29 个 TSX 封装，其中 19 个直接使用 Base UI）。
+
+## cmdk 替换验收
+
+后续在相同 PR #2 完成 [Command 替换](command.md)。当前源码、package.json 和锁文件均无 cmdk / Radix UI 引用；文档中保留对旧实现的说明不属于运行依赖。删除旧 Command 封装，新增 Combobox／Autocomplete 与 match-sorter。实施前调研归档于 [依赖调查](../../research/cmdk-radix-dependency-2026-10-21.md)。
+
+最终补充验证：
+
+- 单元测试 473／473、最终类型检查、格式检查、生产构建和 git diff --check 通过。
+- Chromium 最后一轮模型选择／全局搜索／快捷键／视口与对比度 19／19；此前本次替换下的对话 Markdown 搜索 8 项及移动导航 3 项通过。覆盖供应商同名模型、查询显示名／模型 ID／供应商、无结果、IME、重复选择、Escape 回焦、分页、正文失败重试、离线标题与跨分组键盘定位。
+- WebKit 最后一轮模型选择／全局搜索／快捷键 16／16；本次替换下的对话 Markdown 搜索 8 项也通过。
+- 生产 PWA 全套 Chromium + WebKit 54／54，包括冷安装、按需模块、离线搜索、更新、草稿及匿名分享。
+- Cmd/Ctrl 新标签页链接在两引擎通过；中键在 Chromium 通过。独立纯 HTML 链接对照表明 Playwright WebKit 中键本身不打开新页面，故该引擎不执行中键新窗口断言，没有添加前端兼容分支。
+- 最终浅色 375px 与深色 1280px 模型菜单截图已核对；同时修复有结果时空状态组件保留上下留白的问题，实时播报区域保持挂载。新增焦点用例需要等待菜单真实关闭后再打开，防止将 Escape 发送到仍在退出的旧输入框。模型取消明确回焦触发按钮，选择则回焦聊天框。临时事件日志已删除。
+
+相对于本轮开始前 `fe778a0` 的单独 cmdk 替换成本：
+
+| 指标               |      替换前 |      替换后 |      差值 |
+| ------------------ | ----------: | ----------: | --------: |
+| JS/CSS 文件数      |         433 |         433 |         0 |
+| JS/CSS 原始字节    |  16,456,262 |  16,451,893 |    −4,369 |
+| 逐文件 gzip 字节   |   3,717,005 |   3,717,303 |      +298 |
+| 必需预缓存项       |          13 |          13 |         0 |
+| 必需预缓存原始大小 | 1323.25 KiB | 1318.97 KiB | −4.28 KiB |
+
+上表是完整产物逐文件 gzip 总和（含 sw.js），不代表首屏实际传输量；本次主要收益为统一交互组件与消除间接 Radix 安装依赖，压缩后的总体积基本持平。前面的原版／整体迁移表已更新为最终产物。原版容量测试的错误断言已在独立 PR #3 修复，该基线测试提交没有混入本 PR；本轮没有重新运行完整 409 项 E2E 或声称其全绿。未合并 PR、部署或操作生产 PWA。

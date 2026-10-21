@@ -1,63 +1,15 @@
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
-import { useInfiniteQuery } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { LibrarySearch as SearchPage, SearchResult } from '../../../shared/search/query';
-import { conversationUrl } from '../../app/useConversationRoute';
-import { api } from '../../platform/api';
 import { errorMessage, renderUiMessage } from '../../platform/i18n/messages';
-import { deletedAt } from '../chat/cache';
+import type { useLibrarySearch } from './useLibrarySearch';
 import './locales';
-import { SearchHighlight } from './SearchHighlight';
-import { SearchResultItem } from './SearchResultItem';
 
-export function LibrarySearch({
-  query,
-  open,
-}: {
-  query: string;
-  open: (result: SearchResult, query: string) => void;
-}) {
+export function LibrarySearch({ state }: { state: ReturnType<typeof useLibrarySearch> }) {
   const { t } = useTranslation('library', { useSuspense: false });
-
-  const [debounced, setDebounced] = useState('');
-  const [online, setOnline] = useState(navigator.onLine);
-  useEffect(() => {
-    const timer = setTimeout(() => setDebounced(query.trim()), 350);
-    return () => clearTimeout(timer);
-  }, [query]);
-  useEffect(() => {
-    const update = () => setOnline(navigator.onLine);
-    window.addEventListener('online', update);
-    window.addEventListener('offline', update);
-    return () => {
-      window.removeEventListener('online', update);
-      window.removeEventListener('offline', update);
-    };
-  }, []);
-  const search = useInfiniteQuery({
-    queryKey: ['body-search', debounced],
-    initialPageParam: null as string | null,
-    queryFn: ({ pageParam, signal }) =>
-      api<SearchPage>(
-        `/search?${new URLSearchParams({ q: debounced, ...(pageParam ? { cursor: pageParam } : {}) })}`,
-        'GET',
-        undefined,
-        signal,
-      ),
-    getNextPageParam: (page) => page.cursor ?? undefined,
-    enabled: Boolean(debounced && debounced === query.trim() && online),
-    retry: false,
-    staleTime: 0,
-    refetchInterval: (query) =>
-      query.state.data?.pages.some((page) => page.indexing) ? 3000 : false,
-  });
-  const ready = debounced === query.trim();
-  const pages = ready ? search.data?.pages : undefined;
+  const { online, search, ready, pages } = state;
   return (
-    <section aria-label={t(($) => $.bodySearchResults)} className="mt-4">
-      <p className="px-3 pb-2 text-xs font-medium">{t(($) => $.bodyAndReasoning)}</p>
+    <div className="space-y-2 pb-2">
       {!online ? (
         <p role="status" className="px-3 text-xs text-muted-foreground">
           {t(($) => $.searchNeedsNetwork)}
@@ -68,30 +20,6 @@ export function LibrarySearch({
           {t(($) => $.searching)}
         </p>
       ) : null}
-      {pages && (
-        <ul className="w-full space-y-1 p-0 text-sm">
-          {pages
-            .flatMap((page) => page.results)
-            .filter((result) => !deletedAt(result.conversationId))
-            .map((result) => (
-              <li key={`${result.conversationId}:${result.messageId}:${result.field}`}>
-                <SearchResultItem
-                  value={`body:${result.conversationId}:${result.messageId}:${result.field}`}
-                  href={conversationUrl(result.conversationId, result.messageId)}
-                  open={() => open(result, debounced)}
-                >
-                  <span className="block truncate text-xs font-medium">
-                    <SearchHighlight text={result.title} query={debounced} /> ·{' '}
-                    {result.field === 'reasoning' ? t(($) => $.reasoning) : t(($) => $.body)}
-                  </span>
-                  <span className="mt-1 block line-clamp-3 break-words text-xs text-muted-foreground">
-                    <SearchHighlight text={result.excerpt} query={debounced} />
-                  </span>
-                </SearchResultItem>
-              </li>
-            ))}
-        </ul>
-      )}
       {pages && !pages.some((page) => page.results.length) && (
         <p role="status" className="px-3 text-xs text-muted-foreground">
           {t(($) => $.noBodyMatches)}
@@ -133,6 +61,6 @@ export function LibrarySearch({
           {search.isFetchingNextPage ? t(($) => $.loading) : t(($) => $.loadMore)}
         </Button>
       )}
-    </section>
+    </div>
   );
 }

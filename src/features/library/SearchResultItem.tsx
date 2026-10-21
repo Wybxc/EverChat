@@ -1,24 +1,20 @@
-import { Command as CommandPrimitive } from 'cmdk';
+import { AutocompleteItem } from '@/components/ui/autocomplete';
 import type { ReactNode } from 'react';
 
-/** cmdk controls selection; the anchor preserves browser new-tab and copy-link behavior. */
+/** Base UI handles keyboard selection; the anchor keeps native new-tab and copy-link actions. */
 export function SearchResultItem({
   value,
   href,
   open,
   children,
 }: {
-  value: string;
+  value: unknown;
   href: string;
   open: () => void;
   children: ReactNode;
 }) {
   return (
-    <CommandPrimitive.Item
-      value={value}
-      onSelect={open}
-      className="rounded-lg data-[selected=true]:bg-accent"
-    >
+    <AutocompleteItem value={value} onClick={open}>
       <a
         href={href}
         tabIndex={-1}
@@ -39,6 +35,6 @@ export function SearchResultItem({
       >
         {children}
       </a>
-    </CommandPrimitive.Item>
+    </AutocompleteItem>
   );
 }

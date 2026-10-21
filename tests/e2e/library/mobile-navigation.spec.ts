@@ -169,7 +169,7 @@ test('search closes by a real tap after scrolling, viewport changes and repeated
             .map((animation) => animation.finished.catch(() => {})),
         ),
       );
-      await dialog.locator('[cmdk-list]').evaluate((node) => {
+      await dialog.locator('[data-slot=search-results]').evaluate((node) => {
         node.scrollTop = node.scrollHeight;
       });
       const close = dialog.getByRole('button', { name: '关闭全局搜索' });

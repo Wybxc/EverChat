@@ -11,7 +11,7 @@ Leftover scan: no radix-ui / @radix-ui imports in these component files.
 
 ## Left alone
 
-cmdk search/model grouping retained; it is not the migrated primitive.
+At this component migration step, cmdk search/model grouping was retained. The later [Command replacement](command.md) moves model selection from Popover + Command to native Combobox.
 
 ## Behavior changes
 
