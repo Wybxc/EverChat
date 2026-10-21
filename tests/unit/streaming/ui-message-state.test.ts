@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { MAX_COMMIT_BYTES } from '../../../shared/streaming/batches';
-import { replayUIMessage } from '../../../shared/streaming/ui-checkpoint';
+import { MAX_UI_APPLY_BYTES, replayUIMessage } from '../../../shared/streaming/ui-checkpoint';
 import { UIMessageState } from '../../../worker/streaming/ui-message-state';
 
 test('SDK UI batches acknowledge ordered parts without mutating an earlier checkpoint', async () => {
@@ -89,7 +88,7 @@ test('UI checkpoint batches are bounded and cannot overlap or replace their answ
   const state = new UIMessageState('answer');
   try {
     await assert.rejects(
-      state.apply([{ type: 'text-delta', id: 'a', delta: 'a'.repeat(MAX_COMMIT_BYTES) }]),
+      state.apply([{ type: 'text-delta', id: 'a', delta: 'a'.repeat(MAX_UI_APPLY_BYTES) }]),
       /buffer limit/,
     );
     await assert.rejects(state.apply([{ type: 'start', messageId: 'other' }]), /identity/);

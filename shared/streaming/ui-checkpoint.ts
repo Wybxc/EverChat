@@ -1,5 +1,9 @@
 import { getToolOrDynamicToolName, isToolUIPart, type UIMessage, type UIMessageChunk } from 'ai';
 
+// A valid 64 KiB tool argument/result also needs its standard SDK envelope.
+// This is an in-memory SDK apply bound, independent of durable/wire microbatches.
+export const MAX_UI_APPLY_BYTES = 128 * 1024;
+
 export interface UIActiveBlock {
   type: 'text' | 'reasoning';
   id: string;

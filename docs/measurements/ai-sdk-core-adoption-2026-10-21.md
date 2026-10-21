@@ -75,6 +75,18 @@ SDK `Chat` 架构测试将已有检查点作为显式重放，再追加后续 Ch
 
 PWA 仍为 16 项必需预缓存，约 1335.58 KiB。React SDK 尚未进入生产 UI，不能据此宣称完整 UI 集成后的包体或预缓存已经验收。
 
+## 有序消息与存储准备
+
+新增 `shared/conversation/ui-message.ts` 和 `ui-validation.ts`：定义 `UIMessage<PublicMessageMetadata, EverChatDataParts, EverChatTools>`，让 SDK 验证标准 parts；EverChat 约束公开字段、附件引用、单轮工具数量、调用／结果身份和正文／思考合计容量。工具执行失败、参数失败和取消各保留状态；部分参数不作为持久内容。拒绝 provider metadata、私有续接字段、原始附件 URL、系统消息和未注册的 data part。附件 Schema 验证只证明引用形状正确，不能替代服务端授权或验证客户端上传历史的真实性。
+
+当前 `ai@7.0.145` 使用的 Standard Schema 适配以 `value in result` 判断成功，而安装的 Valibot 1.5.0 失败结果可能同时含 `value` 和 `issues`。本地复现中，未知 metadata 字段被剥离后作为有效结果返回。新增适配通过公开 `jsonSchema({}, { validate })` 直接检查 `v.safeParse(...).success`；这里的 Schema 只供 UI 验证，不发给模型。最终错误不携带 SDK 拒绝输入的原始对象。测试覆盖未知 metadata、无效计数、无效附件字段和私有 provider metadata，不能直接换成未验证的 Standard Schema 路径。
+
+新增 `worker/conversation/ui-content.ts`：`message_parts` 保存按序描述、工具结果和附件引用；text／reasoning 的全文只在 `message_text_chunks` 中分块保存。追加只写受影响的尾部，更新工具结果不重写正文；MCP 分页按频道聚合多个有序 part，保留 UTF-16 游标和完整字符。读取会拒绝缺块、孤立文本和重复全文表示。SDK 准备／验证位于同步写入之前，事务仍由拥有消息的 DO 控制。
+
+SDK 的内存应用上限由最初证明中的 64 KiB 调整为 128 KiB：既有 64 KiB 工具输入加上 `tool-input-error` 外壳会略超 64 KiB，不能因此让原本合法的错误记录无法恢复。wire 微批次、提交节奏和业务输入上限未改变。新增边界测试验证完整容量的错误输入能经过 SDK、公开验证与语义重放，超出输入上限仍拒绝。
+
+13 项针对性测试及全套 **521 项单元测试**、构建通过；包括真实 SQLite 写入／回滚后恢复 SDK 的 text／reasoning 活动 ID 并精确追加。新表尚未加入生产 schema，生产仍使用原有消息／wire 格式。以上是阶段 3 的模块实现与本地证据，尚未证明原生四协议到新存储的全链路、前端 Transport、离线旧数据转换或新格式平台资源表现。
+
 ## 后续门槛
 
 继续实施计划阶段 3–5：有序 `UIMessage` 单一内容、公开 `UIMessageChunk` 与恢复检查点、可靠性去重、单连接 Transport、`Chat`／`useChat`、备份／分享投影与本地离线迁移。删除对应旧 reducer，完成完整 E2E／PWA 与平台测量后，再进行维护切换；本阶段不推送中间格式变更触发自动部署。

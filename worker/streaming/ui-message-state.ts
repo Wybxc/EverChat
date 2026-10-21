@@ -5,9 +5,10 @@ import {
   type UIMessage,
   type UIMessageChunk,
 } from 'ai';
-import { MAX_COMMIT_BYTES, payloadBytes } from '../../shared/streaming/batches';
+import { payloadBytes } from '../../shared/streaming/batches';
 import {
   replayUIMessage,
+  MAX_UI_APPLY_BYTES,
   type UIActiveBlock,
   type UIMessageCheckpoint,
 } from '../../shared/streaming/ui-checkpoint';
@@ -130,7 +131,7 @@ export class UIMessageState {
       let bytes = 2;
       for (const chunk of replayUIMessage(checkpoint)) {
         const length = payloadBytes(JSON.stringify(chunk));
-        if (bytes + length + 1 > MAX_COMMIT_BYTES) {
+        if (bytes + length + 1 > MAX_UI_APPLY_BYTES) {
           if (!batch.length) throw new Error('UI checkpoint part exceeds buffer limit');
           await state.apply(batch);
           batch = [];
@@ -151,7 +152,7 @@ export class UIMessageState {
     if (this.failure) throw this.failure;
     if (this.closed) throw new Error('UI checkpoint reducer is closed');
     if (this.pending) throw new Error('Await the previous UI checkpoint batch');
-    if (payloadBytes(JSON.stringify(chunks)) > MAX_COMMIT_BYTES)
+    if (payloadBytes(JSON.stringify(chunks)) > MAX_UI_APPLY_BYTES)
       throw new Error('UI checkpoint batch exceeds buffer limit');
     for (const chunk of chunks) {
       if (chunk.type === BARRIER || chunk.type === BLOCK)
