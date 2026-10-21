@@ -86,21 +86,25 @@ test('answers use the available narrow width and rich content retains one frame 
     await page.locator('[data-streamdown="mermaid-block"]').scrollIntoViewIfNeeded();
     await expect(page.locator('[data-streamdown="mermaid"] svg').first()).toBeVisible();
     await expect(answer.locator('pre.language-js')).toContainText('const TARGET = 1;');
-    const frames = await page.locator('pre, [data-streamdown="mermaid"]').evaluateAll((nodes) =>
-      nodes.map((node) => {
-        let count = 0;
-        for (
-          let element: Element | null = node;
-          element && !element.classList.contains('markdown');
-          element = element.parentElement
-        ) {
-          const style = getComputedStyle(element);
-          if (parseFloat(style.borderTopWidth) > 0) count++;
-        }
-        return count;
-      }),
-    );
-    expect(frames).toEqual([1, 1]);
+    // Lazy code and diagram chunks can commit separately. Measure both together.
+    await expect
+      .poll(() =>
+        page.locator('pre, [data-streamdown="mermaid"]').evaluateAll((nodes) =>
+          nodes.map((node) => {
+            let count = 0;
+            for (
+              let element: Element | null = node;
+              element && !element.classList.contains('markdown');
+              element = element.parentElement
+            ) {
+              const style = getComputedStyle(element);
+              if (parseFloat(style.borderTopWidth) > 0) count++;
+            }
+            return count;
+          }),
+        ),
+      )
+      .toEqual([1, 1]);
     const thought = answer.getByTestId('message-reasoning');
     await expect.poll(() => isOpen(thought)).toBe(true);
     await thought.locator(':scope > [data-slot=trace-collapsible-trigger]').click();
