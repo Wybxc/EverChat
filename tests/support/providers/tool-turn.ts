@@ -1,9 +1,10 @@
 import type { ProviderConfig } from '../../../shared/providers/types';
 import type { WebToolName } from '../../../shared/web-tools/tasks';
-import { providerCallOptions, providerModel } from '../../../worker/providers/sdk';
+import { providerModel } from '../../../worker/providers/sdk';
+import { coreProviderStream } from '../../../worker/providers/core';
 import { providerEvents } from '../../../worker/providers/events';
 import { ProviderWireGuard } from '../../../worker/providers/stream-errors';
-import { webToolDefinitions } from '../../../worker/providers/tool-turn';
+import { sdkProviderError } from '../../../worker/providers/sdk-diagnostics';
 
 // Synthetic native supplier body, parsed exactly once. No real network or replay
 // in production; lifecycle fixtures use this to construct private turn records.
@@ -16,10 +17,19 @@ export async function fixtureStream(
   const guard = new ProviderWireGuard();
   const fetch: typeof globalThis.fetch = async () =>
     new Response(guard.wrap(body, signal), { headers: { 'content-type': 'text/event-stream' } });
-  const result = await providerModel(config, fetch).doStream(
-    providerCallOptions(config, [], signal, webToolDefinitions(enabled)),
-  );
-  return providerEvents(result.stream, config, guard, signal, [], undefined, { enabled });
+  try {
+    const result = await coreProviderStream(
+      providerModel(config, fetch),
+      config,
+      [{ role: 'user', content: 'Fixture' }],
+      signal,
+      { enabled },
+    );
+    return providerEvents(result.stream, config, guard, signal, [], () => undefined, result.native);
+  } catch (error) {
+    await guard.cancel();
+    throw sdkProviderError(error, config, 'protocol');
+  }
 }
 export async function collectProviderToolTurn(
   config: ProviderConfig,

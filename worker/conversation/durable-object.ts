@@ -76,6 +76,7 @@ import {
 } from '../platform/resource-limits';
 import { initializeStorageSchema } from '../platform/storage-schema';
 import { openProviderStream } from '../providers/stream';
+import { generateProviderText } from '../providers/generate';
 import { searchRetryDelay } from '../search/index';
 import { GenerationCheckpoints } from '../streaming/checkpoints';
 import {
@@ -109,7 +110,7 @@ import {
 } from '../../shared/web-tools/tasks';
 import { providerFailure } from '../providers/failure';
 import { type ProviderToolTurn } from '../providers/tool-turn';
-import { executeWebTool, terminalWebToolError, type WebToolFetch } from '../web-tools/service';
+import { executeWebTool, type WebToolFetch } from '../web-tools/service';
 import { WEB_TOOL_QUOTA_ERROR } from '../web-tools/settings';
 import { ToolTaskJournal, type ToolTaskState } from '../web-tools/task-journal';
 import { toolWorkflowId, type ToolWorkflowParams } from '../web-tools/workflow';
@@ -258,7 +259,7 @@ export class Conversation extends DurableObject<Env> {
             this.accounting.finish(`title:${job.conversationId}:${job.id}`, {
               status,
               usage: state.usage,
-              usageIsFinal: state.usageIsFinal && state.done && !state.failure,
+              usageIsFinal: state.usageIsFinal,
             }),
           );
           this.ctx.waitUntil(this.accounting.deliver().finally(() => this.scheduleAlarm()));
@@ -1626,19 +1627,20 @@ export class Conversation extends DurableObject<Env> {
     const change = this.ctx.storage.transactionSync(() => this.refreshToolMessage(taskId));
     if (change) this.broadcast(change);
     const result = (async () => {
-      const timer = setTimeout(
-        () => abort.abort(),
-        Math.max(1, Math.min(15_000, state.deadline - Date.now())),
-      );
+      const timer = setTimeout(() => abort.abort(), Math.max(1, state.deadline - Date.now()));
       try {
         await this.ctx.storage.sync();
         const before = this.toolTaskState(taskId);
         if (before.status !== 'active') return before;
         const service = (JSON.parse(this.run(state.runId)!.config!) as ProviderConfig).webTools;
+        const unavailable = this.tools
+          .publicCalls(state.runId)
+          .map((item) => item.result)
+          .find((result) => result?.status === 'failed' && result.failure?.terminal);
         let stopError: string | undefined;
         let outcome: WebToolOutcome;
         try {
-          if (service) {
+          if (service && !unavailable) {
             const identity = createHash('sha256')
               .update(JSON.stringify([this.run(state.runId)!.conversationId, taskId, callId]))
               .digest('hex');
@@ -1649,29 +1651,48 @@ export class Conversation extends DurableObject<Env> {
             if ('error' in budget) stopError = budget.error;
           }
           abort.signal.throwIfAborted();
-          outcome = stopError
-            ? { id: call.id, name: call.name, status: 'failed', error: stopError }
-            : await this.executeWebTool(call, abort.signal, service, async () => {
-                const provider = service!.provider;
-                await this.accounting.start(
-                  {
-                    id: usageId,
-                    taskId,
-                    conversationId: this.run(state.runId)!.conversationId,
-                    messageId: this.run(state.runId)!.assistantId,
-                    kind: call.name,
-                  },
-                  {
-                    providerId: `web:${provider}`,
-                    providerName: provider === 'deepseek' ? 'DeepSeek 联网' : 'Tavily',
-                    protocol: provider,
-                    model: call.name,
-                    modelName: call.name,
-                  },
-                );
-                this.ctx.waitUntil(this.accounting.deliver().finally(() => this.scheduleAlarm()));
-              });
-          stopError ??= terminalWebToolError(outcome);
+          outcome =
+            unavailable?.status === 'failed'
+              ? { ...unavailable, id: call.id, name: call.name }
+              : stopError
+                ? {
+                    id: call.id,
+                    name: call.name,
+                    status: 'failed',
+                    error: stopError,
+                    issue: problem('TOOL_RATE_LIMITED'),
+                    failure: { provider: service!.provider, code: 'RATE_LIMIT', terminal: true },
+                  }
+                : call.invalid
+                  ? {
+                      id: call.id,
+                      name: call.name,
+                      status: 'failed',
+                      error: call.error,
+                      issue: problem('TOOL_INVALID'),
+                    }
+                  : await this.executeWebTool(call, abort.signal, service, async () => {
+                      const provider = service!.provider;
+                      await this.accounting.start(
+                        {
+                          id: usageId,
+                          taskId,
+                          conversationId: this.run(state.runId)!.conversationId,
+                          messageId: this.run(state.runId)!.assistantId,
+                          kind: call.name,
+                        },
+                        {
+                          providerId: `web:${provider}`,
+                          providerName: provider === 'deepseek' ? 'DeepSeek 联网' : 'Tavily',
+                          protocol: provider,
+                          model: call.name,
+                          modelName: call.name,
+                        },
+                      );
+                      this.ctx.waitUntil(
+                        this.accounting.deliver().finally(() => this.scheduleAlarm()),
+                      );
+                    });
         } catch {
           outcome = {
             id: call.id,
@@ -1708,16 +1729,9 @@ export class Conversation extends DurableObject<Env> {
               issue: problem('INVALID_REQUEST'),
             });
           }
-          if (stopError) this.tools.stop(taskId, 'failed', stopError);
           return this.refreshToolMessage(taskId);
         });
         if (update) this.broadcast(update);
-        if (stopError) {
-          this.finish(state.runId, 'failed', stopError);
-          // Unlike a model's Alarm, this RPC has no outer Alarm cleanup. The
-          // terminal notification must replace the old root-deadline alarm.
-          await this.scheduleAlarm();
-        }
         await this.ctx.storage.sync();
         return this.toolTaskState(taskId);
       } finally {
@@ -1793,8 +1807,7 @@ export class Conversation extends DurableObject<Env> {
     const titleWork = this.titles?.step(
       this.env.LIBRARY.getByName('personal'),
       () => this.ctx.storage.sync(),
-      (config, input, signal, beforeRequest) =>
-        this.openModelStream(config, input, signal, undefined, undefined, undefined, beforeRequest),
+      (...args) => this.generateModelText(...args),
       () =>
         Boolean(
           this.activeGeneration ||
@@ -1895,6 +1908,9 @@ export class Conversation extends DurableObject<Env> {
   }
   protected openModelStream(...args: Parameters<typeof openProviderStream>) {
     return openProviderStream(...args);
+  }
+  protected generateModelText(...args: Parameters<typeof generateProviderText>) {
+    return generateProviderText(...args);
   }
   private async runInObject(runId: string, claim: Claim) {
     const toolModel = this.tools.model(runId),

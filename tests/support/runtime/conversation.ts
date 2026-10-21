@@ -6,6 +6,7 @@ import type { Env } from '../../../worker/http/env';
 import { Conversation as ProductionConversation } from '../../../worker/index';
 import { MAX_DATABASE_BYTES } from '../../../worker/platform/resource-limits';
 import type { openProviderStream } from '../../../worker/providers/stream';
+import type { generateProviderText } from '../../../worker/providers/generate';
 import { toolWorkflowId, type ToolWorkflowParams } from '../../../worker/web-tools/workflow';
 import type { MeasurementEnv } from './env';
 import type { Library } from './library';
@@ -410,7 +411,7 @@ export class Conversation extends ProductionConversation {
       .exec<{ count: number }>(`SELECT COUNT(*) AS count FROM ${table} ${where}`)
       .one().count;
   }
-  protected override async openModelStream(...args: Parameters<typeof openProviderStream>) {
+  protected override async generateModelText(...args: Parameters<typeof generateProviderText>) {
     const fixtureSql = this.resourceStorage.sql;
     if (args[0].model.startsWith('title-fixture-')) {
       fixtureSql.exec(
@@ -424,6 +425,10 @@ export class Conversation extends ProductionConversation {
         job.id,
       );
     }
+    return super.generateModelText(...args);
+  }
+  protected override async openModelStream(...args: Parameters<typeof openProviderStream>) {
+    const fixtureSql = this.resourceStorage.sql;
     if (args[0].model === 'benchmark-summary-write-failure') this.failNextCommit = true;
     if (
       args[0].model.startsWith('alarm-') ||

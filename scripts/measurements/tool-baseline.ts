@@ -235,20 +235,27 @@ try {
     );
     const snapshot = await api<Snapshot>(`/conversations/${id}`),
       answer = snapshot.messages[1];
-    const expectedModels = scenario.mode === 'multi' ? 6 : scenario.mode === 'rejected' ? 1 : 2;
+    const expectedModels = scenario.mode === 'multi' ? 6 : 2;
     const expectedTools = scenario.mode === 'multi' ? 10 : scenario.mode === 'rejected' ? 1 : 2;
+    const expectedToolClaims = scenario.mode === 'multi' ? 10 : 2;
     assert.equal(
       answer.status,
-      scenario.mode === 'rejected' ? 'failed' : 'completed',
+      'completed',
       `${scenario.name}: ${answer.error ?? 'unexpected terminal status'}`,
     );
-    if (scenario.mode !== 'rejected')
-      assert.equal(
-        messageText(answer),
-        (scenario.protocol === 'openai-chat' ? '先查阅资料。\n' : '') +
-          ('x'.repeat(size - 2) + '🙂').repeat(chunks),
+    assert.equal(
+      messageText(answer),
+      (scenario.protocol === 'openai-chat' ? '先查阅资料。\n' : '') +
+        ('x'.repeat(size - 2) + '🙂').repeat(chunks),
+    );
+    if (scenario.mode === 'rejected') {
+      assert.ok(answer.tools!.calls.every((call) => call.state === 'failed'));
+      assert.ok(
+        answer.tools!.calls.every(
+          (call) => call.result?.status === 'failed' && call.result.failure?.terminal,
+        ),
       );
-    else assert.ok(answer.error?.includes('密钥'));
+    }
     if (scenario.disconnect) assert.ok(live.observed.disconnected);
     else {
       const syncDeadline = Date.now() + 5000;
@@ -282,7 +289,9 @@ try {
     assert.equal(sample.report.upstream.modelRequests, expectedModels);
     assert.equal(sample.report.upstream.toolRequests, expectedTools);
     assert.equal(sample.task!.modelRequests, expectedModels);
-    assert.equal(sample.task!.toolRequests, expectedTools);
+    // The durable journal counts claimed calls; a sibling can fail locally
+    // without consuming another upstream request or daily service allowance.
+    assert.equal(sample.task!.toolRequests, expectedToolClaims);
     assert.equal(library.usedToday - libraryStart.usedToday, expectedTools);
     assert.equal(
       sample.privateStreams +
@@ -303,7 +312,7 @@ try {
     assert.ok(workflow.steps.every((entry) => entry.attempts > 0 && entry.resultBytes > 0));
     assert.equal(
       workflow.steps.filter((entry) => entry.name.startsWith('tool-')).length,
-      expectedTools,
+      expectedToolClaims,
     );
     assert.equal(
       workflow.steps.filter((entry) => entry.name.startsWith('schedule-model-')).length,

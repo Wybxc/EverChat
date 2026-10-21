@@ -352,7 +352,8 @@ test('title generation is accounted independently, while instance loss never rep
     expect((await records()).records.find((r) => r.kind === 'title')).toMatchObject({
       model: 'title-fixture-normal',
       conversationId: id,
-      usageIsFinal: false,
+      usage: { inputTokens: 10, outputTokens: 4 },
+      usageIsFinal: true,
     });
     const sent = await request.post(`/api/conversations/${interrupted}/messages`, {
       headers,

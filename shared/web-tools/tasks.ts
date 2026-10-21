@@ -6,23 +6,25 @@ import type { ResolvedModelMetadata } from '../models/types';
 export const WEB_TOOL_NAMES = ['web_search', 'read_webpage'] as const;
 export type WebToolName = (typeof WEB_TOOL_NAMES)[number];
 export const MAX_TOOL_CALLS_PER_TURN = 2;
-export const MAX_TOOL_INPUT_BYTES = 8 * 1024;
+// Leave room for an 8192-character URL, JSON escaping and UTF-8 encoding.
+export const MAX_TOOL_INPUT_BYTES = 64 * 1024;
+export const MAX_WEB_URL_CHARACTERS = 8192;
 const MAX_TOOL_RESULT_BYTES = 64 * 1024;
 export const MAX_TOOL_SOURCES = 5;
 export const MAX_TOOL_SOURCE_CHARACTERS = 12_000;
 
-// Fetch targets and source links use the same conservative public HTTPS rules.
+// Fetch targets and citations are public pages, not credential-bearing service endpoints.
 // DNS/network enforcement belongs to the configured service, not this syntactic check.
 export function publicWebUrl(value: string): boolean {
-  if (value.length > 2048 || /[\\\u0000-\u0020\u007f]/.test(value)) return false;
+  if (value.length > MAX_WEB_URL_CHARACTERS || /[\\\u0000-\u0020\u007f]/.test(value)) return false;
   try {
     const url = new URL(value),
       host = url.hostname.toLowerCase();
     return (
-      url.protocol === 'https:' &&
+      ['http:', 'https:'].includes(url.protocol) &&
       !url.username &&
       !url.password &&
-      (!url.port || url.port === '443') &&
+      !url.port &&
       host.length <= 253 &&
       /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z]{2,}$/.test(host) &&
       host
@@ -54,20 +56,30 @@ const callId = v.pipe(
   v.maxLength(256),
   v.check((id) => !/[\u0000-\u0020\u007f]/.test(id)),
 );
+const toolName = v.pipe(v.string(), v.minLength(1), v.maxLength(128), v.regex(/^[a-zA-Z0-9_-]+$/));
 const name = v.picklist(WEB_TOOL_NAMES);
-const webUrlInput = v.pipe(v.string(), v.minLength(1), v.maxLength(2048));
-const url = v.pipe(webUrlInput, v.check(publicWebUrl, '只允许公开 HTTPS 网页地址。'));
+const webUrlInput = v.pipe(v.string(), v.minLength(1), v.maxLength(MAX_WEB_URL_CHARACTERS));
+const url = v.pipe(webUrlInput, v.check(publicWebUrl, '只允许公开 HTTP 或 HTTPS 网页地址。'));
 // Serializable model constraints. Network-target policy remains a business check.
 export const webToolInputSchemas = {
   web_search: v.strictObject({ query: safeText(500) }),
   read_webpage: v.strictObject({ url: webUrlInput }),
 };
-export function validateWebToolIdentity(
-  id: string,
-  toolName: string,
-  enabled: readonly WebToolName[],
-) {
-  if (!v.is(callId, id) || !v.is(name, toolName) || !enabled.includes(toolName))
+export function webToolInputSchemasFor(provider?: 'tavily' | 'deepseek') {
+  return provider === 'deepseek'
+    ? {
+        ...webToolInputSchemas,
+        web_search: v.strictObject({
+          query: v.pipe(
+            safeText(256),
+            v.check((query) => [...query].length <= 128, 'query 最多 128 个 Unicode 字符。'),
+          ),
+        }),
+      }
+    : webToolInputSchemas;
+}
+export function validateWebToolIdentity(id: string, toolName: string) {
+  if (!v.is(callId, id) || !/^[a-zA-Z0-9_-]{1,128}$/.test(toolName))
     throw new AppError(problem('TOOL_INVALID'), '模型返回了未启用的工具或无效调用标识。');
 }
 const webToolCallSchema = v.variant('name', [
@@ -81,11 +93,58 @@ const webToolCallSchema = v.variant('name', [
     name: v.literal('read_webpage'),
     input: v.pipe(
       webToolInputSchemas.read_webpage,
-      v.check((input) => publicWebUrl(input.url), '只允许公开 HTTPS 网页地址。'),
+      v.check((input) => publicWebUrl(input.url), '只允许公开 HTTP 或 HTTPS 网页地址。'),
     ),
   }),
 ]);
 export type WebToolCall = v.InferOutput<typeof webToolCallSchema>;
+const jsonInput = v.custom<unknown>((value) => {
+  const json = (value: unknown, depth: number): boolean => {
+    if (depth > 20) return false;
+    if (value === null || typeof value === 'string' || typeof value === 'boolean') return true;
+    if (typeof value === 'number') return Number.isFinite(value);
+    if (Array.isArray(value)) return value.every((item) => json(item, depth + 1));
+    return (
+      !!value &&
+      typeof value === 'object' &&
+      Object.getPrototypeOf(value) === Object.prototype &&
+      Object.values(value).every((item) => json(item, depth + 1))
+    );
+  };
+  return json(value, 0);
+});
+const invalidCallSchema = v.strictObject({
+  id: callId,
+  name: toolName,
+  input: jsonInput,
+  invalid: v.literal(true),
+  error: safeText(500),
+});
+const candidateSchema = v.union([webToolCallSchema, invalidCallSchema]);
+export type WebToolCandidate =
+  (WebToolCall & { invalid?: never }) | v.InferOutput<typeof invalidCallSchema>;
+export function validateWebToolCandidate(
+  value: unknown,
+  enabled: readonly WebToolName[],
+): WebToolCandidate {
+  const result = v.safeParse(candidateSchema, value);
+  if (
+    !result.success ||
+    new TextEncoder().encode(JSON.stringify(result.output.input)).byteLength > MAX_TOOL_INPUT_BYTES
+  )
+    throw new AppError(problem('TOOL_INVALID'), '工具候选调用无效或超过大小限制。');
+  if (!('invalid' in result.output)) validateWebToolCall(result.output, enabled);
+  return result.output;
+}
+export function webToolInputText(call: WebToolCandidate): string {
+  return call.invalid
+    ? typeof call.input === 'string'
+      ? call.input
+      : JSON.stringify(call.input)
+    : call.name === 'web_search'
+      ? call.input.query
+      : call.input.url;
+}
 const sourceSchema = v.strictObject({
   title: safeText(300),
   url,
@@ -105,10 +164,11 @@ const webToolOutcomeSchema = v.variant('status', [
           MAX_TOOL_SOURCE_CHARACTERS,
       ),
     ),
+    warnings: v.optional(v.pipe(v.array(safeText(200)), v.maxLength(5))),
   }),
   v.strictObject({
     id: callId,
-    name,
+    name: toolName,
     status: v.literal('failed'),
     error: safeText(500),
     issue: v.optional(errorIssueSchema),
@@ -136,7 +196,7 @@ export type WebToolOutcome = v.InferOutput<typeof webToolOutcomeSchema>;
 export type WebToolFailure = NonNullable<Extract<WebToolOutcome, { status: 'failed' }>['failure']>;
 export interface PublicToolCall {
   round: number;
-  call: WebToolCall;
+  call: WebToolCandidate;
   state: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
   result?: WebToolOutcome;
 }
@@ -196,7 +256,7 @@ export const publicToolTaskSchema = v.pipe(
     calls: v.array(
       v.strictObject({
         round,
-        call: webToolCallSchema,
+        call: candidateSchema,
         state: v.picklist(['queued', 'running', 'completed', 'failed', 'cancelled']),
         result: v.optional(webToolOutcomeSchema),
       }),
@@ -212,11 +272,12 @@ export const publicToolTaskSchema = v.pipe(
           task.calls.filter((candidate) => candidate.round === item.round).length >
             MAX_TOOL_CALLS_PER_TURN ||
           (task.status !== 'active' && ['queued', 'running'].includes(item.state)) ||
-          (task.status === 'completed' && item.state === 'cancelled')
+          (task.status === 'completed' && item.state === 'cancelled') ||
+          ('invalid' in item.call && item.state !== 'failed')
         )
           return false;
         try {
-          validateWebToolCall(item.call, WEB_TOOL_NAMES);
+          validateWebToolCandidate(item.call, WEB_TOOL_NAMES);
           if (item.result) validateWebToolOutcome(item.result);
         } catch {
           return false;

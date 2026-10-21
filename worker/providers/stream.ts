@@ -6,7 +6,7 @@ import {
   estimateDocumentTokens,
   type DocumentPart,
 } from '../../shared/attachments/documents';
-import type { LanguageModelV4Prompt } from '@ai-sdk/provider';
+import type { ModelMessage } from 'ai';
 import type { ChatInput, ProviderConfig } from '../../shared/providers/types';
 import { GenerationCancelled, ProviderError } from '../generation/errors';
 import {
@@ -15,8 +15,9 @@ import {
   ImageContextError,
   type ImagePart,
 } from '../../shared/attachments/images';
-import { providerCallOptions, providerModel } from './sdk';
-import { providerToolPrompt, webToolDefinitions, type ProviderToolRequest } from './tool-turn';
+import { providerModel, providerRequestInit } from './sdk';
+import { providerToolPrompt, type ProviderToolRequest } from './tool-turn';
+import { coreProviderStream } from './core';
 import { assertWebToolSupport } from '../../shared/web-tools/tasks';
 import { sdkProviderError } from './sdk-diagnostics';
 import { httpProviderError, providerFailure } from './failure';
@@ -47,17 +48,7 @@ export async function openProviderStream(
     signal.throwIfAborted();
     await beforeRequest?.();
     signal.throwIfAborted();
-    // Open Responses exposes reasoning options, but not store/include yet.
-    if (
-      config.provider === 'openai-responses' &&
-      new URL(config.baseUrl).hostname !== 'api.openai.com' &&
-      typeof init?.body === 'string'
-    ) {
-      const payload = JSON.parse(init.body);
-      payload.store = false;
-      if (toolRequest) payload.include = ['reasoning.encrypted_content'];
-      init = { ...init, body: JSON.stringify(payload) };
-    }
+    init = providerRequestInit(config, init, Boolean(toolRequest));
     const response = await globalThis.fetch(input, { ...init, signal, redirect: 'manual' });
     responseHeaders = response.headers;
     if (!response.ok) throw await httpProviderError(response, config, secrets);
@@ -122,7 +113,7 @@ export async function openProviderStream(
         imageData.set(image.attachmentId, data);
       }
     signal.throwIfAborted();
-    const prompt: LanguageModelV4Prompt = [
+    const prompt: ModelMessage[] = [
       ...(config.systemPrompt ? [{ role: 'system' as const, content: config.systemPrompt }] : []),
       ...context.map((message) =>
         message.role === 'system'
@@ -138,7 +129,7 @@ export async function openProviderStream(
                 ...(message.images ?? []).map((image) => ({
                   type: 'file' as const,
                   mediaType: image.mediaType,
-                  data: { type: 'data' as const, data: imageData.get(image.attachmentId)! },
+                  data: imageData.get(image.attachmentId)!,
                 })),
               ],
             },
@@ -146,13 +137,12 @@ export async function openProviderStream(
     ];
     if (toolRequest)
       prompt.push(...providerToolPrompt(toolRequest.exchanges ?? [], toolRequest.enabled, config));
-    const result = await providerModel(config, request).doStream(
-      providerCallOptions(
-        config,
-        prompt,
-        signal,
-        toolRequest ? webToolDefinitions(toolRequest.enabled) : undefined,
-      ),
+    const result = await coreProviderStream(
+      providerModel(config, request),
+      config,
+      prompt,
+      signal,
+      toolRequest,
     );
     return providerEvents(
       result.stream,
@@ -160,8 +150,8 @@ export async function openProviderStream(
       guard,
       signal,
       secrets,
-      responseHeaders,
-      toolRequest,
+      () => responseHeaders,
+      result.native,
       onOutput,
     );
   } catch (error) {

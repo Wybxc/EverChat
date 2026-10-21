@@ -12,6 +12,28 @@ import type { ProviderConfig } from '../../shared/providers/types';
 import { normalizeBaseUrl } from './config';
 import { ProviderError } from '../generation/errors';
 
+// Public diagnostics are bounded and redacted by EverChat; do not also log
+// provider warning payloads through Core's process-wide default logger.
+globalThis.AI_SDK_LOG_WARNINGS = false;
+
+/** Open Responses does not expose store/include in its provider options yet. */
+export function providerRequestInit(
+  config: ProviderConfig,
+  init: RequestInit | undefined,
+  includeEncrypted = false,
+): RequestInit | undefined {
+  if (
+    config.provider !== 'openai-responses' ||
+    new URL(config.baseUrl).hostname === 'api.openai.com' ||
+    typeof init?.body !== 'string'
+  )
+    return init;
+  const payload = JSON.parse(init.body);
+  payload.store = false;
+  if (includeEncrypted) payload.include = ['reasoning.encrypted_content'];
+  return { ...init, body: JSON.stringify(payload) };
+}
+
 export function providerModel(
   config: ProviderConfig,
   fetch: typeof globalThis.fetch,

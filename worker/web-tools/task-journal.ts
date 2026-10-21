@@ -9,7 +9,7 @@ import {
   assertWebToolSupport,
   validateWebToolOutcome,
   type PublicToolTask,
-  type WebToolCall,
+  type WebToolCandidate,
   type WebToolName,
   type WebToolOutcome,
 } from '../../shared/web-tools/tasks';
@@ -80,7 +80,7 @@ export interface ToolTaskState {
   issue?: ErrorIssue;
 }
 interface ToolCallView {
-  call: WebToolCall;
+  call: WebToolCandidate;
   state: Call['state'];
   result?: WebToolOutcome;
 }
@@ -345,12 +345,22 @@ export class ToolTaskJournal {
     );
     turn.calls.forEach((call, ordinal) =>
       this.query(
-        "INSERT INTO web_tool_calls VALUES (?, ?, ?, ?, ?, 'queued', NULL)",
+        'INSERT INTO web_tool_calls VALUES (?, ?, ?, ?, ?, ?, ?)',
         root.id,
         runId,
         ordinal,
         call.id,
         serialized(call),
+        call.invalid ? 'failed' : 'queued',
+        call.invalid
+          ? serialized({
+              id: call.id,
+              name: call.name,
+              status: 'failed',
+              error: call.error,
+              issue: problem('TOOL_INVALID'),
+            })
+          : null,
       ),
     );
     this.notify(root, model.round);
@@ -386,7 +396,7 @@ export class ToolTaskJournal {
           callId,
         ).toArray()[0] ?? taskError('工具调用不存在。');
     const result = validateWebToolOutcome(value),
-      original = JSON.parse(call.payload) as WebToolCall,
+      original = JSON.parse(call.payload) as WebToolCandidate,
       payload = serialized(result);
     if (result.id !== callId || result.name !== original.name) taskError('工具结果与原调用不符。');
     if (root.status !== 'active' || root.deadline <= this.now()) return false;
@@ -516,7 +526,7 @@ export class ToolTaskJournal {
       "SELECT * FROM web_tool_calls WHERE rootId = ? AND state IN ('queued', 'running')",
       id,
     ).toArray()) {
-      const original = JSON.parse(call.payload) as WebToolCall;
+      const original = JSON.parse(call.payload) as WebToolCandidate;
       this.query(
         'UPDATE web_tool_calls SET state = ?, outcome = ? WHERE rootId = ? AND callId = ?',
         status === 'cancelled' ? 'cancelled' : 'failed',
@@ -547,7 +557,7 @@ export class ToolTaskJournal {
     for (const call of this.query<Call>(
       "SELECT web_tool_calls.* FROM web_tool_calls JOIN web_tool_tasks ON web_tool_tasks.id = rootId WHERE status = 'active' AND state = 'running'",
     ).toArray()) {
-      const original = JSON.parse(call.payload) as WebToolCall;
+      const original = JSON.parse(call.payload) as WebToolCandidate;
       this.finishTool(call.rootId, call.callId, {
         id: original.id,
         name: original.name,

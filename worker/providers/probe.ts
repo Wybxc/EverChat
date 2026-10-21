@@ -1,22 +1,20 @@
-import type {
-  LanguageModelV4CallOptions,
-  LanguageModelV4Content,
-  LanguageModelV4Prompt,
-} from '@ai-sdk/provider';
+import { generateText, tool, ToolChoiceViolationError, type ModelMessage } from 'ai';
+import { valibotSchema } from '@ai-sdk/valibot';
+import * as v from 'valibot';
 import type { ProviderConfig } from '../../shared/providers/types';
 import type { ModelProbeResult, ProbeCapability } from '../../shared/models/probe';
-import { providerCallOptions, providerModel } from './sdk';
+import { providerCallOptions, providerModel, providerRequestInit } from './sdk';
 import { probeImage } from './probe-image';
 import { sdkProviderError } from './sdk-diagnostics';
 import { httpProviderError } from './failure';
 import { ProviderError } from '../generation/errors';
-import { sdkUsage } from '../../shared/usage/normalize';
+import { coreUsage } from '../../shared/usage/normalize';
 import type { StreamUsage } from '../../shared/streaming/provider-stream';
+import { boundedJsonResponse, ProviderResponseTooLarge } from './response-body';
 
 export const PROBE_TIMEOUT_MS = 15_000,
   PROBE_RESPONSE_BYTES = 64 * 1024;
 const toolName = 'everchat_capability_probe';
-class ResponseTooLarge extends Error {}
 
 export async function probeModelCapability(
   config: ProviderConfig,
@@ -36,7 +34,7 @@ export async function probeModelCapability(
   const nonce = crypto.randomUUID().replaceAll('-', '').slice(0, 6).toUpperCase();
   const timeout = AbortSignal.timeout(PROBE_TIMEOUT_MS),
     abort = AbortSignal.any([signal, timeout]);
-  const prompt: LanguageModelV4Prompt = [
+  const prompt: ModelMessage[] = [
     {
       role: 'user',
       content:
@@ -48,7 +46,7 @@ export async function probeModelCapability(
               },
               {
                 type: 'file',
-                data: { type: 'data', data: probeImage(nonce) },
+                data: probeImage(nonce),
                 mediaType: 'image/png',
               },
             ]
@@ -63,22 +61,15 @@ export async function probeModelCapability(
             ],
     },
   ];
-  const tools: LanguageModelV4CallOptions['tools'] =
+  const tools =
     capability === 'toolCalls'
-      ? [
-          {
-            type: 'function',
-            name: toolName,
+      ? {
+          [toolName]: tool({
             description:
               'Return the supplied verification challenge. This function is only inspected and never executed.',
-            inputSchema: {
-              type: 'object',
-              properties: { challenge: { type: 'string', enum: [nonce] } },
-              required: ['challenge'],
-              additionalProperties: false,
-            },
-          },
-        ]
+            inputSchema: valibotSchema(v.strictObject({ challenge: v.literal(nonce) })),
+          }),
+        }
       : undefined;
   let oversized = false;
   let usage: StreamUsage = {},
@@ -87,44 +78,21 @@ export async function probeModelCapability(
   const boundedFetch: typeof globalThis.fetch = async (input, init) => {
     abort.throwIfAborted();
     await accounting?.start();
-    const response = await fetch(input, { ...init, signal: abort, redirect: 'manual' });
+    const response = await fetch(input, {
+      ...providerRequestInit(config, init),
+      signal: abort,
+      redirect: 'manual',
+    });
     httpStatus = response.status;
     if (!response.ok) {
       throw await httpProviderError(response, config);
     }
-    if (!response.body) throw new Error('Empty response');
-    const reader = response.body.getReader(),
-      chunks: Uint8Array[] = [];
-    let length = 0;
-    const cancel = () => {
-      void reader.cancel().catch(() => {});
-    };
-    abort.addEventListener('abort', cancel, { once: true });
     try {
-      while (true) {
-        abort.throwIfAborted();
-        const result = await reader.read();
-        if (result.done) break;
-        length += result.value.byteLength;
-        if (length > PROBE_RESPONSE_BYTES) {
-          oversized = true;
-          throw new ResponseTooLarge();
-        }
-        chunks.push(result.value);
-      }
-      abort.throwIfAborted();
-    } finally {
-      abort.removeEventListener('abort', cancel);
-      await reader.cancel().catch(() => {});
-      reader.releaseLock();
+      return await boundedJsonResponse(response, PROBE_RESPONSE_BYTES, abort);
+    } catch (error) {
+      oversized = error instanceof ProviderResponseTooLarge;
+      throw error;
     }
-    const bytes = new Uint8Array(length);
-    let offset = 0;
-    for (const chunk of chunks) {
-      bytes.set(chunk, offset);
-      offset += chunk.length;
-    }
-    return new Response(bytes, { status: response.status, headers: response.headers });
   };
   const result = (reason: ModelProbeResult['reason']): ModelProbeResult => ({
     capability,
@@ -143,26 +111,36 @@ export async function probeModelCapability(
       maxOutputTokens: 256,
       reasoningEnabled: false,
     };
-    const options = providerCallOptions(probeConfig, prompt, abort, tools);
+    const options = providerCallOptions(probeConfig, [], abort);
     // A tool-capable model must make the actual call. No returned tool is executed.
-    if (tools) options.toolChoice = { type: 'required' };
-    const response = await providerModel(probeConfig, boundedFetch).doGenerate(options);
-    usage = sdkUsage(response.usage);
+    const response = await generateText({
+      model: providerModel(probeConfig, boundedFetch),
+      messages: prompt,
+      tools,
+      ...(tools ? { toolChoice: 'required' } : {}),
+      maxRetries: 0,
+      abortSignal: abort,
+      maxOutputTokens: options.maxOutputTokens,
+      providerOptions: options.providerOptions,
+      telemetry: { isEnabled: false },
+      onLanguageModelCallEnd(event) {
+        // A valid response is billable even if Core subsequently rejects its
+        // required-tool choice. A capability mismatch is not a failed request.
+        usage = coreUsage(event.usage);
+        final = true;
+      },
+    });
+    usage = coreUsage(response.usage);
     final = true;
-    const content: LanguageModelV4Content[] = response.content;
     if (capability !== 'toolCalls') {
-      const text = content
-        .filter((part) => part.type === 'text')
-        .map((part) => part.text)
-        .join('')
-        .trim()
-        .toUpperCase();
+      const text = response.text.trim().toUpperCase();
       return result(text === nonce ? 'matched' : 'mismatch');
     }
-    const calls = content.filter((part) => part.type === 'tool-call');
+    const calls = response.toolCalls;
     if (calls.length !== 1 || calls[0].toolName !== toolName) return result('mismatch');
     try {
-      const input: unknown = JSON.parse(calls[0].input);
+      if (calls[0].invalid) return result('mismatch');
+      const input: unknown = calls[0].input;
       return result(
         input &&
           typeof input === 'object' &&
@@ -176,6 +154,7 @@ export async function probeModelCapability(
     }
   } catch (error) {
     if (signal.aborted) throw signal.reason;
+    if (ToolChoiceViolationError.isInstance(error)) return result('mismatch');
     return {
       ...result(timeout.aborted ? 'timeout' : oversized ? 'response-too-large' : 'request-failed'),
       failure:

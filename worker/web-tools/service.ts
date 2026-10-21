@@ -17,10 +17,7 @@ const WEB_TOOL_TIMEOUT_MS = 15_000;
 export type WebToolFetch = (request: Request) => Promise<Response>;
 const credentialsError = '联网服务密钥无效或没有访问权限。';
 const quotaError = '联网服务的请求或用量额度已用尽。';
-const timeoutError = '联网工具执行已停止或超过 15 秒期限。';
-export function terminalWebToolError(outcome: WebToolOutcome): string | undefined {
-  return outcome.status === 'failed' && outcome.failure?.terminal ? outcome.error : undefined;
-}
+const timeoutError = '该网页请求超过 15 秒期限，请尝试其他来源或根据已有资料继续。';
 const invalid = () => new AppError(problem('TOOL_INVALID'), '联网服务返回了无效或超限的结果。');
 const object = (value: unknown): Record<string, unknown> => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw invalid();
@@ -108,10 +105,14 @@ export async function executeWebTool(
   )
     return failed('尚未配置联网工具服务。', 'CONFIGURATION', true);
   const controller = new AbortController(),
-    abort = () => controller.abort(),
-    timer = setTimeout(abort, WEB_TOOL_TIMEOUT_MS);
+    abort = () => controller.abort(signal.reason),
+    timer = setTimeout(
+      () => controller.abort(new DOMException('Tool timed out', 'TimeoutError')),
+      WEB_TOOL_TIMEOUT_MS,
+    );
   signal.addEventListener('abort', abort, { once: true });
   if (signal.aborted) abort();
+  let responseReceived = false;
   try {
     controller.signal.throwIfAborted();
     const search = call.name === 'web_search',
@@ -158,6 +159,7 @@ export async function executeWebTool(
         signal: controller.signal,
       }),
     );
+    responseReceived = true;
     if (!response.ok) {
       await response.body?.cancel().catch(() => {});
       const status = response.status;
@@ -205,23 +207,31 @@ export async function executeWebTool(
     )
       return failed('无法提取该网页的正文。');
     const sources: Extract<WebToolOutcome, { status: 'completed' }>['sources'] = [];
-    let remaining = MAX_TOOL_SOURCE_CHARACTERS;
-    for (const item of data.results.slice(0, search ? MAX_TOOL_SOURCES : 1)) {
+    let remaining = MAX_TOOL_SOURCE_CHARACTERS,
+      ignored = 0;
+    for (const item of data.results) {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) {
+        ignored++;
+        continue;
+      }
       const row = object(item),
-        content = deepseek
-          ? search
-            ? row.summary || row.snippet || ''
-            : row.content
-          : search
-            ? row.content
-            : row.raw_content;
+        content =
+          deepseek && search
+            ? [row.summary, row.snippet].find((value) => typeof value === 'string' && value.trim())
+            : deepseek || search
+              ? row.content
+              : row.raw_content;
+      // Credential echoes invalidate the response, including otherwise unusable rows.
       if (
-        typeof row.url !== 'string' ||
-        !publicWebUrl(row.url) ||
-        typeof content !== 'string' ||
-        (search && typeof row.title !== 'string')
+        [row.title, row.url, content].some(
+          (value) => typeof value === 'string' && value.includes(config.apiKey),
+        )
       )
         throw invalid();
+      if (typeof row.url !== 'string' || !publicWebUrl(row.url) || typeof content !== 'string') {
+        ignored++;
+        continue;
+      }
       const title =
         text(typeof row.title === 'string' ? row.title : new URL(row.url).hostname, 300) ||
         new URL(row.url).hostname;
@@ -229,17 +239,23 @@ export async function executeWebTool(
         truncated = clean.length > remaining;
       const notice = remaining >= 12 ? '\n[内容已截取]' : '…';
       const value = truncated ? text(clean, remaining - notice.length) + notice : clean;
-      if (!value) continue;
+      if (!value) {
+        ignored++;
+        continue;
+      }
       sources.push({ title, url: row.url, content: value });
       remaining -= value.length;
-      if (!remaining || truncated) break;
+      if (!remaining || truncated || sources.length === MAX_TOOL_SOURCES) break;
     }
     if (!search && !sources.length) return failed('该网页没有可读取的正文。');
+    if (search && data.results.length && !sources.length)
+      return failed('搜索返回的来源均不可用，请调整搜索词或尝试其他来源。');
     const outcome = validateWebToolOutcome({
       id: call.id,
       name: call.name,
       status: 'completed',
       sources,
+      ...(ignored ? { warnings: [`已忽略 ${ignored} 条无效来源。`] } : {}),
     });
     if (
       outcome.status === 'completed' &&
@@ -250,9 +266,13 @@ export async function executeWebTool(
       throw invalid();
     return outcome;
   } catch {
+    // A task cancellation must not be mistaken for this tool's own deadline.
+    if (signal.aborted) throw signal.reason;
     return controller.signal.aborted
-      ? failed(timeoutError, 'TIMEOUT', true)
-      : failed('联网服务返回了无效结果或连接中断。', 'INVALID_RESULT');
+      ? failed(timeoutError, 'TIMEOUT')
+      : !responseReceived
+        ? failed('无法连接联网服务，请根据已有资料继续或稍后重试。', 'SERVICE_UNAVAILABLE')
+        : failed('联网服务返回了无效或超限的结果。');
   } finally {
     clearTimeout(timer);
     signal.removeEventListener('abort', abort);

@@ -168,6 +168,53 @@ test('task acceptance pins identity and immutable budgets, deduplicates after a 
   assert.deepEqual(reader().state(input.id), initial);
 });
 
+test('rejected arguments are durably failed without tool admission, while a valid sibling executes and both feed continuation', async (t) => {
+  const { begin, save, reader, write, finish } = database(t),
+    input = begin();
+  const value = await collectProviderToolTurn(
+    config,
+    enabled,
+    fragmentedToolBody(
+      toolStream('openai-chat', {
+        calls: [
+          { name: 'web_search', input: '{' },
+          { name: 'web_search', input: '{"query":"valid"}' },
+        ],
+      }),
+    ),
+    new AbortController().signal,
+  );
+  save(input, value);
+  assert.deepEqual(
+    reader()
+      .publicCalls(input.runId)
+      .map((item) => item.state),
+    ['failed', 'queued'],
+  );
+  assert.equal(
+    write((j) => j.claimTool(input.id, 'call_0')),
+    false,
+  );
+  assert.equal(reader().state(input.id).toolRequests, 0);
+  const publicTask = reader().publicTask(input.id);
+  assert.equal(v.is(publicToolTaskSchema, publicTask), true);
+  const forged = structuredClone(publicTask);
+  forged.calls[0].state = 'queued';
+  delete forged.calls[0].result;
+  assert.equal(
+    v.is(publicToolTaskSchema, forged),
+    false,
+    'invalid candidates can never be executable',
+  );
+  finish(input.id, 'call_1');
+  const exchanges = reader().exchanges(input.id, 1, config);
+  assert.equal(exchanges[0].outcomes[0].status, 'failed');
+  assert.equal(exchanges[0].outcomes[1].status, 'completed');
+  assert.equal(reader().state(input.id).toolRequests, 1);
+  write((j) => j.queueModel(input.id, 1, crypto.randomUUID(), input.messageId, config));
+  assert.equal(reader().state(input.id).phase, 'queued');
+});
+
 test('invalid IDs, unknown capabilities and insufficient initial context cannot create a task', (t) => {
   const { begin, query } = database(t);
   for (const input of [

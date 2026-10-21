@@ -125,7 +125,6 @@ test('private URLs, credentials, malformed schemas and echoed service keys never
   for (const value of [
     { results: [{ ...source, url: 'https://127.0.0.1/' }] },
     { results: [{ ...source, url: 'https://user:pass@example.com/' }] },
-    { results: [{ ...source, url: 'http://example.com/' }] },
     { results: [{ ...source, content: config.apiKey }] },
     { results: [{ ...source, title: config.apiKey }] },
     { results: [{ ...source, url: `https://example.com/?key=${config.apiKey}` }] },
@@ -266,16 +265,62 @@ test('a stalled response body is cancelled by the caller and pre-cancelled reque
   );
   await new Promise((resolve) => setTimeout(resolve, 5));
   controller.abort();
-  assert.equal((await result).status, 'failed');
+  await assert.rejects(result, { name: 'AbortError' });
   assert.equal(cancelled, true);
-  assert.equal(
-    (
-      await executeWebTool(config, search, controller.signal, async () => {
-        throw new Error('Must not fetch');
-      })
-    ).status,
-    'failed',
+  await assert.rejects(
+    executeWebTool(config, search, controller.signal, async () => {
+      throw new Error('Must not fetch');
+    }),
+    { name: 'AbortError' },
   );
+});
+
+test('mixed search results keep valid HTTP pages, fall back to host titles, and report bounded warnings', async () => {
+  const result = await run(
+    json({
+      results: [
+        null,
+        { ...source, url: 'https://127.0.0.1/' },
+        { ...source, content: ' ' },
+        { ...source, title: undefined, url: 'http://example.org/page' },
+        source,
+      ],
+    }),
+  );
+  assert.deepEqual(result, {
+    id: search.id,
+    name: search.name,
+    status: 'completed',
+    sources: [{ ...source, title: 'example.org', url: 'http://example.org/page' }, source],
+    warnings: ['已忽略 3 条无效来源。'],
+  });
+  const allInvalid = await run(json({ results: [null, { ...source, content: '' }] }));
+  assert.equal(allInvalid.status, 'failed');
+});
+
+test('a single tool timeout is recoverable, while task cancellation still rejects', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const result = executeWebTool(config, search, new AbortController().signal, async (request) => {
+    return new Promise<Response>((_, reject) =>
+      request.signal.addEventListener('abort', () => reject(request.signal.reason), { once: true }),
+    );
+  });
+  t.mock.timers.tick(15_000);
+  const outcome = await result;
+  assert.equal(outcome.status, 'failed');
+  if (outcome.status === 'failed') {
+    assert.equal(outcome.failure?.code, 'TIMEOUT');
+    assert.equal(outcome.failure?.terminal, false);
+  }
+});
+
+test('connection failures are service failures and never return network diagnostics', async () => {
+  const outcome = await executeWebTool(config, search, new AbortController().signal, async () => {
+    throw new TypeError(config.apiKey);
+  });
+  assert.equal(outcome.status, 'failed');
+  if (outcome.status === 'failed') assert.equal(outcome.failure?.code, 'SERVICE_UNAVAILABLE');
+  assert.ok(!JSON.stringify(outcome).includes(config.apiKey));
 });
 
 test('streaming JSON preserves fragmented UTF-8', async () => {
@@ -367,8 +412,7 @@ test('DeepSeek query limits count Unicode points and reject before a paid reques
   assert.equal(calls, 1);
 });
 
-test('DeepSeek account failures stop the task, while Fetch 403/404 remain page failures and never retry or leak diagnostics', async () => {
-  const { terminalWebToolError } = await import('../../../worker/web-tools/service');
+test('DeepSeek account failures disable the service, while Fetch 403/404 remain page failures and never retry or leak diagnostics', async () => {
   const service: WebToolServiceConfig = { ...config, provider: 'deepseek' };
   for (const status of [401, 402, 429, 403, 404, 500]) {
     let calls = 0;
@@ -383,7 +427,6 @@ test('DeepSeek account failures stop the task, while Fetch 403/404 remain page f
     );
     assert.equal(calls, 1);
     assert.equal(result.status, 'failed');
-    assert.equal(Boolean(terminalWebToolError(result)), [401, 402, 429].includes(status));
     if (result.status === 'failed') {
       assert.equal(result.failure?.provider, 'deepseek');
       assert.equal(result.failure?.httpStatus, status);
@@ -391,10 +434,7 @@ test('DeepSeek account failures stop the task, while Fetch 403/404 remain page f
       if (status === 402) assert.match(result.error, /余额不足/);
       if (status === 429) assert.match(result.error, /限速/);
       if ([403, 404].includes(status)) assert.equal(result.failure?.code, 'PAGE_UNAVAILABLE');
-      assert.equal(
-        terminalWebToolError({ ...result, error: '换一种错误文案' }),
-        result.failure?.terminal ? '换一种错误文案' : undefined,
-      );
+      assert.equal(result.failure?.terminal, [401, 402, 429].includes(status));
     }
     assert.ok(!JSON.stringify(result).includes(service.apiKey));
   }

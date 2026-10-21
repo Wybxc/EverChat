@@ -18,6 +18,7 @@ import { webToolDefinitions } from '../../../worker/providers/tool-turn';
 import { validateWebToolCall } from '../../../shared/web-tools/tasks';
 import { ProviderUsage } from '../../../worker/providers/stream-usage';
 import type { ProviderConfig } from '../../../shared/providers/types';
+import { AppError, problem } from '../../../shared/errors/descriptor';
 
 const config: ProviderConfig = {
   provider: 'openai-chat',
@@ -91,6 +92,13 @@ test('public SDK diagnostics are bounded, sanitized, and strict across partial c
 });
 
 test('typed SDK HTTP and validation errors preserve safe diagnostics without request values or retries', () => {
+  const invalidTool = sdkProviderError(
+    new AppError(problem('TOOL_INVALID'), '工具参数无效。'),
+    config,
+    'protocol',
+  );
+  assert.equal(invalidTool.details?.stage, 'tool');
+  assert.equal(invalidTool.issue.code, 'TOOL_INVALID');
   const error = new APICallError({
     message: 'raw private prompt',
     url: config.baseUrl,

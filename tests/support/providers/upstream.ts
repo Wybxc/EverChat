@@ -150,9 +150,11 @@ export function installMockUpstream() {
       const data = requestBody as typeof requestBody & {
         max_tokens?: number;
         max_completion_tokens?: number;
+        stream?: boolean;
       };
       if (
         (data.max_tokens ?? data.max_completion_tokens) !== 128 ||
+        data.stream === true ||
         !JSON.stringify(data).includes('只输出一行普通文本')
       )
         return Response.json(
@@ -162,29 +164,26 @@ export function installMockUpstream() {
       if (modelId === 'title-fixture-error')
         return Response.json({ error: { message: 'Fixture title failure' } }, { status: 503 });
       const text = modelId === 'title-fixture-second' ? '第二个模型的标题' : '# “独立生成的标题”';
-      return new Response(
-        new ReadableStream<Uint8Array>({
-          async start(controller) {
-            await new Promise((resolve) =>
-              setTimeout(
-                resolve,
-                modelId === 'title-fixture-parallel'
-                  ? 8000
-                  : modelId === 'title-fixture-slow'
-                    ? 4000
-                    : 100,
-              ),
-            );
-            controller.enqueue(
-              encoder.encode(
-                `data: ${JSON.stringify({ choices: [{ delta: { content: text }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`,
-              ),
-            );
-            controller.close();
-          },
-        }),
-        { headers: { 'Content-Type': 'text/event-stream' } },
+      await new Promise((resolve) =>
+        setTimeout(
+          resolve,
+          modelId === 'title-fixture-parallel'
+            ? 8000
+            : modelId === 'title-fixture-slow'
+              ? 4000
+              : 100,
+        ),
       );
+      request.signal.throwIfAborted();
+      return Response.json({
+        id: 'fixture-title',
+        model: modelId,
+        created: 1,
+        choices: [
+          { index: 0, message: { role: 'assistant', content: text }, finish_reason: 'stop' },
+        ],
+        usage: { prompt_tokens: 10, completion_tokens: 4, total_tokens: 14 },
+      });
     }
     if (modelId === 'diagnostic-http')
       return Response.json(
@@ -278,7 +277,7 @@ export function installMockUpstream() {
       });
     }
     const toolModel =
-      /^tools-(?:(loop|multi|pause|service|flow)-)?(?:(large|sustained)-)?(openai-chat|openai-responses|anthropic|gemini)$/.exec(
+      /^tools-(?:(loop|multi|pause|service|flow|robust)-)?(?:(large|sustained)-)?(openai-chat|openai-responses|anthropic|gemini)$/.exec(
         modelId ?? '',
       );
     const toolKind = toolModel?.[3] as ProviderKind | undefined;
@@ -352,6 +351,17 @@ export function installMockUpstream() {
                           round === 0
                             ? JSON.stringify({ query: 'Cloudflare 文档🙂' })
                             : JSON.stringify({ url: 'https://developers.cloudflare.com/' }),
+                      },
+                    ],
+                  }
+                : {}),
+              ...(modelId?.startsWith('tools-robust-')
+                ? {
+                    calls: [
+                      { name: 'web_search', input: '{"query":42}' },
+                      {
+                        name: 'read_webpage',
+                        input: JSON.stringify({ url: 'http://developers.cloudflare.com/' }),
                       },
                     ],
                   }

@@ -12,6 +12,7 @@ import {
 } from '../../../shared/web-tools/tasks';
 import { openProviderStream } from '../../../worker/providers/stream';
 import { providerToolPrompt, type ProviderToolExchange } from '../../../worker/providers/tool-turn';
+import { toolContinuationChoice } from '../../../worker/providers/tool-turn';
 import { fragmentedToolBody, toolQuery, toolStream } from '../../support/providers/tool-streams';
 
 const kinds: ProviderKind[] = ['openai-chat', 'openai-responses', 'anthropic', 'gemini'];
@@ -43,6 +44,103 @@ const outcome = (id: string): WebToolOutcome => ({
   ],
 });
 const signal = () => new AbortController().signal;
+
+test('Core applies the selected DeepSeek service query schema using Unicode characters before execution', async () => {
+  const config: ProviderConfig = {
+    ...configuration('openai-chat'),
+    webTools: { provider: 'deepseek', apiKey: 'fixture-service-key', dailyLimit: 100 },
+  };
+  for (const [query, invalid] of [
+    ['🙂'.repeat(128), false],
+    ['中'.repeat(129), true],
+    ['x'.repeat(129), true],
+  ] as const) {
+    const turn = await collectProviderToolTurn(
+      config,
+      enabled,
+      fragmentedToolBody(toolStream('openai-chat', { input: JSON.stringify({ query }) })),
+      signal(),
+    );
+    assert.equal(!!turn.calls[0].invalid, invalid);
+    assert.deepEqual(turn.calls[0].input, { query });
+    if (turn.calls[0].invalid) assert.match(turn.calls[0].error, /128/);
+  }
+});
+
+for (const provider of kinds)
+  test(`${provider} persists a rejected call alongside a valid call and feeds both matching results into the next model round`, async () => {
+    const config = configuration(provider);
+    const turn = await collectProviderToolTurn(
+      config,
+      enabled,
+      fragmentedToolBody(
+        toolStream(provider, {
+          calls: [
+            { name: 'web_search', input: '{"query":12}' },
+            { name: 'web_search', input: JSON.stringify({ query: 'valid query' }) },
+          ],
+        }),
+      ),
+      signal(),
+    );
+    assert.equal(turn.calls[0].invalid, true);
+    assert.equal(turn.calls[1].invalid, undefined);
+    const exchange: ProviderToolExchange = JSON.parse(
+      JSON.stringify({
+        turn,
+        outcomes: [
+          { id: 'call_0', name: 'web_search', status: 'failed', error: 'query must be a string' },
+          outcome('call_1'),
+        ],
+      }),
+    );
+    const prompt = providerToolPrompt([exchange], enabled, config);
+    assert.equal(prompt[0].role, 'assistant');
+    assert.equal(prompt[1].role, 'tool');
+    if (prompt[1].role === 'tool') {
+      assert.deepEqual(
+        prompt[1].content.map((part) => part.type === 'tool-result' && part.toolCallId),
+        ['call_0', 'call_1'],
+      );
+      assert.equal(
+        prompt[1].content[0].type === 'tool-result' && prompt[1].content[0].output.type,
+        'error-text',
+      );
+    }
+    assert.equal(toolContinuationChoice([exchange]), 'auto');
+    assert.equal(
+      toolContinuationChoice([exchange, exchange]),
+      'auto',
+      'valid sources count as progress',
+    );
+    const failed = {
+      ...exchange,
+      outcomes: exchange.outcomes.map((value) => ({
+        id: value.id,
+        name: value.name,
+        status: 'failed' as const,
+        error: 'failed',
+      })),
+    };
+    assert.equal(toolContinuationChoice([failed, failed]), 'none');
+    assert.equal(
+      toolContinuationChoice([
+        {
+          ...exchange,
+          outcomes: [
+            {
+              id: 'call_0',
+              name: 'web_search',
+              status: 'failed',
+              error: 'no balance',
+              failure: { provider: 'deepseek', code: 'BALANCE', terminal: true },
+            },
+          ],
+        },
+      ]),
+      'none',
+    );
+  });
 
 for (const provider of kinds)
   test(`${provider} tool continuation preserves IDs, parameters and private reasoning metadata through a JSON checkpoint`, async (t) => {
@@ -147,26 +245,28 @@ for (const provider of kinds)
   });
 
 for (const provider of kinds)
-  test(`${provider} rejects an incomplete tool stream and unknown tools without a model retry`, async () => {
+  test(`${provider} rejects incomplete/ambiguous streams and retains unknown tools as non-executable candidates`, async () => {
     const config = configuration(provider),
       wire = toolStream(provider);
     await assert.rejects(
       collectProviderToolTurn(config, enabled, fragmentedToolBody(wire.slice(0, -20)), signal()),
       /完整|格式|结束/,
     );
-    await assert.rejects(
-      collectProviderToolTurn(
-        config,
-        enabled,
-        fragmentedToolBody(toolStream(provider, { name: 'run_shell' })),
-        signal(),
-      ),
-      /工具|验证/,
+    const unknown = await collectProviderToolTurn(
+      config,
+      enabled,
+      fragmentedToolBody(toolStream(provider, { name: 'run_shell' })),
+      signal(),
     );
-    await assert.rejects(
-      collectProviderToolTurn(config, ['read_webpage'], fragmentedToolBody(wire), signal()),
-      /工具|验证/,
+    assert.equal(unknown.calls[0].invalid, true);
+    assert.equal(unknown.calls[0].name, 'run_shell');
+    const disabled = await collectProviderToolTurn(
+      config,
+      ['read_webpage'],
+      fragmentedToolBody(wire),
+      signal(),
     );
+    assert.equal(disabled.calls[0].invalid, true);
     await assert.rejects(
       collectProviderToolTurn(
         config,
@@ -195,14 +295,13 @@ test('invalid arguments, truncated calls and oversized continuation metadata can
     '{"query":"ok","command":"rm"}',
     JSON.stringify({ query: 'x'.repeat(9000) }),
   ]) {
-    await assert.rejects(
-      collectProviderToolTurn(
-        config,
-        enabled,
-        fragmentedToolBody(toolStream('openai-chat', { input }), 101),
-        signal(),
-      ),
+    const rejected = await collectProviderToolTurn(
+      config,
+      enabled,
+      fragmentedToolBody(toolStream('openai-chat', { input }), 101),
+      signal(),
     );
+    assert.equal(rejected.calls[0].invalid, true);
   }
   const limited = toolStream('openai-chat').replace(
     '"finish_reason":"tool_calls"',
@@ -258,6 +357,8 @@ test('bounded replay cancels oversized or stalled bodies and does not fetch remo
       stalled,
       abort.signal,
     );
+    // Core starts asynchronously; cancel an established native stream here.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     abort.abort();
     await assert.rejects(pending, /中断|abort/i);
     assert.equal(cancelled, true);
@@ -324,8 +425,19 @@ test('continuation requires every result exactly once and pins provider identity
 
 test('public tool inputs and sources reject credentials, local addresses and oversized or mismatched results', () => {
   assert.equal(publicWebUrl('https://developers.cloudflare.com/path?q=docs#section'), true);
+  assert.equal(publicWebUrl('http://r6.ca/blog/20110520T220201Z.html'), true);
+  const longUrl = 'https://example.org/' + 'x'.repeat(8192 - 'https://example.org/'.length);
+  const longCall = validateWebToolCall(
+    { id: 'long', name: 'read_webpage', input: { url: longUrl } },
+    enabled,
+  );
+  assert.equal(longCall.name, 'read_webpage');
+  if (longCall.name === 'read_webpage') assert.equal(longCall.input.url, longUrl);
+  assert.equal(publicWebUrl(longUrl + 'x'), false);
   for (const url of [
-    'http://example.org/',
+    'ftp://example.org/',
+    'http://example.org:443/',
+    'https://example.org:80/',
     'https://user:secret@example.org/',
     'https://127.0.0.1/',
     'https://[::1]/',

@@ -13,6 +13,7 @@ import type { ProviderFailure } from '../../shared/providers/failure';
 import type { GenerationDiagnostics } from '../../shared/streaming/diagnostics';
 import { ProviderError } from '../generation/errors';
 import { providerFailure, providerErrorSummary, redactDiagnostic } from './failure';
+import { AppError } from '../../shared/errors/descriptor';
 
 export function sdkDiagnostics(
   part: Extract<LanguageModelV4StreamPart, { type: 'stream-start' | 'response-metadata' }>,
@@ -84,6 +85,12 @@ export function sdkProviderError(
   secrets: readonly string[] = [],
 ): ProviderError {
   if (error instanceof ProviderError && error.details) return error;
+  if (error instanceof AppError && error.issue.code === 'TOOL_INVALID')
+    return new ProviderError(
+      error.message,
+      providerFailure(config, 'tool', { message: error.message }, { secrets }),
+      error.issue,
+    );
   // Only SDK transport wrappers are unwrapped; validation errors can contain
   // response values and schema causes that must never be copied into a message.
   if (APICallError.isInstance(error)) {

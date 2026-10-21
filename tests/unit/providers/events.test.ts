@@ -28,8 +28,10 @@ async function consume(
     });
   });
   const outputTimes: number[] = [];
-  const parser = new ProviderStream(provider, true),
-    body = await openProviderStream(
+  const parser = new ProviderStream(provider, true);
+  let failure: unknown;
+  try {
+    const body = await openProviderStream(
       { ...config(provider), ...overrides },
       [],
       new AbortController().signal,
@@ -39,9 +41,7 @@ async function consume(
       undefined,
       (time) => outputTimes.push(time),
     );
-  let failure: unknown;
-  const reader = body.getReader();
-  try {
+    const reader = body.getReader();
     while (true) {
       const next = await reader.read();
       if (next.done) break;

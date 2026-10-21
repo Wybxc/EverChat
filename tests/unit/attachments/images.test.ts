@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { providerStreams } from '../../support/providers/streams';
 import { createHash } from 'node:crypto';
 import { test } from 'node:test';
 import * as v from 'valibot';
@@ -179,7 +180,9 @@ for (const [provider, native] of [
           inlineData: { mimeType: 'image/png', data: encoded },
         });
       assert.ok(!JSON.stringify(body).includes('/api/conversations/'));
-      return new Response('data: [DONE]\n\n', { headers: { 'Content-Type': 'text/event-stream' } });
+      return new Response(providerStreams[provider].partial + providerStreams[provider].finish, {
+        headers: { 'Content-Type': 'text/event-stream' },
+      });
     });
     const stream = await openProviderStream(
       { ...config, provider, ...(native ? { baseUrl: 'https://api.openai.com/v1' } : {}) },
