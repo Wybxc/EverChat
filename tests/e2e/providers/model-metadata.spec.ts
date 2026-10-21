@@ -186,7 +186,7 @@ test('unknown model metadata is visible, editable, automatically saved across de
     await saved(page);
     await context.setOffline(true);
     await window.fill('32769');
-    await expect(page.getByTestId('settings-save-status')).toHaveAttribute('role', 'alert');
+    await expect(page.getByTestId('settings-save-status')).toHaveAttribute('data-type', 'error');
     await expect(window).toHaveValue('32769');
     await context.setOffline(false);
     await saved(page);

@@ -48,7 +48,7 @@ export function useAppCommands(commands: AppCommand[]) {
       hasOpenModal() ||
       Boolean(
         document.querySelector(
-          '[data-slot="dialog-content"][data-state="open"], [data-slot="alert-dialog-content"][data-state="open"]',
+          '[data-slot="dialog-content"][data-open], [data-slot="alert-dialog-content"][data-open]',
         ),
       );
     if (!command?.enabled || (modalOpen && !command.allowModal)) return;

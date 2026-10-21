@@ -44,7 +44,7 @@ pnpm dev:access
 - `scripts/`：本地开发入口、测试执行器、离线运维和测量工具。
 - `tests/`：单元、原生集成、浏览器和生产 PWA 测试。
 
-项目使用 React、shadcn/ui（Radix + Nova）、语义主题及 Tailwind CSS；Markdown 基于 Streamdown，模型协议使用 AI SDK 对应适配器。目录依赖与事务边界见[模块说明](architecture/modules.md)，数据流见[运行架构](architecture/runtime.md)。
+项目使用 React、shadcn/ui（Base UI + Nova）、语义主题及 Tailwind CSS；Markdown 基于 Streamdown，模型协议使用 AI SDK 对应适配器。目录依赖与事务边界见[模块说明](architecture/modules.md)，数据流见[运行架构](architecture/runtime.md)。
 
 根 `tsconfig.json` 集中公共选项和编辑器引用；`config/tsconfig.{app,worker,sw,tooling}.json` 分别检查浏览器、Worker、Service Worker 和工具／测试环境。Cloudflare 通用运行配置在 `wrangler.jsonc`，生产域名和 Access 参数在部署者自己的 Cloudflare 控制台管理；本地 Access 联调使用被忽略的 `.dev.vars`。隔离平台测量配置在 `config/wrangler.validation.jsonc`。配置整理的取舍见[配置与脚本整理记录](plans/repository-configuration-and-scripts-plan.md)。
 

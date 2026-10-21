@@ -58,7 +58,7 @@ test('controlled public shares stay network-only, skip private startup and do no
   const user = shared.getByTestId('user-message').first(),
     thought = shared.getByTestId('assistant-message').first().getByTestId('share-reasoning');
   await expect(user.locator('[data-slot="bubble-content"]')).toHaveText('公开提问\n第二行');
-  await expect(thought).toHaveAttribute('data-state', 'closed');
+  await expect(thought).toHaveAttribute('data-closed', '');
   await thought.getByRole('button', { name: '思考内容', exact: true }).click();
   await expect(thought.getByText('公开思考', { exact: true })).toBeVisible();
   await shared.setViewportSize({ width: 390, height: 740 });

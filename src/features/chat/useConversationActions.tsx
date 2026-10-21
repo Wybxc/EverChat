@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import type { ConversationActivity } from '../../../shared/conversation/activity';
 import type { ConversationInfo } from '../../../shared/conversation/types';
 import { Modal, ModalTitle } from '../../components/Modal';
+import { actionMenuReturnTarget } from '../../components/ActionMenu';
 import {
   errorMessage,
   renderUiMessage,
@@ -24,8 +25,16 @@ type DialogTarget = {
   fallback: HTMLElement | null;
 };
 
+const actionTarget = () => {
+  const active = document.activeElement;
+  return active instanceof HTMLElement
+    ? active.closest('[role=menu]')
+      ? actionMenuReturnTarget()
+      : active
+    : null;
+};
 const adjacentRow = () => {
-  const row = document.activeElement?.closest('[data-conversation-row]');
+  const row = actionTarget()?.closest('[data-conversation-row]');
   const sibling = row?.nextElementSibling ?? row?.previousElementSibling;
   return sibling?.querySelector<HTMLElement>('a') ?? null;
 };
@@ -103,8 +112,7 @@ export function useConversationActions({
     close: () => setDialog(null),
     open: (mode: DialogTarget['mode'], conversation: ConversationInfo) => {
       const fallback = adjacentRow();
-      const returnTarget =
-        document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      const returnTarget = actionTarget();
       beforeDialog();
       setDialog({ mode, conversation, fallback, returnTarget });
     },
@@ -174,7 +182,7 @@ function ConversationActionDialog({
       alert={mode === 'delete'}
       busy={busy}
       initialFocus={mode === 'rename' ? titleInput : cancelButton}
-      onCloseAutoFocus={(event) => {
+      finalFocus={() => {
         const active = document.activeElement;
         if (
           active instanceof HTMLElement &&
@@ -182,29 +190,21 @@ function ConversationActionDialog({
           active.checkVisibility() &&
           !active.closest('[role="dialog"], [role="alertdialog"]')
         )
-          return;
+          return false;
         if (deletedCurrent.current) {
-          event.preventDefault();
           actions.restoreFocus(true);
-          return;
+          return false;
         }
-        // Modal restores a surviving trigger; supply a useful fallback if its row left the list.
         if (
           returnTarget?.isConnected &&
           returnTarget.checkVisibility() &&
           !returnTarget.closest('[inert]')
-        ) {
-          event.preventDefault();
-          returnTarget.focus({ preventScroll: true });
-          return;
-        }
-        if (fallback?.isConnected && fallback.checkVisibility() && !fallback.closest('[inert]')) {
-          event.preventDefault();
-          fallback.focus({ preventScroll: true });
-        } else {
-          event.preventDefault();
-          actions.restoreFocus();
-        }
+        )
+          return returnTarget;
+        if (fallback?.isConnected && fallback.checkVisibility() && !fallback.closest('[inert]'))
+          return fallback;
+        actions.restoreFocus();
+        return false;
       }}
     >
       <div className="w-full max-w-md p-5">

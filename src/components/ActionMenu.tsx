@@ -1,36 +1,25 @@
-import { createContext, useContext, useRef, type ComponentProps, type ReactNode } from 'react';
+import { useRef, type ComponentProps, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuTrigger,
   DropdownMenuItem,
+  DropdownMenuGroup,
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
 
 let lastTrigger: HTMLButtonElement | null = null;
 export const actionMenuReturnTarget = () => lastTrigger;
-const PendingAction = createContext<((action: () => void) => void) | null>(null);
 export function ActionMenuItem({
-  onSelect,
+  onClick,
   keepOpen = false,
   ...props
 }: ComponentProps<typeof DropdownMenuItem> & { keepOpen?: boolean }) {
-  const queue = useContext(PendingAction);
-  return (
-    <DropdownMenuItem
-      {...props}
-      onSelect={(event) => {
-        if (keepOpen) {
-          event.preventDefault();
-          onSelect?.(event);
-        } else if (onSelect && queue) queue(() => onSelect(event));
-        else onSelect?.(event);
-      }}
-    />
-  );
+  return <DropdownMenuItem {...props} closeOnClick={!keepOpen} onClick={onClick} />;
 }
+export const ActionMenuGroup = DropdownMenuGroup;
 export const ActionMenuLabel = DropdownMenuLabel;
 export const ActionMenuSeparator = DropdownMenuSeparator;
 export function ActionMenu({
@@ -54,22 +43,17 @@ export function ActionMenu({
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 }) {
-  const trigger = useRef<HTMLButtonElement>(null),
-    pending = useRef<(() => void) | null>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
   return (
-    <PendingAction.Provider
-      value={(action) => {
-        pending.current = action;
+    <DropdownMenu
+      open={open}
+      onOpenChange={(next) => {
+        if (next) lastTrigger = trigger.current;
+        onOpenChange?.(next);
       }}
     >
-      <DropdownMenu
-        open={open}
-        onOpenChange={(next) => {
-          if (next) lastTrigger = trigger.current;
-          onOpenChange?.(next);
-        }}
-      >
-        <DropdownMenuTrigger asChild>
+      <DropdownMenuTrigger
+        render={
           <Button
             ref={trigger}
             data-action-menu={triggerData}
@@ -80,29 +64,20 @@ export function ActionMenu({
             aria-label={label}
             title={label}
             disabled={disabled}
-          >
-            {icon}
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent
-          onCloseAutoFocus={(event) => {
-            const action = pending.current;
-            pending.current = null;
-            if (action) {
-              event.preventDefault();
-              trigger.current?.focus({ preventScroll: true });
-              action();
-            }
-          }}
-          aria-label={label}
-          side={placement.includes('top') ? 'top' : 'bottom'}
-          align={placement.includes('start') ? 'start' : 'end'}
-          sideOffset={4}
-          className="w-60 max-w-[calc(100vw-1rem)]"
-        >
-          {children}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </PendingAction.Provider>
+          />
+        }
+      >
+        {icon}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        aria-label={label}
+        side={placement.includes('top') ? 'top' : 'bottom'}
+        align={placement.includes('start') ? 'start' : 'end'}
+        sideOffset={4}
+        className="w-60 max-w-[calc(100vw-1rem)]"
+      >
+        <DropdownMenuGroup>{children}</DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

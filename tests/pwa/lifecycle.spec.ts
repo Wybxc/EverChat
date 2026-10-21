@@ -117,8 +117,11 @@ test('two real production builds wait for unsaved settings in every tab and pres
   await expect(firstSettings.getByRole('alert')).toContainText('设置尚未保存');
   expect(await version(page)).toBe('pwa-test-a');
   await expect(otherSettings.getByLabel('名称', { exact: true })).toHaveValue('尚未保存的供应商');
+  await second.keyboard.press('F6');
+  const retry = otherSettings.getByRole('button', { name: '重试', exact: true });
+  await retry.focus();
   await control(page.request, { failSettings: false });
-  await otherSettings.getByRole('button', { name: '重试', exact: true }).click();
+  await retry.press('Enter');
   await expect(otherSettings.getByTestId('settings-save-status')).toContainText('已保存');
   await Promise.all([
     page.waitForEvent('framenavigated', (frame) => frame === page.mainFrame()),

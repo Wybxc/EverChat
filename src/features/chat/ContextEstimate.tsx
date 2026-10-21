@@ -28,31 +28,33 @@ export function ContextEstimateView({ estimate }: { estimate: ContextEstimate })
 
   return (
     <Popover>
-      <PopoverTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          type="button"
-          data-testid="context-estimate"
-          className="context-trigger composer-icon"
-          aria-label={t(($) => $.viewContextEstimate)}
-          aria-description={t(($) => $.contextDescription, {
-            total: number.format(estimate.totalTokens),
-            budget: number.format(estimate.inputBudget),
-          })}
-        >
-          {ratio !== undefined ? (
-            <Progress aria-hidden shape="circle" value={Math.min(100, ratio * 100)} />
-          ) : (
-            <CircleDashed aria-hidden="true" />
-          )}
-        </Button>
+      <PopoverTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="icon"
+            type="button"
+            data-testid="context-estimate"
+            className="context-trigger composer-icon"
+            aria-label={t(($) => $.viewContextEstimate)}
+            aria-description={t(($) => $.contextDescription, {
+              total: number.format(estimate.totalTokens),
+              budget: number.format(estimate.inputBudget),
+            })}
+          />
+        }
+      >
+        {ratio !== undefined ? (
+          <Progress aria-hidden shape="circle" value={Math.min(100, ratio * 100)} />
+        ) : (
+          <CircleDashed aria-hidden="true" />
+        )}
       </PopoverTrigger>
       <PopoverContent
         aria-label={t(($) => $.contextEstimate)}
         side="top"
         align="end"
-        className="max-h-[var(--radix-popover-content-available-height)] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto overscroll-contain p-4 text-xs"
+        className="max-h-[var(--available-height)] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto overscroll-contain p-4 text-xs"
       >
         <ContextEstimateDetails estimate={estimate} />
       </PopoverContent>

@@ -449,13 +449,14 @@ test('conversation settings autosave, preserve failed and invalid drafts, sync d
     );
     await expect(modal.getByRole('alert')).toContainText('服务暂时不可用');
     await page.unroute('**/api/conversations/*/settings');
+    await page.keyboard.press('F6');
     await modal.getByRole('button', { name: '重试', exact: true }).click();
     await expect(modal.getByTestId('conversation-save-status')).toHaveText('已保存');
     await expect(remote.getByLabel('会话系统提示词', { exact: true })).toHaveValue(
       '保留未保存的会话提示',
     );
     await modal.getByLabel('Temperature', { exact: true }).fill('3');
-    await expect(modal.getByRole('alert')).toContainText('请检查参数');
+    await expect(modal.getByTestId('conversation-save-status')).toContainText('请检查参数');
     expect((await fixture.snapshot()).settings?.temperature).toBeNull();
     await modal.getByLabel('Temperature', { exact: true }).fill('0.7');
     await modal.getByLabel('Top P', { exact: true }).fill('0.8');

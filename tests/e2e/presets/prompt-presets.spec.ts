@@ -229,8 +229,12 @@ test('preset management autosaves and recovers drafts, applies copies, synchroni
     panel = await presetsTab(page);
     await expect(panel.getByLabel('预设系统提示词', { exact: true })).toHaveValue('你是写作助手。');
     await expect(page.getByTestId('preset-save-status')).toContainText('服务暂时不可用');
+    await page.keyboard.press('F6');
+    const retry = page.getByRole('button', { name: '重试', exact: true });
+    await retry.focus();
+    await expect(page.getByTestId('preset-save-status')).toHaveAttribute('data-type', 'error');
     await page.unroute('**/api/settings/presets/*');
-    await page.getByRole('button', { name: '重试', exact: true }).click();
+    await retry.press('Enter');
     await expect(page.getByTestId('preset-save-status')).toHaveText('已保存');
     const preset = (await list(page.request)).find((item) => item.name === '写作助手')!;
     expect(preset.systemPrompt).toBe('你是写作助手。');
@@ -457,8 +461,12 @@ test('a dirty draft whose preset was deleted remotely can be saved under a new I
     await panel.getByLabel('预设系统提示词', { exact: true }).fill('待恢复的内容');
     await expect(page.getByTestId('preset-save-status')).toContainText('服务暂时不可用');
     await second.request.delete(`/api/settings/presets/${id}`, { headers });
+    await page.keyboard.press('F6');
+    const retry = page.getByRole('button', { name: '重试', exact: true });
+    await retry.focus();
+    await expect(page.getByTestId('preset-save-status')).toHaveAttribute('data-type', 'error');
     await page.unroute(`**/api/settings/presets/${id}`);
-    await page.getByRole('button', { name: '重试', exact: true }).click();
+    await retry.press('Enter');
     await expect(page.getByTestId('preset-save-status')).toContainText('已删除');
     await expect(panel.getByLabel('预设系统提示词', { exact: true })).toHaveValue('待恢复的内容');
     await panel.getByRole('button', { name: '另存为新预设' }).click();

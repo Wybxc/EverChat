@@ -1,6 +1,6 @@
 # 移除 cmdk 的间接 Radix Dialog 依赖
 
-日期：2026-10-21。状态：调研完成，待实施。原始分支为 `main`（`86e8ccb`）；Base UI 迁移分支为 `codex/base-ui-migration`（`fe778a0`，[PR #2](https://github.com/Wybxc/EverChat/pull/2)）。本文建议在 Base UI 迁移基础上实施，不将组件替换混入原始分支的基线测试修复。
+日期：2026-10-21。状态：调研方案已在 PR #2 实施，记录见 [Command 替换报告](../migrations/base-ui/command.md)。以下事实与方案是实施前的调查记录。原始分支为 `main`（`86e8ccb`）；Base UI 迁移分支为 `codex/base-ui-migration`（`fe778a0`，[PR #2](https://github.com/Wybxc/EverChat/pull/2)）。本文建议在 Base UI 迁移基础上实施，不将组件替换混入原始分支的基线测试修复。
 
 ## 结论
 
@@ -68,4 +68,4 @@ Base UI 有现成的 [Dialog + Autocomplete 命令面板示例](https://base-ui.
 - Chromium 与 WebKit 重跑 `settings/model-picker.spec.ts`、`library/library-search.spec.ts`、`library/shortcuts.spec.ts`、`chat/search.spec.ts` 及相关移动回归；依赖 Chromium CDP 的手势场景单独执行，不宣称已在 WebKit 覆盖。
 - 类型检查、生产构建和 PWA 搜索／缓存回归通过；检查最终构建中的 Radix Dialog 模块、全部 JS/CSS gzip 总和与必需预缓存，比较前后实测值。本文未运行替代实现，暂无可承诺的体积降幅。
 
-本次只完成调研。未安装新库、未移除 cmdk、未更改模型选择或搜索界面，也未把该方案标记为已实施。
+后续已按用户要求在 PR #2 完成替换：模型选择使用 Combobox，全局搜索使用 Autocomplete，保留 match-sorter 模糊搜索；cmdk 及间接 Radix 依赖已删除。最终交互、链接组合、测试与体积实测以 [实施报告](../migrations/base-ui/command.md)为准。

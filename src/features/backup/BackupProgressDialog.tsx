@@ -31,8 +31,7 @@ export function BackupProgressDialog({
       }}
       initialFocus={button}
       aria-labelledby={id}
-      onCloseAutoFocus={(event) => {
-        event.preventDefault();
+      finalFocus={() => {
         const target = previous.current;
         if (
           canRestoreFocus() &&
@@ -41,7 +40,8 @@ export function BackupProgressDialog({
           target.checkVisibility() &&
           !target.closest('[inert]')
         )
-          target.focus();
+          return target;
+        return false;
       }}
     >
       <div className="flex max-h-[85dvh] w-full max-w-md flex-col overflow-hidden p-0">

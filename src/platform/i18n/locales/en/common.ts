@@ -9,7 +9,6 @@ export default {
   savedLocally: 'Saved on this device',
   notSaved: 'Not saved · {{error}}',
   saveNotification: 'Save notification',
-  saveNotificationsShortcut: 'Save notifications ({hotkey})',
   language: 'Language',
   system: 'Follow system',
   close: 'Close',

@@ -102,7 +102,8 @@ test('a narrow viewport folds parameters and preserves them across resizing and 
     const context = page.getByRole('button', { name: '查看上下文估算' });
     await expect(context).toBeVisible();
     await expect(context.locator('[data-slot=progress]')).toBeVisible();
-    await expect(context).toHaveText('');
+    await expect(context).toHaveAccessibleName('查看上下文估算');
+    await expect(context).not.toContainText(/Tokens|%/);
     const indicatorCenter = await context.locator('[data-slot=progress]').evaluate((node) => {
       const indicator = node.getBoundingClientRect(),
         button = node.parentElement!.getBoundingClientRect();

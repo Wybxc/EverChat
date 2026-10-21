@@ -242,3 +242,55 @@ test.describe('Windows shortcut labels and modifiers', () => {
     await expect(page.getByRole('dialog', { name: '全局搜索' })).toHaveCount(0);
   });
 });
+
+test('body-search retry stays a button action while title results remain selectable', async ({
+  page,
+}) => {
+  await page.request.post('/__dev/access/login', { headers });
+  const id = crypto.randomUUID();
+  await page.request.post('/api/conversations', { headers, data: { id, title: 'Retry fixture' } });
+  let attempts = 0;
+  await page.route('**/api/search?*', (route) => {
+    attempts++;
+    return route.fulfill(
+      attempts === 1
+        ? {
+            status: 502,
+            json: { error: 'body search test failure' },
+          }
+        : {
+            json: {
+              results: [
+                {
+                  conversationId: id,
+                  title: 'Retry fixture',
+                  messageId: crypto.randomUUID(),
+                  field: 'content',
+                  excerpt: 'Retry body match',
+                },
+              ],
+              cursor: null,
+              indexing: false,
+            },
+          },
+    );
+  });
+  try {
+    await page.goto('/');
+    await page.getByRole('button', { name: '全局搜索', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: '全局搜索', exact: true });
+    await dialog.getByRole('combobox').fill('Retry');
+    await expect(dialog.getByRole('option')).toHaveCount(1);
+    const retry = dialog.getByRole('button', { name: '重新搜索', exact: true });
+    await expect(retry).toBeVisible();
+    await retry.focus();
+    await page.keyboard.press('Enter');
+    await expect(dialog.getByRole('option')).toHaveCount(2);
+    await expect(dialog.getByRole('alert')).toHaveCount(0);
+    await expect(page).toHaveURL('/');
+    await expect(dialog.getByRole('combobox')).toHaveValue('Retry');
+    expect(attempts).toBe(2);
+  } finally {
+    await page.request.delete(`/api/conversations/${id}`, { headers });
+  }
+});

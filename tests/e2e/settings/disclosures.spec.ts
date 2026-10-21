@@ -168,7 +168,7 @@ for (const width of [1280, 390])
       await openParameters(page);
       const dialog = page.getByRole('dialog', { name: '会话参数', exact: true });
       const tabs = dialog.getByRole('tablist', { name: '会话参数分类', exact: true });
-      await expect(tabs).toHaveAttribute('aria-orientation', 'horizontal');
+      await expect(tabs).toHaveAttribute('data-orientation', 'horizontal');
       await expect(tabs.getByRole('tab')).toHaveText(['常规', '上下文', '联网']);
       expect(
         await tabs.evaluate((el) =>
@@ -196,14 +196,16 @@ for (const width of [1280, 390])
       await expect(
         dialog.getByText('开启后可能增加搜索服务与模型费用。每个新对话默认关闭。', { exact: true }),
       ).toBeVisible();
-      await dialog.getByRole('button', { name: '查看错误', exact: true }).click();
+      await page.keyboard.press('F6');
+      await dialog.getByRole('button', { name: '查看错误', exact: true }).focus();
+      await dialog.getByRole('button', { name: '查看错误', exact: true }).press('Enter');
       await expect(dialog.getByRole('tab', { name: '上下文', exact: true })).toHaveAttribute(
         'aria-selected',
         'true',
       );
       await expect(limit).toBeFocused();
       await limit.fill('64');
-      await dialog.getByLabel('自动压缩历史', { exact: true }).check();
+      await dialog.getByRole('checkbox', { name: '自动压缩历史', exact: true }).check();
       await expect(dialog.getByTestId('conversation-save-status')).toHaveText('已保存');
       await dialog.getByLabel('自动压缩阈值（%）', { exact: true }).fill('70');
       await expect(dialog.getByTestId('conversation-save-status')).toHaveText('已保存');
@@ -230,7 +232,10 @@ for (const width of [1280, 390])
       const general = dialog.getByRole('tab', { name: '常规', exact: true });
       await general.focus();
       await general.press('ArrowRight');
-      await expect(dialog.getByRole('tab', { name: '上下文', exact: true })).toBeFocused();
+      const contextTab = dialog.getByRole('tab', { name: '上下文', exact: true });
+      await expect(contextTab).toBeFocused();
+      await expect(general).toHaveAttribute('aria-selected', 'true');
+      await contextTab.press('Enter');
       await expect(dialog.getByLabel('输出 Token 预算', { exact: true })).toHaveValue('64');
       expect(await dialog.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
       await dialog.getByRole('button', { name: '关闭会话参数', exact: true }).click();

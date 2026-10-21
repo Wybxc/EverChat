@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { cn } from '@/lib/utils';
-import { Progress as ProgressPrimitive } from 'radix-ui';
+import { Progress as ProgressPrimitive } from '@base-ui/react/progress';
 
 function Progress({
   className,
@@ -31,26 +31,25 @@ function Progress({
           strokeWidth="3"
         >
           <circle data-slot="progress-track" cx="12" cy="12" r="9" className="stroke-input" />
-          <ProgressPrimitive.Indicator asChild>
-            <circle
-              data-slot="progress-indicator"
-              cx="12"
-              cy="12"
-              r="9"
-              pathLength="100"
-              className="stroke-foreground"
-              strokeLinecap="round"
-              strokeDasharray={`${value ?? 0} 100`}
-              visibility={value ? undefined : 'hidden'}
-            />
-          </ProgressPrimitive.Indicator>
+          <circle
+            data-slot="progress-indicator"
+            cx="12"
+            cy="12"
+            r="9"
+            pathLength="100"
+            className="stroke-foreground"
+            strokeLinecap="round"
+            strokeDasharray={`${value ?? 0} 100`}
+            visibility={value ? undefined : 'hidden'}
+          />
         </svg>
       ) : (
-        <ProgressPrimitive.Indicator
-          data-slot="progress-indicator"
-          className="bg-accent-foreground size-full flex-1 transition-all"
-          style={{ transform: `translateX(-${100 - (value || 0)}%)` }}
-        />
+        <ProgressPrimitive.Track className="h-full w-full">
+          <ProgressPrimitive.Indicator
+            data-slot="progress-indicator"
+            className="bg-accent-foreground h-full transition-all"
+          />
+        </ProgressPrimitive.Track>
       )}
     </ProgressPrimitive.Root>
   );

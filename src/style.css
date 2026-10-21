@@ -196,7 +196,8 @@ html.public-share-document,
 [data-ui-button],
 [data-slot='tabs-trigger'],
 [data-slot='dropdown-menu-item'],
-[data-slot='command-item'] {
+[data-slot='autocomplete-item'],
+[data-slot='combobox-item'] {
   min-height: var(--control-target);
   height: auto;
 }
@@ -498,7 +499,7 @@ html.public-share-document,
   padding-inline: 0.75rem;
   color: var(--muted-foreground);
 }
-.settings-tab-list [data-state='active'] {
+.settings-tab-list [data-active] {
   background: var(--accent);
   color: var(--accent-foreground);
   box-shadow: none;
@@ -753,11 +754,14 @@ html.public-share-document,
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+  [data-slot='trace-collapsible-content'] {
+    animation-duration: 0s !important;
+    transition-duration: 0s !important;
+  }
 }
 @media (any-pointer: coarse) {
   [data-slot='input'],
   [data-slot='input-group-control'],
-  [data-slot='command-input'],
   [data-slot='native-select'],
   [data-slot='textarea'],
   .field-control > input {
@@ -791,12 +795,9 @@ html.public-share-document,
   border-color: transparent;
   box-shadow: none;
 }
-[data-slot='command-input-wrapper'] [data-slot='input-group'] {
+[data-slot='search-input-wrapper'] [data-slot='input-group'] {
   min-height: max(2.75rem, 44px);
   border-color: var(--input);
-}
-[data-slot='command-input'] {
-  min-height: max(2.75rem, 44px);
 }
 
 /* The overlay does not intercept dragleave/drop or move the composer focus. */

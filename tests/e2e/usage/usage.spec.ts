@@ -15,12 +15,12 @@ test('nested usage tabs stay horizontal and transparent in both themes and viewp
   for (const width of [1280, 390]) {
     await page.setViewportSize({ width, height: 800 });
     await expect(outer).toHaveAttribute(
-      'aria-orientation',
+      'data-orientation',
       width === 390 ? 'horizontal' : 'vertical',
     );
     for (const dark of [true, false]) {
       await page.evaluate((dark) => document.documentElement.classList.toggle('dark', dark), dark);
-      await expect(list).toHaveAttribute('aria-orientation', 'horizontal');
+      await expect(list).toHaveAttribute('data-orientation', 'horizontal');
       await expect
         .poll(() => list.evaluate((el) => getComputedStyle(el).flexDirection))
         .toBe('row');

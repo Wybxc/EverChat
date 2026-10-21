@@ -3,11 +3,11 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 export function IconButton({ label, ...props }: ComponentProps<typeof Button> & { label: string }) {
   return (
-    <TooltipProvider delayDuration={400}>
+    <TooltipProvider delay={400}>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <Button variant="ghost" size="icon" aria-label={label} {...props} />
-        </TooltipTrigger>
+        <TooltipTrigger
+          render={<Button variant="ghost" size="icon" aria-label={label} {...props} />}
+        />
         <TooltipContent>{label}</TooltipContent>
       </Tooltip>
     </TooltipProvider>

@@ -79,38 +79,41 @@ export function ComposerParameters({
     <>
       {web}
       <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            ref={trigger}
-            type="button"
-            variant="ghost"
-            size="icon"
-            className={`composer-icon relative ${effort ? 'bg-muted' : ''}`}
-            aria-label={t(($) => $.moreParameters)}
-            aria-description={description}
-            title={description}
-          >
-            <SlidersHorizontal className="size-[1.125rem]" />
-            {effort && (
-              <span
-                aria-hidden="true"
-                className="absolute top-0 right-0 rounded bg-secondary px-0.5 text-[0.625rem] leading-tight text-secondary-foreground"
-              >
-                {modelEffortLabel(effort).slice(0, 1)}
-              </span>
-            )}
-          </Button>
+        <PopoverTrigger
+          render={
+            <Button
+              ref={trigger}
+              type="button"
+              variant="ghost"
+              size="icon"
+              className={`composer-icon relative ${effort ? 'bg-muted' : ''}`}
+              aria-label={t(($) => $.moreParameters)}
+              aria-description={description}
+              title={description}
+            />
+          }
+        >
+          <SlidersHorizontal className="size-[1.125rem]" />
+          {effort && (
+            <span
+              aria-hidden="true"
+              className="absolute top-0 right-0 rounded bg-secondary px-0.5 text-[0.625rem] leading-tight text-secondary-foreground"
+            >
+              {modelEffortLabel(effort).slice(0, 1)}
+            </span>
+          )}
         </PopoverTrigger>
         <PopoverContent
           side="top"
           align="end"
           aria-label={t(($) => $.moreParameters)}
-          className="max-h-[var(--radix-popover-content-available-height)] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto overscroll-contain p-4"
-          onCloseAutoFocus={(event) => {
+          className="max-h-[var(--available-height)] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto overscroll-contain p-4"
+          finalFocus={() => {
             if (!trigger.current?.isConnected) {
-              event.preventDefault();
               focusComposer();
+              return false;
             }
+            return true;
           }}
         >
           {reasoning && (

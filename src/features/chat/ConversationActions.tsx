@@ -20,6 +20,7 @@ import { problem } from '../../../shared/errors/descriptor';
 import {
   ActionMenu,
   ActionMenuItem,
+  ActionMenuGroup,
   ActionMenuLabel,
   ActionMenuSeparator,
 } from '../../components/ActionMenu';
@@ -87,88 +88,89 @@ export function ConversationActions({
       {children}
       {conversation && (
         <>
-          <ActionMenuLabel>{t(($) => $.organize)}</ActionMenuLabel>
-          <ActionMenuItem
-            disabled={disabled || busy}
-            onSelect={() => actions.open('rename', conversation)}
-          >
-            <Pencil className="size-4" />
-            {t(($) => $.rename)}
-          </ActionMenuItem>
-          {actions.titleConfigured && actions.generateTitle && (
-            <ActionMenuItem
-              disabled={
-                disabled ||
-                busy ||
-                ['queued', 'running'].includes(conversation.titleTask?.status ?? '')
-              }
-              onSelect={() => void perform(() => actions.generateTitle!(conversation.id))}
-            >
-              <Sparkles className="size-4" />
-              {['queued', 'running'].includes(conversation.titleTask?.status ?? '')
-                ? t(($) => $.generatingTitle)
-                : conversation.titleSource === 'ai'
-                  ? t(($) => $.regenerateTitle)
-                  : t(($) => $.generateTitle)}
-            </ActionMenuItem>
-          )}
-          {conversation.titleTask?.status === 'failed' && (
-            <div role="status" className="max-w-64 px-2 py-1 text-xs text-muted-foreground">
-              {renderUiMessage(
-                issueMessage(conversation.titleTask.issue ?? problem('TITLE_FAILED')),
-              )}
-            </div>
-          )}
-          <ActionMenuItem
-            disabled={disabled || busy}
-            onSelect={() =>
-              void perform(() => actions.update(conversation.id, { pinned: !conversation.pinned }))
-            }
-          >
-            {conversation.pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
-            {conversation.pinned ? t(($) => $.unpin) : t(($) => $.pin)}
-          </ActionMenuItem>
-          <ActionMenuLabel>{t(($) => $.reuse)}</ActionMenuLabel>
-          {actions.share && (
+          <ActionMenuGroup>
+            <ActionMenuLabel>{t(($) => $.organize)}</ActionMenuLabel>
             <ActionMenuItem
               disabled={disabled || busy}
-              onSelect={() => actions.share?.(conversation.id)}
+              onClick={() => actions.open('rename', conversation)}
             >
-              <Share2 className="size-4" />
-              {t(($) => $.shareBranch)}
+              <Pencil className="size-4" />
+              {t(($) => $.rename)}
             </ActionMenuItem>
-          )}
-          <ActionMenuItem
-            keepOpen
-            onSelect={() =>
-              void perform(async () => {
-                await actions.copyLink(conversation.id);
-                setCopied(true);
-              }, false)
-            }
-          >
-            {copied ? <Check className="size-4" /> : <Link className="size-4" />}
-            {copied ? t(($) => $.linkCopied) : t(($) => $.copyPrivateLink)}
-          </ActionMenuItem>
-          <ActionMenuItem
-            disabled={disabled || busy}
-            onSelect={() => void perform(() => actions.duplicate(conversation.id))}
-          >
-            <Copy className="size-4" />
-            {t(($) => $.copyChat)}
-          </ActionMenuItem>
+            {actions.titleConfigured && actions.generateTitle && (
+              <ActionMenuItem
+                disabled={
+                  disabled ||
+                  busy ||
+                  ['queued', 'running'].includes(conversation.titleTask?.status ?? '')
+                }
+                onClick={() => void perform(() => actions.generateTitle!(conversation.id))}
+              >
+                <Sparkles className="size-4" />
+                {['queued', 'running'].includes(conversation.titleTask?.status ?? '')
+                  ? t(($) => $.generatingTitle)
+                  : conversation.titleSource === 'ai'
+                    ? t(($) => $.regenerateTitle)
+                    : t(($) => $.generateTitle)}
+              </ActionMenuItem>
+            )}
+            {conversation.titleTask?.status === 'failed' && (
+              <div role="status" className="max-w-64 px-2 py-1 text-xs text-muted-foreground">
+                {renderUiMessage(
+                  issueMessage(conversation.titleTask.issue ?? problem('TITLE_FAILED')),
+                )}
+              </div>
+            )}
+            <ActionMenuItem
+              disabled={disabled || busy}
+              onClick={() =>
+                void perform(() =>
+                  actions.update(conversation.id, { pinned: !conversation.pinned }),
+                )
+              }
+            >
+              {conversation.pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
+              {conversation.pinned ? t(($) => $.unpin) : t(($) => $.pin)}
+            </ActionMenuItem>
+          </ActionMenuGroup>
+          <ActionMenuGroup>
+            <ActionMenuLabel>{t(($) => $.reuse)}</ActionMenuLabel>
+            {actions.share && (
+              <ActionMenuItem
+                disabled={disabled || busy}
+                onClick={() => actions.share?.(conversation.id)}
+              >
+                <Share2 className="size-4" />
+                {t(($) => $.shareBranch)}
+              </ActionMenuItem>
+            )}
+            <ActionMenuItem
+              keepOpen
+              onClick={() =>
+                void perform(async () => {
+                  await actions.copyLink(conversation.id);
+                  setCopied(true);
+                }, false)
+              }
+            >
+              {copied ? <Check className="size-4" /> : <Link className="size-4" />}
+              {copied ? t(($) => $.linkCopied) : t(($) => $.copyPrivateLink)}
+            </ActionMenuItem>
+            <ActionMenuItem
+              disabled={disabled || busy}
+              onClick={() => void perform(() => actions.duplicate(conversation.id))}
+            >
+              <Copy className="size-4" />
+              {t(($) => $.copyChat)}
+            </ActionMenuItem>
+          </ActionMenuGroup>
         </>
       )}
-      {exports && (
-        <>
-          <ActionMenuLabel>{t(($) => $.export)}</ActionMenuLabel>
-          {exports}
-        </>
-      )}
+      {exports}
       {conversation && task && (
-        <>
+        <ActionMenuGroup>
           <ActionMenuLabel>{t(($) => $.tasks)}</ActionMenuLabel>
-          <ActionMenuItem onSelect={() => actions.viewTask(conversation.id, task)}>
+          <ActionMenuItem onClick={() => actions.viewTask(conversation.id, task)}>
             <LocateFixed className="size-4" />
             {t(($) => $.viewGeneration)}
           </ActionMenuItem>
@@ -176,21 +178,21 @@ export function ConversationActions({
             disabled={
               disabled || busy || (activity?.status === 'stopping' && activity.runId === task.runId)
             }
-            onSelect={() => void perform(() => actions.stopTask(conversation.id, task))}
+            onClick={() => void perform(() => actions.stopTask(conversation.id, task))}
           >
             <Square className="size-4" />
             {activity?.status === 'stopping' && activity.runId === task.runId
               ? t(($) => $.stopping)
               : t(($) => $.stopGenerating)}
           </ActionMenuItem>
-        </>
+        </ActionMenuGroup>
       )}
       {conversation && (
         <>
           <ActionMenuSeparator />
           <ActionMenuItem
             disabled={disabled || busy}
-            onSelect={() => actions.open('delete', conversation)}
+            onClick={() => actions.open('delete', conversation)}
           >
             <Trash2 className="size-4" />
             {t(($) => $.deleteChat)}

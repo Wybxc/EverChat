@@ -129,7 +129,7 @@ test('changing provider protocol and endpoint preserves other inputs, model draf
     // Intermediate invalid input must not erase credentials or model settings either.
     await page.getByLabel('API 端点').fill('');
     await assertInputs('');
-    await expect(page.getByTestId('settings-save-status')).toHaveAttribute('role', 'alert');
+    await expect(page.getByTestId('settings-save-status')).toHaveAttribute('data-type', 'error');
     expect((await getSettings()).providers[0].baseUrl).toBe(profile.baseUrl);
     const endpoint = 'https://edited-provider.test/v2';
     await page.getByLabel('API 端点').fill(endpoint);

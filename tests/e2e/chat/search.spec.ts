@@ -229,11 +229,11 @@ test('search reveals collapsed thoughts and locates matches in both nested and o
     await page.goto(`/c/${fixture.id}`);
     const details = page.getByTestId('message-reasoning');
     await details.locator(':scope > [data-slot=trace-collapsible-trigger]').click();
-    await expect(details).toHaveAttribute('data-state', 'closed');
+    await expect(details).toHaveAttribute('data-closed', '');
     await page.getByRole('button', { name: '搜索当前对话', exact: true }).click();
     await input(page).fill('隐藏目标');
     await expect(status(page)).toContainText('1 / 1');
-    await expect(details).toHaveAttribute('data-state', 'open');
+    await expect(details).toHaveAttribute('data-open', '');
     const nested = details.locator('.overflow-y-auto');
     await expect.poll(() => nested.evaluate((node) => node.scrollTop)).toBeLessThan(5);
     await expect

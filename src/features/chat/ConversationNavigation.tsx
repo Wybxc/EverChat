@@ -53,7 +53,7 @@ export function ConversationNavigation({
     { id: 'bottom', label: t(($) => $.jumpBottom), icon: ArrowDownToLine, unavailable: atBottom },
   ] satisfies { id: ReadingAction; label: string; icon: typeof ChevronUp; unavailable: boolean }[];
   return (
-    <TooltipProvider delayDuration={400}>
+    <TooltipProvider delay={400}>
       <div
         className="conversation-navigation"
         data-active={visibility.active || undefined}
@@ -96,27 +96,29 @@ export function ConversationNavigation({
               );
             }}
           >
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="shrink-0"
-                aria-label={label}
-                aria-disabled={unavailable}
-                onClick={(event) => {
-                  // Safari does not focus a button on pointer activation by default.
-                  event.currentTarget.focus({ preventScroll: true });
-                  visibility.show();
-                  // Layout can change after the rendered boundary state; the hook reads it fresh.
-                  navigate(id);
-                }}
-              >
-                <Icon
-                  className={`size-[min(1rem,24px)] ${unavailable ? 'opacity-40' : ''}`}
-                  aria-hidden
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="shrink-0"
+                  aria-label={label}
+                  aria-disabled={unavailable}
+                  onClick={(event) => {
+                    // Safari does not focus a button on pointer activation by default.
+                    event.currentTarget.focus({ preventScroll: true });
+                    visibility.show();
+                    // Layout can change after the rendered boundary state; the hook reads it fresh.
+                    navigate(id);
+                  }}
                 />
-              </Button>
+              }
+            >
+              <Icon
+                className={`size-[min(1rem,24px)] ${unavailable ? 'opacity-40' : ''}`}
+                aria-hidden
+              />
             </TooltipTrigger>
             <TooltipContent side={vertical ? 'left' : 'top'} sideOffset={8}>
               {label}
