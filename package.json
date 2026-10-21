@@ -56,7 +56,6 @@
     "micromark-extension-gfm": "^3.0.0",
     "papaparse": "^5.7.0",
     "pdfjs-dist": "6.4.299",
-    "radix-ui": "^1.8.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-i18next": "^17.1.0",
