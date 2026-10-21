@@ -5,6 +5,7 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
   DropdownMenuItem,
+  DropdownMenuGroup,
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
@@ -13,7 +14,7 @@ let lastTrigger: HTMLButtonElement | null = null;
 export const actionMenuReturnTarget = () => lastTrigger;
 const PendingAction = createContext<((action: () => void) => void) | null>(null);
 export function ActionMenuItem({
-  onSelect,
+  onClick,
   keepOpen = false,
   ...props
 }: ComponentProps<typeof DropdownMenuItem> & { keepOpen?: boolean }) {
@@ -21,16 +22,15 @@ export function ActionMenuItem({
   return (
     <DropdownMenuItem
       {...props}
-      onSelect={(event) => {
-        if (keepOpen) {
-          event.preventDefault();
-          onSelect?.(event);
-        } else if (onSelect && queue) queue(() => onSelect(event));
-        else onSelect?.(event);
+      closeOnClick={!keepOpen}
+      onClick={(event) => {
+        if (onClick && queue && !keepOpen) queue(() => onClick(event));
+        else onClick?.(event);
       }}
     />
   );
 }
+export const ActionMenuGroup = DropdownMenuGroup;
 export const ActionMenuLabel = DropdownMenuLabel;
 export const ActionMenuSeparator = DropdownMenuSeparator;
 export function ActionMenu({
@@ -69,30 +69,33 @@ export function ActionMenu({
           onOpenChange?.(next);
         }}
       >
-        <DropdownMenuTrigger asChild>
-          <Button
-            ref={trigger}
-            data-action-menu={triggerData}
-            type="button"
-            variant="ghost"
-            size="icon"
-            className={className}
-            aria-label={label}
-            title={label}
-            disabled={disabled}
-          >
-            {icon}
-          </Button>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              ref={trigger}
+              data-action-menu={triggerData}
+              type="button"
+              variant="ghost"
+              size="icon"
+              className={className}
+              aria-label={label}
+              title={label}
+              disabled={disabled}
+            />
+          }
+        >
+          {icon}
         </DropdownMenuTrigger>
         <DropdownMenuContent
-          onCloseAutoFocus={(event) => {
+          finalFocus={() => {
             const action = pending.current;
             pending.current = null;
             if (action) {
-              event.preventDefault();
               trigger.current?.focus({ preventScroll: true });
               action();
+              return false;
             }
+            return true;
           }}
           aria-label={label}
           side={placement.includes('top') ? 'top' : 'bottom'}
@@ -100,7 +103,7 @@ export function ActionMenu({
           sideOffset={4}
           className="w-60 max-w-[calc(100vw-1rem)]"
         >
-          {children}
+          <DropdownMenuGroup>{children}</DropdownMenuGroup>
         </DropdownMenuContent>
       </DropdownMenu>
     </PendingAction.Provider>

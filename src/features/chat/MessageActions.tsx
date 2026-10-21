@@ -109,14 +109,14 @@ export function MessageActions({
         placement="dropdown-top dropdown-end"
       >
         {!user && (
-          <ActionMenuItem onSelect={quote} aria-label={t(($) => $.quoteMessage)}>
+          <ActionMenuItem onClick={quote} aria-label={t(($) => $.quoteMessage)}>
             <Quote className="h-[0.9375rem] w-[0.9375rem]" />
             {t(($) => $.quote)}
           </ActionMenuItem>
         )}
         <ActionMenuItem
           disabled={!canFork || forking}
-          onSelect={fork}
+          onClick={fork}
           aria-label={t(($) => $.copyToNewChat)}
         >
           {forking ? <Spinner /> : <Copy className="h-[0.9375rem] w-[0.9375rem]" />}
@@ -125,7 +125,7 @@ export function MessageActions({
         {!user && message.status === 'completed' && (
           <>
             <ActionMenuSeparator />
-            <ActionMenuItem onSelect={selectBranch}>
+            <ActionMenuItem onClick={selectBranch}>
               <GitBranch className="size-4" />
               {t(($) => $.continueHere)}
             </ActionMenuItem>
@@ -134,7 +134,7 @@ export function MessageActions({
         <ActionMenuSeparator />
         <ActionMenuItem
           disabled={active || busy || !navigator.onLine}
-          onSelect={remove}
+          onClick={remove}
           aria-label={t(($) => $.deleteMessage)}
         >
           <Trash2 className="h-[0.9375rem] w-[0.9375rem]" />

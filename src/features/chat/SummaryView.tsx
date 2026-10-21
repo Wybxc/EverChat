@@ -74,12 +74,12 @@ export function SummaryView({
               icon={<MoreHorizontal className="h-[1.0625rem] w-[1.0625rem]" />}
               placement="dropdown-top dropdown-end"
             >
-              <ActionMenuItem disabled={busy || !navigator.onLine} onSelect={onRetry}>
+              <ActionMenuItem disabled={busy || !navigator.onLine} onClick={onRetry}>
                 <RefreshCw className="h-[0.9375rem] w-[0.9375rem]" />
                 {t(($) => $.regenerateSummary)}
               </ActionMenuItem>
               <ActionMenuSeparator />
-              <ActionMenuItem disabled={busy || !navigator.onLine} onSelect={onDelete}>
+              <ActionMenuItem disabled={busy || !navigator.onLine} onClick={onDelete}>
                 <Trash2 className="h-[0.9375rem] w-[0.9375rem]" />
                 {t(($) => $.deleteSummary)}
               </ActionMenuItem>

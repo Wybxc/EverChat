@@ -67,6 +67,7 @@ import {
   ActionMenu,
   ActionMenuItem,
   ActionMenuLabel,
+  ActionMenuGroup,
   ActionMenuSeparator,
 } from '../components/ActionMenu';
 import { Disclosure, DisclosureScope } from '../components/Disclosure';
@@ -183,6 +184,7 @@ export function App(props: AppProps = {}) {
 
 function AppContent({ initialSettings }: AppProps) {
   const { t } = useTranslation('app', { useSuspense: false });
+  const { t: chatT } = useTranslation('chat', { useSuspense: false });
   useLocale();
 
   const queryClient = useQueryClient();
@@ -1650,44 +1652,49 @@ function AppContent({ initialSettings }: AppProps) {
                 actions={conversationActions}
                 exports={
                   <>
-                    <ActionMenuItem
-                      disabled={!snapshot.messages.length}
-                      onSelect={() => exportChat('md')}
-                    >
-                      Markdown
-                    </ActionMenuItem>
-                    <ActionMenuItem
-                      disabled={!snapshot.messages.length}
-                      onSelect={() => exportChat('txt')}
-                    >
-                      {t(($) => $.plainText)}
-                    </ActionMenuItem>
-                    <ActionMenuItem
-                      disabled={!snapshot.messages.length}
-                      onSelect={() => exportChat('html')}
-                    >
-                      HTML
-                    </ActionMenuItem>
+                    <ActionMenuGroup>
+                      <ActionMenuLabel>{chatT(($) => $.export)}</ActionMenuLabel>
+                      <ActionMenuItem
+                        disabled={!snapshot.messages.length}
+                        onClick={() => exportChat('md')}
+                      >
+                        Markdown
+                      </ActionMenuItem>
+                      <ActionMenuItem
+                        disabled={!snapshot.messages.length}
+                        onClick={() => exportChat('txt')}
+                      >
+                        {t(($) => $.plainText)}
+                      </ActionMenuItem>
+                      <ActionMenuItem
+                        disabled={!snapshot.messages.length}
+                        onClick={() => exportChat('html')}
+                      >
+                        HTML
+                      </ActionMenuItem>
+                    </ActionMenuGroup>
                     <ActionMenuSeparator />
-                    <ActionMenuLabel>{t(($) => $.backupRestore)}</ActionMenuLabel>
-                    <ActionMenuItem
-                      disabled={!currentConversation}
-                      onSelect={() => void exportBackup()}
-                    >
-                      <Download className="size-4" />
-                      {t(($) => $.downloadBackup)}
-                    </ActionMenuItem>
-                    <ActionMenuItem onSelect={() => backupInput.current?.click()}>
-                      <Upload className="size-4" />
-                      {t(($) => $.importBackup)}
-                    </ActionMenuItem>
+                    <ActionMenuGroup>
+                      <ActionMenuLabel>{t(($) => $.backupRestore)}</ActionMenuLabel>
+                      <ActionMenuItem
+                        disabled={!currentConversation}
+                        onClick={() => void exportBackup()}
+                      >
+                        <Download className="size-4" />
+                        {t(($) => $.downloadBackup)}
+                      </ActionMenuItem>
+                      <ActionMenuItem onClick={() => backupInput.current?.click()}>
+                        <Upload className="size-4" />
+                        {t(($) => $.importBackup)}
+                      </ActionMenuItem>
+                    </ActionMenuGroup>
                   </>
                 }
               >
                 <ActionMenuItem
                   className="md:hidden"
                   disabled={Boolean(invalidRoute || syncError)}
-                  onSelect={() => setConversationSettingsOpen(true)}
+                  onClick={() => setConversationSettingsOpen(true)}
                 >
                   <SlidersHorizontal className="h-[1rem] w-[1rem]" />
                   {t(($) => $.parameters)}
@@ -1698,7 +1705,7 @@ function AppContent({ initialSettings }: AppProps) {
                   !snapshot.deletedAt && (
                     <ActionMenuItem
                       aria-label={t(($) => $.manageFiles)}
-                      onSelect={() => setAttachmentsFor(selected)}
+                      onClick={() => setAttachmentsFor(selected)}
                     >
                       <FolderOpen className="h-[1rem] w-[1rem]" />
                       {t(($) => $.chatFiles)}
@@ -1707,7 +1714,7 @@ function AppContent({ initialSettings }: AppProps) {
                 {selected && latestCompletedAssistant && (
                   <ActionMenuItem
                     disabled={generationBlocked || connection === 'offline' || loading}
-                    onSelect={() => {
+                    onClick={() => {
                       setSummaryTarget(null);
                       setSummaryOpen(true);
                     }}
@@ -1716,7 +1723,7 @@ function AppContent({ initialSettings }: AppProps) {
                     {t(($) => $.compactHistory)}
                   </ActionMenuItem>
                 )}
-                <ActionMenuItem onSelect={() => setShortcutHelpOpen(true)}>
+                <ActionMenuItem onClick={() => setShortcutHelpOpen(true)}>
                   <Keyboard className="size-4" />
                   {t(($) => $.shortcuts)}
                 </ActionMenuItem>
@@ -2204,7 +2211,7 @@ function AppContent({ initialSettings }: AppProps) {
                         <ActionMenuItem
                           aria-label={t(($) => $.addFile)}
                           disabled={draftFiles.length >= MAX_MESSAGE_DOCUMENTS}
-                          onSelect={() => fileInput.current?.click()}
+                          onClick={() => fileInput.current?.click()}
                         >
                           <Paperclip className="h-[1rem] w-[1rem]" />
                           {t(($) => $.file)}
@@ -2212,7 +2219,7 @@ function AppContent({ initialSettings }: AppProps) {
                         <ActionMenuItem
                           aria-label={t(($) => $.addImage)}
                           disabled={draftImages.length >= MAX_MESSAGE_IMAGES}
-                          onSelect={() => imageInput.current?.click()}
+                          onClick={() => imageInput.current?.click()}
                         >
                           <ImagePlus className="h-[1rem] w-[1rem]" />
                           {t(($) => $.image)}
