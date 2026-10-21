@@ -19,6 +19,18 @@
 
 集成与浏览器测试继续串行：多个场景会修改同一 Library 的供应商与工具设置。integration 中 request 场景没有 page/browser 夹具，不启动浏览器。混合浏览器场景的资源限制文件保留在 e2e，避免错分。
 
+## WebKit 与惰性图表渲染
+
+Markdown／搜索回归可直接选择 WebKit，无需另建配置文件：
+
+```sh
+pnpm test:e2e --browser=webkit tests/e2e/chat/reading-layout.spec.ts tests/e2e/chat/search.spec.ts
+```
+
+Streamdown 通过可视区域观察延迟渲染 Mermaid。测试应先将稳定的 `[data-streamdown="mermaid-block"]` 外层容器滚入视口，再等待内部 SVG；直接等待或滚动尚未创建的 `[data-streamdown="mermaid"]` 会形成等待死结。模块失败后的重新加载、离线恢复同样遵循此顺序，保留真实 SVG、代码高亮、搜索、草稿与焦点断言，不使用固定等待或强制渲染来绕过惰性加载。
+
+浏览器筛选只适用于支持对应浏览器的场景；依赖 Chromium CDP 的触摸模拟不能直接用于 WebKit。
+
 ## 本次合并与保留映射
 
 原始清单为 316 项单测、286 项主套件场景、3 项 PWA。整理后的清单为 314／285／3。

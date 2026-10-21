@@ -83,8 +83,9 @@ test('answers use the available narrow width and rich content retains one frame 
     const answer = page.getByTestId('assistant-message').first();
     const body = answer.locator('[data-search-content$=":content"]');
     expect((await body.boundingBox())!.width).toBeGreaterThanOrEqual(280);
-    await page.locator('[data-streamdown="mermaid"]').scrollIntoViewIfNeeded();
+    await page.locator('[data-streamdown="mermaid-block"]').scrollIntoViewIfNeeded();
     await expect(page.locator('[data-streamdown="mermaid"] svg').first()).toBeVisible();
+    await expect(answer.locator('pre.language-js')).toContainText('const TARGET = 1;');
     const frames = await page.locator('pre, [data-streamdown="mermaid"]').evaluateAll((nodes) =>
       nodes.map((node) => {
         let count = 0;

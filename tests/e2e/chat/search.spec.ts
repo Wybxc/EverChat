@@ -70,6 +70,14 @@ const metrics = (page: Page) =>
     gap: node.scrollHeight - node.scrollTop - node.clientHeight,
   }));
 
+async function revealDiagram(page: Page) {
+  // Streamdown renders diagrams lazily. Scroll the stable block into view before
+  // waiting for the inner diagram, which does not exist until it is visible.
+  const block = page.locator('[data-streamdown="mermaid-block"]');
+  await block.scrollIntoViewIfNeeded();
+  await expect(block.locator('[data-streamdown="mermaid"] svg').first()).toBeVisible();
+}
+
 test('unavailable Markdown runtimes preserve messages and drafts, then recover on reconnect', async ({
   page,
   context,
@@ -94,7 +102,7 @@ test('unavailable Markdown runtimes preserve messages and drafts, then recover o
     await page.unroute(plugins);
     await context.setOffline(false);
     await expect(page.locator('.katex')).toHaveCount(1);
-    await expect(page.locator('[data-streamdown="mermaid"] svg').first()).toBeVisible();
+    await revealDiagram(page);
     await expect(answer.locator('[data-streamdown="strong"]')).toContainText('格式');
     await expect(composer).toHaveValue('保留我的离线草稿');
     expect(errors).toEqual([]);
@@ -133,7 +141,7 @@ for (const chunk of ['mermaid', 'highlighted-body'])
       await expect(
         page.getByTestId('assistant-message').first().locator('pre.language-js'),
       ).toContainText('const TARGET = 1;');
-      await expect(page.locator('[data-streamdown="mermaid"] svg').first()).toBeVisible();
+      await revealDiagram(page);
       await expect(composer).toHaveValue('模块加载失败时保留的草稿');
       expect(errors).toEqual([]);
     } finally {
@@ -149,8 +157,8 @@ test('search finds rendered Markdown and literal text, navigates occurrences, ex
   try {
     await page.goto(`/c/${fixture.id}`);
     await expect(page.locator('.katex')).toHaveCount(1);
+    await revealDiagram(page);
     await expect(page.locator('[data-streamdown="mermaid"]')).toHaveCount(1);
-    await expect(page.locator('[data-streamdown="mermaid"] svg').first()).toBeVisible();
     expect(
       await page.locator('pre code span').filter({ hasText: 'TARGET' }).count(),
     ).toBeGreaterThan(0);
@@ -356,8 +364,7 @@ test('returning to the bottom resumes following through growth, and scrolling aw
     await page.goto(`/c/${fixture.id}`);
     // This case measures an exact offset; late rich-content reflow has separate
     // anchoring coverage and must settle before the same-frame race below.
-    await page.locator('[data-streamdown="mermaid-block"]').scrollIntoViewIfNeeded();
-    await expect(page.locator('[data-streamdown="mermaid"] svg').first()).toBeVisible();
+    await revealDiagram(page);
     await page.evaluate(() => document.fonts.ready);
     const thoughts = page.getByTestId('message-reasoning').locator('.overflow-y-auto');
     await thoughts.hover();
