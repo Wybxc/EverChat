@@ -58,7 +58,7 @@ function ReasoningPane({ message }: { message: Message }) {
               <TraceTitle>{t(($) => $.reasoningProcess)}</TraceTitle>
             </TraceLine>
           </TraceCollapsibleTrigger>
-          <TraceCollapsibleContent forceMount hidden={!open} className="ml-0 pl-3 pr-0">
+          <TraceCollapsibleContent keepMounted hidden={!open} className="ml-0 pl-3 pr-0">
             <MessageScroller className="h-auto">
               <MessageScrollerViewport
                 aria-label={t(($) => $.reasoningProcess)}
