@@ -1,6 +1,6 @@
 # UI source
 
-shadcn/ui Base UI primitives and Nova styles. `components.json` uses `base-nova`; interactive primitives use `@base-ui/react` 1.9.0. The 2026-10-21 migration fetched official Radix Nova / Base Nova golden pairs through the shadcn CLI and replayed local customizations rather than overwriting the wrappers. Per-component notes and verification live in [the migration report](../../../.migration/project.md).
+shadcn/ui Base UI primitives and Nova styles. `components.json` uses `base-nova`; interactive primitives use `@base-ui/react` 1.9.0. The 2026-10-21 migration fetched official Radix Nova / Base Nova golden pairs through the shadcn CLI and replayed local customizations rather than overwriting the wrappers. Per-component notes and verification live in [the migration report](../../../docs/migrations/base-ui/project.md).
 
 The original Radix wrappers came from official shadcn/ui revision `c2477f311c19982ef6e246085438e6cfec3e35ea` (2026-10-15); later AI Elements additions came through the registry. Source-owned; upstream shadcn/ui is MIT: https://github.com/shadcn-ui/ui.
 

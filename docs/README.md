@@ -44,6 +44,7 @@
 - 界面设计：[AI Elements 与 Chart 优化](plans/ai-elements-chart-ui-plan.md)、[shadcn/ui 迁移](plans/shadcn-ui-migration-plan.md)、[首轮优化](plans/frontend-refinement-plan.md)、[紧凑布局](plans/frontend-compact-layout-plan.md)、[消息编辑与密度](plans/message-editing-density-plan.md)。
 - 交互体验：[慢连接加载](plans/slow-connection-ui-plan.md)、[对话体验](plans/conversation-experience-improvement-plan.md)、[侧栏操作](plans/sidebar-conversation-actions-plan.md)、[阅读导航](plans/conversation-message-navigation-plan.md)、[分支导航](plans/conversation-branch-navigation-plan.md)、[PWA 与移动端](plans/pwa-mobile-navigation-theme-plan.md)。
 - 工程整理：[模块划分](plans/project-organization-plan.md)、[配置与脚本](plans/repository-configuration-and-scripts-plan.md)、[i18n 架构](plans/i18n-architecture-plan.md)、[Access 迁移](plans/cloudflare-access-migration-plan.md)。
+- [Base UI 迁移记录](migrations/base-ui/project.md)：逐组件变更、交互差异、验证结果与包体积对比。
 - [测量命令与报告入口](measurements/README.md)：流处理、工具、通知、用量和分享的复现方法与平台证据。
 - [WebKit 流式结束滚动排查](measurements/webkit-stream-completion-scroll-2026-10-18.md)、[分享全文加载记录](measurements/sharing-fulltext-2026-10-19.md)。
 
