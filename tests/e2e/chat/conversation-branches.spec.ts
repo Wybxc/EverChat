@@ -592,7 +592,7 @@ test('branch exports and search use the visible path; full copies, idempotent ma
     await page.getByRole('button', { name: '关闭对话搜索', exact: true }).click();
     await page.getByRole('button', { name: '全局搜索', exact: true }).click();
     await page.getByRole('combobox', { name: '搜索对话', exact: true }).fill('另一回答');
-    const result = page.getByRole('region', { name: '正文搜索结果' }).getByRole('link');
+    const result = page.getByRole('group', { name: '正文与思考', exact: true }).getByRole('link');
     await expect(result).toHaveAttribute('href', `/c/${f.id}?branch=${m[4].id}`);
     const newTab = await context.newPage();
     await newTab.goto((await result.getAttribute('href'))!);
@@ -812,7 +812,7 @@ test('a search URL for an uncached message waits for a fresh authoritative snaps
       .then((response) => response.json());
     await page.getByRole('button', { name: '全局搜索', exact: true }).click();
     await page.getByRole('combobox', { name: '搜索对话', exact: true }).fill('远端新增版本');
-    const result = page.getByRole('region', { name: '正文搜索结果' }).getByRole('link');
+    const result = page.getByRole('group', { name: '正文与思考', exact: true }).getByRole('link');
     await expect(result).toHaveCount(1);
     const shadow = await page.request.patch(`/api/conversations/${f.id}/messages/${m[4].id}`, {
       headers,

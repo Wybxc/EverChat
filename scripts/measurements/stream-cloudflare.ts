@@ -19,6 +19,7 @@ const { values } = parseArgs({
     credentials: { type: 'string' },
     output: { type: 'string', default: '/tmp/everchat-stream-cloudflare.json' },
     suite: { type: 'string', default: 'functional' },
+    scenarios: { type: 'string' },
     source: { type: 'string' },
   },
 });
@@ -28,7 +29,9 @@ assert.ok(
 );
 const sustained = values.suite === 'sustained';
 const reconnect = values.suite === 'reconnect';
-const expectedScenarios = reconnect ? 30 : sustained ? 3 : 9;
+const selectedScenarios = values.scenarios?.split(',');
+assert.ok(!selectedScenarios || !reconnect, 'Scenario selection requires a generation suite');
+let expectedScenarios = reconnect ? 30 : sustained ? 3 : 9;
 assert.ok(values.url && values.credentials, '--url and --credentials are required');
 const url = new URL(values.url);
 assert.equal(url.protocol, 'https:');
@@ -41,7 +44,7 @@ const access = await measurementAccess(values.credentials, origin);
 const sockets = new Set<WebSocket>();
 // ws overrides the default connector; supply an explicit agent to honor configured proxies.
 const agent = new Agent({ proxyEnv: process.env });
-const { api } = measurementApi({ origin, headers: () => access.headers });
+const { api } = measurementApi({ origin, headers: () => access.headers, timeout: 90_000 });
 async function subscriber(id: string, initial?: Snapshot, acknowledge = true) {
   const baseline = initial?.epoch ? initial : await api<Snapshot>(`/conversations/${id}`);
   const result = await subscribe({
@@ -52,6 +55,7 @@ async function subscriber(id: string, initial?: Snapshot, acknowledge = true) {
     sockets,
     agent,
     acknowledge,
+    timeout: 90_000,
   });
   return { ...result, received: result.observed };
 }
@@ -142,7 +146,13 @@ try {
                 'benchmark-text-120-100-200',
                 'benchmark-text-140-500-600',
                 'benchmark-reasoning-140-500-600',
-              ].map((id) => ({ id, name: id, enabled: true, reasoningSupport: 'supported' }))
+              ].map((id) => ({
+                id,
+                name: id,
+                enabled: true,
+                reasoningSupport: 'supported',
+                metadataOverrides: { contextWindow: 131072 },
+              }))
             : []),
         ],
       }),
@@ -158,7 +168,7 @@ try {
       },
       'PUT',
     );
-    const cases: {
+    let cases: {
       name: string;
       protocol: ProviderKind;
       model: string;
@@ -241,13 +251,25 @@ try {
             thoughts: 0,
           },
         ];
+    if (selectedScenarios) {
+      assert.ok(
+        selectedScenarios.length > 0 &&
+          new Set(selectedScenarios).size === selectedScenarios.length,
+      );
+      assert.ok(
+        selectedScenarios.every((name) => cases.some((item) => item.name === name)),
+        'Unknown scenario',
+      );
+      cases = cases.filter((item) => selectedScenarios.includes(item.name));
+      expectedScenarios = cases.length;
+    }
     for (const item of cases) {
       const id = crypto.randomUUID(),
         begin = Date.now();
       await api('/conversations', { id, title: item.name });
       let live = await subscriber(id);
       const earlierClient = { frames: 0, bytes: 0 };
-      const shadow = item.name.includes('reasoning') ? await subscriber(id) : undefined;
+      let shadow = item.name.includes('reasoning') ? await subscriber(id) : undefined;
       const slow = item.mode === 'slow' ? await subscriber(id, undefined, false) : undefined;
       const selection: ModelSelection = {
         providerId: profiles.find((profile) => profile.provider === item.protocol)!.id,
@@ -263,18 +285,36 @@ try {
       assert.deepEqual(await api(`/conversations/${id}/messages`, input), accepted);
       const acceptedAt = Date.now();
       let reconnects = 0;
+      async function recoverBoundedSubscriber(
+        connection: Awaited<ReturnType<typeof subscriber>>,
+        countClient = true,
+      ) {
+        assert.equal(connection.code(), 4002, 'Only a bounded subscriber can resume automatically');
+        if (countClient) {
+          earlierClient.frames += connection.received.frames;
+          earlierClient.bytes += connection.received.bytes;
+          reconnects++;
+        }
+        return subscriber(id, connection.sync.durable);
+      }
       if (item.mode === 'partial') {
         await until(() => {
           live.check();
-          return (live.sync.durable.messages[1]?.durableOffset ?? 0) > 0;
+          return messageText(live.sync.durable.messages[1] ?? { parts: [] }).length > 0;
         }, item.name);
-        assert.ok(live.sync.durable.messages[1].streamState?.utf8);
+        // Provider framing stays inside the SDK. The durable checkpoint contains
+        // normalized application events, never an unfinished native SSE frame.
+        const prefix = live.sync.durable.messages[1];
+        assert.ok('**正文🙂**\n答案。'.startsWith(messageText(prefix)));
+        assert.ok('**思考🙂**\n结论。'.startsWith(messageText(prefix, 'reasoning')));
+        assert.ok(!JSON.stringify(prefix.streamState ?? {}).includes('data:'));
         live.socket.close();
         const snapshot = await api<Snapshot>(`/conversations/${id}`);
-        assert.ok(snapshot.messages[1].streamState?.utf8);
+        assert.ok(snapshot.messages[1].durableOffset! >= prefix.durableOffset!);
         earlierClient.frames += live.received.frames;
         earlierClient.bytes += live.received.bytes;
         live = await subscriber(id, snapshot);
+        reconnects++;
       } else if (item.mode === 'reconnect') {
         for (let index = 0; index < 20; index++) {
           await pause(1500);
@@ -310,14 +350,17 @@ try {
         );
       } else {
         await until(
-          () => {
+          async () => {
             live.check();
+            // High RTT can exhaust the preview window of an acknowledging
+            // client too. Resume confirmed state; never restart generation.
+            if (live.code() !== undefined) live = await recoverBoundedSubscriber(live);
             return ['completed', 'failed', 'cancelled'].includes(
               live.sync.durable.messages[1]?.status ?? '',
             );
           },
           item.name,
-          sustained ? 150000 : 30000,
+          sustained ? 150000 : 90000,
         );
       }
       stored = await api<Snapshot>(`/conversations/${id}`);
@@ -341,7 +384,16 @@ try {
       }
       if (item.mode !== 'disconnect') assert.deepEqual(live.sync.durable, stored);
       if (shadow) {
-        await until(() => shadow.sync.durable.seq === stored.seq, 'second device');
+        await until(
+          async () => {
+            shadow!.check();
+            if (shadow!.code() !== undefined)
+              shadow = await recoverBoundedSubscriber(shadow!, false);
+            return shadow!.sync.durable.seq === stored.seq;
+          },
+          'second device',
+          90_000,
+        );
         shadow.check();
         assert.deepEqual(shadow.sync.durable, stored);
         shadow.socket.close();
@@ -384,6 +436,7 @@ try {
     workerName: 'everchat-stream-validation',
     plan: 'Workers Free (user confirmed)',
     suite: values.suite,
+    selectedScenarios,
     diagnosticCounters: false,
     expectedScenarios,
     complete: results.length === expectedScenarios,

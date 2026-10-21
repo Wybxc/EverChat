@@ -1,0 +1,115 @@
+{
+  "version": 1,
+  "runtime": "cloudflare",
+  "workerName": "everchat-tools-validation",
+  "suite": "functional",
+  "startedAt": "2026-10-21T12:30:40.380Z",
+  "finishedAt": "2026-10-21T12:32:01.756Z",
+  "complete": true,
+  "expectedScenarios": 1,
+  "selectedScenarios": [
+    "concurrent-shared-quota"
+  ],
+  "identity": {
+    "kind": "everchat-tools-validation",
+    "version": 1,
+    "runId": "7490969d-7b1f-4245-9388-13f5bd52285b",
+    "mockUpstreams": true,
+    "counters": {
+      "generation": false,
+      "local": false
+    },
+    "workload": {
+      "chunks": 120,
+      "size": 200,
+      "interval": 25
+    }
+  },
+  "observations": {
+    "publicSnapshotReads": 2,
+    "conversationStatusReads": 8,
+    "libraryStatusReads": 2
+  },
+  "observationPolicy": {
+    "activeLibraryProbes": false,
+    "offlineSnapshotIntervalMs": 5000,
+    "terminalStatusIntervalMs": 2000
+  },
+  "scope": "All diagnostic counters disabled. Native tool Workflow and production service adapter with isolated mock HTTP; no paid supplier calls. Public WebSocket completion before read-only terminal checks. API setup, fixture bookkeeping SQL and observation requests are part of the reported platform window. Local elapsed time/SQLite allocation are not CPU, billed resources, natural hibernation proof or account totals.",
+  "results": [
+    {
+      "scenario": "concurrent-shared-quota",
+      "tasks": [
+        {
+          "conversationId": "09561a31-4221-41a4-bc91-ea549aac16dd",
+          "taskId": "df2be932-c0f2-4624-8af3-763a3dcd2e41",
+          "status": "completed",
+          "contentCharacters": 24007,
+          "reasoningCharacters": 6,
+          "elapsedMs": 31655,
+          "runtime": {
+            "databaseBytes": 319488,
+            "alarmAt": null,
+            "task": {
+              "status": "completed",
+              "round": 1,
+              "modelRequests": 2,
+              "toolRequests": 2
+            },
+            "workflowStatus": "complete",
+            "pendingSearch": 0,
+            "pendingNotifications": 0,
+            "privateStreams": 0,
+            "privatePayloads": 0,
+            "retainedContexts": 0,
+            "modelCalls": 2,
+            "serviceRequests": 0
+          },
+          "client": {
+            "frames": 51,
+            "bytes": 87996,
+            "disconnected": false
+          }
+        },
+        {
+          "conversationId": "501b6dd6-64c5-41de-b56b-00c150ddab69",
+          "taskId": "b1129dcf-195a-43f9-b239-3e018187d547",
+          "status": "completed",
+          "contentCharacters": 24007,
+          "reasoningCharacters": 6,
+          "elapsedMs": 60743,
+          "runtime": {
+            "databaseBytes": 327680,
+            "alarmAt": null,
+            "task": {
+              "status": "completed",
+              "round": 1,
+              "modelRequests": 2,
+              "toolRequests": 2
+            },
+            "workflowStatus": "complete",
+            "pendingSearch": 0,
+            "pendingNotifications": 0,
+            "privateStreams": 0,
+            "privatePayloads": 0,
+            "retainedContexts": 0,
+            "modelCalls": 2,
+            "serviceRequests": 1
+          },
+          "client": {
+            "frames": 51,
+            "bytes": 87658,
+            "disconnected": false
+          }
+        }
+      ],
+      "library": {
+        "databaseBytes": 1220608,
+        "alarmAt": null,
+        "pendingBackfills": 0,
+        "usedToday": 49,
+        "usedInWindow": 1
+      }
+    }
+  ]
+}

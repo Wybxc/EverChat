@@ -108,3 +108,31 @@ PWA 的 lifecycle、caching、math 三个套件在 Chromium／WebKit 共 36 项�
 流式、工具 Workflow 与原生任务账本三个套件共 32 项全部通过（3.8 分钟）：预览与持久确认、四协议续接、中断保留、无客户端后台生成、DO 重启、不确定请求不重发、跨设备与页面关闭、指定 run 停止／过期，以及备份／复制后的工具结果。全部使用本地模拟模型与工具，没有调用真实付费供应商。
 
 当前构建 PWA 必需预缓存为 16 项、1335.61 KiB。`wrangler deploy --dry-run` 仅本地打包：未压缩 4608.56 KiB、gzip 881.13 KiB。2026-10-21 复核[官方限制](https://developers.cloudflare.com/workers/platform/limits/#worker-size)，当前限制为未压缩 64 MiB，gzip 仅作参考；构建尺寸通过不代表 CPU、启动或内存峰值通过。未执行生产部署。
+
+## 最终浏览器回归与隔离平台验证
+
+完整 E2E 首次为 419 项通过、3 项失败；两项仍按旧的搜索 `region` 定位，实际结果已位于「正文与思考」group；另一项仍要求工具认证失败导致整条回答失败。修正定位器与旧行为断言后，三个用例单独复测全部通过，保留失败工具可见、展开与焦点断言。没有为适配测试修改产品代码。完整 PWA 套件 56 项通过（含 Chromium／WebKit），最新类型检查通过。以上不是一次全量 E2E 命令零失败的记录。
+
+平台使用 ba5962f 的产品代码及原有隔离夹具：独立 stream／tools Worker、四个 SQLite DO namespace、一个工具 Workflow，所有上游都是合成模型／HTTP 服务，诊断计数关闭。用户单独授权创建一小时 Access 服务令牌，仅用于两个验证域名，生产 Access 应用不变。凭据未写入仓库。
+
+普通流在[第一窗口](ai-sdk-core-platform-stream-partial-2026-10-21.json)完成七项：在线正文／思考、无客户端长回答、四协议中途断线恢复；该窗口随后因观测连接超时中断，报告仍为不完整。[补测窗口](ai-sdk-core-platform-stream-recovery-2026-10-21.json)完成慢订阅者与取消两项。九个功能场景分别有完成记录，不冒充单次全套通过。慢订阅者最终恢复 90,000 字正文与 90,000 字思考，未重启模型。
+
+工具流的[第一窗口](ai-sdk-core-platform-tools-partial-2026-10-21.json)完成八项后发生连接建立超时；包括四协议、无客户端重放、五轮交换、服务认证拒绝和取消。[配额补测](ai-sdk-core-platform-tools-quota-2026-10-21.json)验证两个并发回答完成，总计 4 次模型请求、1 次实际工具请求，终态后私有流／载荷、上下文、待通知／搜索、Alarm 均清空。服务认证失败为 2 模型／1 实际工具请求；取消在已通过窗口为 1 模型／0 工具。另一轮取消因本机网络延迟，到达服务端时第二模型轮次已开始，严格的「第一轮取消」断言失败；不能将这次执行计为该时机验收通过。
+
+持续生成首次被上下文预算拒绝：合成输入约 32,011 Tokens，而未知测试模型回退预算为 21,299；执行器现显式声明合成模型的 131,072 上下文容量。它修正测试配置，不放宽生产默认保护。[持续正文窗口](ai-sdk-core-platform-stream-sustained-partial-2026-10-21.json)保存 84,000 字并完成恢复验证，随后观测请求出现 ECONNRESET，仍保留为部分完成。反复重连及断线持续生成的剩余报告须补齐。
+
+[大工具响应](ai-sdk-core-platform-tools-large-2026-10-21.json)与[分钟级工具流](ai-sdk-core-platform-tools-sustained-2026-10-21.json)均完整通过：分别保存 90,000／24,000 字正文，实际各为 2 模型／2 工具请求，终态临时资料与 Alarm 清空。对应[大响应指标](ai-sdk-core-platform-tools-large-metrics-2026-10-21.json)和[长时指标](ai-sdk-core-platform-tools-sustained-metrics-2026-10-21.json)中的 DO 资源超限计数为零。窗口按分钟扩展且存在交叠，不相加为总消耗；查询时最后一个分钟尚未闭合，也不将样本当作精确账单。工具长时窗口 Conversation 活跃约 77.6 秒、CPU 约 0.712 秒、duration 约 9.934 GB-s；Library 另计。
+
+### 平台资源口径
+
+部署实际报告 stream／tools 启动分别为 **123／118 ms**，隔离包体未压缩 **5618.04／5624.38 KiB**（含夹具），不能与生产 dry-run 直接当作体积增长比较。
+
+已保存[全部尝试采样窗口](ai-sdk-core-platform-window-2026-10-21.json)、[流式补测指标](ai-sdk-core-platform-stream-recovery-metrics-2026-10-21.json)与[配额指标](ai-sdk-core-platform-tools-quota-metrics-2026-10-21.json)。全部尝试窗口为 12:00–12:18 UTC，含设置、旧断言失败及本机超时，不能当作一次完成测试的成本。Worker 成功请求样本 p50 为 2.515 ms、p99 为 22.605 ms、最大 31.616 ms；全部状态桶最大采样内存 33,124,228 字节。四个 DO 的 CPU／内存超限与 fatal internal 计数均为零。采样中有 clientDisconnected／responseStreamDisconnected，包含主动断线与网络观测失败，不等于零错误。
+
+[官方 Worker 限制](https://developers.cloudflare.com/workers/platform/limits/#cpu-time)仍为 Free 每请求 CPU 10 ms，偶发超出有运行时弹性；DO 则有[独立的默认 30 秒 CPU 预算](https://developers.cloudflare.com/durable-objects/platform/limits/)。没有观察到 exceededCpu 不能证明每次 Worker 请求均低于 10 ms，也不能据此承诺持续负载安全。33 MB 是采样最大值，不是完整堆峰值；SQL storage 数据集此时为空，不能当作零存储。
+
+实时 tail 在本机未能建立连接，未以空日志证明无异常。已修正执行器重复添加环境名、从而订阅错误 Worker 的问题。平台 CPU 尖峰、峰值内存与剩余长时负载证据继续列为待验收；未发布。
+
+最后的[长时补测](ai-sdk-core-platform-stream-sustained-recovery-2026-10-21.json)再次因本机请求期限到达而中断，未计为通过；没有重发模型提交。[最终采样](ai-sdk-core-platform-window-final-2026-10-21.json)覆盖 12:00–12:44:24 UTC 的全部隔离尝试，DO 资源超限仍为零，Worker 最大 CPU 样本仍为 31.616 ms。该宽窗口包含诊断、准备、未完成尝试和测试进程的只读观测，不能只归因于回答生成。
+
+一小时授权窗口结束前已[删除测试 Workflow、两个 Worker、四个 namespace 及测试域名](ai-sdk-core-platform-cleanup-2026-10-21.json)，逐项读取确认 namespace 不再存在，并核对正式 EverChat Worker 设置一致。控制台已删除临时 Access 应用、零关联的 Service Auth 策略与服务令牌，原有 EverChat 应用和 owner 策略保留；本机三个凭据文件与两个私密配置文件也已移除。测试资源不能继续沿用；剩余平台测试仍需可用网络及新的受限测试会话。

@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "runtime": "deployed Cloudflare isolated fixture",
+  "workerName": "everchat-stream-validation",
+  "plan": "Workers Free (user confirmed)",
+  "suite": "sustained",
+  "selectedScenarios": [
+    "sustained-reasoning-reconnect",
+    "sustained-disconnected"
+  ],
+  "diagnosticCounters": false,
+  "expectedScenarios": 2,
+  "complete": false,
+  "startedAt": "2026-10-21T12:38:37.220Z",
+  "finishedAt": "2026-10-21T12:43:30.366Z",
+  "results": [],
+  "scope": "Functional cases with mock suppliers; platform analytics collected separately. No real model calls or production data."
+}

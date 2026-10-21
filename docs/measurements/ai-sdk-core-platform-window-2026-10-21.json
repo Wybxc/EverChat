@@ -1,0 +1,576 @@
+{
+  "window": {
+    "start": "2026-10-21T12:00:00Z",
+    "end": "2026-10-21T12:18:00.855Z"
+  },
+  "scope": "All isolated attempts including failed test assertions and network observation timeouts; not a completed functional suite or production traffic.",
+  "resources": {
+    "data": {
+      "viewer": {
+        "accounts": [
+          {
+            "durableObjectsInvocationsAdaptiveGroups": [
+              {
+                "avg": {
+                  "sampleInterval": 1.865979381443299
+                },
+                "dimensions": {
+                  "namespaceId": "f9a5032eef17456489a56b971caf9663",
+                  "status": "success",
+                  "type": "hibernation"
+                },
+                "quantiles": {
+                  "cpuTimeP50": 128,
+                  "cpuTimeP99": 124730
+                },
+                "sum": {
+                  "errors": 0,
+                  "requests": 181
+                }
+              },
+              {
+                "avg": {
+                  "sampleInterval": 1
+                },
+                "dimensions": {
+                  "namespaceId": "381f2155738941b7b1215046e77d5d88",
+                  "status": "success",
+                  "type": "alarm"
+                },
+                "quantiles": {
+                  "cpuTimeP50": 76255,
+                  "cpuTimeP99": 297715
+                },
+                "sum": {
+                  "errors": 0,
+                  "requests": 12
+                }
+              },
+              {
+                "avg": {
+                  "sampleInterval": 1
+                },
+                "dimensions": {
+                  "namespaceId": "381f2155738941b7b1215046e77d5d88",
+                  "status": "success",
+                  "type": "jsrpc"
+                },
+                "quantiles": {
+                  "cpuTimeP50": 14369,
+                  "cpuTimeP99": 62664
+                },
+                "sum": {
+                  "errors": 0,
+                  "requests": 19
+                }
+              },
+              {
+                "avg": {
+                  "sampleInterval": 1
+                },
+                "dimensions": {
+                  "namespaceId": "718365de5c8543d28cbe3b6a21063f9e",
+                  "status": "clientDisconnected",
+                  "type": "jsrpc"
+                },
+                "quantiles": {
+                  "cpuTimeP50": 14444,
+                  "cpuTimeP99": 14444
+                },
+                "sum": {
+                  "errors": 1,
+                  "requests": 1
+                }
+              },
+              {
+                "avg": {
+                  "sampleInterval": 2
+                },
+                "dimensions": {
+                  "namespaceId": "381f2155738941b7b1215046e77d5d88",
+                  "status": "clientDisconnected",
+                  "type": "alarm"
+                },
+                "quantiles": {
+                  "cpuTimeP50": 31,
+                  "cpuTimeP99": 594
+                },
+                "sum": {
+                  "errors": 18,
+                  "requests": 18
+                }
+              },
+              {
+                "avg": {
+                  "sampleInterval": 1
+                },
+                "dimensions": {
+                  "namespaceId": "f9a5032eef17456489a56b971caf9663",
+                  "status": "success",
+                  "type": "alarm"
+                },
+                "quantiles": {
+                  "cpuTimeP50": 57453,
+                  "cpuTimeP99": 330081
+                },
+                "sum": {
+                  "errors": 0,
+                  "requests": 23
+                }
+              },
+              {
+                "avg": {
+                  "sampleInterval": 1
+                },
+                "dimensions": {
+                  "namespaceId": "f9a5032eef17456489a56b971caf9663",
+                  "status": "success",
+                  "type": "http"
+                },
+                "quantiles": {
+                  "cpuTimeP50": 1317,
+                  "cpuTimeP99": 2123
+                },
+                "sum": {
+                  "errors": 0,
+                  "requests": 7
+                }
+              },
+              {
+                "avg": {
+                  "sampleInterval": 1
+                },
+                "dimensions": {
+                  "namespaceId": "f9a5032eef17456489a56b971caf9663",
+                  "status": "clientDisconnected",
+                  "type": "alarm"
+                },
+                "quantiles": {
+                  "cpuTimeP50": 48,
+                  "cpuTimeP99": 205
+                },
+                "sum": {
+                  "errors": 14,
+                  "requests": 14
+                }
+              },
+              {
+                "avg": {
+                  "sampleInterval": 1
+                },
+                "dimensions": {
+                  "namespaceId": "381f2155738941b7b1215046e77d5d88",
+                  "status": "clientDisconnected",
+                  "type": "jsrpc"
+                },
+                "quantiles": {
+                  "cpuTimeP50": 5583,
+                  "cpuTimeP99": 387908
+                },
+                "sum": {
+                  "errors": 34,
+                  "requests": 34
+                }
+              },
+              {
+                "avg": {
+                  "sampleInterval": 1.1548117154811715
+                },
+                "dimensions": {
+                  "namespaceId": "fb6ca3e849ba425eb9993cdaf220ee2c",
+                  "status": "success",
+                  "type": "jsrpc"
+                },
+                "quantiles": {
+                  "cpuTimeP50": 546,
+                  "cpuTimeP99": 41430
+                },
+                "sum": {
+                  "errors": 0,
+                  "requests": 276
+                }
+              },
+              {
+                "avg": {
+                  "sampleInterval": 1
+                },
+                "dimensions": {
+                  "namespaceId": "f9a5032eef17456489a56b971caf9663",
+                  "status": "success",
+                  "type": "jsrpc"
+                },
+                "quantiles": {
+                  "cpuTimeP50": 4202,
+                  "cpuTimeP99": 21337
+                },
+                "sum": {
+                  "errors": 0,
+                  "requests": 85
+                }
+              },
+              {
+                "avg": {
+                  "sampleInterval": 1
+                },
+                "dimensions": {
+                  "namespaceId": "f9a5032eef17456489a56b971caf9663",
+                  "status": "responseStreamDisconnected",
+                  "type": "http"
+                },
+                "quantiles": {
+                  "cpuTimeP50": 899,
+                  "cpuTimeP99": 1494
+                },
+                "sum": {
+                  "errors": 2,
+                  "requests": 2
+                }
+              },
+              {
+                "avg": {
+                  "sampleInterval": 1.1683168316831682
+                },
+                "dimensions": {
+                  "namespaceId": "718365de5c8543d28cbe3b6a21063f9e",
+                  "status": "success",
+                  "type": "jsrpc"
+                },
+                "quantiles": {
+                  "cpuTimeP50": 395,
+                  "cpuTimeP99": 44998
+                },
+                "sum": {
+                  "errors": 0,
+                  "requests": 236
+                }
+              },
+              {
+                "avg": {
+                  "sampleInterval": 1
+                },
+                "dimensions": {
+                  "namespaceId": "fb6ca3e849ba425eb9993cdaf220ee2c",
+                  "status": "clientDisconnected",
+                  "type": "jsrpc"
+                },
+                "quantiles": {
+                  "cpuTimeP50": 5434,
+                  "cpuTimeP99": 20395
+                },
+                "sum": {
+                  "errors": 3,
+                  "requests": 3
+                }
+              },
+              {
+                "avg": {
+                  "sampleInterval": 1
+                },
+                "dimensions": {
+                  "namespaceId": "f9a5032eef17456489a56b971caf9663",
+                  "status": "clientDisconnected",
+                  "type": "jsrpc"
+                },
+                "quantiles": {
+                  "cpuTimeP50": 1887,
+                  "cpuTimeP99": 200228
+                },
+                "sum": {
+                  "errors": 26,
+                  "requests": 26
+                }
+              },
+              {
+                "avg": {
+                  "sampleInterval": 1
+                },
+                "dimensions": {
+                  "namespaceId": "381f2155738941b7b1215046e77d5d88",
+                  "status": "success",
+                  "type": "http"
+                },
+                "quantiles": {
+                  "cpuTimeP50": 1257,
+                  "cpuTimeP99": 2764
+                },
+                "sum": {
+                  "errors": 0,
+                  "requests": 11
+                }
+              },
+              {
+                "avg": {
+                  "sampleInterval": 1.5737704918032787
+                },
+                "dimensions": {
+                  "namespaceId": "381f2155738941b7b1215046e77d5d88",
+                  "status": "success",
+                  "type": "hibernation"
+                },
+                "quantiles": {
+                  "cpuTimeP50": 178,
+                  "cpuTimeP99": 224498
+                },
+                "sum": {
+                  "errors": 0,
+                  "requests": 192
+                }
+              },
+              {
+                "avg": {
+                  "sampleInterval": 1
+                },
+                "dimensions": {
+                  "namespaceId": "381f2155738941b7b1215046e77d5d88",
+                  "status": "clientDisconnected",
+                  "type": "http"
+                },
+                "quantiles": {
+                  "cpuTimeP50": 1775,
+                  "cpuTimeP99": 1775
+                },
+                "sum": {
+                  "errors": 1,
+                  "requests": 1
+                }
+              },
+              {
+                "avg": {
+                  "sampleInterval": 1
+                },
+                "dimensions": {
+                  "namespaceId": "381f2155738941b7b1215046e77d5d88",
+                  "status": "responseStreamDisconnected",
+                  "type": "http"
+                },
+                "quantiles": {
+                  "cpuTimeP50": 674,
+                  "cpuTimeP99": 1447
+                },
+                "sum": {
+                  "errors": 10,
+                  "requests": 10
+                }
+              }
+            ],
+            "durableObjectsPeriodicGroups": [
+              {
+                "avg": {
+                  "sampleInterval": 1
+                },
+                "dimensions": {
+                  "namespaceId": "381f2155738941b7b1215046e77d5d88"
+                },
+                "sum": {
+                  "activeTime": 30212989,
+                  "cpuTime": 2454425,
+                  "duration": 3.8672625919999994,
+                  "exceededCpuErrors": 0,
+                  "exceededMemoryErrors": 0,
+                  "fatalInternalErrors": 0,
+                  "inboundWebsocketMsgCount": 0,
+                  "outboundWebsocketMsgCount": 226,
+                  "rowsRead": 5371,
+                  "rowsWritten": 1320
+                }
+              },
+              {
+                "avg": {
+                  "sampleInterval": 1
+                },
+                "dimensions": {
+                  "namespaceId": "718365de5c8543d28cbe3b6a21063f9e"
+                },
+                "sum": {
+                  "activeTime": 19778853,
+                  "cpuTime": 354734,
+                  "duration": 2.531693184,
+                  "exceededCpuErrors": 0,
+                  "exceededMemoryErrors": 0,
+                  "fatalInternalErrors": 0,
+                  "inboundWebsocketMsgCount": 0,
+                  "outboundWebsocketMsgCount": 0,
+                  "rowsRead": 1503,
+                  "rowsWritten": 376
+                }
+              },
+              {
+                "avg": {
+                  "sampleInterval": 1
+                },
+                "dimensions": {
+                  "namespaceId": "f9a5032eef17456489a56b971caf9663"
+                },
+                "sum": {
+                  "activeTime": 103483560,
+                  "cpuTime": 6088669,
+                  "duration": 13.24589568,
+                  "exceededCpuErrors": 0,
+                  "exceededMemoryErrors": 0,
+                  "fatalInternalErrors": 0,
+                  "inboundWebsocketMsgCount": 0,
+                  "outboundWebsocketMsgCount": 467,
+                  "rowsRead": 19471,
+                  "rowsWritten": 3136
+                }
+              },
+              {
+                "avg": {
+                  "sampleInterval": 1
+                },
+                "dimensions": {
+                  "namespaceId": "fb6ca3e849ba425eb9993cdaf220ee2c"
+                },
+                "sum": {
+                  "activeTime": 4889556,
+                  "cpuTime": 410078,
+                  "duration": 0.625863168,
+                  "exceededCpuErrors": 0,
+                  "exceededMemoryErrors": 0,
+                  "fatalInternalErrors": 0,
+                  "inboundWebsocketMsgCount": 0,
+                  "outboundWebsocketMsgCount": 0,
+                  "rowsRead": 2054,
+                  "rowsWritten": 280
+                }
+              }
+            ],
+            "workersInvocationsAdaptive": [
+              {
+                "avg": {
+                  "sampleInterval": 1
+                },
+                "dimensions": {
+                  "scriptName": "__unknown__",
+                  "status": "responseStreamDisconnected",
+                  "usageModel": "standard"
+                },
+                "max": {
+                  "cpuTime": 19592,
+                  "memoryUsageBytes": 33041183
+                },
+                "quantiles": {
+                  "cpuTimeP50": 5201,
+                  "cpuTimeP99": 19592
+                },
+                "sum": {
+                  "cpuTimeUs": 130348,
+                  "errors": 0,
+                  "requests": 17
+                }
+              },
+              {
+                "avg": {
+                  "sampleInterval": 1.0298013245033113
+                },
+                "dimensions": {
+                  "scriptName": "__unknown__",
+                  "status": "success",
+                  "usageModel": "standard"
+                },
+                "max": {
+                  "cpuTime": 31616,
+                  "memoryUsageBytes": 33047582
+                },
+                "quantiles": {
+                  "cpuTimeP50": 2515,
+                  "cpuTimeP99": 22605
+                },
+                "sum": {
+                  "cpuTimeUs": 1446002,
+                  "errors": 0,
+                  "requests": 311
+                }
+              },
+              {
+                "avg": {
+                  "sampleInterval": 1
+                },
+                "dimensions": {
+                  "scriptName": "__unknown__",
+                  "status": "clientDisconnected",
+                  "usageModel": "standard"
+                },
+                "max": {
+                  "cpuTime": 21683,
+                  "memoryUsageBytes": 33124228
+                },
+                "quantiles": {
+                  "cpuTimeP50": 4063,
+                  "cpuTimeP99": 21683
+                },
+                "sum": {
+                  "cpuTimeUs": 48858,
+                  "errors": 0,
+                  "requests": 4
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "errors": null
+  },
+  "workflow": {
+    "data": {
+      "viewer": {
+        "accounts": [
+          {
+            "workflowsAdaptiveGroups": [
+              {
+                "count": 25,
+                "dimensions": {
+                  "eventType": "WORKFLOW_RUNNING",
+                  "workflowName": "everchat-tools-validation-flow"
+                },
+                "sum": {
+                  "allStepCount": 74,
+                  "cpuTime": 112,
+                  "executionDuration": 0,
+                  "retryCount": 0,
+                  "stepCount": 58,
+                  "storageRate": 57344,
+                  "wallTime": 0
+                }
+              },
+              {
+                "count": 11,
+                "dimensions": {
+                  "eventType": "WORKFLOW_START",
+                  "workflowName": "everchat-tools-validation-flow"
+                },
+                "sum": {
+                  "allStepCount": 0,
+                  "cpuTime": 0,
+                  "executionDuration": 0,
+                  "retryCount": 0,
+                  "stepCount": 0,
+                  "storageRate": 720896,
+                  "wallTime": 0
+                }
+              },
+              {
+                "count": 9,
+                "dimensions": {
+                  "eventType": "WORKFLOW_SUCCESS",
+                  "workflowName": "everchat-tools-validation-flow"
+                },
+                "sum": {
+                  "allStepCount": 23,
+                  "cpuTime": 0,
+                  "executionDuration": 0,
+                  "retryCount": 0,
+                  "stepCount": 16,
+                  "storageRate": 61440,
+                  "wallTime": 101
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "errors": null
+  }
+}

@@ -1,0 +1,314 @@
+{
+  "version": 1,
+  "queriedAt": "2026-10-21T12:39:52.486Z",
+  "window": {
+    "start": "2026-10-21T12:36:00.000Z",
+    "end": "2026-10-21T12:41:00.000Z"
+  },
+  "storageWindow": {
+    "start": "2026-10-21T12:00:00.000Z",
+    "end": "2026-10-21T12:39:47.874Z"
+  },
+  "workerName": "everchat-tools-validation",
+  "namespaces": [
+    {
+      "name": "CONVERSATIONS",
+      "id": "f9a5032eef17456489a56b971caf9663"
+    },
+    {
+      "name": "LIBRARY",
+      "id": "fb6ca3e849ba425eb9993cdaf220ee2c"
+    }
+  ],
+  "units": {
+    "cpuTime": "microseconds",
+    "cpuTimeUs": "microseconds",
+    "activeTime": "microseconds",
+    "duration": "GB*s",
+    "storedBytes": "bytes",
+    "memoryUsageBytes": "bytes"
+  },
+  "scope": "Isolated deployed namespaces and Worker, diagnostic counters disabled. Adaptive fields may be sampled; empty arrays do not prove zero usage. Invocation minute rounding includes setup and idle activity. Storage uses a separate wider window and reports samples rather than the exact functional-run peak.",
+  "available": {
+    "workersInvocationsAdaptive": true,
+    "durableObjectsInvocationsAdaptiveGroups": true,
+    "durableObjectsPeriodicGroups": true,
+    "durableObjectsSqlStorageGroups": false
+  },
+  "data": {
+    "viewer": {
+      "accounts": [
+        {
+          "durableObjectsInvocationsAdaptiveGroups": [
+            {
+              "avg": {
+                "sampleInterval": 1.0245901639344261
+              },
+              "dimensions": {
+                "namespaceId": "f9a5032eef17456489a56b971caf9663",
+                "status": "success",
+                "type": "hibernation"
+              },
+              "quantiles": {
+                "cpuTimeP50": 2150,
+                "cpuTimeP99": 37098
+              },
+              "sum": {
+                "errors": 0,
+                "requests": 125
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "namespaceId": "f9a5032eef17456489a56b971caf9663",
+                "status": "success",
+                "type": "alarm"
+              },
+              "quantiles": {
+                "cpuTimeP50": 35909,
+                "cpuTimeP99": 64612
+              },
+              "sum": {
+                "errors": 0,
+                "requests": 3
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "namespaceId": "f9a5032eef17456489a56b971caf9663",
+                "status": "success",
+                "type": "http"
+              },
+              "quantiles": {
+                "cpuTimeP50": 1130,
+                "cpuTimeP99": 1130
+              },
+              "sum": {
+                "errors": 0,
+                "requests": 1
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "namespaceId": "f9a5032eef17456489a56b971caf9663",
+                "status": "clientDisconnected",
+                "type": "alarm"
+              },
+              "quantiles": {
+                "cpuTimeP50": 28,
+                "cpuTimeP99": 28
+              },
+              "sum": {
+                "errors": 1,
+                "requests": 1
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1.1515151515151516
+              },
+              "dimensions": {
+                "namespaceId": "fb6ca3e849ba425eb9993cdaf220ee2c",
+                "status": "success",
+                "type": "jsrpc"
+              },
+              "quantiles": {
+                "cpuTimeP50": 493,
+                "cpuTimeP99": 43637
+              },
+              "sum": {
+                "errors": 0,
+                "requests": 38
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "namespaceId": "f9a5032eef17456489a56b971caf9663",
+                "status": "success",
+                "type": "jsrpc"
+              },
+              "quantiles": {
+                "cpuTimeP50": 7392,
+                "cpuTimeP99": 17599
+              },
+              "sum": {
+                "errors": 0,
+                "requests": 9
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "namespaceId": "fb6ca3e849ba425eb9993cdaf220ee2c",
+                "status": "clientDisconnected",
+                "type": "jsrpc"
+              },
+              "quantiles": {
+                "cpuTimeP50": 4141,
+                "cpuTimeP99": 4141
+              },
+              "sum": {
+                "errors": 1,
+                "requests": 1
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "namespaceId": "f9a5032eef17456489a56b971caf9663",
+                "status": "clientDisconnected",
+                "type": "jsrpc"
+              },
+              "quantiles": {
+                "cpuTimeP50": 1842,
+                "cpuTimeP99": 6337
+              },
+              "sum": {
+                "errors": 5,
+                "requests": 5
+              }
+            }
+          ],
+          "durableObjectsPeriodicGroups": [
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "namespaceId": "f9a5032eef17456489a56b971caf9663"
+              },
+              "sum": {
+                "activeTime": 77611661,
+                "cpuTime": 712346,
+                "duration": 9.934292608,
+                "exceededCpuErrors": 0,
+                "exceededMemoryErrors": 0,
+                "fatalInternalErrors": 0,
+                "inboundWebsocketMsgCount": 0,
+                "outboundWebsocketMsgCount": 182,
+                "rowsRead": 2759,
+                "rowsWritten": 536
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "namespaceId": "fb6ca3e849ba425eb9993cdaf220ee2c"
+              },
+              "sum": {
+                "activeTime": 884686,
+                "cpuTime": 79344,
+                "duration": 0.113239808,
+                "exceededCpuErrors": 0,
+                "exceededMemoryErrors": 0,
+                "fatalInternalErrors": 0,
+                "inboundWebsocketMsgCount": 0,
+                "outboundWebsocketMsgCount": 0,
+                "rowsRead": 1205,
+                "rowsWritten": 61
+              }
+            }
+          ],
+          "durableObjectsSqlStorageGroups": [],
+          "workersInvocationsAdaptive": [
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "status": "success",
+                "usageModel": "standard"
+              },
+              "max": {
+                "cpuTime": 17019,
+                "memoryUsageBytes": 33017541
+              },
+              "quantiles": {
+                "cpuTimeP50": 2191,
+                "cpuTimeP99": 17019
+              },
+              "sum": {
+                "cpuTimeUs": 88151,
+                "errors": 0,
+                "requests": 21
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "errors": null,
+  "workflow": {
+    "workflowName": "everchat-tools-validation-flow",
+    "available": true,
+    "data": {
+      "viewer": {
+        "accounts": [
+          {
+            "workflowsAdaptiveGroups": [
+              {
+                "count": 1,
+                "dimensions": {
+                  "eventType": "WORKFLOW_RUNNING",
+                  "workflowName": "everchat-tools-validation-flow"
+                },
+                "sum": {
+                  "allStepCount": 2,
+                  "cpuTime": 0,
+                  "executionDuration": 0,
+                  "retryCount": 0,
+                  "stepCount": 1,
+                  "storageRate": 0,
+                  "wallTime": 0
+                }
+              },
+              {
+                "count": 1,
+                "dimensions": {
+                  "eventType": "WORKFLOW_START",
+                  "workflowName": "everchat-tools-validation-flow"
+                },
+                "sum": {
+                  "allStepCount": 0,
+                  "cpuTime": 0,
+                  "executionDuration": 0,
+                  "retryCount": 0,
+                  "stepCount": 0,
+                  "storageRate": 65536,
+                  "wallTime": 0
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "errors": null,
+    "units": {
+      "wallTime": "seconds",
+      "cpuTime": "milliseconds",
+      "executionDuration": "GB*s",
+      "storageRate": "bytes of state growth"
+    },
+    "scope": "Workflow analytics grouped by eventType; do not add summaries across different lifecycle events without checking their semantics. CPU/execution duration/step fields are platform analytics, not an invoice. storageRate is state growth, not retained storage or byte-days. Empty/missing data is unavailable, never zero."
+  }
+}

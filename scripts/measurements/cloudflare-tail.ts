@@ -11,13 +11,13 @@ const { values } = parseArgs({
     worker: { type: 'string', default: 'everchat-stream-validation' },
   },
 });
-const configs: Record<string, string> = {
-  'everchat-stream-validation': 'stream',
-  'everchat-tools-validation': 'tools',
-  'everchat-notifications-validation': 'notifications',
-  'everchat-notification-pipeline-validation': 'notification-pipeline',
-};
-if (!values.worker || !Object.hasOwn(configs, values.worker))
+const workers = new Set([
+  'everchat-stream-validation',
+  'everchat-tools-validation',
+  'everchat-notifications-validation',
+  'everchat-notification-pipeline-validation',
+]);
+if (!values.worker || !workers.has(values.worker))
   throw new Error('Use only an isolated validation Worker');
 const seconds = Number(values.seconds);
 if (!Number.isInteger(seconds) || seconds < 10 || seconds > 900)
@@ -27,17 +27,7 @@ const startedAt = new Date().toISOString(),
   events: Record<string, unknown>[] = [];
 const child = spawn(
   process.execPath,
-  [
-    resolve('node_modules/wrangler/bin/wrangler.js'),
-    'tail',
-    values.worker,
-    '--config',
-    'config/wrangler.validation.jsonc',
-    '--env',
-    configs[values.worker],
-    '--format',
-    'json',
-  ],
+  [resolve('node_modules/wrangler/bin/wrangler.js'), 'tail', values.worker, '--format', 'json'],
   {
     stdio: ['ignore', 'pipe', 'ignore'],
     env: {

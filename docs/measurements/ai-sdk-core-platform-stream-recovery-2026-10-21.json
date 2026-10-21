@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "runtime": "deployed Cloudflare isolated fixture",
+  "workerName": "everchat-stream-validation",
+  "plan": "Workers Free (user confirmed)",
+  "suite": "functional",
+  "selectedScenarios": [
+    "slow-subscriber",
+    "cancel"
+  ],
+  "diagnosticCounters": false,
+  "expectedScenarios": 2,
+  "complete": true,
+  "startedAt": "2026-10-21T12:19:51.954Z",
+  "finishedAt": "2026-10-21T12:20:39.530Z",
+  "results": [
+    {
+      "scenario": "slow-subscriber",
+      "conversationId": "5ea07674-485c-4526-a51a-8a3925b6349f",
+      "status": "completed",
+      "contentCharacters": 90000,
+      "reasoningCharacters": 90000,
+      "elapsedMs": 28551,
+      "generationElapsedMs": 3868,
+      "reconnects": 1,
+      "client": {
+        "frames": 46,
+        "bytes": 1177558
+      }
+    },
+    {
+      "scenario": "cancel",
+      "conversationId": "7cdc6522-6c21-47de-8809-8a12251cd5ab",
+      "status": "cancelled",
+      "contentCharacters": 1000,
+      "reasoningCharacters": 0,
+      "elapsedMs": 6262,
+      "generationElapsedMs": 2144,
+      "reconnects": 0,
+      "client": {
+        "frames": 11,
+        "bytes": 11321
+      }
+    }
+  ],
+  "scope": "Functional cases with mock suppliers; platform analytics collected separately. No real model calls or production data."
+}
