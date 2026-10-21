@@ -1,7 +1,15 @@
 import { actionMenuReturnTarget } from './ActionMenu';
-import { createContext, useEffect, useRef, type ComponentProps, type ReactElement } from 'react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  type ComponentProps,
+  type ReactElement,
+} from 'react';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
+import { AlertDialog, AlertDialogContent, AlertDialogTitle } from '@/components/ui/alert-dialog';
 
 let openModals = 0;
 export const hasOpenModal = () => openModals > 0;
@@ -46,23 +54,24 @@ export function Modal({
     }
   }, [open]);
   const { className, children: body, ...bodyProps } = children.props as ComponentProps<'div'>;
+  const Root = alert ? AlertDialog : Dialog;
+  const Content = alert ? AlertDialogContent : DialogContent;
   return (
     <AlertContext.Provider value={alert}>
-      <Dialog
+      <Root
         open={open}
-        disablePointerDismissal={alert || busy}
+        {...(!alert ? { disablePointerDismissal: busy } : {})}
         onOpenChange={(next, details) => {
           if (busy) details.cancel();
           else onOpenChange(next, details);
         }}
       >
-        <DialogContent
+        <Content
           ref={content}
           {...bodyProps}
           className={cn(className)}
-          showCloseButton={false}
+          {...(!alert ? { showCloseButton: false } : {})}
           aria-describedby={undefined}
-          role={alert ? 'alertdialog' : undefined}
           initialFocus={(interaction) => {
             if (typeof initialFocus === 'function') return initialFocus(interaction);
             if (initialFocus && typeof initialFocus === 'object') {
@@ -95,11 +104,12 @@ export function Modal({
           {...props}
         >
           {body}
-        </DialogContent>
-      </Dialog>
+        </Content>
+      </Root>
     </AlertContext.Provider>
   );
 }
 export function ModalTitle(props: ComponentProps<typeof DialogTitle>) {
-  return <DialogTitle {...props} />;
+  const Title = useContext(AlertContext) ? AlertDialogTitle : DialogTitle;
+  return <Title {...props} />;
 }
