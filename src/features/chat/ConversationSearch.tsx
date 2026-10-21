@@ -28,7 +28,7 @@ function reveal(range: Range, viewport: HTMLElement) {
   }
   for (let element = range.startContainer.parentElement; element; element = element.parentElement) {
     if (element instanceof HTMLDetailsElement) element.open = true;
-    if (element.dataset.slot === 'trace-collapsible' && element.dataset.state === 'closed') {
+    if (element.dataset.slot === 'trace-collapsible' && element.hasAttribute('data-closed')) {
       element
         .querySelector<HTMLButtonElement>(':scope > [data-slot="trace-collapsible-trigger"]')
         ?.click();

@@ -310,9 +310,9 @@ test('the composer uses the selected model and always shows returned provider th
     .getByTestId('message-reasoning')
     .locator(':scope > [data-slot=trace-collapsible-trigger]')
     .click();
-  await expect(answer.getByTestId('message-reasoning')).toHaveAttribute('data-state', 'closed');
+  await expect(answer.getByTestId('message-reasoning')).toHaveAttribute('data-closed', '');
   await expect(answer).toHaveAttribute('data-status', 'completed', { timeout: 30_000 });
-  await expect(answer.getByTestId('message-reasoning')).toHaveAttribute('data-state', 'closed');
+  await expect(answer.getByTestId('message-reasoning')).toHaveAttribute('data-closed', '');
   await answer
     .getByTestId('message-reasoning')
     .locator(':scope > [data-slot=trace-collapsible-trigger]')
@@ -320,7 +320,7 @@ test('the composer uses the selected model and always shows returned provider th
   await expect(answer).toContainText('第二模型：');
   await expect(answer).toContainText('第二模型');
   await expect(answer.getByTestId('message-reasoning')).toContainText('集成思考。');
-  await expect(answer.getByTestId('message-reasoning')).toHaveAttribute('data-state', 'open');
+  await expect(answer.getByTestId('message-reasoning')).toHaveAttribute('data-open', '');
   await expect(
     answer
       .getByTestId('message-reasoning')
@@ -381,13 +381,13 @@ test('DeepSeek-compatible Responses streams Markdown thoughts, persists them and
     answer.locator('[data-streamdown="strong"]').filter({ hasText: '集成测试回答。' }),
   ).toHaveCount(0);
   await thoughts.locator(':scope > [data-slot=trace-collapsible-trigger]').click();
-  await expect(thoughts).toHaveAttribute('data-state', 'closed');
+  await expect(thoughts).toHaveAttribute('data-closed', '');
   await expect(
     answer.locator('[data-streamdown="strong"]').filter({ hasText: '集成测试回答。' }),
   ).toBeVisible();
   await expect(answer).toHaveAttribute('data-status', 'running');
   await expect(answer).toHaveAttribute('data-status', 'completed');
-  await expect(thoughts).toHaveAttribute('data-state', 'closed');
+  await expect(thoughts).toHaveAttribute('data-closed', '');
   const id = new URL(page.url()).pathname.split('/')[2];
   const snapshot = await context.request
     .get(`/api/conversations/${id}`)

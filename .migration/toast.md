@@ -5,7 +5,8 @@
 ## Changed
 
 - `src/components/ui/toast.tsx`: Base manager, viewport, toast content/description/close; notifications remain inside the active dialog for accessibility and keyboard retry.
-- `src/components/AutosaveToast.tsx`: one stable per-store manager ID; upsert transitions; saved timeout 2500 ms; saving/error persist; close on unmount; no initial saved announcement.
+- `src/components/AutosaveToast.tsx`: one stable per-store manager ID; upsert transitions; saved timeout 2500 ms; saving/error persist; close on unmount; no initial saved announcement. Native update refreshes contextual actions and translations without restarting the timer, including “View error” after switching tabs.
+- Retry moves focus to its persistent native toast before the action disappears during saving; “View error” focuses the invalid field in the tab layout effect. This avoids WebKit dropping focus to the document.
 - `src/platform/i18n/locales/en/common.ts`, `zh-CN/common.ts`: remove obsolete Radix hotkey template.
 - Leftover scan: no radix-ui / @radix-ui imports in these files.
 

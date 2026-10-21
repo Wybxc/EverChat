@@ -15,7 +15,7 @@ Navigation behavior and Button variants.
 
 ## Behavior changes
 
-Base groups consecutive tooltips within a 400 ms timeout (Radix default 300 ms). Explicit 400 ms opening delays retained.
+Base groups consecutive tooltips within a 400 ms timeout (Radix default 300 ms). Explicit 400 ms opening delays retained. Focus opening follows focus-visible keyboard modality. Base UI 1.9 tooltips are visual-only and omit the old tooltip role/description relationship; triggers retain matching aria-labels. Tests inspect the visual popup and the trigger name separately, following the [official usage guidance](https://base-ui.com/react/components/tooltip#usage-guidelines).
 
 ## Verify by hand
 

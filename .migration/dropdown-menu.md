@@ -5,8 +5,9 @@
 ## Changed
 
 - `src/components/ui/dropdown-menu.tsx`: Base Menu with Portal/Positioner/Popup; Group/GroupLabel; original compact classes and position defaults retained.
-- `src/components/ActionMenu.tsx`: render trigger, onClick, closeOnClick, finalFocus; deferred actions retain focus handoff to dialogs.
+- `src/components/ActionMenu.tsx`: render trigger, onClick and closeOnClick; actions run directly, independent of cancelable focus cleanup. Native menu focus return replaces the old deferred action queue.
 - `src/app/App.tsx`, `src/features/chat/ConversationActions.tsx`, `MessageActions.tsx`, `SummaryView.tsx`: native click handlers; labeled organize/reuse/export/backup/task groups.
+- `src/features/chat/useConversationActions.tsx`: capture a menu-trigger return target and adjacent row before opening a dialog, preserving rename/delete focus return.
 - Leftover scan: no radix-ui / @radix-ui imports in these files.
 
 ## Left alone

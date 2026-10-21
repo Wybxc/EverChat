@@ -682,9 +682,11 @@ test('automatic compression preferences autosave with fee disclosure, offline ed
     await composer.fill('待发送草稿');
     await openParameters(page, '上下文');
     const modal = page.getByRole('dialog', { name: '会话参数', exact: true });
-    await expect(modal.getByLabel('自动压缩历史', { exact: true })).not.toBeChecked();
+    await expect(
+      modal.getByRole('checkbox', { name: '自动压缩历史', exact: true }),
+    ).not.toBeChecked();
     await expect(modal).toContainText('额外调用摘要模型');
-    await modal.getByLabel('自动压缩历史', { exact: true }).check();
+    await modal.getByRole('checkbox', { name: '自动压缩历史', exact: true }).check();
     await modal
       .getByLabel('自动摘要模型', { exact: true })
       .selectOption(
@@ -695,7 +697,7 @@ test('automatic compression preferences autosave with fee disclosure, offline ed
     const second = await other.newPage();
     await second.goto(`/c/${fixture.id}`);
     await openParameters(second, '上下文');
-    await expect(second.getByLabel('自动压缩历史', { exact: true })).toBeChecked();
+    await expect(second.getByRole('checkbox', { name: '自动压缩历史', exact: true })).toBeChecked();
     await context.setOffline(true);
     await modal.getByLabel('自动压缩阈值（%）', { exact: true }).fill('70');
     await expect(modal.getByRole('alert')).toBeVisible();
@@ -720,7 +722,7 @@ test('automatic compression preferences autosave with fee disclosure, offline ed
       .toBe('cancelled');
     await openParameters(page, '上下文');
     await expect(modal.getByLabel('使用历史摘要', { exact: true })).toHaveCount(0);
-    await modal.getByLabel('自动压缩历史', { exact: true }).uncheck();
+    await modal.getByRole('checkbox', { name: '自动压缩历史', exact: true }).uncheck();
     await expect(modal.getByTestId('conversation-save-status')).toHaveText('已保存');
     expect((await fixture.snapshot()).settings?.autoCompression.enabled).toBe(false);
   } finally {

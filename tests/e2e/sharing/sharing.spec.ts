@@ -69,9 +69,9 @@ for (const mobile of [false, true])
       await dialog.getByLabel('到期时间', { exact: true }).fill(localExpiry);
       await expect(publish).toBeEnabled();
       const reasoning = dialog.getByTestId('share-reasoning').first();
-      await expect(reasoning).toHaveAttribute('data-state', 'closed');
+      await expect(reasoning).toHaveAttribute('data-closed', '');
       await reasoning.getByRole('button', { name: '思考内容', exact: true }).click();
-      await expect(reasoning).toHaveAttribute('data-state', 'open');
+      await expect(reasoning).toHaveAttribute('data-open', '');
       await dialog.getByText('请检查分享', { exact: true }).scrollIntoViewIfNeeded();
       await expect(dialog.getByRole('button', { name: '关闭', exact: true })).toBeInViewport();
       await page.screenshot({

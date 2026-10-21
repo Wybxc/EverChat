@@ -753,6 +753,10 @@ html.public-share-document,
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+  [data-slot='trace-collapsible-content'] {
+    animation-duration: 0s !important;
+    transition-duration: 0s !important;
+  }
 }
 @media (any-pointer: coarse) {
   [data-slot='input'],

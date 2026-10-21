@@ -10,6 +10,7 @@ import { X } from 'lucide-react';
 import {
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -146,6 +147,7 @@ export function ConversationSettingsDialog({
 
   const titleId = useId();
   const scroll = useRef<HTMLDivElement>(null);
+  const focusInvalid = useRef(false);
   const [tab, setTab] = useState<ParameterTab>(focusTools ? 'tools' : 'general');
   const service = useWebToolSettings(open);
   // Reuse one read-only projection in both the store initializer and receive effect.
@@ -195,8 +197,14 @@ export function ConversationSettingsDialog({
       void store.flush().catch(() => {});
     }
   }, [open, store, focusTools]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (scroll.current) scroll.current.scrollTop = 0;
+    if (focusInvalid.current) {
+      focusInvalid.current = false;
+      scroll.current
+        ?.querySelector<HTMLElement>('[role="tabpanel"]:not([hidden]) [aria-invalid="true"]')
+        ?.focus();
+    }
   }, [tab, open]);
   useEffect(() => {
     const retry = () => {
@@ -287,7 +295,7 @@ export function ConversationSettingsDialog({
             <TabsList
               variant="line"
               aria-label={t(($) => $.parameterCategories)}
-              className="mx-3 w-auto shrink-0 self-stretch justify-start px-0 aria-[orientation=horizontal]:h-auto sm:mx-4"
+              className="mx-3 w-auto shrink-0 self-stretch justify-start px-0 data-[orientation=horizontal]:h-auto sm:mx-4"
             >
               {parameterTabs.map((item) => (
                 <TabsTrigger
@@ -582,14 +590,8 @@ export function ConversationSettingsDialog({
                   variant="ghost"
                   type="button"
                   onClick={() => {
+                    focusInvalid.current = true;
                     setTab(invalidTab);
-                    requestAnimationFrame(() =>
-                      scroll.current
-                        ?.querySelector<HTMLElement>(
-                          '[role="tabpanel"]:not([hidden]) [aria-invalid="true"]',
-                        )
-                        ?.focus(),
-                    );
                   }}
                 >
                   {t(($) => $.viewError)}

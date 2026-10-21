@@ -127,8 +127,8 @@ test('pending identity keeps a private-free frame, usable settings and one share
     request.release();
     await expect(page.getByRole('combobox', { name: '联网服务', exact: true })).toBeVisible();
     await expect(page.getByRole('tab', { name: '联网', exact: true })).toHaveAttribute(
-      'data-state',
-      'active',
+      'aria-selected',
+      'true',
     );
     await page.getByRole('button', { name: '关闭设置' }).click();
     await expect(composer(page)).toHaveValue('身份确认前不可见的草稿');
@@ -151,8 +151,8 @@ test('slow provider settings do not block tabs, local controls or independent se
     await page.getByRole('tab', { name: '供应商', exact: true }).click();
     await request.entered;
     await expect(page.getByRole('tab', { name: '供应商', exact: true })).toHaveAttribute(
-      'data-state',
-      'active',
+      'aria-selected',
+      'true',
     );
     await expect(page.getByRole('status', { name: '正在读取设置' })).toBeVisible();
     await expect(page.getByRole('button', { name: '关闭设置' })).toBeVisible();

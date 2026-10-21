@@ -207,7 +207,7 @@ test('mobile row dialogs replace the sidebar focus trap and restore its trigger 
     await page.getByRole('menuitem', { name: '重命名', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: '重命名', exact: true });
     await expect(dialog.getByLabel('对话名称')).toBeFocused();
-    await expect(page.locator('[data-slot="sheet-content"][data-state="open"]')).toHaveCount(0);
+    await expect(page.locator('[data-slot="sheet-content"][data-open]')).toHaveCount(0);
     await dialog.getByRole('button', { name: '取消', exact: true }).click();
     await expect(sidebar).toBeFocused();
     await expect(page).toHaveURL(current);

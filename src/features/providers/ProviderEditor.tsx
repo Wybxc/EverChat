@@ -478,7 +478,7 @@ export function ProviderEditor({
   };
 
   return (
-    <DisclosureScope key={`${open}:${selectedId}:${modelListRevision}`}>
+    <DisclosureScope key={String(open)}>
       <div>
         <fieldset className="gap-3" disabled={Boolean(fetchingId)}>
           <legend className="sr-only">{t(($) => $.aiProviders)}</legend>
@@ -696,187 +696,189 @@ export function ProviderEditor({
                       />
                     </label>
                   )}
-                  {selected.models.length > 0 && (
-                    <div className="divide-y divide-border">
-                      {selected.models.map((model, index) => {
-                        if (
-                          editingModel !== index &&
-                          !`${model.name} ${model.id}`
-                            .toLowerCase()
-                            .includes(modelFilter.toLowerCase())
-                        )
-                          return null;
-                        const expanded = editingModel === index;
-                        return (
-                          <div
-                            key={`${selected.id}-${index}`}
-                            data-testid="provider-model-row"
-                            className={`min-w-0 px-2 py-0.5 ${expanded ? 'bg-muted' : ''}`}
-                          >
-                            <div className="flex min-w-0 items-center gap-2">
-                              <label className="provider-model-toggle flex min-w-0 flex-1 cursor-pointer items-center gap-2">
-                                <Checkbox
-                                  className="shrink-0"
-                                  aria-label={t(($) => $.enableModelLabel, {
-                                    name: model.name || model.id,
-                                  })}
-                                  checked={model.enabled}
-                                  onCheckedChange={(checked) =>
-                                    changeModel(index, { enabled: checked === true })
-                                  }
-                                />
-                                <span className="min-w-0">
-                                  <span className="block truncate text-sm font-medium">
-                                    {model.name || model.id}
-                                  </span>
-                                  {model.name && model.name !== model.id && (
-                                    <span className="block truncate text-xs text-muted-foreground">
-                                      {model.id}
+                  <DisclosureScope key={`${selectedId}:${modelListRevision}`}>
+                    {selected.models.length > 0 && (
+                      <div className="divide-y divide-border">
+                        {selected.models.map((model, index) => {
+                          if (
+                            editingModel !== index &&
+                            !`${model.name} ${model.id}`
+                              .toLowerCase()
+                              .includes(modelFilter.toLowerCase())
+                          )
+                            return null;
+                          const expanded = editingModel === index;
+                          return (
+                            <div
+                              key={`${selected.id}-${index}`}
+                              data-testid="provider-model-row"
+                              className={`min-w-0 px-2 py-0.5 ${expanded ? 'bg-muted' : ''}`}
+                            >
+                              <div className="flex min-w-0 items-center gap-2">
+                                <label className="provider-model-toggle flex min-w-0 flex-1 cursor-pointer items-center gap-2">
+                                  <Checkbox
+                                    className="shrink-0"
+                                    aria-label={t(($) => $.enableModelLabel, {
+                                      name: model.name || model.id,
+                                    })}
+                                    checked={model.enabled}
+                                    onCheckedChange={(checked) =>
+                                      changeModel(index, { enabled: checked === true })
+                                    }
+                                  />
+                                  <span className="min-w-0">
+                                    <span className="block truncate text-sm font-medium">
+                                      {model.name || model.id}
                                     </span>
-                                  )}
-                                </span>
-                              </label>
-                              <Button
-                                variant="ghost"
-                                size="icon-sm"
-                                type="button"
-                                className="shrink-0"
-                                aria-label={t(($) => $.modelSettingsLabel, { index: index + 1 })}
-                                aria-expanded={expanded}
-                                aria-controls={`model-editor-${selected.id}-${index}`}
-                                onClick={() => setEditingModel(expanded ? null : index)}
-                              >
-                                <Pencil className="h-[0.9375rem] w-[0.9375rem]" />
-                              </Button>
-                            </div>
-                            {expanded && (
-                              <div
-                                id={`model-editor-${selected.id}-${index}`}
-                                className="space-y-2 pb-2"
-                              >
-                                <ModelOptions
-                                  model={
-                                    modelCatalog
-                                      ? enrichModelCatalog(
-                                          selected.provider,
-                                          model,
-                                          modelCatalog.data,
-                                          modelCatalog.updatedAt,
-                                        )
-                                      : model
-                                  }
-                                  index={index}
-                                  provider={selected.provider}
-                                  globalPrompt={settings.systemPrompt}
-                                  onChange={(patch) => changeModel(index, patch)}
-                                  stateKey={`model:${index}`}
-                                  onTest={() => void testModel(index)}
-                                  testing={testing}
-                                  results={testResults}
-                                  testError={testError}
-                                />
-                                <ModelPriceButton providerId={selected.id} model={model.id} />
+                                    {model.name && model.name !== model.id && (
+                                      <span className="block truncate text-xs text-muted-foreground">
+                                        {model.id}
+                                      </span>
+                                    )}
+                                  </span>
+                                </label>
                                 <Button
                                   variant="ghost"
+                                  size="icon-sm"
                                   type="button"
-                                  aria-label={t(($) => $.deleteModelLabel, {
-                                    name: model.name || model.id || index + 1,
-                                  })}
-                                  onClick={() =>
-                                    setRemoval({
-                                      kind: 'model',
-                                      providerId: selected.id,
-                                      index,
-                                      name: model.name || model.id,
-                                    })
-                                  }
+                                  className="shrink-0"
+                                  aria-label={t(($) => $.modelSettingsLabel, { index: index + 1 })}
+                                  aria-expanded={expanded}
+                                  aria-controls={`model-editor-${selected.id}-${index}`}
+                                  onClick={() => setEditingModel(expanded ? null : index)}
                                 >
-                                  <Trash2 className="h-[0.9375rem] w-[0.9375rem]" />
-                                  {t(($) => $.deleteModel)}
+                                  <Pencil className="h-[0.9375rem] w-[0.9375rem]" />
                                 </Button>
                               </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                      {editingModel === null &&
-                        modelFilter &&
-                        !selected.models.some((model) =>
-                          `${model.name} ${model.id}`
-                            .toLowerCase()
-                            .includes(modelFilter.toLowerCase()),
-                        ) && (
-                          <p className="py-4 text-sm text-muted-foreground">
-                            {t(($) => $.noModelMatches)}
-                          </p>
-                        )}
-                    </div>
-                  )}
-                  <Disclosure
-                    title={t(($) => $.addModel)}
-                    open={addingModel}
-                    onOpenChange={(next) => {
-                      setAddingModel(next);
-                      if (next)
-                        requestAnimationFrame(() =>
-                          newModelInput.current?.focus({ preventScroll: true }),
-                        );
-                    }}
-                  >
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      <Input
-                        ref={newModelInput}
-                        aria-label={t(($) => $.newModelId)}
-                        maxLength={200}
-                        className="w-full border-input"
-                        placeholder={t(($) => $.modelId)}
-                        value={newModel}
-                        onChange={(event) => setNewModel(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
-                            event.preventDefault();
-                            addModel();
-                          }
-                        }}
-                      />
-                      <Input
-                        aria-label={t(($) => $.newModelDisplayName)}
-                        maxLength={200}
-                        className="w-full border-input"
-                        placeholder={t(($) => $.displayName)}
-                        value={newName}
-                        onChange={(event) => setNewName(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
-                            event.preventDefault();
-                            addModel();
-                          }
-                        }}
-                      />
-                      <div className="flex gap-2 sm:col-span-2">
-                        <Button
-                          variant="secondary"
-                          type="button"
-                          onClick={addModel}
-                          disabled={!newModel.trim()}
-                        >
-                          <Plus className="h-[0.875rem] w-[0.875rem]" />
-                          {t(($) => $.add)}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          type="button"
-                          onClick={() => {
-                            setNewModel('');
-                            setNewName('');
-                            setAddingModel(false);
-                          }}
-                        >
-                          {t(($) => $.cancelAdding)}
-                        </Button>
+                              {expanded && (
+                                <div
+                                  id={`model-editor-${selected.id}-${index}`}
+                                  className="space-y-2 pb-2"
+                                >
+                                  <ModelOptions
+                                    model={
+                                      modelCatalog
+                                        ? enrichModelCatalog(
+                                            selected.provider,
+                                            model,
+                                            modelCatalog.data,
+                                            modelCatalog.updatedAt,
+                                          )
+                                        : model
+                                    }
+                                    index={index}
+                                    provider={selected.provider}
+                                    globalPrompt={settings.systemPrompt}
+                                    onChange={(patch) => changeModel(index, patch)}
+                                    stateKey={`model:${index}`}
+                                    onTest={() => void testModel(index)}
+                                    testing={testing}
+                                    results={testResults}
+                                    testError={testError}
+                                  />
+                                  <ModelPriceButton providerId={selected.id} model={model.id} />
+                                  <Button
+                                    variant="ghost"
+                                    type="button"
+                                    aria-label={t(($) => $.deleteModelLabel, {
+                                      name: model.name || model.id || index + 1,
+                                    })}
+                                    onClick={() =>
+                                      setRemoval({
+                                        kind: 'model',
+                                        providerId: selected.id,
+                                        index,
+                                        name: model.name || model.id,
+                                      })
+                                    }
+                                  >
+                                    <Trash2 className="h-[0.9375rem] w-[0.9375rem]" />
+                                    {t(($) => $.deleteModel)}
+                                  </Button>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                        {editingModel === null &&
+                          modelFilter &&
+                          !selected.models.some((model) =>
+                            `${model.name} ${model.id}`
+                              .toLowerCase()
+                              .includes(modelFilter.toLowerCase()),
+                          ) && (
+                            <p className="py-4 text-sm text-muted-foreground">
+                              {t(($) => $.noModelMatches)}
+                            </p>
+                          )}
                       </div>
-                    </div>
-                  </Disclosure>
+                    )}
+                    <Disclosure
+                      title={t(($) => $.addModel)}
+                      open={addingModel}
+                      onOpenChange={(next) => {
+                        setAddingModel(next);
+                        if (next)
+                          requestAnimationFrame(() =>
+                            newModelInput.current?.focus({ preventScroll: true }),
+                          );
+                      }}
+                    >
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <Input
+                          ref={newModelInput}
+                          aria-label={t(($) => $.newModelId)}
+                          maxLength={200}
+                          className="w-full border-input"
+                          placeholder={t(($) => $.modelId)}
+                          value={newModel}
+                          onChange={(event) => setNewModel(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+                              event.preventDefault();
+                              addModel();
+                            }
+                          }}
+                        />
+                        <Input
+                          aria-label={t(($) => $.newModelDisplayName)}
+                          maxLength={200}
+                          className="w-full border-input"
+                          placeholder={t(($) => $.displayName)}
+                          value={newName}
+                          onChange={(event) => setNewName(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+                              event.preventDefault();
+                              addModel();
+                            }
+                          }}
+                        />
+                        <div className="flex gap-2 sm:col-span-2">
+                          <Button
+                            variant="secondary"
+                            type="button"
+                            onClick={addModel}
+                            disabled={!newModel.trim()}
+                          >
+                            <Plus className="h-[0.875rem] w-[0.875rem]" />
+                            {t(($) => $.add)}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            type="button"
+                            onClick={() => {
+                              setNewModel('');
+                              setNewName('');
+                              setAddingModel(false);
+                            }}
+                          >
+                            {t(($) => $.cancelAdding)}
+                          </Button>
+                        </div>
+                      </div>
+                    </Disclosure>
+                  </DisclosureScope>
                 </div>
               </div>
             ) : (

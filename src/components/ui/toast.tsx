@@ -7,7 +7,6 @@ import { Button } from './button';
 export type SaveToastData = {
   icon: ReactNode;
   testId: string;
-  failed: boolean;
   actions?: ReactNode;
 };
 export const useToastManager = () => ToastPrimitive.useToastManager<SaveToastData>();

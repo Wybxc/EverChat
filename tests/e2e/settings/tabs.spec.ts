@@ -58,7 +58,7 @@ test('settings use vertical desktop tabs, horizontal mobile tabs, persistent dra
     await page.goto('/');
     await openSpaceSettings(page);
     const tabs = page.getByRole('tablist', { name: '设置分类' });
-    await expect(tabs).toHaveAttribute('aria-orientation', 'vertical');
+    await expect(tabs).toHaveAttribute('data-orientation', 'vertical');
     await page.getByRole('tab', { name: '供应商', exact: true }).click();
     await page.getByLabel('名称', { exact: true }).fill('');
     await expect(page.getByTestId('settings-save-status')).toContainText('未保存');
@@ -69,7 +69,7 @@ test('settings use vertical desktop tabs, horizontal mobile tabs, persistent dra
     await expect(page.getByTestId('settings-save-status')).toHaveText('已保存');
     await page.screenshot({ path: info.outputPath('settings-desktop.png') });
     await page.setViewportSize({ width: 320, height: 568 });
-    await expect(tabs).toHaveAttribute('aria-orientation', 'horizontal');
+    await expect(tabs).toHaveAttribute('data-orientation', 'horizontal');
     await page.getByText('添加模型', { exact: true }).scrollIntoViewIfNeeded();
     await expect
       .poll(() => page.getByTestId('settings-scroll').evaluate((element) => element.scrollTop))
@@ -159,6 +159,7 @@ test('failed autosave stays visible across tabs and supports keyboard retry insi
       animations: 'disabled',
     });
     await page.unroute('**/api/settings/providers');
+    await page.keyboard.press('F6');
     const retry = page
       .getByRole('dialog', { name: '设置', exact: true })
       .getByRole('button', { name: '重试', exact: true });

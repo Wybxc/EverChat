@@ -123,7 +123,7 @@ test('cross-conversation search uses paginated literal text and jumps to the mat
     await results.getByRole('link').click();
     await expect(
       page.locator('[data-search-current] [data-testid="message-reasoning"]'),
-    ).toHaveAttribute('data-state', 'open');
+    ).toHaveAttribute('data-open', '');
     await expect
       .poll(() =>
         page.evaluate(() =>

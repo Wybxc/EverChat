@@ -7,6 +7,8 @@
 - `src/components/ui/collapsible.tsx`: Root/Trigger/Panel.
 - `src/components/ui/trace.tsx`: render types and panel-height transition hooks.
 - `src/features/chat/ReasoningContent.tsx`: preserve mounted reasoning with keepMounted.
+- `src/features/chat/ConversationSearch.tsx`: native data-closed drives search expansion of hidden reasoning.
+- `src/style.css`: zero-duration trace-panel transitions under reduced motion avoid conflicting animation detection.
 - Radix import/asChild sweep on this component is clean.
 
 ## Left alone

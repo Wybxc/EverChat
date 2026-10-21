@@ -209,7 +209,7 @@ test('immutable selected-branch sharing stays anonymous, fully readable and dele
     await expect(thought.getByRole('button', { name: '思考内容', exact: true })).toHaveText(
       '思考内容',
     );
-    await expect(thought).toHaveAttribute('data-state', 'closed');
+    await expect(thought).toHaveAttribute('data-closed', '');
     await thought.getByRole('button', { name: '思考内容', exact: true }).click();
     await expect(thought).toContainText('思考🙂');
     const timed = await preview(first.assistantId);

@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import type { ConversationActivity } from '../../../shared/conversation/activity';
 import type { ConversationInfo } from '../../../shared/conversation/types';
 import { Modal, ModalTitle } from '../../components/Modal';
+import { actionMenuReturnTarget } from '../../components/ActionMenu';
 import {
   errorMessage,
   renderUiMessage,
@@ -24,8 +25,16 @@ type DialogTarget = {
   fallback: HTMLElement | null;
 };
 
+const actionTarget = () => {
+  const active = document.activeElement;
+  return active instanceof HTMLElement
+    ? active.closest('[role=menu]')
+      ? actionMenuReturnTarget()
+      : active
+    : null;
+};
 const adjacentRow = () => {
-  const row = document.activeElement?.closest('[data-conversation-row]');
+  const row = actionTarget()?.closest('[data-conversation-row]');
   const sibling = row?.nextElementSibling ?? row?.previousElementSibling;
   return sibling?.querySelector<HTMLElement>('a') ?? null;
 };
@@ -103,8 +112,7 @@ export function useConversationActions({
     close: () => setDialog(null),
     open: (mode: DialogTarget['mode'], conversation: ConversationInfo) => {
       const fallback = adjacentRow();
-      const returnTarget =
-        document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      const returnTarget = actionTarget();
       beforeDialog();
       setDialog({ mode, conversation, fallback, returnTarget });
     },

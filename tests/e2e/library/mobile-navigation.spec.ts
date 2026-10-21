@@ -52,9 +52,9 @@ test('swiping leaves sidebar state unchanged while its buttons preserve the draf
   }
   await expect(input).toHaveValue('保留输入草稿');
   await trigger.tap();
-  await expect(panel).toHaveAttribute('data-state', 'open');
+  await expect(panel).toHaveAttribute('data-open', '');
   await swipe(page, [200, 280], [60, 280]);
-  await expect(panel).toHaveAttribute('data-state', 'open');
+  await expect(panel).toHaveAttribute('data-open', '');
   await page.getByRole('button', { name: '收起侧栏', exact: true }).tap();
   await expect(panel).toHaveCount(0);
   await expect(trigger).toBeFocused();
@@ -149,9 +149,9 @@ test('search closes by a real tap after scrolling, viewport changes and repeated
         const box = await list.boundingBox();
         await swipe(page, [80, box!.y + box!.height * 0.8], [82, box!.y + box!.height * 0.2]);
         await expect.poll(() => list.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
-        await expect(panel).toHaveAttribute('data-state', 'open');
+        await expect(panel).toHaveAttribute('data-open', '');
         await swipe(page, [200, 200], [60, 200]);
-        await expect(panel).toHaveAttribute('data-state', 'open');
+        await expect(panel).toHaveAttribute('data-open', '');
         await page.getByRole('button', { name: '收起侧栏', exact: true }).tap();
         await expect(panel).toHaveCount(0);
         await expect(page).toHaveURL('/');

@@ -7,7 +7,7 @@ export function IconButton({ label, ...props }: ComponentProps<typeof Button> & 
       <Tooltip>
         <TooltipTrigger
           render={<Button variant="ghost" size="icon" aria-label={label} {...props} />}
-        ></TooltipTrigger>
+        />
         <TooltipContent>{label}</TooltipContent>
       </Tooltip>
     </TooltipProvider>

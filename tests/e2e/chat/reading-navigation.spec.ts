@@ -279,13 +279,13 @@ test('four buttons navigate actual answer starts, handle clamped ends and keep U
         .poll(() => toolbar(page).evaluate((node) => getComputedStyle(node).backgroundColor))
         .toBe(theme === 'light' ? 'rgb(255, 255, 255)' : 'rgb(21, 21, 23)');
       const previous = button(page, '上一条回答');
-      // A theme-triggered layout can scroll and dismiss Radix hints; refocus for this sample.
+      // Base UI opens hints for focus-visible input. Establish keyboard modality before focus.
       await button(page, '跳到底部').focus();
+      await page.keyboard.press('ArrowRight');
+      // Safari can skip buttons in Tab order; programmatic focus still uses keyboard modality.
       await previous.focus();
-      // Safari's system preference can skip buttons in Tab order; keyboard input still shows focus.
-      await previous.press('ArrowRight');
       await expect(previous).toBeFocused();
-      const hint = page.getByRole('tooltip', { name: '上一条回答', exact: true });
+      const hint = page.locator('[data-slot=tooltip-content]').filter({ hasText: /^上一条回答$/ });
       await expect(hint).toBeVisible();
       await expect
         .poll(async () => {
@@ -396,7 +396,7 @@ test.describe('touch layouts', () => {
         await expect.poll(() => top(page)).toBe(0);
         await button(page, '跳到底部').tap({ force: true });
         await expect.poll(() => gap(page)).toBeLessThan(2);
-        await expect(page.getByRole('tooltip')).toHaveCount(0);
+        await expect(page.locator('[data-slot=tooltip-content]')).toHaveCount(0);
         await page.screenshot({
           path: testInfo.outputPath(`mobile-${size.width}-${size.font}.png`),
         });

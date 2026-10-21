@@ -62,8 +62,7 @@ async function fixture(page: Page) {
   };
 }
 
-const isOpen = (details: Locator) =>
-  details.evaluate((node) => node.getAttribute('data-state') === 'open');
+const isOpen = (details: Locator) => details.evaluate((node) => node.hasAttribute('data-open'));
 
 test('answers use the available narrow width and rich content retains one frame while folded thoughts stay closed after branch selection and reconnect', async ({
   page,

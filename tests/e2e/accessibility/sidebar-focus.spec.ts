@@ -22,7 +22,9 @@ test('mobile sidebar contains keyboard focus and returns it without opening the 
   await expect(page.getByRole('dialog', { name: '对话列表' })).toBeVisible();
   await expect(page.getByRole('button', { name: '收起侧栏' })).toBeFocused();
   await page.keyboard.press('Shift+Tab');
-  expect(await sidebar.evaluate((node) => node.contains(document.activeElement))).toBe(true);
+  await expect
+    .poll(() => sidebar.evaluate((node) => node.contains(document.activeElement)))
+    .toBe(true);
   await page.keyboard.press('Tab');
   await expect(page.getByRole('button', { name: '收起侧栏' })).toBeFocused();
   await page.keyboard.press('Escape');
