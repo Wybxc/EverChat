@@ -8,7 +8,6 @@ export default {
   savedLocally: '已保存到本机',
   notSaved: '未保存 · {{error}}',
   saveNotification: '保存通知',
-  saveNotificationsShortcut: '保存通知（{hotkey}）',
   language: '语言',
   system: '跟随系统',
   close: '关闭',
