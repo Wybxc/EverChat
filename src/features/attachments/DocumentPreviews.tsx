@@ -142,14 +142,19 @@ export function DocumentPreviews({
               <ModalTitle id={title} className="min-w-0 flex-1 truncate font-medium">
                 {preview.name}
               </ModalTitle>
-              <Button variant="ghost" size="icon" asChild>
-                <a
-                  aria-label={t(($) => $.downloadFile)}
-                  href={attachmentUrl(conversationId, preview.attachmentId)}
-                  download={preview.name}
-                >
-                  <Download className="h-[1rem] w-[1rem]" />
-                </a>
+              <Button
+                variant="ghost"
+                size="icon"
+                nativeButton={false}
+                render={
+                  <a
+                    aria-label={t(($) => $.downloadFile)}
+                    href={attachmentUrl(conversationId, preview.attachmentId)}
+                    download={preview.name}
+                  />
+                }
+              >
+                <Download className="h-[1rem] w-[1rem]" />
               </Button>
               <Button
                 variant="ghost"
