@@ -1923,24 +1923,9 @@ export class Conversation extends DurableObject<Env> {
       buffer: new GenerationBuffer(
         runId,
         claim.assistantId!,
-        (batches) => {
+        async (batches) => {
           const saved = this.commit(runId, batches);
-          if (saved) {
-            const barrier = (active.persistence ?? Promise.resolve()).then(() =>
-              this.ctx.storage.sync(),
-            );
-            active.persistence = barrier;
-            void barrier.then(
-              () => {
-                if (active.persistence === barrier) active.persistence = undefined;
-              },
-              (error) => {
-                active.failure =
-                  error instanceof Error ? error : new Error('Generation persistence failed');
-                abort.abort();
-              },
-            );
-          }
+          if (saved) await this.ctx.storage.sync();
           return saved;
         },
         (batch) => this.preview(batch),
@@ -1959,14 +1944,12 @@ export class Conversation extends DurableObject<Env> {
       if (active.cancelled || abort.signal.aborted) throw new GenerationCancelled();
       if (!claim.config) throw new ProviderError('此任务缺少已保存的供应商配置，请主动重新生成。');
       active.timer = setInterval(() => {
-        if (active.cancelled || active.persistence) return;
-        try {
-          active.buffer.tick();
-        } catch (error) {
+        if (active.cancelled || active.buffer.busy) return;
+        void active.buffer.tick().catch((error) => {
           active.failure =
             error instanceof Error ? error : new Error('Generation persistence failed');
           abort.abort();
-        }
+        });
       }, 100);
       this.query('INSERT INTO generation_timings VALUES (?, ?, NULL)', runId, Date.now());
       const observeOutput = (receivedAt: number) => {
@@ -2027,8 +2010,7 @@ export class Conversation extends DurableObject<Env> {
         observeOutput,
       );
       await consumeModelStream(body, active, (bytes) => active.buffer.add(bytes));
-      active.buffer.flush();
-      await active.persistence;
+      await active.buffer.flush();
       const turn = toolModel && !active.cancelled ? body.toolTurn : undefined;
       this.finish(runId, active.cancelled ? 'cancelled' : 'completed', null, turn);
     } catch (error) {
@@ -2036,8 +2018,7 @@ export class Conversation extends DurableObject<Env> {
       let failure = active.failure ?? error;
       let tailFailed = false;
       try {
-        active.buffer.flush();
-        await active.persistence;
+        await active.buffer.flush();
       } catch (saveError) {
         if (!(saveError instanceof GenerationCancelled)) {
           failure = saveError;
@@ -2552,7 +2533,7 @@ export class Conversation extends DurableObject<Env> {
     await this.ctx.storage.sync();
     let error: string | null = null;
     try {
-      active?.buffer.flush();
+      await active?.buffer.flush();
     } catch (failure) {
       if (!(failure instanceof GenerationCancelled))
         error = '停止时未能保存尾部。已保留最近检查点，请主动重新生成。';
