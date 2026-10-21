@@ -4,6 +4,7 @@ import { messageText } from '../../../shared/conversation/content';
 import { MAX_MESSAGE_TEXT_BYTES } from '../../../shared/conversation/limits';
 import type { ProviderSettings } from '../../../shared/providers/types';
 import type { Snapshot } from '../../../shared/streaming/protocol';
+import { largeProviderStream } from '../../support/providers/large-stream';
 
 const headers = { Origin: 'http://127.0.0.1:5174' };
 
@@ -71,6 +72,11 @@ test('long input, > 4 MiB wire, long thoughts, edits and backup restore share th
     id = crypto.randomUUID();
   const created = [id];
   try {
+    const wireBytes = Array.from(largeProviderStream(), (chunk) => chunk.byteLength).reduce(
+      (total, size) => total + size,
+      0,
+    );
+    expect(wireBytes).toBeGreaterThan(4 * 1024 * 1024);
     const settings = {
       providers: [
         {
@@ -119,7 +125,12 @@ test('long input, > 4 MiB wire, long thoughts, edits and backup restore share th
     expect(messageText(final.messages[0])).toBe(content);
     expect(messageText(final.messages[1])).toBe('答'.repeat(110_000));
     expect(messageText(final.messages[1], 'reasoning')).toBe('思'.repeat(110_000));
-    expect(final.messages[1].durableOffset).toBeGreaterThan(4 * 1024 * 1024);
+    // Offsets count normalized EverChat events, not upstream SSE heartbeats.
+    const textBytes = new TextEncoder().encode(
+      messageText(final.messages[1]) + messageText(final.messages[1], 'reasoning'),
+    ).byteLength;
+    expect(final.messages[1].durableOffset).toBeGreaterThan(textBytes);
+    expect(final.messages[1].durableOffset).toBeLessThan(wireBytes);
 
     const edited = '改'.repeat(120_000);
     const revision = await request.patch(

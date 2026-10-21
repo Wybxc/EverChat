@@ -14,7 +14,7 @@
 
 ## Left alone
 
-Worker、供应商请求、搜索接口、索引与数据存储没有改动。原版分支基线修复在独立 PR #3，未混入此实现。Recharts、Streamdown 和 Message Scroller 保持既有实现。未合并 PR 或发布线上版本。
+Worker、供应商请求、搜索接口、索引与数据存储没有改动。原版分支基线修复在独立 PR #3 完成，后随 main 合入本分支，与组件替换分别提交。Recharts、Streamdown 和 Message Scroller 保持既有实现。未合并 PR 或发布线上版本。
 
 ## Behavior changes
 
