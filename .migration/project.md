@@ -19,7 +19,7 @@ EverChat 的交互基础层由 Radix UI 切换为 Base UI 1.9.0，shadcn 配置�
 
 cmdk、Recharts、Streamdown／Markdown、`@shadcn/react` Message Scroller 不在迁移范围内。cmdk 的间接 `@radix-ui/react-dialog` 依赖仍保留；不能据此宣称依赖树完全没有 Radix。数据模型、Worker、同步与供应商协议均未修改。历史迁移方案保留为历史记录。
 
-迁移工作位于独立工作树。用户随后要求调查原版 WebKit Markdown 失败，因此基于未迁移的 `921ec05` 单独提交修复 `dc28c07`、`5ade458`（[PR #1](https://github.com/Wybxc/EverChat/pull/1)），再合入迁移分支。迁移 PR 以该修复分支为前置，便于分别审查。没有合并到 main、部署或变更线上配置。
+迁移工作位于独立工作树。用户随后要求调查原版 WebKit Markdown 失败，因此基于未迁移的 `921ec05` 单独提交修复 `dc28c07`、`5ade458`（[PR #1](https://github.com/Wybxc/EverChat/pull/1)），再合入迁移分支。PR #1 已于核对期间合入 main（86e8ccb），本迁移分支同步了最新 main，迁移 PR 直接面向 main。迁移版本尚未合并到 main，本次未发布迁移版本或变更线上配置。
 
 ## Behavior changes
 
