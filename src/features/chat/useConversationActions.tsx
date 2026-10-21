@@ -174,7 +174,7 @@ function ConversationActionDialog({
       alert={mode === 'delete'}
       busy={busy}
       initialFocus={mode === 'rename' ? titleInput : cancelButton}
-      onCloseAutoFocus={(event) => {
+      finalFocus={() => {
         const active = document.activeElement;
         if (
           active instanceof HTMLElement &&
@@ -182,29 +182,21 @@ function ConversationActionDialog({
           active.checkVisibility() &&
           !active.closest('[role="dialog"], [role="alertdialog"]')
         )
-          return;
+          return false;
         if (deletedCurrent.current) {
-          event.preventDefault();
           actions.restoreFocus(true);
-          return;
+          return false;
         }
-        // Modal restores a surviving trigger; supply a useful fallback if its row left the list.
         if (
           returnTarget?.isConnected &&
           returnTarget.checkVisibility() &&
           !returnTarget.closest('[inert]')
-        ) {
-          event.preventDefault();
-          returnTarget.focus({ preventScroll: true });
-          return;
-        }
-        if (fallback?.isConnected && fallback.checkVisibility() && !fallback.closest('[inert]')) {
-          event.preventDefault();
-          fallback.focus({ preventScroll: true });
-        } else {
-          event.preventDefault();
-          actions.restoreFocus();
-        }
+        )
+          return returnTarget;
+        if (fallback?.isConnected && fallback.checkVisibility() && !fallback.closest('[inert]'))
+          return fallback;
+        actions.restoreFocus();
+        return false;
       }}
     >
       <div className="w-full max-w-md p-5">

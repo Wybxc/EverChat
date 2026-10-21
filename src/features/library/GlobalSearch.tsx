@@ -43,16 +43,20 @@ export function GlobalSearch({
   return (
     <Modal
       open
-      onOpenChange={(open) => {
-        if (!open) close();
+      onOpenChange={(open, details) => {
+        const event = details.event;
+        if (
+          details.reason === 'escape-key' &&
+          event instanceof KeyboardEvent &&
+          (event.isComposing || event.keyCode === 229)
+        )
+          details.cancel();
+        else if (!open) close();
       }}
       initialFocus={input}
-      onCloseAutoFocus={(event) => {
-        event.preventDefault();
+      finalFocus={() => {
         restoreFocus();
-      }}
-      onEscapeKeyDown={(event) => {
-        if (event.isComposing || event.keyCode === 229) event.preventDefault();
+        return false;
       }}
     >
       <div

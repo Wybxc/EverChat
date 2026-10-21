@@ -117,11 +117,12 @@ export function SummaryDialog({
       busy={sending}
       initialFocus={first}
       aria-labelledby={titleId}
-      onCloseAutoFocus={(event) => {
+      finalFocus={() => {
         if (submitted.current) {
-          event.preventDefault();
           focusComposer();
+          return false;
         }
+        return true;
       }}
     >
       <div className="w-full flex max-h-[85dvh] max-w-xl flex-col overflow-hidden p-0">

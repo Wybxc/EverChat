@@ -58,11 +58,12 @@ export function MessageDeleteDialog({
       busy={busy}
       initialFocus={cancel}
       aria-labelledby={titleId}
-      onCloseAutoFocus={(event) => {
+      finalFocus={() => {
         if (confirmed.current && restoreCompletedFocus) {
-          event.preventDefault();
           restoreCompletedFocus();
+          return false;
         }
+        return true;
       }}
     >
       <div className="p-5 flex max-h-[85dvh] max-w-2xl flex-col overflow-hidden">

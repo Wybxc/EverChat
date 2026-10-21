@@ -24,7 +24,7 @@ export function SettingsDialog({
       onOpenChange={(next) => {
         if (!next) close();
       }}
-      onCloseAutoFocus={restoreFocus ? undefined : (event) => event.preventDefault()}
+      finalFocus={restoreFocus ? undefined : false}
       aria-labelledby="space-settings-title"
     >
       <div className="settings-dialog flex h-[min(48rem,92dvh)] max-h-[92dvh] max-w-[60rem] flex-col overflow-hidden p-0">

@@ -1,16 +1,7 @@
 import { actionMenuReturnTarget } from './ActionMenu';
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useRef,
-  type ComponentProps,
-  type ReactElement,
-  type RefObject,
-} from 'react';
+import { createContext, useEffect, useRef, type ComponentProps, type ReactElement } from 'react';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
-import { AlertDialog, AlertDialogContent, AlertDialogTitle } from '@/components/ui/alert-dialog';
 
 let openModals = 0;
 export const hasOpenModal = () => openModals > 0;
@@ -24,15 +15,13 @@ export function Modal({
   alert = false,
   initialFocus,
   busy = false,
-  onCloseAutoFocus,
-  onOpenAutoFocus,
+  finalFocus,
   ...props
 }: {
   open: boolean;
-  onOpenChange: (open: boolean) => void;
+  onOpenChange: NonNullable<ComponentProps<typeof Dialog>['onOpenChange']>;
   children: ReactElement;
   alert?: boolean;
-  initialFocus?: RefObject<HTMLElement | null>;
   busy?: boolean;
 } & Omit<ComponentProps<typeof DialogContent>, 'children'>) {
   const previousOpen = useRef(false),
@@ -57,65 +46,60 @@ export function Modal({
     }
   }, [open]);
   const { className, children: body, ...bodyProps } = children.props as ComponentProps<'div'>;
-  const Root = alert ? AlertDialog : Dialog;
-  const Content = alert ? AlertDialogContent : DialogContent;
   return (
     <AlertContext.Provider value={alert}>
-      <Root
+      <Dialog
         open={open}
-        onOpenChange={(next) => {
-          if (!busy) onOpenChange(next);
+        disablePointerDismissal={alert || busy}
+        onOpenChange={(next, details) => {
+          if (busy) details.cancel();
+          else onOpenChange(next, details);
         }}
       >
-        <Content
+        <DialogContent
           ref={content}
           {...bodyProps}
           className={cn(className)}
-          {...(!alert ? { showCloseButton: false } : {})}
+          showCloseButton={false}
           aria-describedby={undefined}
-          onOpenAutoFocus={(event) => {
-            onOpenAutoFocus?.(event);
-            if (!event.defaultPrevented && initialFocus?.current) {
-              event.preventDefault();
-              initialFocus.current.focus();
-              if (initialFocus.current instanceof HTMLInputElement) initialFocus.current.select();
+          role={alert ? 'alertdialog' : undefined}
+          initialFocus={(interaction) => {
+            if (typeof initialFocus === 'function') return initialFocus(interaction);
+            if (initialFocus && typeof initialFocus === 'object') {
+              const target = initialFocus.current;
+              if (target instanceof HTMLInputElement) target.select();
+              return target;
             }
+            return initialFocus ?? true;
           }}
-          onCloseAutoFocus={(event) => {
-            onCloseAutoFocus?.(event);
-            if (event.defaultPrevented) return;
-            // Closing animations must not undo a focus choice made after dismissal.
+          finalFocus={(interaction) => {
+            if (typeof finalFocus === 'function') {
+              const target = finalFocus(interaction);
+              if (target !== true && target !== null) return target;
+            } else if (finalFocus !== undefined)
+              return typeof finalFocus === 'object' ? finalFocus.current : finalFocus;
+            // A new page or dialog may deliberately claim focus during dismissal.
             const active = document.activeElement;
             if (
               active instanceof HTMLElement &&
               active !== document.body &&
               active.checkVisibility() &&
               !content.current?.contains(active)
-            ) {
-              event.preventDefault();
-              return;
-            }
+            )
+              return false;
             const target = restoreTarget.current;
-            if (target?.isConnected && target.checkVisibility() && !target.closest('[inert]')) {
-              event.preventDefault();
-              target.focus({ preventScroll: true });
-            }
-          }}
-          onEscapeKeyDown={(event) => {
-            if (busy) event.preventDefault();
-          }}
-          onPointerDownOutside={(event) => {
-            if (busy) event.preventDefault();
+            return target?.isConnected && target.checkVisibility() && !target.closest('[inert]')
+              ? target
+              : true;
           }}
           {...props}
         >
           {body}
-        </Content>
-      </Root>
+        </DialogContent>
+      </Dialog>
     </AlertContext.Provider>
   );
 }
 export function ModalTitle(props: ComponentProps<typeof DialogTitle>) {
-  const Title = useContext(AlertContext) ? AlertDialogTitle : DialogTitle;
-  return <Title {...props} />;
+  return <DialogTitle {...props} />;
 }
