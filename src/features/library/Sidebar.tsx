@@ -41,13 +41,13 @@ export function Sidebar({
         aria-hidden={!open || undefined}
         inert={!open || undefined}
         className="sidebar-surface data-[side=left]:w-[min(20rem,calc(100dvw-1rem))] gap-0 border-0 p-0"
-        onCloseAutoFocus={(event) => {
-          event.preventDefault();
-          if (onClosed?.()) return;
+        finalFocus={() => {
+          if (onClosed?.()) return false;
           // A new page or dialog can deliberately claim focus while the sheet closes.
           const active = document.activeElement;
           if (active === document.body || active?.closest('[data-slot="sheet-content"]'))
-            trigger.current?.focus({ preventScroll: true });
+            return trigger.current;
+          return false;
         }}
       >
         <SheetTitle className="sr-only">{t(($) => $.chatList)}</SheetTitle>
