@@ -51,12 +51,16 @@ export class StreamSync {
       this.durable = assertToolPositions(packet.snapshot);
       this.resetPreview();
     } else if (packet.type === 'state') {
-      if (packet.snapshot.seq < this.durable.seq) return false;
       if (
-        packet.after !== this.durable.seq ||
+        !Number.isSafeInteger(packet.after) ||
+        packet.after < 0 ||
+        packet.after > this.durable.seq ||
         (this.durable.epoch && packet.snapshot.epoch !== this.durable.epoch)
       )
         throw new Error('State baseline mismatch');
+      // A heartbeat can use an older cursor while live commits are in flight.
+      // State includes every changed message since that cursor at its latest version.
+      if (packet.snapshot.seq <= this.durable.seq) return false;
       assertToolPositions(packet.snapshot);
       const messages = new Map(this.durable.messages.map((message) => [message.id, message]));
       for (const message of packet.snapshot.messages) messages.set(message.id, message);

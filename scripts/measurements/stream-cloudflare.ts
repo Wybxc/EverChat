@@ -22,6 +22,7 @@ const { values } = parseArgs({
     suite: { type: 'string', default: 'functional' },
     scenarios: { type: 'string' },
     source: { type: 'string' },
+    'input-repeats': { type: 'string', default: '4000' },
   },
 });
 assert.ok(
@@ -30,6 +31,8 @@ assert.ok(
 );
 const sustained = values.suite === 'sustained';
 const reconnect = values.suite === 'reconnect';
+const inputRepeats = Number(values['input-repeats']);
+assert.ok(Number.isInteger(inputRepeats) && inputRepeats >= 1 && inputRepeats <= 4000);
 const selectedScenarios = values.scenarios?.split(',');
 assert.ok(!selectedScenarios || !reconnect, 'Scenario selection requires a generation suite');
 let expectedScenarios = reconnect ? 30 : sustained ? 3 : 9;
@@ -68,6 +71,7 @@ async function subscriber(id: string, initial?: Snapshot, acknowledge = true) {
     agent,
     acknowledge,
     timeout: 90_000,
+    heartbeat: { interval: 20_000, timeout: 60_000 },
   });
   return { ...result, received: result.observed };
 }
@@ -83,6 +87,7 @@ try {
       await fetch(`${origin}/api/settings/providers`, {
         redirect: 'manual',
         headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        signal: AbortSignal.timeout(90_000),
       })
     ).status,
     401,
@@ -91,6 +96,7 @@ try {
     (
       await fetch(`${origin}/api/conversations/${crypto.randomUUID()}/measurements`, {
         headers: { ...access.headers },
+        signal: AbortSignal.timeout(90_000),
       })
     ).status,
     404,
@@ -299,7 +305,7 @@ try {
       const input = {
         parentId: null,
         requestId: crypto.randomUUID(),
-        content: sustained ? '长输入。'.repeat(4000) : 'Platform stream validation',
+        content: sustained ? '长输入。'.repeat(inputRepeats) : 'Platform stream validation',
         selection,
       };
       phase = 'submit-generation';
@@ -451,6 +457,7 @@ try {
         scenario: item.name,
         conversationId: id,
         status: answer.status,
+        inputCharacters: input.content.length,
         contentCharacters: messageText(answer).length,
         reasoningCharacters: messageText(answer, 'reasoning').length,
         elapsedMs: Date.now() - begin,
@@ -487,6 +494,7 @@ try {
     plan: 'Workers Free (user confirmed)',
     suite: values.suite,
     selectedScenarios,
+    ...(sustained ? { inputRepeats, inputCharacters: '长输入。'.length * inputRepeats } : {}),
     diagnosticCounters: false,
     expectedScenarios,
     complete: results.length === expectedScenarios,

@@ -97,6 +97,8 @@ export async function subscribe(options: {
   maxPayload?: number;
   disconnect?: boolean;
   acknowledge?: boolean;
+  /** Match browser liveness checks for deployed, long-running subscriptions. */
+  heartbeat?: { interval: number; timeout: number };
 }) {
   const { baseline } = options;
   const socket = new WebSocket(
@@ -114,7 +116,10 @@ export async function subscribe(options: {
   let failure: unknown,
     code: number | undefined,
     protocolFailure = false;
+  let heartbeat: ReturnType<typeof setInterval> | undefined,
+    lastActivity = Date.now();
   socket.on('close', (value) => {
+    if (heartbeat) clearInterval(heartbeat);
     code = value;
     options.sockets.delete(socket);
   });
@@ -123,6 +128,7 @@ export async function subscribe(options: {
       let initialized = false;
       const fail = (error: unknown) => {
         failure = error;
+        if (heartbeat) clearInterval(heartbeat);
         clearTimeout(timer);
         reject(error);
       };
@@ -143,12 +149,32 @@ export async function subscribe(options: {
             : Buffer.from(value);
         observed.frames++;
         observed.bytes += bytes.byteLength;
+        if (bytes.toString() === 'pong') return;
+        lastActivity = Date.now();
         try {
           const packet = JSON.parse(bytes.toString()) as SyncPacket;
           sync.receive(packet);
           if (packet.type === 'ready') {
             initialized = true;
             clearTimeout(timer);
+            if (options.heartbeat && !heartbeat) {
+              heartbeat = setInterval(() => {
+                if (Date.now() - lastActivity > options.heartbeat!.timeout) {
+                  socket.terminate();
+                  return;
+                }
+                if (socket.readyState !== WebSocket.OPEN) return;
+                socket.send('ping');
+                socket.send('session-check');
+                socket.send(
+                  JSON.stringify({
+                    type: 'sync-check',
+                    seq: sync.durable.seq,
+                    epoch: sync.durable.epoch,
+                  }),
+                );
+              }, options.heartbeat.interval);
+            }
             ready();
           }
           if (packet.type === 'preview' && options.disconnect && !observed.disconnected) {

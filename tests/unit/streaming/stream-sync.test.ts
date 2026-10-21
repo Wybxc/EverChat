@@ -261,3 +261,42 @@ test('latest-state reconciliation skips lost notifications and preserves only th
   assert.equal(sync.hasPreview, false);
   assert.deepEqual(sync.view.messages[0].parts, []);
 });
+
+test('heartbeat reconciliation can overlap live commits without duplicate output or lost previews', () => {
+  const retained = {
+    ...message,
+    id: 'retained',
+    role: 'user' as const,
+    parts: messageParts('保留'),
+  };
+  const sync = new StreamSync({ messages: [retained, message], seq: 0, epoch: 'epoch' });
+  sync.receive({ type: 'preview', batch: first });
+  sync.receive({ type: 'preview', batch: second });
+  sync.receive(commitAck(commit));
+  const confirmed = sync.durable.messages[1];
+  sync.receive({
+    type: 'state',
+    after: 0,
+    snapshot: { seq: 2, epoch: 'epoch', messages: [confirmed] },
+  });
+  assert.equal(sync.durable.seq, 2);
+  assert.equal(sync.durable.messages[0], retained);
+  assert.equal(messageText(sync.durable.messages[1]), '**正文🙂**');
+  assert.equal(messageText(sync.view.messages[1]), '**正文🙂**第二段');
+  assert.equal(sync.hasPreview, true);
+  const saved = sync.durable;
+  assert.equal(
+    sync.receive({ type: 'state', after: 0, snapshot: { ...saved, messages: [] } }),
+    false,
+  );
+  assert.equal(sync.durable, saved);
+  assert.throws(
+    () => sync.receive({ type: 'state', after: 3, snapshot: { ...saved, seq: 4 } }),
+    /baseline mismatch/,
+  );
+  assert.throws(
+    () => sync.receive({ type: 'state', after: 0, snapshot: { ...saved, epoch: 'other' } }),
+    /baseline mismatch/,
+  );
+  assert.equal(sync.durable, saved);
+});

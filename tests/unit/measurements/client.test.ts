@@ -39,3 +39,45 @@ test('measurement reconnects distinguish network and preview bounds from protoco
     );
   }
 });
+
+test('deployed measurement heartbeat checks sync and replaces a silent connection', async () => {
+  const server = new WebSocketServer({ host: '127.0.0.1', port: 0 });
+  const sockets = new Set<WebSocket>();
+  const requests: string[] = [];
+  server.on('connection', (peer) => {
+    peer.send(JSON.stringify({ type: 'ready', seq: 0 }));
+    peer.on('message', (value) => {
+      requests.push(value.toString());
+      if (value.toString() === 'ping') peer.send('pong');
+    });
+  });
+  try {
+    await once(server, 'listening');
+    const address = server.address();
+    assert.ok(address && typeof address !== 'string');
+    const live = await subscribe({
+      origin: `http://127.0.0.1:${address.port}`,
+      id: 'test',
+      baseline: { seq: 0, messages: [], epoch: 'epoch' },
+      headers: {},
+      sockets,
+      heartbeat: { interval: 10, timeout: 60 },
+    });
+    await until(live.closed, 'silent sync connection');
+    live.check();
+    assert.equal(live.recoverable(), true);
+    assert.ok(requests.includes('ping'));
+    assert.ok(requests.includes('session-check'));
+    assert.deepEqual(JSON.parse(requests.find((value) => value.startsWith('{'))!), {
+      type: 'sync-check',
+      seq: 0,
+      epoch: 'epoch',
+    });
+  } finally {
+    for (const socket of sockets) socket.terminate();
+    for (const peer of server.clients) peer.terminate();
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+});
