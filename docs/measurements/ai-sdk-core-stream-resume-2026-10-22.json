@@ -4393,7 +4393,7 @@
     "accessApplicationAbsent": true,
     "accessPolicyAbsent": true,
     "accessTokenDeleteSubmitted": true,
-    "accessTokenAbsenceConfirmed": false,
+    "accessTokenAbsenceConfirmed": true,
     "accessVerification": {
       "checkedAt": "2026-10-21T18:50:16.458Z",
       "resources": [
@@ -4433,7 +4433,7 @@
         }
       ]
     },
-    "controlPanelVerification": "Policy list contained only production owner after deletion. Token deletion submitted, then final read failed automatic approval twice (timeout). Awaiting user verification. API token/policy reads denied 403; not evidence of presence or absence.",
+    "controlPanelVerification": "On the following goal turn, a fresh Cloudflare service-token list displayed the empty-state onboarding page. Token absence confirmed; temporary application and policy had already been confirmed absent. API 403 reads remain recorded only as failed verification attempts.",
     "privateFilesRemoved": [
       "credentials",
       "isolatedConfig",
@@ -4441,10 +4441,10 @@
     ],
     "receiverStopped": true,
     "twentyMinuteCleanupPromiseMet": false,
-    "timing": "Token UI creation 2026-10-21 17:18 UTC; testing completed by 17:28:26 UTC; cleanup began before 17:30 UTC. Worker removal confirmed 17:39:03 UTC; token delete submitted before 17:41:38 UTC, final absence not confirmed. Do not claim revocation within twenty minutes."
+    "timing": "Token UI creation 2026-10-21 17:18 UTC; testing completed by 17:28:26 UTC; cleanup began before 17:30 UTC. Worker removal confirmed 17:39:03 UTC; token delete submitted before 17:41:38 UTC, final absence not confirmed. Do not claim revocation within twenty minutes. On the next turn the control panel confirmed an empty token list around 18:55 UTC. This is the confirmation time, not the actual revocation time.",
+    "accessTokenAbsenceConfirmedAt": "2026-10-21T18:55:00Z"
   },
   "remaining": [
-    "Confirm temporary Access token absent",
     "Closed-window platform resource totals unavailable after mixed GraphQL query hit budget",
     "Free stateless CPU assessment: sync samples 17/18 ms need attribution; current profile is not sufficient",
     "Main release and production Access, long conversation, anonymous share, MCP and notification verification"
@@ -4464,5 +4464,83 @@
     },
     "available": false,
     "scope": "Reduced Worker-only query returned an empty dataset; no zero-usage inference."
+  },
+  "durableObjectAnalyticsFollowup": {
+    "queriedAt": "2026-10-21T18:56:41.555Z",
+    "window": {
+      "start": "2026-10-21T17:23:00Z",
+      "end": "2026-10-21T17:30:00Z"
+    },
+    "namespaces": [
+      {
+        "name": "CONVERSATIONS",
+        "id": "396a1dfed6f841598ef8d606cc337222"
+      },
+      {
+        "name": "LIBRARY",
+        "id": "6f41c8509b25405c9cdf901ae892ef77"
+      }
+    ],
+    "scope": "Closed seven-minute isolated window; includes three sustained scenarios, completed-stream reconnects and profile traffic. No production data; adaptive platform aggregation is not an invoice.",
+    "data": {
+      "viewer": {
+        "accounts": [
+          {
+            "durableObjectsPeriodicGroups": []
+          }
+        ]
+      }
+    },
+    "errors": null,
+    "available": false,
+    "limitation": "Both deleted namespaces returned an empty dataset. No zero-usage, peak-memory or closed-window billing conclusion."
+  },
+  "historicalLogsFollowup": {
+    "source": "Cloudflare Observability control panel, read-only",
+    "window": {
+      "start": "2026-10-21T17:23:00Z",
+      "end": "2026-10-21T17:30:00Z"
+    },
+    "service": "everchat-stream-validation",
+    "filter": "$metadata.service = \"everchat-stream-validation\" AND $workers.cpuTimeMs > 10",
+    "observations": [
+      {
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "after": 39,
+        "cpuMs": 18,
+        "wallMs": 1417,
+        "executionModel": "stateless",
+        "outcome": "ok",
+        "eventCompletedAt": "2026-10-21T17:24:49.152Z",
+        "correlation": "Matches real-time tail event timestamp 1792603487323; control panel displays completion time."
+      },
+      {
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "after": 22,
+        "cpuMs": 17,
+        "outcome": "ok",
+        "eventCompletedAt": "2026-10-21T17:25:37.049Z",
+        "scope": "Visible event row; invocation body not expanded."
+      },
+      {
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "after": 0,
+        "cpuMs": 20,
+        "eventCompletedAt": "2026-10-21T17:23:45.383Z",
+        "scope": "Visible Worker event row before tail collection began."
+      },
+      {
+        "method": "PUT",
+        "path": "/api/settings/providers",
+        "cpuMs": 27,
+        "eventCompletedAt": "2026-10-21T17:23:42.085Z",
+        "scope": "Visible Worker event row before tail collection began."
+      }
+    ],
+    "traceResult": "No spans found for the inspected 18 ms request.",
+    "limitations": "Invocation details confirm route, execution model, CPU and wall time, but do not provide function CPU attribution. Counts include DO events, setup and external non-API scans; they are not suite request totals or zero-error proof. No request headers, client IP, private conversation identifiers or access credentials retained."
   }
 }
