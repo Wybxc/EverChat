@@ -39,6 +39,8 @@ export const MIGRATION_TABLES: Record<StoreKind, string[]> = {
     'message_deletions',
   ],
   library: [
+    'mcp_requests',
+    'mcp_keys',
     'storage_schema',
     'usage_outbox',
     'conversation_metadata',

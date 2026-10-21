@@ -1,4 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
+import { readMcpStatus } from '../mcp/conversation';
 import { DocumentError, type DocumentPart } from '../../shared/attachments/documents';
 import {
   backupMessage,
@@ -792,6 +793,44 @@ export class Conversation extends DurableObject<Env> {
       return { deletedAt: accepted.deletedAt };
     }
     return accepted;
+  }
+  mcpSubmission(requestId: string): Submission | Failure | null {
+    if (this.deletedAt) return null;
+    const row = this.query<{ result: string }>(
+      'SELECT result FROM submissions WHERE id=?',
+      requestId,
+    ).toArray()[0];
+    return row ? JSON.parse(row.result) : null;
+  }
+  async mcpCancelSubmission(requestId: string) {
+    if (this.deletedAt)
+      return { error: 'Conversation deleted.', status: 410, code: 'CONVERSATION_DELETED' };
+    const submission = this.ctx.storage.transactionSync(() => {
+      const existing = this.mcpSubmission(requestId);
+      if (existing) return existing;
+      const cancelled: Failure = {
+        error: 'MCP request cancelled before submission.',
+        status: 409,
+        code: 'CANCELLED',
+      };
+      // A tombstone fences a concurrent submit before it can start a paid request.
+      this.query(
+        'INSERT INTO submissions VALUES (?,?,?)',
+        requestId,
+        'mcp-cancelled',
+        JSON.stringify(cancelled),
+      );
+      return cancelled;
+    });
+    if (!('error' in submission)) await this.cancel(submission.runId);
+    return submission;
+  }
+  mcpStatus(assistantId: string) {
+    return this.deletedAt ? null : readMcpStatus(this.query.bind(this), assistantId);
+  }
+  mcpPage(assistantId: string, channel: 'content' | 'reasoning', offset: number) {
+    if (this.deletedAt || !readMcpStatus(this.query.bind(this), assistantId)) return null;
+    return this.journal.page(assistantId, channel, offset);
   }
   async submit(
     conversationId: string,

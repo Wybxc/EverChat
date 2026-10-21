@@ -10,6 +10,7 @@ export default {
   webTools: '联网',
   usage: '用量统计',
   sharing: '分享',
+  mcp: 'MCP',
   sessionChanged: '登录状态已改变。',
   settingsCategories: '设置分类',
   signOut: '退出并清除本地记录',

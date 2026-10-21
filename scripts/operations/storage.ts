@@ -235,9 +235,8 @@ if (action === 'prepare') {
         ].sort((a, b) => a.kind.localeCompare(b.kind) || a.id.localeCompare(b.id));
       };
       const snapshot = async (target: Target): Promise<Snapshot> => {
-        const schema = await call<TableSchema[]>(target, { action: 'schema' }),
-          rows: Snapshot['rows'] = {};
-        for (const table of schema) {
+        const schema = await call<TableSchema[]>(target, { action: 'schema' });
+        const entries = await readConcurrent(schema, async (table) => {
           const values: Snapshot['rows'][string] = [];
           while (true) {
             const page = await call<Snapshot['rows'][string]>(target, {
@@ -248,8 +247,9 @@ if (action === 'prepare') {
             if (!page.length) break;
             values.push(...page);
           }
-          rows[table.name] = values;
-        }
+          return [table.name, values] as const;
+        });
+        const rows = Object.fromEntries(entries);
         const indexes = await call<IndexSchema[]>(target, { action: 'indexes' });
         return { schema, indexes, rows };
       };
@@ -260,10 +260,10 @@ if (action === 'prepare') {
         );
         manifest.objects = await discoverTargets();
         await save('manifest.json', manifest);
-        for (const target of manifest.objects) {
+        await readConcurrent(manifest.objects, async (target) => {
           const file = `${base(target)}.before.json`;
           if (!(await hasFile(file))) await save(file, await snapshot(target));
-        }
+        });
         await save('backup-complete.json', { objects: manifest.objects.length });
       } else if (action === 'apply') {
         assert.ok(
@@ -290,14 +290,14 @@ if (action === 'prepare') {
           'Namespace inventory changed during maintenance',
         );
         assert.ok(await hasFile('apply-complete.json'), 'Import every patch before verification');
-        for (const target of manifest.objects) {
+        await readConcurrent(manifest.objects, async (target) => {
           const expected = await load<Snapshot>(`${base(target)}.after.json`);
           assert.equal(
             hash(await snapshot(target)),
             hash(expected),
             `Verification failed for ${base(target)}`,
           );
-        }
+        });
         await save('verified.json', {
           objects: manifest.objects.length,
           verifiedAt: new Date().toISOString(),
@@ -338,6 +338,24 @@ if (action === 'prepare') {
       console.log(JSON.stringify({ [action]: true, objects: manifest.objects.length }));
     }
   }
+}
+
+// Only independent reads overlap: at most four objects and four tables per
+// object. Preserve input order for snapshot hashes, and await every worker on
+// failure before returning. Imports and rollback remain strictly sequential.
+async function readConcurrent<T, R>(items: T[], read: (item: T) => Promise<R>): Promise<R[]> {
+  const result = new Array<R>(items.length);
+  let next = 0;
+  const settled = await Promise.allSettled(
+    Array.from({ length: Math.min(4, items.length) }, async () => {
+      while (next < items.length) {
+        const index = next++;
+        result[index] = await read(items[index]);
+      }
+    }),
+  );
+  for (const entry of settled) if (entry.status === 'rejected') throw entry.reason;
+  return result;
 }
 
 function patchPages(statements: Statement[]) {

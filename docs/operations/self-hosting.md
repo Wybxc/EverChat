@@ -34,11 +34,11 @@ chat.example.com/auth
 chat.example.com/auth/*
 ```
 
-前端、静态资源、`sw.js` 和 `/s/:id` 分享页面公开；`/public/shares/:id` 也须可匿名到达 Worker，由分享令牌和有效期校验控制读取。不要将私有 API 配为 Everyone 或 Bypass。使用同域分享时，覆盖整个域名的其他 Access 应用也不能继续拦截这些公开路径。
+前端、静态资源、`sw.js` 和 `/s/:id` 分享页面公开；`/public/shares/:id` 也须可匿名到达 Worker，由分享令牌和有效期校验控制读取。`/mcp` 同样需要可到达 Worker，由 EverChat 自己的可撤销 API Key 鉴权，接入步骤见 [MCP 指南](../features/mcp.md)。不要将私有 API 配为 Everyone 或 Bypass。覆盖整个域名的其他 Access 应用也不能继续拦截这些入口。
 
 Worker 会再次校验 JWT 的签名、issuer、audience、有效期和允许身份；修改请求与 WebSocket 仍有同源检查。仅设置变量不会启用边缘 Access 规则。应用当前是共享的个人空间，不按多个允许身份隔离数据。
 
-保留 `workers_dev: false`、`preview_urls: false`，避免出现未纳入域名访问规则的备用入口。域名在控制台管理，仓库不声明 `routes`；普通部署不重新分配已绑定的自定义域名。静态资源保留 SPA 回退、`html_handling: none` 及 `/api`、`/auth`、`/public` 的 `run_worker_first` 配置。
+保留 `workers_dev: false`、`preview_urls: false`，避免出现未纳入域名访问规则的备用入口。域名在控制台管理，仓库不声明 `routes`；普通部署不重新分配已绑定的自定义域名。静态资源保留 SPA 回退、`html_handling: none` 及 `/api`、`/auth`、`/public`、`/mcp` 的 `run_worker_first` 配置。
 
 构建输出包含聊天用的 `index.html` 和分享用的 `share.html`。保留 `public/_redirects` 中将 `/s`、`/s/*` 以 200 代理到 `/share.html` 的规则，以及 `_headers` 对分享路径和直接 HTML 地址的安全头；它们随构建复制到静态目录。此分流不改变分享 URL，不需要将 `/s/*` 加入 `run_worker_first` 或 Access 保护。已安装 PWA 按正常检查更新流程获取新的 SW 后，分别处理聊天与分享导航。
 

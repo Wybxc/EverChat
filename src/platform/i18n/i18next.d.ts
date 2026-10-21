@@ -1,4 +1,5 @@
 import 'i18next';
+import type mcp from '../../features/mcp/locales/en';
 import type app from '../../app/locales/en';
 import type chat from '../../features/chat/locales/en';
 import type library from '../../features/library/locales/en';
@@ -30,6 +31,7 @@ declare module 'i18next' {
     enableSelector: true;
     strictKeyChecks: true;
     resources: {
+      mcp: typeof mcp;
       errors: typeof errors;
       presets: typeof presets;
       'web-tools': typeof webtools;

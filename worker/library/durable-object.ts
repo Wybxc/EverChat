@@ -1,4 +1,8 @@
 import { DurableObject } from 'cloudflare:workers';
+import { McpRequests, type McpRecord } from '../mcp/store';
+import { McpError, type ChatArguments, type McpFailure } from '../mcp/contracts';
+import { MCP_REQUESTS_SCHEMA } from '../mcp/schema';
+import { McpKeys, MCP_KEYS_SCHEMA } from '../mcp/keys';
 import * as v from 'valibot';
 import type { DocumentPart, DocumentRange } from '../../shared/attachments/documents';
 import type { AttachmentInput } from '../../shared/attachments/files';
@@ -107,6 +111,8 @@ export class Library extends DurableObject<Env> {
       initializeStorageSchema(ctx.storage.sql.exec.bind(ctx.storage.sql)),
     );
     ctx.storage.sql.exec(USAGE_OUTBOX_SCHEMA);
+    ctx.storage.sql.exec(MCP_REQUESTS_SCHEMA);
+    ctx.storage.sql.exec(MCP_KEYS_SCHEMA);
     this.accounting = new UsageAccounting(ctx.storage.sql.exec.bind(ctx.storage.sql), env, () =>
       ctx.storage.sync(),
     );
@@ -452,6 +458,10 @@ export class Library extends DurableObject<Env> {
         .toArray()[0];
       if (existing?.completed) return existing;
       const deletion = existing ?? { id, deletedAt: Date.now(), completed: 0 };
+      this.ctx.storage.sql.exec(
+        "UPDATE mcp_requests SET payload=json_remove(payload,'$.prepared') WHERE conversationId=?",
+        id,
+      );
       if (!existing)
         this.ctx.storage.sql.exec(
           'INSERT INTO conversation_deletions VALUES (?, ?, 0)',
@@ -959,6 +969,72 @@ export class Library extends DurableObject<Env> {
   }
   providerConfig(selection?: ModelSelection, effort?: ReasoningEffort): ProviderConfig | null {
     return this.providers.providerConfig(selection, effort);
+  }
+  private mcpRequests() {
+    return new McpRequests(
+      this.ctx.storage,
+      this.providers,
+      () => this.promptPresets(),
+      this.env,
+      (id, title) => this.create(id, title, 'fallback'),
+      (id) => Boolean(this.get(id)),
+      () => this.webToolConfig(),
+    );
+  }
+  private mcpKeys() {
+    return new McpKeys(this.ctx.storage.sql.exec.bind(this.ctx.storage.sql));
+  }
+  mcpKeysList() {
+    return this.mcpKeys().list();
+  }
+  mcpKeyCreate(name: string) {
+    return this.mcpKeys().create(name);
+  }
+  mcpKeyRevoke(id: string) {
+    this.mcpKeys().revoke(id);
+  }
+  mcpKeyRename(id: string, name: string) {
+    return this.mcpKeys().rename(id, name);
+  }
+  mcpKeyExists(id: string) {
+    return this.mcpKeys().exists(id);
+  }
+  mcpAuthenticate(key: string) {
+    return this.mcpKeys().authenticate(key);
+  }
+  private mcpAction<T>(action: () => T): { value: T } | { error: McpFailure } {
+    try {
+      return { value: action() };
+    } catch (error) {
+      if (error instanceof McpError) return { error: error.detail };
+      throw error;
+    }
+  }
+  mcpCatalog() {
+    return this.mcpAction(() => this.mcpRequests().catalog());
+  }
+  mcpPrepare(principal: string, input: ChatArguments) {
+    if (!this.mcpKeyExists(principal))
+      return {
+        error: {
+          code: 'MCP_KEY_REVOKED',
+          message: 'This API key was revoked.',
+          stage: 'authorization',
+          retryable: false,
+        },
+      };
+    return this.mcpAction(() => this.mcpRequests().prepare(principal, input));
+  }
+  mcpRequest(principal: string, requestId: string) {
+    const record = this.mcpRequests().get(principal, requestId);
+    return record && this.get(record.conversationId) ? record : null;
+  }
+  mcpFinish(
+    principal: string,
+    requestId: string,
+    outcome: NonNullable<McpRecord['submission']> | McpFailure,
+  ) {
+    return this.mcpAction(() => this.mcpRequests().finish(principal, requestId, outcome));
   }
   providerSettings(): ProviderSettings {
     return this.providers.providerSettings();

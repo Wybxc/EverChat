@@ -34,13 +34,14 @@
 | 联网工具     | [服务实现](features/web-tool-service.md)、[DeepSeek 接入及实施记录](plans/deepseek-web-tools-plan.md)、[思考与工具过程](plans/reasoning-web-tools-flow-plan.md)                    |
 | 用量与分享   | [费用统计方案](plans/usage-cost-statistics-plan.md)、[只读分享方案](plans/revocable-readonly-sharing-plan.md)、[执行记录](measurements/usage-sharing-implementation-2026-10-19.md) |
 | 通知         | [回答通知方案与真机记录](plans/answer-completion-notifications-plan.md)                                                                                                            |
+| 自动化聊天   | [MCP 接入与密钥管理](features/mcp.md)、[设计与实施范围](plans/everchat-mcp-server-plan.md)、[本地验收](measurements/mcp-implementation-2026-10-21.md)                              |
 
 ## 设计、计划与验收
 
 [执行计划索引](plans/README.md)记录各项工作的状态，不以文档数量计算待办。带日期的方案和测量是对应版本的设计与证据；早期描述可能已被后续实现取代，使用操作以[使用指南](user-guide.md)为入口，当前资源预算以[免费层资源政策](architecture/free-tier-resource-policy.md)为准。
 
 - 功能演进：[Serverless 路线图](plans/serverless-feature-roadmap.md)、[早期实施与验收核对](architecture/implementation-audit.md)。
-- 新增接入：[new-api 连接信息导入设计](plans/new-api-connection-import-plan.md)、[供应商余额与额度](plans/provider-balance-plan.md)；功能调研：[DSH 热门插件借鉴](research/dsh-plugins-review-2026-10-20.md)。
+- 新增接入：[EverChat MCP Server](plans/everchat-mcp-server-plan.md)、[new-api 连接信息导入设计](plans/new-api-connection-import-plan.md)、[供应商余额与额度](plans/provider-balance-plan.md)；功能调研：[DSH 热门插件借鉴](research/dsh-plugins-review-2026-10-20.md)。
 - 界面设计：[AI Elements 与 Chart 优化](plans/ai-elements-chart-ui-plan.md)、[shadcn/ui 迁移](plans/shadcn-ui-migration-plan.md)、[首轮优化](plans/frontend-refinement-plan.md)、[紧凑布局](plans/frontend-compact-layout-plan.md)、[消息编辑与密度](plans/message-editing-density-plan.md)。
 - 交互体验：[慢连接加载](plans/slow-connection-ui-plan.md)、[对话体验](plans/conversation-experience-improvement-plan.md)、[侧栏操作](plans/sidebar-conversation-actions-plan.md)、[阅读导航](plans/conversation-message-navigation-plan.md)、[分支导航](plans/conversation-branch-navigation-plan.md)、[PWA 与移动端](plans/pwa-mobile-navigation-theme-plan.md)。
 - 工程整理：[模块划分](plans/project-organization-plan.md)、[配置与脚本](plans/repository-configuration-and-scripts-plan.md)、[i18n 架构](plans/i18n-architecture-plan.md)、[Access 迁移](plans/cloudflare-access-migration-plan.md)。

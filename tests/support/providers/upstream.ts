@@ -108,6 +108,31 @@ export function installMockUpstream() {
       );
     }
     const modelId = requestBody.model ?? /\/models\/([^/:]+):/.exec(url.pathname)?.[1];
+    if (modelId === 'mcp-long-fixture') {
+      const text = 'START\n' + '0123456789🙂正文\n'.repeat(2400) + '\nEND';
+      const reasoning = '思考🧠'.repeat(3000);
+      const frame = (delta: object, finish_reason: string | null) =>
+        `data: ${JSON.stringify({ choices: [{ index: 0, delta, finish_reason }] })}\n\n`;
+      return new Response(
+        frame({ content: text, reasoning_content: reasoning }, null) +
+          frame({}, 'stop') +
+          'data: [DONE]\n\n',
+        { headers: { 'Content-Type': 'text/event-stream' } },
+      );
+    }
+    if (modelId === 'mcp-fixture') {
+      const protocol: ProviderKind = url.pathname.endsWith('/responses')
+        ? 'openai-responses'
+        : url.pathname.endsWith('/messages')
+          ? 'anthropic'
+          : url.pathname.includes(':streamGenerateContent')
+            ? 'gemini'
+            : 'openai-chat';
+      const fixture = providerStreams[protocol];
+      return new Response(fixture.partial + fixture.finish, {
+        headers: { 'Content-Type': 'text/event-stream' },
+      });
+    }
     if (modelId === 'alarm-free-tier-large') {
       const chunks = largeProviderStream();
       return new Response(

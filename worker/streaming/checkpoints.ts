@@ -32,6 +32,33 @@ type Checkpoint = {
 export class GenerationCheckpoints {
   private parsers = new Map<string, { offset: number; parser: ProviderStream }>();
   constructor(private readonly store: SqlQuery) {}
+  page(messageId: string, channel: 'content' | 'reasoning', offset: number, limit = 8192) {
+    const ordinal = Math.floor(offset / CHUNK_CHARACTERS);
+    const rows = this.store<{ payload: string }>(
+      'SELECT payload FROM message_content_chunks WHERE messageId=? AND channel=? AND ordinal>=? AND ordinal<=? ORDER BY ordinal',
+      messageId,
+      channel,
+      ordinal,
+      Math.floor((offset + limit + 1) / CHUNK_CHARACTERS),
+    ).toArray();
+    let value: string;
+    if (rows.length)
+      value = rows
+        .map(({ payload }) => JSON.parse(payload) as string)
+        .join('')
+        .slice(offset % CHUNK_CHARACTERS);
+    else {
+      const column = channel === 'content' ? 'content' : 'reasoning';
+      const row = this.store<{ value: string | null }>(
+        `SELECT ${column} AS value FROM messages WHERE id=?`,
+        messageId,
+      ).toArray()[0];
+      value = (row?.value ?? '').slice(offset);
+    }
+    let end = Math.min(value.length, limit);
+    if (end < value.length && /[\uD800-\uDBFF]/.test(value[end - 1])) end--;
+    return { text: value.slice(0, end), hasMore: value.length > end, nextOffset: offset + end };
+  }
   read(messageId: string, content = '', reasoning = '') {
     const chunks = this.store<{ channel: string; payload: string }>(
       'SELECT channel, payload FROM message_content_chunks WHERE messageId = ? ORDER BY channel, ordinal',

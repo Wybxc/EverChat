@@ -98,6 +98,11 @@ const server = createServer(async (request, response) => {
     }
     return json(providerSettings);
   }
+  if (path === '/mcp') {
+    response.writeHead(401, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    response.end(JSON.stringify({ error: 'MCP_AUTH_REQUIRED' }));
+    return;
+  }
   if (path === '/public/shares/aaaaaaaaaaaaaaaaaaaaaa') {
     if (request.headers.authorization !== `Bearer ${'b'.repeat(43)}`) {
       response.writeHead(404, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });

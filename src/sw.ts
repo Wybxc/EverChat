@@ -96,7 +96,15 @@ registerRoute(
       headers.set('X-Robots-Tag', 'noindex, nofollow, noarchive');
       return new Response(response.body, { status: response.status, headers });
     },
-    { denylist: [/^\/api(?:\/|$)/, /^\/auth(?:\/|$)/, /^\/public(?:\/|$)/, /^\/cdn-cgi(?:\/|$)/] },
+    {
+      denylist: [
+        /^\/api(?:\/|$)/,
+        /^\/auth(?:\/|$)/,
+        /^\/public(?:\/|$)/,
+        /^\/mcp(?:\/|$)/,
+        /^\/cdn-cgi(?:\/|$)/,
+      ],
+    },
   ),
 );
 clientsClaim();
