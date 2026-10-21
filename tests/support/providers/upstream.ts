@@ -2,6 +2,7 @@ import { env as runtimeEnv } from 'cloudflare:workers';
 import { SUMMARY_SYSTEM_PROMPT } from '../../../shared/conversation/summaries';
 import type { ProviderKind } from '../../../shared/providers/types';
 import type { MeasurementEnv } from '../runtime/env';
+import { largeProviderStream } from './large-stream';
 import { providerStreams } from './streams';
 import { toolFinalStream, toolStream } from './tool-streams';
 
@@ -108,20 +109,13 @@ export function installMockUpstream() {
     }
     const modelId = requestBody.model ?? /\/models\/([^/:]+):/.exec(url.pathname)?.[1];
     if (modelId === 'alarm-free-tier-large') {
-      let step = 0;
+      const chunks = largeProviderStream();
       return new Response(
         new ReadableStream<Uint8Array>({
           pull(controller) {
-            if (step++ < 160) {
-              controller.enqueue(encoder.encode(`: ${'keepalive '.repeat(3277)}\n\n`));
-            } else {
-              controller.enqueue(
-                encoder.encode(
-                  `data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: '思'.repeat(110_000), content: '答'.repeat(110_000) }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`,
-                ),
-              );
-              controller.close();
-            }
+            const next = chunks.next();
+            if (next.done) controller.close();
+            else controller.enqueue(next.value);
           },
         }),
         { headers: { 'Content-Type': 'text/event-stream' } },
