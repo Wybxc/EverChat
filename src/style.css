@@ -498,7 +498,7 @@ html.public-share-document,
   padding-inline: 0.75rem;
   color: var(--muted-foreground);
 }
-.settings-tab-list [data-state='active'] {
+.settings-tab-list [data-active] {
   background: var(--accent);
   color: var(--accent-foreground);
   box-shadow: none;
