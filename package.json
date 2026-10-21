@@ -33,6 +33,7 @@
     "@ai-sdk/valibot": "3.0.63",
     "@base-ui/react": "^1.9.0",
     "@block65/webcrypto-web-push": "2.0.0",
+    "@modelcontextprotocol/server": "2.3.1",
     "@shadcn/react": "^0.3.1",
     "@streamdown/code": "^2.0.0",
     "@streamdown/math": "^1.0.3",
@@ -71,6 +72,7 @@
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.63.1",
     "@cloudflare/workers-types": "latest",
+    "@modelcontextprotocol/client": "2.3.1",
     "@playwright/test": "latest",
     "@tailwindcss/vite": "^4.2.0",
     "@types/node": "^26.0.0",

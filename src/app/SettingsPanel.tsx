@@ -54,10 +54,12 @@ const tabs = [
   { id: 'web-tools', label: 'webTools' },
   { id: 'usage', label: 'usage' },
   { id: 'shares', label: 'sharing' },
+  { id: 'mcp', label: 'mcp' },
 ] as const;
 export type SettingsTab = (typeof tabs)[number]['id'];
 const ShareManagement = lazy(() => import('../features/sharing/ShareManagement'));
 const UsageSettings = lazy(() => import('../features/usage/UsageSettings'));
+const McpSettings = lazy(() => import('../features/mcp/McpSettings'));
 
 export function SettingsPanel(props: PanelProps) {
   const { t } = useTranslation('app', { useSuspense: false });
@@ -235,6 +237,17 @@ export function SettingsPanel(props: PanelProps) {
                       }}
                     />
                   </section>
+                  {open && tab === 'mcp' && (
+                    <section
+                      id="settings-panel-mcp"
+                      role="tabpanel"
+                      aria-labelledby="settings-tab-mcp"
+                    >
+                      <Suspense fallback={<LoadingContent label={t(($) => $.mcp)} />}>
+                        <McpSettings />
+                      </Suspense>
+                    </section>
+                  )}
                   {open && tab === 'shares' && (
                     <section
                       id="settings-panel-shares"

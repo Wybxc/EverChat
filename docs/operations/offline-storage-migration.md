@@ -137,3 +137,11 @@ pnpm ops:storage prepare --config <private-production-config> --usage-only --dir
 不增加线上清理、补算入口或启动扫描。清理后的新失败／取消请求仍按实际情况保留部分或未知用量。出错时本地转换整批回滚；线上导入失败沿用批次重试及原始备份恢复机制。
 
 2026-10-19 已在生产执行本次统计清理：原 23 条请求中删除 22 条已结束但用量或计价不完整的历史记录，保留 1 条完整记录；没有价格配置或修正字段需要处理。小时汇总已离线重建，线上与本地结构、索引及逐行值验证通过，临时回执已清除。私有备份保存在 `.wrangler/operations/usage-cleanup-2026-10-19`，目录 0700、文件 0600，已核对 SHA-256，不含 Access 会话令牌。正式恢复版本 `22382d94-e569-4ed5-a410-e4adbf1d7b09`。445 项单元测试、原生 workerd 运维测试、12 项相关浏览器场景、类型检查与构建通过；生产恢复后统计、根页面和临时入口移除均已只读验收。
+
+## MCP 存储版本 3
+
+MCP 发布要求 Conversation／Library 的 `storage_schema` 从 2 升至 3；UsageStore／ShareStore 继续使用其原有版本 1。Library 新增空的 `mcp_keys` 与 `mcp_requests` 表，保存密钥哈希、脱敏管理元数据和幂等请求索引。Conversation 的原有消息、分支和内容分块不重写，只更新版本标记。
+
+必须使用上文维护窗口的完整流程：暂停自动构建和新生成，确认现有任务结束，`prepare → preflight → backup → convert → apply → verify → cleanup` 后再部署新业务构建。备份及转换清单已纳入两张 MCP 表；转换在本地 Node/SQLite 中完成，不在业务请求、首次 MCP 访问或 Alarm 中迁移。
+
+旧业务版本不能读取版本 3；需要回滚时，先按原始备份恢复数据库并校验，再恢复旧业务版本。新部署使用空数据库时直接创建当前结构，不需要历史迁移。

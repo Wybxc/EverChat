@@ -10,6 +10,8 @@ import { STORAGE_SCHEMA, STORAGE_SCHEMA_VERSION } from '../../worker/platform/st
 import { GenerationCheckpoints } from '../../worker/streaming/checkpoints';
 import { addRecord, emptyTotals } from '../../worker/usage/aggregate';
 import { USAGE_OUTBOX_SCHEMA } from '../../worker/usage/schema';
+import { MCP_REQUESTS_SCHEMA } from '../../worker/mcp/schema';
+import { MCP_KEYS_SCHEMA } from '../../worker/mcp/keys';
 import { encodeValue, type Statement, type StoreKind } from './storage-protocol';
 
 // Only this Node.js operations module understands previous database formats.
@@ -47,7 +49,12 @@ export function migrateStorage(db: DatabaseSync, kind: StoreKind): Statement[] {
   try {
     if (exists('storage_schema')) {
       const version = db.prepare('SELECT version FROM storage_schema WHERE id=1').get()?.version;
-      if (version !== undefined && version !== 1 && version !== STORAGE_SCHEMA_VERSION)
+      if (
+        version !== undefined &&
+        version !== 1 &&
+        version !== 2 &&
+        version !== STORAGE_SCHEMA_VERSION
+      )
         throw new Error(`Unsupported storage schema version: ${version}`);
     }
     query(STORAGE_SCHEMA);
@@ -131,6 +138,8 @@ export function migrateStorage(db: DatabaseSync, kind: StoreKind): Statement[] {
       }
       if (exists('events')) query('DROP TABLE events');
     } else if (kind === 'library') {
+      query(MCP_REQUESTS_SCHEMA);
+      query(MCP_KEYS_SCHEMA);
       if (
         exists('conversation_metadata') &&
         columns('conversation_metadata').includes('archived')

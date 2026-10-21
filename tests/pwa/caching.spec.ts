@@ -45,6 +45,16 @@ test.afterEach(async ({ page, context }) => {
   await control(page, { moduleResponse: 'normal', richMarkdown: false });
 });
 
+test('MCP protocol navigation bypasses the SPA fallback and offline caches', async ({ page }) => {
+  await controlled(page);
+  const response = await page.goto('/mcp');
+  expect(response?.status()).toBe(401);
+  expect(response?.headers()['content-type']).toContain('application/json');
+  await expect(page.locator('body')).toContainText('MCP_AUTH_REQUIRED');
+  for (const kind of ['precache', 'modules'] as const)
+    expect(await cachedPaths(page, kind)).not.toContain('/mcp');
+});
+
 test('cold installation only requires the application shell and opens offline while optional modules are unavailable', async ({
   page,
   context,

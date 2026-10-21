@@ -10,6 +10,7 @@ export default {
   webTools: 'Web',
   usage: 'Usage',
   sharing: 'Sharing',
+  mcp: 'MCP',
   sessionChanged: 'Your sign-in session has changed.',
   settingsCategories: 'Settings categories',
   signOut: 'Sign out and clear local data',

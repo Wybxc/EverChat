@@ -17,6 +17,8 @@ export interface Env {
   ACCESS_AUD?: string;
   ACCESS_ALLOWED_EMAILS?: string;
   APP_ORIGIN?: string;
+  MCP_ALLOWED_MODELS?: string;
+  MCP_DEFAULT_MODEL?: string;
   AI_API_KEY?: string;
   AI_PROVIDER: string;
   AI_BASE_URL: string;

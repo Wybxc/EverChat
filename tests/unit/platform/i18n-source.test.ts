@@ -19,6 +19,7 @@ const migrated = [
   'src/features/chat/rendering/*.tsx',
   'src/features/backup/*.tsx',
   'src/features/notifications/*.tsx',
+  'src/features/mcp/*.tsx',
   'src/platform/pwa/*.tsx',
   'src/platform/{api,xhr,storage,autosave}.ts',
 ];

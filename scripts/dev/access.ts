@@ -69,6 +69,10 @@ export async function localAccess() {
   };
   return {
     plugin,
-    vars: { DEV_ACCESS_ORIGIN: origin, DEV_ACCESS_PUBLIC_JWK: JSON.stringify(publicJwk) },
+    vars: {
+      DEV_ACCESS_ORIGIN: origin,
+      DEV_ACCESS_PUBLIC_JWK: JSON.stringify(publicJwk),
+      APP_ORIGIN: origin,
+    },
   };
 }

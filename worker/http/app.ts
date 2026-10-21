@@ -4,6 +4,7 @@ import { registerAttachmentsRoutes } from '../attachments/routes';
 import { registerBackupRoutes } from '../backup/routes';
 import { registerConversationRoutes } from '../conversation/routes';
 import { registerLibraryRoutes } from '../library/routes';
+import { registerMcpRoutes } from '../mcp/routes';
 import { registerNotificationRoutes } from '../notifications/routes';
 import { storageErrorMessage } from '../platform/resource-limits';
 import { registerPresetsRoutes } from '../presets/routes';
@@ -35,6 +36,7 @@ export function createApi(
   });
 
   registerSessionRoutes(app, logoutUrl);
+  registerMcpRoutes(app);
   registerUsageRoutes(app);
   registerSharingRoutes(app);
   registerNotificationRoutes(app);
