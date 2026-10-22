@@ -18,26 +18,30 @@ import {
 
 export const messageScrollId = (id: string) => `message:${id}`;
 
+const SCROLL_EDGE_THRESHOLD = 24;
+// Reading resumes at the end; selection/navigation pauses wait for fresh user intent.
+type FollowMode = 'following' | 'reading' | 'paused';
+
 const FollowingContext = createContext<{
-  set: (enabled: boolean) => void;
-  enabled: { current: boolean };
-}>({ set: () => {}, enabled: { current: true } });
+  set: (mode: FollowMode) => void;
+  mode: { current: FollowMode };
+}>({ set: () => {}, mode: { current: 'following' } });
 
 /** Each transcript/reasoning pane owns an independent scroller and following mode. */
 export function ChatScrollProvider({ children }: PropsWithChildren) {
   const [following, setState] = useState(true);
-  const enabled = useRef(true);
-  const setFollowing = useCallback((value: boolean) => {
-    enabled.current = value;
-    setState(value);
+  const mode = useRef<FollowMode>('following');
+  const setMode = useCallback((value: FollowMode) => {
+    mode.current = value;
+    setState(value === 'following');
   }, []);
-  const intent = useMemo(() => ({ set: setFollowing, enabled }), [setFollowing]);
+  const intent = useMemo(() => ({ set: setMode, mode }), [setMode]);
   return (
     <FollowingContext value={intent}>
       <MessageScrollerProvider
         autoScroll={following}
         defaultScrollPosition="end"
-        scrollEdgeThreshold={24}
+        scrollEdgeThreshold={SCROLL_EDGE_THRESHOLD}
       >
         {children}
       </MessageScrollerProvider>
@@ -48,43 +52,39 @@ export function ChatScrollProvider({ children }: PropsWithChildren) {
 /** Business intent/focus bridge. The library owns bottom-follow and scroll range/spacers. */
 export function useChatScroll(resetKey?: string | null) {
   const commands = useMessageScroller();
-  const { set: setFollowing, enabled } = useContext(FollowingContext);
+  const { set: setMode, mode } = useContext(FollowingContext);
   const [viewport, viewportRef] = useState<HTMLDivElement | null>(null);
   const [content, contentRef] = useState<HTMLDivElement | null>(null);
   const endFrame = useRef(0);
-  const locked = useRef(false);
   const scheduleEnd = useCallback(
     (options?: { behavior?: ScrollBehavior }) => {
       cancelAnimationFrame(endFrame.current);
       endFrame.current = requestAnimationFrame(() => {
         endFrame.current = 0;
-        if (enabled.current && !locked.current) commands.scrollToEnd(options);
+        if (mode.current === 'following') commands.scrollToEnd(options);
       });
     },
-    [commands, enabled],
+    [commands, mode],
   );
   const pauseFollowing = useCallback(() => {
-    locked.current = true;
     cancelAnimationFrame(endFrame.current);
-    setFollowing(false);
+    setMode('paused');
     viewport?.dispatchEvent(new Event(SCROLL_INTENT_EVENT));
-  }, [setFollowing, viewport]);
+  }, [setMode, viewport]);
   const scrollToBottom = useCallback(
     (options?: { behavior?: ScrollBehavior }) => {
-      locked.current = false;
-      cancelAnimationFrame(endFrame.current);
-      setFollowing(true);
+      setMode('following');
       viewport?.dispatchEvent(new Event(SCROLL_INTENT_EVENT));
       // Commit autoScroll before the library decides whether this command resumes following.
       scheduleEnd(options);
     },
-    [scheduleEnd, setFollowing, viewport],
+    [scheduleEnd, setMode, viewport],
   );
 
   useLayoutEffect(() => {
     if (!viewport || !content) return;
     scrollToBottom();
-    const resume = (event: Event) => {
+    const read = (event: Event) => {
       if (event.type === 'keydown' && !isScrollKey(event)) return;
       if (
         event.target instanceof Element &&
@@ -95,54 +95,50 @@ export function useChatScroll(resetKey?: string | null) {
       // expressing intent to resume following at the nearby live edge.
       if (event instanceof WheelEvent && event.deltaY === 0) return;
       cancelAnimationFrame(endFrame.current);
-      locked.current = false;
       const downward =
         event instanceof WheelEvent
           ? event.deltaY > 0
           : event instanceof KeyboardEvent &&
             ['ArrowDown', 'PageDown', 'End', ' '].includes(event.key);
-      // A wheel at the end may produce no scroll event. Resume after the library
-      // has processed intent, so the next delayed chunk still follows.
-      if (downward && viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop <= 24) {
-        setFollowing(true);
-        scheduleEnd();
-      } else setFollowing(false);
+      const atEnd =
+        viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop <= SCROLL_EDGE_THRESHOLD;
+      setMode(downward && atEnd ? 'following' : 'reading');
+      // A downward wheel at the end may produce no scroll event.
+      if (mode.current === 'following') scheduleEnd();
     };
-    // Forward geometry changes to business anchors and repair a return to the
-    // old bottom in the same frame as a new chunk grows the range.
     let previousTop = viewport.scrollTop;
     let previousBottom = viewport.scrollHeight - viewport.clientHeight;
     const syncReadingIntent = () => {
       const maximum = viewport.scrollHeight - viewport.clientHeight;
       const top = viewport.scrollTop;
-      const atEnd = maximum - top <= 24;
-      const returnedToOldEnd =
-        maximum > previousBottom && top > previousTop && Math.abs(top - previousBottom) <= 24;
-      // The library ignores upward scrolls during its 180ms auto-scroll window.
-      // Preserve a small reflow adjustment, but yield to a reader moving away
-      // even if a chunk grows the range before its scroll event is delivered.
-      const movedUp =
-        top < previousTop &&
-        (maximum === previousBottom || top < Math.min(previousTop, maximum) - 24);
-      if (movedUp && !atEnd) {
-        // A queued return to the live edge must yield before its next frame,
-        // even when autoScroll=false has not committed to the primitive yet.
-        cancelAnimationFrame(endFrame.current);
-        setFollowing(false);
-      } else if (
-        !locked.current &&
-        (atEnd || returnedToOldEnd) &&
-        (!enabled.current || returnedToOldEnd)
-      ) {
-        setFollowing(true);
-        scheduleEnd();
+      if (mode.current !== 'paused') {
+        // Native input already pauses immediately; geometry alone can be a small reflow.
+        if (
+          top < previousTop &&
+          maximum - top > SCROLL_EDGE_THRESHOLD &&
+          (maximum === previousBottom ||
+            top < Math.min(previousTop, maximum) - SCROLL_EDGE_THRESHOLD)
+        ) {
+          cancelAnimationFrame(endFrame.current);
+          setMode('reading');
+        } else if (
+          mode.current === 'reading' &&
+          top > previousTop &&
+          (maximum - top <= SCROLL_EDGE_THRESHOLD ||
+            Math.abs(previousBottom - top) <= SCROLL_EDGE_THRESHOLD)
+        ) {
+          // Only downward movement resumes following. Include the old end when
+          // a new chunk grows the range before the scroll event is delivered.
+          setMode('following');
+          scheduleEnd();
+        }
       }
       previousTop = top;
       previousBottom = maximum;
     };
     const pauseForSelection = () => {
       const selection = document.getSelection();
-      if (!selection || selection.isCollapsed || locked.current) return;
+      if (!selection || selection.isCollapsed || mode.current === 'paused') return;
       for (let index = 0; index < selection.rangeCount; index++)
         if (selection.getRangeAt(index).intersectsNode(content)) {
           pauseFollowing();
@@ -152,11 +148,8 @@ export function useChatScroll(resetKey?: string | null) {
     const layout = new ResizeObserver(() => {
       const resized = viewport.scrollHeight - viewport.clientHeight !== previousBottom;
       syncReadingIntent();
-      // Markdown reflow can make the primitive leave following mode before its
-      // resize callback. Restore the explicit reading intent through its command.
-      // Let native scroll intent run before repairing layout. Writing from this
-      // resize callback can overwrite a reader's scroll before its event arrives.
-      if (resized && enabled.current && !locked.current) scheduleEnd();
+      // Keep Markdown reflow following deferred so user input can cancel it.
+      if (resized && mode.current === 'following') scheduleEnd();
       viewport.dispatchEvent(new Event(SCROLL_LAYOUT_EVENT));
     });
     layout.observe(content);
@@ -165,7 +158,7 @@ export function useChatScroll(resetKey?: string | null) {
     viewport.addEventListener(PAUSE_FOLLOW_EVENT, pauseFollowing);
     document.addEventListener('selectionchange', pauseForSelection);
     for (const name of ['wheel', 'touchmove', 'keydown'])
-      viewport.addEventListener(name, resume, { passive: true });
+      viewport.addEventListener(name, read, { passive: true });
     return () => {
       cancelAnimationFrame(endFrame.current);
       layout.disconnect();
@@ -173,18 +166,9 @@ export function useChatScroll(resetKey?: string | null) {
       viewport.removeEventListener(PAUSE_FOLLOW_EVENT, pauseFollowing);
       document.removeEventListener('selectionchange', pauseForSelection);
       for (const name of ['wheel', 'touchmove', 'keydown'])
-        viewport.removeEventListener(name, resume);
+        viewport.removeEventListener(name, read);
     };
-  }, [
-    viewport,
-    content,
-    resetKey,
-    pauseFollowing,
-    scrollToBottom,
-    setFollowing,
-    enabled,
-    scheduleEnd,
-  ]);
+  }, [viewport, content, resetKey, pauseFollowing, scrollToBottom, setMode, mode, scheduleEnd]);
 
   return {
     viewport,

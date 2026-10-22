@@ -154,6 +154,41 @@ test('button navigation animates, yields to manual scrolling and respects reduce
   }
 });
 
+test('small upward wheel steps leave the bottom in both transcript and reasoning panes', async ({
+  page,
+}) => {
+  const fixture = await setup(page);
+  try {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.locator('[data-streamdown="mermaid-block"]').scrollIntoViewIfNeeded();
+    await expect(
+      page.locator('[data-streamdown="mermaid"] svg[aria-roledescription]'),
+    ).toBeVisible();
+    await page.evaluate(() => document.fonts.ready);
+    const thoughts = page.getByTestId('message-reasoning').locator('.overflow-y-auto');
+    for (const viewport of [pane(page), thoughts]) {
+      if (viewport === thoughts) await thoughts.scrollIntoViewIfNeeded();
+      else await button(page, '跳到底部').press('Space');
+      await viewport.evaluate((node) => {
+        node.scrollTop = node.scrollHeight;
+      });
+      const distance = () =>
+        viewport.evaluate((node) => node.scrollHeight - node.clientHeight - node.scrollTop);
+      await expect.poll(distance).toBeLessThan(2);
+      const box = (await viewport.boundingBox())!;
+      await page.mouse.move(box.x + 8, box.y + box.height / 2);
+      for (let step = 1; step <= 5; step++) {
+        await page.mouse.wheel(0, -4);
+        // Wait past the next-frame repair rather than accepting a transient position.
+        await page.waitForTimeout(100);
+        expect(await distance()).toBeCloseTo(step * 4, 0);
+      }
+    }
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
 test('navigation is quiet by default, reveals on hover and stays visible for keyboard focus', async ({
   page,
 }, testInfo) => {
