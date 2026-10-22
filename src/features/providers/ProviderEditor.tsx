@@ -18,7 +18,6 @@ import {
 import type { DiscoveredModel, ProviderModel } from '../../../shared/models/types';
 import { providerOptions } from '../../../shared/providers/endpoints';
 import type { ProviderFailure } from '../../../shared/providers/failure';
-import { MAX_PROVIDER_MODELS } from '../../../shared/providers/limits';
 import type {
   ProviderApiKind,
   ProviderProfile,
@@ -336,8 +335,6 @@ export function ProviderEditor({
           .filter((model) => !existing.has(model.id))
           .map((model) => ({ ...model, enabled: false })),
       ];
-      if (models.length > MAX_PROVIDER_MODELS)
-        throw new UiError(uiMessage('common', 'modelLimit', { count: MAX_PROVIDER_MODELS }));
       update({
         ...current,
         providers: current.providers.map((profile) =>
@@ -363,10 +360,6 @@ export function ProviderEditor({
     const id = newModel.trim();
     if (selected.models.some((model) => model.id === id)) {
       setNotice(uiMessage('providers', 'modelIdExists'));
-      return;
-    }
-    if (selected.models.length >= MAX_PROVIDER_MODELS) {
-      setNotice(uiMessage('common', 'modelLimit', { count: MAX_PROVIDER_MODELS }));
       return;
     }
     update(

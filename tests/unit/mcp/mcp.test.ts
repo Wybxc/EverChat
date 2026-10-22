@@ -251,7 +251,7 @@ test('MCP references support Unicode IDs; tool input rejects excess bytes, unkno
     { waitMs: NaN },
     { persist: false },
     { jsonSchema: {} },
-    { prompt: '字'.repeat(300_000) },
+    { prompt: '字'.repeat(1_000_000) },
   ])
     assert.equal(v.safeParse(chatSchema, { ...base, ...extra }).success, false);
   assert.equal(conversationSettingsDefaults().useGlobalMaxOutputTokens, true);

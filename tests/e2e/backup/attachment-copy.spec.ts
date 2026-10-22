@@ -324,7 +324,7 @@ test('concurrent identical requests share one copy, different sources cannot reu
     const responses = await Promise.all([first, second, same]);
     expect(responses.map((response) => response.status())).toEqual([201, 201, 201]);
     expect((await responses[0].json()).id).toBe((await responses[2].json()).id);
-    expect((await control(request)).dailyCount).toBe(3);
+    expect((await control(request)).dailyCount).toBe(0);
   } finally {
     await fixture.cleanup();
   }
@@ -398,7 +398,7 @@ for (const failure of ['deadline', 'source-deletion'] as const)
         .toBe('failed');
       await control(request, { releaseText: true });
       expect((await copying).status()).toBe(failure === 'deadline' ? 408 : 410);
-      expect((await control(request)).dailyCount).toBe(1);
+      expect((await control(request)).dailyCount).toBe(0);
       expect(
         (
           await request.get('/api/conversations').then((response) => response.json())

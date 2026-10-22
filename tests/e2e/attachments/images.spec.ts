@@ -175,7 +175,7 @@ for (const provider of [
     }
   });
 }
-test('server rejects unsupported, foreign, incomplete, oversized and invalid images before creating messages', async ({
+test('server rejects unsupported, foreign, incomplete and invalid image references before creating messages', async ({
   request,
 }) => {
   const fixture = await setup(request),
@@ -185,7 +185,7 @@ test('server rejects unsupported, foreign, incomplete, oversized and invalid ima
   const broken = await upload(request, fixture.id, png.subarray(0, 12), 'broken.png');
   const large = Buffer.from(png);
   large.writeUInt32BE(5000, 16);
-  const oversized = await upload(request, fixture.id, large, 'large.png');
+  await upload(request, fixture.id, large, 'large.png');
   const incomplete = {
     id: crypto.randomUUID(),
     name: 'pending.png',
@@ -199,7 +199,6 @@ test('server rejects unsupported, foreign, incomplete, oversized and invalid ima
       { selection: { providerId, model: 'text-only' }, imageIds: [image.id] },
       { imageIds: [foreign.id] },
       { imageIds: [broken.id] },
-      { imageIds: [oversized.id] },
       { imageIds: [incomplete.id] },
       { imageIds: [image.id, image.id] },
     ]) {
@@ -323,7 +322,7 @@ async function login(page: Page) {
   await page.reload();
   await expect(page.getByLabel('消息', { exact: true })).toBeVisible();
 }
-test('new conversation picker scales, previews, persists drafts and sends an image-only message', async ({
+test('new conversation picker preserves originals, previews, persists drafts and sends an image-only message', async ({
   page,
   request,
 }) => {
@@ -350,20 +349,20 @@ test('new conversation picker scales, previews, persists drafts and sends an ima
     await expect(page.getByLabel('待发送图片')).toBeVisible();
     await expect(page.getByLabel('消息', { exact: true })).toBeFocused();
     const stored = await (await request.get(`/api/conversations/${id}/attachments`)).json();
-    expect(stored[0].size).toBeLessThanOrEqual(1048576);
-    expect(stored[0].mediaType).toBe('image/webp');
+    expect(stored[0].size).toBe(Buffer.from(source, 'base64').length);
+    expect(stored[0].mediaType).toBe('image/png');
     await page.reload();
     await expect(page.getByLabel('待发送图片')).toBeVisible();
     await expect(page.getByLabel('消息', { exact: true })).toHaveValue('图片草稿');
-    await page.getByRole('button', { name: '预览 large.webp' }).click();
+    await page.getByRole('button', { name: '预览 large.png' }).click();
     expect(
       await page
         .getByRole('dialog')
         .getByRole('img')
         .evaluate((image) => (image as HTMLImageElement).naturalWidth),
-    ).toBe(1536);
+    ).toBe(2400);
     await page.getByRole('button', { name: '关闭图片预览' }).click();
-    await page.getByRole('button', { name: '预览 large.webp' }).click();
+    await page.getByRole('button', { name: '预览 large.png' }).click();
     await page
       .getByRole('dialog')
       .getByRole('button', { name: '关闭图片预览', exact: true })
@@ -405,7 +404,7 @@ test('pasted images retain drafts across routes and unsupported model changes pr
     await page.getByRole('button', { name: '开启新对话', exact: true }).click();
     await page.goBack();
     await expect(page.getByLabel('待发送图片')).toBeVisible();
-    await page.getByRole('button', { name: '移除 pasted.webp' }).click();
+    await page.getByRole('button', { name: '移除 pasted.png' }).click();
     await expect(page.getByLabel('待发送图片')).toHaveCount(0);
   } finally {
     await fixture.cleanup();
@@ -464,7 +463,7 @@ test('uploaded image-only requests remain in the offline outbox and send once af
     await expect(page.getByTestId('assistant-message')).toContainText('答案。');
     await expect(page.getByText('等待发送', { exact: true })).toHaveCount(0);
     expect((await fixture.snapshot()).messages).toHaveLength(2);
-    await expect(page.getByRole('img', { name: 'offline.webp' })).toBeVisible();
+    await expect(page.getByRole('img', { name: 'offline.png' })).toBeVisible();
   } finally {
     await context.setOffline(false);
     await fixture.cleanup();

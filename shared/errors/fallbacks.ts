@@ -22,7 +22,7 @@ export const errorFallbacks = {
   SCHEMA_MISMATCH: 'The database needs an offline maintenance migration.',
   CONVERSATION_DELETED: 'This chat was deleted.',
   CONVERSATION_BUSY: 'Wait for generation to finish or stop it first.',
-  MESSAGE_LIMIT: 'The message and reasoning exceed the 768 KiB storage safety limit.',
+  MESSAGE_LIMIT: 'The message and reasoning exceed the database row size.',
   BRANCH_INVALID: 'This message branch is invalid or unavailable. Sync the chat again.',
   PARENT_UNAVAILABLE: 'The parent message is unavailable. Select another branch and retry.',
   CONTEXT_INVALID:

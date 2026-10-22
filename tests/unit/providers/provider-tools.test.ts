@@ -267,15 +267,13 @@ for (const provider of kinds)
       signal(),
     );
     assert.equal(disabled.calls[0].invalid, true);
-    await assert.rejects(
-      collectProviderToolTurn(
-        config,
-        enabled,
-        fragmentedToolBody(toolStream(provider, { count: 3 })),
-        signal(),
-      ),
-      /工具|调用/,
+    const multiple = await collectProviderToolTurn(
+      config,
+      enabled,
+      fragmentedToolBody(toolStream(provider, { count: 3 })),
+      signal(),
     );
+    assert.equal(multiple.calls.length, 3);
     await assert.rejects(
       collectProviderToolTurn(
         config,
@@ -316,7 +314,7 @@ test('invalid arguments, truncated calls and oversized continuation metadata can
       configuration('anthropic'),
       enabled,
       fragmentedToolBody(
-        toolStream('anthropic', { signature: Array(6).fill('x'.repeat(190_000)) }),
+        toolStream('anthropic', { signature: Array(12).fill('x'.repeat(190_000)) }),
         64 * 1024,
       ),
       signal(),
@@ -332,7 +330,7 @@ test('bounded replay cancels oversized or stalled bodies and does not fetch remo
   let cancelled = false;
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
-      controller.enqueue(new Uint8Array(1024 * 1024 + 1));
+      controller.enqueue(new Uint8Array(2_000_000 + 1));
     },
     cancel() {
       cancelled = true;
@@ -456,13 +454,13 @@ test('public tool inputs and sources reject credentials, local addresses and ove
       validateWebToolCall({ id: 'call', name: 'read_webpage', input: { url } }, enabled),
     );
   }
-  assert.throws(() =>
+  assert.doesNotThrow(() =>
     validateWebToolOutcome({
       ...outcome('call'),
       sources: [{ title: 'x', url: 'https://example.org/', content: 'x'.repeat(12_001) }],
     }),
   );
-  assert.throws(() =>
+  assert.doesNotThrow(() =>
     validateWebToolOutcome({
       ...outcome('call'),
       sources: Array.from({ length: 5 }, () => ({

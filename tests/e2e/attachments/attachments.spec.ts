@@ -3,7 +3,6 @@ import { createHash } from 'node:crypto';
 import {
   attachmentUrl,
   MAX_ATTACHMENT_BYTES,
-  MAX_CONVERSATION_ATTACHMENTS,
   type Attachment,
   type AttachmentInput,
 } from '../../../shared/attachments/files';
@@ -110,19 +109,17 @@ test('private R2 upload preserves Unicode bytes, validates integrity, is idempot
   }
 });
 
-test('a maximum-size file streams through the Worker and DO and returns exactly the original bytes', async ({
+test('a file exceeding the former 5 MiB limit streams through the Worker and DO and returns exactly the original bytes', async ({
   request,
 }) => {
   const fixture = await setup(request),
-    bytes = Buffer.alloc(MAX_ATTACHMENT_BYTES, 'x'),
+    bytes = Buffer.alloc(6 * 1024 * 1024, 'x'),
     input = file(bytes, 'large.txt', 'text/plain');
   try {
     expect((await fixture.register(input)).status()).toBe(201);
     const url = attachmentUrl(fixture.id, input.id);
     expect((await request.put(url, { headers, data: bytes })).status()).toBe(200);
-    expect((await request.head(url)).headers()['content-length']).toBe(
-      String(MAX_ATTACHMENT_BYTES),
-    );
+    expect((await request.head(url)).headers()['content-length']).toBe(String(bytes.length));
     expect(await (await request.get(url)).body()).toEqual(bytes);
   } finally {
     await fixture.cleanup();
@@ -142,13 +139,14 @@ test('a failed R2 delete retains its reservation across a Library reset and the 
       (await request.put(attachmentUrl(fixture.id, input.id), { headers, data: bytes })).status(),
     ).toBe(200);
     await storage(request, { failDelete: input.id });
+    const deletionStarted = Date.now();
     await fixture.cleanup();
     expect((await request.get(attachmentUrl(fixture.id, input.id))).status()).toBe(410);
     await expect.poll(async () => (await storage(request)).failedDeletes).toBe(before + 1);
     const failed = await storage(request);
     expect(failed.rows.find((row) => row.id === input.id)).toMatchObject({ removed: 1 });
     expect(failed.objects.some((object) => object.key.includes(input.id))).toBe(true);
-    expect(failed.rows.find((row) => row.id === input.id)!.lease).toBeGreaterThan(Date.now());
+    expect(failed.rows.find((row) => row.id === input.id)!.lease).toBeGreaterThan(deletionStarted);
     await request
       .post('/api/__test/library/attachments', { headers, data: { resetLibrary: true } })
       .catch(() => {});
@@ -191,7 +189,7 @@ test('without an R2 binding storage is explicitly unavailable and its hidden ent
     await fixture.cleanup();
   }
 });
-test('expired registrations release reservations, completed files survive expiry and daily attempts cannot bypass the operation budget', async ({
+test('expired registrations are cleaned, completed files survive expiry and old daily counters do not block uploads', async ({
   request,
 }) => {
   const fixture = await setup(request),
@@ -218,7 +216,7 @@ test('expired registrations release reservations, completed files survive expiry
     await fixture.register(blocked);
     expect(
       (await request.put(attachmentUrl(fixture.id, blocked.id), { headers, data: bytes })).status(),
-    ).toBe(429);
+    ).toBe(200);
     expect(
       (await request.put(attachmentUrl(fixture.id, ready.id), { headers, data: bytes })).status(),
     ).toBe(200);
@@ -260,28 +258,24 @@ test('cleanup closes expired registrations before R2 deletion and rechecks later
   }
 });
 
-test('concurrent registrations cannot exceed conversation byte or file-count reservations', async ({
-  request,
-}) => {
+test('concurrent registrations exceed former byte and file-count quotas', async ({ request }) => {
   const large = await setup(request),
     many = await setup(request),
     bytes = Buffer.from('reserved');
   try {
     for (let index = 0; index < 6; index++)
-      expect((await large.register({ ...file(bytes), size: MAX_ATTACHMENT_BYTES })).status()).toBe(
-        201,
-      );
+      expect((await large.register({ ...file(bytes), size: 5 * 1024 * 1024 })).status()).toBe(201);
     const room = await Promise.all([
       large.register({ ...file(bytes), size: 2 * 1024 * 1024 }),
       large.register({ ...file(bytes), size: 2 * 1024 * 1024 }),
     ]);
-    expect(room.map((response) => response.status()).sort()).toEqual([201, 507]);
-    expect((await large.list()).reduce((sum, item) => sum + item.size, 0)).toBe(32 * 1024 * 1024);
-    for (let index = 0; index < MAX_CONVERSATION_ATTACHMENTS - 1; index++)
+    expect(room.map((response) => response.status()).sort()).toEqual([201, 201]);
+    expect((await large.list()).reduce((sum, item) => sum + item.size, 0)).toBe(34 * 1024 * 1024);
+    for (let index = 0; index < 64; index++)
       expect((await many.register(file(bytes))).status()).toBe(201);
     const last = await Promise.all([many.register(file(bytes)), many.register(file(bytes))]);
-    expect(last.map((response) => response.status()).sort()).toEqual([201, 507]);
-    expect(await many.list()).toHaveLength(MAX_CONVERSATION_ATTACHMENTS);
+    expect(last.map((response) => response.status()).sort()).toEqual([201, 201]);
+    expect(await many.list()).toHaveLength(66);
   } finally {
     await large.cleanup();
     await many.cleanup();
@@ -364,11 +358,11 @@ test('a reset after R2 write never exposes an uncommitted upload, and the durabl
     const state = await storage(request);
     expect(state.objects.some((object) => object.key.includes(input.id))).toBe(true);
     expect(state.rows.find((row) => row.id === input.id)?.status).toBe('uploading');
-    expect(state.dailyCount).toBe(before + 1);
+    expect(state.dailyCount).toBe(before);
     expect(
       (await request.put(attachmentUrl(fixture.id, input.id), { headers, data: bytes })).status(),
     ).toBe(409);
-    expect((await storage(request)).dailyCount).toBe(before + 1);
+    expect((await storage(request)).dailyCount).toBe(before);
     await storage(request, { id: input.id, expire: true });
     await expect
       .poll(async () =>

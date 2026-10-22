@@ -1,6 +1,5 @@
 import * as v from 'valibot';
-import { documentRangesSchema, MAX_MESSAGE_DOCUMENTS } from '../../shared/attachments/documents';
-import { MAX_MESSAGE_IMAGES } from '../../shared/attachments/images';
+import { documentRangesSchema } from '../../shared/attachments/documents';
 import {
   MAX_MESSAGE_TEXT_BYTES,
   MAX_SYSTEM_PROMPT_LENGTH,
@@ -20,14 +19,12 @@ const submitSchema = v.object({
   fileIds: v.optional(
     v.pipe(
       v.array(uuidSchema),
-      v.maxLength(MAX_MESSAGE_DOCUMENTS),
       v.check((ids) => new Set(ids).size === ids.length),
     ),
   ),
   imageIds: v.optional(
     v.pipe(
       v.array(uuidSchema),
-      v.maxLength(MAX_MESSAGE_IMAGES),
       v.check((ids) => new Set(ids).size === ids.length),
     ),
   ),

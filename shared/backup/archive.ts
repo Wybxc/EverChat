@@ -1,10 +1,6 @@
 import * as v from 'valibot';
 import { documentPartSchema, documentSource, MAX_DOCUMENT_BYTES } from '../attachments/documents';
-import {
-  attachmentInputSchema,
-  MAX_CONVERSATION_ATTACHMENT_BYTES,
-  MAX_CONVERSATION_ATTACHMENTS,
-} from '../attachments/files';
+import { attachmentInputSchema } from '../attachments/files';
 import { MAX_PDF_TEXT_BYTES, pdfExtractionSchema } from '../attachments/pdf';
 import { branchPath } from '../conversation/branch-path';
 import { messageAttachments } from '../conversation/content';
@@ -15,12 +11,9 @@ import { MAX_BACKUP_BYTES, validateBackup, type EverChatBackup } from './backup'
 
 export const ARCHIVE_FORMAT = 'everchat-archive',
   ARCHIVE_VERSION = 1;
-export const MAX_ARCHIVE_BYTES =
-  MAX_BACKUP_BYTES +
-  MAX_CONVERSATION_ATTACHMENT_BYTES +
-  MAX_CONVERSATION_ATTACHMENTS * MAX_DOCUMENT_BYTES +
-  128 * 1024;
-export const MAX_ARCHIVE_ENTRIES = 1 + MAX_CONVERSATION_ATTACHMENTS * 2;
+// fflate uses classic ZIP: 32-bit offsets/sizes and 16-bit entry counts, not ZIP64.
+export const MAX_ARCHIVE_BYTES = 0xffffffff;
+export const MAX_ARCHIVE_ENTRIES = 0xffff;
 export const ARCHIVE_MANIFEST = 'manifest.json';
 export const originalPath = (id: string) => `files/${id}`;
 export const extractedPath = (id: string) => `documents/${id}.txt`;
@@ -68,16 +61,11 @@ export function validateArchiveManifest(value: unknown): ArchiveManifest {
       throw new AppError(problem('BACKUP_INVALID'), '备份中的消息父链无效。');
     }
   }
-  if (!parsed.success || parsed.output.length > MAX_CONVERSATION_ATTACHMENTS)
-    throw new AppError(problem('BACKUP_INVALID'), '备份中的文件列表无效。');
+  if (!parsed.success) throw new AppError(problem('BACKUP_INVALID'), '备份中的文件列表无效。');
   const files = parsed.output,
     ids = new Set(files.map((file) => file.id));
-  if (
-    ids.size !== files.length ||
-    files.reduce((sum, file) => sum + file.size + (file.parsed?.bytes ?? 0), 0) >
-      MAX_CONVERSATION_ATTACHMENT_BYTES
-  )
-    throw new AppError(problem('BACKUP_INVALID'), '备份中的文件重复或超出容量。');
+  if (ids.size !== files.length)
+    throw new AppError(problem('BACKUP_INVALID'), '备份中的文件重复。');
   for (const file of files)
     if (file.parsed) {
       const ref = file.parsed.reference;

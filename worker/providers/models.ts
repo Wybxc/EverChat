@@ -1,8 +1,9 @@
+import { MAX_BUFFERED_BODY_BYTES } from '../../shared/platform/limits';
+import { MAX_SQL_PAYLOAD_BYTES } from '../../shared/conversation/limits';
 import { AppError, problem } from '../../shared/errors/descriptor';
 import { MAX_MODEL_TOKENS, reasoningEfforts } from '../../shared/models/metadata';
 import type { DiscoveredModel, ModelMetadata } from '../../shared/models/types';
 import type { ProviderFailure } from '../../shared/providers/failure';
-import { MAX_PROVIDER_MODELS, MODEL_LIST_LIMIT_MESSAGE } from '../../shared/providers/limits';
 import type { ProviderModelConfig } from '../../shared/providers/types';
 import { providerIssue } from '../generation/errors';
 import { normalizeBaseUrl } from './config';
@@ -39,7 +40,6 @@ async function fetchPage(
   profile: ProviderModelConfig,
   url: URL,
   signal: AbortSignal,
-  budget: { remaining: number },
 ): Promise<Record<string, unknown>> {
   const headers = new Headers({ Accept: 'application/json' });
   if (profile.provider === 'anthropic') {
@@ -76,8 +76,7 @@ async function fetchPage(
         const next = await reader.read();
         if (next.done) break;
         size += next.value.byteLength;
-        budget.remaining -= next.value.byteLength;
-        if (size > 2 * 1024 * 1024 || budget.remaining < 0)
+        if (size > MAX_BUFFERED_BODY_BYTES)
           throw new ProviderModelError(
             '供应商模型目录超过获取大小保护，请手动添加需要的模型。',
             502,
@@ -194,17 +193,25 @@ export async function fetchProviderModels(
   if (!profile.apiKey) throw new ProviderModelError('请先配置 API 密钥。');
   const url = modelsEndpoint(profile);
   const found = new Map<string, DiscoveredModel>();
+  let modelBytes = 2;
   let pageToken: string | undefined;
   const seen = new Set<string>();
   const signal = AbortSignal.timeout(45_000);
-  const budget = { remaining: 8 * 1024 * 1024 };
-  for (let page = 0; page < 10; page++) {
+  while (true) {
+    signal.throwIfAborted();
     if (pageToken)
       url.searchParams.set(profile.provider === 'gemini' ? 'pageToken' : 'after_id', pageToken);
-    const response = await fetchPage(profile, url, signal, budget);
+    const response = await fetchPage(profile, url, signal);
     for (const model of modelEntries(profile, response)) {
-      if (!found.has(model.id)) found.set(model.id, model);
-      if (found.size > MAX_PROVIDER_MODELS) throw new ProviderModelError(MODEL_LIST_LIMIT_MESSAGE);
+      if (!found.has(model.id)) {
+        modelBytes += new TextEncoder().encode(JSON.stringify(model)).byteLength + 1;
+        if (modelBytes > MAX_SQL_PAYLOAD_BYTES)
+          throw new ProviderModelError(
+            '模型目录超过单个供应商配置的数据库行大小，请拆分供应商或手动选择模型。',
+            502,
+          );
+        found.set(model.id, model);
+      }
     }
     const next =
       response.nextPageToken ?? (response.has_more === true ? response.last_id : undefined);
@@ -215,8 +222,6 @@ export async function fetchProviderModels(
     if (!next) break;
     if (seen.has(next))
       throw new ProviderModelError('供应商模型目录分页游标重复，请检查 API 端点。', 502);
-    if (page === 9)
-      throw new ProviderModelError('模型目录超过 10 页的获取保护，请手动添加需要的模型。');
     seen.add(next);
     pageToken = next;
   }

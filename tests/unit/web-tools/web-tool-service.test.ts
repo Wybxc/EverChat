@@ -40,7 +40,6 @@ test('Tavily requests pin the fixed credential origin, disable redirects and exp
         query: search.input.query,
         topic: 'general',
         search_depth: 'basic',
-        max_results: 5,
         auto_parameters: false,
         include_answer: false,
         include_raw_content: false,
@@ -77,7 +76,7 @@ test('Tavily requests pin the fixed credential origin, disable redirects and exp
   });
 });
 
-test('search results cap five sources and a shared 12000-character budget without splitting a surrogate or returning control characters', async () => {
+test('search results preserve all sources and complete Unicode content while removing controls', async () => {
   const result = await run(
     json({
       results: Array.from({ length: 7 }, (_, i) => ({
@@ -89,14 +88,14 @@ test('search results cap five sources and a shared 12000-character budget withou
   );
   assert.equal(result.status, 'completed');
   if (result.status !== 'completed') return;
-  assert.equal(result.sources.length, 1);
-  assert.equal(result.sources[0].content.length, 12000);
-  assert.ok(result.sources[0].content.endsWith('\n[内容已截取]'));
+  assert.equal(result.sources.length, 7);
+  assert.equal(result.sources[0].content.length, 12001);
+  assert.ok(result.sources[0].content.endsWith('x🙂'));
   assert.equal(result.sources[0].title.length, 300);
   assert.doesNotMatch(JSON.stringify(result), /\\u0000/);
   assert.equal((await run(json({ results: Array(10).fill(source) }))).status, 'completed');
   const limited = await run(json({ results: Array(10).fill(source) }));
-  if (limited.status === 'completed') assert.equal(limited.sources.length, 5);
+  if (limited.status === 'completed') assert.equal(limited.sources.length, 10);
 });
 
 test('empty search is a valid result while empty/failed HTTP 200 extraction is an explicit failure', async () => {
@@ -350,7 +349,6 @@ test('DeepSeek Search and Fetch normalize summaries and Markdown with fixed endp
       assert.equal(request.url, 'https://api.deepseek.com/v1/tools/search');
       assert.deepEqual(await request.json(), {
         query: search.input.query,
-        count: 5,
         need_content: false,
       });
       return json({ results: [{ ...source, content: '', summary: '长摘要', snippet: '短摘要' }] });

@@ -79,7 +79,7 @@ test('unknown endpoints, credentials with whitespace/control characters and inva
     { ...input, apiKey: 'key other' },
     { ...input, apiKey: 'a'.repeat(4097) },
     { ...input, dailyLimit: 0 },
-    { ...input, dailyLimit: 1001 },
+    { ...input, dailyLimit: Number.MAX_SAFE_INTEGER + 1 },
     { ...input, dailyLimit: 1.5 },
   ])
     assert.throws(() => write(() => store.save(value)), /设置无效/);
@@ -157,4 +157,10 @@ test('switching network services retains separate keys and pins accepted task cr
   write(() => store.save({ provider: 'tavily', dailyLimit: 20, apiKey: '' }));
   write(() => store.save({ provider: 'deepseek', dailyLimit: 20 }));
   assert.equal(read().key(), 'deepseek-private-key');
+});
+
+test('user-defined service budgets can exceed the former 1,000 ceiling', (t) => {
+  const { store, write } = setup(t);
+  write(() => store.save({ ...input, dailyLimit: 100_000 }));
+  assert.equal(store.settings().dailyLimit, 100_000);
 });

@@ -1,13 +1,6 @@
 import * as v from 'valibot';
 import { AppError, problem } from '../../shared/errors/descriptor';
-import {
-  MAX_PRESET_TEXT_BYTES,
-  MAX_PROMPT_PRESETS,
-  PRESET_CAPACITY_MESSAGE,
-  presetTextBytes,
-  promptPresetInputSchema,
-  promptPresetListSchema,
-} from '../../shared/presets/schema';
+import { promptPresetInputSchema, promptPresetListSchema } from '../../shared/presets/schema';
 import {
   DEFAULT_PROMPT_PRESET_ID,
   type PromptPreset,
@@ -47,7 +40,10 @@ export class PromptPresets {
   save(id: string, input: PromptPresetInput): PromptPreset {
     const parsed = v.safeParse(promptPresetInputSchema, input);
     if (!parsed.success)
-      throw new PromptPresetError(400, '预设名称为 1–100 字，系统提示词最多 20,000 字。');
+      throw new PromptPresetError(
+        400,
+        '请检查预设名称和系统提示词，单个预设须符合数据库单行大小。',
+      );
     return this.storage.transactionSync(() => {
       const previous = this.storage.sql
         .exec<Row>('SELECT * FROM prompt_presets WHERE id = ?', id)
@@ -62,18 +58,6 @@ export class PromptPresets {
         const { deletedAt: _deleted, ...preset } = previous;
         return preset;
       }
-      const totals = this.storage.sql
-        .exec<{ count: number; bytes: number }>(
-          `SELECT COUNT(*) AS count,
-        COALESCE(SUM(LENGTH(CAST(name AS BLOB)) + LENGTH(CAST(systemPrompt AS BLOB))), 0) AS bytes FROM prompt_presets WHERE deletedAt IS NULL`,
-        )
-        .one();
-      if (
-        totals.count + Number(!previous) > MAX_PROMPT_PRESETS ||
-        totals.bytes - (previous ? presetTextBytes(previous) : 0) + presetTextBytes(parsed.output) >
-          MAX_PRESET_TEXT_BYTES
-      )
-        throw new PromptPresetError(507, PRESET_CAPACITY_MESSAGE);
       const preset = { id, ...parsed.output, updatedAt: Date.now() };
       this.storage.sql.exec(
         `INSERT INTO prompt_presets VALUES (?, ?, ?, ?, NULL)
@@ -133,7 +117,7 @@ export class PromptPresets {
       added.push(preset);
     }
     if (!v.safeParse(promptPresetListSchema, merged).success)
-      throw new PromptPresetError(507, PRESET_CAPACITY_MESSAGE);
+      throw new PromptPresetError(400, '备份中的提示词预设无效。');
     return added;
   }
   insertRestored(presets: PromptPreset[]) {

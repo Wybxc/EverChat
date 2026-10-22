@@ -311,7 +311,7 @@ test('unknown image capability can send actual native image bytes; confirmed fal
     await page
       .locator('input[type="file"][accept*="image"]')
       .setInputFiles({ name: 'test.png', mimeType: 'image/png', buffer: png });
-    await expect(page.getByRole('button', { name: '移除 test.webp' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '移除 test.png' })).toBeVisible();
     await page.getByLabel('消息', { exact: true }).fill('用户选择尝试未知图片能力');
     await page.getByRole('button', { name: '发送消息', exact: true }).click();
     await expect(page).toHaveURL(/\/c\//);

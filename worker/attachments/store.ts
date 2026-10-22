@@ -4,21 +4,16 @@ import {
   ATTACHMENT_LEASE,
   ATTACHMENT_UPLOAD_TIMEOUT,
   attachmentSignatureMatches,
-  MAX_CONVERSATION_ATTACHMENT_BYTES,
-  MAX_CONVERSATION_ATTACHMENTS,
-  MAX_DAILY_ATTACHMENT_UPLOADS,
-  MAX_SPACE_ATTACHMENT_BYTES,
-  MAX_SPACE_ATTACHMENTS,
   type Attachment,
   type AttachmentInput,
 } from '../../shared/attachments/files';
 import {
   assertChatImage,
   imageMediaTypeSchema,
-  MAX_MESSAGE_IMAGES,
   type ImagePart,
 } from '../../shared/attachments/images';
 import { issueOf, problem } from '../../shared/errors/descriptor';
+import { MAX_SQL_PAYLOAD_BYTES } from '../../shared/conversation/limits';
 import { HttpError } from '../http/response';
 import { DocumentStore } from './documents';
 
@@ -41,9 +36,6 @@ export class AttachmentStore {
       size INTEGER NOT NULL, mediaType TEXT NOT NULL, sha256 TEXT NOT NULL, status TEXT NOT NULL, createdAt INTEGER NOT NULL,
       error TEXT, key TEXT NOT NULL, lease INTEGER NOT NULL, token TEXT, removed INTEGER NOT NULL DEFAULT 0)`);
     storage.sql.exec(
-      'CREATE TABLE IF NOT EXISTS attachment_daily_uploads (date TEXT PRIMARY KEY, count INTEGER NOT NULL)',
-    );
-    storage.sql.exec(
       'CREATE TABLE IF NOT EXISTS attachment_usage (id TEXT PRIMARY KEY, token TEXT NOT NULL)',
     );
     this.documents = new DocumentStore(
@@ -55,33 +47,6 @@ export class AttachmentStore {
         const row = this.row(id);
         if (row?.removed && row.status !== 'uploading')
           this.storage.sql.exec('UPDATE attachments SET lease = ? WHERE id = ?', Date.now(), id);
-      },
-      (conversationId, bytes) => {
-        const total = this.storage.sql
-          .exec<{ bytes: number }>(
-            'SELECT COALESCE(SUM(a.size + COALESCE(d.bytes, 0)), 0) AS bytes FROM attachments a LEFT JOIN attachment_documents d ON d.id=a.id',
-          )
-          .one().bytes;
-        const local = this.storage.sql
-          .exec<{ bytes: number }>(
-            'SELECT COALESCE(SUM(a.size + COALESCE(d.bytes, 0)), 0) AS bytes FROM attachments a LEFT JOIN attachment_documents d ON d.id=a.id WHERE a.conversationId=?',
-            conversationId,
-          )
-          .one().bytes;
-        if (total + bytes > MAX_SPACE_ATTACHMENT_BYTES)
-          throw new HttpError(
-            507,
-            '空间附件容量已满，全文提取结果也计入容量。',
-            undefined,
-            problem('STORAGE_FULL'),
-          );
-        if (local + bytes > MAX_CONVERSATION_ATTACHMENT_BYTES)
-          throw new HttpError(
-            507,
-            '此对话附件容量已满，全文提取结果也计入 32 MiB 容量。',
-            undefined,
-            problem('ATTACHMENT_INVALID'),
-          );
       },
     );
   }
@@ -146,13 +111,8 @@ export class AttachmentStore {
   }
   images(conversationId: string, ids: string[]): ImagePart[] {
     this.configuredBucket();
-    if (ids.length > MAX_MESSAGE_IMAGES || new Set(ids).size !== ids.length)
-      throw new HttpError(
-        400,
-        '每条消息最多添加 4 张不同的图片。',
-        undefined,
-        problem('ATTACHMENT_INVALID'),
-      );
+    if (new Set(ids).size !== ids.length)
+      throw new HttpError(400, '图片引用不能重复。', undefined, problem('ATTACHMENT_INVALID'));
     return ids.map((id) => {
       const row = this.require(conversationId, id);
       if (row.status !== 'ready')
@@ -192,7 +152,7 @@ export class AttachmentStore {
           undefined,
           problem('ATTACHMENT_INVALID'),
         );
-      const response = await this.response(conversationId, image.attachmentId);
+      const response = await this.response(conversationId, image.attachmentId, false, true);
       try {
         assertChatImage(new Uint8Array(await response.arrayBuffer()), image.mediaType);
       } catch (error) {
@@ -297,37 +257,6 @@ export class AttachmentStore {
           );
         return this.public(existing);
       }
-      const space = this.storage.sql
-        .exec<{ count: number; bytes: number }>(
-          'SELECT COUNT(*) AS count, COALESCE(SUM(a.size + COALESCE(d.bytes, 0)), 0) AS bytes FROM attachments a LEFT JOIN attachment_documents d ON d.id=a.id',
-        )
-        .one();
-      const local = this.storage.sql
-        .exec<{ count: number; bytes: number }>(
-          'SELECT COUNT(*) AS count, COALESCE(SUM(a.size + COALESCE(d.bytes, 0)), 0) AS bytes FROM attachments a LEFT JOIN attachment_documents d ON d.id=a.id WHERE a.conversationId = ?',
-          conversationId,
-        )
-        .one();
-      if (
-        space.count >= MAX_SPACE_ATTACHMENTS ||
-        space.bytes + input.size > MAX_SPACE_ATTACHMENT_BYTES
-      )
-        throw new HttpError(
-          507,
-          '空间附件容量已满，请删除附件后重试。',
-          undefined,
-          problem('STORAGE_FULL'),
-        );
-      if (
-        local.count >= MAX_CONVERSATION_ATTACHMENTS ||
-        local.bytes + input.size > MAX_CONVERSATION_ATTACHMENT_BYTES
-      )
-        throw new HttpError(
-          507,
-          '此对话附件容量已满，请删除附件后重试。',
-          undefined,
-          problem('ATTACHMENT_INVALID'),
-        );
       const createdAt = Date.now();
       this.storage.sql.exec(
         'INSERT INTO attachments VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, NULL, 0)',
@@ -363,26 +292,6 @@ export class AttachmentStore {
     }
     const token = crypto.randomUUID();
     this.storage.transactionSync(() => {
-      const date = new Date().toISOString().slice(0, 10);
-      const attempts =
-        this.storage.sql
-          .exec<{ count: number }>(
-            'SELECT count FROM attachment_daily_uploads WHERE date = ?',
-            date,
-          )
-          .toArray()[0]?.count ?? 0;
-      if (attempts >= MAX_DAILY_ATTACHMENT_UPLOADS)
-        throw new HttpError(
-          429,
-          '今日附件上传次数已达上限，请明天重试。',
-          undefined,
-          problem('ATTACHMENT_INVALID'),
-        );
-      this.storage.sql.exec('DELETE FROM attachment_daily_uploads WHERE date < ?', date);
-      this.storage.sql.exec(
-        'INSERT INTO attachment_daily_uploads VALUES (?, 1) ON CONFLICT(date) DO UPDATE SET count = count + 1',
-        date,
-      );
       this.storage.sql.exec(
         "UPDATE attachments SET status = 'uploading', token = ?, lease = ? WHERE id = ?",
         token,
@@ -505,12 +414,22 @@ export class AttachmentStore {
       this.active.delete(id);
     }
   }
-  async response(conversationId: string, id: string, head = false): Promise<Response> {
+  async response(
+    conversationId: string,
+    id: string,
+    head = false,
+    imageHeader = false,
+  ): Promise<Response> {
     const bucket = this.configuredBucket();
     const row = this.require(conversationId, id);
     if (row.status !== 'ready')
       throw new HttpError(409, '附件尚未上传完成。', undefined, problem('ATTACHMENT_INVALID'));
-    const object = head ? await bucket.head(row.key) : await bucket.get(row.key);
+    // Pinning only needs format/dimensions. Do not load a 100 MB original just
+    // to inspect its header during a copy/restore or before model admission.
+    const length = imageHeader ? Math.min(row.size, MAX_SQL_PAYLOAD_BYTES) : row.size;
+    const object = head
+      ? await bucket.head(row.key)
+      : await bucket.get(row.key, imageHeader ? { range: { offset: 0, length } } : undefined);
     if (!object)
       throw new HttpError(404, '附件文件不存在。', undefined, problem('ATTACHMENT_INVALID'));
     try {
@@ -533,7 +452,7 @@ export class AttachmentStore {
     }
     const headers = new Headers({
       'Content-Type': row.mediaType,
-      'Content-Length': String(object.size),
+      'Content-Length': String(length),
       'Cache-Control': 'no-store',
       'X-Content-Type-Options': 'nosniff',
       'Content-Security-Policy': "default-src 'none'; sandbox",

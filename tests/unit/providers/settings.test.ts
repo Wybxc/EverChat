@@ -1,5 +1,4 @@
 import { MAX_MODEL_TOKENS } from '../../../shared/models/metadata';
-import { MAX_PROVIDER_MODELS } from '../../../shared/providers/limits';
 import { MAX_SYSTEM_PROMPT_LENGTH } from '../../../shared/conversation/limits';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -35,7 +34,7 @@ const settings = {
 test('large model lists, prompts and explicit output limits share their new save bounds', () => {
   const models = [
     settings.providers[0].models[0],
-    ...Array.from({ length: MAX_PROVIDER_MODELS - 1 }, (_, i) => ({
+    ...Array.from({ length: 1000 }, (_, i) => ({
       id: `model-${i}`,
       name: `Model ${i}`,
       enabled: false,
@@ -43,15 +42,15 @@ test('large model lists, prompts and explicit output limits share their new save
   ];
   const input = {
     ...settings,
-    systemPrompt: 'x'.repeat(MAX_SYSTEM_PROMPT_LENGTH),
+    systemPrompt: 'x'.repeat(MAX_SYSTEM_PROMPT_LENGTH - 1024),
     maxOutputTokens: 200_000,
     providers: [{ ...settings.providers[0], models }],
   };
   const saved = mergeProviderSettings(settings, input);
-  assert.equal(saved.providers[0].models.length, MAX_PROVIDER_MODELS);
+  assert.equal(saved.providers[0].models.length, 1001);
   assert.equal(saved.systemPrompt, input.systemPrompt);
   assert.equal(runtimeProviderConfig(saved)?.maxOutputTokens, 200_000);
-  assert.throws(() =>
+  assert.doesNotThrow(() =>
     mergeProviderSettings(settings, {
       ...input,
       providers: [
@@ -60,6 +59,23 @@ test('large model lists, prompts and explicit output limits share their new save
           models: [...models, { id: 'overflow', name: '', enabled: false }],
         },
       ],
+    }),
+  );
+});
+
+test('provider preferences validate encoded SQL row size instead of counting prompt characters', () => {
+  assert.throws(() =>
+    mergeProviderSettings(settings, { ...settings, systemPrompt: '中'.repeat(640_000) }),
+  );
+  assert.doesNotThrow(() =>
+    mergeProviderSettings(settings, {
+      ...settings,
+      providers: Array.from({ length: 51 }, () => ({
+        ...settings.providers[0],
+        id: crypto.randomUUID(),
+      })),
+      activeProviderId: null,
+      activeModel: '',
     }),
   );
 });

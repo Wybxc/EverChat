@@ -7,7 +7,6 @@ import { AttachmentStore } from '../../../worker/attachments/store';
 import type { Env } from '../../../worker/http/env';
 import { HttpError } from '../../../worker/http/response';
 import { Library as ProductionLibrary } from '../../../worker/index';
-import { MAX_CONVERSATIONS } from '../../../worker/platform/resource-limits';
 import type { MeasurementEnv } from './env';
 import { FixtureResourceMeter } from './resource-meter';
 import type { ConversationActivity } from '../../../shared/conversation/activity';
@@ -342,7 +341,7 @@ export class Library extends ProductionLibrary {
         const count = sql
           .exec<{ count: number }>('SELECT COUNT(*) AS count FROM conversations')
           .one().count;
-        for (let index = count; index < MAX_CONVERSATIONS - 1; index++)
+        for (let index = count; index < 128; index++)
           this.create(crypto.randomUUID(), '__capacity_fixture__');
       }
     });
@@ -369,6 +368,10 @@ export class Library extends ProductionLibrary {
   }: AttachmentControl) {
     const date = new Date().toISOString().slice(0, 10),
       sql = this.ctx.storage.sql;
+    // Seed a retired counter only in fixtures, to prove it no longer gates uploads.
+    sql.exec(
+      'CREATE TABLE IF NOT EXISTS attachment_daily_uploads (date TEXT PRIMARY KEY, count INTEGER NOT NULL)',
+    );
     if (releaseText) this.attachmentText.splice(0).forEach((pause) => pause.release());
     for (const [kind, id] of [
       ['put', holdTextPut],

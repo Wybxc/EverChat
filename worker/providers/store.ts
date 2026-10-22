@@ -130,7 +130,11 @@ export class ProviderSettingsStore {
 
   async saveProviderSettingsResponse(body: ReadableStream<Uint8Array>) {
     try {
-      const input = await readJsonStream(body, MAX_BACKUP_BYTES, '供应商配置超过 12 MiB。');
+      const input = await readJsonStream(
+        body,
+        MAX_BACKUP_BYTES,
+        '供应商配置超过单次 JSON 解析的内存保护大小。',
+      );
       const result = this.saveProviderSettings(input as ProviderSettingsInput);
       return 'error' in result
         ? json({ error: result.error, issue: result.issue }, result.status ?? 400)

@@ -34,8 +34,6 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import * as v from 'valibot';
-import { MAX_MESSAGE_DOCUMENTS } from '../../shared/attachments/documents';
-import { MAX_MESSAGE_IMAGES } from '../../shared/attachments/images';
 import { identityKey } from '../../shared/auth/types';
 import { parentKey, summariesOnBranch } from '../../shared/conversation/branches';
 import { messageFiles, messageImages, messageText } from '../../shared/conversation/content';
@@ -2210,7 +2208,6 @@ function AppContent({ initialSettings }: AppProps) {
                       >
                         <ActionMenuItem
                           aria-label={t(($) => $.addFile)}
-                          disabled={draftFiles.length >= MAX_MESSAGE_DOCUMENTS}
                           onClick={() => fileInput.current?.click()}
                         >
                           <Paperclip className="h-[1rem] w-[1rem]" />
@@ -2218,7 +2215,6 @@ function AppContent({ initialSettings }: AppProps) {
                         </ActionMenuItem>
                         <ActionMenuItem
                           aria-label={t(($) => $.addImage)}
-                          disabled={draftImages.length >= MAX_MESSAGE_IMAGES}
                           onClick={() => imageInput.current?.click()}
                         >
                           <ImagePlus className="h-[1rem] w-[1rem]" />

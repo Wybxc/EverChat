@@ -2,11 +2,12 @@ import assert from 'node:assert/strict';
 import { providerStreams } from '../../support/providers/streams';
 import { createHash } from 'node:crypto';
 import { test } from 'node:test';
+import { MAX_ATTACHMENT_BYTES } from '../../../shared/attachments/files';
+import { MAX_BUFFERED_BODY_BYTES } from '../../../shared/platform/limits';
 import * as v from 'valibot';
 import {
   assertChatImage,
   assertImageContext,
-  IMAGE_TOKEN_ALLOWANCE,
   imageDimensions,
   imagePartSchema,
   type ImagePart,
@@ -57,7 +58,7 @@ test('image parts contain only bounded immutable private references and fit cano
   for (const patch of [
     { url: 'https://public/image' },
     { data: png.toString('base64') },
-    { size: 1048577 },
+    { size: MAX_ATTACHMENT_BYTES + 1 },
     { mediaType: 'image/svg+xml' },
     { sha256: 'bad' },
   ])
@@ -70,14 +71,14 @@ test('image parts contain only bounded immutable private references and fit cano
     false,
   );
 });
-test('image format and dimensions are bounded before provider calls', () => {
+test('image format and dimensions are validated without resizing or an arbitrary count limit', () => {
   assert.deepEqual(imageDimensions(png, 'image/png'), { width: 1, height: 1 });
   assert.doesNotThrow(() => assertChatImage(png, 'image/png'));
   assert.throws(() => assertChatImage(png, 'image/jpeg'), /类型/);
   assert.throws(() => assertChatImage(png.subarray(0, 9), 'image/png'), /无效/);
   const large = Buffer.from(png);
   large.writeUInt32BE(5000, 16);
-  assert.throws(() => assertChatImage(large, 'image/png'), /限制/);
+  assert.doesNotThrow(() => assertChatImage(large, 'image/png'));
   assert.throws(
     () => assertImageContext([{ role: 'user', content: '', images: [image] }], {}),
     /不支持图片/,
@@ -86,9 +87,16 @@ test('image format and dimensions are bounded before provider calls', () => {
     () => assertImageContext([{ role: 'assistant', content: '', images: [image] }], config),
     /用户消息/,
   );
+  assert.doesNotThrow(() =>
+    assertImageContext([{ role: 'user', content: '', images: Array(9).fill(image) }], config),
+  );
   assert.throws(
-    () => assertImageContext([{ role: 'user', content: '', images: Array(9).fill(image) }], config),
-    /8 张/,
+    () =>
+      assertImageContext(
+        [{ role: 'user', content: '', images: [{ ...image, size: MAX_BUFFERED_BODY_BYTES }] }],
+        config,
+      ),
+    /内存保护/,
   );
 });
 test('image-only questions, retries, branches and budget planning retain references without binary payloads', () => {
@@ -125,22 +133,20 @@ test('image-only questions, retries, branches and budget planning retain referen
     undefined,
     [image],
   );
-  assert.equal(built.estimate.imageTokens, IMAGE_TOKEN_ALLOWANCE * 2);
-  assert.equal(built.estimate.inputTokens, IMAGE_TOKEN_ALLOWANCE);
+  assert.equal(built.estimate.imageTokens, undefined);
+  assert.equal(built.estimate.inputTokens, 0);
   assert.deepEqual(built.messages.at(-1)?.images, [image]);
-  assert.throws(
-    () =>
-      assertContextFits(
-        buildContext(
-          [],
-          '',
-          config,
-          { ...DEFAULT_CONVERSATION_SETTINGS, contextBudget: 100 },
-          undefined,
-          [image],
-        ).estimate,
-      ),
-    /超过/,
+  assert.doesNotThrow(() =>
+    assertContextFits(
+      buildContext(
+        [],
+        '',
+        config,
+        { ...DEFAULT_CONVERSATION_SETTINGS, contextBudget: 100 },
+        undefined,
+        [image],
+      ).estimate,
+    ),
   );
   assert.ok(!JSON.stringify(built).includes(png.toString('base64')));
 });
@@ -238,7 +244,7 @@ test('history summaries require a vision model and retain image-only source mess
   };
   const prepared = summaryGeneration([user, answer], answer.id, config);
   assert.deepEqual(prepared.context[0].images, [image]);
-  assert.equal(prepared.estimate.imageTokens, IMAGE_TOKEN_ALLOWANCE);
+  assert.equal(prepared.estimate.imageTokens, undefined);
   assert.deepEqual(summaryContext([user, answer], answer.id).history[0].images, [image]);
   assert.throws(
     () => summaryGeneration([user, answer], answer.id, { ...config, modelMetadata: undefined }),

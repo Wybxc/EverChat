@@ -1,12 +1,13 @@
 import type { TextUIPart, ReasoningUIPart } from 'ai';
 import * as v from 'valibot';
-import { MAX_MESSAGE_TEXT_BYTES, MESSAGE_TEXT_LIMIT_MESSAGE, messageTextFits } from './limits';
 import {
-  documentPartSchema,
-  MAX_MESSAGE_DOCUMENTS,
-  type DocumentPart,
-} from '../attachments/documents';
-import { imagePartSchema, MAX_MESSAGE_IMAGES, type ImagePart } from '../attachments/images';
+  MAX_MESSAGE_TEXT_BYTES,
+  MAX_SQL_PAYLOAD_BYTES,
+  MESSAGE_TEXT_LIMIT_MESSAGE,
+  messageTextFits,
+} from './limits';
+import { documentPartSchema, type DocumentPart } from '../attachments/documents';
+import { imagePartSchema, type ImagePart } from '../attachments/images';
 
 /** SDK UI text shapes; EverChat aggregates channels independently of SSE event order. */
 export type MessagePart =
@@ -50,7 +51,6 @@ export const messagePartsSchema = v.pipe(
       documentPartSchema,
     ]),
   ),
-  v.maxLength(2 + MAX_MESSAGE_IMAGES + MAX_MESSAGE_DOCUMENTS),
   v.check(
     (parts) => messageTextFits(messageText({ parts }), messageText({ parts }, 'reasoning')),
     MESSAGE_TEXT_LIMIT_MESSAGE,
@@ -61,8 +61,8 @@ export const messagePartsSchema = v.pipe(
       files = parts.filter((part) => part.type === 'file');
     const attachments = [...images, ...files];
     return (
-      images.length <= MAX_MESSAGE_IMAGES &&
-      files.length <= MAX_MESSAGE_DOCUMENTS &&
+      new TextEncoder().encode(JSON.stringify(images)).byteLength <= MAX_SQL_PAYLOAD_BYTES &&
+      new TextEncoder().encode(JSON.stringify(files)).byteLength <= MAX_SQL_PAYLOAD_BYTES &&
       new Set(attachments.map((file) => file.attachmentId)).size === attachments.length &&
       channels.length <= 2 &&
       (channels.length < 2 || (channels[0].type === 'reasoning' && channels[1].type === 'text')) &&

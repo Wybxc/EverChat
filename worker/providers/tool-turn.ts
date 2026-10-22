@@ -1,6 +1,10 @@
 import { valibotSchema } from '@ai-sdk/valibot';
 import type { ModelMessage, TypedToolCall, ToolSet } from 'ai';
-import { MAX_MESSAGE_TEXT_BYTES, jsonTextBytes } from '../../shared/conversation/limits';
+import {
+  MAX_MESSAGE_TEXT_BYTES,
+  MAX_SQL_PAYLOAD_BYTES,
+  jsonTextBytes,
+} from '../../shared/conversation/limits';
 import type {
   LanguageModelV4FunctionTool,
   LanguageModelV4StreamPart,
@@ -15,7 +19,6 @@ import type { ProviderConfig } from '../../shared/providers/types';
 import {
   assertWebToolSupport,
   webToolInputSchemas,
-  MAX_TOOL_CALLS_PER_TURN,
   MAX_TOOL_INPUT_BYTES,
   validateWebToolCall,
   validateWebToolCandidate,
@@ -27,7 +30,7 @@ import {
 } from '../../shared/web-tools/tasks';
 import { ProviderError } from '../generation/errors';
 
-const MAX_TOOL_TURN_CONTEXT_BYTES = 1024 * 1024;
+const MAX_TOOL_TURN_CONTEXT_BYTES = MAX_SQL_PAYLOAD_BYTES;
 type AssistantPart =
   LanguageModelV4TextPart | LanguageModelV4ReasoningPart | LanguageModelV4ToolCallPart;
 // This private continuation never enters messages, snapshots, exports or client caches.
@@ -77,14 +80,8 @@ function toolWireIdentity(config: ProviderConfig) {
       (name === undefined || name === previous.name)
     )
       return;
-    if (
-      previous ||
-      typeof value !== 'string' ||
-      typeof name !== 'string' ||
-      ids.has(value) ||
-      slots.size >= MAX_TOOL_CALLS_PER_TURN
-    )
-      throw new Error('工具调用标识重复、缺失或数量过多。');
+    if (previous || typeof value !== 'string' || typeof name !== 'string' || ids.has(value))
+      throw new Error('工具调用标识重复或缺失。');
     validateWebToolIdentity(value, name);
     ids.add(value);
     slots.set(slot, { id: value, name });
@@ -243,9 +240,7 @@ export function validateProviderToolTurn(
     turn.identity !== providerToolIdentity(config) ||
     !Array.isArray(turn.content) ||
     !turn.content.length ||
-    turn.content.length > 64 ||
     !Array.isArray(turn.calls) ||
-    turn.calls.length > MAX_TOOL_CALLS_PER_TURN ||
     bytes(turn) > MAX_TOOL_TURN_CONTEXT_BYTES ||
     !['stop', 'length', 'tool-calls'].includes(turn.finishReason) ||
     turn.calls.length > 0 !== (turn.finishReason === 'tool-calls')
@@ -318,14 +313,11 @@ export class ProviderToolCollector {
       return;
     }
     const add = (part: AssistantPart) => {
-      if (content.length >= 64) throw new ProviderError('工具轮次的内容部分超过限制。');
       content.push(part);
     };
     const toolBlock = (id: string, name: string) => {
       let block = toolBlocks.get(id);
       if (!block) {
-        if (toolBlocks.size >= MAX_TOOL_CALLS_PER_TURN)
-          throw new ProviderError('模型返回了未启用的工具或过多调用。');
         validateWebToolIdentity(id, name);
         const part: LanguageModelV4ToolCallPart = {
           type: 'tool-call',

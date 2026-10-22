@@ -2,13 +2,7 @@ import { expect, test, type APIRequestContext } from '@playwright/test';
 import { messageText } from '../../../shared/conversation/content';
 import type { ProviderSettings } from '../../../shared/providers/types';
 import type { Snapshot } from '../../../shared/streaming/protocol';
-import {
-  MAX_CONVERSATIONS,
-  MAX_DATABASE_BYTES,
-  MAX_DATABASE_START_BYTES,
-  MAX_DATABASE_WRITE_BYTES,
-  STORAGE_QUOTA_MESSAGE,
-} from '../../../worker/platform/resource-limits';
+import { STORAGE_QUOTA_MESSAGE } from '../../../worker/platform/resource-limits';
 const headers = { Origin: 'http://127.0.0.1:5174' };
 const action = (request: APIRequestContext, id: string, name: string, data: unknown = {}) =>
   request.post(`/api/__test/conversations/${id}/${name}`, { headers, data });
@@ -106,38 +100,15 @@ test('large unrelated branches no longer reject generation at four MiB of histor
   }
 });
 
-test('database allocation reserves space for generation and blocks before accepting an input', async ({
+test('generation remains usable above the previous per-conversation database budget', async ({
   request,
 }) => {
   const fixture = await setup(request);
   try {
-    expect(
-      (await action(request, fixture.id, 'fill', { target: MAX_DATABASE_START_BYTES + 4096 })).ok(),
-    ).toBe(true);
-    const response = await request.post(`/api/conversations/${fixture.id}/messages`, {
-      headers,
-      data: { parentId: null, requestId: crypto.randomUUID(), content: '容量不足' },
-    });
-    expect(response.status()).toBe(507);
-    expect((await response.json()).error).toContain('存储容量');
-    expect(
-      await action(request, fixture.id, 'resources').then((response) => response.json()),
-    ).toMatchObject({ messages: 0, runs: 0, calls: 0 });
-  } finally {
-    await fixture.restore();
-  }
-});
-
-test('capacity reached during generation terminates without retrying, retains the durable prefix and releases stored context', async ({
-  request,
-}) => {
-  const fixture = await setup(request);
-  try {
-    const input = {
-      parentId: null,
-      requestId: crypto.randomUUID(),
-      content: '开始后模拟空间不足',
-    };
+    expect((await action(request, fixture.id, 'fill', { target: 33 * 1024 * 1024 })).ok()).toBe(
+      true,
+    );
+    const input = { parentId: null, requestId: crypto.randomUUID(), content: '继续生成' };
     const response = await request.post(`/api/conversations/${fixture.id}/messages`, {
       headers,
       data: input,
@@ -149,35 +120,14 @@ test('capacity reached during generation terminates without retrying, retains th
         .get(`/api/conversations/${fixture.id}`)
         .then((result) => result.json()) as Promise<Snapshot>;
     await expect
-      .poll(async () => messageText((await snapshot()).messages[1]).length)
-      .toBeGreaterThan(0);
-    const prefix = messageText((await snapshot()).messages[1]);
-    expect(
-      (await action(request, fixture.id, 'fill', { target: MAX_DATABASE_WRITE_BYTES + 4096 })).ok(),
-    ).toBe(true);
-    await expect.poll(async () => (await snapshot()).messages[1].status).toBe('failed');
-    const stored = await snapshot();
-    expect(messageText(stored.messages[1]).startsWith(prefix)).toBe(true);
-    expect(messageText(stored.messages[1])).not.toContain('服务端生成完成');
-    expect(stored.messages[1].error).toContain('存储容量');
-    expect(stored.messages[1].generation?.failure).toMatchObject({
-      stage: 'storage',
-      code: 'CONVERSATION_STORAGE_CAPACITY',
-      type: 'write',
-    });
-    const resources = await action(request, fixture.id, 'resources').then((result) =>
-      result.json(),
-    );
-    expect(resources).toMatchObject({ calls: 1, runs: 1, retainedContexts: 0, journalRows: 0 });
-    expect(resources.databaseBytes).toBeLessThanOrEqual(MAX_DATABASE_BYTES);
+      .poll(async () => (await snapshot()).messages[1]?.status, { timeout: 30_000 })
+      .toBe('completed');
+    expect(messageText((await snapshot()).messages[1])).toContain('服务端生成完成');
     const repeated = await request.post(`/api/conversations/${fixture.id}/messages`, {
       headers,
       data: input,
     });
-    expect(repeated.status()).toBe(202);
     expect(await repeated.json()).toEqual(accepted);
-    expect((await action(request, fixture.id, 'alarm')).ok()).toBe(true);
-    expect(await snapshot()).toEqual(stored);
     expect(
       (await action(request, fixture.id, 'resources').then((result) => result.json())).calls,
     ).toBe(1);
@@ -186,7 +136,7 @@ test('capacity reached during generation terminates without retrying, retains th
   }
 });
 
-test('Library serializes concurrent creations at the limit and allows idempotent retries when full', async ({
+test('Library creates conversations beyond 128 and preserves idempotent retries', async ({
   request,
 }) => {
   expect((await request.post('/__dev/access/login', { headers })).ok()).toBe(true);
@@ -195,7 +145,7 @@ test('Library serializes concurrent creations at the limit and allows idempotent
   let createdId: string | undefined;
   try {
     expect(await capacity(true).then((response) => response.json())).toEqual({
-      count: MAX_CONVERSATIONS - 1,
+      count: 128,
     });
     const ids = Array.from({ length: 12 }, () => crypto.randomUUID());
     const responses = await Promise.all(
@@ -206,8 +156,8 @@ test('Library serializes concurrent creations at the limit and allows idempotent
         }),
       ),
     );
-    expect(responses.filter((response) => response.status() === 201)).toHaveLength(1);
-    expect(responses.filter((response) => response.status() === 507)).toHaveLength(11);
+    expect(responses.filter((response) => response.status() === 201)).toHaveLength(12);
+    expect(responses.filter((response) => response.status() === 507)).toHaveLength(0);
     const index = responses.findIndex((response) => response.status() === 201);
     createdId = ids[index];
     const repeated = await request.post('/api/conversations', {
@@ -221,7 +171,7 @@ test('Library serializes concurrent creations at the limit and allows idempotent
         .get('/api/conversations')
         .then((response) => response.json())
         .then((items) => items.conversations.length),
-    ).toBe(MAX_CONVERSATIONS);
+    ).toBe(140);
   } finally {
     expect((await capacity(false)).ok()).toBe(true);
     if (createdId) {
@@ -230,6 +180,39 @@ test('Library serializes concurrent creations at the limit and allows idempotent
         .then((response) => response.json());
       expect(search.progress).toBeNull();
     }
+  }
+});
+
+test('a conversation with over 1,000 messages can still accept another generation', async ({
+  request,
+}) => {
+  const fixture = await setup(request);
+  try {
+    expect((await action(request, fixture.id, 'indexed-history', { count: 1001 })).ok()).toBe(true);
+    const before = (await request
+      .get(`/api/conversations/${fixture.id}`)
+      .then((result) => result.json())) as Snapshot;
+    const response = await request.post(`/api/conversations/${fixture.id}/messages`, {
+      headers,
+      data: {
+        parentId: before.messages[0].id,
+        requestId: crypto.randomUUID(),
+        content: '继续所选分支',
+      },
+    });
+    expect(response.status(), await response.text()).toBe(202);
+    await expect
+      .poll(
+        async () =>
+          (
+            await request
+              .get(`/api/conversations/${fixture.id}/storage`)
+              .then((result) => result.json())
+          ).messages,
+      )
+      .toBe(1003);
+  } finally {
+    await fixture.restore();
   }
 });
 

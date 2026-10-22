@@ -36,7 +36,7 @@ export default {
   outputReserve: '输出预留',
   separateWindow: '（独立窗口）',
   safetyMargin: '估算余量',
-  estimateHint: '近似值；输出预留不设置请求上限，实际用量以供应商报告为准。',
+  estimateHint: '仅估算文本与文档，不含图片；只为显式输出预算预留空间，实际用量以供应商报告为准。',
   autoCompactionNotice: '发送时先自动压缩历史，会额外调用摘要模型。',
   moreChatActions: '更多会话操作',
   updateFailed: '修改失败，请重试。',

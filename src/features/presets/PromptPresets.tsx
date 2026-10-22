@@ -8,7 +8,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 import { useTranslation } from 'react-i18next';
 import * as v from 'valibot';
 import { MAX_SYSTEM_PROMPT_LENGTH } from '../../../shared/conversation/limits';
-import { MAX_PROMPT_PRESETS, promptPresetInputSchema } from '../../../shared/presets/schema';
+import { promptPresetInputSchema } from '../../../shared/presets/schema';
 import { DEFAULT_PROMPT_PRESET_ID, type PromptPreset } from '../../../shared/presets/types';
 import { Modal, ModalTitle } from '../../components/Modal';
 import { AutosaveToast } from '../../components/AutosaveToast';
@@ -212,10 +212,7 @@ export function PromptPresetsPanel({
           variant="secondary"
           ref={addButton}
           type="button"
-          disabled={
-            items.filter((item) => item.id !== DEFAULT_PROMPT_PRESET_ID).length >=
-              MAX_PROMPT_PRESETS || !query.data
-          }
+          disabled={!query.data}
           onClick={add}
         >
           <Plus className="h-[0.9375rem] w-[0.9375rem]" />
@@ -238,9 +235,6 @@ export function PromptPresetsPanel({
           changed={changed}
           removed={removed}
           copy={copy}
-          canCopy={
-            items.filter((item) => item.id !== DEFAULT_PROMPT_PRESET_ID).length < MAX_PROMPT_PRESETS
-          }
           beforeDefaultSave={beforeDefaultSave}
           onDefaultSaved={onDefaultSaved}
         />
@@ -255,7 +249,6 @@ function PresetEditor({
   changed,
   removed,
   copy,
-  canCopy,
   beforeDefaultSave,
   onDefaultSaved,
 }: {
@@ -264,7 +257,6 @@ function PresetEditor({
   changed: () => void;
   removed: () => void;
   copy: (preset: PromptPreset) => void;
-  canCopy: boolean;
   beforeDefaultSave?: () => Promise<unknown>;
   onDefaultSaved?: () => Promise<void>;
 }) {
@@ -425,12 +417,7 @@ function PresetEditor({
         <div className="flex flex-wrap gap-2">
           {status === 'error' && (
             <>
-              <Button
-                variant="secondary"
-                type="button"
-                disabled={!canCopy}
-                onClick={() => copy(settings)}
-              >
+              <Button variant="secondary" type="button" onClick={() => copy(settings)}>
                 {t(($) => $.saveAsNew)}
               </Button>
             </>

@@ -13,7 +13,7 @@ import {
 } from './diagnostics';
 import type { ProviderKind } from '../providers/types';
 
-export const MAX_EVENT_CHARACTERS = 1024 * 1024;
+export const MAX_EVENT_CHARACTERS = 2_000_000;
 export const FINISH_REASONS = [
   'stop',
   'length',

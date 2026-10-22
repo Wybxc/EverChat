@@ -1,9 +1,9 @@
-// Keep message/event rows below SQLite's 2 MB row limit, including JSON escaping,
-// metadata and restore event envelopes. This is a combined text + reasoning budget.
+// Cloudflare SQLite limits each row/string to 2,000,000 bytes. Leave space for
+// IDs, metadata and serialization envelopes; this is a per-row bound, not a chat quota.
 export const MAX_SQL_PAYLOAD_BYTES = 1_900_000;
-export const MAX_MESSAGE_TEXT_BYTES = 768 * 1024;
-export const MAX_SYSTEM_PROMPT_LENGTH = 64_000;
-export const MESSAGE_TEXT_LIMIT_MESSAGE = '消息正文与思考内容合计超过 768 KiB 的存储保护大小。';
+export const MAX_MESSAGE_TEXT_BYTES = MAX_SQL_PAYLOAD_BYTES;
+export const MAX_SYSTEM_PROMPT_LENGTH = MAX_SQL_PAYLOAD_BYTES;
+export const MESSAGE_TEXT_LIMIT_MESSAGE = '消息正文与思考内容超过数据库单行存储大小。';
 
 // Count JSON string contents, excluding the surrounding quotes. Control characters
 // and lone surrogates must count their escaped size, not just their UTF-8 size.

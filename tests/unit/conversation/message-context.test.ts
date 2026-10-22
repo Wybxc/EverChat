@@ -101,12 +101,10 @@ test('provider context omits unfinished output and bounds a long branch without 
     status: 'failed',
     parts: messageParts('failed output'),
   });
-  const built = buildContext(
-    contextHistory(messages, parent),
-    'current',
-    config,
-    DEFAULT_CONVERSATION_SETTINGS,
-  );
+  const built = buildContext(contextHistory(messages, parent), 'current', config, {
+    ...DEFAULT_CONVERSATION_SETTINGS,
+    contextBudget: 8000,
+  });
   const context = built.messages;
   assert.ok(context.length < 61);
   assert.ok(built.estimate.totalTokens <= built.estimate.inputBudget);

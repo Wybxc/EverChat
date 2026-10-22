@@ -136,9 +136,9 @@ test('cloud budgeting rejects oversized fixed input, keeps a complete branch suf
     for (const patch of [
       { contextBudget: 0 },
       { contextBudget: 1.1 },
-      { contextBudget: 10000001 },
+      { contextBudget: Number.MAX_SAFE_INTEGER + 1 },
       { recentMessages: 0 },
-      { recentMessages: 1001 },
+      { recentMessages: Number.MAX_SAFE_INTEGER + 1 },
       { recentMessages: 1.1 },
     ])
       expect((await fixture.save({ ...defaults, ...patch })).status()).toBe(400);
@@ -167,7 +167,7 @@ test('cloud budgeting rejects oversized fixed input, keeps a complete branch suf
       inputBudget: 300,
       retainedMessages: 2,
       omittedMessages: 2,
-      outputReserve: 1024,
+      outputReserve: 0,
       windowSource: 'manual',
     });
     expect(estimate.totalTokens).toBeLessThanOrEqual(300);
@@ -311,7 +311,7 @@ test('composer estimates reflect model prompts and autosaved budgets across devi
   }
 });
 
-test('an unknown model displays fallback capacity and an over-budget draft stays focused at its original URL', async ({
+test('an unknown model displays unknown capacity and an over-budget draft stays focused at its original URL', async ({
   page,
 }) => {
   const fixture = await setup(page.request, null);
@@ -368,7 +368,7 @@ test('cloud capacity distinguishes separate input limits from combined windows a
     const task = (await accepted.json()) as Submission;
     expect((await fixture.snapshot()).messages.at(-1)!.generation!.context).toMatchObject({
       contextScope: 'input',
-      inputBudget: 900,
+      inputBudget: 1000,
       outputReserve: 900,
     });
     await fixture.stop(task.runId);
@@ -385,9 +385,9 @@ test('cloud capacity distinguishes separate input limits from combined windows a
     expect(
       (await request.put('/api/settings/providers', { headers, data: combined })).status(),
     ).toBe(200);
-    const rejected = await fixture.submit({ content: 'next', settings });
+    const rejected = await fixture.submit({ content: '中'.repeat(100), settings });
     expect(rejected.status()).toBe(400);
-    expect((await rejected.json()).error).toContain('超过上下文预算 0');
+    expect((await rejected.json()).error).toContain('超过上下文预算 100');
     expect((await fixture.snapshot()).messages).toHaveLength(6);
   } finally {
     await fixture.cleanup();

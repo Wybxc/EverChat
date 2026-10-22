@@ -55,17 +55,11 @@ import type { Env } from '../http/env';
 import { HttpError, json, readJsonStream } from '../http/response';
 import { sendWebPush } from '../notifications/push';
 import { NotificationRegistry } from '../notifications/registry';
-import { MAX_CONVERSATIONS } from '../platform/resource-limits';
 import { initializeStorageSchema } from '../platform/storage-schema';
 import { PromptPresetError, PromptPresets } from '../presets/store';
 import { probeModelCapability } from '../providers/probe';
 import { ProviderSettingsStore } from '../providers/store';
-import {
-  SEARCH_CAPACITY_MESSAGE,
-  SearchChanged,
-  SearchIndex,
-  searchRetryDelay,
-} from '../search/index';
+import { SearchChanged, SearchIndex, searchRetryDelay } from '../search/index';
 import { UsageAccounting, modelIdentity } from '../usage/accounting';
 import { USAGE_OUTBOX_SCHEMA } from '../usage/schema';
 import { WebToolSettings } from '../web-tools/settings';
@@ -224,9 +218,7 @@ export class Library extends DurableObject<Env> {
       this.ctx.storage.sql.exec(
         'INSERT INTO search_problems VALUES (?, ?) ON CONFLICT(conversationId) DO UPDATE SET error = excluded.error',
         id,
-        error instanceof Error && error.message === SEARCH_CAPACITY_MESSAGE
-          ? SEARCH_CAPACITY_MESSAGE
-          : '部分对话的索引尚未更新，请稍后重试。',
+        '部分对话的索引尚未更新，请稍后重试。',
       );
       throw error;
     }
@@ -394,16 +386,6 @@ export class Library extends DurableObject<Env> {
       return { error: '此对话正在恢复或已停止。', issue: problem('INVALID_REQUEST'), status: 409 };
     const existing = this.get(id);
     if (existing) return existing;
-    if (
-      this.ctx.storage.sql
-        .exec<{ count: number }>('SELECT COUNT(*) AS count FROM conversations')
-        .one().count >= MAX_CONVERSATIONS
-    ) {
-      return {
-        error: `空间最多保存 ${MAX_CONVERSATIONS} 个对话，请整理已有对话后再创建。`,
-        status: 507,
-      };
-    }
     const now = Date.now();
     this.ctx.storage.sql.exec(
       'INSERT OR IGNORE INTO conversations VALUES (?, ?, ?, ?)',
@@ -687,17 +669,6 @@ export class Library extends DurableObject<Env> {
           undefined,
           problem('CONVERSATION_ID_CONFLICT'),
         );
-      if (
-        this.ctx.storage.sql
-          .exec<{ count: number }>('SELECT COUNT(*) AS count FROM conversations')
-          .one().count >= MAX_CONVERSATIONS
-      )
-        throw new HttpError(
-          507,
-          `空间最多保存 ${MAX_CONVERSATIONS} 个对话，请整理已有对话后再创建。`,
-          undefined,
-          problem('INVALID_REQUEST'),
-        );
       this.ctx.storage.transactionSync(() => {
         this.copies.begin(id, sourceId, messageId, viewHeadId);
         const now = Date.now();
@@ -813,7 +784,7 @@ export class Library extends DurableObject<Env> {
       if (new TextEncoder().encode(payload).byteLength > MAX_BACKUP_BYTES)
         throw new HttpError(
           413,
-          '复制资料超过 12 MiB，请选择较短的分支。',
+          '复制资料超过单次 JSON 解析的内存保护大小。',
           undefined,
           problem('REQUEST_TOO_LARGE'),
         );
@@ -904,7 +875,12 @@ export class Library extends DurableObject<Env> {
         );
       const response = json(textOnly ? manifest.backup : manifest);
       if (new TextEncoder().encode(JSON.stringify(manifest)).byteLength > MAX_BACKUP_BYTES)
-        throw new HttpError(413, '备份清单超过 12 MiB。', undefined, problem('REQUEST_TOO_LARGE'));
+        throw new HttpError(
+          413,
+          '备份清单超过单次 JSON 解析的内存保护大小。',
+          undefined,
+          problem('REQUEST_TOO_LARGE'),
+        );
       return response;
     } catch (error) {
       return json(

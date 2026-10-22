@@ -221,7 +221,6 @@ function ServiceEditor({ initial, active }: { initial: WebToolServiceSettings; a
           aria-label={t(($) => $.dailyLimitLabel)}
           type="number"
           min={1}
-          max={1000}
           step={1}
           className="block w-full border-input sm:max-w-56"
           value={Number.isFinite(settings.dailyLimit) ? settings.dailyLimit : ''}

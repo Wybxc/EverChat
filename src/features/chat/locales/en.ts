@@ -39,7 +39,7 @@ export default {
   separateWindow: '(separate window)',
   safetyMargin: 'Estimated safety margin',
   estimateHint:
-    'Approximate values. The output reserve does not cap requests; provider reports determine actual usage.',
+    'Text and document estimates exclude images. Only an explicit output budget is reserved; provider reports determine actual usage.',
   autoCompactionNotice:
     'History will be compacted before sending, making an extra summary model request.',
   moreChatActions: 'More chat actions',

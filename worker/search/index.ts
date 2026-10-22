@@ -26,8 +26,6 @@ export function searchableMarkdown(markdown: string): string {
   ).trim();
 }
 
-export const MAX_SEARCH_DATABASE_BYTES = 256 * 1024 * 1024;
-export const SEARCH_CAPACITY_MESSAGE = '搜索索引已达到容量限制，请删除不需要的对话后重试。';
 export class SearchChanged extends AppError {
   constructor(message: string) {
     super(problem('SEARCH_STALE'), message);
@@ -124,7 +122,6 @@ export class SearchIndex {
         );
         this.changed();
       }
-      if (sql.databaseSize > MAX_SEARCH_DATABASE_BYTES) throw new Error(SEARCH_CAPACITY_MESSAGE);
     });
   }
   remove(conversationId: string) {

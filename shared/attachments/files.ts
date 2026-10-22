@@ -1,11 +1,7 @@
 import * as v from 'valibot';
+import { MAX_HTTP_BODY_BYTES } from '../platform/limits';
 
-export const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
-export const MAX_CONVERSATION_ATTACHMENT_BYTES = 32 * 1024 * 1024;
-export const MAX_SPACE_ATTACHMENT_BYTES = 512 * 1024 * 1024;
-export const MAX_CONVERSATION_ATTACHMENTS = 64,
-  MAX_SPACE_ATTACHMENTS = 512;
-export const MAX_DAILY_ATTACHMENT_UPLOADS = 100;
+export const MAX_ATTACHMENT_BYTES = MAX_HTTP_BODY_BYTES;
 export const ATTACHMENT_UPLOAD_TIMEOUT = 60_000,
   ATTACHMENT_LEASE = 5 * 60_000;
 export const attachmentInputSchema = v.strictObject({

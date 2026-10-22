@@ -39,7 +39,10 @@ export function ContextEstimateView({ estimate }: { estimate: ContextEstimate })
             aria-label={t(($) => $.viewContextEstimate)}
             aria-description={t(($) => $.contextDescription, {
               total: number.format(estimate.totalTokens),
-              budget: number.format(estimate.inputBudget),
+              budget:
+                estimate.inputBudget === Number.MAX_SAFE_INTEGER
+                  ? '—'
+                  : number.format(estimate.inputBudget),
             })}
           />
         }
@@ -76,7 +79,10 @@ export function ContextEstimateDetails({ estimate }: { estimate: ContextEstimate
             aria-label={t(($) => $.contextEstimate)}
             aria-valuetext={t(($) => $.contextDescription, {
               total: number.format(estimate.totalTokens),
-              budget: number.format(estimate.inputBudget),
+              budget:
+                estimate.inputBudget === Number.MAX_SAFE_INTEGER
+                  ? '—'
+                  : number.format(estimate.inputBudget),
             })}
             value={Math.min(100, ratio * 100)}
           />
@@ -86,7 +92,10 @@ export function ContextEstimateDetails({ estimate }: { estimate: ContextEstimate
       <p>
         {t(($) => $.contextTokens, {
           total: number.format(estimate.totalTokens),
-          budget: number.format(estimate.inputBudget),
+          budget:
+            estimate.inputBudget === Number.MAX_SAFE_INTEGER
+              ? '—'
+              : number.format(estimate.inputBudget),
         })}
       </p>
       <p>
@@ -128,7 +137,8 @@ export function ContextEstimateDetails({ estimate }: { estimate: ContextEstimate
         )}
         <dt>{t(($) => $.modelWindow)}</dt>
         <dd>
-          {number.format(estimate.contextWindow)} · {metadataSourceLabel(estimate.windowSource)}
+          {estimate.windowSource === 'fallback' ? '—' : number.format(estimate.contextWindow)} ·{' '}
+          {metadataSourceLabel(estimate.windowSource)}
         </dd>
         <dt>{t(($) => $.outputReserve)}</dt>
         <dd>

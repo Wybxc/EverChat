@@ -1,5 +1,5 @@
 export default {
-  messageLimit: 'The message and reasoning exceed the 768 KiB storage safety limit.',
+  messageLimit: 'The message and reasoning exceed the database row size.',
   modelLimit:
     'The model list exceeds {{count}} models. Split it across providers or add the models you need manually.',
 

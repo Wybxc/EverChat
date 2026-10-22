@@ -4,11 +4,10 @@ import * as v from 'valibot';
 import {
   documentMediaTypeSchema,
   MAX_DOCUMENT_BYTES,
-  MAX_MESSAGE_DOCUMENTS,
   type DocumentPart,
 } from '../../../shared/attachments/documents';
 import { fileMediaType } from '../../../shared/attachments/files';
-import { MAX_MESSAGE_IMAGES, type ImagePart } from '../../../shared/attachments/images';
+import { type ImagePart } from '../../../shared/attachments/images';
 import type { PDFExtraction } from '../../../shared/attachments/pdf';
 import type { SessionInfo } from '../../../shared/auth/types';
 import { conversationSettingsSchema } from '../../../shared/conversation/settings';
@@ -120,15 +119,6 @@ export function useChatAttachments({
           controller.signal.throwIfAborted();
           if (kind === 'image' && !canAttemptCapability(selectedModel?.metadata, 'imageInput'))
             throw new UiError(uiMessage('attachments', 'visionRequired'));
-          if (
-            (kind === 'image'
-              ? draftImages.length + uploadedImages.length
-              : draftFiles.length + uploadedFiles.length) >=
-            (kind === 'image' ? MAX_MESSAGE_IMAGES : MAX_MESSAGE_DOCUMENTS)
-          )
-            throw new UiError(
-              uiMessage('attachments', kind === 'image' ? 'imageLimit' : 'documentLimit'),
-            );
           setImageProgress({ name: file.name, percent: 0, kind, state: 'processing' });
           const mediaType = fileMediaType(file.name);
           if (
