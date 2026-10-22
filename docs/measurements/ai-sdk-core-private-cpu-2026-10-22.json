@@ -1,0 +1,3846 @@
+{
+  "version": 1,
+  "code": "177aa40",
+  "branch": "codex/ai-sdk-core-ui",
+  "scope": "Bounded private diagnostic only. Same API and DO code in separate scripts; synthetic RS256 identity/local JWKS, no Cloudflare Access edge, no public domain or service token, no real provider requests. Does not replace unchanged production-topology or account-wide quota validation.",
+  "authorizationWindow": {
+    "startedAt": "2026-10-22T02:45:28.720Z",
+    "testCutoff": "2026-10-22T02:57:28.000Z",
+    "cleanupConfirmedAt": "2026-10-22T02:55:51.848Z",
+    "within12Minutes": true
+  },
+  "failedAttempts": [
+    {
+      "version": 1,
+      "startedAt": "2026-10-22T02:45:28.720Z",
+      "code": "177aa40",
+      "complete": false,
+      "scope": "Private Service Binding diagnostic with synthetic upstream. Same API and DO implementation in separate scripts to target the stateless isolate; not the unchanged production deployment topology or Cloudflare Access edge.",
+      "phases": [],
+      "cleanup": [
+        {
+          "worker": "everchat-stream-validation",
+          "deleteStatus": 200
+        },
+        {
+          "worker": "everchat-core-cpu-storage-validation",
+          "deleteStatus": 200
+        },
+        {
+          "namespace": "CONVERSATIONS",
+          "id": "0462c93309f24b2ba37d8d3509ac9e1a",
+          "deleteStatus": 404
+        },
+        {
+          "namespace": "LIBRARY",
+          "id": "f9fc927b6e6b406e9184d311f97b6850",
+          "deleteStatus": 404
+        },
+        {
+          "worker": "everchat-stream-validation",
+          "confirmedStatus": 404
+        },
+        {
+          "worker": "everchat-core-cpu-storage-validation",
+          "confirmedStatus": 404
+        },
+        {
+          "namespace": "CONVERSATIONS",
+          "id": "0462c93309f24b2ba37d8d3509ac9e1a",
+          "confirmedAbsent": true,
+          "verification": "complete namespace list"
+        },
+        {
+          "namespace": "LIBRARY",
+          "id": "f9fc927b6e6b406e9184d311f97b6850",
+          "confirmedAbsent": true,
+          "verification": "complete namespace list"
+        }
+      ],
+      "bindingsMatch": true,
+      "failure": {
+        "name": "AssertionError",
+        "message": "Private remote development proxy ready: timed out"
+      },
+      "driverExit": 143,
+      "productionUnchanged": true,
+      "finishedAt": "2026-10-22T02:47:28.337Z"
+    },
+    {
+      "version": 1,
+      "startedAt": "2026-10-22T02:50:13.189Z",
+      "code": "177aa40",
+      "complete": false,
+      "scope": "Private Service Binding diagnostic with synthetic upstream. Same API and DO implementation in separate scripts to target the stateless isolate; not the unchanged production deployment topology or Cloudflare Access edge.",
+      "phases": [],
+      "cleanup": [
+        {
+          "worker": "everchat-stream-validation",
+          "deleteStatus": 200
+        },
+        {
+          "worker": "everchat-core-cpu-storage-validation",
+          "deleteStatus": 200
+        },
+        {
+          "namespace": "CONVERSATIONS",
+          "id": "d632bb34ea894883b3b997967aaced9c",
+          "deleteStatus": 404
+        },
+        {
+          "namespace": "LIBRARY",
+          "id": "3d9917477bd64faab86cd603ad53599e",
+          "deleteStatus": 404
+        },
+        {
+          "worker": "everchat-stream-validation",
+          "confirmedStatus": 404
+        },
+        {
+          "worker": "everchat-core-cpu-storage-validation",
+          "confirmedStatus": 404
+        },
+        {
+          "namespace": "CONVERSATIONS",
+          "id": "d632bb34ea894883b3b997967aaced9c",
+          "confirmedAbsent": true,
+          "verification": "complete namespace list"
+        },
+        {
+          "namespace": "LIBRARY",
+          "id": "3d9917477bd64faab86cd603ad53599e",
+          "confirmedAbsent": true,
+          "verification": "complete namespace list"
+        }
+      ],
+      "bindingsMatch": true,
+      "failure": {
+        "name": "AssertionError",
+        "message": "Tail ready: timed out"
+      },
+      "productionUnchanged": true,
+      "finishedAt": "2026-10-22T02:51:25.657Z"
+    }
+  ],
+  "completedAttempt": {
+    "version": 1,
+    "startedAt": "2026-10-22T02:52:05.322Z",
+    "code": "177aa40",
+    "complete": true,
+    "scope": "Private Service Binding diagnostic with synthetic upstream. Same API and DO implementation in separate scripts to target the stateless isolate; not the unchanged production deployment topology or Cloudflare Access edge.",
+    "phases": [
+      {
+        "name": "warm",
+        "startedAt": "2026-10-22T02:52:39.706Z",
+        "requested": 40,
+        "completed": 40,
+        "finishedAt": "2026-10-22T02:52:46.024Z"
+      },
+      {
+        "name": "active",
+        "startedAt": "2026-10-22T02:52:46.522Z",
+        "requested": 80,
+        "completed": 80,
+        "finishedAt": "2026-10-22T02:52:54.887Z"
+      },
+      {
+        "name": "terminal",
+        "startedAt": "2026-10-22T02:53:58.902Z",
+        "requested": 20,
+        "completed": 20,
+        "finishedAt": "2026-10-22T02:54:01.951Z"
+      }
+    ],
+    "cleanup": [
+      {
+        "worker": "everchat-stream-validation",
+        "deleteStatus": 200
+      },
+      {
+        "worker": "everchat-core-cpu-storage-validation",
+        "deleteStatus": 200
+      },
+      {
+        "namespace": "CONVERSATIONS",
+        "id": "cd31e7f1b5334f5aa494eab57a8aba25",
+        "deleteStatus": 404
+      },
+      {
+        "namespace": "LIBRARY",
+        "id": "e86cfa7707554ffabf7c342c461075c2",
+        "deleteStatus": 404
+      },
+      {
+        "worker": "everchat-stream-validation",
+        "confirmedStatus": 404
+      },
+      {
+        "worker": "everchat-core-cpu-storage-validation",
+        "confirmedStatus": 404
+      },
+      {
+        "namespace": "CONVERSATIONS",
+        "id": "cd31e7f1b5334f5aa494eab57a8aba25",
+        "confirmedAbsent": true,
+        "verification": "complete namespace list"
+      },
+      {
+        "namespace": "LIBRARY",
+        "id": "e86cfa7707554ffabf7c342c461075c2",
+        "confirmedAbsent": true,
+        "verification": "complete namespace list"
+      }
+    ],
+    "bindingsMatch": true,
+    "unauthorizedStatus": 401,
+    "transport": {
+      "publicDomains": 0,
+      "accessServiceTokens": 0,
+      "authentication": "RS256 verification with synthetic local JWKS; Cloudflare Access edge excluded",
+      "driver": "Authenticated temporary remote preview via Wrangler edge-preview API"
+    },
+    "measurementStartedAt": "2026-10-22T02:52:39.706Z",
+    "warmProfile": {
+      "name": "warm",
+      "status": 404,
+      "bytes": 179,
+      "available": false
+    },
+    "activeProfile": {
+      "name": "active",
+      "status": 404,
+      "bytes": 179,
+      "available": false
+    },
+    "output": {
+      "text": 84000,
+      "reasoning": 84000,
+      "status": "completed"
+    },
+    "measurementFinishedAt": "2026-10-22T02:54:01.951Z",
+    "namespaces": [
+      {
+        "name": "CONVERSATIONS",
+        "id": "cd31e7f1b5334f5aa494eab57a8aba25"
+      },
+      {
+        "name": "LIBRARY",
+        "id": "e86cfa7707554ffabf7c342c461075c2"
+      }
+    ],
+    "window": {
+      "start": "2026-10-22T02:52:00.000Z",
+      "end": "2026-10-22T02:55:00.000Z"
+    },
+    "workerMetrics": {
+      "data": {
+        "viewer": {
+          "accounts": [
+            {
+              "workersInvocationsAdaptive": [
+                {
+                  "avg": {
+                    "sampleInterval": 1
+                  },
+                  "dimensions": {
+                    "status": "success"
+                  },
+                  "max": {
+                    "cpuTime": 6336,
+                    "memoryUsageBytes": 13739611
+                  },
+                  "quantiles": {
+                    "cpuTimeP50": 2140,
+                    "cpuTimeP99": 6336
+                  },
+                  "sum": {
+                    "cpuTimeUs": 66576,
+                    "errors": 0,
+                    "requests": 27
+                  }
+                },
+                {
+                  "avg": {
+                    "sampleInterval": 1
+                  },
+                  "dimensions": {
+                    "status": "responseStreamDisconnected"
+                  },
+                  "max": {
+                    "cpuTime": 18033,
+                    "memoryUsageBytes": 13481571
+                  },
+                  "quantiles": {
+                    "cpuTimeP50": 2133,
+                    "cpuTimeP99": 15295
+                  },
+                  "sum": {
+                    "cpuTimeUs": 373952,
+                    "errors": 0,
+                    "requests": 140
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "errors": null
+    },
+    "doMetrics": {
+      "data": {
+        "viewer": {
+          "accounts": [
+            {
+              "durableObjectsPeriodicGroups": []
+            }
+          ]
+        }
+      },
+      "errors": null
+    },
+    "storage": {
+      "sampledAt": "2026-10-22T02:55:47.463Z",
+      "libraryBytes": 1261568,
+      "conversationBytes": [
+        860160
+      ],
+      "scope": "Post-run SQLite database allocation from deployed objects. Not a platform billing total or the peak during streaming."
+    },
+    "productionUnchanged": true,
+    "finishedAt": "2026-10-22T02:55:51.848Z"
+  },
+  "tail": {
+    "version": 1,
+    "workerName": "everchat-stream-validation",
+    "startedAt": "2026-10-22T02:52:32.402Z",
+    "finishedAt": "2026-10-22T02:55:48.097Z",
+    "connected": true,
+    "code": 0,
+    "malformed": 0,
+    "dropped": 0,
+    "partialFrame": false,
+    "events": [
+      {
+        "timestamp": 1792637555196,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/session",
+        "cpuTime": 0,
+        "wallTime": 1,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637557299,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "PUT",
+        "path": "/api/settings/providers",
+        "cpuTime": 4,
+        "wallTime": 859,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637558238,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "POST",
+        "path": "/api/conversations",
+        "cpuTime": 2,
+        "wallTime": 58,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637558456,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 2,
+        "wallTime": 1199,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637559898,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 33,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637560180,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 8,
+        "wallTime": 864,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637560105,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 12,
+        "wallTime": 848,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637560215,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 6,
+        "wallTime": 831,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637561627,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 20,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637560399,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 852,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637561437,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 21,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637561478,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 19,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637562786,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 19,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637561557,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 7,
+        "wallTime": 870,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637563457,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 31,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637561914,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 6,
+        "wallTime": 906,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637561913,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 18,
+        "wallTime": 955,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637563190,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 4,
+        "wallTime": 65,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637562048,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 15,
+        "wallTime": 876,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637563606,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 73,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637563661,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 4,
+        "wallTime": 66,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637563730,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 3,
+        "wallTime": 32,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637563855,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 28,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637564136,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 21,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637564101,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 29,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637564149,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 3,
+        "wallTime": 26,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637564210,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 20,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637564476,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 22,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637564539,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 22,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637564525,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 32,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637564602,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 3,
+        "wallTime": 22,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637564839,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 22,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637564897,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 3,
+        "wallTime": 18,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637564864,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 4,
+        "wallTime": 46,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637564986,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 16,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637565218,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 19,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637565224,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 38,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637565251,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 32,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637565337,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 35,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637565537,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 18,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637565601,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 38,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637565605,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 5,
+        "wallTime": 46,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637565726,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 23,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637565867,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 20,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637566299,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "POST",
+        "path": "/api/conversations/:id/messages",
+        "cpuTime": 4,
+        "wallTime": 193,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637566679,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 17,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637566697,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 3,
+        "wallTime": 34,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637566725,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 3,
+        "wallTime": 25,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637566699,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 37,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637567007,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 20,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637567032,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 22,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637567076,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 26,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637567347,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 3,
+        "wallTime": 32,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637567429,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 20,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637567501,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 53,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637567778,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 21,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637567875,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 22,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637567939,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 20,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637568120,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 43,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637568212,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 3,
+        "wallTime": 32,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637568221,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 3,
+        "wallTime": 31,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637568562,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 28,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637568567,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 27,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637568693,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 3,
+        "wallTime": 52,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637568925,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 4,
+        "wallTime": 28,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637569108,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 38,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637569257,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 22,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637569800,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 39,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637570191,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 22,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637570417,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 4,
+        "wallTime": 34,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637570599,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 26,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637570753,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 17,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637570840,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 3,
+        "wallTime": 35,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637570950,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 29,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637571134,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 3,
+        "wallTime": 29,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637571535,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 25,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637571894,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 32,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637572155,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 22,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637572224,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 18,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637572639,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 23,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637572314,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 29,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637572956,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 36,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637572970,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 27,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637573028,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 22,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637573096,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 26,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637573264,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 25,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637573321,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 16,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637573352,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 34,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637573445,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 16,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637573579,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 24,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637573826,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 18,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637573803,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 19,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637573915,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 41,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637574052,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 3,
+        "wallTime": 25,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637574158,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 24,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637574236,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 37,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637574611,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 19,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637574613,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 40,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637575101,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 28,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637578281,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 29,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637581388,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 2,
+        "wallTime": 26,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637584491,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 2,
+        "wallTime": 35,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637587608,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 2,
+        "wallTime": 36,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637590743,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 2,
+        "wallTime": 31,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637593864,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 3,
+        "wallTime": 40,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637596985,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 2,
+        "wallTime": 43,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637600119,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 36,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637603241,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 2,
+        "wallTime": 40,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637606376,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 2,
+        "wallTime": 43,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637609498,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 39,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637612718,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 31,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637615853,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 44,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637619288,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 42,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637622449,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 2,
+        "wallTime": 45,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637625622,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 2,
+        "wallTime": 44,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637629179,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 2,
+        "wallTime": 124,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637632393,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 36,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637635553,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 2,
+        "wallTime": 49,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637638721,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 2,
+        "wallTime": 130,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637639292,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 18,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637639387,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 17,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637639340,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 26,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637639448,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 21,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637639735,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 22,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637639841,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 29,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637639888,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 31,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637640069,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 34,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637640274,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 18,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637640232,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 29,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637640493,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 24,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637640646,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 18,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637640358,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 24,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637640884,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 21,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637640939,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 19,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637641081,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 16,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637640729,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 17,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637641295,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 22,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637641418,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 18,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792637641801,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 13,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      }
+    ],
+    "scope": "Sanitized real-time tail. Optional CPU fields may be absent; missing values are not zero. Receipt does not prove exhaustive platform coverage."
+  },
+  "tailPhases": [
+    {
+      "phase": "warm",
+      "completed": 40,
+      "tailSamples": 40,
+      "cpuMs": {
+        "median": 2,
+        "max": 18,
+        "above10ms": 3
+      },
+      "scope": "Tail samples whose invocation timestamp falls within this client phase; not exhaustive platform coverage."
+    },
+    {
+      "phase": "active",
+      "completed": 80,
+      "tailSamples": 53,
+      "cpuMs": {
+        "median": 2,
+        "max": 4,
+        "above10ms": 0
+      },
+      "scope": "Tail samples whose invocation timestamp falls within this client phase; not exhaustive platform coverage."
+    },
+    {
+      "phase": "terminal",
+      "completed": 20,
+      "tailSamples": 20,
+      "cpuMs": {
+        "median": 1,
+        "max": 2,
+        "above10ms": 0
+      },
+      "scope": "Tail samples whose invocation timestamp falls within this client phase; not exhaustive platform coverage."
+    }
+  ],
+  "closedHistoricalWindow": {
+    "originalWorkerFilter": {
+      "queriedAt": "2026-10-22T02:32:52.879Z",
+      "query": "{ viewer { accounts(filter:{accountTag:\"5c157050a6ecab003f5cc64aa3c54db2\"}) { workersInvocationsAdaptive(limit:10,filter:{datetime_geq:\"2026-10-21T17:23:00Z\",datetime_lt:\"2026-10-21T17:30:00Z\",scriptName:\"everchat-stream-validation\"}) { dimensions {status} avg {sampleInterval} sum {requests errors cpuTimeUs} max {cpuTime memoryUsageBytes} quantiles {cpuTimeP50 cpuTimeP99} } } } }",
+      "response": {
+        "data": {
+          "viewer": {
+            "accounts": [
+              {
+                "workersInvocationsAdaptive": []
+              }
+            ]
+          }
+        },
+        "errors": null
+      }
+    },
+    "accountWithoutWorkerFilter": {
+      "queriedAt": "2026-10-22T02:33:43.967Z",
+      "query": "{ viewer { accounts(filter:{accountTag:\"5c157050a6ecab003f5cc64aa3c54db2\"}) { workersInvocationsAdaptive(limit:20,filter:{datetime_geq:\"2026-10-21T17:23:00Z\",datetime_lt:\"2026-10-21T17:30:00Z\"}) { dimensions {scriptName status} sum {requests errors} max {cpuTime memoryUsageBytes} } } } }",
+      "response": {
+        "data": {
+          "viewer": {
+            "accounts": [
+              {
+                "workersInvocationsAdaptive": [
+                  {
+                    "dimensions": {
+                      "scriptName": "__unknown__",
+                      "status": "responseStreamDisconnected"
+                    },
+                    "max": {
+                      "cpuTime": 10208,
+                      "memoryUsageBytes": 32990829
+                    },
+                    "sum": {
+                      "errors": 0,
+                      "requests": 31
+                    }
+                  },
+                  {
+                    "dimensions": {
+                      "scriptName": "__unknown__",
+                      "status": "clientDisconnected"
+                    },
+                    "max": {
+                      "cpuTime": 20524,
+                      "memoryUsageBytes": 33113031
+                    },
+                    "sum": {
+                      "errors": 0,
+                      "requests": 5
+                    }
+                  },
+                  {
+                    "dimensions": {
+                      "scriptName": "__unknown__",
+                      "status": "success"
+                    },
+                    "max": {
+                      "cpuTime": 27593,
+                      "memoryUsageBytes": 33111077
+                    },
+                    "sum": {
+                      "errors": 0,
+                      "requests": 144
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "errors": null
+      }
+    },
+    "withoutNamespaceFilter": {
+      "queriedAt": "2026-10-22T02:34:17.569Z",
+      "query": "{ viewer { accounts(filter:{accountTag:\"5c157050a6ecab003f5cc64aa3c54db2\"}) { durableObjectsPeriodicGroups(limit:10,filter:{datetime_geq:\"2026-10-21T17:23:00Z\",datetime_lt:\"2026-10-21T17:30:00Z\"}) { dimensions {namespaceId} avg {sampleInterval} sum {activeTime cpuTime duration rowsRead rowsWritten exceededCpuErrors exceededMemoryErrors fatalInternalErrors inboundWebsocketMsgCount outboundWebsocketMsgCount} } } } }",
+      "response": {
+        "data": {
+          "viewer": {
+            "accounts": [
+              {
+                "durableObjectsPeriodicGroups": [
+                  {
+                    "avg": {
+                      "sampleInterval": 1
+                    },
+                    "dimensions": {
+                      "namespaceId": "62b5d54229534cd195373add8cc96194"
+                    },
+                    "sum": {
+                      "activeTime": 269355,
+                      "cpuTime": 21616,
+                      "duration": 0.03447744,
+                      "exceededCpuErrors": 0,
+                      "exceededMemoryErrors": 0,
+                      "fatalInternalErrors": 0,
+                      "inboundWebsocketMsgCount": 0,
+                      "outboundWebsocketMsgCount": 0,
+                      "rowsRead": 992,
+                      "rowsWritten": 8
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "errors": null
+      }
+    }
+  },
+  "assessment": {
+    "functional": "40 warm, 80 active, 20 terminal sync handshakes completed; 16000-character input produced and persisted 84000 text and 84000 reasoning characters. No real provider call.",
+    "cpu": "Worker-filtered closed-window aggregation contains 27 success and 140 responseStreamDisconnected invocations at sampleInterval 1; errors zero. Sync CPU p50 2133 us, p99 15295 us, max 18033 us. Tail captured three above-10ms sync events before model submission, on an empty conversation. This rules out generated content/stream consumption as a necessary trigger in this diagnostic; no exact function attribution or constant-load Free guarantee.",
+    "profiles": "Both sampling requests returned HTTP 404, 179 bytes. No pprof obtained; error bodies were not retained.",
+    "do": "DO periodic aggregation returned an empty array before deletion. Not zero consumption; no closed-window DO duration/SQL totals can be concluded.",
+    "storage": "Post-run library allocation 1261568 bytes and conversation allocation 860160 bytes; not peak memory, billing storage, or SQL row totals.",
+    "cleanup": "All six namespaces across the three attempts were absent from complete namespace listings; both private script names returned 404 after each attempt. No Access app/policy/service token or domain was created. Private synthetic JWT/preview token kept in process memory only in completed attempt; local auth/deployment logs removed. Remote preview is temporary, not a deployed public Worker. Production settings digest unchanged.",
+    "release": "Not released. Production CPU attribution and resource assessment remain incomplete; no production topology or authentication change based on this diagnostic."
+  },
+  "remaining": [
+    "Exact sync CPU spike attribution in production topology",
+    "Closed-window DO duration/CPU/SQL usage",
+    "Final production release and Access/share/MCP/notification verification"
+  ],
+  "finalReadOnlyCleanupCheck": {
+    "at": "2026-10-22T02:59:05.225Z",
+    "scripts": [
+      {
+        "name": "everchat-stream-validation",
+        "status": 404
+      },
+      {
+        "name": "everchat-core-cpu-storage-validation",
+        "status": 404
+      },
+      {
+        "name": "everchat-core-cpu-driver-validation",
+        "status": 404
+      }
+    ],
+    "namespacesChecked": 6,
+    "allAbsent": true,
+    "scope": "Persistent script settings and complete namespace list; does not claim immediate expiry of temporary preview sessions."
+  }
+}
