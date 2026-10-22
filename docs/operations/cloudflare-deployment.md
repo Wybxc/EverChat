@@ -1,23 +1,23 @@
 # Cloudflare 生产部署与用量告警
 
-更新日期：2026-10-21。以下为已保存并验证的实际配置；费用以账户账单和 Cloudflare 当前规则为准。
+更新日期：2026-10-22。费用以账户账单和 Cloudflare 当前规则为准；测试与构建拆分的启用顺序见下文。
 
 2026-10-20 配置整理：仓库 `wrangler.jsonc` 不再包含本部署的域名、AUD、团队域名或允许邮箱。已有参数保留在生产 Worker 的变量中，`keep_vars: true` 防止后续发布清除；自定义域名由控制台管理。Worker、DO、Workflow、R2 的名称和绑定保持不变，自动构建命令无需调整。下文的个人站点信息为本次部署记录，不是其他部署者的默认配置。
 
 ## 生产资源
 
-| 项目             | 当前配置                                                                                                                                     |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| 网站             | <https://chat.wybxc.cc>                                                                                                                      |
-| 私有 GitHub 仓库 | <https://github.com/Wybxc/EverChat>                                                                                                          |
-| Worker           | `everchat`                                                                                                                                   |
-| Workers 套餐     | Workers Free                                                                                                                                 |
-| Access 套餐      | Teams Free                                                                                                                                   |
-| Access 应用      | EverChat，保护 `/api`、`/api/*`、`/auth`、`/auth/*`，仅允许配置的所有者邮箱；前端与 SW 公开                                                  |
-| Durable Objects  | `CONVERSATIONS` → `everchat_Conversation`；`LIBRARY` → `everchat_Library`；`USAGE` → `everchat_UsageStore`；`SHARES` → `everchat_ShareStore` |
-| Workflow         | `WEB_TOOLS` → `everchat-web-tools`                                                                                                           |
-| 私有 R2          | `ATTACHMENTS` → `everchat-attachments`，Standard 存储                                                                                        |
-| 备用公开入口     | `workers_dev: false`、`preview_urls: false`                                                                                                  |
+| 项目            | 当前配置                                                                                                                                     |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| 网站            | <https://chat.wybxc.cc>                                                                                                                      |
+| GitHub 仓库     | <https://github.com/Wybxc/EverChat>（公开）                                                                                                  |
+| Worker          | `everchat`                                                                                                                                   |
+| Workers 套餐    | Workers Free                                                                                                                                 |
+| Access 套餐     | Teams Free                                                                                                                                   |
+| Access 应用     | EverChat，保护 `/api`、`/api/*`、`/auth`、`/auth/*`，仅允许配置的所有者邮箱；前端与 SW 公开                                                  |
+| Durable Objects | `CONVERSATIONS` → `everchat_Conversation`；`LIBRARY` → `everchat_Library`；`USAGE` → `everchat_UsageStore`；`SHARES` → `everchat_ShareStore` |
+| Workflow        | `WEB_TOOLS` → `everchat-web-tools`                                                                                                           |
+| 私有 R2         | `ATTACHMENTS` → `everchat-attachments`，Standard 存储                                                                                        |
+| 备用公开入口    | `workers_dev: false`、`preview_urls: false`                                                                                                  |
 
 原 `chat` CNAME 指向已下线的 Tunnel；经用户授权已切换到 Worker Custom Domain。Access 在域名切换前已启用。R2 不开放公共桶或 `r2.dev`，附件由受保护的 Worker 路由读取。
 
@@ -35,23 +35,27 @@ Cloudflare 身份提供商测试显示「Your connection works!」，GitHub 返�
 
 ## GitHub 自动部署
 
-Cloudflare Workers Builds 已连接上述私有仓库，生产分支为 `main`。推送提交后由 Cloudflare 拉取、安装依赖、测试、构建并部署。
+Cloudflare Workers Builds 已连接上述仓库，生产分支为 `main`。测试由 GitHub Actions 在 PR 阶段独立执行；合并后由 Cloudflare 拉取、安装依赖、构建并部署。
 
 | 配置       | 值                                              |
 | ---------- | ----------------------------------------------- |
 | 项目根目录 | `/`                                             |
 | Node.js    | `NODE_VERSION=24.18.0`                          |
 | pnpm       | `PNPM_VERSION=12.6.0`，与 `packageManager` 一致 |
-| 构建命令   | `pnpm test && pnpm build`                       |
+| 构建命令   | `pnpm build`                                    |
 | 部署命令   | `pnpm exec wrangler deploy`                     |
 | 部署凭据   | Cloudflare 保存的专用 `EverChat build token`    |
 | 构建缓存   | 关闭                                            |
 
-`pnpm build` 包含类型检查；单元测试或构建失败时不会执行部署。浏览器端到端、PWA 和资源测量仍在本地运行，不在每次云端构建中重复执行。生产数据保存在 DO／R2，常规代码部署不清空它们。
+`pnpm build` 包含类型检查，构建失败时不会执行部署。[Tests 工作流](../../.github/workflows/tests.yml) 的 `Required tests` 运行格式、类型、单测和本地运维集成。`main` 的分支保护要求该检查通过、分支同步最新 `main` 并通过 PR 合并，管理员同样遵守；单人维护不额外要求另一位审阅者批准。[Browser regression](../../.github/workflows/browser-tests.yml) 手动运行完整 Chromium、macOS WebKit 阅读／搜索及 PWA 回归，独立报告，当前不设为自动合并门槛。
+
+首次切换时，先推送工作流分支并创建 PR，待检查成功，再启用 `main` 的必需检查与 PR 规则，最后将 Cloudflare 构建命令从 `pnpm test && pnpm build` 改为 `pnpm build`。这三个步骤完成前保留原构建命令，避免出现测试空窗。新增 CI 文件本身不会开启远端分支保护或修改 Cloudflare 控制台。
+
+`main` 推送后仍运行一遍 GitHub 检查，用于复核合并结果；该次检查与 Cloudflare 构建可能同时启动，真正的发布门槛是合并前的 PR 检查。平台资源测量、真实 Access、系统通知和真机验收另行执行。生产数据保存在 DO／R2，常规代码部署不清空它们。
 
 构建令牌权限已单独获得用户确认，采用控制台默认部署权限，包含账户级 Workers／R2 等资源编辑与区域 Workers 路由编辑；它不是只读令牌，也不限于一个 Worker。令牌仅交给 Cloudflare Builds，不写入 Git、构建变量明文或浏览器应用。修改／撤销令牌可在 Cloudflare API 令牌管理中完成，撤销会使后续自动部署失败。
 
-查看结果：Workers 和 Pages → `everchat` → 部署。失败先检查依赖安装、测试／类型检查和 Wrangler 日志；保留域名 Access 保护，不能通过放宽认证解决构建问题。[Git 集成](https://developers.cloudflare.com/workers/ci-cd/builds/git-integration/)、[构建镜像与版本变量](https://developers.cloudflare.com/workers/ci-cd/builds/build-image/)。
+测试结果在 GitHub PR 的 Checks／Actions 中查看；发布结果在 Workers 和 Pages → `everchat` → 部署中查看。失败先区分测试、依赖安装、类型／构建和 Wrangler 部署日志；保留域名 Access 保护，不能通过放宽认证解决构建问题。[Git 集成](https://developers.cloudflare.com/workers/ci-cd/builds/git-integration/)、[构建镜像与版本变量](https://developers.cloudflare.com/workers/ci-cd/builds/build-image/)、[必需状态检查](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches#require-status-checks-before-merging)。
 
 ## 平台原生告警
 

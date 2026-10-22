@@ -1,0 +1,62 @@
+name: Browser regression
+
+on:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: Test suite
+        type: choice
+        options: [all, chromium, webkit, pwa]
+        default: all
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-regression-${{ github.ref }}-${{ inputs.suite }}
+  cancel-in-progress: true
+
+env:
+  WRANGLER_SEND_METRICS: 'false'
+
+jobs:
+  browser:
+    name: Browser tests (${{ matrix.suite }})
+    runs-on: ${{ matrix.suite == 'webkit' && 'macos-15' || 'ubuntu-24.04' }}
+    timeout-minutes: ${{ matrix.suite == 'chromium' && 60 || 25 }}
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: ${{ inputs.suite == 'all' && fromJSON('["chromium", "webkit", "pwa"]') || fromJSON(format('["{0}"]', inputs.suite)) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/setup@a0881977cd8ea73b1ed212236c99ca10dcc80cf4 # v3.1.1
+        with:
+          runtime: node@24.18.0
+          cache: true
+          require-lockfile: true
+      - name: Install browsers and system dependencies
+        run: pnpm exec playwright install --with-deps ${{ matrix.suite == 'webkit' && 'webkit' || matrix.suite == 'pwa' && 'chromium webkit' || 'chromium' }}
+      - name: Run Chromium integration and end-to-end tests
+        if: matrix.suite == 'chromium'
+        run: pnpm test:e2e --reporter=line,html
+      - name: Run WebKit reading, navigation and search tests
+        if: matrix.suite == 'webkit'
+        run: pnpm test:e2e --browser=webkit tests/e2e/chat/reading-layout.spec.ts tests/e2e/chat/reading-navigation.spec.ts tests/e2e/chat/search.spec.ts --reporter=line,html
+      - name: Run production PWA tests
+        if: matrix.suite == 'pwa'
+        run: pnpm test:pwa --reporter=line,html
+      - name: Upload failure reports and traces
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tests-${{ matrix.suite }}
+          path: |
+            playwright-report/
+            test-results/
+            test-results-pwa/
+          retention-days: 7
+          if-no-files-found: ignore
