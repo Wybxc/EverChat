@@ -92,3 +92,29 @@ test('internal text never retries HTTP errors, limits response buffering, and pr
   await assert.rejects(generateProviderText(config, input, abort.signal), /caller stopped/);
   assert.equal(requests, 2);
 });
+
+test('DeepSeek auxiliary requests explicitly disable default thinking within the title budget', async (t) => {
+  let requests = 0;
+  t.mock.method(globalThis, 'fetch', async (_url: string, init: RequestInit) => {
+    requests++;
+    const data = JSON.parse(init.body as string);
+    assert.deepEqual(data.thinking, { type: 'disabled' });
+    assert.equal(data.reasoning_effort, undefined);
+    assert.equal(data.max_tokens, 128);
+    return Response.json(body());
+  });
+  const result = await generateProviderText(
+    {
+      ...config,
+      baseUrl: 'https://api.deepseek.com',
+      model: 'deepseek-flash',
+      reasoningEnabled: false,
+      reasoningEffort: 'high',
+    },
+    input,
+    new AbortController().signal,
+  );
+  assert.equal(requests, 1);
+  assert.equal(result.text, 'A title');
+  assert.equal(result.finishReason, 'stop');
+});

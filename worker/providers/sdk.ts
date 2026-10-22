@@ -97,8 +97,10 @@ export function providerGenerationOptions(
             ...(config.provider === 'openai-responses' && controlReasoning
               ? { reasoningSummary: 'auto' }
               : {}),
-            ...(deepseek && controlReasoning
-              ? effort === 'none'
+            // DeepSeek enables thinking by default. Auxiliary calls explicitly
+            // turn it off so reasoning cannot consume their small output budget.
+            ...(deepseek && (config.reasoningEnabled === false || controlReasoning)
+              ? config.reasoningEnabled === false || effort === 'none'
                 ? { thinking: { type: 'disabled' } }
                 : { thinking: { type: 'enabled' }, ...(effort ? { reasoningEffort: effort } : {}) }
               : {}),
