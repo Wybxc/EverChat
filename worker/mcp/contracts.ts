@@ -8,6 +8,34 @@ import {
 const uuid = v.pipe(v.string(), v.uuid());
 const handle = v.pipe(v.string(), v.minLength(1), v.maxLength(2048));
 const wait = v.optional(v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(20_000)), 10_000);
+export const MCP_TOOL_NAMES = [
+  'everchat_help',
+  'everchat_models_list',
+  'everchat_chat',
+  'everchat_run_get',
+  'everchat_run_cancel',
+] as const;
+export type McpToolName = (typeof MCP_TOOL_NAMES)[number];
+export const helpInputSchema = v.strictObject({ tool: v.optional(v.picklist(MCP_TOOL_NAMES)) });
+export const helpResultSchema = v.strictObject({
+  workflow: v.array(v.string()),
+  notes: v.array(v.string()),
+  tools: v.array(
+    v.strictObject({
+      name: v.picklist(MCP_TOOL_NAMES),
+      description: v.string(),
+      inputSchema: v.record(v.string(), v.unknown()),
+      examples: v.array(
+        v.strictObject({
+          description: v.string(),
+          arguments: v.record(v.string(), v.unknown()),
+        }),
+      ),
+      notes: v.array(v.string()),
+    }),
+  ),
+});
+export type HelpResult = v.InferOutput<typeof helpResultSchema>;
 export const chatSchema = v.strictObject({
   requestId: uuid,
   prompt: v.pipe(

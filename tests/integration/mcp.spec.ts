@@ -1,7 +1,7 @@
 import { expect, test, type APIRequestContext } from '@playwright/test';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import type { ProviderSettings } from '../../shared/providers/types';
-import type { ModelsResult, RunResult } from '../../worker/mcp/contracts';
+import type { HelpResult, ModelsResult, RunResult } from '../../worker/mcp/contracts';
 import { openSpaceSettings } from '../support/browser/ui';
 
 const origin = 'http://127.0.0.1:5174',
@@ -84,7 +84,7 @@ async function setup(request: APIRequestContext) {
   };
 }
 
-test('MCP modern and legacy clients share the four-tool contract and all provider protocols save normal conversations', async ({
+test('MCP modern and legacy clients share the tool contract and all provider protocols save normal conversations', async ({
   request,
 }) => {
   const app = await setup(request);
@@ -94,11 +94,20 @@ test('MCP modern and legacy clients share the four-tool contract and all provide
       const tools = await client.listTools();
       expect(tools.tools.map(({ name }) => name).sort()).toEqual([
         'everchat_chat',
+        'everchat_help',
         'everchat_models_list',
         'everchat_run_cancel',
         'everchat_run_get',
       ]);
       for (const tool of tools.tools) expect(tool.outputSchema).toBeTruthy();
+      const help = await app.call<HelpResult>(client, 'everchat_help');
+      expect(help.tools.map(({ name }) => name).sort()).toEqual(
+        tools.tools.map(({ name }) => name).sort(),
+      );
+      for (const tool of help.tools)
+        expect(tool.inputSchema).toEqual(
+          tools.tools.find(({ name }) => name === tool.name)!.inputSchema,
+        );
       const catalog = await app.call<ModelsResult>(client, 'everchat_models_list');
       expect(catalog.models).toHaveLength(4);
       expect(JSON.stringify(catalog)).not.toMatch(
