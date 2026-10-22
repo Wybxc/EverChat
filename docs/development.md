@@ -67,13 +67,13 @@ pnpm build
 测试与生产构建分别运行：
 
 1. 开发过程中，修改后运行对应单测或浏览器场景，提交前检查格式。
-2. PR 创建或更新时，GitHub Actions 的 [Tests](../.github/workflows/tests.yml) 执行格式、类型、全部单测、本地运维集成测试、完整 Chromium 集成／浏览器测试、WebKit 阅读与搜索回归，以及 Chromium／WebKit PWA 测试。各作业独立运行，同一套件内部仍串行。
-3. `main` 要求通过 `Required tests` 后才允许合并 PR；分支必须包含最新的 `main`，避免只验证过时的分支。合并后 Cloudflare 使用 `pnpm build` 构建、`pnpm exec wrangler deploy` 发布。
+2. PR 创建或更新时，GitHub Actions 的 [Tests](../.github/workflows/tests.yml) 执行格式、类型、全部单测和本地运维集成测试。`main` 要求该作业 `Required tests` 通过后才允许合并 PR；分支必须包含最新的 `main`，避免只验证过时的分支。
+3. 涉及交互、渲染、离线或浏览器兼容的修改，在合并前本地运行对应回归，或在 Actions 手动运行 [Browser regression](../.github/workflows/browser-tests.yml)，选择 PR 分支与 `chromium`／`webkit`／`pwa`／`all`。完整浏览器回归独立报告，目前不设为自动合并门槛。合并后 Cloudflare 使用 `pnpm build` 构建、`pnpm exec wrangler deploy` 发布。
 4. 发布后检查页面加载、登录与关键交互；涉及推送、移动端或 Access 时补充真机验收。上线后的检查用于发现部署环境问题，不能替代合并前测试。
 
 工作流也在 `main` 更新和手动触发时运行，便于复核合并结果与排查 CI。直接推送 `main` 后才启动的测试无法阻止同时开始的 Cloudflare 部署，因此发布应通过受保护的 PR 流程。新 PR 提交会取消该 PR 旧提交仍在运行的检查。
 
-测试只使用本地 workerd、合成身份和模拟供应商，不需要生产密钥或 Cloudflare 部署令牌。浏览器失败的报告和 trace 保留 7 天。PWA 测试为安装／更新夹具生成两个构建版本，这是测试数据准备，与 Cloudflare 生产构建分开。
+测试只使用本地 workerd、合成身份和模拟供应商，不需要生产密钥或 Cloudflare 部署令牌。浏览器工作流覆盖完整 Chromium 主套件、macOS WebKit 阅读／导航／搜索及 Chromium／WebKit PWA；同一套件内部仍串行，失败报告和 trace 保留 7 天。PWA 测试为安装／更新夹具生成两个构建版本，这是测试数据准备，与 Cloudflare 生产构建分开。
 
 ## 集成、浏览器与 PWA 测试
 

@@ -106,7 +106,7 @@ pnpm exec wrangler secret put AI_API_KEY
 
 ## 发布与维护
 
-可使用 `pnpm deploy`，或配置 GitHub 自动部署。生产构建入口为 `pnpm build`，部署入口为 `pnpm exec wrangler deploy`；凭据和分支必须属于自己的部署。测试由仓库的 [Tests 工作流](../../.github/workflows/tests.yml) 独立执行，包含单测、运维、浏览器和 PWA 回归，不需要生产凭据。将生产分支设为受保护分支，要求 PR 的 `Required tests` 通过并同步最新主分支后才允许合并；不要用生产分支推送后才启动的测试作为发布门槛。平台资源测量与真实设备验收按[开发指南](../development.md)另行执行。
+可使用 `pnpm deploy`，或配置 GitHub 自动部署。生产构建入口为 `pnpm build`，部署入口为 `pnpm exec wrangler deploy`；凭据和分支必须属于自己的部署。仓库的 [Tests 工作流](../../.github/workflows/tests.yml) 独立运行格式、类型、单测和运维集成；[Browser regression 工作流](../../.github/workflows/browser-tests.yml) 手动运行浏览器／PWA 回归，均不需要生产凭据。将生产分支设为受保护分支，要求 PR 的 `Required tests` 通过并同步最新主分支后才允许合并；不要用生产分支推送后才启动的测试作为发布门槛。平台资源测量与真实设备验收按[开发指南](../development.md)另行执行。
 
 首次上线应验证：未登录可读取静态页面，私有 API 要求 Access；获准身份可聊天和上传；匿名完整分享链接可读，删除后不可读；PWA 可安装、检查更新并离线重开。
 

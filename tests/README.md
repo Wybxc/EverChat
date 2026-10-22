@@ -21,9 +21,9 @@
 
 ## CI
 
-[Tests 工作流](../.github/workflows/tests.yml) 在面向 `main` 的 PR 创建／更新、`main` 推送及手动触发时运行。格式、类型、单测和原生运维测试组成一个作业；完整 Chromium 主套件、WebKit 阅读／导航／搜索回归、生产 PWA 分别运行。PWA 按现有配置覆盖 Chromium 全部场景及适用的 WebKit 场景，不将依赖 CDP 的主套件强行运行在 WebKit 上。
+[Tests 工作流](../.github/workflows/tests.yml) 在面向 `main` 的 PR 创建／更新、`main` 推送及手动触发时运行。格式、类型、单测和原生运维测试组成必需作业 `Required tests`，任一步失败都阻止合并。工作流不使用路径过滤，以免必需检查一直等待；连续更新同一 PR 时取消旧提交的检查。
 
-`Required tests` 汇总所有作业，任何失败、取消或跳过都不会通过。该检查用作 `main` 的合并门槛；Cloudflare 只做生产构建和部署。工作流不使用路径过滤，以免必需检查一直等待；连续更新同一 PR 时取消旧提交的测试。失败报告与 trace 在 Actions 的 artifacts 中保留 7 天。
+[Browser regression 工作流](../.github/workflows/browser-tests.yml) 手动触发，选择要验证的分支及 `chromium`、`webkit`、`pwa` 或 `all`。完整 Chromium 主套件在 Ubuntu 运行，WebKit 阅读／导航／搜索回归在 macOS 运行，生产 PWA 在 Ubuntu 按现有配置覆盖 Chromium 全部场景及适用的 WebKit 场景；不将依赖 CDP 的主套件强行运行在 WebKit 上。失败报告与 trace 在 Actions 的 artifacts 中保留 7 天。浏览器回归独立报告，当前不作为自动合并门槛；涉及相关功能的修改仍应在合并前运行对应场景。
 
 本地开发继续按改动选择测试；不需要等到生产构建才发现测试失败。环境与发布顺序见[开发指南](../docs/development.md#测试与发布时机)。
 

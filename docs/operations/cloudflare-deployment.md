@@ -47,7 +47,7 @@ Cloudflare Workers Builds 已连接上述仓库，生产分支为 `main`。测�
 | 部署凭据   | Cloudflare 保存的专用 `EverChat build token`    |
 | 构建缓存   | 关闭                                            |
 
-`pnpm build` 包含类型检查，构建失败时不会执行部署。[Tests 工作流](../../.github/workflows/tests.yml) 运行格式、类型、单测、本地运维集成、Chromium 主套件、WebKit 阅读／搜索和 PWA 回归，以 `Required tests` 汇总结果。`main` 的分支保护要求该检查通过、分支同步最新 `main` 并通过 PR 合并，管理员同样遵守；单人维护不额外要求另一位审阅者批准。
+`pnpm build` 包含类型检查，构建失败时不会执行部署。[Tests 工作流](../../.github/workflows/tests.yml) 的 `Required tests` 运行格式、类型、单测和本地运维集成。`main` 的分支保护要求该检查通过、分支同步最新 `main` 并通过 PR 合并，管理员同样遵守；单人维护不额外要求另一位审阅者批准。[Browser regression](../../.github/workflows/browser-tests.yml) 手动运行完整 Chromium、macOS WebKit 阅读／搜索及 PWA 回归，独立报告，当前不设为自动合并门槛。
 
 首次切换时，先推送工作流分支并创建 PR，待检查成功，再启用 `main` 的必需检查与 PR 规则，最后将 Cloudflare 构建命令从 `pnpm test && pnpm build` 改为 `pnpm build`。这三个步骤完成前保留原构建命令，避免出现测试空窗。新增 CI 文件本身不会开启远端分支保护或修改 Cloudflare 控制台。
 
