@@ -1,0 +1,268 @@
+{
+  "version": 1,
+  "scope": "Final isolated synthetic stream validation. No paid supplier calls, production data or production settings changes. Independent attempts are preserved; incomplete suites are not passes.",
+  "deployment": {
+    "branchProductCode": "5ae283e",
+    "workerVersion": "728fdb7e-c277-4e0a-8d59-6f5c53b33718",
+    "clientFix": "Overlapping heartbeat state reconciliations accepted only within the same epoch and valid durable cursor range."
+  },
+  "attempts": [
+    {
+      "version": 1,
+      "runtime": "deployed Cloudflare isolated fixture",
+      "workerName": "everchat-stream-validation",
+      "plan": "Workers Free (user confirmed)",
+      "suite": "sustained",
+      "diagnosticCounters": false,
+      "expectedScenarios": 3,
+      "complete": false,
+      "startedAt": "2026-10-21T13:27:12.051Z",
+      "finishedAt": "2026-10-21T13:30:25.873Z",
+      "failure": {
+        "phase": "observe-generation",
+        "scenario": "sustained-text",
+        "name": "AssertionError",
+        "code": "ERR_ASSERTION"
+      },
+      "results": [],
+      "scope": "Functional cases with mock suppliers; platform analytics collected separately. No real model calls or production data."
+    },
+    {
+      "version": 1,
+      "runtime": "deployed Cloudflare isolated fixture",
+      "workerName": "everchat-stream-validation",
+      "plan": "Workers Free (user confirmed)",
+      "suite": "sustained",
+      "diagnosticCounters": false,
+      "expectedScenarios": 3,
+      "complete": false,
+      "startedAt": "2026-10-21T13:35:30.882Z",
+      "finishedAt": "2026-10-21T13:37:03.394Z",
+      "failure": {
+        "phase": "observe-generation",
+        "scenario": "sustained-text",
+        "name": "Error"
+      },
+      "results": [],
+      "scope": "Functional cases with mock suppliers; platform analytics collected separately. No real model calls or production data."
+    },
+    {
+      "version": 1,
+      "runtime": "deployed Cloudflare isolated fixture",
+      "workerName": "everchat-stream-validation",
+      "plan": "Workers Free (user confirmed)",
+      "suite": "sustained",
+      "diagnosticCounters": false,
+      "expectedScenarios": 3,
+      "complete": false,
+      "startedAt": "2026-10-21T13:39:46.049Z",
+      "finishedAt": "2026-10-21T13:41:24.213Z",
+      "failure": {
+        "phase": "submit-generation",
+        "scenario": "sustained-text",
+        "name": "TypeError",
+        "code": "ECONNRESET"
+      },
+      "results": [],
+      "scope": "Functional cases with mock suppliers; platform analytics collected separately. No real model calls or production data."
+    },
+    {
+      "version": 1,
+      "runtime": "deployed Cloudflare isolated fixture",
+      "workerName": "everchat-stream-validation",
+      "plan": "Workers Free (user confirmed)",
+      "suite": "sustained",
+      "selectedScenarios": [
+        "sustained-reasoning-reconnect",
+        "sustained-disconnected"
+      ],
+      "diagnosticCounters": false,
+      "expectedScenarios": 2,
+      "complete": false,
+      "startedAt": "2026-10-21T13:43:01.793Z",
+      "finishedAt": "2026-10-21T13:45:03.232Z",
+      "failure": {
+        "phase": "submit-generation",
+        "scenario": "sustained-reasoning-reconnect",
+        "name": "TypeError",
+        "code": "ECONNRESET"
+      },
+      "results": [],
+      "scope": "Functional cases with mock suppliers; platform analytics collected separately. No real model calls or production data."
+    },
+    {
+      "version": 1,
+      "runtime": "deployed Cloudflare isolated fixture",
+      "workerName": "everchat-stream-validation",
+      "plan": "Workers Free (user confirmed)",
+      "suite": "sustained",
+      "inputRepeats": 200,
+      "inputCharacters": 800,
+      "diagnosticCounters": false,
+      "expectedScenarios": 3,
+      "complete": false,
+      "startedAt": "2026-10-21T13:46:59.855Z",
+      "finishedAt": "2026-10-21T13:52:47.192Z",
+      "failure": {
+        "phase": "connect-subscribers",
+        "scenario": "sustained-reasoning-reconnect",
+        "name": "TimeoutError",
+        "code": 23
+      },
+      "results": [
+        {
+          "scenario": "sustained-text",
+          "conversationId": "0f7fca97-9352-449e-885b-62537c30317b",
+          "status": "completed",
+          "inputCharacters": 800,
+          "contentCharacters": 84000,
+          "reasoningCharacters": 0,
+          "elapsedMs": 225192,
+          "generationElapsedMs": 70500,
+          "observationElapsedMs": 143693,
+          "reconnects": 2,
+          "client": {
+            "frames": 60,
+            "bytes": 503128
+          }
+        }
+      ],
+      "scope": "Functional cases with mock suppliers; platform analytics collected separately. No real model calls or production data."
+    },
+    {
+      "version": 1,
+      "runtime": "deployed Cloudflare isolated fixture",
+      "workerName": "everchat-stream-validation",
+      "plan": "Workers Free (user confirmed)",
+      "suite": "sustained",
+      "selectedScenarios": [
+        "sustained-reasoning-reconnect",
+        "sustained-disconnected"
+      ],
+      "inputRepeats": 200,
+      "inputCharacters": 800,
+      "diagnosticCounters": false,
+      "expectedScenarios": 2,
+      "complete": false,
+      "startedAt": "2026-10-21T13:55:43.057Z",
+      "finishedAt": "2026-10-21T13:58:13.014Z",
+      "failure": {
+        "phase": "connect-subscribers",
+        "scenario": "sustained-reasoning-reconnect",
+        "name": "TimeoutError",
+        "code": 23
+      },
+      "results": [],
+      "scope": "Functional cases with mock suppliers; platform analytics collected separately. No real model calls or production data."
+    }
+  ],
+  "lastSuccessfulMetricsObserved": {
+    "window": {
+      "start": "2026-10-21T13:26:00Z",
+      "end": "2026-10-21T13:48:00Z"
+    },
+    "note": "Selected values from the successful GraphQL output recorded during validation; not a completed-suite cost. Includes setup, failed observations and read-only inspection. Later broad refresh hit the query budget.",
+    "worker": {
+      "successfulRequests": 27,
+      "cpuP50Ms": 10.628,
+      "cpuP99Ms": 24.548,
+      "maxCpuMs": 24.548,
+      "maxSampledMemoryBytes": 33046219,
+      "clientDisconnectedRequests": 5,
+      "responseStreamDisconnectedRequests": 1
+    },
+    "conversation": {
+      "activeTimeUs": 143423564,
+      "cpuTimeUs": 2544019,
+      "durationGBSeconds": 18.358216192,
+      "rowsRead": 4539,
+      "rowsWritten": 1165,
+      "exceededCpuErrors": 0,
+      "exceededMemoryErrors": 0,
+      "fatalInternalErrors": 0
+    },
+    "library": {
+      "activeTimeUs": 1760094,
+      "cpuTimeUs": 221085,
+      "durationGBSeconds": 0.22529203199999998,
+      "rowsRead": 1991,
+      "rowsWritten": 244,
+      "exceededCpuErrors": 0,
+      "exceededMemoryErrors": 0,
+      "fatalInternalErrors": 0
+    }
+  },
+  "metricsRefresh": {
+    "window": {
+      "start": "2026-10-21T13:26:00Z",
+      "end": "2026-10-21T14:14:00Z"
+    },
+    "scope": "All final isolated stream attempts including setup, observation failures and read-only inspection. Closed minute buckets with at least two minutes for ingestion; not a successful suite total or production billing. Namespace IDs identify this fresh deployment only.",
+    "data": null,
+    "errors": [
+      {
+        "message": "Rate limiter budget depleted. Please try again after 5 minutes. Refer to this page for more details about rate limits: https://developers.cloudflare.com/analytics/graphql-api/limits/",
+        "path": null,
+        "extensions": {
+          "code": "budget",
+          "timestamp": "2026-10-21T14:26:16.582164429Z",
+          "ray_id": "a4e0efb388c76dc3-LAX"
+        }
+      }
+    ]
+  },
+  "cpuLogObservation": {
+    "source": "Cloudflare dashboard, exact isolated Worker filter, stateless execution",
+    "time": "2026-10-21T13:31:48.779Z",
+    "method": "GET",
+    "path": "/api/conversations",
+    "cpuMs": 19,
+    "wallMs": 604,
+    "outcome": "ok",
+    "note": "This route does not execute Core generation; no function-level attribution was obtained."
+  },
+  "cpuProfile": {
+    "start": "2026-10-21T14:12:43.529Z",
+    "finishedAt": "2026-10-21T14:12:45.706Z",
+    "status": 404,
+    "contentType": "application/json; charset=UTF-8",
+    "errors": [
+      {
+        "code": 10393,
+        "message": "No recent executions were found for this Worker."
+      }
+    ]
+  },
+  "cleanup": {
+    "cleanedAt": "2026-10-21T14:13:22.436Z",
+    "worker": "everchat-stream-validation",
+    "workerDeleted": true,
+    "namespacesRemoved": [
+      "9ccd133bd9db40bba2b0c0ef0821383f",
+      "244106ab2a84405587b2df4b2f409d1b"
+    ],
+    "validationDomainRemoved": true,
+    "productionSettingsUnchanged": true,
+    "accessCleanup": {
+      "applicationDeleted": true,
+      "policyDeleted": true,
+      "serviceTokenDeleted": true,
+      "serviceTokenId": "0862027b-0c6b-495f-af17-b4ed8754a86a",
+      "verifiedBy": "Cloudflare dashboard successful deletion confirmations",
+      "verifiedAt": "2026-10-21T14:24:22.444978+00:00",
+      "deletionDeadline": "2026-10-21T14:19:00Z",
+      "confirmedWithinHour": false,
+      "delayNote": "Deletion confirmed by 14:24 UTC, about five minutes after the conservative deadline. Application and Worker had already been deleted; token deletion first failed due to the remaining isolated policy reference, then dashboard calls were slow.",
+      "serviceTokenListEmpty": true,
+      "onlyProductionPolicyRemains": true,
+      "privateCredentialFilesDeleted": true
+    }
+  },
+  "remaining": [
+    "Sustained reasoning with repeated reconnection",
+    "Sustained generation without client",
+    "30 completed-stream reconnections",
+    "Function-level CPU attribution and Free-budget release assessment",
+    "Production release and post-release validation"
+  ]
+}

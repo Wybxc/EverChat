@@ -48,3 +48,57 @@ test('measurement requests reject redirects and never include upstream bodies or
     globalThis.fetch = original;
   }
 });
+
+test('measurement retries are bounded reads only and do not hide HTTP, parse or abort failures', async () => {
+  const original = globalThis.fetch;
+  const { api } = measurementApi({
+    origin: 'https://fixture.invalid',
+    headers: () => ({}),
+    readAttempts: 3,
+  });
+  const reset = () =>
+    new TypeError('fetch failed', { cause: Object.assign(new Error(), { code: 'ECONNRESET' }) });
+  try {
+    let calls = 0;
+    globalThis.fetch = async () => {
+      if (++calls < 3) throw reset();
+      return Response.json({ ok: true });
+    };
+    assert.deepEqual(await api('/snapshot'), { ok: true });
+    assert.equal(calls, 3);
+    for (const method of ['POST', 'PUT', 'DELETE']) {
+      calls = 0;
+      globalThis.fetch = async () => {
+        calls++;
+        throw reset();
+      };
+      await assert.rejects(api('/mutation', {}, method), TypeError);
+      assert.equal(calls, 1, method);
+    }
+    calls = 0;
+    globalThis.fetch = async () => {
+      calls++;
+      throw reset();
+    };
+    await assert.rejects(api('/snapshot'), TypeError);
+    assert.equal(calls, 3);
+    for (const result of [new Response('private', { status: 503 }), new Response('invalid JSON')]) {
+      calls = 0;
+      globalThis.fetch = async () => {
+        calls++;
+        return result;
+      };
+      await assert.rejects(api('/snapshot'));
+      assert.equal(calls, 1);
+    }
+    calls = 0;
+    globalThis.fetch = async () => {
+      calls++;
+      throw new DOMException('Aborted', 'TimeoutError');
+    };
+    await assert.rejects(api('/snapshot'), { name: 'TimeoutError' });
+    assert.equal(calls, 1);
+  } finally {
+    globalThis.fetch = original;
+  }
+});

@@ -1,7 +1,8 @@
 import { cleanTitle } from '../../shared/conversation/titles';
 import { problem } from '../../shared/errors/descriptor';
 import type { ChatInput, ProviderConfig } from '../../shared/providers/types';
-import { ProviderStream, type StreamState } from '../../shared/streaming/provider-stream';
+import type { StreamUsage } from '../../shared/streaming/provider-stream';
+import type { generateProviderText } from '../providers/generate';
 import type { SqlQuery } from '../generation/metrics';
 
 export const TITLE_JOBS_SCHEMA = `CREATE TABLE IF NOT EXISTS title_automatic (
@@ -42,6 +43,7 @@ type TitleLibrary = {
     error?: string,
   ): Promise<boolean>;
 };
+type TitleUsage = { usage: StreamUsage; usageIsFinal: boolean };
 const terminal = ['completed', 'failed', 'superseded'];
 
 /** One auxiliary request at a time. Only delivery of its saved result may retry. */
@@ -56,7 +58,7 @@ export class ConversationTitles {
       start: (job: TitleJob, config: ProviderConfig) => Promise<void>;
       finish: (
         job: TitleJob,
-        state: StreamState,
+        state: TitleUsage,
         status: 'completed' | 'failed' | 'cancelled',
       ) => void;
     },
@@ -144,12 +146,7 @@ export class ConversationTitles {
   step(
     library: TitleLibrary,
     sync: () => Promise<void>,
-    open: (
-      config: ProviderConfig,
-      input: ChatInput[],
-      signal: AbortSignal,
-      beforeRequest?: () => Promise<void>,
-    ) => Promise<ReadableStream<Uint8Array>>,
+    open: typeof generateProviderText,
     chatBusy: () => boolean,
   ) {
     if (this.working) return this.working;
@@ -162,12 +159,7 @@ export class ConversationTitles {
   private async advance(
     library: TitleLibrary,
     sync: () => Promise<void>,
-    open: (
-      config: ProviderConfig,
-      input: ChatInput[],
-      signal: AbortSignal,
-      beforeRequest?: () => Promise<void>,
-    ) => Promise<ReadableStream<Uint8Array>>,
+    open: typeof generateProviderText,
     chatBusy: () => boolean,
   ) {
     if (!this.live()) return;
@@ -267,44 +259,29 @@ export class ConversationTitles {
       }
     }
   }
-  private async generate(
-    job: TitleJob,
-    open: (
-      config: ProviderConfig,
-      input: ChatInput[],
-      signal: AbortSignal,
-      beforeRequest?: () => Promise<void>,
-    ) => Promise<ReadableStream<Uint8Array>>,
-    signal: AbortSignal,
-  ) {
+  private async generate(job: TitleJob, open: typeof generateProviderText, signal: AbortSignal) {
     const config = JSON.parse(job.config!) as ProviderConfig;
-    const parser = new ProviderStream(config.provider, false);
-    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+    let usage: TitleUsage = { usage: {}, usageIsFinal: false };
     let status: 'completed' | 'failed' | 'cancelled' = 'failed';
     try {
-      reader = (
-        await open(
-          config,
-          JSON.parse(job.input),
-          signal,
-          () => this.observe?.start(job, config) ?? Promise.resolve(),
-        )
-      ).getReader();
-      while (true) {
-        signal.throwIfAborted();
-        const { done, value } = await reader.read();
-        if (done) break;
-        parser.feed(value);
-        if (parser.content.length > 1024) throw new Error('Title too long');
-      }
-      parser.assertComplete();
-      if (parser.checkpoint().finishReason === 'length') throw new Error('Incomplete title');
-      const title = cleanTitle(parser.content);
+      const result = await open(
+        config,
+        JSON.parse(job.input),
+        signal,
+        () => this.observe?.start(job, config) ?? Promise.resolve(),
+        (response) => {
+          usage = response;
+        },
+      );
+      usage = result;
+      signal.throwIfAborted();
+      if (result.text.length > 1024 || result.finishReason !== 'stop')
+        throw new Error('Incomplete or oversized title');
+      const title = cleanTitle(result.text);
       status = 'completed';
       return title;
     } finally {
-      this.observe?.finish(job, parser.checkpoint(), signal.aborted ? 'cancelled' : status);
-      void reader?.cancel().catch(() => {});
+      this.observe?.finish(job, usage, signal.aborted ? 'cancelled' : status);
     }
   }
   private defer(job: TitleJob, delay: number) {

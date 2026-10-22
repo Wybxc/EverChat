@@ -23,12 +23,35 @@ export interface ToolValidationOptions {
   output: string;
   suite: ToolValidationSuite;
   runtime: 'local' | 'cloudflare';
+  scenarios?: string[];
 }
 const protocols: ProviderKind[] = ['openai-chat', 'openai-responses', 'anthropic', 'gemini'];
 const terminal = (snapshot: Snapshot) =>
   ['completed', 'failed', 'cancelled'].includes(snapshot.messages[1]?.status ?? '');
 export async function runToolValidation(options: ToolValidationOptions) {
   assert.ok(['functional', 'large', 'sustained'].includes(options.suite), 'Unknown suite');
+  assert.ok(
+    !options.scenarios || options.suite === 'functional',
+    'Scenario selection is functional only',
+  );
+  if (options.scenarios) {
+    const known = [
+      ...protocols.map((protocol) => `online-${protocol}`),
+      'disconnected-replay',
+      'multi-round',
+      'service-rejected',
+      'cancel-model',
+      'concurrent-shared-quota',
+    ];
+    assert.ok(
+      options.scenarios.length > 0 && new Set(options.scenarios).size === options.scenarios.length,
+    );
+    assert.ok(
+      options.scenarios.every((name) => known.includes(name)),
+      'Unknown scenario',
+    );
+  }
+  const expectedScenarios = options.scenarios?.length ?? (options.suite === 'functional' ? 9 : 1);
   const url = new URL(options.url),
     origin = url.origin;
   assert.equal(url.pathname, '/');
@@ -60,7 +83,11 @@ export async function runToolValidation(options: ToolValidationOptions) {
     libraryStatusReads: 0,
   };
 
-  const { api, request } = measurementApi({ origin, headers: () => options.access.headers });
+  const { api, request } = measurementApi({
+    origin,
+    headers: () => options.access.headers,
+    timeout: options.runtime === 'cloudflare' ? 90_000 : 30_000,
+  });
 
   async function subscriber(id: string, disconnect = false) {
     return subscribe({
@@ -71,6 +98,7 @@ export async function runToolValidation(options: ToolValidationOptions) {
       sockets,
       agent,
       disconnect,
+      timeout: options.runtime === 'cloudflare' ? 90_000 : 30_000,
     });
   }
   const library = () => {
@@ -306,6 +334,7 @@ export async function runToolValidation(options: ToolValidationOptions) {
             },
           ];
     for (const entry of cases) {
+      if (options.scenarios && !options.scenarios.includes(entry.name)) continue;
       const before = await idleLibrary();
       const variant =
         entry.mode === 'large'
@@ -330,27 +359,36 @@ export async function runToolValidation(options: ToolValidationOptions) {
       }
       const result = await finish(item, entry.mode === 'disconnect');
       const after = await idleLibrary(),
-        failed = entry.mode === 'rejected',
+        rejected = entry.mode === 'rejected',
         cancelled = entry.mode === 'cancel';
-      const expectedModels = entry.mode === 'multi' ? 6 : failed || cancelled ? 1 : 2;
+      const expectedModels = entry.mode === 'multi' ? 6 : cancelled ? 1 : 2;
       const expectedTools =
         entry.mode === 'multi' ? 10 : entry.mode === 'rejected' ? 1 : cancelled ? 0 : 2;
-      assert.equal(result.status, cancelled ? 'cancelled' : failed ? 'failed' : 'completed');
+      assert.equal(result.status, cancelled ? 'cancelled' : 'completed');
       assert.equal(result.runtime.modelCalls, expectedModels);
       assert.equal(result.runtime.task!.modelRequests, expectedModels);
       assert.equal(result.runtime.serviceRequests, expectedTools);
       assert.equal(after.usedToday - before.usedToday, expectedTools);
-      assert.equal(result.runtime.task!.toolRequests, expectedTools);
-      if (!failed && !cancelled) {
+      // The journal counts claimed candidates, including locally rejected
+      // siblings; daily usage counts only actual upstream service requests.
+      assert.equal(result.runtime.task!.toolRequests, rejected ? 2 : expectedTools);
+      if (!cancelled) {
+        const answer = (await snapshot(item.id)).messages[1];
         const size = entry.mode === 'large' ? 750 : 200;
         const expected =
           (entry.protocol === 'openai-chat' ? '先查阅资料。\n' : '') +
           ('x'.repeat(size - 2) + '🙂').repeat(120);
-        assert.equal(
-          messageText((await snapshot(item.id)).messages[1]),
-          expected,
-          'Complete generated content',
-        );
+        assert.equal(messageText(answer), expected, 'Complete generated content');
+        if (rejected)
+          assert.ok(
+            answer.tools!.calls.every(
+              (call) =>
+                call.state === 'failed' &&
+                call.result?.status === 'failed' &&
+                call.result.failure?.terminal,
+            ),
+            'Authentication rejection remains local to tools while the model finishes',
+          );
       }
       if (entry.mode === 'sustained')
         assert.ok(result.elapsedMs >= 60_000, 'Sustained run must exceed a minute');
@@ -370,7 +408,10 @@ export async function runToolValidation(options: ToolValidationOptions) {
         }),
       );
     }
-    if (options.suite === 'functional') {
+    if (
+      options.suite === 'functional' &&
+      (!options.scenarios || options.scenarios.includes('concurrent-shared-quota'))
+    ) {
       const before = await idleLibrary();
       await api(
         '/settings/web-tools',
@@ -389,9 +430,9 @@ export async function runToolValidation(options: ToolValidationOptions) {
         assert.ok(
           answers.every(
             (answer) =>
-              answer.status === 'failed' &&
-              answer.runtime.modelCalls === 1 &&
-              answer.runtime.task!.modelRequests === 1,
+              answer.status === 'completed' &&
+              answer.runtime.modelCalls === 2 &&
+              answer.runtime.task!.modelRequests === 2,
           ),
         );
         assert.equal(
@@ -408,7 +449,7 @@ export async function runToolValidation(options: ToolValidationOptions) {
         console.log(
           JSON.stringify({
             scenario: 'concurrent-shared-quota',
-            modelCalls: 2,
+            modelCalls: answers.reduce((sum, answer) => sum + answer.runtime.modelCalls, 0),
             serviceRequests: 1,
           }),
         );
@@ -416,7 +457,7 @@ export async function runToolValidation(options: ToolValidationOptions) {
         await api('/settings/web-tools', { provider: 'tavily', dailyLimit: 1000 }, 'PUT');
       }
     }
-    assert.equal(results.length, options.suite === 'functional' ? 9 : 1);
+    assert.equal(results.length, expectedScenarios);
     complete = true;
   } finally {
     for (const socket of sockets) socket.terminate();
@@ -430,7 +471,8 @@ export async function runToolValidation(options: ToolValidationOptions) {
       startedAt,
       finishedAt: new Date().toISOString(),
       complete,
-      expectedScenarios: options.suite === 'functional' ? 9 : 1,
+      expectedScenarios,
+      selectedScenarios: options.scenarios,
       identity,
       observations,
       observationPolicy: {

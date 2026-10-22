@@ -1,0 +1,38 @@
+{
+  "cleanedAt": "2026-10-21T12:45:03.332Z",
+  "results": [
+    {
+      "path": "/accounts/5c157050a6ecab003f5cc64aa3c54db2/workflows/everchat-tools-validation-flow",
+      "status": 200,
+      "success": true,
+      "errors": []
+    },
+    {
+      "path": "/accounts/5c157050a6ecab003f5cc64aa3c54db2/workers/scripts/everchat-stream-validation",
+      "status": 200,
+      "success": true,
+      "errors": []
+    },
+    {
+      "path": "/accounts/5c157050a6ecab003f5cc64aa3c54db2/workers/scripts/everchat-tools-validation",
+      "status": 200,
+      "success": true,
+      "errors": []
+    }
+  ],
+  "namespacesRemoved": [
+    "381f2155738941b7b1215046e77d5d88",
+    "718365de5c8543d28cbe3b6a21063f9e",
+    "f9a5032eef17456489a56b971caf9663",
+    "fb6ca3e849ba425eb9993cdaf220ee2c"
+  ],
+  "validationDomainsRemoved": true,
+  "productionSettingsUnchanged": true,
+  "accessCleanup": {
+    "temporaryApplicationRemoved": true,
+    "temporaryPolicyRemoved": true,
+    "temporaryServiceTokenRemoved": true,
+    "localCredentialFilesRemoved": true,
+    "productionApplicationAndPolicyPreserved": true
+  }
+}

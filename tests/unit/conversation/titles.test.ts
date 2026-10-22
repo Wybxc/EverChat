@@ -76,19 +76,7 @@ function fixture() {
   };
 }
 function body(value = '"一个标题"') {
-  return new ReadableStream<Uint8Array>({
-    start(controller) {
-      controller.enqueue(
-        new TextEncoder().encode(
-          JSON.stringify({ type: 'text', text: value }) +
-            '\n' +
-            JSON.stringify({ type: 'finish', reason: 'stop', usage: {}, usageIsFinal: false }) +
-            '\n',
-        ),
-      );
-      controller.close();
-    },
-  });
+  return { text: value, finishReason: 'stop' as const, usage: {}, usageIsFinal: true };
 }
 
 test('automatic titles are opt-in, bounded, frozen, and attempted only once', () => {

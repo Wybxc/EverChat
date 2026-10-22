@@ -1,0 +1,113 @@
+{
+  "version": 1,
+  "runtime": "deployed Cloudflare isolated fixture",
+  "workerName": "everchat-stream-validation",
+  "plan": "Workers Free (user confirmed)",
+  "suite": "functional",
+  "diagnosticCounters": false,
+  "expectedScenarios": 9,
+  "complete": false,
+  "startedAt": "2026-10-21T12:05:45.750Z",
+  "finishedAt": "2026-10-21T12:09:58.242Z",
+  "results": [
+    {
+      "scenario": "online-text",
+      "conversationId": "e5a250d9-d54b-4ac2-934f-302c79a9cf3e",
+      "status": "completed",
+      "contentCharacters": 24000,
+      "reasoningCharacters": 0,
+      "elapsedMs": 18141,
+      "generationElapsedMs": 8145,
+      "reconnects": 0,
+      "client": {
+        "frames": 37,
+        "bytes": 155138
+      }
+    },
+    {
+      "scenario": "online-reasoning",
+      "conversationId": "1487ea3d-00fe-42ac-85f7-d0f0c511c047",
+      "status": "completed",
+      "contentCharacters": 24000,
+      "reasoningCharacters": 24000,
+      "elapsedMs": 22604,
+      "generationElapsedMs": 11394,
+      "reconnects": 0,
+      "client": {
+        "frames": 36,
+        "bytes": 299954
+      }
+    },
+    {
+      "scenario": "disconnected-long",
+      "conversationId": "6fa0e969-2819-4999-85b1-5917d6dc222c",
+      "status": "completed",
+      "contentCharacters": 90000,
+      "reasoningCharacters": 0,
+      "elapsedMs": 26408,
+      "generationElapsedMs": 12489,
+      "reconnects": 0,
+      "client": {
+        "frames": 13,
+        "bytes": 98747
+      }
+    },
+    {
+      "scenario": "openai-chat-partial-resume",
+      "conversationId": "154b927b-d8d5-410a-96c8-5f19ca387b0d",
+      "status": "completed",
+      "contentCharacters": 12,
+      "reasoningCharacters": 12,
+      "elapsedMs": 57785,
+      "generationElapsedMs": 14179,
+      "reconnects": 1,
+      "client": {
+        "frames": 12,
+        "bytes": 6299
+      }
+    },
+    {
+      "scenario": "openai-responses-partial-resume",
+      "conversationId": "9dbe6c5f-b2d8-4489-9a7b-4798b490a7bb",
+      "status": "completed",
+      "contentCharacters": 12,
+      "reasoningCharacters": 12,
+      "elapsedMs": 17792,
+      "generationElapsedMs": 7636,
+      "reconnects": 1,
+      "client": {
+        "frames": 11,
+        "bytes": 4751
+      }
+    },
+    {
+      "scenario": "anthropic-partial-resume",
+      "conversationId": "7d7719d3-9d1e-4dc6-a507-84a511afb78d",
+      "status": "completed",
+      "contentCharacters": 12,
+      "reasoningCharacters": 12,
+      "elapsedMs": 41230,
+      "generationElapsedMs": 9533,
+      "reconnects": 1,
+      "client": {
+        "frames": 10,
+        "bytes": 5902
+      }
+    },
+    {
+      "scenario": "gemini-partial-resume",
+      "conversationId": "629030b6-aca1-4dd3-b9c8-77e6c121fa2e",
+      "status": "completed",
+      "contentCharacters": 12,
+      "reasoningCharacters": 12,
+      "elapsedMs": 19955,
+      "generationElapsedMs": 5154,
+      "reconnects": 1,
+      "client": {
+        "frames": 8,
+        "bytes": 3585
+      }
+    }
+  ],
+  "scope": "Functional cases with mock suppliers; platform analytics collected separately. No real model calls or production data."
+}

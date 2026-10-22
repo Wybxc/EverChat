@@ -6,21 +6,42 @@ import WebSocket, { type ClientOptions } from 'ws';
 import type { Snapshot, SyncPacket } from '../../../shared/streaming/protocol';
 import { StreamSync } from '../../../shared/streaming/sync';
 
+const transientNetworkCodes = new Set([
+  'ECONNRESET',
+  'ETIMEDOUT',
+  'EAI_AGAIN',
+  'UND_ERR_CONNECT_TIMEOUT',
+  'UND_ERR_SOCKET',
+]);
+function transientNetworkError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const value = error as { code?: string; cause?: unknown };
+  return (
+    transientNetworkCodes.has(value.code ?? '') ||
+    (!!value.cause && transientNetworkError(value.cause))
+  );
+}
+
 export function measurementApi(options: {
   origin: string;
   prefix?: string;
   headers: () => Record<string, string>;
   timeout?: number;
+  /** Retry only failed reads before headers arrive; never replay a mutation. */
+  readAttempts?: number;
 }) {
-  const request = (
+  const request = async (
     path: string,
     body?: unknown,
     method = body === undefined ? 'GET' : 'POST',
     headers?: Record<string, string>,
-  ) =>
-    fetch(`${options.origin}${options.prefix ?? '/api'}${path}`, {
+  ) => {
+    const signal = AbortSignal.timeout(options.timeout ?? 30_000);
+    const attempts = method === 'GET' ? (options.readAttempts ?? 1) : 1;
+    assert.ok(Number.isInteger(attempts) && attempts >= 1 && attempts <= 3);
+    const init = {
       method,
-      redirect: 'error',
+      redirect: 'error' as const,
       headers: {
         Origin: options.origin,
         ...options.headers(),
@@ -28,8 +49,16 @@ export function measurementApi(options: {
         ...headers,
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      signal: AbortSignal.timeout(options.timeout ?? 30_000),
-    });
+      signal,
+    };
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await fetch(`${options.origin}${options.prefix ?? '/api'}${path}`, init);
+      } catch (error) {
+        if (attempt >= attempts || signal.aborted || !transientNetworkError(error)) throw error;
+      }
+    }
+  };
   return {
     request,
     async api<T>(path: string, body?: unknown, method?: string): Promise<T> {
@@ -68,6 +97,8 @@ export async function subscribe(options: {
   maxPayload?: number;
   disconnect?: boolean;
   acknowledge?: boolean;
+  /** Match browser liveness checks for deployed, long-running subscriptions. */
+  heartbeat?: { interval: number; timeout: number };
 }) {
   const { baseline } = options;
   const socket = new WebSocket(
@@ -82,8 +113,13 @@ export async function subscribe(options: {
   options.sockets.add(socket);
   const sync = new StreamSync(baseline);
   const observed = { frames: 0, bytes: 0, disconnected: false };
-  let failure: unknown, code: number | undefined;
+  let failure: unknown,
+    code: number | undefined,
+    protocolFailure = false;
+  let heartbeat: ReturnType<typeof setInterval> | undefined,
+    lastActivity = Date.now();
   socket.on('close', (value) => {
+    if (heartbeat) clearInterval(heartbeat);
     code = value;
     options.sockets.delete(socket);
   });
@@ -92,6 +128,7 @@ export async function subscribe(options: {
       let initialized = false;
       const fail = (error: unknown) => {
         failure = error;
+        if (heartbeat) clearInterval(heartbeat);
         clearTimeout(timer);
         reject(error);
       };
@@ -112,12 +149,32 @@ export async function subscribe(options: {
             : Buffer.from(value);
         observed.frames++;
         observed.bytes += bytes.byteLength;
+        if (bytes.toString() === 'pong') return;
+        lastActivity = Date.now();
         try {
           const packet = JSON.parse(bytes.toString()) as SyncPacket;
           sync.receive(packet);
           if (packet.type === 'ready') {
             initialized = true;
             clearTimeout(timer);
+            if (options.heartbeat && !heartbeat) {
+              heartbeat = setInterval(() => {
+                if (Date.now() - lastActivity > options.heartbeat!.timeout) {
+                  socket.terminate();
+                  return;
+                }
+                if (socket.readyState !== WebSocket.OPEN) return;
+                socket.send('ping');
+                socket.send('session-check');
+                socket.send(
+                  JSON.stringify({
+                    type: 'sync-check',
+                    seq: sync.durable.seq,
+                    epoch: sync.durable.epoch,
+                  }),
+                );
+              }, options.heartbeat.interval);
+            }
             ready();
           }
           if (packet.type === 'preview' && options.disconnect && !observed.disconnected) {
@@ -138,6 +195,7 @@ export async function subscribe(options: {
             );
           }
         } catch (error) {
+          protocolFailure = true;
           fail(error);
           socket.terminate();
         }
@@ -161,6 +219,10 @@ export async function subscribe(options: {
     },
     code: () => code,
     closed: () => code !== undefined,
+    recoverable: () =>
+      !protocolFailure &&
+      ((!failure && (code === 4002 || code === 1006)) ||
+        (!!failure && transientNetworkError(failure))),
   };
 }
 

@@ -145,7 +145,7 @@ if (action === 'prepare') {
       try {
         restoreSnapshot(db, snapshot);
         const cleanup = target.kind === 'usage' ? cleanIncompleteUsage(db) : null;
-        const patch = cleanup?.statements ?? migrateStorage(db, target.kind);
+        const patch = cleanup?.statements ?? (await migrateStorage(db, target.kind));
         if (cleanup) await save(`${prefix}.cleanup.json`, cleanup.counts);
         if (target.kind === 'library' && values['rebuild-search']) {
           assert.equal(

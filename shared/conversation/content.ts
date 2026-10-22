@@ -1,3 +1,4 @@
+import type { TextUIPart, ReasoningUIPart } from 'ai';
 import * as v from 'valibot';
 import { MAX_MESSAGE_TEXT_BYTES, MESSAGE_TEXT_LIMIT_MESSAGE, messageTextFits } from './limits';
 import {
@@ -7,9 +8,12 @@ import {
 } from '../attachments/documents';
 import { imagePartSchema, MAX_MESSAGE_IMAGES, type ImagePart } from '../attachments/images';
 
-/** Current channels are aggregated independently; parts do not imply SSE event order. */
+/** SDK UI text shapes; EverChat aggregates channels independently of SSE event order. */
 export type MessagePart =
-  { type: 'text'; text: string } | { type: 'reasoning'; text: string } | ImagePart | DocumentPart;
+  | Pick<TextUIPart, 'type' | 'text'>
+  | Pick<ReasoningUIPart, 'type' | 'text'>
+  | ImagePart
+  | DocumentPart;
 
 /** One nonempty part per channel, with reasoning before the answer. */
 export function messageParts(text: string, reasoning = ''): MessagePart[] {

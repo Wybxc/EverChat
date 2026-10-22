@@ -1,0 +1,111 @@
+{
+  "version": 1,
+  "scope": "Local workerd V8 sampling only; no Cloudflare API or real model requests. Separate API/storage scripts; not billed CPU or production topology.",
+  "startedAt": "2026-10-22T03:07:39.259Z",
+  "phases": [
+    {
+      "name": "initial",
+      "count": 160,
+      "completed": 160,
+      "wallMs": 2239
+    },
+    {
+      "name": "warm",
+      "count": 1600,
+      "completed": 1600,
+      "wallMs": 21791
+    }
+  ],
+  "complete": true,
+  "finishedAt": "2026-10-22T03:08:05.241Z",
+  "code": "1268f4d",
+  "environment": {
+    "runtime": "local Wrangler/workerd",
+    "separateProcesses": true,
+    "apiPort": 5189,
+    "apiInspectorPort": 9239,
+    "storagePort": 5190,
+    "concurrency": 4,
+    "input": "empty conversation; synthetic RS256 JWT and local JWKS",
+    "apiProfileContains": "api.js",
+    "apiProfileExcludes": "backend.js",
+    "network": "local only; no Cloudflare API or real provider calls"
+  },
+  "artifacts": {
+    "initial.cpuprofile": "d92dd3c5b022f53b94851cf57060c18116725dd289ea12f66a3b2f92d2520aa6",
+    "warm.cpuprofile": "0494698380a5d1312eb63d39b956c097d2001521dba3dcbf1e6f86d30bcd609a",
+    "api-runtime.js": "0c01d6e4a60e50e2ca898410b81d66fbea9a9f0d44957764c87fbcabe30efb01"
+  },
+  "profiles": [
+    {
+      "phase": "initial",
+      "totalSamples": 290,
+      "selectedFrames": [
+        {
+          "name": "<anonymous>",
+          "bundle": "api.js",
+          "bundleLine": 30303,
+          "label": "sync route",
+          "selfSamples": 31,
+          "inclusiveSamples": 96
+        },
+        {
+          "name": "<anonymous>",
+          "bundle": "api.js",
+          "bundleLine": 29511,
+          "label": "requireConversation",
+          "selfSamples": 22,
+          "inclusiveSamples": 22
+        },
+        {
+          "name": "verify",
+          "bundle": "",
+          "bundleLine": 0,
+          "label": "native verification",
+          "selfSamples": 16,
+          "inclusiveSamples": 16
+        }
+      ],
+      "artifactSha256": "d92dd3c5b022f53b94851cf57060c18116725dd289ea12f66a3b2f92d2520aa6"
+    },
+    {
+      "phase": "warm",
+      "totalSamples": 2116,
+      "selectedFrames": [
+        {
+          "name": "<anonymous>",
+          "bundle": "api.js",
+          "bundleLine": 30303,
+          "label": "sync route",
+          "selfSamples": 301,
+          "inclusiveSamples": 817
+        },
+        {
+          "name": "<anonymous>",
+          "bundle": "api.js",
+          "bundleLine": 29511,
+          "label": "requireConversation",
+          "selfSamples": 176,
+          "inclusiveSamples": 187
+        },
+        {
+          "name": "verify",
+          "bundle": "",
+          "bundleLine": 0,
+          "label": "native verification",
+          "selfSamples": 175,
+          "inclusiveSamples": 175
+        }
+      ],
+      "artifactSha256": "0494698380a5d1312eb63d39b956c097d2001521dba3dcbf1e6f86d30bcd609a"
+    }
+  ],
+  "assessment": {
+    "scope": "Statistical V8 sample counts only; time deltas include idle and I/O, so neither deltas nor wall time represent per-request or Cloudflare billed CPU. Inclusive counts overlap and must not be added. Selected frames are not exhaustive.",
+    "sourceMapping": "api-runtime.js retrieved from the actual API inspector; bundle lines mapped to the sync handler, access lookup and JOSE. Separate storage inspector was excluded.",
+    "finding": "JWT verification, access lookup, Hono routing, Headers/Request construction and WebSocket forwarding are present. This identifies candidate paths, not the cause of a specific 18 ms platform event. No model generation occurs in this empty-conversation workload.",
+    "authReview": "requireAuth reads the principal stored by authentication middleware; repeated calls are not repeated JWT signature checks. Library.get also excludes copying/importing/deleted conversations; retain those authorization semantics.",
+    "cleanup": "Both local Wrangler/workerd processes stopped; temporary runtime state and synthetic credential configs deleted. Raw profiles remain local and ignored.",
+    "release": "No production code, authentication, deployment or database changes; platform CPU attribution and DO aggregate evidence still pending."
+  }
+}

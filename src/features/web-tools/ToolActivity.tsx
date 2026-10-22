@@ -12,7 +12,7 @@ import {
 import { ArrowUpRight, Globe, Search } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { problem } from '../../../shared/errors/descriptor';
-import type { PublicToolCall } from '../../../shared/web-tools/tasks';
+import { webToolInputText, type PublicToolCall } from '../../../shared/web-tools/tasks';
 import { useDisclosureController, useDisclosureState } from '../../components/Disclosure';
 import { issueMessage, renderUiMessage } from '../../platform/i18n/messages';
 import { PAUSE_FOLLOW_EVENT } from '../chat/scroll-intent';
@@ -75,7 +75,7 @@ function ToolCallView({ item, messageId }: { item: PublicToolCall; messageId: st
   const { call, state, result, round } = item;
   const [open, setOpen] = useDisclosureState(`tools:${messageId}:${call.id}`);
   const id = callId(messageId, call.id);
-  const input = call.name === 'web_search' ? call.input.query : call.input.url;
+  const input = webToolInputText(call);
   const line = (
     <TraceLine
       status={
@@ -90,7 +90,12 @@ function ToolCallView({ item, messageId }: { item: PublicToolCall; messageId: st
     >
       <TraceIcon>{call.name === 'web_search' ? <Search /> : <Globe />}</TraceIcon>
       <TraceTitle title={input}>
-        {call.name === 'web_search' ? t(($) => $.search) : t(($) => $.fetch)} · {input}
+        {call.name === 'web_search'
+          ? t(($) => $.search)
+          : call.name === 'read_webpage'
+            ? t(($) => $.fetch)
+            : call.name}{' '}
+        · {input}
         <span className="sr-only">{t(($) => $.round, { round: round + 1 })}</span>
       </TraceTitle>
       <TraceDescription>
@@ -195,7 +200,7 @@ export function ToolFailures({ calls, messageId }: { calls: PublicToolCall[]; me
           className="shrink-0"
           onClick={() => locate(item.call.id)}
           aria-label={t(($) => $.failedCallLabel, {
-            input: item.call.name === 'web_search' ? item.call.input.query : item.call.input.url,
+            input: webToolInputText(item.call),
           })}
         >
           {t(($) => $.viewCall)}

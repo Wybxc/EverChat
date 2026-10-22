@@ -15,6 +15,7 @@ const { values } = parseArgs({
     runtime: { type: 'string', default: 'local' },
     port: { type: 'string', default: '5191' },
     suite: { type: 'string', default: 'functional' },
+    scenarios: { type: 'string' },
     output: { type: 'string', default: '/tmp/everchat-tools-platform' },
     url: { type: 'string' },
     credentials: { type: 'string' },
@@ -35,6 +36,7 @@ if (values.runtime === 'cloudflare') {
     output: values.output!,
     suite: values.suite as ToolValidationSuite,
     runtime: 'cloudflare',
+    scenarios: values.scenarios?.split(','),
   });
 } else {
   const port = Number(values.port);
@@ -115,6 +117,7 @@ if (values.runtime === 'cloudflare') {
         runtime: 'local',
         suite,
         output: `${values.output}-${suite}.json`,
+        scenarios: values.scenarios?.split(','),
       });
   } finally {
     await runtime.stop();

@@ -370,7 +370,7 @@ for (const provider of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
     }
   });
 
-test('a failed tool has one visible error while collapsed and can reveal and focus its call', async ({
+test('a completed answer retains one visible tool error while collapsed and can reveal and focus its call', async ({
   page,
   context,
 }) => {
@@ -411,7 +411,7 @@ test('a failed tool has one visible error while collapsed and can reveal and foc
     await page.goto(`/c/${id}`);
     const answer = page.getByTestId('assistant-message'),
       activity = page.getByTestId('tool-call');
-    await expect(answer).toHaveAttribute('data-status', 'failed');
+    await expect(answer).toHaveAttribute('data-status', 'completed');
     const reasoning = page.getByTestId('message-reasoning');
     await reasoning.locator(':scope > [data-slot="trace-collapsible-trigger"]').click();
     await expect(reasoning).toHaveAttribute('data-closed', '');
@@ -420,7 +420,8 @@ test('a failed tool has one visible error while collapsed and can reveal and foc
     const error = answer.getByRole('alert');
     await expect(error).toContainText('联网服务拒绝访问，请检查密钥与权限。');
     await expect(error).toBeVisible();
-    await expect(answer.getByText('生成失败', { exact: true })).toBeVisible();
+    await expect(answer.getByText('生成失败', { exact: true })).toHaveCount(0);
+    await expect(answer).toContainText('工具回答🙂');
     await answer.getByRole('button', { name: /^查看失败调用/ }).click();
     await expect(reasoning).toHaveAttribute('data-open', '');
     await expect(activity).toHaveAttribute('data-open', '');

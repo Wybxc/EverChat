@@ -2,6 +2,8 @@
 
 日期：2026-10-20。状态：已实施，完成本地验收。承接已完成的[流解析迁移](provider-sdk-streaming-plan.md)。
 
+后续扩展见 [AI SDK Core 与 UI 深度集成计划](ai-sdk-core-ui-adoption-plan.md)：在本轮已完成的 Provider 集成上继续接入 Core／UI，覆盖工具容错、消息与状态管理、传输和重复实现清理；该后续计划尚未实施，不改变本页的历史验收范围。
+
 ## 调研结论
 
 当前四种协议已使用 LanguageModelV4.doStream。剩余问题主要在 SDK 输出到应用状态的桥接层：警告和响应元信息被忽略；用量重复映射遗漏 noCache／text；错误分类依赖属性猜测；工具 JSON Schema 与运行时约束不一致；结构化事件为了容量检查又被编码、解码；首字时间也重复解码。

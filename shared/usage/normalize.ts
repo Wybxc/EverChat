@@ -1,4 +1,21 @@
 import type { StreamUsage } from '../streaming/provider-stream';
+import type { LanguageModelUsage } from 'ai';
+
+export function coreUsage(usage: LanguageModelUsage): StreamUsage {
+  return sdkUsage({
+    inputTokens: {
+      total: usage.inputTokens,
+      noCache: usage.inputTokenDetails.noCacheTokens,
+      cacheRead: usage.inputTokenDetails.cacheReadTokens,
+      cacheWrite: usage.inputTokenDetails.cacheWriteTokens,
+    },
+    outputTokens: {
+      total: usage.outputTokens,
+      text: usage.outputTokenDetails.textTokens,
+      reasoning: usage.outputTokenDetails.reasoningTokens,
+    },
+  });
+}
 
 /** AI SDK v4 counters use inclusive totals. Never add the reasoning/cache subsets again. */
 export function sdkUsage(usage: {

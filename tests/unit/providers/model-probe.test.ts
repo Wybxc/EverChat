@@ -189,6 +189,47 @@ test('HTTP success, text pretending to be a tool, wrong challenge and wrong tool
     assert.equal(result.reason, 'mismatch');
   }
 });
+test('a required-tool mismatch retains the completed request usage without retrying or executing tools', async (t) => {
+  t.mock.method(crypto, 'randomUUID', () => uuid);
+  let requests = 0,
+    starts = 0;
+  const finished: unknown[] = [];
+  const result = await probeModelCapability(
+    config,
+    'toolCalls',
+    signal(),
+    async () => {
+      requests++;
+      return Response.json(response('openai-chat', 'text', 'I cannot call tools'));
+    },
+    {
+      async start() {
+        starts++;
+      },
+      finish(...args) {
+        finished.push(args);
+      },
+    },
+  );
+  assert.equal(result.reason, 'mismatch');
+  assert.equal(requests, 1);
+  assert.equal(starts, 1);
+  assert.deepEqual(finished, [
+    [
+      'completed',
+      {
+        inputTokens: 10,
+        uncachedInputTokens: 10,
+        cachedInputTokens: 0,
+        outputTokens: 4,
+        textOutputTokens: 4,
+        reasoningTokens: 0,
+      },
+      true,
+      200,
+    ],
+  ]);
+});
 test('failed and redirected probes make one request, redact credentials in diagnostics and leave capability unconfirmed', async () => {
   for (const status of [302, 401, 429, 500]) {
     let calls = 0;

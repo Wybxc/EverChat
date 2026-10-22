@@ -256,7 +256,7 @@ test('MCP references support Unicode IDs; tool input rejects excess bytes, unkno
     assert.equal(v.safeParse(chatSchema, { ...base, ...extra }).success, false);
   assert.equal(conversationSettingsDefaults().useGlobalMaxOutputTokens, true);
 });
-test('MCP tables are introduced only by offline schema 2 to 3 migration', () => {
+test('MCP tables are introduced only by offline schema 2 to 3 migration', async () => {
   const { db, query } = database();
   try {
     db.exec(
@@ -264,7 +264,7 @@ test('MCP tables are introduced only by offline schema 2 to 3 migration', () => 
     );
     assert.throws(() => initializeStorageSchema(query));
     assert.equal(query("SELECT name FROM sqlite_master WHERE name='mcp_keys'").toArray().length, 0);
-    migrateStorage(db, 'library');
+    await migrateStorage(db, 'library');
     initializeStorageSchema(query);
     assert.equal(query('SELECT * FROM mcp_keys').toArray().length, 0);
     assert.equal(query('SELECT * FROM mcp_requests').toArray().length, 0);

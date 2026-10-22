@@ -76,6 +76,7 @@ import {
 } from '../platform/resource-limits';
 import { initializeStorageSchema } from '../platform/storage-schema';
 import { openProviderStream } from '../providers/stream';
+import { generateProviderText } from '../providers/generate';
 import { searchRetryDelay } from '../search/index';
 import { GenerationCheckpoints } from '../streaming/checkpoints';
 import {
@@ -109,7 +110,7 @@ import {
 } from '../../shared/web-tools/tasks';
 import { providerFailure } from '../providers/failure';
 import { type ProviderToolTurn } from '../providers/tool-turn';
-import { executeWebTool, terminalWebToolError, type WebToolFetch } from '../web-tools/service';
+import { executeWebTool, type WebToolFetch } from '../web-tools/service';
 import { WEB_TOOL_QUOTA_ERROR } from '../web-tools/settings';
 import { ToolTaskJournal, type ToolTaskState } from '../web-tools/task-journal';
 import { toolWorkflowId, type ToolWorkflowParams } from '../web-tools/workflow';
@@ -258,7 +259,7 @@ export class Conversation extends DurableObject<Env> {
             this.accounting.finish(`title:${job.conversationId}:${job.id}`, {
               status,
               usage: state.usage,
-              usageIsFinal: state.usageIsFinal && state.done && !state.failure,
+              usageIsFinal: state.usageIsFinal,
             }),
           );
           this.ctx.waitUntil(this.accounting.deliver().finally(() => this.scheduleAlarm()));
@@ -1626,19 +1627,20 @@ export class Conversation extends DurableObject<Env> {
     const change = this.ctx.storage.transactionSync(() => this.refreshToolMessage(taskId));
     if (change) this.broadcast(change);
     const result = (async () => {
-      const timer = setTimeout(
-        () => abort.abort(),
-        Math.max(1, Math.min(15_000, state.deadline - Date.now())),
-      );
+      const timer = setTimeout(() => abort.abort(), Math.max(1, state.deadline - Date.now()));
       try {
         await this.ctx.storage.sync();
         const before = this.toolTaskState(taskId);
         if (before.status !== 'active') return before;
         const service = (JSON.parse(this.run(state.runId)!.config!) as ProviderConfig).webTools;
+        const unavailable = this.tools
+          .publicCalls(state.runId)
+          .map((item) => item.result)
+          .find((result) => result?.status === 'failed' && result.failure?.terminal);
         let stopError: string | undefined;
         let outcome: WebToolOutcome;
         try {
-          if (service) {
+          if (service && !unavailable) {
             const identity = createHash('sha256')
               .update(JSON.stringify([this.run(state.runId)!.conversationId, taskId, callId]))
               .digest('hex');
@@ -1649,29 +1651,48 @@ export class Conversation extends DurableObject<Env> {
             if ('error' in budget) stopError = budget.error;
           }
           abort.signal.throwIfAborted();
-          outcome = stopError
-            ? { id: call.id, name: call.name, status: 'failed', error: stopError }
-            : await this.executeWebTool(call, abort.signal, service, async () => {
-                const provider = service!.provider;
-                await this.accounting.start(
-                  {
-                    id: usageId,
-                    taskId,
-                    conversationId: this.run(state.runId)!.conversationId,
-                    messageId: this.run(state.runId)!.assistantId,
-                    kind: call.name,
-                  },
-                  {
-                    providerId: `web:${provider}`,
-                    providerName: provider === 'deepseek' ? 'DeepSeek 联网' : 'Tavily',
-                    protocol: provider,
-                    model: call.name,
-                    modelName: call.name,
-                  },
-                );
-                this.ctx.waitUntil(this.accounting.deliver().finally(() => this.scheduleAlarm()));
-              });
-          stopError ??= terminalWebToolError(outcome);
+          outcome =
+            unavailable?.status === 'failed'
+              ? { ...unavailable, id: call.id, name: call.name }
+              : stopError
+                ? {
+                    id: call.id,
+                    name: call.name,
+                    status: 'failed',
+                    error: stopError,
+                    issue: problem('TOOL_RATE_LIMITED'),
+                    failure: { provider: service!.provider, code: 'RATE_LIMIT', terminal: true },
+                  }
+                : call.invalid
+                  ? {
+                      id: call.id,
+                      name: call.name,
+                      status: 'failed',
+                      error: call.error,
+                      issue: problem('TOOL_INVALID'),
+                    }
+                  : await this.executeWebTool(call, abort.signal, service, async () => {
+                      const provider = service!.provider;
+                      await this.accounting.start(
+                        {
+                          id: usageId,
+                          taskId,
+                          conversationId: this.run(state.runId)!.conversationId,
+                          messageId: this.run(state.runId)!.assistantId,
+                          kind: call.name,
+                        },
+                        {
+                          providerId: `web:${provider}`,
+                          providerName: provider === 'deepseek' ? 'DeepSeek 联网' : 'Tavily',
+                          protocol: provider,
+                          model: call.name,
+                          modelName: call.name,
+                        },
+                      );
+                      this.ctx.waitUntil(
+                        this.accounting.deliver().finally(() => this.scheduleAlarm()),
+                      );
+                    });
         } catch {
           outcome = {
             id: call.id,
@@ -1708,16 +1729,9 @@ export class Conversation extends DurableObject<Env> {
               issue: problem('INVALID_REQUEST'),
             });
           }
-          if (stopError) this.tools.stop(taskId, 'failed', stopError);
           return this.refreshToolMessage(taskId);
         });
         if (update) this.broadcast(update);
-        if (stopError) {
-          this.finish(state.runId, 'failed', stopError);
-          // Unlike a model's Alarm, this RPC has no outer Alarm cleanup. The
-          // terminal notification must replace the old root-deadline alarm.
-          await this.scheduleAlarm();
-        }
         await this.ctx.storage.sync();
         return this.toolTaskState(taskId);
       } finally {
@@ -1793,8 +1807,7 @@ export class Conversation extends DurableObject<Env> {
     const titleWork = this.titles?.step(
       this.env.LIBRARY.getByName('personal'),
       () => this.ctx.storage.sync(),
-      (config, input, signal, beforeRequest) =>
-        this.openModelStream(config, input, signal, undefined, undefined, undefined, beforeRequest),
+      (...args) => this.generateModelText(...args),
       () =>
         Boolean(
           this.activeGeneration ||
@@ -1896,6 +1909,9 @@ export class Conversation extends DurableObject<Env> {
   protected openModelStream(...args: Parameters<typeof openProviderStream>) {
     return openProviderStream(...args);
   }
+  protected generateModelText(...args: Parameters<typeof generateProviderText>) {
+    return generateProviderText(...args);
+  }
   private async runInObject(runId: string, claim: Claim) {
     const toolModel = this.tools.model(runId),
       deadline = toolModel ? this.tools.state(toolModel.rootId).deadline : Date.now() + 14 * 60_000;
@@ -1907,24 +1923,9 @@ export class Conversation extends DurableObject<Env> {
       buffer: new GenerationBuffer(
         runId,
         claim.assistantId!,
-        (batches) => {
-          const saved = this.commit(runId, batches);
-          if (saved) {
-            const barrier = (active.persistence ?? Promise.resolve()).then(() =>
-              this.ctx.storage.sync(),
-            );
-            active.persistence = barrier;
-            void barrier.then(
-              () => {
-                if (active.persistence === barrier) active.persistence = undefined;
-              },
-              (error) => {
-                active.failure =
-                  error instanceof Error ? error : new Error('Generation persistence failed');
-                abort.abort();
-              },
-            );
-          }
+        async (batches) => {
+          const saved = await this.commit(runId, batches);
+          if (saved) await this.ctx.storage.sync();
           return saved;
         },
         (batch) => this.preview(batch),
@@ -1943,14 +1944,12 @@ export class Conversation extends DurableObject<Env> {
       if (active.cancelled || abort.signal.aborted) throw new GenerationCancelled();
       if (!claim.config) throw new ProviderError('此任务缺少已保存的供应商配置，请主动重新生成。');
       active.timer = setInterval(() => {
-        if (active.cancelled || active.persistence) return;
-        try {
-          active.buffer.tick();
-        } catch (error) {
+        if (active.cancelled || active.buffer.busy) return;
+        void active.buffer.tick().catch((error) => {
           active.failure =
             error instanceof Error ? error : new Error('Generation persistence failed');
           abort.abort();
-        }
+        });
       }, 100);
       this.query('INSERT INTO generation_timings VALUES (?, ?, NULL)', runId, Date.now());
       const observeOutput = (receivedAt: number) => {
@@ -2011,8 +2010,7 @@ export class Conversation extends DurableObject<Env> {
         observeOutput,
       );
       await consumeModelStream(body, active, (bytes) => active.buffer.add(bytes));
-      active.buffer.flush();
-      await active.persistence;
+      await active.buffer.flush();
       const turn = toolModel && !active.cancelled ? body.toolTurn : undefined;
       this.finish(runId, active.cancelled ? 'cancelled' : 'completed', null, turn);
     } catch (error) {
@@ -2020,8 +2018,7 @@ export class Conversation extends DurableObject<Env> {
       let failure = active.failure ?? error;
       let tailFailed = false;
       try {
-        active.buffer.flush();
-        await active.persistence;
+        await active.buffer.flush();
       } catch (saveError) {
         if (!(saveError instanceof GenerationCancelled)) {
           failure = saveError;
@@ -2094,7 +2091,7 @@ export class Conversation extends DurableObject<Env> {
       assistantId: run.assistantId,
     };
   }
-  commit(runId: string, batches: StreamBatch[]): boolean {
+  async commit(runId: string, batches: StreamBatch[]): Promise<boolean> {
     if (this.deletedAt) return false;
     const run = this.run(runId),
       message = run && this.messages.rawMessage(run.assistantId);
@@ -2104,29 +2101,54 @@ export class Conversation extends DurableObject<Env> {
     validateCommit(commit);
     const first = batches[0],
       last = batches.at(-1)!;
-    if (last.chunkSeq <= run.chunkSeq) {
-      this.ctx.storage.transactionSync(() => {
-        if (this.journal.append(commit)) throw new Error('Missing acknowledged stream commit');
-      });
-      return true;
-    }
-    if (first.chunkSeq !== run.chunkSeq + 1 || first.startOffset !== run.durableOffset)
+    if (
+      last.chunkSeq > run.chunkSeq &&
+      (first.chunkSeq !== run.chunkSeq + 1 || first.startOffset !== run.durableOffset)
+    )
       throw new Error('Stream sequence or offset gap');
-    if (this.env.GENERATION_METRICS === '1' && !this.meter)
-      this.meter = new GenerationMeter(runId, Date.now, 'since-last-resume', 'do-v1');
-    if (this.capacityBytes(MAX_DATABASE_WRITE_BYTES) > MAX_DATABASE_WRITE_BYTES)
-      throw capacityError('write');
+    const prepared = await this.journal.prepare(commit, {
+      protocol: message.tools
+        ? 'openai-chat'
+        : (JSON.parse(run.config!) as ProviderConfig).provider,
+    });
     let change: Commit;
     try {
+      // Preparation may yield to the SDK. Deletion, a watchdog or a terminal
+      // cancellation must not be overwritten by the subsequently prepared tail.
+      const current = this.deletedAt ? undefined : this.run(runId);
+      const currentMessage = current
+        ? this.query<{ status: string; runId: string | null }>(
+            'SELECT status, runId FROM messages WHERE id = ?',
+            current.assistantId,
+          ).toArray()[0]
+        : undefined;
+      if (
+        !current ||
+        current.assistantId !== message.id ||
+        currentMessage?.status !== 'running' ||
+        currentMessage.runId !== runId
+      ) {
+        prepared.discard();
+        return false;
+      }
+      if (last.chunkSeq <= current.chunkSeq) {
+        this.ctx.storage.transactionSync(() => {
+          if (prepared.apply()) throw new Error('Missing acknowledged stream commit');
+        });
+        return true;
+      }
+      if (
+        current.streamVersion !== STREAM_VERSION ||
+        first.chunkSeq !== current.chunkSeq + 1 ||
+        first.startOffset !== current.durableOffset
+      )
+        throw new Error('Stream sequence or offset gap');
+      if (this.env.GENERATION_METRICS === '1' && !this.meter)
+        this.meter = new GenerationMeter(runId, Date.now, 'since-last-resume', 'do-v1');
+      if (this.capacityBytes(MAX_DATABASE_WRITE_BYTES) > MAX_DATABASE_WRITE_BYTES)
+        throw capacityError('write');
       change = this.ctx.storage.transactionSync(() => {
-        if (
-          !this.journal.append(commit, {
-            protocol: message.tools
-              ? 'openai-chat'
-              : (JSON.parse(run.config!) as ProviderConfig).provider,
-          })
-        )
-          throw new Error('Conflicting stream sequence');
+        if (!prepared.apply()) throw new Error('Conflicting stream sequence');
         this.query(
           'UPDATE runs SET chunkSeq = ?, durableOffset = ?, updatedAt = ? WHERE id = ?',
           last.chunkSeq,
@@ -2140,6 +2162,7 @@ export class Conversation extends DurableObject<Env> {
         return { type: 'commit', ...commit, seq };
       });
     } catch (error) {
+      prepared.discard();
       this.journal.forget(runId);
       throw error;
     }
@@ -2536,7 +2559,7 @@ export class Conversation extends DurableObject<Env> {
     await this.ctx.storage.sync();
     let error: string | null = null;
     try {
-      active?.buffer.flush();
+      await active?.buffer.flush();
     } catch (failure) {
       if (!(failure instanceof GenerationCancelled))
         error = '停止时未能保存尾部。已保留最近检查点，请主动重新生成。';

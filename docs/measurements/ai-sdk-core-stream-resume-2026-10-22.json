@@ -1,0 +1,4600 @@
+{
+  "version": 1,
+  "commit": "2740e8c",
+  "date": "2026-10-22",
+  "scope": "Fresh isolated Cloudflare stream fixture; production unchanged; mock suppliers only; no paid model calls.",
+  "deployment": {
+    "workerVersion": "9ed2b245-12b1-4dea-9c75-3e20f4cf663d",
+    "startupMs": 192,
+    "uncompressedKiB": 5617.25,
+    "gzipKiB": 925.92
+  },
+  "network": {
+    "measurementProcessProxy": "http://127.0.0.1:7890",
+    "persistedProjectConfiguration": false,
+    "conclusion": "Explicitly used existing macOS system proxy in this CLI run. Does not establish the root cause of previous connection failures."
+  },
+  "sustained": {
+    "version": 1,
+    "runtime": "deployed Cloudflare isolated fixture",
+    "workerName": "everchat-stream-validation",
+    "plan": "Workers Free (user confirmed)",
+    "suite": "sustained",
+    "inputRepeats": 4000,
+    "inputCharacters": 16000,
+    "diagnosticCounters": false,
+    "expectedScenarios": 3,
+    "complete": true,
+    "startedAt": "2026-10-21T17:23:39.342Z",
+    "finishedAt": "2026-10-21T17:27:33.991Z",
+    "results": [
+      {
+        "scenario": "sustained-text",
+        "conversationId": "ed0dc4ad-bc8d-4862-9677-eccb39cfd7e2",
+        "status": "completed",
+        "inputCharacters": 16000,
+        "contentCharacters": 84000,
+        "reasoningCharacters": 0,
+        "elapsedMs": 77690,
+        "generationElapsedMs": 70500,
+        "observationElapsedMs": 73207,
+        "reconnects": 3,
+        "client": {
+          "frames": 199,
+          "bytes": 945772
+        }
+      },
+      {
+        "scenario": "sustained-reasoning-reconnect",
+        "conversationId": "c89ed088-2863-453d-a828-05a94004ecd4",
+        "status": "completed",
+        "inputCharacters": 16000,
+        "contentCharacters": 84000,
+        "reasoningCharacters": 84000,
+        "elapsedMs": 74741,
+        "generationElapsedMs": 70500,
+        "observationElapsedMs": 71708,
+        "reconnects": 21,
+        "client": {
+          "frames": 231,
+          "bytes": 1724617
+        }
+      },
+      {
+        "scenario": "sustained-disconnected",
+        "conversationId": "293ed5f7-1c8c-4e50-a145-04c2b5ef0d03",
+        "status": "completed",
+        "inputCharacters": 16000,
+        "contentCharacters": 84000,
+        "reasoningCharacters": 0,
+        "elapsedMs": 79426,
+        "generationElapsedMs": 70500,
+        "observationElapsedMs": 76290,
+        "reconnects": 0,
+        "client": {
+          "frames": 4,
+          "bytes": 53070
+        }
+      }
+    ],
+    "scope": "Functional cases with mock suppliers; platform analytics collected separately. No real model calls or production data."
+  },
+  "reconnect": {
+    "version": 1,
+    "runtime": "deployed Cloudflare isolated fixture",
+    "workerName": "everchat-stream-validation",
+    "plan": "Workers Free (user confirmed)",
+    "suite": "reconnect",
+    "diagnosticCounters": false,
+    "expectedScenarios": 30,
+    "complete": true,
+    "startedAt": "2026-10-21T17:27:55.266Z",
+    "finishedAt": "2026-10-21T17:28:06.587Z",
+    "results": [
+      {
+        "scenario": "reconnect-1",
+        "mode": "full-replay",
+        "status": "completed",
+        "handshakeAttempts": 1,
+        "client": {
+          "frames": 1,
+          "bytes": 25,
+          "disconnected": false
+        }
+      },
+      {
+        "scenario": "reconnect-2",
+        "mode": "latest-cursor",
+        "status": "completed",
+        "handshakeAttempts": 1,
+        "client": {
+          "frames": 1,
+          "bytes": 25,
+          "disconnected": false
+        }
+      },
+      {
+        "scenario": "reconnect-3",
+        "mode": "full-replay",
+        "status": "completed",
+        "handshakeAttempts": 1,
+        "client": {
+          "frames": 1,
+          "bytes": 25,
+          "disconnected": false
+        }
+      },
+      {
+        "scenario": "reconnect-4",
+        "mode": "latest-cursor",
+        "status": "completed",
+        "handshakeAttempts": 1,
+        "client": {
+          "frames": 1,
+          "bytes": 25,
+          "disconnected": false
+        }
+      },
+      {
+        "scenario": "reconnect-5",
+        "mode": "full-replay",
+        "status": "completed",
+        "handshakeAttempts": 1,
+        "client": {
+          "frames": 1,
+          "bytes": 25,
+          "disconnected": false
+        }
+      },
+      {
+        "scenario": "reconnect-6",
+        "mode": "latest-cursor",
+        "status": "completed",
+        "handshakeAttempts": 1,
+        "client": {
+          "frames": 1,
+          "bytes": 25,
+          "disconnected": false
+        }
+      },
+      {
+        "scenario": "reconnect-7",
+        "mode": "full-replay",
+        "status": "completed",
+        "handshakeAttempts": 1,
+        "client": {
+          "frames": 1,
+          "bytes": 25,
+          "disconnected": false
+        }
+      },
+      {
+        "scenario": "reconnect-8",
+        "mode": "latest-cursor",
+        "status": "completed",
+        "handshakeAttempts": 1,
+        "client": {
+          "frames": 1,
+          "bytes": 25,
+          "disconnected": false
+        }
+      },
+      {
+        "scenario": "reconnect-9",
+        "mode": "full-replay",
+        "status": "completed",
+        "handshakeAttempts": 1,
+        "client": {
+          "frames": 1,
+          "bytes": 25,
+          "disconnected": false
+        }
+      },
+      {
+        "scenario": "reconnect-10",
+        "mode": "latest-cursor",
+        "status": "completed",
+        "handshakeAttempts": 1,
+        "client": {
+          "frames": 1,
+          "bytes": 25,
+          "disconnected": false
+        }
+      },
+      {
+        "scenario": "reconnect-11",
+        "mode": "full-replay",
+        "status": "completed",
+        "handshakeAttempts": 1,
+        "client": {
+          "frames": 1,
+          "bytes": 25,
+          "disconnected": false
+        }
+      },
+      {
+        "scenario": "reconnect-12",
+        "mode": "latest-cursor",
+        "status": "completed",
+        "handshakeAttempts": 1,
+        "client": {
+          "frames": 1,
+          "bytes": 25,
+          "disconnected": false
+        }
+      },
+      {
+        "scenario": "reconnect-13",
+        "mode": "full-replay",
+        "status": "completed",
+        "handshakeAttempts": 1,
+        "client": {
+          "frames": 1,
+          "bytes": 25,
+          "disconnected": false
+        }
+      },
+      {
+        "scenario": "reconnect-14",
+        "mode": "latest-cursor",
+        "status": "completed",
+        "handshakeAttempts": 1,
+        "client": {
+          "frames": 1,
+          "bytes": 25,
+          "disconnected": false
+        }
+      },
+      {
+        "scenario": "reconnect-15",
+        "mode": "full-replay",
+        "status": "completed",
+        "handshakeAttempts": 1,
+        "client": {
+          "frames": 1,
+          "bytes": 25,
+          "disconnected": false
+        }
+      },
+      {
+        "scenario": "reconnect-16",
+        "mode": "latest-cursor",
+        "status": "completed",
+        "handshakeAttempts": 1,
+        "client": {
+          "frames": 1,
+          "bytes": 25,
+          "disconnected": false
+        }
+      },
+      {
+        "scenario": "reconnect-17",
+        "mode": "full-replay",
+        "status": "completed",
+        "handshakeAttempts": 1,
+        "client": {
+          "frames": 1,
+          "bytes": 25,
+          "disconnected": false
+        }
+      },
+      {
+        "scenario": "reconnect-18",
+        "mode": "latest-cursor",
+        "status": "completed",
+        "handshakeAttempts": 1,
+        "client": {
+          "frames": 1,
+          "bytes": 25,
+          "disconnected": false
+        }
+      },
+      {
+        "scenario": "reconnect-19",
+        "mode": "full-replay",
+        "status": "completed",
+        "handshakeAttempts": 1,
+        "client": {
+          "frames": 1,
+          "bytes": 25,
+          "disconnected": false
+        }
+      },
+      {
+        "scenario": "reconnect-20",
+        "mode": "latest-cursor",
+        "status": "completed",
+        "handshakeAttempts": 1,
+        "client": {
+          "frames": 1,
+          "bytes": 25,
+          "disconnected": false
+        }
+      },
+      {
+        "scenario": "reconnect-21",
+        "mode": "full-replay",
+        "status": "completed",
+        "handshakeAttempts": 1,
+        "client": {
+          "frames": 1,
+          "bytes": 25,
+          "disconnected": false
+        }
+      },
+      {
+        "scenario": "reconnect-22",
+        "mode": "latest-cursor",
+        "status": "completed",
+        "handshakeAttempts": 1,
+        "client": {
+          "frames": 1,
+          "bytes": 25,
+          "disconnected": false
+        }
+      },
+      {
+        "scenario": "reconnect-23",
+        "mode": "full-replay",
+        "status": "completed",
+        "handshakeAttempts": 1,
+        "client": {
+          "frames": 1,
+          "bytes": 25,
+          "disconnected": false
+        }
+      },
+      {
+        "scenario": "reconnect-24",
+        "mode": "latest-cursor",
+        "status": "completed",
+        "handshakeAttempts": 1,
+        "client": {
+          "frames": 1,
+          "bytes": 25,
+          "disconnected": false
+        }
+      },
+      {
+        "scenario": "reconnect-25",
+        "mode": "full-replay",
+        "status": "completed",
+        "handshakeAttempts": 1,
+        "client": {
+          "frames": 1,
+          "bytes": 25,
+          "disconnected": false
+        }
+      },
+      {
+        "scenario": "reconnect-26",
+        "mode": "latest-cursor",
+        "status": "completed",
+        "handshakeAttempts": 1,
+        "client": {
+          "frames": 1,
+          "bytes": 25,
+          "disconnected": false
+        }
+      },
+      {
+        "scenario": "reconnect-27",
+        "mode": "full-replay",
+        "status": "completed",
+        "handshakeAttempts": 1,
+        "client": {
+          "frames": 1,
+          "bytes": 25,
+          "disconnected": false
+        }
+      },
+      {
+        "scenario": "reconnect-28",
+        "mode": "latest-cursor",
+        "status": "completed",
+        "handshakeAttempts": 1,
+        "client": {
+          "frames": 1,
+          "bytes": 25,
+          "disconnected": false
+        }
+      },
+      {
+        "scenario": "reconnect-29",
+        "mode": "full-replay",
+        "status": "completed",
+        "handshakeAttempts": 1,
+        "client": {
+          "frames": 1,
+          "bytes": 25,
+          "disconnected": false
+        }
+      },
+      {
+        "scenario": "reconnect-30",
+        "mode": "latest-cursor",
+        "status": "completed",
+        "handshakeAttempts": 1,
+        "client": {
+          "frames": 1,
+          "bytes": 25,
+          "disconnected": false
+        }
+      }
+    ],
+    "scope": "Functional cases with mock suppliers; platform analytics collected separately. No real model calls or production data."
+  },
+  "tail": {
+    "version": 1,
+    "workerName": "everchat-stream-validation",
+    "startedAt": "2026-10-21T17:24:05.359Z",
+    "finishedAt": "2026-10-21T17:38:52.222Z",
+    "connected": true,
+    "code": 0,
+    "malformed": 0,
+    "dropped": 0,
+    "partialFrame": false,
+    "scope": "Sanitized real-time tail. Optional CPU fields may be absent; missing values are not zero. Receipt does not prove exhaustive platform coverage.",
+    "routeSummary": [
+      {
+        "route": "DO Library",
+        "samples": 100,
+        "cpuMs": {
+          "p50": 0,
+          "max": 48,
+          "above10": 2
+        },
+        "outcomes": {
+          "ok": 100
+        }
+      },
+      {
+        "route": "GET /api/conversations/:id/sync",
+        "samples": 55,
+        "cpuMs": {
+          "p50": 2,
+          "max": 18,
+          "above10": 2
+        },
+        "outcomes": {
+          "canceled": 4,
+          "responseStreamDisconnected": 30,
+          "ok": 21
+        }
+      },
+      {
+        "route": "GET /api/conversations/:id",
+        "samples": 55,
+        "cpuMs": {
+          "p50": 1,
+          "max": 10,
+          "above10": 0
+        },
+        "outcomes": {
+          "ok": 55
+        }
+      },
+      {
+        "route": "POST /api/conversations",
+        "samples": 1,
+        "cpuMs": {
+          "p50": 2,
+          "max": 2,
+          "above10": 0
+        },
+        "outcomes": {
+          "ok": 1
+        }
+      },
+      {
+        "route": "DO Conversation",
+        "samples": 116,
+        "cpuMs": {
+          "p50": 3,
+          "max": 83,
+          "above10": 33
+        },
+        "outcomes": {
+          "canceled": 31,
+          "ok": 81,
+          "responseStreamDisconnected": 4
+        }
+      },
+      {
+        "route": "POST /api/conversations/:id/messages",
+        "samples": 3,
+        "cpuMs": {
+          "p50": 3,
+          "max": 7,
+          "above10": 0
+        },
+        "outcomes": {
+          "ok": 3
+        }
+      },
+      {
+        "route": "GET /api/conversations",
+        "samples": 10,
+        "cpuMs": {
+          "p50": 1,
+          "max": 3,
+          "above10": 0
+        },
+        "outcomes": {
+          "ok": 10
+        }
+      },
+      {
+        "route": "GET /api/conversations/:id/measurements",
+        "samples": 1,
+        "cpuMs": {
+          "p50": 3,
+          "max": 3,
+          "above10": 0
+        },
+        "outcomes": {
+          "ok": 1
+        }
+      },
+      {
+        "route": "GET /api/__validation/storage",
+        "samples": 1,
+        "cpuMs": {
+          "p50": 2,
+          "max": 2,
+          "above10": 0
+        },
+        "outcomes": {
+          "ok": 1
+        }
+      }
+    ],
+    "events": [
+      {
+        "timestamp": 1792603467085,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 1,
+        "wallTime": 6,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603467076,
+        "outcome": "canceled",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 29,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603488663,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 5,
+        "wallTime": 11,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603497804,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 90,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603497806,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 41,
+        "wallTime": 154,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603497848,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 1,
+        "wallTime": 70,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603498809,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603499519,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603498110,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 10,
+        "wallTime": 978,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603499772,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 4,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603499770,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 20,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603487323,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 18,
+        "wallTime": 1417,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603499871,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 39,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603499868,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "POST",
+        "path": "/api/conversations",
+        "cpuTime": 2,
+        "wallTime": 48,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603499516,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 27,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603500070,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 4,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603501023,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603500064,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 4,
+        "wallTime": 777,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603500766,
+        "outcome": "canceled",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 7,
+        "wallTime": 76,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603501423,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603501416,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 20,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603501429,
+        "outcome": "canceled",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603501915,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 3,
+        "wallTime": 114,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603501866,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "POST",
+        "path": "/api/conversations/:id/messages",
+        "cpuTime": 3,
+        "wallTime": 172,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603501886,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 13,
+        "wallTime": 173,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603502224,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 1,
+        "wallTime": 15,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603502194,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "POST",
+        "path": "/api/conversations/:id/messages",
+        "cpuTime": 7,
+        "wallTime": 98,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603503028,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 8,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603503731,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 0,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603503731,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 70,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603501015,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 330,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603501337,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 1,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603504124,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603503805,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 288,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603504109,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 5,
+        "wallTime": 30,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603504102,
+        "outcome": "canceled",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 5,
+        "wallTime": 117,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603504218,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 64,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603504347,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 0,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603504297,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 3,
+        "wallTime": 23,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603506006,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603505999,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 24,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603506158,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 53,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603507936,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603507928,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 23,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603508097,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 4,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603510095,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603510088,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 21,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603510292,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603508087,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 3,
+        "wallTime": 331,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603510718,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 10,
+        "wallTime": 499,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603511718,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 2,
+        "wallTime": 441,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603512278,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603512269,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 22,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603512843,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 3,
+        "wallTime": 368,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603513717,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 14,
+        "wallTime": 526,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603512477,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 328,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603514482,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603514471,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 3,
+        "wallTime": 27,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603514715,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 3,
+        "wallTime": 493,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603515719,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 11,
+        "wallTime": 470,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603514631,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 18,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603516335,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603516328,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 22,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603516715,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 3,
+        "wallTime": 497,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603517720,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 350,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603516500,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 4,
+        "wallTime": 26,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603518210,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 4,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603518200,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 27,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603518360,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603518717,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 10,
+        "wallTime": 497,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603518354,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 17,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603520046,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603519915,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 129,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603520039,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 25,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603520203,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 4,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603520045,
+        "outcome": "canceled",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 5,
+        "wallTime": 177,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603501705,
+        "outcome": "canceled",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 17,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603521819,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 243,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603520195,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 327,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603522140,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603522132,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 21,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603522716,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 3,
+        "wallTime": 494,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603522282,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 18,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603523977,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603523968,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 24,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603524134,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603523963,
+        "outcome": "canceled",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 3,
+        "wallTime": 158,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603524739,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 2,
+        "wallTime": 472,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603524125,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 17,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603525810,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 4,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603525803,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 28,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603526038,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 33,
+        "wallTime": 211,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603525974,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 19,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603527669,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603527660,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 54,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603527862,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603527909,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 2,
+        "wallTime": 305,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603528718,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 5,
+        "wallTime": 495,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603527856,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 19,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603529543,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603529535,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 27,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603529707,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 4,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603529761,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 9,
+        "wallTime": 476,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603530718,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 3,
+        "wallTime": 498,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603529699,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 17,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603531409,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603531390,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 42,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603531572,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 6,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603531718,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 16,
+        "wallTime": 504,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603532716,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 407,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603531566,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 18,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603533257,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603533248,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 30,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603533429,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 4,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603533720,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 3,
+        "wallTime": 493,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603534720,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 9,
+        "wallTime": 279,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603533424,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 3,
+        "wallTime": 27,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603535138,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603535130,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 31,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603536733,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 5,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603535126,
+        "outcome": "canceled",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 30,
+        "wallTime": 1904,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603537100,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 2,
+        "wallTime": 118,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603537715,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 10,
+        "wallTime": 524,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603538734,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603538727,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 22,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603538920,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 4,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603535308,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 17,
+        "wallTime": 1331,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603538975,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 2,
+        "wallTime": 243,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603539718,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 14,
+        "wallTime": 505,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603538912,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 17,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603540601,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603540594,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 24,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603540898,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 4,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603540950,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 3,
+        "wallTime": 266,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603541717,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 3,
+        "wallTime": 496,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603540885,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 4,
+        "wallTime": 23,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603542585,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603542576,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 28,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603542736,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603542786,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 11,
+        "wallTime": 432,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603543715,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 2,
+        "wallTime": 498,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603544718,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 2,
+        "wallTime": 494,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603545724,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 10,
+        "wallTime": 513,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603546718,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 3,
+        "wallTime": 498,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603547716,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 11,
+        "wallTime": 501,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603548215,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 2,
+        "wallTime": 498,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603549716,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 4,
+        "wallTime": 499,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603550717,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 16,
+        "wallTime": 510,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603551717,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 3,
+        "wallTime": 496,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603552717,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 2,
+        "wallTime": 495,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603553717,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 10,
+        "wallTime": 521,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603554721,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 2,
+        "wallTime": 495,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603555717,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 14,
+        "wallTime": 509,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603556719,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 2,
+        "wallTime": 496,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603557716,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 3,
+        "wallTime": 501,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603558720,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 12,
+        "wallTime": 500,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603559719,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 3,
+        "wallTime": 496,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603560717,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 3,
+        "wallTime": 498,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603561728,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 11,
+        "wallTime": 519,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603542731,
+        "outcome": "canceled",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 13,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603562993,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 2,
+        "wallTime": 6,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603562844,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 143,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603563716,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 14,
+        "wallTime": 506,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603564714,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 2,
+        "wallTime": 499,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603565716,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 2,
+        "wallTime": 496,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603566716,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 13,
+        "wallTime": 509,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603567721,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 3,
+        "wallTime": 489,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603568729,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 2,
+        "wallTime": 481,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603569716,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 60,
+        "wallTime": 594,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603570721,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 3,
+        "wallTime": 482,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603571717,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 14,
+        "wallTime": 500,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603572717,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 2,
+        "wallTime": 493,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603573737,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 2,
+        "wallTime": 99,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603573737,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 177,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603573777,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 48,
+        "wallTime": 136,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603573893,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603573931,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 26,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603573896,
+        "outcome": "canceled",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 141,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603574203,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 4,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603574228,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 29,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603574306,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603574487,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 5,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603574501,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 5,
+        "wallTime": 24,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603574575,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 40,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603574749,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603574760,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 4,
+        "wallTime": 1034,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603575703,
+        "outcome": "canceled",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 6,
+        "wallTime": 95,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603575940,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 4,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603576488,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "POST",
+        "path": "/api/conversations/:id/messages",
+        "cpuTime": 3,
+        "wallTime": 658,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603576998,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 22,
+        "wallTime": 176,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603575938,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 484,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603578926,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 19,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603584086,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603578910,
+        "outcome": "canceled",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 46,
+        "wallTime": 5151,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603584079,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 17,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603589250,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 6,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603584085,
+        "outcome": "canceled",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 43,
+        "wallTime": 5628,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603589239,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 5,
+        "wallTime": 490,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603594867,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603589712,
+        "outcome": "canceled",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 34,
+        "wallTime": 5154,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603594860,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 23,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603600041,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 2,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603594869,
+        "outcome": "canceled",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 33,
+        "wallTime": 5171,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603600034,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 2,
+        "wallTime": 26,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603605207,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603600042,
+        "outcome": "canceled",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 32,
+        "wallTime": 5167,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603605197,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 2,
+        "wallTime": 23,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603610395,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 2,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603605210,
+        "outcome": "canceled",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 41,
+        "wallTime": 5188,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603610388,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 29,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603616178,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603610394,
+        "outcome": "canceled",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 42,
+        "wallTime": 6241,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603616169,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 2,
+        "wallTime": 510,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603621812,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603616636,
+        "outcome": "canceled",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 40,
+        "wallTime": 5629,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603621800,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 3,
+        "wallTime": 506,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603627543,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 4,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603622267,
+        "outcome": "canceled",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 40,
+        "wallTime": 5278,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603627536,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 2,
+        "wallTime": 28,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603632716,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603627547,
+        "outcome": "canceled",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 44,
+        "wallTime": 5171,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603632704,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 2,
+        "wallTime": 31,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603637881,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603632714,
+        "outcome": "canceled",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 42,
+        "wallTime": 5165,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603637874,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 28,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603641323,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 1,
+        "wallTime": 5,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603641311,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations",
+        "cpuTime": 3,
+        "wallTime": 15,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603641501,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 4,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603641496,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations",
+        "cpuTime": 1,
+        "wallTime": 9,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603641704,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 5,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603641696,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations",
+        "cpuTime": 1,
+        "wallTime": 13,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603641905,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 4,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603641901,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations",
+        "cpuTime": 1,
+        "wallTime": 8,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603642078,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 5,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603642072,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations",
+        "cpuTime": 1,
+        "wallTime": 10,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603642273,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 4,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603642263,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations",
+        "cpuTime": 1,
+        "wallTime": 14,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603642475,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 4,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603642469,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations",
+        "cpuTime": 2,
+        "wallTime": 10,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603642676,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 5,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603642671,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations",
+        "cpuTime": 1,
+        "wallTime": 9,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603642873,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 4,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603642869,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations",
+        "cpuTime": 1,
+        "wallTime": 9,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603643060,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations",
+        "cpuTime": 1,
+        "wallTime": 8,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603637880,
+        "outcome": "canceled",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 45,
+        "wallTime": 5292,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603643164,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 4,
+        "wallTime": 69,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603645045,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 4,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603643174,
+        "outcome": "canceled",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 83,
+        "wallTime": 5219,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603578114,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 44,
+        "wallTime": 70843,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603648396,
+        "outcome": "canceled",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 40,
+        "wallTime": 566,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603648933,
+        "outcome": "canceled",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 102,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603653552,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603653559,
+        "outcome": "canceled",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 3,
+        "wallTime": 13,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603653543,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 24,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603653634,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 4,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603653624,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 2,
+        "wallTime": 30,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603653639,
+        "outcome": "canceled",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 3,
+        "wallTime": 16,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603653733,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 4,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603653725,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 2,
+        "wallTime": 25,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603653735,
+        "outcome": "canceled",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 3,
+        "wallTime": 12,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603653945,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 4,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603653880,
+        "outcome": "canceled",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 3,
+        "wallTime": 77,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603654001,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603653946,
+        "outcome": "canceled",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 0,
+        "wallTime": 0,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603676587,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/measurements",
+        "cpuTime": 3,
+        "wallTime": 4,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603676685,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 1,
+        "wallTime": 7,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603676940,
+        "outcome": "canceled",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 10,
+        "wallTime": 23,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603676676,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 2,
+        "wallTime": 286,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603677057,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 5,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603677055,
+        "outcome": "canceled",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 6,
+        "wallTime": 20,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603677051,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 33,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603677321,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603677384,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 4,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603677319,
+        "outcome": "responseStreamDisconnected",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 1,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603677315,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 3,
+        "wallTime": 20,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603677608,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 4,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603677668,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 4,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603677607,
+        "outcome": "responseStreamDisconnected",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 0,
+        "wallTime": 0,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603677600,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 3,
+        "wallTime": 19,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603677816,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 4,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603677815,
+        "outcome": "canceled",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 6,
+        "wallTime": 15,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603677811,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 27,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603677976,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 4,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603678030,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603677971,
+        "outcome": "responseStreamDisconnected",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 0,
+        "wallTime": 0,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603678234,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 4,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603677968,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 19,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603678293,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603678233,
+        "outcome": "responseStreamDisconnected",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 0,
+        "wallTime": 1,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603678228,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 19,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603678444,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603678438,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 29,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603678603,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 4,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603678599,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 14,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603678857,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603678850,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 18,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603678897,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 3,
+        "wallTime": 38,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603679053,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 31,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603679212,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 17,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603679462,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 15,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603679646,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 31,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603679814,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 19,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603680093,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 3,
+        "wallTime": 25,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603680290,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 2,
+        "wallTime": 34,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603680457,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 15,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603680717,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 6,
+        "wallTime": 21,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603680925,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 2,
+        "wallTime": 30,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603681108,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603681163,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 4,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603681355,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 16,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603681542,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 31,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603681712,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 14,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603681968,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 16,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603682171,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 24,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603682331,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 16,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603682588,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 22,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603682795,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 2,
+        "wallTime": 30,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603682970,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 14,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603683234,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603683224,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 3,
+        "wallTime": 17,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603683629,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 19,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603684083,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603684080,
+        "outcome": "canceled",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 5,
+        "wallTime": 15,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603684078,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 26,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603684222,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 3,
+        "wallTime": 20,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603684483,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 16,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603684844,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 15,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603685116,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 2,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603685175,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 2,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603685302,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id",
+        "cpuTime": 1,
+        "wallTime": 34,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603685480,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 3,
+        "wallTime": 20,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603685744,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 19,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603686106,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603686101,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 1,
+        "wallTime": 14,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603686158,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 3,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603686371,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 2,
+        "wallTime": 24,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603705324,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 1,
+        "wallTime": 7,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603705336,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 3,
+        "wallTime": 7,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603705338,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 3,
+        "wallTime": 8,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603705589,
+        "outcome": "ok",
+        "entrypoint": "Conversation",
+        "durableObject": true,
+        "cpuTime": 2,
+        "wallTime": 7,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603705596,
+        "outcome": "ok",
+        "entrypoint": "Library",
+        "durableObject": true,
+        "cpuTime": 0,
+        "wallTime": 4,
+        "truncated": false
+      },
+      {
+        "timestamp": 1792603705318,
+        "outcome": "ok",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/__validation/storage",
+        "cpuTime": 2,
+        "wallTime": 283,
+        "truncated": false
+      }
+    ]
+  },
+  "storage": {
+    "sampledAt": "2026-10-21T17:28:25.595Z",
+    "libraryBytes": 2301952,
+    "conversationBytes": [
+      593920,
+      860160,
+      593920
+    ],
+    "scope": "Post-run SQLite database allocation from deployed objects. Not a platform billing total or the peak during streaming."
+  },
+  "profile": {
+    "request": {
+      "start": "2026-10-21T17:27:22.688Z",
+      "status": 200,
+      "contentType": "application/vnd.google.protobuf",
+      "bytes": 4023,
+      "finishedAt": "2026-10-21T17:27:35.626Z",
+      "traffic": [
+        {
+          "status": 200,
+          "elapsedMs": 184
+        },
+        {
+          "status": 200,
+          "elapsedMs": 79
+        },
+        {
+          "status": 200,
+          "elapsedMs": 97
+        },
+        {
+          "status": 200,
+          "elapsedMs": 97
+        },
+        {
+          "status": 200,
+          "elapsedMs": 73
+        },
+        {
+          "status": 200,
+          "elapsedMs": 94
+        },
+        {
+          "status": 200,
+          "elapsedMs": 99
+        },
+        {
+          "status": 200,
+          "elapsedMs": 98
+        },
+        {
+          "status": 200,
+          "elapsedMs": 97
+        },
+        {
+          "status": 200,
+          "elapsedMs": 89
+        },
+        {
+          "status": 200,
+          "elapsedMs": 89
+        },
+        {
+          "status": 200,
+          "elapsedMs": 77
+        },
+        {
+          "status": 200,
+          "elapsedMs": 76
+        },
+        {
+          "status": 200,
+          "elapsedMs": 167
+        },
+        {
+          "status": 200,
+          "elapsedMs": 96
+        },
+        {
+          "status": 200,
+          "elapsedMs": 72
+        },
+        {
+          "status": 200,
+          "elapsedMs": 95
+        },
+        {
+          "status": 200,
+          "elapsedMs": 107
+        },
+        {
+          "status": 200,
+          "elapsedMs": 89
+        },
+        {
+          "status": 200,
+          "elapsedMs": 94
+        },
+        {
+          "status": 200,
+          "elapsedMs": 71
+        },
+        {
+          "status": 200,
+          "elapsedMs": 72
+        },
+        {
+          "status": 200,
+          "elapsedMs": 74
+        },
+        {
+          "status": 200,
+          "elapsedMs": 74
+        },
+        {
+          "status": 200,
+          "elapsedMs": 71
+        },
+        {
+          "status": 200,
+          "elapsedMs": 79
+        },
+        {
+          "status": 200,
+          "elapsedMs": 134
+        },
+        {
+          "status": 200,
+          "elapsedMs": 257
+        },
+        {
+          "status": 200,
+          "elapsedMs": 70
+        },
+        {
+          "status": 200,
+          "elapsedMs": 82
+        }
+      ]
+    },
+    "analysis": {
+      "sampleType": [
+        "cpu",
+        "nanoseconds"
+      ],
+      "durationMs": 9999.851,
+      "totalSampleWeightMs": 8434.97,
+      "flat": [
+        {
+          "name": "get",
+          "file": "worker/library/durable-object.ts",
+          "line": 367,
+          "weightMs": 4801.884
+        },
+        {
+          "name": "(garbage collector)",
+          "file": "",
+          "line": 0,
+          "weightMs": 1829.203
+        },
+        {
+          "name": "exec",
+          "file": "",
+          "line": 0,
+          "weightMs": 1296.86
+        },
+        {
+          "name": "(idle)",
+          "file": "",
+          "line": 0,
+          "weightMs": 266.238
+        },
+        {
+          "name": "toArray",
+          "file": "",
+          "line": 0,
+          "weightMs": 173.729
+        },
+        {
+          "name": "(program)",
+          "file": "",
+          "line": 0,
+          "weightMs": 44.583
+        },
+        {
+          "name": "go",
+          "file": "node_modules/.pnpm/micromark@4.0.3_supports-color@10.2.2/node_modules/micromark/lib/create-tokenizer.js",
+          "line": 230,
+          "weightMs": 4.268
+        },
+        {
+          "name": "go",
+          "file": "node_modules/.pnpm/micromark@4.0.3_supports-color@10.2.2/node_modules/micromark/lib/create-tokenizer.js",
+          "line": 230,
+          "weightMs": 3.199
+        },
+        {
+          "name": "go",
+          "file": "node_modules/.pnpm/micromark@4.0.3_supports-color@10.2.2/node_modules/micromark/lib/create-tokenizer.js",
+          "line": 230,
+          "weightMs": 3.191
+        },
+        {
+          "name": "go",
+          "file": "node_modules/.pnpm/micromark@4.0.3_supports-color@10.2.2/node_modules/micromark/lib/create-tokenizer.js",
+          "line": 230,
+          "weightMs": 2.134
+        },
+        {
+          "name": "exec",
+          "file": "",
+          "line": 0,
+          "weightMs": 2.122
+        },
+        {
+          "name": "(anonymous)",
+          "file": "shared/search/query.ts",
+          "line": 28,
+          "weightMs": 1.198
+        },
+        {
+          "name": "consume",
+          "file": "node_modules/.pnpm/micromark@4.0.3_supports-color@10.2.2/node_modules/micromark/lib/create-tokenizer.js",
+          "line": 237,
+          "weightMs": 1.068
+        },
+        {
+          "name": "gfmStrikethroughFromMarkdown",
+          "file": "node_modules/.pnpm/mdast-util-gfm-strikethrough@2.0.1_supports-color@10.2.2/node_modules/mdast-util-gfm-strikethrough/lib/index.js",
+          "line": 45,
+          "weightMs": 1.067
+        },
+        {
+          "name": "enter",
+          "file": "node_modules/.pnpm/micromark@4.0.3_supports-color@10.2.2/node_modules/micromark/lib/create-tokenizer.js",
+          "line": 273,
+          "weightMs": 1.063
+        },
+        {
+          "name": "consume",
+          "file": "node_modules/.pnpm/micromark@4.0.3_supports-color@10.2.2/node_modules/micromark/lib/create-tokenizer.js",
+          "line": 237,
+          "weightMs": 1.063
+        },
+        {
+          "name": "one",
+          "file": "",
+          "line": 0,
+          "weightMs": 1.062
+        },
+        {
+          "name": "combineExtensions",
+          "file": "node_modules/.pnpm/micromark-util-combine-extensions@2.0.1/node_modules/micromark-util-combine-extensions/index.js",
+          "line": 22,
+          "weightMs": 1.038
+        }
+      ],
+      "inclusive": [
+        {
+          "name": "(root)",
+          "file": "",
+          "line": 0,
+          "weightMs": 8434.97
+        },
+        {
+          "name": "get",
+          "file": "worker/library/durable-object.ts",
+          "line": 367,
+          "weightMs": 4801.884
+        },
+        {
+          "name": "(garbage collector)",
+          "file": "",
+          "line": 0,
+          "weightMs": 1829.203
+        },
+        {
+          "name": "indexSnapshot",
+          "file": "worker/library/durable-object.ts",
+          "line": 249,
+          "weightMs": 1470.589
+        },
+        {
+          "name": "exec",
+          "file": "",
+          "line": 0,
+          "weightMs": 1296.86
+        },
+        {
+          "name": "(idle)",
+          "file": "",
+          "line": 0,
+          "weightMs": 266.238
+        },
+        {
+          "name": "list",
+          "file": "worker/library/durable-object.ts",
+          "line": 243,
+          "weightMs": 173.729
+        },
+        {
+          "name": "toArray",
+          "file": "",
+          "line": 0,
+          "weightMs": 173.729
+        },
+        {
+          "name": "(program)",
+          "file": "",
+          "line": 0,
+          "weightMs": 44.583
+        },
+        {
+          "name": "applySearchDocuments",
+          "file": "tests/support/runtime/library.ts",
+          "line": 248,
+          "weightMs": 22.473
+        },
+        {
+          "name": "applySearchDocuments",
+          "file": "worker/library/durable-object.ts",
+          "line": 218,
+          "weightMs": 22.473
+        },
+        {
+          "name": "replace",
+          "file": "worker/search/index.ts",
+          "line": 89,
+          "weightMs": 22.473
+        },
+        {
+          "name": "transactionSync",
+          "file": "",
+          "line": 0,
+          "weightMs": 22.473
+        },
+        {
+          "name": "(anonymous)",
+          "file": "worker/search/index.ts",
+          "line": 90,
+          "weightMs": 22.473
+        },
+        {
+          "name": "searchableMarkdown",
+          "file": "worker/search/index.ts",
+          "line": 15,
+          "weightMs": 18.091
+        },
+        {
+          "name": "fromMarkdown",
+          "file": "node_modules/.pnpm/mdast-util-from-markdown@2.1.0_supports-color@10.2.2/node_modules/mdast-util-from-markdown/lib/index.js",
+          "line": 74,
+          "weightMs": 15.986
+        },
+        {
+          "name": "write",
+          "file": "node_modules/.pnpm/micromark@4.0.3_supports-color@10.2.2/node_modules/micromark/lib/create-tokenizer.js",
+          "line": 134,
+          "weightMs": 11.718
+        },
+        {
+          "name": "main",
+          "file": "node_modules/.pnpm/micromark@4.0.3_supports-color@10.2.2/node_modules/micromark/lib/create-tokenizer.js",
+          "line": 203,
+          "weightMs": 11.718
+        },
+        {
+          "name": "go",
+          "file": "node_modules/.pnpm/micromark@4.0.3_supports-color@10.2.2/node_modules/micromark/lib/create-tokenizer.js",
+          "line": 230,
+          "weightMs": 11.718
+        },
+        {
+          "name": "flowContinue",
+          "file": "node_modules/.pnpm/micromark@4.0.3_supports-color@10.2.2/node_modules/micromark/lib/initialize/document.js",
+          "line": 208,
+          "weightMs": 8.527
+        },
+        {
+          "name": "writeToChild",
+          "file": "node_modules/.pnpm/micromark@4.0.3_supports-color@10.2.2/node_modules/micromark/lib/initialize/document.js",
+          "line": 235,
+          "weightMs": 8.527
+        },
+        {
+          "name": "write",
+          "file": "node_modules/.pnpm/micromark@4.0.3_supports-color@10.2.2/node_modules/micromark/lib/create-tokenizer.js",
+          "line": 134,
+          "weightMs": 8.527
+        },
+        {
+          "name": "main",
+          "file": "node_modules/.pnpm/micromark@4.0.3_supports-color@10.2.2/node_modules/micromark/lib/create-tokenizer.js",
+          "line": 203,
+          "weightMs": 8.527
+        },
+        {
+          "name": "go",
+          "file": "node_modules/.pnpm/micromark@4.0.3_supports-color@10.2.2/node_modules/micromark/lib/create-tokenizer.js",
+          "line": 230,
+          "weightMs": 8.527
+        },
+        {
+          "name": "postprocess",
+          "file": "node_modules/.pnpm/micromark@4.0.3_supports-color@10.2.2/node_modules/micromark/lib/postprocess.js",
+          "line": 13,
+          "weightMs": 4.268
+        },
+        {
+          "name": "subtokenize",
+          "file": "node_modules/.pnpm/micromark-util-subtokenize@2.1.0/node_modules/micromark-util-subtokenize/index.js",
+          "line": 20,
+          "weightMs": 4.268
+        },
+        {
+          "name": "subcontent",
+          "file": "node_modules/.pnpm/micromark-util-subtokenize@2.1.0/node_modules/micromark-util-subtokenize/index.js",
+          "line": 123,
+          "weightMs": 4.268
+        },
+        {
+          "name": "write",
+          "file": "node_modules/.pnpm/micromark@4.0.3_supports-color@10.2.2/node_modules/micromark/lib/create-tokenizer.js",
+          "line": 134,
+          "weightMs": 4.268
+        },
+        {
+          "name": "main",
+          "file": "node_modules/.pnpm/micromark@4.0.3_supports-color@10.2.2/node_modules/micromark/lib/create-tokenizer.js",
+          "line": 203,
+          "weightMs": 4.268
+        },
+        {
+          "name": "go",
+          "file": "node_modules/.pnpm/micromark@4.0.3_supports-color@10.2.2/node_modules/micromark/lib/create-tokenizer.js",
+          "line": 230,
+          "weightMs": 4.268
+        },
+        {
+          "name": "chunkInside",
+          "file": "node_modules/.pnpm/micromark-core-commonmark@2.0.4/node_modules/micromark-core-commonmark/lib/content.js",
+          "line": 79,
+          "weightMs": 4.265
+        },
+        {
+          "name": "contentEnd",
+          "file": "node_modules/.pnpm/micromark-core-commonmark@2.0.4/node_modules/micromark-core-commonmark/lib/content.js",
+          "line": 100,
+          "weightMs": 3.202
+        },
+        {
+          "name": "ok",
+          "file": "node_modules/.pnpm/micromark@4.0.3_supports-color@10.2.2/node_modules/micromark/lib/create-tokenizer.js",
+          "line": 425,
+          "weightMs": 3.202
+        },
+        {
+          "name": "onsuccessfulconstruct",
+          "file": "node_modules/.pnpm/micromark@4.0.3_supports-color@10.2.2/node_modules/micromark/lib/create-tokenizer.js",
+          "line": 297,
+          "weightMs": 3.202
+        },
+        {
+          "name": "addResult",
+          "file": "node_modules/.pnpm/micromark@4.0.3_supports-color@10.2.2/node_modules/micromark/lib/create-tokenizer.js",
+          "line": 451,
+          "weightMs": 3.202
+        },
+        {
+          "name": "resolveContent",
+          "file": "node_modules/.pnpm/micromark-core-commonmark@2.0.4/node_modules/micromark-core-commonmark/lib/content.js",
+          "line": 36,
+          "weightMs": 3.202
+        },
+        {
+          "name": "subtokenize",
+          "file": "node_modules/.pnpm/micromark-util-subtokenize@2.1.0/node_modules/micromark-util-subtokenize/index.js",
+          "line": 20,
+          "weightMs": 3.202
+        },
+        {
+          "name": "subcontent",
+          "file": "node_modules/.pnpm/micromark-util-subtokenize@2.1.0/node_modules/micromark-util-subtokenize/index.js",
+          "line": 123,
+          "weightMs": 3.202
+        },
+        {
+          "name": "write",
+          "file": "node_modules/.pnpm/micromark@4.0.3_supports-color@10.2.2/node_modules/micromark/lib/create-tokenizer.js",
+          "line": 134,
+          "weightMs": 3.202
+        },
+        {
+          "name": "main",
+          "file": "node_modules/.pnpm/micromark@4.0.3_supports-color@10.2.2/node_modules/micromark/lib/create-tokenizer.js",
+          "line": 203,
+          "weightMs": 3.202
+        },
+        {
+          "name": "go",
+          "file": "node_modules/.pnpm/micromark@4.0.3_supports-color@10.2.2/node_modules/micromark/lib/create-tokenizer.js",
+          "line": 230,
+          "weightMs": 3.202
+        },
+        {
+          "name": "exec",
+          "file": "",
+          "line": 0,
+          "weightMs": 2.122
+        },
+        {
+          "name": "(anonymous)",
+          "file": "shared/search/query.ts",
+          "line": 28,
+          "weightMs": 1.198
+        },
+        {
+          "name": "data",
+          "file": "node_modules/.pnpm/micromark@4.0.3_supports-color@10.2.2/node_modules/micromark/lib/initialize/content.js",
+          "line": 62,
+          "weightMs": 1.068
+        },
+        {
+          "name": "consume",
+          "file": "node_modules/.pnpm/micromark@4.0.3_supports-color@10.2.2/node_modules/micromark/lib/create-tokenizer.js",
+          "line": 237,
+          "weightMs": 1.068
+        },
+        {
+          "name": "gfmFromMarkdown",
+          "file": "node_modules/.pnpm/mdast-util-gfm@3.1.0_supports-color@10.2.2/node_modules/mdast-util-gfm/lib/index.js",
+          "line": 33,
+          "weightMs": 1.067
+        },
+        {
+          "name": "gfmStrikethroughFromMarkdown",
+          "file": "node_modules/.pnpm/mdast-util-gfm-strikethrough@2.0.1_supports-color@10.2.2/node_modules/mdast-util-gfm-strikethrough/lib/index.js",
+          "line": 45,
+          "weightMs": 1.067
+        },
+        {
+          "name": "start",
+          "file": "node_modules/.pnpm/micromark@4.0.3_supports-color@10.2.2/node_modules/micromark/lib/create-tokenizer.js",
+          "line": 400,
+          "weightMs": 1.063
+        },
+        {
+          "name": "chunkStart",
+          "file": "node_modules/.pnpm/micromark-core-commonmark@2.0.4/node_modules/micromark-core-commonmark/lib/content.js",
+          "line": 61,
+          "weightMs": 1.063
+        },
+        {
+          "name": "enter",
+          "file": "node_modules/.pnpm/micromark@4.0.3_supports-color@10.2.2/node_modules/micromark/lib/create-tokenizer.js",
+          "line": 273,
+          "weightMs": 1.063
+        },
+        {
+          "name": "consume",
+          "file": "node_modules/.pnpm/micromark@4.0.3_supports-color@10.2.2/node_modules/micromark/lib/create-tokenizer.js",
+          "line": 237,
+          "weightMs": 1.063
+        },
+        {
+          "name": "one",
+          "file": "",
+          "line": 0,
+          "weightMs": 1.062
+        },
+        {
+          "name": "gfm",
+          "file": "node_modules/.pnpm/micromark-extension-gfm@3.0.0/node_modules/micromark-extension-gfm/index.js",
+          "line": 39,
+          "weightMs": 1.038
+        },
+        {
+          "name": "combineExtensions",
+          "file": "node_modules/.pnpm/micromark-util-combine-extensions@2.0.1/node_modules/micromark-util-combine-extensions/index.js",
+          "line": 22,
+          "weightMs": 1.038
+        }
+      ],
+      "scope": "Raw V8 profile includes idle/program/root time; do not treat summed sample weights as billed CPU or map them to a single request."
+    },
+    "rawSha256": "0843a38d63fad266b906c505e2dd94182456a724b7f592b1152f87c54a6e17fc",
+    "limitations": "Contains Library, search, GC and idle stacks; not request-scoped. Does not isolate stateless sync CPU spikes or prove Core overhead. Sample weights are not platform billing CPU."
+  },
+  "analytics": {
+    "window": {
+      "start": "2026-10-21T17:22:00Z",
+      "end": "2026-10-21T17:40:00Z"
+    },
+    "scope": "Entire fresh isolated validation window, including API setup, streamed generation, reads, reconnects and separate CPU profiling traffic; not production billing or a function-only cost.",
+    "data": null,
+    "errors": [
+      {
+        "message": "Rate limiter budget depleted. Please try again after 5 minutes. Refer to this page for more details about rate limits: https://developers.cloudflare.com/analytics/graphql-api/limits/",
+        "path": null,
+        "extensions": {
+          "code": "budget",
+          "timestamp": "2026-10-21T18:47:53.191054686Z",
+          "ray_id": "a4e26eea5ad1e2e3-SEA"
+        }
+      }
+    ]
+  },
+  "cleanup": {
+    "cleanedAt": "2026-10-21T17:39:03.901Z",
+    "workerDeleted": true,
+    "namespacesRemoved": [
+      {
+        "name": "CONVERSATIONS",
+        "id": "396a1dfed6f841598ef8d606cc337222"
+      },
+      {
+        "name": "LIBRARY",
+        "id": "6f41c8509b25405c9cdf901ae892ef77"
+      }
+    ],
+    "domainRemoved": true,
+    "productionSettingsUnchanged": true,
+    "accessApplicationAbsent": true,
+    "accessPolicyAbsent": true,
+    "accessTokenDeleteSubmitted": true,
+    "accessTokenAbsenceConfirmed": true,
+    "accessVerification": {
+      "checkedAt": "2026-10-21T18:50:16.458Z",
+      "resources": [
+        {
+          "type": "application",
+          "status": 404,
+          "success": false,
+          "errors": [
+            {
+              "code": 11021,
+              "message": "access.api.error.unknown_application"
+            }
+          ],
+          "absent": true
+        },
+        {
+          "type": "policy",
+          "status": 403,
+          "success": false,
+          "errors": [
+            {
+              "code": 1010
+            }
+          ],
+          "absent": false
+        },
+        {
+          "type": "token",
+          "status": 403,
+          "success": false,
+          "errors": [
+            {
+              "code": 1010
+            }
+          ],
+          "absent": false
+        }
+      ]
+    },
+    "controlPanelVerification": "On the following goal turn, a fresh Cloudflare service-token list displayed the empty-state onboarding page. Token absence confirmed; temporary application and policy had already been confirmed absent. API 403 reads remain recorded only as failed verification attempts.",
+    "privateFilesRemoved": [
+      "credentials",
+      "isolatedConfig",
+      "productionBaseline"
+    ],
+    "receiverStopped": true,
+    "twentyMinuteCleanupPromiseMet": false,
+    "timing": "Token UI creation 2026-10-21 17:18 UTC; testing completed by 17:28:26 UTC; cleanup began before 17:30 UTC. Worker removal confirmed 17:39:03 UTC; token delete submitted before 17:41:38 UTC, final absence not confirmed. Do not claim revocation within twenty minutes. On the next turn the control panel confirmed an empty token list around 18:55 UTC. This is the confirmation time, not the actual revocation time.",
+    "accessTokenAbsenceConfirmedAt": "2026-10-21T18:55:00Z"
+  },
+  "remaining": [
+    "Closed-window platform resource totals unavailable after mixed GraphQL query hit budget",
+    "Free stateless CPU assessment: sync samples 17/18 ms need attribution; current profile is not sufficient",
+    "Main release and production Access, long conversation, anonymous share, MCP and notification verification"
+  ],
+  "workerAnalyticsFollowup": {
+    "result": {
+      "data": {
+        "viewer": {
+          "accounts": [
+            {
+              "workersInvocationsAdaptive": []
+            }
+          ]
+        }
+      },
+      "errors": null
+    },
+    "available": false,
+    "scope": "Reduced Worker-only query returned an empty dataset; no zero-usage inference."
+  },
+  "durableObjectAnalyticsFollowup": {
+    "queriedAt": "2026-10-21T18:56:41.555Z",
+    "window": {
+      "start": "2026-10-21T17:23:00Z",
+      "end": "2026-10-21T17:30:00Z"
+    },
+    "namespaces": [
+      {
+        "name": "CONVERSATIONS",
+        "id": "396a1dfed6f841598ef8d606cc337222"
+      },
+      {
+        "name": "LIBRARY",
+        "id": "6f41c8509b25405c9cdf901ae892ef77"
+      }
+    ],
+    "scope": "Closed seven-minute isolated window; includes three sustained scenarios, completed-stream reconnects and profile traffic. No production data; adaptive platform aggregation is not an invoice.",
+    "data": {
+      "viewer": {
+        "accounts": [
+          {
+            "durableObjectsPeriodicGroups": []
+          }
+        ]
+      }
+    },
+    "errors": null,
+    "available": false,
+    "limitation": "Both deleted namespaces returned an empty dataset. No zero-usage, peak-memory or closed-window billing conclusion."
+  },
+  "historicalLogsFollowup": {
+    "source": "Cloudflare Observability control panel, read-only",
+    "window": {
+      "start": "2026-10-21T17:23:00Z",
+      "end": "2026-10-21T17:30:00Z"
+    },
+    "service": "everchat-stream-validation",
+    "filter": "$metadata.service = \"everchat-stream-validation\" AND $workers.cpuTimeMs > 10",
+    "observations": [
+      {
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "after": 39,
+        "cpuMs": 18,
+        "wallMs": 1417,
+        "executionModel": "stateless",
+        "outcome": "ok",
+        "correlation": "Route, after cursor, CPU and wall time match the real-time tail event timestamp 1792603487323. Control-panel record timestamp differs; no function timing inferred.",
+        "eventRecordedAt": "2026-10-21T17:24:49.152Z"
+      },
+      {
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "after": 22,
+        "cpuMs": 17,
+        "outcome": "ok",
+        "scope": "Visible event row; invocation body not expanded.",
+        "eventRecordedAt": "2026-10-21T17:25:37.049Z"
+      },
+      {
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "after": 0,
+        "cpuMs": 20,
+        "scope": "Visible Worker event row before tail collection began.",
+        "eventRecordedAt": "2026-10-21T17:23:45.383Z"
+      },
+      {
+        "method": "PUT",
+        "path": "/api/settings/providers",
+        "cpuMs": 27,
+        "scope": "Visible Worker event row before tail collection began.",
+        "eventRecordedAt": "2026-10-21T17:23:42.085Z"
+      }
+    ],
+    "traceResult": "No spans found for the inspected 18 ms request.",
+    "limitations": "Invocation details confirm route, execution model, CPU and wall time, but do not provide function CPU attribution. Counts include DO events, setup and external non-API scans; they are not suite request totals or zero-error proof. No request headers, client IP, private conversation identifiers or access credentials retained.",
+    "apiOnlyQuery": {
+      "filter": "$metadata.service = \"everchat-stream-validation\" AND $workers.executionModel = \"stateless\" AND startsWith($workers.event.path, \"/api/\")",
+      "visibleSuccessEvents": 169,
+      "visibleErrorEvents": 0,
+      "scope": "Control-panel event counts including setup, generation, reconnect and profiling traffic. Not exhaustive provider or request correctness proof. JSON export timed out and no downloadable evidence was retrieved."
+    }
+  },
+  "browserRegressionFollowup": {
+    "recordedAt": "2026-10-22T02:30:21Z",
+    "reportHead": "1e42509",
+    "productCodeEquivalentTo": "2740e8c",
+    "runs": [
+      {
+        "scope": "Complete E2E suite",
+        "command": "pnpm test:e2e --reporter=line",
+        "passed": 396,
+        "failed": 26,
+        "durationMinutes": 55.5
+      },
+      {
+        "scope": "First recheck of the 26 original failures",
+        "command": "pnpm test:e2e --last-failed --reporter=line",
+        "passed": 25,
+        "failed": 1,
+        "durationMinutes": 2.8
+      },
+      {
+        "scope": "Isolated body-search retry test, repeated twice",
+        "passed": 2,
+        "failed": 0,
+        "durationSeconds": 6.7
+      },
+      {
+        "scope": "Second recheck in the original failed-test order, with temporary navigation/Vite/console diagnostics in the body-search test",
+        "passed": 26,
+        "failed": 0,
+        "durationMinutes": 2.5
+      },
+      {
+        "scope": "Complete search and shortcuts files, after removing temporary diagnostics",
+        "command": "pnpm test:e2e tests/e2e/library/shortcuts.spec.ts tests/e2e/library/library-search.spec.ts --reporter=line",
+        "passed": 13,
+        "failed": 0,
+        "durationSeconds": 46.4
+      }
+    ],
+    "searchFailure": {
+      "test": "body-search retry stays a button action while title results remain selectable",
+      "observed": "The expected intercepted 502 was followed by another document navigation to the root page and Vite/React startup. The search dialog disappeared before the retry assertion. No corresponding JavaScript exception was captured.",
+      "reproduction": "Not reproduced in two isolated repetitions, the second ordered 26-test recheck, or the final 13-test search regression.",
+      "cause": "Unresolved; neither a product defect nor an environment-only cause is established.",
+      "changes": "No product or permanent test changes. Temporary diagnostic listeners were removed. Assertions were preserved."
+    },
+    "limitations": "Multiple reruns are not a single complete passing suite. Offline page states, successful localhost requests and failed fixture cleanup do not establish the cause of every original failure. This followup created no Cloudflare resources or credentials; CPU attribution, closed-window platform resource evidence and post-deployment validation remain pending."
+  }
+}

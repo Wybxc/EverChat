@@ -21,6 +21,7 @@ async function setup(
   request: APIRequestContext,
   provider: ProviderKind = 'openai-chat',
   limit = 20,
+  modelMode: 'service' | 'robust' = 'service',
 ) {
   expect((await request.post('/__dev/access/login', { headers })).ok()).toBe(true);
   const original = (await request
@@ -33,7 +34,7 @@ async function setup(
     apiKey: string;
   };
   const providerId = crypto.randomUUID(),
-    model = `tools-service-${provider}`;
+    model = `tools-${modelMode}-${provider}`;
   expect(
     (
       await request.put('/api/settings/providers', {
@@ -279,18 +280,52 @@ for (const provider of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
     }
   });
 
-test('an exhausted daily budget stops before the next model, survives Library reset, and rejects new tasks without breaking idempotency', async ({
+for (const provider of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'] as const)
+  test(`${provider} persists an invalid call, executes its valid HTTP sibling once, and completes with matching results`, async ({
+    request,
+  }) => {
+    const f = await setup(request, provider, 20, 'robust');
+    try {
+      const c = await f.create();
+      expect((await c.submit()).status()).toBe(202);
+      await expect.poll(async () => (await c.snapshot()).messages[1]?.status).toBe('completed');
+      const answer = (await c.snapshot()).messages[1];
+      expect(answer.tools!.calls.map((call) => call.state)).toEqual(['failed', 'completed']);
+      expect(answer.tools!.calls[0]).toMatchObject({
+        call: { invalid: true, name: 'web_search', input: { query: 42 } },
+        result: { status: 'failed', issue: { code: 'TOOL_INVALID' } },
+      });
+      const state = await c.state();
+      expect(state.modelCalls).toBe(2);
+      expect(state.serviceRequests).toHaveLength(1);
+      expect(JSON.parse(state.serviceRequests[0].body).urls).toEqual([
+        'http://developers.cloudflare.com/',
+      ]);
+      expect((await f.settings()).usedToday).toBe(f.baseline + 1);
+      expect(JSON.stringify(answer)).not.toMatch(/encrypted-fixture|fixture-signature|tvly-native/);
+      expect((await c.submit()).status()).toBe(202);
+      expect((await c.state()).serviceRequests).toHaveLength(1);
+      await expect.poll(async () => (await c.state()).workflow?.status).toBe('complete');
+    } finally {
+      await f.cleanup();
+    }
+  });
+
+test('an exhausted daily budget lets the model finish without more tools, survives Library reset, and rejects new tasks without breaking idempotency', async ({
   request,
 }) => {
   const f = await setup(request, 'openai-chat', 1);
   try {
     const c = await f.create();
     expect((await c.submit()).status()).toBe(202);
-    await expect.poll(async () => (await c.snapshot()).messages[1]?.status).toBe('failed');
+    await expect.poll(async () => (await c.snapshot()).messages[1]?.status).toBe('completed');
     const answer = (await c.snapshot()).messages[1];
-    expect(answer.error).toContain('每日请求上限');
+    expect(answer.tools!.calls[1].result).toMatchObject({
+      status: 'failed',
+      failure: { code: 'RATE_LIMIT', terminal: true },
+    });
     expect(answer.tools!.calls.map((call) => call.state)).toEqual(['completed', 'failed']);
-    expect(await c.state()).toMatchObject({ modelCalls: 1, privatePayloads: 0, privateStreams: 0 });
+    expect(await c.state()).toMatchObject({ modelCalls: 2, privatePayloads: 0, privateStreams: 0 });
     expect((await c.state()).serviceRequests).toHaveLength(1);
     await f.resetLibrary();
     expect((await f.settings()).usedToday).toBe(f.baseline + 1);
@@ -301,7 +336,7 @@ test('an exhausted daily budget stops before the next model, survives Library re
     });
     expect(rejected.status()).toBe(429);
     expect((await c.snapshot()).messages).toHaveLength(2);
-    expect((await c.state()).modelCalls).toBe(1);
+    expect((await c.state()).modelCalls).toBe(2);
   } finally {
     await f.cleanup();
   }
@@ -317,12 +352,12 @@ test('concurrent conversations share one atomic daily ledger and cannot exceed i
     const responses = await Promise.all([first.submit(), second.submit()]);
     for (const r of responses) expect(r.status()).toBe(202);
     for (const c of [first, second])
-      await expect.poll(async () => (await c.snapshot()).messages[1]?.status).toBe('failed');
+      await expect.poll(async () => (await c.snapshot()).messages[1]?.status).toBe('completed');
     expect(
       (await first.state()).serviceRequests.length + (await second.state()).serviceRequests.length,
     ).toBe(1);
     expect((await f.settings()).usedToday).toBe(f.baseline + 1);
-    for (const c of [first, second]) expect((await c.state()).modelCalls).toBe(1);
+    for (const c of [first, second]) expect((await c.state()).modelCalls).toBe(2);
   } finally {
     await f.cleanup();
   }
@@ -336,13 +371,13 @@ for (const status of [401, 429])
     try {
       const c = await f.create(`service-${status}`);
       expect((await c.submit()).status()).toBe(202);
-      await expect.poll(async () => (await c.snapshot()).messages[1]?.status).toBe('failed');
+      await expect.poll(async () => (await c.snapshot()).messages[1]?.status).toBe('completed');
       const answer = (await c.snapshot()).messages[1];
       expect(answer.tools!.calls.map((call) => call.state)).toEqual(['failed', 'failed']);
       expect(JSON.stringify(answer)).not.toContain(key);
       expect((await c.state()).serviceRequests).toHaveLength(1);
       expect((await f.settings()).usedToday).toBe(f.baseline + 1);
-      expect((await c.state()).modelCalls).toBe(1);
+      expect((await c.state()).modelCalls).toBe(2);
       await expect.poll(async () => (await c.state()).workflow?.status).toBe('complete');
       await expect
         .poll(async () => (await c.state()).pendingNotifications, { timeout: 5000 })
@@ -401,22 +436,27 @@ test('stopping the production service fetch aborts it, retains its attempt and n
   }
 });
 
-test('a production service timeout records its attempt and stops the root before a second tool or model', async ({
+test('production service timeouts remain local and preserve attempts before the model finishes', async ({
   request,
 }) => {
+  test.setTimeout(60_000);
   const f = await setup(request);
   try {
     const c = await f.create('service-timeout');
     expect((await c.submit()).status()).toBe(202);
     await expect
-      .poll(async () => (await c.snapshot()).messages[1]?.status, { timeout: 30_000 })
-      .toBe('failed');
+      .poll(async () => (await c.snapshot()).messages[1]?.status, { timeout: 45_000 })
+      .toBe('completed');
     const answer = (await c.snapshot()).messages[1];
-    expect(answer.error).toContain('15 秒');
+    for (const call of answer.tools!.calls)
+      expect(call.result).toMatchObject({
+        status: 'failed',
+        failure: { code: 'TIMEOUT', terminal: false },
+      });
     expect(answer.tools!.calls.map((call) => call.state)).toEqual(['failed', 'failed']);
-    expect((await c.state()).serviceRequests).toHaveLength(1);
-    expect((await c.state()).modelCalls).toBe(1);
-    expect((await f.settings()).usedToday).toBe(f.baseline + 1);
+    expect((await c.state()).serviceRequests).toHaveLength(2);
+    expect((await c.state()).modelCalls).toBe(2);
+    expect((await f.settings()).usedToday).toBe(f.baseline + 2);
   } finally {
     await f.cleanup();
   }
@@ -430,10 +470,13 @@ test('lowering the daily ceiling applies to an already accepted task before its 
     const c = await f.create();
     expect((await c.submit()).status()).toBe(202);
     await f.save(key, f.baseline + 1);
-    await expect.poll(async () => (await c.snapshot()).messages[1]?.status).toBe('failed');
-    expect((await c.snapshot()).messages[1].error).toContain('每日请求上限');
+    await expect.poll(async () => (await c.snapshot()).messages[1]?.status).toBe('completed');
+    expect((await c.snapshot()).messages[1].tools!.calls[1].result).toMatchObject({
+      status: 'failed',
+      failure: { code: 'RATE_LIMIT', terminal: true },
+    });
     expect((await c.state()).serviceRequests).toHaveLength(1);
-    expect((await c.state()).modelCalls).toBe(1);
+    expect((await c.state()).modelCalls).toBe(2);
     expect((await f.settings()).usedToday).toBe(f.baseline + 1);
   } finally {
     await f.cleanup();

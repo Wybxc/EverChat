@@ -39,7 +39,7 @@ test('reasoning positions interleave rounds, keep parallel call order, and survi
       calls: next.calls.map((item) => ({
         ...item,
         state: 'completed',
-        result: { id: item.call.id, name: item.call.name, status: 'completed', sources: [] },
+        result: { id: item.call.id, name: 'web_search', status: 'completed', sources: [] },
       })),
     },
     text,

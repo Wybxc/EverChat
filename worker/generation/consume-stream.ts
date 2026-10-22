@@ -8,7 +8,6 @@ export type ActiveGeneration = {
   cancelled: boolean;
   endedAt?: number;
   failure?: Error;
-  persistence?: Promise<void>;
   timer?: ReturnType<typeof setInterval>;
 };
 
@@ -16,7 +15,7 @@ export type ActiveGeneration = {
 export async function consumeModelStream(
   body: ReadableStream<Uint8Array>,
   active: ActiveGeneration,
-  onChunk: (bytes: Uint8Array) => void,
+  onChunk: (bytes: Uint8Array) => void | Promise<void>,
 ) {
   const reader = body.getReader();
   try {
@@ -24,7 +23,6 @@ export async function consumeModelStream(
       if (active.cancelled) throw new GenerationCancelled();
       if (active.failure) throw active.failure;
       if (active.abort.signal.aborted) throw new ProviderError('模型供应商连接已中断。');
-      await active.persistence;
       const next = await reader.read();
       const receivedAt = Date.now();
       if (next.done) {
@@ -32,7 +30,7 @@ export async function consumeModelStream(
         break;
       }
       if (active.cancelled) throw new GenerationCancelled();
-      onChunk(next.value);
+      await onChunk(next.value);
     }
   } finally {
     await reader.cancel().catch(() => {});

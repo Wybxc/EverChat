@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "runtime": "deployed Cloudflare isolated fixture",
+  "workerName": "everchat-stream-validation",
+  "plan": "Workers Free (user confirmed)",
+  "suite": "sustained",
+  "diagnosticCounters": false,
+  "expectedScenarios": 3,
+  "complete": false,
+  "startedAt": "2026-10-21T12:33:56.557Z",
+  "finishedAt": "2026-10-21T12:37:46.871Z",
+  "results": [
+    {
+      "scenario": "sustained-text",
+      "conversationId": "7bb70955-a33b-4807-aac0-f0099661cb3b",
+      "status": "completed",
+      "contentCharacters": 84000,
+      "reasoningCharacters": 0,
+      "elapsedMs": 105958,
+      "generationElapsedMs": 88598,
+      "reconnects": 1,
+      "client": {
+        "frames": 166,
+        "bytes": 722907
+      }
+    }
+  ],
+  "scope": "Functional cases with mock suppliers; platform analytics collected separately. No real model calls or production data."
+}

@@ -17,7 +17,7 @@ import { encodeValue, type Statement, type StoreKind } from './storage-protocol'
 // Only this Node.js operations module understands previous database formats.
 // The returned patch contains values already converted locally, never a parser
 // or a migration callback to execute while serving production traffic.
-export function migrateStorage(db: DatabaseSync, kind: StoreKind): Statement[] {
+export async function migrateStorage(db: DatabaseSync, kind: StoreKind): Promise<Statement[]> {
   if (kind === 'usage') throw new Error('Usage cleanup requires cleanIncompleteUsage');
   const patch: Statement[] = [];
   const query: SqlQuery = <T extends Record<string, SqlStorageValue>>(
@@ -124,8 +124,8 @@ export function migrateStorage(db: DatabaseSync, kind: StoreKind): Statement[] {
               : 'openai-chat';
           for (const row of db
             .prepare('SELECT payload FROM stream_commits WHERE runId=? ORDER BY chunkSeq')
-            .all(run.id as string))
-            checkpoints.append(
+            .all(run.id as string)) {
+            const prepared = await checkpoints.prepare(
               {
                 runId: String(run.id),
                 messageId: String(run.assistantId),
@@ -133,6 +133,8 @@ export function migrateStorage(db: DatabaseSync, kind: StoreKind): Statement[] {
               },
               { protocol },
             );
+            prepared.apply();
+          }
         }
         query('DROP TABLE stream_commits');
       }

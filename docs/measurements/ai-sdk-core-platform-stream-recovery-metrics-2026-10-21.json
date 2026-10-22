@@ -1,0 +1,340 @@
+{
+  "version": 1,
+  "queriedAt": "2026-10-21T12:32:44.494Z",
+  "window": {
+    "start": "2026-10-21T12:19:00.000Z",
+    "end": "2026-10-21T12:22:00.000Z"
+  },
+  "storageWindow": {
+    "start": "2026-10-21T12:00:00.000Z",
+    "end": "2026-10-21T12:32:41.936Z"
+  },
+  "workerName": "everchat-stream-validation",
+  "namespaces": [
+    {
+      "name": "CONVERSATIONS",
+      "id": "381f2155738941b7b1215046e77d5d88"
+    },
+    {
+      "name": "LIBRARY",
+      "id": "718365de5c8543d28cbe3b6a21063f9e"
+    }
+  ],
+  "units": {
+    "cpuTime": "microseconds",
+    "cpuTimeUs": "microseconds",
+    "activeTime": "microseconds",
+    "duration": "GB*s",
+    "storedBytes": "bytes",
+    "memoryUsageBytes": "bytes"
+  },
+  "scope": "Isolated deployed namespaces and Worker, diagnostic counters disabled. Adaptive fields may be sampled; empty arrays do not prove zero usage. Invocation minute rounding includes setup and idle activity. Storage uses a separate wider window and reports samples rather than the exact functional-run peak.",
+  "available": {
+    "workersInvocationsAdaptive": true,
+    "durableObjectsInvocationsAdaptiveGroups": true,
+    "durableObjectsPeriodicGroups": true,
+    "durableObjectsSqlStorageGroups": false
+  },
+  "data": {
+    "viewer": {
+      "accounts": [
+        {
+          "durableObjectsInvocationsAdaptiveGroups": [
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "namespaceId": "381f2155738941b7b1215046e77d5d88",
+                "status": "success",
+                "type": "alarm"
+              },
+              "quantiles": {
+                "cpuTimeP50": 5329,
+                "cpuTimeP99": 67149
+              },
+              "sum": {
+                "errors": 0,
+                "requests": 3
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "namespaceId": "381f2155738941b7b1215046e77d5d88",
+                "status": "success",
+                "type": "jsrpc"
+              },
+              "quantiles": {
+                "cpuTimeP50": 11172,
+                "cpuTimeP99": 93310
+              },
+              "sum": {
+                "errors": 0,
+                "requests": 5
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "namespaceId": "718365de5c8543d28cbe3b6a21063f9e",
+                "status": "clientDisconnected",
+                "type": "jsrpc"
+              },
+              "quantiles": {
+                "cpuTimeP50": 5233,
+                "cpuTimeP99": 5233
+              },
+              "sum": {
+                "errors": 1,
+                "requests": 1
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "namespaceId": "381f2155738941b7b1215046e77d5d88",
+                "status": "clientDisconnected",
+                "type": "alarm"
+              },
+              "quantiles": {
+                "cpuTimeP50": 41,
+                "cpuTimeP99": 168
+              },
+              "sum": {
+                "errors": 2,
+                "requests": 2
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "namespaceId": "381f2155738941b7b1215046e77d5d88",
+                "status": "clientDisconnected",
+                "type": "jsrpc"
+              },
+              "quantiles": {
+                "cpuTimeP50": 5915,
+                "cpuTimeP99": 8326
+              },
+              "sum": {
+                "errors": 7,
+                "requests": 7
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1.325
+              },
+              "dimensions": {
+                "namespaceId": "718365de5c8543d28cbe3b6a21063f9e",
+                "status": "success",
+                "type": "jsrpc"
+              },
+              "quantiles": {
+                "cpuTimeP50": 393,
+                "cpuTimeP99": 70405
+              },
+              "sum": {
+                "errors": 0,
+                "requests": 53
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "namespaceId": "381f2155738941b7b1215046e77d5d88",
+                "status": "success",
+                "type": "http"
+              },
+              "quantiles": {
+                "cpuTimeP50": 2481,
+                "cpuTimeP99": 204945
+              },
+              "sum": {
+                "errors": 0,
+                "requests": 2
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1.3636363636363635
+              },
+              "dimensions": {
+                "namespaceId": "381f2155738941b7b1215046e77d5d88",
+                "status": "success",
+                "type": "hibernation"
+              },
+              "quantiles": {
+                "cpuTimeP50": 109,
+                "cpuTimeP99": 206783
+              },
+              "sum": {
+                "errors": 0,
+                "requests": 45
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "namespaceId": "381f2155738941b7b1215046e77d5d88",
+                "status": "clientDisconnected",
+                "type": "http"
+              },
+              "quantiles": {
+                "cpuTimeP50": 707,
+                "cpuTimeP99": 1072
+              },
+              "sum": {
+                "errors": 3,
+                "requests": 3
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "namespaceId": "381f2155738941b7b1215046e77d5d88",
+                "status": "responseStreamDisconnected",
+                "type": "http"
+              },
+              "quantiles": {
+                "cpuTimeP50": 625,
+                "cpuTimeP99": 8654
+              },
+              "sum": {
+                "errors": 2,
+                "requests": 2
+              }
+            }
+          ],
+          "durableObjectsPeriodicGroups": [
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "namespaceId": "381f2155738941b7b1215046e77d5d88"
+              },
+              "sum": {
+                "activeTime": 5680258,
+                "cpuTime": 995819,
+                "duration": 0.7270730240000001,
+                "exceededCpuErrors": 0,
+                "exceededMemoryErrors": 0,
+                "fatalInternalErrors": 0,
+                "inboundWebsocketMsgCount": 0,
+                "outboundWebsocketMsgCount": 89,
+                "rowsRead": 2042,
+                "rowsWritten": 453
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "namespaceId": "718365de5c8543d28cbe3b6a21063f9e"
+              },
+              "sum": {
+                "activeTime": 4880443,
+                "cpuTime": 107716,
+                "duration": 0.624696704,
+                "exceededCpuErrors": 0,
+                "exceededMemoryErrors": 0,
+                "fatalInternalErrors": 0,
+                "inboundWebsocketMsgCount": 0,
+                "outboundWebsocketMsgCount": 0,
+                "rowsRead": 491,
+                "rowsWritten": 80
+              }
+            }
+          ],
+          "durableObjectsSqlStorageGroups": [],
+          "workersInvocationsAdaptive": [
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "status": "clientDisconnected",
+                "usageModel": "standard"
+              },
+              "max": {
+                "cpuTime": 19681,
+                "memoryUsageBytes": 33017359
+              },
+              "quantiles": {
+                "cpuTimeP50": 2629,
+                "cpuTimeP99": 19681
+              },
+              "sum": {
+                "cpuTimeUs": 26933,
+                "errors": 0,
+                "requests": 4
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "status": "responseStreamDisconnected",
+                "usageModel": "standard"
+              },
+              "max": {
+                "cpuTime": 19688,
+                "memoryUsageBytes": 32988875
+              },
+              "quantiles": {
+                "cpuTimeP50": 3461,
+                "cpuTimeP99": 19688
+              },
+              "sum": {
+                "cpuTimeUs": 23149,
+                "errors": 0,
+                "requests": 2
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "status": "success",
+                "usageModel": "standard"
+              },
+              "max": {
+                "cpuTime": 18329,
+                "memoryUsageBytes": 33059521
+              },
+              "quantiles": {
+                "cpuTimeP50": 2090,
+                "cpuTimeP99": 18329
+              },
+              "sum": {
+                "cpuTimeUs": 61102,
+                "errors": 0,
+                "requests": 15
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "errors": null
+}
