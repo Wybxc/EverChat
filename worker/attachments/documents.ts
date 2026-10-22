@@ -8,7 +8,6 @@ import {
   documentSource,
   estimateDocumentTokens,
   MAX_DOCUMENT_BYTES,
-  MAX_MESSAGE_DOCUMENTS,
   selectedDocumentText,
   type DocumentPart,
   type DocumentRange,
@@ -49,7 +48,6 @@ export class DocumentStore {
     private source: (conversationId: string, id: string) => Source,
     private original: (conversationId: string, id: string, head?: boolean) => Promise<Response>,
     private settled: (id: string) => void,
-    private reserve: (conversationId: string, bytes: number) => void = () => {},
   ) {
     storage.sql
       .exec(`CREATE TABLE IF NOT EXISTS attachment_documents (id TEXT PRIMARY KEY, status TEXT NOT NULL, key TEXT NOT NULL,
@@ -104,9 +102,9 @@ export class DocumentStore {
     if (source.mediaType !== 'application/pdf' && source.size > MAX_DOCUMENT_BYTES)
       throw new HttpError(
         413,
-        '文本文件最多 128 KiB，请拆分文件或选择片段。',
+        '文本文件超过单次全文解析的内存保护大小，请拆分文件。',
         undefined,
-        problem('ATTACHMENT_INVALID'),
+        problem('REQUEST_TOO_LARGE'),
       );
     return source;
   }
@@ -148,13 +146,8 @@ export class DocumentStore {
     ids: string[],
     selections: Record<string, DocumentRange[]> = {},
   ) {
-    if (ids.length > MAX_MESSAGE_DOCUMENTS || new Set(ids).size !== ids.length)
-      throw new HttpError(
-        400,
-        '每条消息最多添加 4 个不同的文本文件。',
-        undefined,
-        problem('ATTACHMENT_INVALID'),
-      );
+    if (new Set(ids).size !== ids.length)
+      throw new HttpError(400, '文件引用不能重复。', undefined, problem('ATTACHMENT_INVALID'));
     if (Object.keys(selections).some((id) => !ids.includes(id)))
       throw new HttpError(400, '文件选区缺少对应附件。', undefined, problem('ATTACHMENT_INVALID'));
     const files: DocumentPart[] = [];
@@ -303,7 +296,6 @@ export class DocumentStore {
         sha256 = await digest(bytes);
       this.requireSource(conversationId, source.id);
       this.storage.transactionSync(() => {
-        this.reserve(conversationId, bytes.length - this.row(source.id)!.bytes);
         this.storage.sql.exec(
           'UPDATE attachment_documents SET bytes = ? WHERE id = ?',
           bytes.length,

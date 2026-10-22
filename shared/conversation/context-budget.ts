@@ -1,6 +1,6 @@
 import * as v from 'valibot';
 import { assertDocumentContext, documentTokens, type DocumentPart } from '../attachments/documents';
-import { assertImageContext, imageTokens, type ImagePart } from '../attachments/images';
+import { assertImageContext, type ImagePart } from '../attachments/images';
 import { AppError, problem, type ErrorIssue } from '../errors/descriptor';
 import { FALLBACK_MODEL_METADATA } from '../models/metadata';
 import { type ChatInput, type ProviderConfig } from '../providers/types';
@@ -12,7 +12,7 @@ import { type ConversationSettings, type Message, type SubmitInput } from './typ
 import { estimateTextTokens } from './token-estimate';
 export { estimateTextTokens, TOKEN_SAMPLE_UNITS } from './token-estimate';
 
-const count = v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(100_000_000));
+const count = v.pipe(v.number(), v.safeInteger(), v.minValue(0));
 export const contextEstimateSchema = v.strictObject({
   method: v.literal('approximate-v1'),
   inputTokens: count,
@@ -98,14 +98,14 @@ const MESSAGE_OVERHEAD = 8,
   REQUEST_OVERHEAD = 3;
 const historyTokenCache = new WeakMap<
   ChatInput,
-  { content: string; images: number; tokens: number }
+  { content: string; documents: number; tokens: number }
 >();
 function historyTokens(message: ChatInput): number {
   const cached = historyTokenCache.get(message);
-  const images = imageTokens(message.images) + documentTokens(message.files);
-  if (cached?.content === message.content && cached.images === images) return cached.tokens;
-  const tokens = estimateTextTokens(message.content) + MESSAGE_OVERHEAD + images;
-  historyTokenCache.set(message, { content: message.content, images, tokens });
+  const documents = documentTokens(message.files);
+  if (cached?.content === message.content && cached.documents === documents) return cached.tokens;
+  const tokens = estimateTextTokens(message.content) + MESSAGE_OVERHEAD + documents;
+  historyTokenCache.set(message, { content: message.content, documents, tokens });
   return tokens;
 }
 function turnStart(history: ChatInput[], end: number) {
@@ -140,15 +140,16 @@ export function buildContext(
   };
   const { contextWindow, contextScope } = metadata;
   // Planning reserve only: never turn an unset request output limit into a supplier parameter.
-  const outputReserve =
-    config.maxOutputTokens ?? Math.min(metadata.maxOutputTokens, Math.floor(contextWindow / 4));
-  const safetyMargin = Math.ceil(contextWindow / 10);
+  const outputReserve = config.maxOutputTokens ?? 0;
+  const safetyMargin = 0;
   const capacity = Math.max(
     0,
-    contextWindow - safetyMargin - (contextScope === 'combined' ? outputReserve : 0),
+    metadata.sources.contextWindow === 'fallback'
+      ? Number.MAX_SAFE_INTEGER
+      : contextWindow - (contextScope === 'combined' ? outputReserve : 0),
   );
   const inputBudget = Math.min(capacity, settings.contextBudget ?? capacity);
-  const inputTokens = estimateTextTokens(content) + imageTokens(images) + documentTokens(files);
+  const inputTokens = estimateTextTokens(content) + documentTokens(files);
   const systemTokens = config.systemPrompt
     ? estimateTextTokens(config.systemPrompt) + MESSAGE_OVERHEAD
     : 0;
@@ -198,8 +199,6 @@ export function buildContext(
       ...(files.length ? { files } : {}),
     },
   ];
-  const imageAllowance = messages.reduce((sum, message) => sum + imageTokens(message.images), 0);
-  if (imageAllowance) estimate.imageTokens = imageAllowance;
   const fileAllowance = messages.reduce((sum, message) => sum + documentTokens(message.files), 0);
   if (fileAllowance) estimate.documentTokens = fileAllowance;
   assertImageContext(messages, config);
@@ -247,8 +246,6 @@ export function measureContextDemand(
 ): ContextEstimate {
   const fixed = buildContext([], content, config, settings, summary, images, files).estimate;
   const tokens = history.reduce((total, message) => total + historyTokens(message), 0);
-  const imageAllowance =
-    imageTokens(images) + history.reduce((sum, message) => sum + imageTokens(message.images), 0);
   const fileAllowance =
     documentTokens(files) +
     history.reduce((sum, message) => sum + documentTokens(message.files), 0);
@@ -258,7 +255,6 @@ export function measureContextDemand(
     totalTokens: fixed.totalTokens + tokens,
     retainedMessages: history.length,
     omittedMessages: 0,
-    ...(imageAllowance ? { imageTokens: imageAllowance } : {}),
     ...(fileAllowance ? { documentTokens: fileAllowance } : {}),
   };
 }

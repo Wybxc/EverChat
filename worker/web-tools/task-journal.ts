@@ -1,6 +1,10 @@
 import { createHash } from 'node:crypto';
 import * as v from 'valibot';
-import { MAX_MESSAGE_TEXT_BYTES, jsonTextBytes } from '../../shared/conversation/limits';
+import {
+  MAX_MESSAGE_TEXT_BYTES,
+  MAX_SQL_PAYLOAD_BYTES,
+  jsonTextBytes,
+} from '../../shared/conversation/limits';
 import { estimateTextTokens } from '../../shared/conversation/token-estimate';
 import type { ErrorIssue } from '../../shared/errors/descriptor';
 import { AppError, problem } from '../../shared/errors/descriptor';
@@ -14,7 +18,6 @@ import {
   type WebToolOutcome,
 } from '../../shared/web-tools/tasks';
 import type { SqlQuery } from '../generation/metrics';
-import { MAX_MESSAGES } from '../platform/resource-limits';
 import {
   providerToolIdentity,
   providerToolPrompt,
@@ -24,7 +27,6 @@ import {
 } from '../providers/tool-turn';
 
 export const TOOL_TASK_TIMEOUT_MS = 10 * 60_000;
-export const MAX_TOOL_TASKS = MAX_MESSAGES;
 export const TOOL_DEFINITION_TOKENS = 2048;
 type Terminal = 'completed' | 'failed' | 'cancelled';
 type Root = {
@@ -102,6 +104,8 @@ export interface StartToolTask {
 }
 const uuid = v.pipe(v.string(), v.uuid());
 const serialized = (value: unknown) => JSON.stringify(value);
+const publicTaskFits = (task: PublicToolTask) =>
+  new TextEncoder().encode(serialized(task)).byteLength <= MAX_SQL_PAYLOAD_BYTES;
 const errorText = (value: string) =>
   value
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
@@ -259,11 +263,6 @@ export class ToolTaskJournal {
         .length
     )
       taskError('这个对话已有工具任务。');
-    if (
-      this.query<{ count: number }>('SELECT COUNT(*) AS count FROM web_tool_tasks').one().count >=
-      MAX_TOOL_TASKS
-    )
-      taskError('此对话的工具任务数量已达上限。');
     const now = this.now();
     this.query(
       "INSERT INTO web_tool_tasks VALUES (?, ?, ?, ?, 'active', 0, ?, ?, ?, ?, 0, 0, 0, 0, NULL)",
@@ -330,6 +329,26 @@ export class ToolTaskJournal {
         ).toArray().length
       )
         taskError('工具任务重复使用了调用 ID。');
+    const projected = this.publicTask(root.id);
+    projected.calls.push(
+      ...turn.calls.map((call) => ({
+        round: model.round,
+        call,
+        state: call.invalid ? ('failed' as const) : ('queued' as const),
+        ...(call.invalid
+          ? {
+              result: {
+                id: call.id,
+                name: call.name,
+                status: 'failed' as const,
+                error: call.error,
+                issue: problem('TOOL_INVALID'),
+              },
+            }
+          : {}),
+      })),
+    );
+    if (!publicTaskFits(projected)) taskError('工具过程超过数据库单行存储大小。');
     this.query(
       'UPDATE web_tool_models SET phase = ?, turn = ?, turnHash = ? WHERE runId = ?',
       turn.calls.length ? 'tools' : 'completed',
@@ -395,11 +414,23 @@ export class ToolTaskJournal {
           rootId,
           callId,
         ).toArray()[0] ?? taskError('工具调用不存在。');
-    const result = validateWebToolOutcome(value),
-      original = JSON.parse(call.payload) as WebToolCandidate,
-      payload = serialized(result);
+    let result = validateWebToolOutcome(value);
+    const original = JSON.parse(call.payload) as WebToolCandidate;
     if (result.id !== callId || result.name !== original.name) taskError('工具结果与原调用不符。');
     if (root.status !== 'active' || root.deadline <= this.now()) return false;
+    const projected = this.publicTask(rootId);
+    projected.calls = projected.calls.map((item) =>
+      item.call.id === callId ? { ...item, state: result.status, result } : item,
+    );
+    if (!publicTaskFits(projected))
+      result = {
+        id: result.id,
+        name: result.name,
+        status: 'failed',
+        error: '工具结果无法完整保存：工具过程超过数据库单行存储大小。',
+        issue: problem('TOOL_INVALID'),
+      };
+    const payload = serialized(result);
     if (call.outcome !== null) {
       if (call.outcome === payload) return false;
       taskError('工具结果已保存，不能覆盖。');

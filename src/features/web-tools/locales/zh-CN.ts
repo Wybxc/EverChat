@@ -14,7 +14,7 @@ export default {
   reload: '重新读取',
   loading: '读取联网服务',
   sessionChanged: '登录状态已改变。',
-  invalid: '每日上限须为 1–1,000 的整数，密钥不能包含空格或控制字符。',
+  invalid: '每日上限须为正整数，密钥不能包含空格或控制字符。',
   switchFailed: '切换服务失败。',
   keyFailed: '密钥读取失败。',
   service: '联网服务',

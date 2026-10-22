@@ -1,3 +1,4 @@
+import { MAX_SQL_PAYLOAD_BYTES } from '../conversation/limits';
 import * as v from 'valibot';
 import { AppError, errorIssueSchema, problem } from '../errors/descriptor';
 import { canAttemptCapability } from '../models/metadata';
@@ -5,13 +6,9 @@ import type { ResolvedModelMetadata } from '../models/types';
 
 export const WEB_TOOL_NAMES = ['web_search', 'read_webpage'] as const;
 export type WebToolName = (typeof WEB_TOOL_NAMES)[number];
-export const MAX_TOOL_CALLS_PER_TURN = 2;
-// Leave room for an 8192-character URL, JSON escaping and UTF-8 encoding.
-export const MAX_TOOL_INPUT_BYTES = 64 * 1024;
+export const MAX_TOOL_INPUT_BYTES = MAX_SQL_PAYLOAD_BYTES;
 export const MAX_WEB_URL_CHARACTERS = 8192;
-const MAX_TOOL_RESULT_BYTES = 64 * 1024;
-export const MAX_TOOL_SOURCES = 5;
-export const MAX_TOOL_SOURCE_CHARACTERS = 12_000;
+const MAX_TOOL_RESULT_BYTES = MAX_SQL_PAYLOAD_BYTES;
 
 // Fetch targets and citations are public pages, not credential-bearing service endpoints.
 // DNS/network enforcement belongs to the configured service, not this syntactic check.
@@ -148,22 +145,14 @@ export function webToolInputText(call: WebToolCandidate): string {
 const sourceSchema = v.strictObject({
   title: safeText(300),
   url,
-  content: safeText(MAX_TOOL_SOURCE_CHARACTERS),
+  content: safeText(MAX_SQL_PAYLOAD_BYTES),
 });
 const webToolOutcomeSchema = v.variant('status', [
   v.strictObject({
     id: callId,
     name,
     status: v.literal('completed'),
-    sources: v.pipe(
-      v.array(sourceSchema),
-      v.maxLength(MAX_TOOL_SOURCES),
-      v.check(
-        (sources) =>
-          sources.reduce((total, source) => total + source.content.length, 0) <=
-          MAX_TOOL_SOURCE_CHARACTERS,
-      ),
-    ),
+    sources: v.array(sourceSchema),
     warnings: v.optional(v.pipe(v.array(safeText(200)), v.maxLength(5))),
   }),
   v.strictObject({
@@ -263,14 +252,16 @@ export const publicToolTaskSchema = v.pipe(
     ),
   }),
   v.check(
+    (task) => new TextEncoder().encode(JSON.stringify(task)).byteLength <= MAX_SQL_PAYLOAD_BYTES,
+    '工具过程超过数据库单行存储大小。',
+  ),
+  v.check(
     (task) =>
       validReasoningBreaks(task) &&
       new Set(task.calls.map((item) => item.call.id)).size === task.calls.length &&
       task.calls.every((item) => {
         if (
           item.round > task.round ||
-          task.calls.filter((candidate) => candidate.round === item.round).length >
-            MAX_TOOL_CALLS_PER_TURN ||
           (task.status !== 'active' && ['queued', 'running'].includes(item.state)) ||
           (task.status === 'completed' && item.state === 'cancelled') ||
           ('invalid' in item.call && item.state !== 'failed')

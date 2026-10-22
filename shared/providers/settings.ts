@@ -1,10 +1,9 @@
 import * as v from 'valibot';
-import { MAX_SYSTEM_PROMPT_LENGTH } from '../conversation/limits';
+import { MAX_SQL_PAYLOAD_BYTES, MAX_SYSTEM_PROMPT_LENGTH } from '../conversation/limits';
 import { titleSettingsSchema } from '../conversation/titles';
 import { AppError, problem } from '../errors/descriptor';
 import { MAX_MODEL_TOKENS, reasoningEfforts } from '../models/metadata';
 import { providerOptions } from './endpoints';
-import { MAX_PROVIDER_MODELS } from './limits';
 import type { ProviderApiKind, ProviderSettingsInput } from './types';
 
 export const providerTypes = providerOptions.map((option) => option.value) as [
@@ -66,20 +65,29 @@ const profileSchema = v.object({
   name: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(100)),
   provider: v.picklist(providerTypes),
   baseUrl: v.pipe(v.string(), v.trim(), v.maxLength(2048)),
-  models: v.pipe(v.array(modelSchema), v.maxLength(MAX_PROVIDER_MODELS)),
+  models: v.array(modelSchema),
   apiKey: v.optional(v.pipe(v.string(), v.trim(), v.maxLength(4096))),
 });
-export const providerSettingsSchema = v.object({
-  title: v.optional(titleSettingsSchema),
-  providers: v.pipe(v.array(profileSchema), v.maxLength(50)),
-  activeProviderId: v.nullable(v.pipe(v.string(), v.uuid())),
-  activeModel: v.pipe(v.string(), v.trim(), v.maxLength(200)),
-  systemPrompt: v.pipe(v.string(), v.maxLength(MAX_SYSTEM_PROMPT_LENGTH)),
-  maxOutputTokens: v.optional(
-    v.nullable(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(MAX_MODEL_TOKENS))),
-    null,
+export const providerSettingsSchema = v.pipe(
+  v.object({
+    title: v.optional(titleSettingsSchema),
+    providers: v.array(profileSchema),
+    activeProviderId: v.nullable(v.pipe(v.string(), v.uuid())),
+    activeModel: v.pipe(v.string(), v.trim(), v.maxLength(200)),
+    systemPrompt: v.pipe(v.string(), v.maxLength(MAX_SYSTEM_PROMPT_LENGTH)),
+    maxOutputTokens: v.optional(
+      v.nullable(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(MAX_MODEL_TOKENS))),
+      null,
+    ),
+  }),
+  v.check(
+    ({ systemPrompt, activeProviderId, activeModel, maxOutputTokens }) =>
+      new TextEncoder().encode(
+        JSON.stringify({ systemPrompt, activeProviderId, activeModel, maxOutputTokens }),
+      ).byteLength <= MAX_SQL_PAYLOAD_BYTES,
+    '默认供应商参数超过数据库单行存储大小。',
   ),
-});
+);
 
 export function normalizeBaseUrl(value: string): string {
   const baseUrl = value.trim().replace(/\/+$/, '');

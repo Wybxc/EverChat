@@ -1,8 +1,7 @@
+import { MAX_BUFFERED_BODY_BYTES } from '../../shared/platform/limits';
 import { AppError, problem } from '../../shared/errors/descriptor';
 import type { WebToolServiceConfig } from '../../shared/web-tools/service';
 import {
-  MAX_TOOL_SOURCE_CHARACTERS,
-  MAX_TOOL_SOURCES,
   publicWebUrl,
   validateWebToolCall,
   validateWebToolOutcome,
@@ -12,7 +11,7 @@ import {
   type WebToolOutcome,
 } from '../../shared/web-tools/tasks';
 
-export const WEB_TOOL_RESPONSE_BYTES = 512 * 1024;
+export const WEB_TOOL_RESPONSE_BYTES = MAX_BUFFERED_BODY_BYTES;
 const WEB_TOOL_TIMEOUT_MS = 15_000;
 export type WebToolFetch = (request: Request) => Promise<Response>;
 const credentialsError = '联网服务密钥无效或没有访问权限。';
@@ -124,14 +123,13 @@ export async function executeWebTool(
       : `https://api.tavily.com/${search ? 'search' : 'extract'}`;
     const body = deepseek
       ? search
-        ? { query: call.input.query, count: MAX_TOOL_SOURCES, need_content: false }
+        ? { query: call.input.query, need_content: false }
         : { url: call.input.url }
       : search
         ? {
             query: call.input.query,
             topic: 'general',
             search_depth: 'basic',
-            max_results: MAX_TOOL_SOURCES,
             auto_parameters: false,
             include_answer: false,
             include_raw_content: false,
@@ -207,8 +205,7 @@ export async function executeWebTool(
     )
       return failed('无法提取该网页的正文。');
     const sources: Extract<WebToolOutcome, { status: 'completed' }>['sources'] = [];
-    let remaining = MAX_TOOL_SOURCE_CHARACTERS,
-      ignored = 0;
+    let ignored = 0;
     for (const item of data.results) {
       if (!item || typeof item !== 'object' || Array.isArray(item)) {
         ignored++;
@@ -235,17 +232,12 @@ export async function executeWebTool(
       const title =
         text(typeof row.title === 'string' ? row.title : new URL(row.url).hostname, 300) ||
         new URL(row.url).hostname;
-      const clean = text(content, content.length),
-        truncated = clean.length > remaining;
-      const notice = remaining >= 12 ? '\n[内容已截取]' : '…';
-      const value = truncated ? text(clean, remaining - notice.length) + notice : clean;
+      const value = text(content, content.length);
       if (!value) {
         ignored++;
         continue;
       }
       sources.push({ title, url: row.url, content: value });
-      remaining -= value.length;
-      if (!remaining || truncated || sources.length === MAX_TOOL_SOURCES) break;
     }
     if (!search && !sources.length) return failed('该网页没有可读取的正文。');
     if (search && data.results.length && !sources.length)

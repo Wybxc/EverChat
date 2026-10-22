@@ -4,7 +4,6 @@ import { HttpError } from '../http/response';
 
 const COPY_LEASE = 10 * 60_000;
 const COPY_RETENTION = 7 * 24 * 60 * 60_000,
-  MAX_COPY_RECORDS = 1000,
   MAX_ACTIVE_COPIES = 2;
 export type CopyResult =
   { id: string; viewHeadId: string | null } | { error: string; issue?: ErrorIssue; status: number };
@@ -54,17 +53,6 @@ export class CopyJobs {
       throw new HttpError(
         429,
         '同时最多复制 2 个对话，请稍后重试。',
-        undefined,
-        problem('OPERATION_BUSY'),
-      );
-    if (
-      this.storage.sql
-        .exec<{ count: number }>('SELECT COUNT(*) AS count FROM conversation_copies')
-        .one().count >= MAX_COPY_RECORDS
-    )
-      throw new HttpError(
-        429,
-        '近期复制次数已达上限，请稍后重试。',
         undefined,
         problem('OPERATION_BUSY'),
       );

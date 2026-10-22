@@ -24,8 +24,6 @@ import { MESSAGE_TEXT_LIMIT_MESSAGE, messageTextFits } from '../../shared/conver
 import { isActive } from '../../shared/conversation/message-state';
 import { applyConversationSettings } from '../../shared/conversation/settings';
 import {
-  MAX_SUMMARIES,
-  MAX_SUMMARY_CHARACTERS,
   prepareChatContext,
   summaryContext,
   summaryGeneration,
@@ -66,14 +64,7 @@ import { generationTiming } from '../generation/timing';
 import type { Env } from '../http/env';
 import { json } from '../http/response';
 import { CompletionOutbox } from '../notifications/outbox';
-import {
-  DATABASE_LIMIT_MESSAGE,
-  MAX_DATABASE_BYTES,
-  MAX_DATABASE_START_BYTES,
-  MAX_DATABASE_WRITE_BYTES,
-  MAX_MESSAGES,
-  storageErrorMessage,
-} from '../platform/resource-limits';
+import { storageErrorMessage } from '../platform/resource-limits';
 import { initializeStorageSchema } from '../platform/storage-schema';
 import { openProviderStream } from '../providers/stream';
 import { generateProviderText } from '../providers/generate';
@@ -135,14 +126,6 @@ type Dependency = {
   payload: string;
 } & Record<string, SqlStorageValue>;
 type Failure = { error: string; issue?: ErrorIssue; status: number; code?: string; stage?: string };
-const capacityError = (phase: 'write' | 'terminal') =>
-  new ProviderError(DATABASE_LIMIT_MESSAGE, {
-    stage: 'storage',
-    occurredAt: Date.now(),
-    code: 'CONVERSATION_STORAGE_CAPACITY',
-    type: phase,
-    message: DATABASE_LIMIT_MESSAGE,
-  });
 type Claim = {
   context: ChatInput[];
   config?: ProviderConfig;
@@ -478,10 +461,6 @@ export class Conversation extends DurableObject<Env> {
       return json({ error: '这个对话已删除。', issue: problem('CONVERSATION_DELETED') }, 410);
     return json(this.messages.page(after));
   }
-  private capacityBytes(threshold: number) {
-    const size = this.ctx.storage.sql.databaseSize;
-    return size > threshold ? databaseUsage(this.ctx.storage.sql).usedBytes : size;
-  }
   storageStats() {
     const sum = (table: string, expression: string) =>
       this.query<{ bytes: number }>(
@@ -490,11 +469,6 @@ export class Conversation extends DurableObject<Env> {
     return {
       databaseBytes: this.ctx.storage.sql.databaseSize,
       ...databaseUsage(this.ctx.storage.sql),
-      limits: {
-        admissionBytes: MAX_DATABASE_START_BYTES,
-        writeBytes: MAX_DATABASE_WRITE_BYTES,
-        maximumBytes: MAX_DATABASE_BYTES,
-      },
       messages: this.query<{ count: number }>('SELECT COUNT(*) AS count FROM messages').one().count,
       canonicalBytes:
         sum(
@@ -671,20 +645,6 @@ export class Conversation extends DurableObject<Env> {
         };
       if (!content.trim() || !messageTextFits(content.trim()))
         return { error: MESSAGE_TEXT_LIMIT_MESSAGE, issue: problem('MESSAGE_LIMIT'), status: 400 };
-      if (this.capacityBytes(MAX_DATABASE_START_BYTES) > MAX_DATABASE_START_BYTES)
-        return {
-          error: DATABASE_LIMIT_MESSAGE,
-          issue: problem('STORAGE_FULL'),
-          status: 507,
-          code: 'CONVERSATION_STORAGE_CAPACITY',
-          stage: 'admission',
-        };
-      if (this.messages.count() >= MAX_MESSAGES)
-        return {
-          error: '此对话已达到消息数量保护上限，请新建对话。',
-          issue: problem('OPERATION_BUSY'),
-          status: 507,
-        };
       const revision: Message = {
         id: crypto.randomUUID(),
         role: 'assistant',
@@ -933,33 +893,10 @@ export class Conversation extends DurableObject<Env> {
           issue: problem('CONVERSATION_BUSY'),
           status: 409,
         };
-      if (this.capacityBytes(MAX_DATABASE_START_BYTES) > MAX_DATABASE_START_BYTES)
-        return {
-          error: DATABASE_LIMIT_MESSAGE,
-          issue: problem('STORAGE_FULL'),
-          status: 507,
-          code: 'CONVERSATION_STORAGE_CAPACITY',
-          stage: 'admission',
-        };
       const messages = this.messages.forHead(
         input.summaryThrough ?? input.retryOf ?? input.revisionOf ?? input.parentId,
       );
       if (input.summaryThrough) {
-        if (messages.length >= MAX_MESSAGES)
-          return {
-            error: '此对话已达到消息数量保护上限，请新建对话。',
-            issue: problem('OPERATION_BUSY'),
-            status: 507,
-          };
-        if (
-          messages.filter((message) => message.summary && !message.deletedAt).length >=
-          MAX_SUMMARIES
-        )
-          return {
-            error: '摘要数量已达到容量上限，请删除旧摘要或新建对话。',
-            issue: problem('OPERATION_BUSY'),
-            status: 507,
-          };
         let prepared;
         try {
           prepared = summaryGeneration(messages, input.summaryThrough, config);
@@ -1048,7 +985,7 @@ export class Conversation extends DurableObject<Env> {
       const files = documents.value;
       if ((!content && !images.length && !files.length) || !messageTextFits(content))
         return {
-          error: '请输入消息，正文须在 768 KiB 的存储保护大小以内。',
+          error: '请输入消息，正文须符合数据库单行存储大小。',
           issue: problem('REQUEST_TOO_LARGE'),
           status: 400,
         };
@@ -1080,21 +1017,6 @@ export class Conversation extends DurableObject<Env> {
         context = built.messages;
         contextEstimate = built.estimate;
         if (built.automatic) {
-          if (messages.length + (parent ? 2 : 3) > MAX_MESSAGES)
-            return {
-              error: '此对话已达到消息数量保护上限，请新建对话。',
-              issue: problem('OPERATION_BUSY'),
-              status: 507,
-            };
-          if (
-            messages.filter((message) => message.summary && !message.deletedAt).length >=
-            MAX_SUMMARIES
-          )
-            return {
-              error: '摘要数量已达到容量上限，请删除旧摘要或关闭自动压缩。',
-              issue: problem('OPERATION_BUSY'),
-              status: 507,
-            };
           const summaryConfig = settings.autoCompression.model
             ? await this.env.LIBRARY.getByName('personal').providerConfig(
                 settings.autoCompression.model,
@@ -2145,8 +2067,6 @@ export class Conversation extends DurableObject<Env> {
         throw new Error('Stream sequence or offset gap');
       if (this.env.GENERATION_METRICS === '1' && !this.meter)
         this.meter = new GenerationMeter(runId, Date.now, 'since-last-resume', 'do-v1');
-      if (this.capacityBytes(MAX_DATABASE_WRITE_BYTES) > MAX_DATABASE_WRITE_BYTES)
-        throw capacityError('write');
       change = this.ctx.storage.transactionSync(() => {
         if (!prepared.apply()) throw new Error('Conflicting stream sequence');
         this.query(
@@ -2157,8 +2077,6 @@ export class Conversation extends DurableObject<Env> {
           runId,
         );
         const seq = this.messages.advance([message.id]);
-        if (this.capacityBytes(MAX_DATABASE_WRITE_BYTES) > MAX_DATABASE_WRITE_BYTES)
-          throw capacityError('write');
         return { type: 'commit', ...commit, seq };
       });
     } catch (error) {
@@ -2275,12 +2193,10 @@ export class Conversation extends DurableObject<Env> {
     if (
       status === 'completed' &&
       message.summary &&
-      (!messageText(message).trim() ||
-        message.streamState?.finishReason === 'length' ||
-        messageText(message).length > MAX_SUMMARY_CHARACTERS)
+      (!messageText(message).trim() || message.streamState?.finishReason === 'length')
     ) {
       status = 'failed';
-      error = '摘要未完整生成或超过长度限制，未用于后续上下文。请主动重新生成。';
+      error = '摘要未完整生成，未用于后续上下文。请主动重新生成。';
     }
     message.generation = {
       usage: {},
@@ -2407,8 +2323,6 @@ export class Conversation extends DurableObject<Env> {
             messageText(message),
           );
       }
-      if (this.capacityBytes(MAX_DATABASE_BYTES) > MAX_DATABASE_BYTES)
-        throw capacityError('terminal');
       return { change: terminal, finalStatus, executionStatus };
     });
     this.broadcast(change);

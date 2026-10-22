@@ -3,7 +3,7 @@ import WebSocket from 'ws';
 import { validateBackup, type EverChatBackup } from '../../../shared/backup/backup';
 import { messageParts, messageText } from '../../../shared/conversation/content';
 import { DEFAULT_CONVERSATION_SETTINGS as defaults } from '../../../shared/conversation/settings';
-import { MAX_SUMMARIES, SUMMARY_SYSTEM_PROMPT } from '../../../shared/conversation/summaries';
+import { SUMMARY_SYSTEM_PROMPT } from '../../../shared/conversation/summaries';
 import type {
   ConversationSettings,
   Submission,
@@ -766,7 +766,7 @@ test('manual summaries pin complete input, are idempotent after model changes, a
     expect(pinned.config).toMatchObject({
       systemPrompt: SUMMARY_SYSTEM_PROMPT,
       model: 'benchmark-summary-ok',
-      maxOutputTokens: 2048,
+      maxOutputTokens: null,
     });
     expect(pinned.config.apiKey).toBeUndefined();
     expect(pinned.context).toHaveLength(3);
@@ -1250,7 +1250,7 @@ test('a reset interrupts partial summary work without re-calling the supplier or
   }
 });
 
-test('the summary limit rejects before calling a supplier and deleting an old summary frees that quota', async ({
+test('summaries beyond the old count quota remain editable and can generate a replacement', async ({
   request,
 }) => {
   const fixture = await setup(request);
@@ -1260,7 +1260,7 @@ test('the summary limit rejects before calling a supplier and deleting an old su
       .then((response) => response.json())) as EverChatBackup;
     const path = backup.conversation.messages.slice(0, 2);
     backup.conversation.messages.push(
-      ...Array.from({ length: MAX_SUMMARIES }, (_, index) => ({
+      ...Array.from({ length: 101 }, (_, index) => ({
         ...path[1],
         id: crypto.randomUUID(),
         parts: messageParts(`摘要 ${index}`),
@@ -1280,21 +1280,6 @@ test('the summary limit rejects before calling a supplier and deleting an old su
       selection: { providerId: fixture.providerId, model: 'benchmark-summary-ok' },
     };
     const endpoint = `/api/conversations/${id}/messages`;
-    expect((await request.post(endpoint, { headers, data: input })).status()).toBe(507);
-    expect(
-      (
-        await request
-          .post(`/api/__test/conversations/${id}/resources`, { headers, data: {} })
-          .then((response) => response.json())
-      ).calls,
-    ).toBe(0);
-    expect(
-      (
-        await request.delete(`/api/conversations/${id}/messages/${snapshot.messages[6].id}`, {
-          headers,
-        })
-      ).status(),
-    ).toBe(200);
     const accepted = await request.post(endpoint, { headers, data: input });
     expect(accepted.status()).toBe(202);
     const task = (await accepted.json()) as Submission;
@@ -1305,7 +1290,7 @@ test('the summary limit rejects before calling a supplier and deleting an old su
           .get(`/api/conversations/${id}`)
           .then((response) => response.json())) as Snapshot
       ).messages.filter((message) => message.summary && !message.deletedAt),
-    ).toHaveLength(MAX_SUMMARIES);
+    ).toHaveLength(102);
   } finally {
     await fixture.cleanup();
   }

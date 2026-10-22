@@ -3,11 +3,7 @@ import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
 import * as v from 'valibot';
-import {
-  MAX_PROMPT_PRESETS,
-  promptPresetInputSchema,
-  promptPresetListSchema,
-} from '../../../shared/presets/schema';
+import { promptPresetInputSchema, promptPresetListSchema } from '../../../shared/presets/schema';
 import { PromptPresetError, PromptPresets } from '../../../worker/presets/store';
 
 function fixture() {
@@ -84,48 +80,27 @@ test('deletion erases prompt text and prevents delayed saves, including a first 
   }
 });
 
-test('preset count and actual UTF-8 text capacity are bounded without preventing edits or atomic failures', () => {
-  const count = fixture();
+test('preset collections exceed old count and aggregate byte quotas while individual rows stay bounded', () => {
+  const { db, presets } = fixture();
   try {
-    const ids = Array.from({ length: MAX_PROMPT_PRESETS }, () => crypto.randomUUID());
-    for (const id of ids) count.presets.save(id, { name: '预设', systemPrompt: '' });
-    assert.throws(
-      () => count.presets.save(crypto.randomUUID(), { name: '超限', systemPrompt: '' }),
-      status(507),
-    );
-    count.presets.save(ids[0], { name: '修改', systemPrompt: '可以修改' });
-    count.presets.remove(ids[1]);
-    count.presets.save(crypto.randomUUID(), { name: '替代', systemPrompt: '' });
-    assert.equal(count.presets.list().length, MAX_PROMPT_PRESETS);
-  } finally {
-    count.db.close();
-  }
-  const bytes = fixture();
-  try {
-    for (let index = 0; index < 8; index++)
-      bytes.presets.save(crypto.randomUUID(), { name: 'x', systemPrompt: '界'.repeat(20000) });
+    for (let index = 0; index < 201; index++)
+      presets.save(crypto.randomUUID(), { name: '预设', systemPrompt: '界'.repeat(1000) });
+    assert.equal(presets.list().length, 201);
     const id = crypto.randomUUID();
-    bytes.presets.save(id, { name: 'x', systemPrompt: '界'.repeat(14000) });
+    presets.save(id, { name: '长提示词', systemPrompt: '界'.repeat(64_001) });
+    assert.equal(presets.list().at(-1)!.systemPrompt.length, 64_001);
+    assert.throws(() => presets.save(id, { name: ' ', systemPrompt: '' }), status(400));
     assert.throws(
-      () => bytes.presets.save(id, { name: 'x', systemPrompt: '界'.repeat(15000) }),
-      status(507),
+      () => presets.save(id, { name: 'x', systemPrompt: '界'.repeat(MAX_SYSTEM_PROMPT_LENGTH) }),
+      status(400),
     );
-    assert.throws(
-      () =>
-        bytes.presets.prepareRestore([
-          {
-            id: crypto.randomUUID(),
-            name: '导入超限',
-            systemPrompt: '界'.repeat(1000),
-            updatedAt: 1,
-          },
-        ]),
-      status(507),
-    );
-    assert.equal(bytes.presets.list().at(-1)!.systemPrompt.length, 14000);
-    assert.throws(() => bytes.presets.save(id, { name: ' ', systemPrompt: '' }), status(400));
+    const restored = presets.prepareRestore([
+      { id: crypto.randomUUID(), name: '导入', systemPrompt: 'ok', updatedAt: 1 },
+    ]);
+    presets.insertRestored(restored);
+    assert.equal(presets.list().length, 203);
   } finally {
-    bytes.db.close();
+    db.close();
   }
 });
 
@@ -159,7 +134,7 @@ test('backup merging preserves conflicting local and deleted IDs, deduplicates r
   }
 });
 
-test('preset schemas reject leaked fields, invalid IDs, duplicate IDs and oversized backup collections', () => {
+test('preset schemas reject leaked fields, invalid IDs, duplicate IDs and oversized individual rows', () => {
   const preset = { id: crypto.randomUUID(), name: '预设', systemPrompt: '', updatedAt: 1 };
   for (const input of [
     { name: '', systemPrompt: '' },
@@ -172,7 +147,6 @@ test('preset schemas reject leaked fields, invalid IDs, duplicate IDs and oversi
     [{ ...preset, id: 'bad' }],
     [{ ...preset, apiKey: 'secret' }],
     [{ ...preset, updatedAt: Infinity }],
-    Array.from({ length: MAX_PROMPT_PRESETS + 1 }, () => ({ ...preset, id: crypto.randomUUID() })),
   ])
     assert.equal(v.safeParse(promptPresetListSchema, input).success, false);
 });

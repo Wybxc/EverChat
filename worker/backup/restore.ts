@@ -7,7 +7,6 @@ import { ArchiveImports, readArchiveManifest, type ImportResult } from '../backu
 import type { Env } from '../http/env';
 import { HttpError } from '../http/response';
 import type { Library } from '../library/durable-object';
-import { MAX_CONVERSATIONS } from '../platform/resource-limits';
 import { ProviderSettingsStore } from '../providers/store';
 
 // The Library owns transaction boundaries, its alarm and all feature stores.
@@ -63,12 +62,6 @@ export class ArchiveRestorer {
           undefined,
           problem('CONVERSATION_ID_CONFLICT'),
         );
-      if (
-        this.ctx.storage.sql
-          .exec<{ count: number }>('SELECT COUNT(*) AS count FROM conversations')
-          .one().count >= MAX_CONVERSATIONS
-      )
-        throw new HttpError(507, '空间对话容量已满。', undefined, problem('STORAGE_FULL'));
       this.ctx.storage.transactionSync(() => {
         this.imports.begin(id, hash, bytes.byteLength, manifest.files);
         this.ctx.storage.sql.exec(

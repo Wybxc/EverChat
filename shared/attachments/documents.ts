@@ -2,15 +2,11 @@ import * as v from 'valibot';
 import { estimateTextTokens } from '../conversation/token-estimate';
 import { AppError, problem, type ErrorIssue } from '../errors/descriptor';
 import type { ChatInput } from '../providers/types';
-import { attachmentInputSchema } from './files';
+import { attachmentInputSchema, MAX_ATTACHMENT_BYTES } from './files';
 import { MAX_PDF_TEXT_BYTES, pdfMetadataSchema } from './pdf';
+import { MAX_BUFFERED_TEXT_BYTES } from '../platform/limits';
 
-export const MAX_MESSAGE_DOCUMENTS = 4,
-  MAX_CONTEXT_DOCUMENTS = 8;
-export const MAX_DOCUMENT_BYTES = 128 * 1024,
-  MAX_DOCUMENT_CHARACTERS = 64_000;
-export const MAX_CSV_ROWS = 2000,
-  MAX_CSV_COLUMNS = 100;
+export const MAX_DOCUMENT_BYTES = Math.min(MAX_ATTACHMENT_BYTES, MAX_BUFFERED_TEXT_BYTES);
 export const DOCUMENT_VERSION = 1;
 export const documentMediaTypeSchema = v.picklist([
   'text/plain',
@@ -54,7 +50,10 @@ export const documentPartSchema = v.pipe(
     tokens: positive(MAX_PDF_TEXT_BYTES * 3),
     selection: v.optional(selectionSchema),
     csv: v.optional(
-      v.strictObject({ rows: positive(MAX_CSV_ROWS), columns: positive(MAX_CSV_COLUMNS) }),
+      v.strictObject({
+        rows: positive(Number.MAX_SAFE_INTEGER),
+        columns: positive(Number.MAX_SAFE_INTEGER),
+      }),
     ),
     pdf: v.optional(pdfMetadataSchema),
   }),
@@ -62,10 +61,7 @@ export const documentPartSchema = v.pipe(
     (part) =>
       (part.mediaType === 'text/csv' ? Boolean(part.csv) : !part.csv) &&
       (part.mediaType === 'application/pdf' ? Boolean(part.pdf) : !part.pdf) &&
-      (part.mediaType === 'application/pdf' ||
-        (part.size <= MAX_DOCUMENT_BYTES &&
-          part.characters <= MAX_DOCUMENT_CHARACTERS &&
-          !part.selection)) &&
+      (part.mediaType === 'application/pdf' || !part.selection) &&
       (!part.selection ||
         (part.selection.ranges.at(-1)!.end <= part.selection.sourceCharacters &&
           part.characters ===
@@ -106,16 +102,12 @@ export const estimateDocumentTokens = (
   text: string,
 ) => estimateTextTokens(documentPrompt(file, text)) + 8;
 export function assertDocumentContext(context: readonly ChatInput[]) {
-  let count = 0;
   for (const message of context) {
     if (!message.files?.length) continue;
     if (message.role !== 'user') throw new DocumentError('文件只能放在用户消息中。');
     for (const file of message.files) {
       if (!v.safeParse(documentPartSchema, file).success)
         throw new DocumentError('文件解析引用无效，请重新上传。');
-      count++;
     }
   }
-  if (count > MAX_CONTEXT_DOCUMENTS)
-    throw new DocumentError('本次上下文最多包含 8 个文本文件，请减少文件或缩短历史。');
 }

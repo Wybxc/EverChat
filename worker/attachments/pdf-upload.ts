@@ -54,8 +54,8 @@ export async function readPdfUpload(body: ReadableStream<Uint8Array>): Promise<P
       size += value.byteLength;
       if (size > MAX_PDF_TEXT_BYTES)
         throw new HttpError(
-          507,
-          'PDF 全文超过此对话 32 MiB 的附件存储容量。',
+          413,
+          'PDF 全文超过单次全文解析的内存保护大小。',
           undefined,
           problem('STORAGE_FULL'),
         );

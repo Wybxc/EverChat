@@ -4,7 +4,6 @@ import type { WebToolServiceConfig } from '../../../shared/web-tools/service';
 import type { WebToolCall, WebToolName, WebToolOutcome } from '../../../shared/web-tools/tasks';
 import type { Env } from '../../../worker/http/env';
 import { Conversation as ProductionConversation } from '../../../worker/index';
-import { MAX_DATABASE_BYTES } from '../../../worker/platform/resource-limits';
 import type { openProviderStream } from '../../../worker/providers/stream';
 import type { generateProviderText } from '../../../worker/providers/generate';
 import { toolWorkflowId, type ToolWorkflowParams } from '../../../worker/web-tools/workflow';
@@ -307,7 +306,7 @@ export class Conversation extends ProductionConversation {
     };
   }
   fixtureIndexedHistory(count: number) {
-    if (!Number.isInteger(count) || count < 1 || count > 60)
+    if (!Number.isInteger(count) || count < 1 || count > 1100)
       throw new Error('Invalid indexed history count');
     if (this.ctx.storage.sql.exec('SELECT id FROM messages LIMIT 1').toArray().length)
       throw new Error('Seed only empty conversation');
@@ -368,7 +367,7 @@ export class Conversation extends ProductionConversation {
     this.ctx.storage.sql.exec('CREATE TABLE fixture_storage_fault (id INTEGER)');
   }
   fixtureFillDatabase(target: number) {
-    if (!Number.isInteger(target) || target < 0 || target > MAX_DATABASE_BYTES - 512 * 1024)
+    if (!Number.isInteger(target) || target < 0 || target > 64 * 1024 * 1024)
       throw new Error('Invalid storage fixture size');
     const sql = this.ctx.storage.sql;
     sql.exec('CREATE TABLE IF NOT EXISTS fixture_padding (payload BLOB NOT NULL)');

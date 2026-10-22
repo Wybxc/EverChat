@@ -16,8 +16,6 @@ import {
 } from '../../../shared/conversation/context-budget';
 import { DEFAULT_CONVERSATION_SETTINGS as defaults } from '../../../shared/conversation/settings';
 import {
-  MAX_SUMMARIES,
-  MAX_SUMMARY_CHARACTERS,
   SUMMARY_SYSTEM_PROMPT,
   summaryContext,
   summaryCoverageSchema,
@@ -116,7 +114,6 @@ test('queued, partial, failed, cancelled, deleted, empty and truncated summaries
   variants.push(
     { ...candidate, deletedAt: 123 },
     { ...candidate, parts: messageParts('  ') },
-    { ...candidate, parts: messageParts('x'.repeat(MAX_SUMMARY_CHARACTERS + 1)) },
     { ...candidate, generation: { usage: {}, usageIsFinal: false, finishReason: 'length' } },
   );
   for (const invalid of variants) {
@@ -178,7 +175,7 @@ test('manual compression covers all prepared input or rejects without losing ori
   );
   assert.equal(first.estimate.omittedMessages, 0);
   assert.equal(first.config.systemPrompt, SUMMARY_SYSTEM_PROMPT);
-  assert.equal(first.config.maxOutputTokens, 2048);
+  assert.equal(first.config.maxOutputTokens, config.maxOutputTokens);
   assert.equal(first.context[0].content, messageText(path[0]));
   const saved = summary(path.slice(0, 2));
   const incremental = summaryGeneration([...path, saved], path[3].id, {
@@ -246,18 +243,17 @@ test('summary coverage and backups reject dangling, reordered, duplicate or priv
     },
   };
   assert.deepEqual(validateBackup(backup).conversation.messages.at(-1)?.summary, saved.summary);
-  const excess = Array.from({ length: MAX_SUMMARIES + 1 }, (_, index) =>
+  const excess = Array.from({ length: 101 }, (_, index) =>
     backupMessage(summary(path.slice(0, 2), index + 10)),
   );
-  assert.throws(
-    () =>
-      validateBackup({
-        ...backup,
-        conversation: { ...backup.conversation, messages: [...path.map(backupMessage), ...excess] },
-      }),
-    /摘要数量超过/,
+  assert.equal(
+    validateBackup({
+      ...backup,
+      conversation: { ...backup.conversation, messages: [...path.map(backupMessage), ...excess] },
+    }).conversation.messages.length,
+    path.length + 101,
   );
-  for (const parts of [[], messageParts(' '), messageParts('x'.repeat(MAX_SUMMARY_CHARACTERS + 1))])
+  for (const parts of [[], messageParts(' ')])
     assert.throws(
       () =>
         validateBackup({

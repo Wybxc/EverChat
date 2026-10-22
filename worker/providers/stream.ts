@@ -23,6 +23,7 @@ import { sdkProviderError } from './sdk-diagnostics';
 import { httpProviderError, providerFailure } from './failure';
 import { ProviderWireGuard } from './stream-errors';
 import { providerEvents, type ProviderResponse } from './events';
+import { MAX_BUFFERED_BODY_BYTES } from '../../shared/platform/limits';
 
 export { GenerationCancelled, ProviderError } from '../generation/errors';
 
@@ -49,6 +50,11 @@ export async function openProviderStream(
     await beforeRequest?.();
     signal.throwIfAborted();
     init = providerRequestInit(config, init, Boolean(toolRequest));
+    if (
+      typeof init?.body === 'string' &&
+      new TextEncoder().encode(init.body).byteLength > MAX_BUFFERED_BODY_BYTES
+    )
+      throw new ProviderError('模型请求超过单次序列化的内存保护大小，请减少附件或携带的历史。');
     const response = await globalThis.fetch(input, { ...init, signal, redirect: 'manual' });
     responseHeaders = response.headers;
     if (!response.ok) throw await httpProviderError(response, config, secrets);
@@ -81,6 +87,14 @@ export async function openProviderStream(
     }
     assertImageContext(context, config);
     assertDocumentContext(context);
+    if (
+      context.reduce(
+        (bytes, message) =>
+          bytes + (message.files ?? []).reduce((sum, file) => sum + file.characters, 0),
+        0,
+      ) > MAX_BUFFERED_BODY_BYTES
+    )
+      throw new DocumentError('本次文档内容超过单次模型请求的内存保护大小，请选择页码或片段。');
     const documentData = new Map<string, string>();
     for (const message of context)
       for (const file of message.files ?? []) {

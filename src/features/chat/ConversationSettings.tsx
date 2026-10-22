@@ -436,7 +436,7 @@ export function ConversationSettingsDialog({
                     label={t(($) => $.contextTokenBudget)}
                     value={settings.contextBudget}
                     min={1}
-                    max={10000000}
+                    max={Number.MAX_SAFE_INTEGER}
                     integer
                     change={(contextBudget) => update({ contextBudget })}
                   />
@@ -444,7 +444,7 @@ export function ConversationSettingsDialog({
                     label={t(($) => $.recentMessages)}
                     value={settings.recentMessages}
                     min={1}
-                    max={1000}
+                    max={Number.MAX_SAFE_INTEGER}
                     integer
                     change={(recentMessages) => update({ recentMessages })}
                   />

@@ -15,7 +15,7 @@ export default {
   loading: 'Loading web service',
   sessionChanged: 'Your sign-in session has changed.',
   invalid:
-    'The daily limit must be an integer from 1 to 1,000. API keys cannot contain whitespace or control characters.',
+    'The daily limit must be a positive integer. API keys cannot contain whitespace or control characters.',
   switchFailed: 'Could not switch services.',
   keyFailed: 'Could not read the API key.',
   service: 'Web service',

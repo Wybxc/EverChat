@@ -82,15 +82,25 @@ test('text estimates account for Unicode, punctuation and empty input with bound
   );
 });
 
-test('unknown models use a labelled fallback and unset output limits remain unset while reserving space', () => {
+test('unknown models use a labelled fallback and unknown windows do not truncate history or invent output reserves', () => {
   const { estimate } = buildContext([], 'hello', config, defaults);
   assert.equal(estimate.method, 'approximate-v1');
   assert.equal(estimate.windowSource, 'fallback');
   assert.equal(estimate.contextWindow, 32768);
-  assert.equal(estimate.outputReserve, 8192);
-  assert.equal(estimate.inputBudget, 32768 - 8192 - Math.ceil(32768 / 10));
+  assert.equal(estimate.outputReserve, 0);
+  assert.equal(estimate.inputBudget, Number.MAX_SAFE_INTEGER);
   assert.equal(config.maxOutputTokens, null);
   assert.doesNotThrow(() => assertContextFits(estimate));
+  const largeHistory: ChatInput[] = [
+    { role: 'user', content: '历史'.repeat(50_000) },
+    { role: 'assistant', content: '保留'.repeat(50_000) },
+  ];
+  assert.equal(buildContext(largeHistory, 'next', config, defaults).estimate.omittedMessages, 0);
+  assert.equal(
+    buildContext(largeHistory, 'next', config, { ...defaults, contextBudget: 100 }).estimate
+      .omittedMessages,
+    2,
+  );
 });
 
 test('shared windows reserve explicit output limits; separate input windows do not subtract output twice', () => {
@@ -99,16 +109,16 @@ test('shared windows reserve explicit output limits; separate input windows do n
     maxOutputTokens: 1000,
     modelMetadata: metadata({ contextWindow: 10000, maxOutputTokens: 2000 }),
   };
-  assert.equal(buildContext([], 'x', combined, defaults).estimate.inputBudget, 8000);
+  assert.equal(buildContext([], 'x', combined, defaults).estimate.inputBudget, 9000);
   const separate = {
     ...combined,
     modelMetadata: metadata({ contextWindow: 10000, maxOutputTokens: 2000, contextScope: 'input' }),
   };
-  assert.equal(buildContext([], 'x', separate, defaults).estimate.inputBudget, 9000);
+  assert.equal(buildContext([], 'x', separate, defaults).estimate.inputBudget, 10000);
   assert.equal(buildContext([], 'x', separate, defaults).estimate.outputReserve, 1000);
   assert.equal(
     buildContext([], 'x', combined, { ...defaults, contextBudget: 50000 }).estimate.inputBudget,
-    8000,
+    9000,
   );
   assert.equal(
     buildContext([], 'x', combined, { ...defaults, contextBudget: 500 }).estimate.inputBudget,
@@ -231,14 +241,26 @@ test('preview sources match normal continuation, user-ending copies, revision an
 });
 
 test('settings and stored estimates reject invalid bounds and unexpected private fields', () => {
+  assert.equal(
+    v.safeParse(conversationSettingsSchema, { ...defaults, systemPrompt: '中'.repeat(640_000) })
+      .success,
+    false,
+  );
+  assert.equal(
+    v.safeParse(conversationSettingsSchema, {
+      ...defaults,
+      systemPrompt: 'x'.repeat(100_000),
+      recentMessages: 10_000,
+      contextBudget: 10_000_000,
+    }).success,
+    true,
+  );
   for (const patch of [
     { contextBudget: 0 },
     { contextBudget: 1.5 },
     { contextBudget: Infinity },
-    { contextBudget: 10000001 },
     { recentMessages: 0 },
     { recentMessages: 1.5 },
-    { recentMessages: 1001 },
   ]) {
     assert.equal(v.safeParse(conversationSettingsSchema, { ...defaults, ...patch }).success, false);
   }

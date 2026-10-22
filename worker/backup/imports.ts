@@ -1,4 +1,3 @@
-import { MAX_DAILY_ATTACHMENT_UPLOADS } from '../../shared/attachments/files';
 import {
   sha256,
   validateArchiveManifest,
@@ -32,7 +31,7 @@ export type ImportResult =
 export async function readArchiveManifest(body: ReadableStream<Uint8Array>) {
   try {
     return validateArchiveManifest(
-      await readJsonStream(body, MAX_BACKUP_BYTES, '备份清单超过 12 MiB。'),
+      await readJsonStream(body, MAX_BACKUP_BYTES, '备份清单超过单次 JSON 解析的内存保护大小。'),
     );
   } catch (error) {
     throw error instanceof HttpError
@@ -125,31 +124,6 @@ export class ArchiveImports {
         undefined,
         problem('OPERATION_BUSY'),
       );
-    if (
-      this.storage.sql
-        .exec<{ count: number }>('SELECT COUNT(*) AS count FROM archive_imports')
-        .one().count >= 1000
-    )
-      throw new HttpError(429, '近期恢复次数已达上限。', undefined, problem('OPERATION_BUSY'));
-    const date = new Date().toISOString().slice(0, 10);
-    const count =
-      this.storage.sql
-        .exec<{ count: number }>('SELECT count FROM attachment_daily_uploads WHERE date = ?', date)
-        .toArray()[0]?.count ?? 0;
-    if (files.length) {
-      if (count + files.length + 1 > MAX_DAILY_ATTACHMENT_UPLOADS)
-        throw new HttpError(
-          429,
-          '今日剩余附件写入次数不足以恢复此存档，请明天重试。',
-          undefined,
-          problem('BACKUP_INVALID'),
-        );
-      this.storage.sql.exec('DELETE FROM attachment_daily_uploads WHERE date < ?', date);
-      this.storage.sql.exec(
-        'INSERT INTO attachment_daily_uploads VALUES (?, 1) ON CONFLICT(date) DO UPDATE SET count = count + 1',
-        date,
-      );
-    }
     const now = Date.now();
     this.storage.sql.exec(
       "INSERT INTO archive_imports VALUES (?, ?, ?, ?, 'preparing', ?, ?, ?, ?, NULL, NULL)",

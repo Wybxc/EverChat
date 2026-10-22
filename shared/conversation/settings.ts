@@ -3,7 +3,7 @@ import { AppError, problem } from '../errors/descriptor';
 import { MAX_MODEL_TOKENS, validateOutputLimit } from '../models/metadata';
 import type { ProviderConfig } from '../providers/types';
 import { WEB_TOOL_NAMES } from '../web-tools/tasks';
-import { MAX_SYSTEM_PROMPT_LENGTH } from './limits';
+import { MAX_SQL_PAYLOAD_BYTES, MAX_SYSTEM_PROMPT_LENGTH } from './limits';
 import type { ConversationSettings } from './types';
 
 export const DEFAULT_CONVERSATION_SETTINGS: ConversationSettings = {
@@ -26,9 +26,11 @@ export const conversationSettingsSchema = v.pipe(
     maxOutputTokens: v.nullable(
       v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(MAX_MODEL_TOKENS)),
     ),
-    recentMessages: v.nullable(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(1000))),
+    recentMessages: v.nullable(
+      v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(Number.MAX_SAFE_INTEGER)),
+    ),
     contextBudget: v.nullable(
-      v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(10_000_000)),
+      v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(Number.MAX_SAFE_INTEGER)),
     ),
     tools: v.pipe(
       v.array(v.picklist(WEB_TOOL_NAMES)),
@@ -46,6 +48,11 @@ export const conversationSettingsSchema = v.pipe(
       ),
     }),
   }),
+  v.check(
+    (settings) =>
+      new TextEncoder().encode(JSON.stringify(settings)).byteLength <= MAX_SQL_PAYLOAD_BYTES,
+    '对话参数超过数据库单行存储大小。',
+  ),
 );
 
 // Project saved values onto the current public settings. Retired fields stay

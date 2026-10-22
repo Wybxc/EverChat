@@ -690,9 +690,7 @@ test('large settings remain readable through native responses and oversized prov
   }
 });
 
-test('insufficient daily writes reject a whole import before registering its manifest or target files', async ({
-  request,
-}) => {
+test('retired daily counters do not prevent registering a backup import', async ({ request }) => {
   const fixture = await setup(request),
     id = crypto.randomUUID();
   fixture.restored.push(id);
@@ -702,14 +700,14 @@ test('insufficient daily writes reject a whole import before registering its man
     await control(request, { count: 99 });
     expect(
       (await request.post(`/api/backup/imports/${id}`, { headers, data: saved })).status(),
-    ).toBe(429);
-    expect((await request.get(`/api/backup/imports/${id}`)).status()).toBe(404);
+    ).toBe(200);
+    expect((await request.get(`/api/backup/imports/${id}`)).status()).toBe(200);
     const state = await control(request);
     expect(state.dailyCount).toBe(99);
     expect(state.rows.some((file: { conversationId: string }) => file.conversationId === id)).toBe(
-      false,
+      true,
     );
-    expect(state.objects.some((file: { key: string }) => file.key.includes(id))).toBe(false);
+    expect(state.objects.some((file: { key: string }) => file.key.includes(id))).toBe(true);
   } finally {
     await control(request, { count: 0 });
     await fixture.cleanup();

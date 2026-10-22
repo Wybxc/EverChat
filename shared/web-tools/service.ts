@@ -3,7 +3,7 @@ import * as v from 'valibot';
 export const DEFAULT_WEB_TOOL_DAILY_LIMIT = 20;
 export const webToolServiceInputSchema = v.strictObject({
   provider: v.picklist(['tavily', 'deepseek']),
-  dailyLimit: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(1000)),
+  dailyLimit: v.pipe(v.number(), v.safeInteger(), v.minValue(1)),
   apiKey: v.optional(
     v.pipe(
       v.string(),

@@ -1,14 +1,11 @@
+import { MAX_BUFFERED_BODY_BYTES } from '../platform/limits';
 import * as v from 'valibot';
 import { mergeGenerationDiagnostics } from '../streaming/diagnostics';
 import { branchPath } from '../conversation/branch-path';
 import { messagePartsSchema, messageText } from '../conversation/content';
 import { MAX_SYSTEM_PROMPT_LENGTH } from '../conversation/limits';
 import { conversationSettingsSchema } from '../conversation/settings';
-import {
-  MAX_SUMMARIES,
-  MAX_SUMMARY_CHARACTERS,
-  summaryCoverageSchema,
-} from '../conversation/summaries';
+import { summaryCoverageSchema } from '../conversation/summaries';
 import { titleSettingsSchema, type TitleSettings } from '../conversation/titles';
 import type { ConversationSettings, Message } from '../conversation/types';
 import { AppError, problem } from '../errors/descriptor';
@@ -16,7 +13,6 @@ import { MAX_MODEL_TOKENS } from '../models/metadata';
 import type { ProviderModel } from '../models/types';
 import { promptPresetListSchema } from '../presets/schema';
 import type { PromptPreset } from '../presets/types';
-import { MAX_PROVIDER_MODELS } from '../providers/limits';
 import { modelSchema } from '../providers/settings';
 import type { ProviderApiKind } from '../providers/types';
 import { addGenerationUsage, generationSchema } from '../streaming/generation';
@@ -24,8 +20,8 @@ import { publicToolTaskSchema, validReasoningBreaks } from '../web-tools/tasks';
 
 export const BACKUP_FORMAT = 'everchat-backup';
 export const BACKUP_VERSION = 1 as const;
-export const MAX_BACKUP_BYTES = 12 * 1024 * 1024;
-const MAX_BACKUP_MESSAGES = 1000;
+// Only the parsed JSON manifest is buffered. ZIP file data is uploaded separately.
+export const MAX_BACKUP_BYTES = MAX_BUFFERED_BODY_BYTES;
 
 interface BackupProvider {
   id: string;
@@ -162,7 +158,7 @@ export function validateBackup(value: unknown): EverChatBackup {
     !Number.isSafeInteger(conversation.updatedAt)
   )
     throw new AppError(problem('BACKUP_INVALID'), '备份中的对话信息无效。');
-  if (!Array.isArray(conversation.messages) || conversation.messages.length > MAX_BACKUP_MESSAGES)
+  if (!Array.isArray(conversation.messages))
     throw new AppError(problem('BACKUP_INVALID'), '备份中的消息数量无效。');
   const conversationSettings =
     conversation.settings === undefined
@@ -249,8 +245,6 @@ export function validateBackup(value: unknown): EverChatBackup {
       ...(tools?.success ? { tools: tools.output } : {}),
     } as unknown as BackupMessage;
   });
-  if (messages.filter((message) => message.summary && !message.deletedAt).length > MAX_SUMMARIES)
-    throw new AppError(problem('BACKUP_INVALID'), '备份中的摘要数量超过上限。');
   for (const message of messages)
     if (message.summary) {
       let path;
@@ -272,9 +266,6 @@ export function validateBackup(value: unknown): EverChatBackup {
         !message.deletedAt &&
         message.status === 'completed' &&
         (!message.parts.some((part) => part.type === 'text' && part.text.trim()) ||
-          message.parts.some(
-            (part) => part.type === 'text' && part.text.length > MAX_SUMMARY_CHARACTERS,
-          ) ||
           message.generation?.finishReason === 'length')
       )
         throw new AppError(problem('BACKUP_INVALID'), '备份中的已完成摘要无效。');
@@ -290,7 +281,6 @@ export function validateBackup(value: unknown): EverChatBackup {
     !settings ||
     typeof settings !== 'object' ||
     !Array.isArray(settings.providers) ||
-    settings.providers.length > 50 ||
     !nullableString(settings.activeProviderId, 64) ||
     !isString(settings.activeModel, 200) ||
     !isString(settings.systemPrompt, MAX_SYSTEM_PROMPT_LENGTH) ||
@@ -313,8 +303,7 @@ export function validateBackup(value: unknown): EverChatBackup {
         String(provider.provider),
       ) ||
       !isString(provider.baseUrl, 2048) ||
-      !Array.isArray(provider.models) ||
-      provider.models.length > MAX_PROVIDER_MODELS
+      !Array.isArray(provider.models)
     )
       throw new AppError(problem('BACKUP_INVALID'), '备份中的供应商配置无效。');
     const models = provider.models.map((model) => {

@@ -20,7 +20,7 @@ export default {
   SCHEMA_MISMATCH: '数据库需要先执行离线运维迁移。',
   CONVERSATION_DELETED: '这个对话已删除。',
   CONVERSATION_BUSY: '请等待生成完成或先停止。',
-  MESSAGE_LIMIT: '消息正文与思考内容合计超过 768 KiB 的存储保护大小。',
+  MESSAGE_LIMIT: '消息正文与思考内容超过数据库单行存储大小。',
   BRANCH_INVALID: '消息分支关系无效或不可用，请重新同步对话。',
   PARENT_UNAVAILABLE: '找不到可继续的父消息，请切换分支后重试。',
   CONTEXT_INVALID: '上下文无法容纳于配置的预算，请缩短输入或历史，或调整预算。',

@@ -2,12 +2,7 @@ import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
 import type { SearchDocument } from '../../../shared/search/query';
-import {
-  MAX_SEARCH_DATABASE_BYTES,
-  SearchChanged,
-  SearchIndex,
-  searchableMarkdown,
-} from '../../../worker/search/index';
+import { SearchChanged, SearchIndex, searchableMarkdown } from '../../../worker/search/index';
 
 function fixture() {
   const db = new DatabaseSync(':memory:');
@@ -54,7 +49,7 @@ function fixture() {
     sql,
     index,
     fill: () => {
-      size = MAX_SEARCH_DATABASE_BYTES + 1;
+      size = 256 * 1024 * 1024 + 1;
     },
   };
 }
@@ -147,15 +142,15 @@ test('keyset pagination covers all results, validates query/revision, and exclud
     db.close();
   }
 });
-test('index capacity failure rolls back fields, FTS and version together', () => {
+test('index writes continue above the old Library size budget', () => {
   const { db, sql, index, fill } = fixture();
   try {
     index.replace('c', [document('m', 'retained body')]);
     fill();
-    assert.throws(() => index.replace('c', [document('m', 'lost body', 2)]), /容量/);
-    assert.equal(index.search('retained').results.length, 1);
-    assert.equal(index.search('lost').results.length, 0);
-    assert.equal(sql.exec('SELECT version FROM search_messages').one().version, 1);
+    index.replace('c', [document('m', 'lost body', 2)]);
+    assert.equal(index.search('retained').results.length, 0);
+    assert.equal(index.search('lost').results.length, 1);
+    assert.equal(sql.exec('SELECT version FROM search_messages').one().version, 2);
   } finally {
     db.close();
   }

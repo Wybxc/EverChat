@@ -124,9 +124,9 @@ test('validateBackup accepts version 1 backups and rejects malformed messages', 
       ...backup.conversation,
       settings: {
         ...DEFAULT_CONVERSATION_SETTINGS,
-        systemPrompt: '\u0000'.repeat(MAX_SYSTEM_PROMPT_LENGTH),
+        systemPrompt: '\u0000'.repeat(64000),
       },
-      messages: [{ ...saved, parts: messageParts('x'.repeat(MAX_MESSAGE_TEXT_BYTES)) }],
+      messages: [{ ...saved, parts: messageParts('x'.repeat(1_000_000)) }],
     },
     settings: { ...backup.settings, maxOutputTokens: 200_000 },
   });

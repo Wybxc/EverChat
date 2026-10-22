@@ -3,7 +3,7 @@ import type { ProviderApiKind } from '../providers/types';
 import { matchModelCatalog } from './catalog';
 import type { ModelMetadata, ProviderModel, ResolvedModelMetadata } from './types';
 
-export const MAX_MODEL_TOKENS = 10_000_000;
+export const MAX_MODEL_TOKENS = Number.MAX_SAFE_INTEGER;
 export const reasoningEfforts = [
   'none',
   'minimal',

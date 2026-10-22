@@ -14,7 +14,6 @@ import * as v from 'valibot';
 import type { SqlQuery } from '../../../worker/generation/metrics';
 import { providerToolIdentity, type ProviderToolTurn } from '../../../worker/providers/tool-turn';
 import {
-  MAX_TOOL_TASKS,
   TOOL_DEFINITION_TOKENS,
   TOOL_TASK_TIMEOUT_MS,
   ToolTaskJournal,
@@ -446,6 +445,37 @@ test('saved turns and results cannot be overwritten, and a continuation waits fo
   assert.equal(journal.state(input.id).toolRequests, 2);
 });
 
+test('large tool results fit by bytes and an unpersistable aggregate becomes an explicit failure', (t) => {
+  const { journal, write, begin, save } = database(t),
+    input = begin();
+  save(input, turn([call('one'), call('two')]));
+  const large = (id: string): WebToolOutcome => ({
+    id,
+    name: 'web_search',
+    status: 'completed',
+    sources: [
+      { title: 'Large result', url: 'https://example.org/', content: 'x'.repeat(1_000_000) },
+    ],
+  });
+  for (const id of ['one', 'two']) {
+    write((j) => j.claimTool(input.id, id));
+    assert.equal(
+      write((j) => j.finishTool(input.id, id, large(id))),
+      true,
+    );
+    assert.equal(
+      write((j) => j.finishTool(input.id, id, large(id))),
+      false,
+    );
+  }
+  const task = journal.publicTask(input.id);
+  assert.equal(task.calls[0].result?.status, 'completed');
+  assert.equal(task.calls[1].result?.status, 'failed');
+  assert.ok(v.safeParse(publicToolTaskSchema, task).success);
+  const failed = task.calls[1].result!;
+  assert.ok(failed.status === 'failed' && failed.error.includes('单行存储'));
+});
+
 test('different call IDs, enabled tools and stored result correspondence are revalidated before continuation', (t) => {
   const { query, write, begin, save, finish } = database(t),
     input = begin();
@@ -788,15 +818,15 @@ test('large signed continuation stays in its own bounded row and is removed at t
   );
 });
 
-test('per-conversation ledger capacity rejects new roots without removing idempotency evidence', (t) => {
+test('completed task history beyond the old quota preserves idempotency without blocking new roots', (t) => {
   const { begin, write, journal } = database(t);
   let first!: StartToolTask;
-  for (let index = 0; index < MAX_TOOL_TASKS; index++) {
+  for (let index = 0; index < 1001; index++) {
     const input = begin();
     first ??= input;
     write((j) => j.stop(input.id, 'cancelled'));
   }
-  assert.throws(() => begin(), /数量已达上限/);
+  assert.ok(begin());
   assert.equal(write((j) => j.create(first, config)).status, 'cancelled');
   assert.equal(journal.state(first.id).status, 'cancelled');
 });

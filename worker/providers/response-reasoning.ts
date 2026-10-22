@@ -21,7 +21,6 @@ export class ResponseReasoning {
     const id = `${event.item_id}:${index}`;
     let part = this.parts.get(id);
     if (!part) {
-      if (this.parts.size >= 256) throw new Error('供应商思考片段数量超过解析容量。');
       part = { raw: '', summary: '' };
       this.parts.set(id, part);
     }

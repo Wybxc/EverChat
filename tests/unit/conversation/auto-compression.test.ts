@@ -147,7 +147,7 @@ test('demand includes summary framing, independent input/output windows and the 
     { id: crypto.randomUUID(), content: 'summary and framing', coveredMessages: 2 },
   );
   assert.equal(demand.inputBudget, 777);
-  assert.equal(demand.outputReserve, 1024);
+  assert.equal(demand.outputReserve, 0);
   assert.ok(demand.summaryTokens! > 0);
   assert.ok(demand.systemTokens > 0);
   assert.equal(demand.retainedMessages, 2);

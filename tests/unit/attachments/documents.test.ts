@@ -68,8 +68,8 @@ test('UTF-8 extraction preserves code, Markdown and line endings without executi
   for (const invalid of [' ', '\r\n\t', 'text\u0000binary', 'text\u001bescape', 'text\u007f'])
     assert.throws(() => parse(invalid));
   assert.equal(parse('a'.repeat(64000)).text.length, 64000);
-  assert.throws(() => parse('a'.repeat(64001)), /64,000/);
-  assert.throws(() => parse('中'.repeat(44000)), /128 KiB/);
+  assert.equal(parse('a'.repeat(64001)).text.length, 64001);
+  assert.equal(parse('中'.repeat(44000)).text.length, 44000);
 });
 test('restricted CSV accepts quoted commas, quotes and newlines, keeps formulas literal and rejects inconsistent or malformed records', () => {
   const csv = 'name,value\r\n"one,two","line1\nline2"\r\n"a""b",=SUM(A1)\r\n\r\n';
@@ -77,12 +77,12 @@ test('restricted CSV accepts quoted commas, quotes and newlines, keeps formulas 
   for (const invalid of ['a,b\n1', 'a,b\n1,2,3', 'a,b\n"unclosed,2', 'a,b\n"bad"x,2'])
     assert.throws(() => parse(invalid, 'text/csv'), /CSV/);
   assert.deepEqual(parse('a\n'.repeat(2000), 'text/csv').csv, { rows: 2000, columns: 1 });
-  assert.throws(() => parse('a\n'.repeat(2001), 'text/csv'), /2,000/);
+  assert.deepEqual(parse('a\n'.repeat(2001), 'text/csv').csv, { rows: 2001, columns: 1 });
   assert.deepEqual(parse(Array(100).fill('x').join(','), 'text/csv').csv, {
     rows: 1,
     columns: 100,
   });
-  assert.throws(() => parse(Array(101).fill('x').join(','), 'text/csv'), /100 列/);
+  assert.equal(parse(Array(101).fill('x').join(','), 'text/csv').csv?.columns, 101);
 });
 test('document parts store only bounded versioned references and canonical message channels', () => {
   assert.ok(v.safeParse(documentPartSchema, file).success);
@@ -91,8 +91,6 @@ test('document parts store only bounded versioned references and canonical messa
     { url: 'https://public/file' },
     { version: 2 },
     { tokens: 0 },
-    { characters: 64001 },
-    { size: 131073 },
     { mediaType: 'application/pdf' },
     { csv: { rows: 1, columns: 1 } },
   ])
@@ -103,7 +101,6 @@ test('document parts store only bounded versioned references and canonical messa
   for (const invalid of [
     [file, file],
     [file, { type: 'text', text: 'out of order' }],
-    Array.from({ length: 5 }, () => ({ ...file, attachmentId: crypto.randomUUID() })),
   ])
     assert.equal(v.safeParse(messagePartsSchema, invalid).success, false);
 });
@@ -166,14 +163,13 @@ test('file-only questions retain their references through retries, branches, sum
   assert.deepEqual(contextHistory([{ ...user, deletedAt: 2 }, answer], answer.id), []);
   assert.ok(!JSON.stringify(built).includes(text));
 });
-test('context bounds count repeated file occurrences even when storage loads are deduplicated', () => {
+test('document contexts accept more than eight occurrences while retaining role validation', () => {
   assert.throws(
     () => assertDocumentContext([{ role: 'assistant', content: '', files: [file] }]),
     /用户消息/,
   );
-  assert.throws(
-    () => assertDocumentContext([{ role: 'user', content: '', files: Array(9).fill(file) }]),
-    /8 个/,
+  assert.doesNotThrow(() =>
+    assertDocumentContext([{ role: 'user', content: '', files: Array(9).fill(file) }]),
   );
   const long = { ...file, characters: 64000 };
   assert.doesNotThrow(() =>

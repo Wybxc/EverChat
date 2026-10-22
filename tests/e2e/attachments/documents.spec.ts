@@ -260,8 +260,6 @@ test('invalid, incomplete, foreign, unparsed and over-budget documents fail befo
       ],
       [Buffer.from('valid prefix text \u001bescape'), 'control.txt', 'text/plain', 415],
       [Buffer.from('a,b\n1'), 'bad.csv', 'text/csv', 415],
-      [Buffer.from('x'.repeat(64001)), 'characters.txt', 'text/plain', 413],
-      [Buffer.from('中'.repeat(44000)), 'bytes.txt', 'text/plain', 413],
     ] as const) {
       const bad = await upload(request, fixture.id, bytes, name, mediaType);
       const endpoint = documentUrl(fixture.id, bad.id);
@@ -278,6 +276,16 @@ test('invalid, incomplete, foreign, unparsed and over-budget documents fail befo
           })
         ).status(),
       ).toBeGreaterThanOrEqual(400);
+    }
+    for (const text of ['x'.repeat(64_001), '中'.repeat(44_000)]) {
+      const large = await upload(request, fixture.id, Buffer.from(text), 'large.txt', 'text/plain');
+      expect((await request.post(documentUrl(fixture.id, large.id), { headers })).status()).toBe(
+        200,
+      );
+      expect(
+        (await request.get(documentUrl(fixture.id, large.id)).then((response) => response.json()))
+          .text,
+      ).toBe(text);
     }
     expect((await request.post(documentUrl(fixture.id, foreign.id), { headers })).status()).toBe(
       404,
@@ -370,7 +378,28 @@ test('document retries, revisions and summaries retain branch references and pro
     await fixture.cleanup();
   }
 });
-test('image and CSV can share one task and both allowances are included in the context budget', async ({
+
+test('large raw files remain storable while parsing rejects excessive working sets before loading them', async ({
+  request,
+}) => {
+  const fixture = await setup(request);
+  try {
+    const file = await upload(
+      request,
+      fixture.id,
+      Buffer.alloc(33 * 1024 * 1024, 'x'),
+      'large.txt',
+      'text/plain',
+    );
+    const response = await request.post(documentUrl(fixture.id, file.id), { headers });
+    expect(response.status()).toBe(413);
+    expect((await response.json()).error).toContain('内存保护');
+    expect((await request.head(attachmentUrl(fixture.id, file.id))).status()).toBe(200);
+  } finally {
+    await fixture.cleanup();
+  }
+});
+test('image and CSV can share one task without an invented fixed image token allowance', async ({
   request,
 }) => {
   const fixture = await setup(request, 'openai-chat', true);
@@ -395,7 +424,7 @@ test('image and CSV can share one task and both allowances are included in the c
       fileIds: [original.id],
     });
     const answer = await finish(fixture, result);
-    expect(answer.generation?.context?.imageTokens).toBe(4096);
+    expect(answer.generation?.context?.imageTokens).toBeUndefined();
     expect(answer.generation?.context?.documentTokens).toBe(file.tokens);
   } finally {
     await fixture.cleanup();

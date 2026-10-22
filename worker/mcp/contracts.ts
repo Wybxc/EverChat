@@ -52,11 +52,15 @@ export const chatSchema = v.strictObject({
   ),
   temperature: v.optional(v.pipe(v.number(), v.finite(), v.minValue(0), v.maxValue(2))),
   topP: v.optional(v.pipe(v.number(), v.finite(), v.minValue(0), v.maxValue(1))),
-  contextBudget: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(10_000_000))),
-  maxOutputTokens: v.optional(
-    v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(10_000_000)),
+  contextBudget: v.optional(
+    v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(Number.MAX_SAFE_INTEGER)),
   ),
-  recentMessages: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(1000))),
+  maxOutputTokens: v.optional(
+    v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(Number.MAX_SAFE_INTEGER)),
+  ),
+  recentMessages: v.optional(
+    v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(Number.MAX_SAFE_INTEGER)),
+  ),
   webSearch: v.optional(v.boolean()),
   waitMs: wait,
 });

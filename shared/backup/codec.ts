@@ -127,7 +127,7 @@ export async function encodeArchive(
   const safe = validateArchiveManifest(manifest),
     metadata = new TextEncoder().encode(JSON.stringify(safe));
   if (metadata.byteLength > MAX_BACKUP_BYTES)
-    throw new AppError(problem('BACKUP_LIMIT'), '备份清单超过 12 MiB。');
+    throw new AppError(problem('BACKUP_LIMIT'), '备份清单超过单次 JSON 解析的内存保护大小。');
   const all = { ...entries, [ARCHIVE_MANIFEST]: metadata };
   await validateArchiveData(safe, all);
   const files: Zippable = {};
@@ -183,7 +183,7 @@ export async function decodeBackup(bytes: Uint8Array): Promise<ArchiveData> {
   while (start < bytes.length && [0x20, 0x09, 0x0a, 0x0d].includes(bytes[start])) start++;
   if (bytes[start] !== 0x7b) return decodeArchive(bytes);
   if (bytes.byteLength > MAX_BACKUP_BYTES)
-    throw new AppError(problem('BACKUP_LIMIT'), 'JSON 备份超过 12 MiB。');
+    throw new AppError(problem('BACKUP_LIMIT'), 'JSON 备份超过单次 JSON 解析的内存保护大小。');
   const backup = validateBackup(
     JSON.parse(new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes)),
   );

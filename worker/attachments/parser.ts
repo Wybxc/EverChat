@@ -1,11 +1,5 @@
 import Papa from 'papaparse';
-import {
-  MAX_CSV_COLUMNS,
-  MAX_CSV_ROWS,
-  MAX_DOCUMENT_BYTES,
-  MAX_DOCUMENT_CHARACTERS,
-  type DocumentPart,
-} from '../../shared/attachments/documents';
+import { MAX_DOCUMENT_BYTES, type DocumentPart } from '../../shared/attachments/documents';
 import { problem } from '../../shared/errors/descriptor';
 import { HttpError } from '../http/response';
 
@@ -16,7 +10,7 @@ export function extractDocument(
   if (!bytes.length || bytes.length > MAX_DOCUMENT_BYTES)
     throw new HttpError(
       413,
-      '文本文件最多 128 KiB，请拆分文件或选择片段。',
+      '文本文件超过单次全文解析的内存保护大小，请拆分文件。',
       undefined,
       problem('TEXT_INVALID'),
     );
@@ -28,13 +22,6 @@ export function extractDocument(
   }
   if (!text.trim())
     throw new HttpError(415, '文件没有可用于问答的文本。', undefined, problem('TEXT_INVALID'));
-  if (text.length > MAX_DOCUMENT_CHARACTERS)
-    throw new HttpError(
-      413,
-      '文件最多 64,000 字符，请拆分文件或选择片段。',
-      undefined,
-      problem('TEXT_INVALID'),
-    );
   if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text))
     throw new HttpError(
       415,
@@ -55,11 +42,9 @@ export function extractDocument(
         columns ||= result.data.length;
         const failure = result.errors.length
           ? 'CSV 引号或字段格式无效。'
-          : rows > MAX_CSV_ROWS || result.data.length > MAX_CSV_COLUMNS
-            ? 'CSV 最多 2,000 行、100 列，请拆分文件。'
-            : result.data.length !== columns
-              ? 'CSV 各行的列数必须一致。'
-              : '';
+          : result.data.length !== columns
+            ? 'CSV 各行的列数必须一致。'
+            : '';
         if (failure) {
           parser.abort();
           throw new HttpError(415, failure, undefined, problem('TEXT_INVALID'));

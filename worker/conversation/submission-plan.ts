@@ -2,7 +2,6 @@ import { messageText } from '../../shared/conversation/content';
 import type { Message, SubmitInput } from '../../shared/conversation/types';
 import type { ErrorIssue } from '../../shared/errors/descriptor';
 import { problem } from '../../shared/errors/descriptor';
-import { MAX_MESSAGES } from '../platform/resource-limits';
 
 export function planSubmissionParent(
   messages: Message[],
@@ -57,12 +56,6 @@ export function planSubmissionParent(
     : undefined;
   if (input.revisionOf && !original)
     return { error: '找不到要编辑的消息。', issue: problem('NOT_FOUND'), status: 404 };
-  if (messages.length + (parent ? 1 : 2) > MAX_MESSAGES)
-    return {
-      error: '此对话已达到消息数量保护上限，请新建对话。',
-      issue: problem('OPERATION_BUSY'),
-      status: 507,
-    };
   const content = parent ? messageText(parent) : (input.content?.trim() ?? '');
   if (
     input.retryOf &&

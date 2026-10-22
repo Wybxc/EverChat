@@ -70,7 +70,6 @@ test('PDF extraction and immutable references validate page, parser, original si
   assert.ok(v.safeParse(documentPartSchema, part).success);
   for (const patch of [
     { pdf: undefined },
-    { size: 5242881 },
     { csv: { rows: 1, columns: 1 } },
     { mediaType: 'text/plain' },
   ])

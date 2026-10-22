@@ -16,12 +16,10 @@ import { branchPath } from './branch-path';
 import { type ConversationSettings, type Message } from './types';
 import { type ProviderConfig } from '../providers/types';
 
-export const MAX_SUMMARIES = 100,
-  MAX_SUMMARY_CHARACTERS = 20_000;
 export const summaryCoverageSchema = v.pipe(
   v.strictObject({
     throughId: v.pipe(v.string(), v.uuid()),
-    sourceIds: v.pipe(v.array(v.pipe(v.string(), v.uuid())), v.minLength(1), v.maxLength(1000)),
+    sourceIds: v.pipe(v.array(v.pipe(v.string(), v.uuid())), v.minLength(1)),
     automatic: v.optional(v.boolean()),
   }),
   v.check(
@@ -51,7 +49,6 @@ export function summaryForPath(
       message.status !== 'completed' ||
       message.deletedAt ||
       !messageText(message).trim() ||
-      messageText(message).length > MAX_SUMMARY_CHARACTERS ||
       message.generation?.finishReason === 'length'
     )
       continue;
@@ -201,10 +198,7 @@ export function summaryGeneration(messages: Message[], throughId: string, config
   const generationConfig: ProviderConfig = {
     ...config,
     systemPrompt: SUMMARY_SYSTEM_PROMPT,
-    maxOutputTokens: Math.max(
-      1,
-      Math.min(2048, metadata.maxOutputTokens, Math.floor(metadata.contextWindow / 4)),
-    ),
+    maxOutputTokens: config.maxOutputTokens,
     temperature: undefined,
     topP: undefined,
     reasoningEnabled: metadata.reasoning && metadata.reasoningEfforts.includes('none'),
