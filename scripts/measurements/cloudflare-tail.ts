@@ -13,6 +13,7 @@ const { values } = parseArgs({
 });
 const workers = new Set([
   'everchat-stream-validation',
+  'everchat-core-http-api-validation',
   'everchat-tools-validation',
   'everchat-notifications-validation',
   'everchat-notification-pipeline-validation',

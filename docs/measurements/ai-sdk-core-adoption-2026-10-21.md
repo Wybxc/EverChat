@@ -265,3 +265,25 @@ Cloudflare [Workers CPU 规则](https://developers.cloudflare.com/workers/platfo
 这些是统计采样点，含子调用的数值相互重叠，不能相加为总耗时；V8 timeDeltas 包含 idle／I/O，本地墙钟亦不能除以请求数当作 CPU。JWT／JOSE、权限查询、Hono 路由、Headers／Request 构造和 WebSocket 转发均出现在采样中，仅能列为候选路径，不能据此解释平台某一条 18 ms 请求或认定冷启动／JIT 根因。
 
 源码复核确认：`requireAuth` 读取中间件保存的 principal，多次调用不是重复验签；`requireConversation` 的 `Library.get` 同时排除复制中、导入中和已删除的对话，不应为降低成本删除这些语义。没有模型生成调用出现在此空对话负载中，也没有因此修改产品代码或削弱鉴权。两个本地进程已停止，临时运行状态与合成凭据配置已删除；未创建 Cloudflare 资源。平台函数级归因、DO 汇总与正式发布仍待完成。
+
+## 直接 HTTP 定向补测
+
+用户另行授权临时开放测试 Worker 的 workers.dev 地址，以 12 分钟有效的合成 RS256 JWT 保护所有 API；存储 Worker 保持私有。不创建 Access 凭据、自定义域名或远程开发 driver，不改生产、不调用真实模型。全部尝试共用 03:20:44–03:29:44 UTC 的负载窗口和 03:32:44 UTC 的清理目标，未重新延长。原始记录见[HTTP 补测](ai-sdk-core-http-cpu-2026-10-22.json)。
+
+第一轮因新 Worker 名未加入日志采集器允许列表而退出，尚未开始生成负载；资源核对删除后修正列表，在原窗口内重试。第二轮完成空对话 137 次、生成中 164 次、终态 175 次同步握手，共 476 次；每阶段至少 12 秒、4 并发。16,000 字输入产生正文、思考各 84,000 字并保存为 completed。生成中握手只覆盖最初约 12 秒，不代替此前的全程分钟级恢复验证。
+
+删除前读取 03:22–03:25 UTC 的封闭窗口：
+
+| 状态                       | 平台报告请求数 | sampleInterval |  CPU p50 |   CPU p99 | CPU 最大值 | 最大采样内存 |
+| -------------------------- | -------------: | -------------: | -------: | --------: | ---------: | -----------: |
+| success                    |             30 |              1 | 2.355 ms |  5.523 ms |   5.523 ms | 13,774,659 B |
+| responseStreamDisconnected |            467 |          1.081 | 2.283 ms | 15.628 ms |  20.809 ms | 14,058,015 B |
+| clientDisconnected         |              1 |              1 | 2.756 ms |  2.756 ms |   2.756 ms |  9,260,867 B |
+
+同步桶为自适应估算，不能把 467 当作精确逐请求计数或模型调用数。各桶 errors 为零，未出现 exceededCpu／exceededMemory 分组；测量客户端主动关闭同步连接。tail 捕获 287 个事件，其中同步 256 条，少于 476 次完成握手；空闲捕获 88 条，4 条超过 10 ms，最大 20 ms；生成中捕获 81 条，最大 8 ms；终态捕获 87 条，1 条 16 ms。不能宣称完整覆盖、每次均符合 Free 预算或没有运行时风险。
+
+两次 5 秒 profile 指定准确的已部署 UUID，采样前及期间均有同步流量，仍返回 HTTP 404／10393：`No recent executions were found for this Worker.` 未取得 pprof；不据此推断套餐、Service Binding 或 HTTP 拓扑不支持 profiling。DO periodic 在封闭窗口结束 3 分钟后查询、再隔 30 秒复查，均为空且无 GraphQL 错误；删除后的账户范围复查仅有两个其他 namespace，仍不能归属本测试。不是零用量，也没有取得本次 DO CPU、duration、读写总量。
+
+`worker/http/auth.ts`、`access.ts`、`app.ts` 与 `worker/conversation/routes.ts` 相对 `origin/main` 没有源码改动，但这不证明运行时、包体初始化及生产拓扑完全相同，也不是平台前后对照。保留鉴权与完整性检查，没有因观测缺失修改产品或放宽验收。
+
+03:28:37 UTC 清理核对完成，在原总窗口内：先关闭 workers.dev，再删除两个 Worker；两次尝试产生的四个 namespace 均确认不在完整列表，两个 script settings 均 404。生产设置摘要一致，本地认证日志和配置已移除。功能补测已完成；函数级平台归因、DO 汇总和发布仍未完成，不自动重复创建隔离资源。

@@ -1,0 +1,582 @@
+{
+  "version": 1,
+  "code": "9b93f28",
+  "authorizationWindow": {
+    "startedAt": "2026-10-22T03:20:44.733Z",
+    "testCutoff": "2026-10-22T03:29:44.733Z",
+    "cleanupTarget": "2026-10-22T03:32:44.733Z",
+    "cleanupConfirmedAt": "2026-10-22T03:28:37.583Z",
+    "within12Minutes": true
+  },
+  "scope": "Direct workers.dev HTTP diagnostic protected by a synthetic 12-minute RS256 JWT. API and DO in separate scripts; no Access edge, real provider or production data. Not the unchanged production topology.",
+  "failedAttempt": {
+    "version": 1,
+    "startedAt": "2026-10-22T03:20:44.733Z",
+    "code": "1268f4d",
+    "complete": false,
+    "scope": "Direct workers.dev HTTP diagnostic protected by a synthetic 12-minute RS256 JWT. API and DO in separate scripts; no Access edge, real provider or production data. Not the unchanged production topology.",
+    "phases": [],
+    "cleanup": [
+      {
+        "worker": "everchat-core-http-api-validation",
+        "workersDevDisabled": true,
+        "status": 200
+      },
+      {
+        "worker": "everchat-core-http-api-validation",
+        "deleteStatus": 200
+      },
+      {
+        "worker": "everchat-core-http-storage-validation",
+        "deleteStatus": 200
+      },
+      {
+        "namespace": "CONVERSATIONS",
+        "id": "50b0ed9a93324d65a2da38021d8d87e4",
+        "deleteStatus": 404
+      },
+      {
+        "namespace": "LIBRARY",
+        "id": "029f8a1c38a14ebd9b6b51818c273b81",
+        "deleteStatus": 404
+      },
+      {
+        "worker": "everchat-core-http-api-validation",
+        "confirmedStatus": 404
+      },
+      {
+        "worker": "everchat-core-http-storage-validation",
+        "confirmedStatus": 404
+      },
+      {
+        "namespace": "CONVERSATIONS",
+        "id": "50b0ed9a93324d65a2da38021d8d87e4",
+        "confirmedAbsent": true,
+        "verification": "complete namespace list"
+      },
+      {
+        "namespace": "LIBRARY",
+        "id": "029f8a1c38a14ebd9b6b51818c273b81",
+        "confirmedAbsent": true,
+        "verification": "complete namespace list"
+      }
+    ],
+    "testCutoff": "2026-10-22T03:29:44.733Z",
+    "cleanupTarget": "2026-10-22T03:32:44.733Z",
+    "deployments": [
+      {
+        "name": "everchat-core-http-storage-validation",
+        "version": "d360d0c8-b692-4b2a-a64d-5db1977f2a9c"
+      },
+      {
+        "name": "everchat-core-http-api-validation",
+        "version": "720a10d6-9b32-4d2b-a603-dcef1bb135b5"
+      }
+    ],
+    "bindingsMatch": true,
+    "unauthorizedStatus": 401,
+    "failure": {
+      "name": "AssertionError",
+      "message": "Tail ready after unauthorized probe: timed out",
+      "rootCause": "Test harness omission: new Worker name absent from tail collector allowlist. No generation load started. Fixed collector and reran within the original cutoff; no deadline extension."
+    },
+    "productionUnchanged": true,
+    "finishedAt": "2026-10-22T03:21:48.893Z"
+  },
+  "completedAttempt": {
+    "version": 1,
+    "startedAt": "2026-10-22T03:22:31.786Z",
+    "code": "1268f4d",
+    "complete": true,
+    "scope": "Direct workers.dev HTTP diagnostic protected by a synthetic 12-minute RS256 JWT. API and DO in separate scripts; no Access edge, real provider or production data. Not the unchanged production topology.",
+    "phases": [
+      {
+        "name": "warm",
+        "startedAt": "2026-10-22T03:22:55.944Z",
+        "minimum": 40,
+        "minimumDurationMs": 12000,
+        "completed": 137,
+        "finishedAt": "2026-10-22T03:23:08.123Z"
+      },
+      {
+        "name": "active",
+        "startedAt": "2026-10-22T03:23:08.561Z",
+        "minimum": 80,
+        "minimumDurationMs": 12000,
+        "completed": 164,
+        "finishedAt": "2026-10-22T03:23:20.719Z"
+      },
+      {
+        "name": "terminal",
+        "startedAt": "2026-10-22T03:24:20.669Z",
+        "minimum": 20,
+        "minimumDurationMs": 12000,
+        "completed": 175,
+        "finishedAt": "2026-10-22T03:24:32.888Z"
+      }
+    ],
+    "cleanup": [
+      {
+        "worker": "everchat-core-http-api-validation",
+        "workersDevDisabled": true,
+        "status": 200
+      },
+      {
+        "worker": "everchat-core-http-api-validation",
+        "deleteStatus": 200
+      },
+      {
+        "worker": "everchat-core-http-storage-validation",
+        "deleteStatus": 200
+      },
+      {
+        "namespace": "CONVERSATIONS",
+        "id": "5a434804d6c24d4899b2b20250accaa4",
+        "deleteStatus": 404
+      },
+      {
+        "namespace": "LIBRARY",
+        "id": "6524be055aeb4f2087b2a0179ec6bc9b",
+        "deleteStatus": 404
+      },
+      {
+        "worker": "everchat-core-http-api-validation",
+        "confirmedStatus": 404
+      },
+      {
+        "worker": "everchat-core-http-storage-validation",
+        "confirmedStatus": 404
+      },
+      {
+        "namespace": "CONVERSATIONS",
+        "id": "5a434804d6c24d4899b2b20250accaa4",
+        "confirmedAbsent": true,
+        "verification": "complete namespace list"
+      },
+      {
+        "namespace": "LIBRARY",
+        "id": "6524be055aeb4f2087b2a0179ec6bc9b",
+        "confirmedAbsent": true,
+        "verification": "complete namespace list"
+      }
+    ],
+    "testCutoff": "2026-10-22T03:29:44.733Z",
+    "authorizationStartedAt": "2026-10-22T03:20:44.733Z",
+    "cleanupTarget": "2026-10-22T03:32:44.733Z",
+    "deployments": [
+      {
+        "name": "everchat-core-http-storage-validation",
+        "version": "ec768dde-360f-47cd-9b3e-a0d023a9df3b"
+      },
+      {
+        "name": "everchat-core-http-api-validation",
+        "version": "cfd4c5a0-bef7-403e-b53d-097267f803d4"
+      }
+    ],
+    "bindingsMatch": true,
+    "unauthorizedStatus": 401,
+    "transport": {
+      "workersDev": "https://everchat-core-http-api-validation.wybxc.workers.dev",
+      "customDomains": 0,
+      "accessServiceTokens": 0,
+      "authentication": "Synthetic 12-minute RS256 JWT with local JWKS; all API paths authenticated, no Access edge",
+      "driver": false
+    },
+    "measurementStartedAt": "2026-10-22T03:22:55.944Z",
+    "warmProfile": {
+      "name": "warm",
+      "status": 404,
+      "bytes": 179,
+      "available": false,
+      "error": [
+        {
+          "code": 10393,
+          "message": "No recent executions were found for this Worker."
+        }
+      ]
+    },
+    "activeProfile": {
+      "name": "active",
+      "status": 404,
+      "bytes": 179,
+      "available": false,
+      "error": [
+        {
+          "code": 10393,
+          "message": "No recent executions were found for this Worker."
+        }
+      ]
+    },
+    "output": {
+      "text": 84000,
+      "reasoning": 84000,
+      "status": "completed"
+    },
+    "measurementFinishedAt": "2026-10-22T03:24:32.888Z",
+    "namespaces": [
+      {
+        "name": "CONVERSATIONS",
+        "id": "5a434804d6c24d4899b2b20250accaa4"
+      },
+      {
+        "name": "LIBRARY",
+        "id": "6524be055aeb4f2087b2a0179ec6bc9b"
+      }
+    ],
+    "window": {
+      "start": "2026-10-22T03:22:00.000Z",
+      "end": "2026-10-22T03:25:00.000Z"
+    },
+    "workerMetrics": {
+      "data": {
+        "viewer": {
+          "accounts": [
+            {
+              "workersInvocationsAdaptive": [
+                {
+                  "avg": {
+                    "sampleInterval": 1
+                  },
+                  "dimensions": {
+                    "status": "success"
+                  },
+                  "max": {
+                    "cpuTime": 5523,
+                    "memoryUsageBytes": 13774659
+                  },
+                  "quantiles": {
+                    "cpuTimeP50": 2355,
+                    "cpuTimeP99": 5523
+                  },
+                  "sum": {
+                    "cpuTimeUs": 71240,
+                    "errors": 0,
+                    "requests": 30
+                  }
+                },
+                {
+                  "avg": {
+                    "sampleInterval": 1.0810185185185186
+                  },
+                  "dimensions": {
+                    "status": "responseStreamDisconnected"
+                  },
+                  "max": {
+                    "cpuTime": 20809,
+                    "memoryUsageBytes": 14058015
+                  },
+                  "quantiles": {
+                    "cpuTimeP50": 2283,
+                    "cpuTimeP99": 15628
+                  },
+                  "sum": {
+                    "cpuTimeUs": 1226890,
+                    "errors": 0,
+                    "requests": 467
+                  }
+                },
+                {
+                  "avg": {
+                    "sampleInterval": 1
+                  },
+                  "dimensions": {
+                    "status": "clientDisconnected"
+                  },
+                  "max": {
+                    "cpuTime": 2756,
+                    "memoryUsageBytes": 9260867
+                  },
+                  "quantiles": {
+                    "cpuTimeP50": 2756,
+                    "cpuTimeP99": 2756
+                  },
+                  "sum": {
+                    "cpuTimeUs": 2756,
+                    "errors": 0,
+                    "requests": 1
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "errors": null
+    },
+    "doMetrics": {
+      "data": {
+        "viewer": {
+          "accounts": [
+            {
+              "durableObjectsPeriodicGroups": []
+            }
+          ]
+        }
+      },
+      "errors": null
+    },
+    "doMetricsRetry": {
+      "data": {
+        "viewer": {
+          "accounts": [
+            {
+              "durableObjectsPeriodicGroups": []
+            }
+          ]
+        }
+      },
+      "errors": null
+    },
+    "storage": {
+      "sampledAt": "2026-10-22T03:28:32.836Z",
+      "libraryBytes": 1261568,
+      "conversationBytes": [
+        860160
+      ],
+      "scope": "Post-run SQLite database allocation from deployed objects. Not a platform billing total or the peak during streaming."
+    },
+    "productionUnchanged": true,
+    "finishedAt": "2026-10-22T03:28:37.583Z",
+    "completeMeaning": "Only the stated functional workload and cleanup completed. Profile and DO aggregation remain unavailable; not a resource acceptance result."
+  },
+  "tail": {
+    "version": 1,
+    "workerName": "everchat-core-http-api-validation",
+    "startedAt": "2026-10-22T03:22:49.748Z",
+    "finishedAt": "2026-10-22T03:28:33.756Z",
+    "connected": true,
+    "code": 0,
+    "malformed": 0,
+    "dropped": 0,
+    "partialFrame": false,
+    "scope": "Sanitized real-time tail. Optional CPU fields may be absent; missing values are not zero. Receipt does not prove exhaustive platform coverage.",
+    "totalEvents": 287,
+    "sha256": "348a01829caf4ad0dc2ab4995b285356747af262d86a140377e137d5a184b1c2",
+    "syncEvents": 256,
+    "highCpuSyncEvents": [
+      {
+        "timestamp": 1792639376089,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 15,
+        "wallTime": 821,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792639377274,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 16,
+        "wallTime": 834,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792639377825,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 16,
+        "wallTime": 843,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792639380498,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 20,
+        "wallTime": 848,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      },
+      {
+        "timestamp": 1792639461561,
+        "outcome": "responseStreamDisconnected",
+        "durableObject": false,
+        "method": "GET",
+        "path": "/api/conversations/:id/sync",
+        "cpuTime": 16,
+        "wallTime": 37,
+        "truncated": false,
+        "fields": [
+          "wallTime",
+          "cpuTime",
+          "truncated",
+          "executionModel",
+          "outcome",
+          "scriptVersion",
+          "scriptName",
+          "diagnosticsChannelEvents",
+          "exceptions",
+          "logs",
+          "eventTimestamp",
+          "event"
+        ]
+      }
+    ],
+    "phases": [
+      {
+        "name": "warm",
+        "completed": 137,
+        "tailSamples": 88,
+        "cpuSamples": 88,
+        "cpuMedianMs": 2.0,
+        "cpuMaxMs": 20,
+        "above10ms": 4
+      },
+      {
+        "name": "active",
+        "completed": 164,
+        "tailSamples": 81,
+        "cpuSamples": 81,
+        "cpuMedianMs": 2,
+        "cpuMaxMs": 8,
+        "above10ms": 0
+      },
+      {
+        "name": "terminal",
+        "completed": 175,
+        "tailSamples": 87,
+        "cpuSamples": 87,
+        "cpuMedianMs": 2,
+        "cpuMaxMs": 16,
+        "above10ms": 1
+      }
+    ]
+  },
+  "review": {
+    "sourceUnchanged": [
+      "worker/http/auth.ts",
+      "worker/http/access.ts",
+      "worker/http/app.ts",
+      "worker/conversation/routes.ts"
+    ],
+    "comparedTo": "origin/main",
+    "method": "git diff origin/main...HEAD for these files returned no changes",
+    "boundary": "Does not establish identical runtime behavior, bundle initialization or production topology; not a before/after platform baseline."
+  },
+  "assessment": {
+    "functional": "137 empty, 164 active and 175 terminal handshakes completed. Each phase ran at least 12 seconds, concurrency 4. 16000-character input produced 84000 text and 84000 reasoning characters; active reconnect phase covered only the first ~12 seconds of generation, not the full lifetime. No real model calls.",
+    "worker": "Closed 03:22–03:25 UTC window queried before deletion. 30 success, 467 responseStreamDisconnected and 1 clientDisconnected reported. Sync bucket sampleInterval is 1.0810185185185186; adaptive estimates are not exact request counts or exact per-request billing. Clients intentionally close sync connections. No exceededCpu/exceededMemory bucket; errors zero. Does not guarantee all workloads fit Workers Free.",
+    "cpu": "Sync bucket p50 2283 us, p99 15628 us, max 20809 us. Tail has 256 sync samples out of 476 completed handshakes. Above-10ms events include empty and terminal phases. Not exhaustive coverage or a function-level cause. Keep auth and integrity checks.",
+    "profile": "Two 5-second captures targeted the recorded deployed UUID with overlapping traffic; both HTTP 404 / code 10393, No recent executions were found for this Worker. No pprof. Cannot conclude profiling is unsupported for a plan, binding or HTTP topology.",
+    "do": "Namespace-filtered periodic query at 3 minutes after closed window end, then 30 seconds later, both empty without GraphQL errors. No resource totals obtained; do not treat as zero. Existing successful earlier DO metrics remain separate evidence.",
+    "cleanup": "workers.dev entry disabled first; both scripts returned 404. All four namespace IDs across both attempts absent from complete lists. Logs/configs with authentication removed. Production digest unchanged. No Access credentials or production data changed.",
+    "release": "Not released. Resource attribution/assessment and final release checks remain pending; no additional test resources created after cleanup."
+  },
+  "postCleanupAccountDoQuery": {
+    "queriedAt": "2026-10-22T03:29:53.434Z",
+    "query": "{viewer{accounts(filter:{accountTag:\"5c157050a6ecab003f5cc64aa3c54db2\"}){durableObjectsPeriodicGroups(limit:30,filter:{datetime_geq:\"2026-10-22T03:20:00Z\",datetime_lt:\"2026-10-22T03:29:00Z\"}){dimensions{namespaceId}avg{sampleInterval}sum{activeTime cpuTime duration rowsRead rowsWritten exceededCpuErrors exceededMemoryErrors fatalInternalErrors}}}}}",
+    "response": {
+      "data": {
+        "viewer": {
+          "accounts": [
+            {
+              "durableObjectsPeriodicGroups": [
+                {
+                  "avg": {
+                    "sampleInterval": 1
+                  },
+                  "dimensions": {
+                    "namespaceId": "62b5d54229534cd195373add8cc96194"
+                  },
+                  "sum": {
+                    "activeTime": 180904,
+                    "cpuTime": 28597,
+                    "duration": 0.023155712000000002,
+                    "exceededCpuErrors": 0,
+                    "exceededMemoryErrors": 0,
+                    "fatalInternalErrors": 0,
+                    "rowsRead": 531,
+                    "rowsWritten": 1
+                  }
+                },
+                {
+                  "avg": {
+                    "sampleInterval": 1
+                  },
+                  "dimensions": {
+                    "namespaceId": "e5671bc93b354a08afac7d3c645e6f94"
+                  },
+                  "sum": {
+                    "activeTime": 153985,
+                    "cpuTime": 79744,
+                    "duration": 0.019710080000000005,
+                    "exceededCpuErrors": 0,
+                    "exceededMemoryErrors": 0,
+                    "fatalInternalErrors": 0,
+                    "rowsRead": 1582,
+                    "rowsWritten": 0
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "errors": null
+    },
+    "assessment": "Returned only namespaces 62b5d54229534cd195373add8cc96194 and e5671bc93b354a08afac7d3c645e6f94, neither is one of this test’s four namespaces. Not attributable test consumption."
+  }
+}
