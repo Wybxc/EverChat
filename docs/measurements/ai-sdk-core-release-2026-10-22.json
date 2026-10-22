@@ -1,0 +1,127 @@
+{
+  "date": "2026-10-22",
+  "release": {
+    "pullRequest": "https://github.com/Wybxc/EverChat/pull/5",
+    "commit": "e3c98da74fad394fb9a1d2d64972611e483a3d0e",
+    "versionId": "de5d26b0-fb53-454f-ad1e-32c42b0512b0",
+    "deployedAt": "2026-10-22T03:43:56.939Z",
+    "cloudflareBuildId": "e816f3ac-e2d9-40f1-a006-a35d41a3ef91",
+    "databaseMigration": false
+  },
+  "ordinary": {
+    "status": "completed",
+    "finishReason": "stop",
+    "conversationId": "d3523bf2-5582-4784-8987-fdc1affafc94",
+    "assistantMessageId": "54ca861f-342c-4ec6-9a6e-ced5558c2e47",
+    "outputCharacters": 18,
+    "reasoningCharacters": 70,
+    "usage": {
+      "inputTokens": 80,
+      "outputTokens": 46,
+      "totalTokens": 126,
+      "uncachedInputTokens": 80,
+      "cachedInputTokens": 0,
+      "reasoningTokens": 38,
+      "textOutputTokens": 8,
+      "isFinal": true
+    }
+  },
+  "idempotency": {
+    "sameRunRef": true,
+    "sameAssistantId": true,
+    "sameOutput": true,
+    "sameUsage": true
+  },
+  "webTools": {
+    "status": "completed",
+    "finishReason": "stop",
+    "conversationId": "d3523bf2-5582-4784-8987-fdc1affafc94",
+    "assistantMessageId": "a69f44f2-66ae-43bd-b8ad-04b9e3d8366b",
+    "outputCharacters": 66,
+    "reasoningCharacters": 326,
+    "usage": {
+      "inputTokens": 10388,
+      "outputTokens": 205,
+      "totalTokens": 10593,
+      "uncachedInputTokens": 5524,
+      "cachedInputTokens": 4864,
+      "reasoningTokens": 79,
+      "textOutputTokens": 126,
+      "isFinal": true
+    },
+    "completed": [
+      {
+        "tool": "web_search",
+        "round": 1,
+        "sources": 5
+      },
+      {
+        "tool": "read_webpage",
+        "round": 2,
+        "sources": 1
+      }
+    ]
+  },
+  "anonymousBoundary": {
+    "staticHtml": 200,
+    "entryJs": 200,
+    "serviceWorker": 200,
+    "shareHtml": 200,
+    "privateSession": 302,
+    "authResume": 302,
+    "mcpWithoutKey": 401,
+    "shareWithoutToken": 404
+  },
+  "publicShare": {
+    "id": "ebcu4h_TBael3abOo-jFLQ",
+    "expiresAt": "2026-10-22T04:50:55.508Z",
+    "anonymousTokenRead": 200,
+    "messageCount": 4,
+    "blocks": 6,
+    "nextCursor": null,
+    "cacheControl": "no-store",
+    "hasExpectedText": true,
+    "hasReasoning": true,
+    "browserRendering": "passed",
+    "reasoningDefaultCollapsed": true,
+    "providerNamesOmitted": true
+  },
+  "existingConversationRead": {
+    "conversationId": "82014a7b-dac7-44d7-acd2-eaf0eff6ab88",
+    "branchId": "a5aed362-e452-40c7-8348-36b3e6ab2493",
+    "renderedMessageNodes": 42,
+    "renderedCharacters": 88286,
+    "targetAnswerPresent": true,
+    "targetStatus": "completed",
+    "resourceLoadError": false,
+    "scope": "DOM-only read; not a full database content verification"
+  },
+  "titleFollowup": {
+    "commit": "de0fd96",
+    "failedUsage": {
+      "inputTokens": 117,
+      "outputTokens": 128
+    },
+    "fix": "Explicitly disable DeepSeek default thinking for auxiliary OpenAI Chat calls.",
+    "regression": "fails before fix; passes after",
+    "productionRetry": "completed",
+    "versionId": "3e8d205f-26ca-46d8-a84e-fe5a36de0611",
+    "deployedAt": "2026-10-22T04:11:27.826Z",
+    "retryAt": "2026-10-22T04:12:42Z",
+    "retryUsage": { "inputTokens": 92, "outputTokens": 13, "isFinal": true },
+    "retryDurationMs": 830
+  },
+  "validation": {
+    "unitTestsPassed": 505,
+    "build": "passed",
+    "typecheck": "passed",
+    "fullBrowserSuiteRerun": false
+  },
+  "limitations": {
+    "resourceAssessment": "separate follow-up; unresolved CPU spikes, profile 10393, and missing DO aggregates",
+    "oldBrowserResourceError": "recovered through existing cache repair; root cause unconfirmed",
+    "osPushRetested": false,
+    "newIsolatedResources": false,
+    "newCredentials": false
+  }
+}

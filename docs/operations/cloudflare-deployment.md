@@ -102,6 +102,18 @@ Access 已由所有者保存为同一个应用的四个 Public hostname 路径�
 
 临时运维入口和 `OPS_*` 变量已移除，Access 变量、分享和通知 Secrets 保持不变。真实模型请求和免费层 CPU／活跃时长不包含在本次只读接入验收中，详见[MCP 实施记录](../measurements/mcp-implementation-2026-10-21.md)。
 
+## AI SDK Core 发布（2026-10-22）
+
+用户确认先发布 Core 集成，将同步 CPU 与平台资源观测缺项独立排查。PR #5 合并提交为 `e3c98da74fad394fb9a1d2d64972611e483a3d0e`，Workers Builds `e816f3ac-e2d9-40f1-a006-a35d41a3ef91` 执行测试、构建和部署成功；03:43:56.939 UTC 生效的版本为 `de5d26b0-fb53-454f-ad1e-32c42b0512b0`。
+
+生产真实验证普通 DeepSeek 生成、思考、同 requestId 幂等、两轮联网续聊与最终用量；公开分享令牌读取及页面渲染正常，Access／MCP Key／分享权限边界保留。已只读打开既有长对话并定位指定分支，测试回答的通知目标 URL 正确。本轮不重新代表真机通知投递验收。
+
+此次不改变 SQL、消息协议或浏览器缓存格式，无数据库迁移；没有新建资源或改变 Access、Secrets 和供应商设置。旧浏览器发生过未定位的资源加载失败，现有“修复缓存”恢复后新版本显示“可离线启动”；不能将恢复流程成功写成该缺陷已修复。
+
+验收发现 DeepSeek 标题请求未显式关闭默认思考，输出达到 128 Token 预算。补正提交 `de0fd96` 已通过 505 项单元测试与构建，04:11:27.826 UTC 自动部署为 `3e8d205f-26ca-46d8-a84e-fe5a36de0611`；线上主动重试标题成功，最终输出 13 Token。修复仍无数据迁移，详见[发布记录](../measurements/ai-sdk-core-adoption-2026-10-21.md#生产发布与验收2026-10-22)。
+
+同步高 CPU 样本、平台 profile 10393 与 DO 空汇总在[独立资源计划](../plans/sync-worker-resource-investigation-plan.md)继续，尚不能承诺所有负载符合免费层预算；不因本次功能发布视其通过。
+
 ## 回答完成通知
 
 2026-10-18：生产 Worker 已配置 `VAPID_PUBLIC_KEY`、`VAPID_PRIVATE_KEY` 和 `VAPID_SUBJECT` 三个 Secrets，subject 为所有者联系邮箱。私钥由本机生成，仅通过 Wrangler Secret API 上传，不在 Git、前端包、备份或日志中出现。`GET /api/notifications/config` 经过 Access 身份校验，只返回公钥；未配置完整密钥时明确退回页面在线通知。
