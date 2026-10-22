@@ -9,10 +9,13 @@ import {
   chatSchema,
   emptySchema,
   getSchema,
+  helpInputSchema,
+  helpResultSchema,
   McpError,
   modelsSchema,
   runSchema,
 } from './contracts';
+import { mcpHelp, mcpToolDescriptions } from './help';
 import { McpChatService } from './service';
 
 function schema<T extends GenericSchema>(source: T) {
@@ -74,10 +77,19 @@ export async function serveMcp(request: Request, env: Env) {
           }
         };
         server.registerTool(
+          'everchat_help',
+          {
+            description: mcpToolDescriptions.everchat_help,
+            inputSchema: schema(helpInputSchema),
+            outputSchema: schema(helpResultSchema),
+            annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+          },
+          ({ tool }) => result(async () => mcpHelp(tool)),
+        );
+        server.registerTool(
           'everchat_models_list',
           {
-            description:
-              'List enabled models and prompt presets. Use the exact stable model ref when calling everchat_chat. Provider endpoints and credentials remain private.',
+            description: mcpToolDescriptions.everchat_models_list,
             inputSchema: schema(emptySchema),
             outputSchema: schema(modelsSchema),
             annotations: { readOnlyHint: true, openWorldHint: false },
@@ -87,8 +99,7 @@ export async function serveMcp(request: Request, env: Env) {
         server.registerTool(
           'everchat_chat',
           {
-            description:
-              'Create a normal saved conversation, or continue from an explicit continuation returned by an earlier answer. Supply a UUID requestId; transport retries MUST reuse the same requestId and original arguments. A new requestId intentionally generates again and may incur costs. Waits are bounded; pending generations continue in the background. Poll with everchat_run_get. presetId and systemPrompt are mutually exclusive.',
+            description: mcpToolDescriptions.everchat_chat,
             inputSchema: schema(chatSchema),
             outputSchema: schema(runSchema),
             annotations: {
@@ -103,8 +114,7 @@ export async function serveMcp(request: Request, env: Env) {
         server.registerTool(
           'everchat_run_get',
           {
-            description:
-              'Get your own run, optionally wait up to 20 seconds. When output.hasMore is true, call again with output.nextCursor as outputCursor until false. Reasoning is opt-in and separately paginated with reasoningCursor. Disconnecting or ending a wait does not cancel generation.',
+            description: mcpToolDescriptions.everchat_run_get,
             inputSchema: schema(getSchema),
             outputSchema: schema(runSchema),
             annotations: { readOnlyHint: true, openWorldHint: false },
@@ -114,8 +124,7 @@ export async function serveMcp(request: Request, env: Env) {
         server.registerTool(
           'everchat_run_cancel',
           {
-            description:
-              'Explicitly cancel your own generation. Saved partial output remains in the normal conversation. Cancellation is idempotent; completed answers are unchanged.',
+            description: mcpToolDescriptions.everchat_run_cancel,
             inputSchema: schema(cancelSchema),
             outputSchema: schema(runSchema),
             annotations: {
