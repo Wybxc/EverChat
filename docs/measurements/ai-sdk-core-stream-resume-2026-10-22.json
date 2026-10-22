@@ -4512,8 +4512,8 @@
         "wallMs": 1417,
         "executionModel": "stateless",
         "outcome": "ok",
-        "eventCompletedAt": "2026-10-21T17:24:49.152Z",
-        "correlation": "Matches real-time tail event timestamp 1792603487323; control panel displays completion time."
+        "correlation": "Route, after cursor, CPU and wall time match the real-time tail event timestamp 1792603487323. Control-panel record timestamp differs; no function timing inferred.",
+        "eventRecordedAt": "2026-10-21T17:24:49.152Z"
       },
       {
         "method": "GET",
@@ -4521,26 +4521,80 @@
         "after": 22,
         "cpuMs": 17,
         "outcome": "ok",
-        "eventCompletedAt": "2026-10-21T17:25:37.049Z",
-        "scope": "Visible event row; invocation body not expanded."
+        "scope": "Visible event row; invocation body not expanded.",
+        "eventRecordedAt": "2026-10-21T17:25:37.049Z"
       },
       {
         "method": "GET",
         "path": "/api/conversations/:id/sync",
         "after": 0,
         "cpuMs": 20,
-        "eventCompletedAt": "2026-10-21T17:23:45.383Z",
-        "scope": "Visible Worker event row before tail collection began."
+        "scope": "Visible Worker event row before tail collection began.",
+        "eventRecordedAt": "2026-10-21T17:23:45.383Z"
       },
       {
         "method": "PUT",
         "path": "/api/settings/providers",
         "cpuMs": 27,
-        "eventCompletedAt": "2026-10-21T17:23:42.085Z",
-        "scope": "Visible Worker event row before tail collection began."
+        "scope": "Visible Worker event row before tail collection began.",
+        "eventRecordedAt": "2026-10-21T17:23:42.085Z"
       }
     ],
     "traceResult": "No spans found for the inspected 18 ms request.",
-    "limitations": "Invocation details confirm route, execution model, CPU and wall time, but do not provide function CPU attribution. Counts include DO events, setup and external non-API scans; they are not suite request totals or zero-error proof. No request headers, client IP, private conversation identifiers or access credentials retained."
+    "limitations": "Invocation details confirm route, execution model, CPU and wall time, but do not provide function CPU attribution. Counts include DO events, setup and external non-API scans; they are not suite request totals or zero-error proof. No request headers, client IP, private conversation identifiers or access credentials retained.",
+    "apiOnlyQuery": {
+      "filter": "$metadata.service = \"everchat-stream-validation\" AND $workers.executionModel = \"stateless\" AND startsWith($workers.event.path, \"/api/\")",
+      "visibleSuccessEvents": 169,
+      "visibleErrorEvents": 0,
+      "scope": "Control-panel event counts including setup, generation, reconnect and profiling traffic. Not exhaustive provider or request correctness proof. JSON export timed out and no downloadable evidence was retrieved."
+    }
+  },
+  "browserRegressionFollowup": {
+    "recordedAt": "2026-10-22T02:30:21Z",
+    "reportHead": "1e42509",
+    "productCodeEquivalentTo": "2740e8c",
+    "runs": [
+      {
+        "scope": "Complete E2E suite",
+        "command": "pnpm test:e2e --reporter=line",
+        "passed": 396,
+        "failed": 26,
+        "durationMinutes": 55.5
+      },
+      {
+        "scope": "First recheck of the 26 original failures",
+        "command": "pnpm test:e2e --last-failed --reporter=line",
+        "passed": 25,
+        "failed": 1,
+        "durationMinutes": 2.8
+      },
+      {
+        "scope": "Isolated body-search retry test, repeated twice",
+        "passed": 2,
+        "failed": 0,
+        "durationSeconds": 6.7
+      },
+      {
+        "scope": "Second recheck in the original failed-test order, with temporary navigation/Vite/console diagnostics in the body-search test",
+        "passed": 26,
+        "failed": 0,
+        "durationMinutes": 2.5
+      },
+      {
+        "scope": "Complete search and shortcuts files, after removing temporary diagnostics",
+        "command": "pnpm test:e2e tests/e2e/library/shortcuts.spec.ts tests/e2e/library/library-search.spec.ts --reporter=line",
+        "passed": 13,
+        "failed": 0,
+        "durationSeconds": 46.4
+      }
+    ],
+    "searchFailure": {
+      "test": "body-search retry stays a button action while title results remain selectable",
+      "observed": "The expected intercepted 502 was followed by another document navigation to the root page and Vite/React startup. The search dialog disappeared before the retry assertion. No corresponding JavaScript exception was captured.",
+      "reproduction": "Not reproduced in two isolated repetitions, the second ordered 26-test recheck, or the final 13-test search regression.",
+      "cause": "Unresolved; neither a product defect nor an environment-only cause is established.",
+      "changes": "No product or permanent test changes. Temporary diagnostic listeners were removed. Assertions were preserved."
+    },
+    "limitations": "Multiple reruns are not a single complete passing suite. Offline page states, successful localhost requests and failed fixture cleanup do not establish the cause of every original failure. This followup created no Cloudflare resources or credentials; CPU attribution, closed-window platform resource evidence and post-deployment validation remain pending."
   }
 }
