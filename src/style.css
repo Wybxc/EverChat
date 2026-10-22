@@ -24,6 +24,8 @@
   --primary-foreground: #0b2927;
   --accent: #eaf9f7;
   --accent-foreground: #126b65;
+  --selection: #126b65;
+  --selection-foreground: #ffffff;
   --sidebar-accent: #eaf9f7;
   --sidebar-accent-foreground: #126b65;
   --sidebar-primary: #39c5bb;
@@ -63,6 +65,8 @@
   --primary-foreground: #0b2927;
   --accent: #183b38;
   --accent-foreground: #7bded6;
+  --selection: #39c5bb;
+  --selection-foreground: #0b2927;
   --sidebar-accent: #183b38;
   --sidebar-accent-foreground: #7bded6;
   --sidebar-primary: #39c5bb;
@@ -165,8 +169,9 @@
     outline-offset: 2px;
   }
   ::selection {
-    background: var(--accent);
-    color: var(--accent-foreground);
+    background: var(--selection);
+    color: var(--selection-foreground);
+    text-shadow: none;
   }
   ::highlight(everchat-search) {
     background: var(--warning);
