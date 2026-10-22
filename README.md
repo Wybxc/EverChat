@@ -50,7 +50,7 @@ pnpm test
 pnpm build
 ```
 
-使用 `pnpm format` 格式化代码。涉及浏览器交互、后台任务或离线能力时，按[测试说明](tests/README.md)运行对应测试；完整检查入口为 `pnpm check`。运行环境、测试隔离和性能测量详见[开发指南](docs/development.md)。
+使用 `pnpm format` 格式化代码。涉及浏览器交互、后台任务或离线能力时，按[测试说明](tests/README.md)运行对应测试；完整检查入口为 `pnpm check`。提交 PR 后由 GitHub Actions 独立运行检查，通过后再合并、构建和发布。运行环境、测试隔离和性能测量详见[开发指南](docs/development.md)。
 
 提交说明应包含修改目的、用户可见的行为变化和验证结果。请勿提交密钥、本地聊天数据或运维备份。
 

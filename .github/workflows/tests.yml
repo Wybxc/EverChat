@@ -1,0 +1,102 @@
+name: Tests
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  WRANGLER_SEND_METRICS: 'false'
+
+jobs:
+  checks:
+    name: Static and unit checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/setup@a0881977cd8ea73b1ed212236c99ca10dcc80cf4 # v3.1.1
+        with:
+          runtime: node@24.18.0
+          cache: true
+          require-lockfile: true
+      - name: Check formatting
+        run: pnpm format:check
+      - name: Check types
+        run: pnpm typecheck
+      - name: Run unit tests
+        run: pnpm test
+      - name: Test offline storage operations
+        run: pnpm test:operations
+
+  browser:
+    name: Browser tests (${{ matrix.suite }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ matrix.timeout }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: chromium
+            browsers: chromium
+            timeout: 60
+            command: pnpm test:e2e --reporter=line,html
+          - suite: webkit
+            browsers: webkit
+            timeout: 25
+            command: pnpm test:e2e --browser=webkit tests/e2e/chat/reading-layout.spec.ts tests/e2e/chat/reading-navigation.spec.ts tests/e2e/chat/search.spec.ts --reporter=line,html
+          - suite: pwa
+            browsers: chromium webkit
+            timeout: 25
+            command: pnpm test:pwa --reporter=line,html
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/setup@a0881977cd8ea73b1ed212236c99ca10dcc80cf4 # v3.1.1
+        with:
+          runtime: node@24.18.0
+          cache: true
+          require-lockfile: true
+      - name: Install browsers and system dependencies
+        run: pnpm exec playwright install --with-deps ${{ matrix.browsers }}
+      - name: Run browser tests
+        run: ${{ matrix.command }}
+      - name: Upload failure reports and traces
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tests-${{ matrix.suite }}
+          path: |
+            playwright-report/
+            test-results/
+            test-results-pwa/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  required:
+    name: Required tests
+    if: always()
+    needs: [checks, browser]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    steps:
+      - name: Require every test job to pass
+        env:
+          CHECKS_RESULT: ${{ needs.checks.result }}
+          BROWSER_RESULT: ${{ needs.browser.result }}
+        run: |
+          test "$CHECKS_RESULT" = success
+          test "$BROWSER_RESULT" = success
