@@ -1,5 +1,6 @@
 import { authenticateAccess, type Authenticator } from '../../../worker/http/auth';
 import { createWorker } from '../../../worker/http/worker';
+import { localR2Upload } from '../../../scripts/dev/r2';
 import type { Env } from '../../../worker/http/env';
 import { toolWorkflowId } from '../../../worker/web-tools/workflow';
 import type { Conversation } from './conversation';
@@ -22,6 +23,8 @@ export function createTestWorker(
   };
   return {
     async fetch(request: Request, env: Env, ctx: ExecutionContext) {
+      const upload = await localR2Upload(request, env);
+      if (upload) return upload;
       const url = new URL(request.url);
       const measurement = /^\/api\/__test\/resources\/(library|[0-9a-f-]{36})$/.exec(url.pathname);
       if (measurement) {

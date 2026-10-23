@@ -34,15 +34,30 @@ test('production assets load the real PDF worker and bundled Chinese CMaps and f
   await page.route('**/api/conversations/*/attachments**', async (route) => {
     const request = route.request(),
       path = new URL(request.url()).pathname;
-    if (request.method() === 'POST' && path.endsWith('/attachments')) {
-      input = request.postDataJSON();
+    if (request.method() === 'POST' && path.endsWith('/attachments/uploads')) {
+      [input] = request.postDataJSON();
       return route.fulfill({
         status: 201,
-        json: { ...input, status: 'registered', conversationId: id, createdAt: 1, error: null },
+        json: [
+          {
+            attachment: {
+              ...input,
+              status: 'registered',
+              conversationId: id,
+              createdAt: 1,
+              error: null,
+            },
+            upload: {
+              method: 'PUT',
+              url: 'https://00000000000000000000000000000000.r2.cloudflarestorage.com/test/pdf',
+              headers: { 'Content-Type': 'application/pdf', 'If-None-Match': '*' },
+              expiresAt: Date.now() + 300_000,
+            },
+          },
+        ],
       });
     }
-    if (request.method() === 'PUT' && path.endsWith('/content')) {
-      expect(request.postDataBuffer()).toEqual(bytes);
+    if (request.method() === 'POST' && path.endsWith('/receive')) {
       return route.fulfill({
         json: { ...input, status: 'ready', conversationId: id, createdAt: 1, error: null },
       });
@@ -80,6 +95,12 @@ test('production assets load the real PDF worker and bundled Chinese CMaps and f
         headers: { 'Cache-Control': 'no-store' },
       });
     return route.fulfill({ json: [] });
+  });
+  await page.route('https://*.r2.cloudflarestorage.com/**', async (route) => {
+    expect(route.request().method()).toBe('PUT');
+    expect(route.request().postDataBuffer()).toEqual(bytes);
+    expect(route.request().headers()['cookie']).toBeUndefined();
+    await route.fulfill({ status: 200 });
   });
   await page.goto(`/c/${id}`);
   await expect

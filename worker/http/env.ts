@@ -13,6 +13,10 @@ export interface Env {
   SHARE_LINK_KEY?: string;
   WEB_TOOLS: Workflow<ToolWorkflowParams>;
   ATTACHMENTS?: R2Bucket;
+  R2_ACCOUNT_ID?: string;
+  R2_BUCKET_NAME?: string;
+  R2_ACCESS_KEY_ID?: string;
+  R2_SECRET_ACCESS_KEY?: string;
   ACCESS_TEAM_DOMAIN?: string;
   ACCESS_AUD?: string;
   ACCESS_ALLOWED_EMAILS?: string;

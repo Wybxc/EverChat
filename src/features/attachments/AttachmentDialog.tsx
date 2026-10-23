@@ -13,7 +13,7 @@ import {
   uiMessage,
   type UiMessage,
 } from '../../platform/i18n/messages';
-import { prepareAttachment, uploadAttachment } from './attachment-upload';
+import { prepareAttachment, prepareAttachmentUploads, uploadAttachment } from './attachment-upload';
 import './locales';
 
 export function AttachmentDialog({
@@ -48,19 +48,40 @@ export function AttachmentDialog({
     const abort = new AbortController();
     controller.current = abort;
     setError('');
+    const pending = new Set<string>();
     try {
-      for (const file of Array.from(items)) {
+      const selected = Array.from(items);
+      const inputs = [];
+      for (const file of selected) inputs.push(await prepareAttachment(file, abort.signal));
+      for (const input of inputs) pending.add(input.id);
+      const targets = await prepareAttachmentUploads(id, inputs, abort.signal);
+      for (const [index, file] of selected.entries()) {
         setUpload({ name: file.name, size: file.size, sent: 0 });
-        const input = await prepareAttachment(file, abort.signal);
-        await uploadAttachment(id, input, file, abort.signal, (sent) =>
-          setUpload({ name: file.name, size: file.size, sent }),
+        await uploadAttachment(
+          id,
+          inputs[index],
+          file,
+          abort.signal,
+          (sent) => setUpload({ name: file.name, size: file.size, sent }),
+          targets[index],
         );
+        pending.delete(inputs[index].id);
         await client.invalidateQueries({ queryKey: key });
       }
     } catch (failure) {
       if (!abort.signal.aborted)
         setError(errorMessage(failure, uiMessage('attachments', 'simpleUploadFailed')));
     } finally {
+      await Promise.allSettled(
+        [...pending].map((fileId) =>
+          api(
+            `/conversations/${id}/attachments/${fileId}`,
+            'DELETE',
+            undefined,
+            AbortSignal.timeout(10_000),
+          ),
+        ),
+      );
       controller.current = null;
       setUpload(null);
       if (picker.current) picker.current.value = '';

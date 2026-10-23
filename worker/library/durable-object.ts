@@ -48,6 +48,7 @@ import type { SearchDocument } from '../../shared/search/query';
 import type { Snapshot } from '../../shared/streaming/protocol';
 import { readPdfUpload } from '../attachments/pdf-upload';
 import { AttachmentStore } from '../attachments/store';
+import { r2UploadSigner } from '../attachments/signing';
 import { CopyJobs, type CopyResult } from '../backup/copies';
 import { ArchiveImports, type ImportResult } from '../backup/imports';
 import { ArchiveRestorer } from '../backup/restore';
@@ -1063,7 +1064,10 @@ export class Library extends DurableObject<Env> {
     return this.attachmentAction(() => this.attachments.list(conversationId));
   }
   imageReferences(conversationId: string, ids: string[]) {
-    return this.attachmentAction(() => this.attachments.images(conversationId, ids));
+    return this.attachmentAction(async () => {
+      for (const id of ids) await this.attachments.receive(conversationId, id);
+      return this.attachments.images(conversationId, ids);
+    });
   }
   pinAttachments(conversationId: string, images: ImagePart[], files: DocumentPart[]) {
     return this.attachmentAction(() =>
@@ -1075,9 +1079,10 @@ export class Library extends DurableObject<Env> {
     ids: string[],
     selections?: Record<string, DocumentRange[]>,
   ) {
-    return this.attachmentAction(() =>
-      this.attachments.documents.references(conversationId, ids, selections),
-    );
+    return this.attachmentAction(async () => {
+      for (const id of ids) await this.attachments.receive(conversationId, id);
+      return this.attachments.documents.references(conversationId, ids, selections);
+    });
   }
   async parseDocumentBody(
     conversationId: string,
@@ -1086,6 +1091,7 @@ export class Library extends DurableObject<Env> {
     format: string,
   ) {
     const action = this.attachmentAction(async () => {
+      await this.attachments.receive(conversationId, id);
       const raw =
         format === 'json'
           ? await readJsonStream(
@@ -1124,9 +1130,10 @@ export class Library extends DurableObject<Env> {
       : result.value;
   }
   async parseDocument(conversationId: string, id: string, input?: PDFExtraction) {
-    const action = this.attachmentAction(() =>
-      this.attachments.documents.parse(conversationId, id, input),
-    );
+    const action = this.attachmentAction(async () => {
+      await this.attachments.receive(conversationId, id);
+      return this.attachments.documents.parse(conversationId, id, input);
+    });
     await this.scheduleMaintenance();
     try {
       return await action;
@@ -1137,16 +1144,21 @@ export class Library extends DurableObject<Env> {
   documentText(conversationId: string, id: string) {
     return this.attachmentAction(() => this.attachments.documents.read(conversationId, id));
   }
-  async registerAttachment(conversationId: string, input: AttachmentInput) {
-    const result = await this.attachmentAction(() =>
-      this.attachments.register(conversationId, input),
-    );
-    await this.scheduleMaintenance();
-    return result;
+  protected attachmentUploadSigner() {
+    return r2UploadSigner(this.env);
   }
-  async uploadAttachment(conversationId: string, id: string, body: ReadableStream<Uint8Array>) {
+  async prepareAttachmentUploads(conversationId: string, inputs: AttachmentInput[]) {
     try {
-      return await this.attachmentAction(() => this.attachments.upload(conversationId, id, body));
+      return await this.attachmentAction(() =>
+        this.attachments.prepareUploads(conversationId, inputs, this.attachmentUploadSigner()),
+      );
+    } finally {
+      await this.scheduleMaintenance();
+    }
+  }
+  async receiveAttachment(conversationId: string, id: string) {
+    try {
+      return await this.attachmentAction(() => this.attachments.receive(conversationId, id));
     } finally {
       await this.scheduleMaintenance();
     }

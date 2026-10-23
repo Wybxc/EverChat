@@ -56,6 +56,37 @@ pnpm exec wrangler r2 bucket create everchat-attachments --storage-class Standar
 pnpm deploy
 ```
 
+网页原文件采用 R2 预签名 PUT 直传。R2 binding 无法签发 S3 URL，还需在 R2 → 管理 API 令牌创建**仅指定附件桶的对象读写凭据**，并配置以下 Worker 参数：
+
+| 配置                   | 存储方式      | 用途                                |
+| ---------------------- | ------------- | ----------------------------------- |
+| `R2_ACCOUNT_ID`        | 变量或 Secret | 当前 Cloudflare 账户 ID             |
+| `R2_BUCKET_NAME`       | 变量或 Secret | 与 `ATTACHMENTS` binding 相同的桶名 |
+| `R2_ACCESS_KEY_ID`     | Secret        | 专用 S3 Access Key ID               |
+| `R2_SECRET_ACCESS_KEY` | Secret        | 专用 S3 Secret Access Key           |
+
+通过控制台或 `wrangler secret put` 输入，不写进仓库或前端。缺失时签发接口返回 503，不回退大文件中转。密钥只授权附件桶，保持私有；Access 保护范围不变。
+
+为该桶设置 CORS，将 Origin 换成实际 `APP_ORIGIN`，不得直接使用通配来源：
+
+```json
+{
+  "rules": [
+    {
+      "allowed": {
+        "origins": ["https://chat.example.com"],
+        "methods": ["PUT"],
+        "headers": ["Content-Type", "If-None-Match"]
+      },
+      "exposeHeaders": ["ETag"],
+      "maxAgeSeconds": 3600
+    }
+  ]
+}
+```
+
+将配置保存在仓库外，通过 `pnpm exec wrangler r2 bucket cors set <bucket> --file <path>` 设置。CORS 只控制浏览器读取，鉴权仍由短期 SigV4 完成；上传不会带网站 Cookie 或 Access JWT。上传后的 HEAD 仅核对大小和类型，客户端 SHA-256 是内容指纹；详情见 [R2 直传计划](../plans/r2-direct-upload-plan.md)。本地开发使用独立的本地 S3 适配器，不需要生产 S3 密钥。
+
 附件桶保持私有，不启用公开下载；自定义桶名时同步修改 Wrangler 配置。`pnpm deploy` 执行类型检查、构建和部署，默认不会创建 `workers.dev` 公开入口。
 
 首次部署完成后，在 Workers 和 Pages → 对应 Worker 中完成：
