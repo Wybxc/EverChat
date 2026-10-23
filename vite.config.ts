@@ -109,6 +109,7 @@ export default defineConfig(async ({ command, mode }) => {
         ...(local
           ? {
               config: {
+                assets: { run_worker_first: ['/__dev/r2/*'] },
                 main:
                   process.env.EVERCHAT_MOCK_PROVIDER === '1'
                     ? 'tests/support/runtime/worker.ts'

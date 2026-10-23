@@ -1,3 +1,4 @@
+import { directUpload } from '../../support/browser/attachments';
 import { expect, test, type APIRequestContext } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import type { DocumentPart } from '../../../shared/attachments/documents';
@@ -95,11 +96,11 @@ async function upload(
     sha256: createHash('sha256').update(bytes).digest('hex'),
   };
   expect(
-    (await request.post(`/api/conversations/${id}/attachments`, { headers, data: input })).status(),
+    (
+      await request.post(`/api/conversations/${id}/attachments/uploads`, { headers, data: [input] })
+    ).status(),
   ).toBe(201);
-  expect((await request.put(attachmentUrl(id, input.id), { headers, data: bytes })).status()).toBe(
-    200,
-  );
+  expect((await directUpload(request, id, input.id, bytes)).status()).toBe(200);
   return input;
 }
 const documentUrl = (id: string, fileId: string) =>
@@ -231,7 +232,10 @@ test('invalid, incomplete, foreign, unparsed and over-budget documents fail befo
       sha256: 'a'.repeat(64),
       mediaType: 'text/plain',
     };
-    await request.post(`/api/conversations/${fixture.id}/attachments`, { headers, data: pending });
+    await request.post(`/api/conversations/${fixture.id}/attachments/uploads`, {
+      headers,
+      data: [pending],
+    });
     for (const ids of [
       [unparsed.id],
       [foreign.id],
@@ -365,6 +369,7 @@ test('document retries, revisions and summaries retain branch references and pro
         })
       ).status(),
     ).toBe(200);
+    await control(request, { id: original.id, expire: true });
     await expect
       .poll(
         async () =>
@@ -496,6 +501,7 @@ test('deletion interleaved with parsing or acceptance never leaves an orphan or 
     ).toBe(200);
     await control(request, { releaseText: true });
     expect((await parsing).status()).toBe(404);
+    await control(request, { id: original.id, expire: true });
     await expect
       .poll(async () =>
         (await control(request)).objects.some((object: { key: string }) =>
@@ -522,6 +528,7 @@ test('deletion interleaved with parsing or acceptance never leaves an orphan or 
     await control(request, { releaseText: true });
     expect((await accepting).status()).toBeGreaterThanOrEqual(400);
     expect((await fixture.snapshot()).messages).toHaveLength(0);
+    await control(request, { id: next.id, expire: true });
     await expect
       .poll(async () =>
         (await control(request)).objects.some((object: { key: string }) =>
@@ -749,6 +756,37 @@ test('mobile long-file preview scrolls independently and remote conversation del
       fixture.id,
     );
     expect(draft.files ?? []).toEqual([]);
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+test('parsing receives a direct document upload without a separate receive request', async ({
+  request,
+}) => {
+  const fixture = await setup(request),
+    bytes = Buffer.from(text);
+  const input = {
+    id: crypto.randomUUID(),
+    name: 'direct.txt',
+    size: bytes.length,
+    mediaType: 'text/plain',
+    sha256: createHash('sha256').update(bytes).digest('hex'),
+  };
+  try {
+    expect(
+      (
+        await request.post(`/api/conversations/${fixture.id}/attachments/uploads`, {
+          headers,
+          data: [input],
+        })
+      ).status(),
+    ).toBe(201);
+    expect((await directUpload(request, fixture.id, input.id, bytes, false)).status()).toBe(200);
+    expect((await request.get(attachmentUrl(fixture.id, input.id))).status()).toBe(409);
+    const parsed = await parse(request, fixture.id, input.id);
+    expect(parsed.attachmentId).toBe(input.id);
+    await finish(fixture, await submit(fixture, { content: '', fileIds: [input.id] }));
   } finally {
     await fixture.cleanup();
   }

@@ -1,3 +1,4 @@
+import { directUpload, receiveAttachment } from '../../support/browser/attachments';
 import { expect, test, type APIRequestContext } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import {
@@ -5,6 +6,7 @@ import {
   MAX_ATTACHMENT_BYTES,
   type Attachment,
   type AttachmentInput,
+  type AttachmentUpload,
 } from '../../../shared/attachments/files';
 import { conversationMenu } from '../../support/browser/ui';
 const headers = { Origin: 'http://127.0.0.1:5174' };
@@ -23,7 +25,7 @@ async function setup(request: APIRequestContext) {
         .get(`/api/conversations/${id}/attachments`)
         .then((response) => response.json()) as Promise<Attachment[]>,
     register: (input: AttachmentInput) =>
-      request.post(`/api/conversations/${id}/attachments`, { headers, data: input }),
+      request.post(`/api/conversations/${id}/attachments/uploads`, { headers, data: [input] }),
     remove: (fileId: string) =>
       request.delete(`/api/conversations/${id}/attachments/${fileId}`, { headers }),
     cleanup: () => request.delete(`/api/conversations/${id}`, { headers }),
@@ -64,7 +66,7 @@ const storage = (
     failedDeletes: number;
     unconfiguredStatus: number[];
   }>;
-test('private R2 upload preserves Unicode bytes, validates integrity, is idempotent and supports another device', async ({
+test('private R2 upload preserves Unicode bytes, checks metadata, is idempotent and supports another device', async ({
   request,
   browser,
 }) => {
@@ -79,10 +81,10 @@ test('private R2 upload preserves Unicode bytes, validates integrity, is idempot
     ]);
     const url = attachmentUrl(fixture.id, input.id);
     expect((await request.get(url)).status()).toBe(409);
-    const uploaded = await request.put(url, { headers, data: bytes });
+    const uploaded = await directUpload(request, fixture.id, input.id, bytes);
     expect(uploaded.status()).toBe(200);
     expect(await uploaded.json()).toMatchObject({ ...input, status: 'ready' });
-    expect((await request.put(url, { headers, data: bytes })).status()).toBe(200);
+    expect((await directUpload(request, fixture.id, input.id, bytes)).status()).toBe(200);
     expect((await fixture.register(input)).status()).toBe(201);
     expect(await fixture.list()).toHaveLength(1);
     const downloaded = await request.get(url);
@@ -98,6 +100,7 @@ test('private R2 upload preserves Unicode bytes, validates integrity, is idempot
     expect((await fixture.remove(input.id)).status()).toBe(200);
     expect((await request.get(url)).status()).toBe(404);
     expect(await fixture.list()).toEqual([]);
+    await storage(request, { id: input.id, expire: true });
     await expect
       .poll(async () =>
         (await storage(request)).objects.filter((object) => object.key.includes(input.id)),
@@ -109,7 +112,7 @@ test('private R2 upload preserves Unicode bytes, validates integrity, is idempot
   }
 });
 
-test('a file exceeding the former 5 MiB limit streams through the Worker and DO and returns exactly the original bytes', async ({
+test('a file exceeding the former 5 MiB limit uploads directly to R2 and returns exactly the original bytes', async ({
   request,
 }) => {
   const fixture = await setup(request),
@@ -118,7 +121,7 @@ test('a file exceeding the former 5 MiB limit streams through the Worker and DO 
   try {
     expect((await fixture.register(input)).status()).toBe(201);
     const url = attachmentUrl(fixture.id, input.id);
-    expect((await request.put(url, { headers, data: bytes })).status()).toBe(200);
+    expect((await directUpload(request, fixture.id, input.id, bytes)).status()).toBe(200);
     expect((await request.head(url)).headers()['content-length']).toBe(String(bytes.length));
     expect(await (await request.get(url)).body()).toEqual(bytes);
   } finally {
@@ -135,10 +138,8 @@ test('a failed R2 delete retains its reservation across a Library reset and the 
     before = (await storage(request)).failedDeletes;
   try {
     await fixture.register(input);
-    expect(
-      (await request.put(attachmentUrl(fixture.id, input.id), { headers, data: bytes })).status(),
-    ).toBe(200);
-    await storage(request, { failDelete: input.id });
+    expect((await directUpload(request, fixture.id, input.id, bytes)).status()).toBe(200);
+    await storage(request, { failDelete: input.id, id: input.id, expire: true });
     const deletionStarted = Date.now();
     await fixture.cleanup();
     expect((await request.get(attachmentUrl(fixture.id, input.id))).status()).toBe(410);
@@ -204,9 +205,7 @@ test('expired registrations are cleaned, completed files survive expiry and old 
       .poll(async () => (await fixture.list()).some((item) => item.id === expired.id))
       .toBe(false);
     await fixture.register(ready);
-    expect(
-      (await request.put(attachmentUrl(fixture.id, ready.id), { headers, data: bytes })).status(),
-    ).toBe(200);
+    expect((await directUpload(request, fixture.id, ready.id, bytes)).status()).toBe(200);
     await storage(request, { id: ready.id, expire: true });
     await expect
       .poll(async () => (await storage(request)).rows.find((row) => row.id === ready.id)?.status)
@@ -214,12 +213,8 @@ test('expired registrations are cleaned, completed files survive expiry and old 
     await storage(request, { count: 100 });
     const blocked = file(bytes);
     await fixture.register(blocked);
-    expect(
-      (await request.put(attachmentUrl(fixture.id, blocked.id), { headers, data: bytes })).status(),
-    ).toBe(200);
-    expect(
-      (await request.put(attachmentUrl(fixture.id, ready.id), { headers, data: bytes })).status(),
-    ).toBe(200);
+    expect((await directUpload(request, fixture.id, blocked.id, bytes)).status()).toBe(200);
+    expect((await directUpload(request, fixture.id, ready.id, bytes)).status()).toBe(200);
     expect((await storage(request)).dailyCount).toBe(100);
   } finally {
     await storage(request, { count: before });
@@ -227,31 +222,36 @@ test('expired registrations are cleaned, completed files survive expiry and old 
   }
 });
 
-test('cleanup closes expired registrations before R2 deletion and rechecks later reservations claimed during its wait', async ({
+test('deleted registrations reject receive and cannot be overwritten with an outstanding URL', async ({
   request,
 }) => {
   const fixture = await setup(request),
-    bytes = Buffer.from('survives interleaved cleanup'),
-    first = file(bytes),
-    second = file(bytes);
+    bytes = Buffer.from('immutable direct object'),
+    input = file(bytes);
   try {
-    await fixture.register(first);
-    await fixture.register(second);
-    await storage(request, { id: first.id, expire: true, holdDelete: first.id });
-    await storage(request, { id: second.id, expire: true });
-    await expect.poll(async () => (await storage(request)).deleteWaiting).toBe(true);
+    const [target]: AttachmentUpload[] = await (await fixture.register(input)).json();
     expect(
-      (await request.put(attachmentUrl(fixture.id, first.id), { headers, data: bytes })).status(),
-    ).toBe(404);
-    expect(
-      (await request.put(attachmentUrl(fixture.id, second.id), { headers, data: bytes })).status(),
+      (
+        await request.put(target.upload!.url, { headers: target.upload!.headers, data: bytes })
+      ).status(),
     ).toBe(200);
+    await fixture.remove(input.id);
+    expect((await receiveAttachment(request, fixture.id, input.id)).status()).toBe(404);
+    expect(
+      (
+        await request.put(target.upload!.url, { headers: target.upload!.headers, data: bytes })
+      ).status(),
+    ).toBe(412);
+    expect((await storage(request)).objects.some((object) => object.key.includes(input.id))).toBe(
+      true,
+    );
+    await storage(request, { id: input.id, expire: true, holdDelete: input.id });
+    await expect.poll(async () => (await storage(request)).deleteWaiting).toBe(true);
+    expect((await receiveAttachment(request, fixture.id, input.id)).status()).toBe(404);
     await storage(request, { releaseDelete: true });
     await expect
-      .poll(async () => (await storage(request)).rows.some((row) => row.id === first.id))
+      .poll(async () => (await storage(request)).rows.some((row) => row.id === input.id))
       .toBe(false);
-    expect(await (await request.get(attachmentUrl(fixture.id, second.id))).body()).toEqual(bytes);
-    expect((await fixture.list()).map(({ id }) => id)).toEqual([second.id]);
   } finally {
     await storage(request, { releaseDelete: true });
     await fixture.cleanup();
@@ -299,7 +299,7 @@ test('the file manager uploads with progress, preserves the composer and URL, sy
     await page.getByRole('menuitem', { name: '管理对话文件', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: '对话文件', exact: true });
     await expect(dialog.getByLabel('上传文件', { exact: true })).toBeFocused();
-    await page.route('**/api/conversations/*/attachments/*/content', async (route) => {
+    await page.route('**/__dev/r2/**', async (route) => {
       if (route.request().method() === 'PUT') {
         const response = await route.fetch();
         await new Promise((resolve) => setTimeout(resolve, 400));
@@ -339,39 +339,28 @@ test('the file manager uploads with progress, preserves the composer and URL, sy
   }
 });
 
-test('a reset after R2 write never exposes an uncommitted upload, and the durable lease cleans its object without another write', async ({
+test('an R2 write survives a Library reset and is received without another PUT', async ({
   request,
 }) => {
   const fixture = await setup(request),
     bytes = Buffer.from('saved before reset'),
     input = file(bytes);
   try {
-    await fixture.register(input);
-    const before = (await storage(request)).dailyCount;
-    await storage(request, { reset: true });
-    const response = await request.put(attachmentUrl(fixture.id, input.id), {
-      headers,
-      data: bytes,
-    });
-    expect(response.ok()).toBe(false);
-    expect((await request.get(attachmentUrl(fixture.id, input.id))).status()).toBe(409);
-    const state = await storage(request);
-    expect(state.objects.some((object) => object.key.includes(input.id))).toBe(true);
-    expect(state.rows.find((row) => row.id === input.id)?.status).toBe('uploading');
-    expect(state.dailyCount).toBe(before);
+    const [target]: AttachmentUpload[] = await (await fixture.register(input)).json();
     expect(
-      (await request.put(attachmentUrl(fixture.id, input.id), { headers, data: bytes })).status(),
-    ).toBe(409);
-    expect((await storage(request)).dailyCount).toBe(before);
-    await storage(request, { id: input.id, expire: true });
-    await expect
-      .poll(async () =>
-        (await storage(request)).objects.filter((object) => object.key.includes(input.id)),
-      )
-      .toEqual([]);
-    expect((await storage(request)).rows.some((row) => row.id === input.id)).toBe(false);
+      (
+        await request.put(target.upload!.url, { headers: target.upload!.headers, data: bytes })
+      ).status(),
+    ).toBe(200);
+    expect((await request.get(attachmentUrl(fixture.id, input.id))).status()).toBe(409);
+    await request.post('/api/__test/library/attachments', {
+      headers,
+      data: { resetLibrary: true },
+    });
+    expect((await receiveAttachment(request, fixture.id, input.id)).status()).toBe(200);
+    expect(await (await request.get(attachmentUrl(fixture.id, input.id))).body()).toEqual(bytes);
+    expect((await receiveAttachment(request, fixture.id, input.id)).status()).toBe(200);
   } finally {
-    await storage(request, { reset: false });
     await fixture.cleanup();
   }
 });
@@ -393,7 +382,7 @@ test('client cancellation removes the accepted registration, while a mobile file
     await conversationMenu(page);
     await page.getByRole('menuitem', { name: '管理对话文件', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: '对话文件', exact: true });
-    await page.route('**/api/conversations/*/attachments/*/content', async (route) => {
+    await page.route('**/__dev/r2/**', async (route) => {
       if (route.request().method() !== 'PUT') return route.continue();
       arrived();
       await held;
@@ -409,7 +398,7 @@ test('client cancellation removes the accepted registration, while a mobile file
     await expect(dialog.getByRole('progressbar')).toHaveCount(0);
     await expect.poll(fixture.list).toEqual([]);
     release();
-    await page.unroute('**/api/conversations/*/attachments/*/content');
+    await page.unroute('**/__dev/r2/**');
     for (let index = 0; index < 20; index++)
       await fixture.register(file(Buffer.from('file'), `第 ${index} 个文件.txt`, 'text/plain'));
     await expect(dialog.getByRole('listitem')).toHaveCount(20);
@@ -437,17 +426,17 @@ test('attachment routes reject unauthorized, cross-origin, foreign-conversation,
   try {
     expect(
       (
-        await other.request.post(`/api/conversations/${fixture.id}/attachments`, {
+        await other.request.post(`/api/conversations/${fixture.id}/attachments/uploads`, {
           headers,
-          data: input,
+          data: [input],
         })
       ).status(),
     ).toBe(401);
     expect(
       (
-        await request.post(`/api/conversations/${fixture.id}/attachments`, {
+        await request.post(`/api/conversations/${fixture.id}/attachments/uploads`, {
           headers: { Origin: 'https://foreign.test' },
-          data: input,
+          data: [input],
         })
       ).status(),
     ).toBe(403);
@@ -459,14 +448,12 @@ test('attachment routes reject unauthorized, cross-origin, foreign-conversation,
     const second = crypto.randomUUID();
     await request.post('/api/conversations', { headers, data: { id: second, title: '其他对话' } });
     try {
-      expect(
-        (await request.put(attachmentUrl(second, input.id), { headers, data: bytes })).status(),
-      ).toBe(404);
+      expect((await receiveAttachment(request, second, input.id)).status()).toBe(404);
     } finally {
       await request.delete(`/api/conversations/${second}`, { headers });
     }
     const url = attachmentUrl(fixture.id, input.id),
-      bad = await request.put(url, { headers, data: Buffer.from('different bytes') });
+      bad = await directUpload(request, fixture.id, input.id, Buffer.from('different bytes'));
     expect([400, 413]).toContain(bad.status());
     expect((await request.get(url)).status()).not.toBe(200);
   } finally {
@@ -474,32 +461,90 @@ test('attachment routes reject unauthorized, cross-origin, foreign-conversation,
     await fixture.cleanup();
   }
 });
-test('spoofed media, truncated bytes and a checksum mismatch never become ready; conversation deletion revokes reads', async ({
+test('truncated uploads cannot become ready; client digests are metadata and deletion revokes reads', async ({
   request,
 }) => {
   const fixture = await setup(request),
     bytes = Buffer.from('plain text payload');
   try {
-    const invalid = [
-      file(bytes, 'fake.png', 'image/png'),
-      { ...file(bytes), size: bytes.length + 1 },
-      { ...file(bytes), sha256: 'a'.repeat(64) },
-    ];
-    for (const input of invalid) {
-      expect((await fixture.register(input)).status()).toBe(201);
-      const url = attachmentUrl(fixture.id, input.id),
-        uploaded = await request.put(url, { headers, data: bytes });
-      expect([400, 415]).toContain(uploaded.status());
-      expect((await request.get(url)).status()).not.toBe(200);
-    }
-    const valid = file(bytes);
+    const short = { ...file(bytes), size: bytes.length + 1 };
+    await fixture.register(short);
+    expect((await directUpload(request, fixture.id, short.id, bytes)).status()).toBe(400);
+    expect((await request.get(attachmentUrl(fixture.id, short.id))).status()).toBe(409);
+    const valid = { ...file(bytes), sha256: 'a'.repeat(64) };
     await fixture.register(valid);
-    expect(
-      (await request.put(attachmentUrl(fixture.id, valid.id), { headers, data: bytes })).status(),
-    ).toBe(200);
+    expect((await directUpload(request, fixture.id, valid.id, bytes)).status()).toBe(200);
+    expect(await (await request.get(attachmentUrl(fixture.id, valid.id))).body()).toEqual(bytes);
     await fixture.cleanup();
     expect((await request.get(attachmentUrl(fixture.id, valid.id))).status()).toBe(410);
   } finally {
+    await fixture.cleanup();
+  }
+});
+
+test('batch signing fixes headers and path, rejects tampering, and enforces atomic no-overwrite', async ({
+  request,
+  playwright,
+}) => {
+  const fixture = await setup(request),
+    bytes = Buffer.from('signed object'),
+    a = file(bytes),
+    b = file(bytes);
+  const anonymous = await playwright.request.newContext();
+  try {
+    const response = await request.post(`/api/conversations/${fixture.id}/attachments/uploads`, {
+      headers,
+      data: [a, b],
+    });
+    expect(response.status()).toBe(201);
+    const targets: AttachmentUpload[] = await response.json();
+    expect(targets).toHaveLength(2);
+    const upload = targets[0].upload!;
+    expect(upload.headers).toEqual({ 'Content-Type': a.mediaType, 'If-None-Match': '*' });
+    expect(new URL(upload.url).searchParams.get('X-Amz-SignedHeaders')).toBe(
+      'content-type;host;if-none-match',
+    );
+    expect((await receiveAttachment(request, fixture.id, a.id)).status()).toBe(409);
+    expect(
+      (
+        await anonymous.put(upload.url, {
+          headers: { ...upload.headers, 'Content-Type': 'text/plain' },
+          data: bytes,
+        })
+      ).status(),
+    ).toBe(403);
+    expect(
+      (
+        await anonymous.put(upload.url, { headers: { 'Content-Type': a.mediaType }, data: bytes })
+      ).status(),
+    ).toBe(403);
+    const expired = new URL(upload.url);
+    expired.searchParams.set('X-Amz-Date', '20200101T000000Z');
+    expect(
+      (await anonymous.put(expired.href, { headers: upload.headers, data: bytes })).status(),
+    ).toBe(403);
+    const puts = await Promise.all(
+      [bytes, Buffer.from('other bytes!!')].map((data) =>
+        anonymous.put(upload.url, { headers: upload.headers, data }),
+      ),
+    );
+    expect(puts.map((put) => put.status()).sort()).toEqual([200, 412]);
+    const winner = puts[0].status() === 200 ? bytes : Buffer.from('other bytes!!');
+    // Both payloads have the same length; receive checks declared metadata only.
+    expect((await receiveAttachment(request, fixture.id, a.id)).status()).toBe(200);
+    expect(await (await request.get(attachmentUrl(fixture.id, a.id))).body()).toEqual(winner);
+    expect(
+      (
+        await anonymous.post(
+          `http://127.0.0.1:5174/api/conversations/${fixture.id}/attachments/uploads`,
+          { headers, data: [a] },
+        )
+      ).status(),
+    ).toBe(401);
+    await storage(request, { id: b.id, expire: true });
+    expect((await receiveAttachment(request, fixture.id, b.id)).status()).toBe(409);
+  } finally {
+    await anonymous.dispose();
     await fixture.cleanup();
   }
 });

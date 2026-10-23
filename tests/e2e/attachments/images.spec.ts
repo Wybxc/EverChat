@@ -1,3 +1,4 @@
+import { directUpload } from '../../support/browser/attachments';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import { attachmentUrl } from '../../../shared/attachments/files';
@@ -82,11 +83,11 @@ async function upload(
     sha256: createHash('sha256').update(bytes).digest('hex'),
   };
   expect(
-    (await request.post(`/api/conversations/${id}/attachments`, { headers, data: input })).status(),
+    (
+      await request.post(`/api/conversations/${id}/attachments/uploads`, { headers, data: [input] })
+    ).status(),
   ).toBe(201);
-  expect((await request.put(attachmentUrl(id, input.id), { headers, data: bytes })).status()).toBe(
-    200,
-  );
+  expect((await directUpload(request, id, input.id, bytes)).status()).toBe(200);
   return input;
 }
 async function finish(fixture: Awaited<ReturnType<typeof setup>>, submission: Submission) {
@@ -193,7 +194,10 @@ test('server rejects unsupported, foreign, incomplete and invalid image referenc
     sha256: createHash('sha256').update(png).digest('hex'),
     mediaType: 'image/png',
   };
-  await request.post(`/api/conversations/${fixture.id}/attachments`, { headers, data: incomplete });
+  await request.post(`/api/conversations/${fixture.id}/attachments/uploads`, {
+    headers,
+    data: [incomplete],
+  });
   try {
     for (const patch of [
       { selection: { providerId, model: 'text-only' }, imageIds: [image.id] },
@@ -481,7 +485,7 @@ test('switching conversations cancels an image upload, cleans its registration a
   const wait = new Promise<void>((resolve) => {
     release = resolve;
   });
-  await page.route('**/attachments/*/content', async (route) => {
+  await page.route('**/__dev/r2/**', async (route) => {
     if (route.request().method() !== 'PUT') {
       await route.continue();
       return;
@@ -534,6 +538,40 @@ test('a remote conversation deletion clears image draft metadata from the curren
     expect((await fixture.cleanup()).status()).toBe(200);
     await expect(page.getByLabel('待发送图片')).toHaveCount(0);
     await expect(page.getByLabel('消息', { exact: true })).toHaveValue('');
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+test('a direct image PUT can be submitted without a separate receive request', async ({
+  request,
+}) => {
+  const fixture = await setup(request);
+  const input = {
+    id: crypto.randomUUID(),
+    name: 'direct.png',
+    size: png.length,
+    mediaType: 'image/png',
+    sha256: createHash('sha256').update(png).digest('hex'),
+  };
+  try {
+    const prepared = await request.post(`/api/conversations/${fixture.id}/attachments/uploads`, {
+      headers,
+      data: [input],
+    });
+    expect(prepared.status()).toBe(201);
+    expect((await directUpload(request, fixture.id, input.id, png, false)).status()).toBe(200);
+    expect((await request.get(attachmentUrl(fixture.id, input.id))).status()).toBe(409);
+    const response = await fixture.submit({
+      parentId: null,
+      requestId: crypto.randomUUID(),
+      content: 'expect-images:1',
+      imageIds: [input.id],
+      selection: fixture.selection,
+    });
+    expect(response.status(), await response.text()).toBe(202);
+    await finish(fixture, await response.json());
+    expect((await request.get(attachmentUrl(fixture.id, input.id))).status()).toBe(200);
   } finally {
     await fixture.cleanup();
   }

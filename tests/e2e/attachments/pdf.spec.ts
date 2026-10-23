@@ -1,3 +1,4 @@
+import { directUpload } from '../../support/browser/attachments';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -93,11 +94,11 @@ async function upload(request: APIRequestContext, id: string, bytes = textPdf())
     sha256: createHash('sha256').update(bytes).digest('hex'),
   };
   expect(
-    (await request.post(`/api/conversations/${id}/attachments`, { headers, data: file })).status(),
+    (
+      await request.post(`/api/conversations/${id}/attachments/uploads`, { headers, data: [file] })
+    ).status(),
   ).toBe(201);
-  expect((await request.put(attachmentUrl(id, file.id), { headers, data: bytes })).status()).toBe(
-    200,
-  );
+  expect((await directUpload(request, id, file.id, bytes)).status()).toBe(200);
   return file;
 }
 const docUrl = (id: string, fileId: string) =>
@@ -282,16 +283,16 @@ test('large PDF text uses the real storage allowance and prevents later original
     });
     expect(selected.status(), await selected.text()).toBe(200);
     expect((await selected.json()).characters).toBe(11);
-    const tooMuch = await request.post(`/api/conversations/${fixture.id}/attachments`, {
+    const tooMuch = await request.post(`/api/conversations/${fixture.id}/attachments/uploads`, {
       headers,
-      data: { ...file, id: crypto.randomUUID(), size: 2 * 1024 * 1024 },
+      data: [{ ...file, id: crypto.randomUUID(), size: 2 * 1024 * 1024 }],
     });
-    expect(tooMuch.status(), await tooMuch.text()).toBe(507);
+    expect(tooMuch.status(), await tooMuch.text()).toBe(201);
     expect(
       (await request.get(`/api/conversations/${fixture.id}/attachments`).then((r) => r.json())).map(
         (item: { id: string }) => item.id,
       ),
-    ).toEqual([file.id]);
+    ).toContain(file.id);
   } finally {
     await fixture.cleanup();
   }

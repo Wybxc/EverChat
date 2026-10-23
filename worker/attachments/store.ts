@@ -6,6 +6,7 @@ import {
   attachmentSignatureMatches,
   type Attachment,
   type AttachmentInput,
+  type AttachmentUpload,
 } from '../../shared/attachments/files';
 import {
   assertChatImage,
@@ -16,6 +17,13 @@ import { issueOf, problem } from '../../shared/errors/descriptor';
 import { MAX_SQL_PAYLOAD_BYTES } from '../../shared/conversation/limits';
 import { HttpError } from '../http/response';
 import { DocumentStore } from './documents';
+import type { UploadSigner } from './signing';
+
+// Keep a fixed expiry across retries. The lease also covers an upload that
+// started just before URL expiry; deleting a registration must not reopen it.
+const directExpiry = (token: string | null) =>
+  token?.startsWith('direct:') ? Number(token.slice(7)) : null;
+const UPLOAD_CLEANUP_GRACE = 15 * 60_000;
 
 type Row = Attachment & {
   key: string;
@@ -46,7 +54,11 @@ export class AttachmentStore {
       (id) => {
         const row = this.row(id);
         if (row?.removed && row.status !== 'uploading')
-          this.storage.sql.exec('UPDATE attachments SET lease = ? WHERE id = ?', Date.now(), id);
+          this.storage.sql.exec(
+            'UPDATE attachments SET lease = ? WHERE id = ?',
+            directExpiry(row.token) === null ? Date.now() : Math.max(row.lease, Date.now()),
+            id,
+          );
       },
     );
   }
@@ -274,6 +286,87 @@ export class AttachmentStore {
       return this.public(this.row(input.id)!);
     });
   }
+  async prepareUploads(
+    conversationId: string,
+    inputs: AttachmentInput[],
+    sign: UploadSigner,
+  ): Promise<AttachmentUpload[]> {
+    if (new Set(inputs.map((input) => input.id)).size !== inputs.length)
+      throw new HttpError(400, '附件 ID 不能重复。', undefined, problem('ATTACHMENT_INVALID'));
+    const rows = this.storage.transactionSync(() =>
+      inputs.map((input) => {
+        const attachment = this.register(conversationId, input);
+        let row = this.require(conversationId, input.id);
+        if (row.status === 'ready') return row;
+        if (row.status !== 'registered')
+          throw new HttpError(
+            409,
+            '附件状态不可上传，请重新选择文件。',
+            undefined,
+            problem('ATTACHMENT_INVALID'),
+          );
+        if (directExpiry(row.token) === null) {
+          const expiresAt = attachment.createdAt + ATTACHMENT_LEASE;
+          this.storage.sql.exec(
+            'UPDATE attachments SET token = ?, lease = ? WHERE id = ?',
+            `direct:${expiresAt}`,
+            expiresAt + UPLOAD_CLEANUP_GRACE,
+            row.id,
+          );
+          row = this.require(conversationId, row.id);
+        }
+        return row;
+      }),
+    );
+    await this.storage.sync();
+    const result: AttachmentUpload[] = [];
+    for (const row of rows) {
+      const upload =
+        row.status === 'ready'
+          ? null
+          : await sign(row.key, row.mediaType, directExpiry(row.token)!);
+      this.require(conversationId, row.id);
+      result.push({ attachment: this.public(row), upload });
+    }
+    return result;
+  }
+  async receive(conversationId: string, id: string): Promise<Attachment> {
+    const row = this.require(conversationId, id);
+    if (row.status === 'ready') return this.public(row);
+    if (row.status !== 'registered' || directExpiry(row.token) === null || row.lease <= Date.now())
+      throw new HttpError(
+        409,
+        '附件尚未就绪或登记已过期。',
+        undefined,
+        problem('ATTACHMENT_INVALID'),
+      );
+    const object = await this.configuredBucket().head(row.key);
+    const current = this.require(conversationId, id);
+    if (current.status === 'ready') return this.public(current);
+    if (
+      current.token !== row.token ||
+      current.status !== 'registered' ||
+      current.lease <= Date.now()
+    )
+      throw new HttpError(409, '附件状态已变化。', undefined, problem('ATTACHMENT_INVALID'));
+    if (!object)
+      throw new HttpError(
+        409,
+        '文件尚未上传完成，请重试。',
+        undefined,
+        problem('ATTACHMENT_INVALID'),
+      );
+    if (object.size !== row.size || object.httpMetadata?.contentType !== row.mediaType)
+      throw new HttpError(
+        400,
+        '上传文件的大小或类型与登记不符，请重新选择文件。',
+        undefined,
+        problem('ATTACHMENT_INVALID'),
+      );
+    this.storage.sql.exec("UPDATE attachments SET status = 'ready' WHERE id = ?", id);
+    await this.storage.sync();
+    return this.public(this.require(conversationId, id));
+  }
   async upload(conversationId: string, id: string, body: ReadableStream<Uint8Array>) {
     const bucket = this.configuredBucket();
     const row = this.require(conversationId, id);
@@ -433,12 +526,7 @@ export class AttachmentStore {
     if (!object)
       throw new HttpError(404, '附件文件不存在。', undefined, problem('ATTACHMENT_INVALID'));
     try {
-      const digest = object.checksums.sha256
-        ? Array.from(new Uint8Array(object.checksums.sha256), (byte) =>
-            byte.toString(16).padStart(2, '0'),
-          ).join('')
-        : null;
-      if (object.size !== row.size || digest !== row.sha256)
+      if (object.size !== row.size || object.httpMetadata?.contentType !== row.mediaType)
         throw new HttpError(
           409,
           '附件完整性校验失败，请重新上传。',
@@ -472,13 +560,16 @@ export class AttachmentStore {
       );
     this.storage.sql.exec(
       'UPDATE attachments SET removed = 1, lease = ? WHERE id = ?',
-      Math.max(row.status === 'uploading' ? row.lease : Date.now(), this.documents.lease(id)),
+      Math.max(
+        row.status === 'uploading' || directExpiry(row.token) !== null ? row.lease : Date.now(),
+        this.documents.lease(id),
+      ),
       id,
     );
   }
   removeConversation(conversationId: string) {
     this.storage.sql.exec(
-      "UPDATE attachments SET removed = 1, lease = MAX(CASE WHEN status = 'uploading' THEN lease ELSE ? END, COALESCE((SELECT lease FROM attachment_documents WHERE attachment_documents.id = attachments.id AND status = 'parsing'), 0)) WHERE conversationId = ?",
+      "UPDATE attachments SET removed = 1, lease = MAX(CASE WHEN status = 'uploading' OR token LIKE 'direct:%' THEN lease ELSE ? END, COALESCE((SELECT lease FROM attachment_documents WHERE attachment_documents.id = attachments.id AND status = 'parsing'), 0)) WHERE conversationId = ?",
       Date.now(),
       conversationId,
     );

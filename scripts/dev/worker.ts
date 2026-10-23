@@ -3,8 +3,9 @@ import { createLocalJWKSet, type JWK } from 'jose';
 import { createAccessVerifier, type Authenticator } from '../../worker/http/auth';
 import { HttpError } from '../../worker/http/response';
 import { createWorker } from '../../worker/http/worker';
+import { localR2Upload } from './r2';
 export { Conversation } from '../../worker/conversation/durable-object';
-export { Library } from '../../worker/library/durable-object';
+export { Library } from './r2';
 export { ShareStore } from '../../worker/sharing/durable-object';
 export { UsageStore } from '../../worker/usage/durable-object';
 export { WebToolWorkflow } from '../../worker/web-tools/workflow';
@@ -39,4 +40,12 @@ export const authenticateLocal: Authenticator = async (request, env) => {
   return verify(new Request(request.url, { headers }), env);
 };
 export const localWorker = createWorker(authenticateLocal, '/__dev/access/login');
-export default localWorker;
+export default {
+  async fetch(
+    request: Request,
+    env: Parameters<typeof localWorker.fetch>[1],
+    context: ExecutionContext,
+  ) {
+    return (await localR2Upload(request, env)) ?? localWorker.fetch(request, env, context);
+  },
+};

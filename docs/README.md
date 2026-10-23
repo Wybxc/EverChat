@@ -30,7 +30,7 @@
 | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 模型与上下文 | [模型元数据](features/model-metadata.md)、[上下文预算](features/context-budget.md)、[历史摘要](features/history-summaries.md)                                                                        |
 | 文件输入     | [对话文件](features/attachments.md)、[图片](features/images.md)、[文本与 CSV](features/documents.md)、[PDF](features/pdf.md)                                                                         |
-| 数据保留     | [附件复制](features/attachment-copies.md)、[附件备份](features/attachment-backups.md)                                                                                                                |
+| 数据保留     | [附件复制](features/attachment-copies.md)、[附件备份](features/attachment-backups.md)、[R2 直传](plans/r2-direct-upload-plan.md)                                                                     |
 | 联网工具     | [服务实现](features/web-tool-service.md)、[DeepSeek 接入及实施记录](plans/deepseek-web-tools-plan.md)、[思考与工具过程](plans/reasoning-web-tools-flow-plan.md)                                      |
 | 用量与分享   | [费用统计方案](plans/usage-cost-statistics-plan.md)、[只读分享方案](plans/revocable-readonly-sharing-plan.md)、[执行记录](measurements/usage-sharing-implementation-2026-10-19.md)                   |
 | 通知         | [回答通知方案与真机记录](plans/answer-completion-notifications-plan.md)                                                                                                                              |

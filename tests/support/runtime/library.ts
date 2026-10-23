@@ -6,7 +6,7 @@ import {
 import { AttachmentStore } from '../../../worker/attachments/store';
 import type { Env } from '../../../worker/http/env';
 import { HttpError } from '../../../worker/http/response';
-import { Library as ProductionLibrary } from '../../../worker/index';
+import { Library as ProductionLibrary } from '../../../scripts/dev/r2';
 import type { MeasurementEnv } from './env';
 import { FixtureResourceMeter } from './resource-meter';
 import type { ConversationActivity } from '../../../shared/conversation/activity';

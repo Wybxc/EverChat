@@ -14,35 +14,30 @@ const attachmentId = (context: AppContext) => {
 };
 
 export function registerAttachmentsRoutes(app: ApiRouter) {
+  app.post('/conversations/:id/attachments/uploads', async (context) => {
+    await requireAuth(context);
+    const id = conversationId(context),
+      library = await requireConversation(context, id);
+    const input = await parseBody(context, v.pipe(v.array(attachmentInputSchema), v.minLength(1)));
+    const result = await library.prepareAttachmentUploads(id, input);
+    return 'error' in result
+      ? json({ error: result.error, issue: result.issue }, result.status)
+      : json(result.value, 201);
+  });
+  app.post('/conversations/:id/attachments/:attachmentId/receive', async (context) => {
+    await requireAuth(context);
+    const id = conversationId(context),
+      library = await requireConversation(context, id);
+    const result = await library.receiveAttachment(id, attachmentId(context));
+    return 'error' in result
+      ? json({ error: result.error, issue: result.issue }, result.status)
+      : json(result.value);
+  });
   app.get('/conversations/:id/attachments', async (context) => {
     await requireAuth(context);
     const id = conversationId(context),
       library = await requireConversation(context, id);
     const result = await library.listAttachments(id);
-    return 'error' in result
-      ? json({ error: result.error, issue: result.issue }, result.status)
-      : json(result.value);
-  });
-
-  app.post('/conversations/:id/attachments', async (context) => {
-    await requireAuth(context);
-    const id = conversationId(context),
-      library = await requireConversation(context, id);
-    const input = await parseBody(context, attachmentInputSchema, { maxBytes: 2000 });
-    const result = await library.registerAttachment(id, input);
-    return 'error' in result
-      ? json({ error: result.error, issue: result.issue }, result.status)
-      : json(result.value, 201);
-  });
-
-  app.put('/conversations/:id/attachments/:attachmentId/content', async (context) => {
-    await requireAuth(context);
-    const id = conversationId(context),
-      library = await requireConversation(context, id),
-      fileId = attachmentId(context);
-    if (!context.req.raw.body)
-      throw new HttpError(400, '附件内容为空。', undefined, problem('ATTACHMENT_INVALID'));
-    const result = await library.uploadAttachment(id, fileId, context.req.raw.body);
     return 'error' in result
       ? json({ error: result.error, issue: result.issue }, result.status)
       : json(result.value);

@@ -13,7 +13,7 @@ import {
   uiMessage,
   type UiMessage,
 } from '../../platform/i18n/messages';
-import { prepareAttachment, uploadAttachment } from './attachment-upload';
+import { prepareAttachment, prepareAttachmentUploads, uploadAttachment } from './attachment-upload';
 import './locales';
 
 export function AttachmentDialog({
@@ -49,11 +49,19 @@ export function AttachmentDialog({
     controller.current = abort;
     setError('');
     try {
-      for (const file of Array.from(items)) {
+      const selected = Array.from(items);
+      const inputs = [];
+      for (const file of selected) inputs.push(await prepareAttachment(file, abort.signal));
+      const targets = await prepareAttachmentUploads(id, inputs, abort.signal);
+      for (const [index, file] of selected.entries()) {
         setUpload({ name: file.name, size: file.size, sent: 0 });
-        const input = await prepareAttachment(file, abort.signal);
-        await uploadAttachment(id, input, file, abort.signal, (sent) =>
-          setUpload({ name: file.name, size: file.size, sent }),
+        await uploadAttachment(
+          id,
+          inputs[index],
+          file,
+          abort.signal,
+          (sent) => setUpload({ name: file.name, size: file.size, sent }),
+          targets[index],
         );
         await client.invalidateQueries({ queryKey: key });
       }

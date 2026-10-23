@@ -31,6 +31,15 @@ export interface Attachment extends AttachmentInput {
   createdAt: number;
   error: string | null;
 }
+export interface AttachmentUpload {
+  attachment: Attachment;
+  upload: null | {
+    method: 'PUT';
+    url: string;
+    headers: Record<string, string>;
+    expiresAt: number;
+  };
+}
 export const attachmentUrl = (conversationId: string, id: string) =>
   `/api/conversations/${conversationId}/attachments/${id}/content`;
 export const bytesLabel = (size: number) =>

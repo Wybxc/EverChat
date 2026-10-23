@@ -2,6 +2,7 @@ export default {
   invalidUpload: '请选择不超过 100 MB 的图片、文本、代码或 PDF 文件。',
   invalidName: '文件名无效，请重命名后重试。',
   uploadFailed: '附件上传失败。',
+  r2Rejected: '文件存储拒绝上传（HTTP {{status}}），请重试。',
   invalidResponse: '附件响应无效。',
   interrupted: '上传中断，请联网后重试。',
   timeout: '上传超时，请重试。',

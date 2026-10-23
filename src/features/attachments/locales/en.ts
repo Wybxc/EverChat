@@ -2,6 +2,7 @@ export default {
   invalidUpload: 'Choose an image, text, code or PDF file up to 100 MB.',
   invalidName: 'Invalid filename. Rename it and try again.',
   uploadFailed: 'Attachment upload failed.',
+  r2Rejected: 'File storage rejected the upload (HTTP {{status}}). Try again.',
   invalidResponse: 'Invalid attachment response.',
   interrupted: 'Upload interrupted. Reconnect and try again.',
   timeout: 'Upload timed out. Try again.',

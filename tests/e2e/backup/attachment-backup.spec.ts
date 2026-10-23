@@ -1,3 +1,4 @@
+import { directUpload } from '../../support/browser/attachments';
 import { expect, test, type APIRequestContext } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
@@ -99,11 +100,11 @@ async function upload(
     sha256: createHash('sha256').update(bytes).digest('hex'),
   };
   expect(
-    (await request.post(`/api/conversations/${cid}/attachments`, { headers, data: file })).status(),
+    (
+      await request.post(`/api/conversations/${cid}/attachments/uploads`, { headers, data: [file] })
+    ).status(),
   ).toBe(201);
-  expect((await request.put(attachmentUrl(cid, file.id), { headers, data: bytes })).status()).toBe(
-    200,
-  );
+  expect((await directUpload(request, cid, file.id, bytes)).status()).toBe(200);
   if (parse)
     expect(
       (
