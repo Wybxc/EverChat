@@ -301,9 +301,8 @@ test('the file manager uploads with progress, preserves the composer and URL, sy
     await expect(dialog.getByLabel('上传文件', { exact: true })).toBeFocused();
     await page.route('**/__dev/r2/**', async (route) => {
       if (route.request().method() === 'PUT') {
-        const response = await route.fetch();
         await new Promise((resolve) => setTimeout(resolve, 400));
-        await route.fulfill({ response });
+        await route.continue();
       } else await route.continue();
     });
     const bytes = Buffer.from('# 文件\n42 元🙂');
@@ -313,6 +312,10 @@ test('the file manager uploads with progress, preserves the composer and URL, sy
     await expect(dialog.getByRole('progressbar', { name: '上传进度' })).toBeVisible();
     await expect(dialog.getByRole('link', { name: '下载', exact: true })).toBeVisible();
     await expect(dialog).toContainText('已保存');
+    const [uploaded] = await fixture.list();
+    expect(await (await page.request.get(attachmentUrl(fixture.id, uploaded.id))).body()).toEqual(
+      bytes,
+    );
     const second = await other.newPage();
     await second.goto(`/c/${fixture.id}`);
     await conversationMenu(second);
@@ -388,11 +391,10 @@ test('client cancellation removes the accepted registration, while a mobile file
       await held;
       await route.continue().catch(() => {});
     });
-    await dialog.getByLabel('上传文件', { exact: true }).setInputFiles({
-      name: 'cancel.txt',
-      mimeType: 'text/plain',
-      buffer: Buffer.from('pending file'),
-    });
+    await dialog.getByLabel('上传文件', { exact: true }).setInputFiles([
+      { name: 'cancel.txt', mimeType: 'text/plain', buffer: Buffer.from('pending file') },
+      { name: 'not-started.txt', mimeType: 'text/plain', buffer: Buffer.from('batch pending') },
+    ]);
     await sent;
     await dialog.getByRole('button', { name: '取消上传', exact: true }).click();
     await expect(dialog.getByRole('progressbar')).toHaveCount(0);
@@ -545,6 +547,36 @@ test('batch signing fixes headers and path, rejects tampering, and enforces atom
     expect((await receiveAttachment(request, fixture.id, b.id)).status()).toBe(409);
   } finally {
     await anonymous.dispose();
+    await fixture.cleanup();
+  }
+});
+
+test('a lost R2 PUT response is reconciled by receive without another upload', async ({ page }) => {
+  const fixture = await setup(page.request);
+  let puts = 0;
+  try {
+    await page.goto(`/c/${fixture.id}`);
+    await conversationMenu(page);
+    await page.getByRole('menuitem', { name: '管理对话文件', exact: true }).click();
+    const bytes = Buffer.from('upload response lost, object saved');
+    await page.route('**/__dev/r2/**', async (route) => {
+      puts++;
+      // WebKit does not expose File bytes to route.fetch; supply this known fixture.
+      const response = await route.fetch({ postData: bytes });
+      expect(response.status()).toBe(200);
+      await route.abort('failed');
+    });
+    const dialog = page.getByRole('dialog', { name: '对话文件', exact: true });
+    await dialog
+      .getByLabel('上传文件', { exact: true })
+      .setInputFiles({ name: 'lost.txt', mimeType: 'text/plain', buffer: bytes });
+    await expect(dialog).toContainText('已保存');
+    expect(puts).toBe(1);
+    const [saved] = await fixture.list();
+    expect(await (await page.request.get(attachmentUrl(fixture.id, saved.id))).body()).toEqual(
+      bytes,
+    );
+  } finally {
     await fixture.cleanup();
   }
 });

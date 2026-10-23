@@ -1,6 +1,6 @@
 # R2 预签名 PUT 直传
 
-日期：2026-10-23。状态：实施中。
+日期：2026-10-23。状态：实现与验证完成；合并、CI 与发布结果见 [PR #9](https://github.com/Wybxc/EverChat/pull/9)。
 
 ## 目标
 
@@ -35,5 +35,15 @@
 覆盖真实浏览器直传、批量签发、Unicode、取消／响应丢失、签名头篡改、过期、412、大小不符、跨对话／匿名访问、删除竞争、历史附件读取，以及图片／文本／CSV／PDF、复制和备份恢复。不消耗真实模型请求。
 
 执行格式、类型、单测、运维集成、构建及定向浏览器回归；生产签名与 CORS 就绪后用纯测试对象验证真实 R2。提交推送、创建 PR，必需检查通过后合并。记录发布与平台验证结果，不以本地模拟推断具体 CPU 或免费额度节省。
+
+### 验证记录（2026-10-23）
+
+- 类型检查、受版本控制文件的 Prettier 检查、512 项单测、1 项离线运维集成和生产构建通过。生产包不含本地 S3 模拟入口或测试凭据；CI 在干净 checkout 中运行完整格式检查。
+- Chromium 覆盖附件、图片、文本／CSV、PDF、复制、备份恢复与取消／删除竞争；失败的旧即时清理断言按签名过期清理语义调整后复测通过。新增图片准入和文档解析无需预先 receive 的场景通过。
+- WebKit 附件直传 14 项全部通过。文件管理页下载后逐字节核对原文件；响应丢失只发生一次 PUT，经 receive 恢复。初次测试代理的 `route.fetch()` 丢失 WebKit File 正文，已改为保留原生请求；模拟响应丢失时显式传入已知测试字节。
+- 批量取消同时清理当前文件和未开始上传的登记，保留已经成功的文件。Chromium／WebKit 均通过；生产 PWA 的真实 PDF worker、离线 CMap 与字体回归通过。
+- 生产桶级凭据和 CORS 已配置。真实 R2 测试确认同源预检通过、其他来源被拒、篡改签名头返回 403、首次 PUT 返回 200、覆盖返回 412、HEAD 元数据与原始字节一致、访问其他桶返回 403。36 字节测试对象已删除，并用 HEAD 404 确认；未调用真实模型。
+
+本次复用现有表，无数据库迁移。专用生产凭据需持续保留；本机明文交接文件已删除，验证记录不包含签名 URL、Access JWT 或 S3 密钥。配置与轮换入口见[自行部署](../operations/self-hosting.md#3-创建附件桶并部署)，当前站点配置见[生产部署记录](../operations/cloudflare-deployment.md#r2-直传配置2026-10-23)。
 
 依据：[R2 预签名 URL](https://developers.cloudflare.com/r2/api/s3/presigned-urls/)、[原子条件写入](https://developers.cloudflare.com/r2/api/s3/api/#object-level-operations)、[浏览器 CORS](https://developers.cloudflare.com/r2/buckets/cors/)。

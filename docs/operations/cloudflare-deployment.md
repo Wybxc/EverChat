@@ -118,6 +118,14 @@ Access 已由所有者保存为同一个应用的四个 Public hostname 路径�
 
 同步高 CPU 样本、平台 profile 10393 与 DO 空汇总在[独立资源计划](../plans/sync-worker-resource-investigation-plan.md)继续，尚不能承诺所有负载符合免费层预算；不因本次功能发布视其通过。
 
+## R2 直传配置（2026-10-23）
+
+经用户授权创建 `EverChat R2 direct uploads` 专用凭据，仅授予 `everchat-attachments` 桶的对象读写权限；已验证其他桶返回 403。S3 Access Key ID 和 Secret 仅存 Worker secrets，连同 `R2_ACCOUNT_ID`、`R2_BUCKET_NAME` 配置到 `everchat`；本机权限 0600 的交接文件已删除。凭据为生产签名所需，应持续保留并按需轮换，不属于用后删除的临时测试令牌。
+
+桶仍为私有。CORS 仅允许 `https://chat.wybxc.cc` 的 PUT，请求头为 `Content-Type`、`If-None-Match`，暴露 `ETag`，预检缓存 3600 秒；未修改 Access 或增加公开下载入口。真实 R2 验证涵盖同源／其他来源预检、签名头篡改、条件写入与逐字节读取，36 字节测试对象已删除并确认 HEAD 404。
+
+网页直传由 [PR #9](https://github.com/Wybxc/EverChat/pull/9) 发布，必需检查通过后合并触发 Workers Builds，部署结果记录在 PR 中。本次复用附件表，不需要数据库迁移；MCP 附件工具仍按专项计划另行实施。代码、本地浏览器与 PWA 验证详见[R2 直传计划](../plans/r2-direct-upload-plan.md#验证记录2026-10-23)。
+
 ## 回答完成通知
 
 2026-10-18：生产 Worker 已配置 `VAPID_PUBLIC_KEY`、`VAPID_PRIVATE_KEY` 和 `VAPID_SUBJECT` 三个 Secrets，subject 为所有者联系邮箱。私钥由本机生成，仅通过 Wrangler Secret API 上传，不在 Git、前端包、备份或日志中出现。`GET /api/notifications/config` 经过 Access 身份校验，只返回公钥；未配置完整密钥时明确退回页面在线通知。

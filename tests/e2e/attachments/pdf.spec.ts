@@ -250,7 +250,7 @@ test('native full-text storage and previews exceed RPC object size while excerpt
     await fixture.cleanup();
   }
 });
-test('large PDF text uses the real storage allowance and prevents later originals from exceeding the shared conversation quota', async ({
+test('large PDF text stays within its parsing workset without consuming a shared original-file quota', async ({
   request,
 }) => {
   test.setTimeout(120_000);
@@ -527,6 +527,7 @@ test('server binds extracted text to immutable PDF source and rejects missing, c
         await request.delete(`/api/conversations/${fixture.id}/attachments/${file.id}`, { headers })
       ).status(),
     ).toBe(200);
+    await control(request, { id: file.id, expire: true });
     await expect
       .poll(async () =>
         (await control(request)).objects.some((object: { key: string }) =>
