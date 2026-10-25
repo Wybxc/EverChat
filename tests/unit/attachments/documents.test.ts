@@ -128,6 +128,7 @@ test('file-only questions retain their references through retries, branches, sum
     role: 'user',
     content: '',
     files: [file],
+    source: { kind: 'message', messageId: user.id },
   });
   assert.deepEqual(contextSource(messages, { retryOf: answer.id }).files, [file]);
   assert.deepEqual(messageFiles(user), [file]);
@@ -203,6 +204,7 @@ for (const [provider, native] of [
       else assert.equal(content[0].text, expected);
       assert.ok(!JSON.stringify(body).includes('/api/conversations/'));
       assert.ok(!JSON.stringify(body).includes(file.attachmentId));
+      assert.ok(!JSON.stringify(body).includes('internal-source-message'));
       return new Response(providerStreams[provider].partial + providerStreams[provider].finish, {
         headers: { 'Content-Type': 'text/event-stream' },
       });
@@ -210,7 +212,12 @@ for (const [provider, native] of [
     const stream = await openProviderStream(
       { ...config, provider, ...(native ? { baseUrl: 'https://api.openai.com/v1' } : {}) },
       [
-        { role: 'user', content: '', files: [file] },
+        {
+          role: 'user',
+          content: '',
+          files: [file],
+          source: { kind: 'message', messageId: 'internal-source-message' },
+        },
         { role: 'user', content: '', files: [file] },
       ],
       new AbortController().signal,

@@ -88,6 +88,7 @@ export function contextHistory(messages: Message[], parentId: string | null): Ch
     .map((message) => ({
       role: message.role,
       content: messageText(message),
+      source: { kind: 'message' as const, messageId: message.id },
       ...(messageImages(message).length ? { images: messageImages(message) } : {}),
       ...(messageFiles(message).length ? { files: messageFiles(message) } : {}),
     }));
@@ -130,10 +131,11 @@ export function buildContext(
   content: string,
   config: Pick<ProviderConfig, 'systemPrompt' | 'maxOutputTokens' | 'modelMetadata'>,
   settings: Pick<ConversationSettings, 'recentMessages' | 'contextBudget'>,
-  summary?: { id: string; content: string; coveredMessages: number },
+  summary?: { id: string; content: string; coveredMessages: number; sourceIds?: string[] },
   images: ImagePart[] = [],
   files: DocumentPart[] = [],
-): { messages: ChatInput[]; estimate: ContextEstimate } {
+  currentSource?: ChatInput['source'],
+): { messages: ChatInput[]; estimate: ContextEstimate; selection: ContextSelection } {
   const metadata = config.modelMetadata ?? {
     ...FALLBACK_MODEL_METADATA,
     sources: { contextWindow: 'fallback' as const },
@@ -157,13 +159,22 @@ export function buildContext(
   const fixed = inputTokens + MESSAGE_OVERHEAD + systemTokens + REQUEST_OVERHEAD + summaryTokens;
   const selected: ChatInput[] = [];
   let retainedTokens = 0;
+  let omittedReason: ContextOmissionReason = 'context_budget';
   // Select a suffix of complete user-led turns. Never cut a message or start on an orphaned answer.
   let end = history.length;
   while (end > 0) {
     const start = turnStart(history, end);
-    if (start < 0) break;
-    if (settings.recentMessages !== null && selected.length + end - start > settings.recentMessages)
+    if (start < 0) {
+      omittedReason = 'unavailable';
       break;
+    }
+    if (
+      settings.recentMessages !== null &&
+      selected.length + end - start > settings.recentMessages
+    ) {
+      omittedReason = 'recent_messages';
+      break;
+    }
     let tokens = 0;
     for (let i = start; i < end; i++) tokens += historyTokens(history[i]);
     if (fixed + retainedTokens + tokens > inputBudget) break;
@@ -190,11 +201,20 @@ export function buildContext(
       : {}),
   };
   const messages: ChatInput[] = [
-    ...(summary ? [{ role: 'user' as const, content: summary.content }] : []),
+    ...(summary
+      ? [
+          {
+            role: 'user' as const,
+            content: summary.content,
+            source: { kind: 'summary' as const, messageId: summary.id },
+          },
+        ]
+      : []),
     ...selected,
     {
       role: 'user',
       content,
+      ...(currentSource ? { source: currentSource } : {}),
       ...(images.length ? { images } : {}),
       ...(files.length ? { files } : {}),
     },
@@ -203,7 +223,20 @@ export function buildContext(
   if (fileAllowance) estimate.documentTokens = fileAllowance;
   assertImageContext(messages, config);
   assertDocumentContext(messages);
-  return { messages, estimate };
+  return {
+    messages,
+    estimate,
+    selection: {
+      omitted: history.slice(0, end).map((input) => ({ input, reason: omittedReason })),
+      summarized: summary?.sourceIds ?? [],
+    },
+  };
+}
+
+export type ContextOmissionReason = 'context_budget' | 'recent_messages' | 'unavailable';
+export interface ContextSelection {
+  omitted: { input: ChatInput; reason: ContextOmissionReason }[];
+  summarized: string[];
 }
 
 // Only validate contexts that will actually be persisted, not an intermediate

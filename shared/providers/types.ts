@@ -13,6 +13,8 @@ export interface ChatInput {
   content: string;
   images?: ImagePart[];
   files?: DocumentPart[];
+  /** Application provenance only. Provider adapters never serialize this field. */
+  source?: { kind: 'message' | 'summary' | 'generated'; messageId?: string };
 }
 
 export interface SessionSettings {

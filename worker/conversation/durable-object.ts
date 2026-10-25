@@ -1022,6 +1022,7 @@ export class Conversation extends DurableObject<Env> {
         };
       }
       const runId = crypto.randomUUID();
+      const userId = parent?.id ?? crypto.randomUUID();
       let context: ChatInput[];
       let contextEstimate;
       let automatic: ReturnType<typeof summaryGeneration> | undefined;
@@ -1034,6 +1035,7 @@ export class Conversation extends DurableObject<Env> {
           settings,
           images,
           files,
+          { kind: 'message', messageId: userId },
         );
         context = built.messages;
         contextEstimate = built.estimate;
@@ -1068,7 +1070,7 @@ export class Conversation extends DurableObject<Env> {
       ]);
       if (pinned) return pinned;
       const user: Message = parent ?? {
-        id: crypto.randomUUID(),
+        id: userId,
         role: 'user',
         parts: [...messageParts(content), ...images, ...files],
         status: 'completed',
@@ -2425,6 +2427,7 @@ export class Conversation extends DurableObject<Env> {
             summaryPrefix(prepared.summary),
             images,
             files,
+            { kind: 'message', messageId: answer.parentId! },
           );
           assertContextFits(built.estimate);
           assertStoredContextFits(built.messages, JSON.parse(run.config) as ProviderConfig);
