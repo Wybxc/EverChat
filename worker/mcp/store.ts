@@ -11,6 +11,11 @@ import type { PromptPreset } from '../../shared/presets/types';
 import type { ProviderConfig } from '../../shared/providers/types';
 import type { Env } from '../http/env';
 import type { ProviderSettingsStore } from '../providers/store';
+import type { ResolvedAttachments } from './attachments';
+import { canAttemptCapability } from '../../shared/models/metadata';
+import { attachmentInputSchema, MAX_ATTACHMENT_BYTES } from '../../shared/attachments/files';
+import { MAX_DOCUMENT_BYTES } from '../../shared/attachments/documents';
+import { PDF_PARSER_VERSION } from '../../shared/attachments/pdf';
 import {
   decodeRef,
   encodeRef,
@@ -67,11 +72,33 @@ export class McpRequests {
         reasoningEfforts: model.reasoningEfforts,
         contextWindow: model.metadata.contextWindow || null,
         maxOutputTokens: model.metadata.maxOutputTokens || null,
+        imageInput: {
+          supported:
+            model.metadata.sources.imageInput === 'fallback' ? null : model.metadata.imageInput,
+          source: model.metadata.sources.imageInput,
+          canAttempt: canAttemptCapability(model.metadata, 'imageInput'),
+        },
       }))
       .filter((model) => !allowed || allowed.includes(model.ref));
     const defaultModelRef = this.env.MCP_DEFAULT_MODEL;
     return {
       models,
+      attachments: {
+        storage: Boolean(this.env.ATTACHMENTS),
+        directUpload: Boolean(
+          this.env.ATTACHMENTS &&
+          this.env.R2_ACCOUNT_ID &&
+          this.env.R2_BUCKET_NAME &&
+          this.env.R2_ACCESS_KEY_ID &&
+          this.env.R2_SECRET_ACCESS_KEY,
+        ),
+        mediaTypes: [...attachmentInputSchema.entries.mediaType.options],
+        maxFileBytes: MAX_ATTACHMENT_BYTES,
+        inlineRequestBytes: 2 * 1024 * 1024,
+        documentWorkingSetBytes: MAX_DOCUMENT_BYTES,
+        pdfParserVersion: PDF_PARSER_VERSION,
+        documentInput: 'extracted_text',
+      },
       presets: this.presets().map(({ id, name }) => ({ id, name })),
       ...(defaultModelRef && models.some(({ ref }) => ref === defaultModelRef)
         ? { defaultModelRef }
@@ -88,13 +115,34 @@ export class McpRequests {
       .toArray()[0];
     return row ? JSON.parse(row.payload) : undefined;
   }
-  prepare(principal: string, input: ChatArguments): McpRecord {
+  private fingerprint(input: ChatArguments) {
     const original = Object.fromEntries(
       Object.entries(input)
         .filter(([key]) => key !== 'waitMs')
         .sort(([a], [b]) => a.localeCompare(b)),
     );
-    const fingerprint = createHash('sha256').update(JSON.stringify(original)).digest('hex');
+    return createHash('sha256').update(JSON.stringify(original)).digest('hex');
+  }
+  replay(principal: string, input: ChatArguments) {
+    const previous = this.storage.sql
+      .exec<{ fingerprint: string; payload: string }>(
+        'SELECT fingerprint,payload FROM mcp_requests WHERE principal=? AND requestId=?',
+        principal,
+        input.requestId,
+      )
+      .toArray()[0];
+    if (!previous) return null;
+    if (previous.fingerprint !== this.fingerprint(input))
+      fail('IDEMPOTENCY_CONFLICT', 'This requestId was already used with different input.');
+    return JSON.parse(previous.payload) as McpRecord;
+  }
+  prepare(
+    principal: string,
+    input: ChatArguments,
+    attachments?: ResolvedAttachments,
+    discussionPrompt?: string,
+  ): McpRecord {
+    const fingerprint = this.fingerprint(input);
     return this.storage.transactionSync(() => {
       const previous = this.storage.sql
         .exec<{ fingerprint: string; payload: string }>(
@@ -110,6 +158,13 @@ export class McpRequests {
       }
       if (input.presetId && input.systemPrompt !== undefined)
         fail('INVALID_ARGUMENT', 'presetId and systemPrompt are mutually exclusive.');
+      if (!input.prompt.trim() && !input.attachments?.length)
+        fail('INVALID_ARGUMENT', 'Provide a prompt or at least one file.');
+      if (input.discussion && !discussionPrompt)
+        fail(
+          'DISCUSSION_SOURCE_UNAVAILABLE',
+          'Discussion sources must be validated before preparing a generation.',
+        );
       let parent: McpRecord | undefined;
       if (input.continuation) {
         const [conversationId, requestId, assistantId] = decodeRef(
@@ -138,6 +193,14 @@ export class McpRequests {
       const selection: ModelSelection = { providerId, model: modelId };
       const config = this.providers.providerConfig(selection, input.reasoningEffort);
       if (!config) fail('MODEL_UNAVAILABLE', 'The selected model is unavailable.');
+      config.receiptSystemPrompt = Boolean(
+        this.storage.sql
+          .exec<{ readSystemPrompts: number }>(
+            'SELECT readSystemPrompts FROM mcp_keys WHERE id=?',
+            principal,
+          )
+          .toArray()[0]?.readSystemPrompts,
+      );
       if (input.reasoningEffort && !model.reasoningEfforts.includes(input.reasoningEffort))
         fail(
           'UNSUPPORTED_PARAMETER',
@@ -164,14 +227,27 @@ export class McpRequests {
             : [];
       settings.tools = [...tools];
       if (tools.length) config.webTools = this.webTools();
-      const conversationId = parent?.conversationId ?? crypto.randomUUID();
-      if (!parent) {
+      const conversationId =
+        parent?.conversationId ?? attachments?.conversationId ?? crypto.randomUUID();
+      if (
+        attachments &&
+        (attachments.conversationId !== conversationId ||
+          attachments.parentId !== (parent?.submission?.assistantId ?? null))
+      )
+        fail('UPLOAD_TARGET_MISMATCH', 'Files do not belong to this exact continuation.');
+      if (!parent && !attachments) {
         const created = this.create(conversationId, input.prompt.trim().slice(0, 80));
         if (created && typeof created === 'object' && 'error' in created)
           fail(
             'CONVERSATION_UNAVAILABLE',
             'Unable to create a conversation. Check workspace capacity.',
           );
+        this.storage.sql.exec(
+          'INSERT INTO mcp_conversation_grants VALUES (?,?,?)',
+          principal,
+          conversationId,
+          Date.now(),
+        );
       }
       const record: McpRecord = {
         conversationId,
@@ -181,10 +257,24 @@ export class McpRequests {
         prepared: {
           input: {
             requestId: input.requestId,
-            content: input.prompt,
+            content: discussionPrompt ?? input.prompt,
             parentId: parent?.submission?.assistantId ?? null,
             selection,
             settings,
+            ...(attachments ? { materialBindings: attachments.materialBindings } : {}),
+            ...(attachments?.images.length
+              ? { imageIds: attachments.images.map((i) => i.attachmentId) }
+              : {}),
+            ...(attachments?.files.length
+              ? {
+                  fileIds: attachments.files.map((f) => f.attachmentId),
+                  fileSelections: Object.fromEntries(
+                    attachments.files
+                      .filter((f) => f.selection)
+                      .map((f) => [f.attachmentId, f.selection!.ranges]),
+                  ),
+                }
+              : {}),
             ...(tools.length ? { tools: [...tools] } : {}),
             ...(input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : {}),
           },
@@ -212,6 +302,7 @@ export class McpRequests {
       const record = this.get(principal, requestId);
       if (!record) fail('RUN_NOT_FOUND', 'This run is unavailable.');
       if (record.submission || record.failure) return record;
+      if (!('runId' in outcome) && outcome.retryable) return { ...record, failure: outcome };
       delete record.prepared;
       if ('runId' in outcome) record.submission = outcome;
       else record.failure = outcome as McpFailure;

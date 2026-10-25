@@ -29,4 +29,7 @@ export default {
     'Keys can invoke models and access their own MCP conversations. Full keys are shown only when created.',
   reload: 'Retry',
   loading: 'Loading MCP settings',
+  readSystemPrompts: 'Allow reading effective system prompts',
+  systemPromptAccess:
+    'Retain the effective prompt in new input receipts for this key. Turning this off immediately blocks reads. Earlier requests are not reconstructed.',
 } as const;

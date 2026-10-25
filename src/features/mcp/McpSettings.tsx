@@ -5,6 +5,7 @@ import { Check, Copy, Plus } from 'lucide-react';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { InputGroup, InputGroupInput, InputGroupAddon } from '@/components/ui/input-group';
 import { Spinner } from '@/components/ui/spinner';
@@ -29,6 +30,7 @@ export default function McpSettings() {
   });
   const [editor, setEditor] = useState<Editor | null>(null),
     [name, setName] = useState(''),
+    [readSystemPrompts, setReadSystemPrompts] = useState(false),
     [created, setCreated] = useState<(McpKeyInfo & { key: string }) | null>(null),
     [deleting, setDeleting] = useState<McpKeyInfo | null>(null),
     [pending, setPending] = useState(false),
@@ -41,6 +43,7 @@ export default function McpSettings() {
   }, [created]);
   const edit = (value: Editor) => {
     setName(value.kind === 'rename' ? value.key.name : '');
+    setReadSystemPrompts(value.kind === 'rename' ? value.key.readSystemPrompts : false);
     setError(null);
     setEditor(value);
   };
@@ -64,6 +67,7 @@ export default function McpSettings() {
       if (editor.kind === 'create') {
         const result = await api<McpKeyInfo & { key: string }>('/settings/mcp/keys', 'POST', {
           name: name.trim(),
+          readSystemPrompts,
         });
         setCreated(result);
         // Only public metadata enters React Query. The one-time secret stays in this dialog.
@@ -75,6 +79,7 @@ export default function McpSettings() {
       } else {
         const updated = await api<McpKeyInfo>(`/settings/mcp/keys/${editor.key.id}`, 'PATCH', {
           name: name.trim(),
+          readSystemPrompts,
         });
         client.setQueryData<KeyList>(
           queryKey,
@@ -244,6 +249,21 @@ export default function McpSettings() {
                     autoComplete="off"
                   />
                 </Field>
+                <Field>
+                  <FieldLabel htmlFor="mcp-read-system-prompts" className="flex items-center gap-2">
+                    <Checkbox
+                      id="mcp-read-system-prompts"
+                      aria-describedby="mcp-system-prompt-access"
+                      checked={readSystemPrompts}
+                      onCheckedChange={(value) => setReadSystemPrompts(value === true)}
+                      disabled={pending}
+                    />
+                    {t(($) => $.readSystemPrompts)}
+                  </FieldLabel>
+                  <p id="mcp-system-prompt-access" className="text-sm text-muted-foreground">
+                    {t(($) => $.systemPromptAccess)}
+                  </p>
+                </Field>
               </FieldGroup>
               {failure}
               <div className="flex justify-end gap-2">
@@ -262,7 +282,9 @@ export default function McpSettings() {
                   disabled={
                     pending ||
                     !name.trim() ||
-                    (editor?.kind === 'rename' && name.trim() === editor.key.name)
+                    (editor?.kind === 'rename' &&
+                      name.trim() === editor.key.name &&
+                      readSystemPrompts === editor.key.readSystemPrompts)
                   }
                 >
                   {pending && <Spinner data-icon="inline-start" />}

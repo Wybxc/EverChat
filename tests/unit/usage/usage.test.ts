@@ -78,6 +78,83 @@ function fixture() {
     },
   };
 }
+test('MCP usage pages bound model-step records, exclude tools and other answers, and preserve stable ordering', () => {
+  const s = fixture();
+  try {
+    for (let i = 0; i < 19; i++)
+      s.ledger.record(attempt({ id: `model-${String(i).padStart(2, '0')}`, taskId: `task-${i}` }));
+    s.ledger.record(attempt({ id: 'search', kind: 'web_search' }));
+    s.ledger.record(attempt({ id: 'other', messageId: 'other' }));
+    const first = s.ledger.mcpPage('message1');
+    assert.equal(first.count, 19);
+    assert.equal(first.records.length, 16);
+    assert.equal(first.hasMore, true);
+    const last = first.records.at(-1)!;
+    const second = s.ledger.mcpPage('message1', { startedAt: last.startedAt, id: last.id });
+    assert.equal(second.records.length, 3);
+    assert.equal(second.hasMore, false);
+    assert.equal(new Set([...first.records, ...second.records].map(({ id }) => id)).size, 19);
+    assert.ok(
+      first.records.every(({ kind, messageId }) => kind === 'chat' && messageId === 'message1'),
+    );
+  } finally {
+    s.db.close();
+  }
+});
+test('MCP costs sum model steps exactly by currency, keep linked web fees separate, and deduplicate updated attempts', () => {
+  const s = fixture();
+  try {
+    const large = {
+      ...price,
+      input: '999999999.999999',
+      output: '999999999.999999',
+      cacheRead: null,
+    };
+    const one = attempt({
+      id: 'large-1',
+      usage: { inputTokens: Number.MAX_SAFE_INTEGER, outputTokens: 0 },
+      price: large,
+    });
+    const two = attempt({
+      id: 'large-2',
+      usage: { inputTokens: Number.MAX_SAFE_INTEGER, outputTokens: 0 },
+      price: large,
+    });
+    s.ledger.record(one);
+    s.ledger.record(two);
+    s.ledger.record(two);
+    s.ledger.record(attempt({ id: 'usd', price: { ...price, currency: 'USD' } }));
+    s.ledger.record(attempt({ id: 'unknown', price: null }));
+    s.ledger.record(
+      attempt({ id: 'search', kind: 'web_search', price: { ...price, perRequest: '0.001' } }),
+    );
+    s.ledger.record(attempt({ id: 'other', messageId: 'another-answer' }));
+    const page = s.ledger.mcpCosts('message1');
+    assert.equal(page.count, 4);
+    const cny = page.records.find((r) => r.kind === 'chat' && r.currency === 'CNY')!;
+    assert.equal(
+      cny.amount,
+      (BigInt(estimateCost(one.usage, true, large, 'chat').amount!) * 2n).toString(),
+    );
+    assert.equal(cny.attempts, 2);
+    assert.equal(cny.priced, 2);
+    assert.ok(page.records.some((r) => r.kind === 'web_search' && r.amount === '1000000000'));
+    assert.ok(page.records.some((r) => r.currency === '' && r.known === 0));
+    const revision = page.revision;
+    s.ledger.record({ ...one, version: 2, usage: { inputTokens: 1, outputTokens: 0 } });
+    const updated = s.ledger.mcpCosts('message1');
+    assert.notEqual(updated.revision, revision);
+    assert.equal(
+      updated.records.find((r) => r.kind === 'chat' && r.currency === 'CNY')!.amount,
+      (
+        BigInt(estimateCost(two.usage, true, large, 'chat').amount!) +
+        BigInt(estimateCost({ inputTokens: 1, outputTokens: 0 }, true, large, 'chat').amount!)
+      ).toString(),
+    );
+  } finally {
+    s.db.close();
+  }
+});
 test('accounting chooses manual prices before endpoint defaults, snapshots them once, and leaves lookup failures unpriced', async () => {
   const s = fixture();
   try {

@@ -41,7 +41,7 @@ export class UsageOutbox {
   finish(
     id: string,
     result: Pick<UsageAttempt, 'status' | 'usage' | 'usageIsFinal'> &
-      Partial<Pick<UsageAttempt, 'firstTokenMs' | 'httpStatus'>>,
+      Partial<Pick<UsageAttempt, 'firstTokenMs' | 'httpStatus' | 'usageSources'>>,
   ) {
     const record = this.get(id);
     if (!record || record.status !== 'running') return;

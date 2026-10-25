@@ -68,6 +68,7 @@ export interface SubmitInput {
   imageIds?: string[];
   fileIds?: string[];
   fileSelections?: Record<string, import('../attachments/documents').DocumentRange[]>;
+  materialBindings?: Record<string, import('../attachments/materials').MaterialBinding>;
   retryOf?: string;
   revisionOf?: string;
   parentId?: string | null;

@@ -1,4 +1,4 @@
-import type { DocumentPart } from '../../shared/attachments/documents';
+import type { DocumentPart, LoadedDocumentInput } from '../../shared/attachments/documents';
 import type { ImagePart } from '../../shared/attachments/images';
 import type { Library } from '../library/durable-object';
 import { ProviderError } from './errors';
@@ -31,8 +31,8 @@ export async function loadGenerationDocument(
     conversationId,
     file.attachmentId,
     file.selection?.ranges,
+    true,
   );
   if (!response.ok) throw new ProviderError('文件解析内容不可用，回答未调用模型。');
-  const result = (await response.json()) as { text: string };
-  return result.text;
+  return (await response.json()) as LoadedDocumentInput;
 }

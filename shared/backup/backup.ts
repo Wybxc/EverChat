@@ -17,6 +17,7 @@ import { modelSchema } from '../providers/settings';
 import type { ProviderApiKind } from '../providers/types';
 import { addGenerationUsage, generationSchema } from '../streaming/generation';
 import { publicToolTaskSchema, validReasoningBreaks } from '../web-tools/tasks';
+import { inputEvidenceBackupSchema, type InputEvidenceBackup } from '../streaming/input-receipt';
 
 export const BACKUP_FORMAT = 'everchat-backup';
 export const BACKUP_VERSION = 1 as const;
@@ -54,6 +55,7 @@ export interface BackupMessage {
   generation?: Message['generation'];
   summary?: Message['summary'];
   tools?: Message['tools'];
+  inputEvidence?: InputEvidenceBackup;
   deletedAt?: number | null;
 }
 export interface ConversationBackup {
@@ -89,6 +91,7 @@ export function backupMessage(message: Message): BackupMessage {
           ...addGenerationUsage(message.tools?.round ? message.generation : undefined, {
             usage: message.streamState.usage,
             usageIsFinal: false,
+            usageSources: message.streamState.usageSources,
           }),
         }
       : message.generation;
@@ -222,6 +225,28 @@ export function validateBackup(value: unknown): EverChatBackup {
       rawGeneration === undefined ? undefined : v.safeParse(generationSchema, rawGeneration);
     if (generation && (!generation.success || message.role !== 'assistant'))
       throw new AppError(problem('BACKUP_INVALID'), '备份中的生成元数据无效。');
+    const evidence =
+      message.inputEvidence === undefined
+        ? undefined
+        : v.safeParse(inputEvidenceBackupSchema, message.inputEvidence);
+    if (
+      evidence &&
+      (!evidence.success ||
+        message.role !== 'assistant' ||
+        evidence.output.steps.some(
+          (step, index) =>
+            step.receipt.messageId !== message.id ||
+            step.receipt.round !== index ||
+            step.receipt.previousStepId !==
+              (index ? evidence.output.steps[index - 1].receipt.stepId : null) ||
+            step.items.some(({ item, snapshot }) =>
+              item.content === 'snapshot'
+                ? snapshot === undefined || item.characters !== snapshot.length
+                : snapshot !== undefined,
+            ),
+        ))
+    )
+      throw new AppError(problem('BACKUP_INVALID'), '备份中的输入回执无效。');
     const retained = generation?.success && generation.output.interrupted;
     if (
       retained &&
@@ -243,6 +268,7 @@ export function validateBackup(value: unknown): EverChatBackup {
       ...fields,
       ...(generation?.success ? { generation: generation.output } : {}),
       ...(tools?.success ? { tools: tools.output } : {}),
+      ...(evidence?.success ? { inputEvidence: evidence.output } : {}),
     } as unknown as BackupMessage;
   });
   for (const message of messages)

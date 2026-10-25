@@ -1,6 +1,10 @@
 import { DurableObject } from 'cloudflare:workers';
 import { readMcpStatus } from '../mcp/conversation';
 import { DocumentError, type DocumentPart } from '../../shared/attachments/documents';
+import { McpHistory } from '../mcp/history';
+import { McpError, type McpFailure } from '../mcp/contracts';
+import { discussionSource } from '../mcp/discussion';
+import type { DiscussionCitation } from '../mcp/discussion-contracts';
 import {
   backupMessage,
   type BackupMessage,
@@ -61,6 +65,9 @@ import { GenerationCancelled, ProviderError, providerIssue } from '../generation
 import { GenerationMeter, measuredQuery } from '../generation/metrics';
 import { mergeGenerationDiagnostics } from '../../shared/streaming/diagnostics';
 import { generationTiming } from '../generation/timing';
+import { GenerationProgressStore } from '../generation/progress';
+import { InputReceipts } from '../generation/input-receipts';
+import type { ContextSelection } from '../../shared/conversation/context-budget';
 import type { Env } from '../http/env';
 import { json } from '../http/response';
 import { CompletionOutbox } from '../notifications/outbox';
@@ -88,7 +95,7 @@ import { ConversationTitles, TITLE_JOBS_SCHEMA } from './titles';
 import { createHash } from 'node:crypto';
 import { ImageContextError, type ImagePart } from '../../shared/attachments/images';
 import type { ProviderFailure } from '../../shared/providers/failure';
-import { addGenerationUsage } from '../../shared/streaming/generation';
+import { addGenerationUsage, type GenerationUsage } from '../../shared/streaming/generation';
 import { updateToolTask } from '../../shared/web-tools/reasoning-flow';
 import type { WebToolServiceConfig } from '../../shared/web-tools/service';
 import {
@@ -154,6 +161,8 @@ export class Conversation extends DurableObject<Env> {
   private readonly subscribers: ConversationSubscribers;
   private readonly messages: ConversationMessages;
   private readonly journal: GenerationCheckpoints;
+  private readonly progress: GenerationProgressStore;
+  private readonly inputReceipts: InputReceipts;
   private readonly tools!: ToolTaskJournal;
   private readonly activeTools = new Map<
     string,
@@ -196,6 +205,8 @@ export class Conversation extends DurableObject<Env> {
         () => !this.deletedAt,
       );
     this.journal = new GenerationCheckpoints(this.query.bind(this));
+    this.progress = new GenerationProgressStore(this.query.bind(this));
+    this.inputReceipts = new InputReceipts(this.query.bind(this));
     this.messages = new ConversationMessages(
       this.query.bind(this),
       this.journal,
@@ -305,7 +316,15 @@ export class Conversation extends DurableObject<Env> {
   }
   backup(): BackupMessage[] {
     if (this.deletedAt) return [];
-    return this.messages.all().map(backupMessage);
+    return this.messages.all().map((message) => this.backupWithEvidence(message));
+  }
+  private backupWithEvidence(message: Message): BackupMessage {
+    const saved = backupMessage(message);
+    if (!message.deletedAt && message.role === 'assistant') {
+      const inputEvidence = this.inputReceipts.export(message.id);
+      if (inputEvidence) saved.inputEvidence = inputEvidence;
+    }
+    return saved;
   }
   shareSourceVersion() {
     if (this.deletedAt) return null;
@@ -394,7 +413,9 @@ export class Conversation extends DurableObject<Env> {
     }
     // Read settings and the durable prefix together; never copy browser-only previews or start a generation.
     return {
-      messages: messages.map((message) => backupMessage(this.messages.materialize(message))),
+      messages: messages.map((message) =>
+        this.backupWithEvidence(this.messages.materialize(message)),
+      ),
       settings: this.messages.settings(),
     };
   }
@@ -434,13 +455,14 @@ export class Conversation extends DurableObject<Env> {
       return { error: '目标对话已有消息。', issue: problem('INVALID_REQUEST'), status: 409 };
     const plan = planConversationRestore(backup);
     if ('error' in plan) return plan;
-    const { messages, settings, batches } = plan;
+    const { messages, settings, batches, ids, evidence } = plan;
     const changes = this.ctx.storage.transactionSync(() => {
       for (const message of messages) {
         this.messages.insert(message);
         if (message.deletedAt)
           this.query('INSERT INTO message_deletions VALUES (?, ?)', message.id, message.deletedAt);
       }
+      for (const item of evidence) this.inputReceipts.restore(item.messageId, item.input, ids);
       this.messages.writeSettings(settings);
       return batches.map((batch) => this.messages.record(batch, conversationId, settings));
     });
@@ -722,6 +744,8 @@ export class Conversation extends DurableObject<Env> {
         this.query('DELETE FROM message_generations WHERE messageId = ?', message.id);
         this.query('DELETE FROM message_images WHERE messageId = ?', message.id);
         this.query('DELETE FROM message_files WHERE messageId = ?', message.id);
+        this.progress.erase(message.id);
+        this.inputReceipts.erase(message.id);
         const tool = this.toolRequest(message.id);
         if (tool) {
           this.query(
@@ -789,9 +813,91 @@ export class Conversation extends DurableObject<Env> {
   mcpStatus(assistantId: string) {
     return this.deletedAt ? null : readMcpStatus(this.query.bind(this), assistantId);
   }
-  mcpPage(assistantId: string, channel: 'content' | 'reasoning', offset: number) {
+  mcpDiscussionSource(
+    messageId: string,
+    citation: DiscussionCitation,
+    target: boolean,
+  ): { value: ReturnType<typeof discussionSource> } | { error: McpFailure } | null {
+    if (this.deletedAt) return null;
+    try {
+      return { value: discussionSource(this.query.bind(this), messageId, citation, target) };
+    } catch (error) {
+      if (error instanceof McpError) return { error: error.detail };
+      throw error;
+    }
+  }
+  mcpBranches(after: number) {
+    return this.deletedAt ? null : new McpHistory(this.query.bind(this)).branches(after);
+  }
+  mcpHistory(conversationId: string, headId: string, options: Parameters<McpHistory['read']>[2]) {
+    if (this.deletedAt) return null;
+    try {
+      return { value: new McpHistory(this.query.bind(this)).read(conversationId, headId, options) };
+    } catch (error) {
+      if (error instanceof McpError) return { error: error.detail };
+      throw error;
+    }
+  }
+  mcpContextPage(assistantId: string, round: number, offset: number) {
     if (this.deletedAt || !readMcpStatus(this.query.bind(this), assistantId)) return null;
-    return this.journal.page(assistantId, channel, offset);
+    return this.inputReceipts.page(assistantId, round, offset);
+  }
+  mcpContextExclusions(assistantId: string, offset: number) {
+    if (this.deletedAt || !readMcpStatus(this.query.bind(this), assistantId)) return null;
+    return this.inputReceipts.exclusions(assistantId, offset);
+  }
+  mcpContextMetadata(assistantId: string, round: number, ordinal: number, offset: number) {
+    if (this.deletedAt || !readMcpStatus(this.query.bind(this), assistantId)) return null;
+    return this.inputReceipts.metadata(assistantId, round, ordinal, offset);
+  }
+  mcpContextText(
+    assistantId: string,
+    round: number,
+    ordinal: number,
+    offset: number,
+    allowSystem = false,
+  ) {
+    if (this.deletedAt || !readMcpStatus(this.query.bind(this), assistantId)) return null;
+    return this.inputReceipts.text(
+      assistantId,
+      round,
+      ordinal,
+      offset,
+      (id, at, limit) => {
+        if (
+          !this.query(
+            `SELECT 1 FROM messages WHERE id=? AND NOT EXISTS (SELECT 1 FROM message_deletions WHERE id=?)`,
+            id,
+            id,
+          ).toArray().length
+        )
+          return null;
+        const page = this.journal.page(id, 'content', at, limit);
+        return page.error ? null : page;
+      },
+      allowSystem,
+    );
+  }
+  mcpPage(
+    assistantId: string,
+    channel: 'content' | 'reasoning',
+    offset: number,
+    expectedEpoch?: number,
+  ) {
+    if (this.deletedAt) return null;
+    const state = readMcpStatus(this.query.bind(this), assistantId);
+    if (!state) return null;
+    const epoch = state.progress?.[channel].epoch ?? 0;
+    if (expectedEpoch !== undefined && expectedEpoch !== epoch)
+      return { error: 'output_changed' as const };
+    const page = this.journal.page(assistantId, channel, offset);
+    if (page.error) return { error: page.error };
+    return {
+      ...page,
+      epoch,
+      persistedAt: state.progress?.persistedAt ?? null,
+      revision: state.progress?.revision ?? null,
+    };
   }
   async submit(
     conversationId: string,
@@ -819,6 +925,7 @@ export class Conversation extends DurableObject<Env> {
         input.imageIds ?? null,
         input.fileIds ?? null,
         input.fileSelections ?? null,
+        input.materialBindings ?? null,
         input.tools ?? null,
       ]);
       const duplicate = () => {
@@ -982,7 +1089,11 @@ export class Conversation extends DurableObject<Env> {
             )
           : { value: [] as DocumentPart[] };
       if ('error' in documents) return documents;
-      const files = documents.value;
+      const files = documents.value.map((file) =>
+        input.materialBindings?.[file.attachmentId]
+          ? { ...file, material: input.materialBindings[file.attachmentId] }
+          : file,
+      );
       if ((!content && !images.length && !files.length) || !messageTextFits(content))
         return {
           error: '请输入消息，正文须符合数据库单行存储大小。',
@@ -1001,7 +1112,9 @@ export class Conversation extends DurableObject<Env> {
         };
       }
       const runId = crypto.randomUUID();
+      const userId = parent?.id ?? crypto.randomUUID();
       let context: ChatInput[];
+      let contextSelection: ContextSelection;
       let contextEstimate;
       let automatic: ReturnType<typeof summaryGeneration> | undefined;
       try {
@@ -1013,8 +1126,10 @@ export class Conversation extends DurableObject<Env> {
           settings,
           images,
           files,
+          { kind: 'message', messageId: userId },
         );
         context = built.messages;
+        contextSelection = built.selection;
         contextEstimate = built.estimate;
         if (built.automatic) {
           const summaryConfig = settings.autoCompression.model
@@ -1047,7 +1162,7 @@ export class Conversation extends DurableObject<Env> {
       ]);
       if (pinned) return pinned;
       const user: Message = parent ?? {
-        id: crypto.randomUUID(),
+        id: userId,
         role: 'user',
         parts: [...messageParts(content), ...images, ...files],
         status: 'completed',
@@ -1088,6 +1203,8 @@ export class Conversation extends DurableObject<Env> {
       if (!parent) this.messages.insert(user);
       const summary = automatic ? this.queueSummary(conversationId, automatic, true) : undefined;
       this.messages.insert(assistant);
+      if (!automatic) this.inputReceipts.select(assistant.id, contextSelection);
+      if (summary) this.progress.phase(assistant.id, 'preparing');
       if (input.tools)
         this.query(
           'INSERT INTO message_web_tools VALUES (?, ?, ?, ?, ?)',
@@ -1274,6 +1391,7 @@ export class Conversation extends DurableObject<Env> {
     );
     if (payload === request.payload) return null;
     this.query('UPDATE message_web_tools SET payload = ? WHERE rootId = ?', payload, rootId);
+    this.progress.advance(request.messageId);
     return request;
   }
   private initializeToolTasks() {
@@ -1493,6 +1611,7 @@ export class Conversation extends DurableObject<Env> {
             STREAM_VERSION,
             state.messageId,
           );
+          this.progress.phase(state.messageId, 'queued');
         }
         const current = this.tools.state(taskId);
         if (round !== current.round || current.phase !== 'queued') return null;
@@ -1906,8 +2025,19 @@ export class Conversation extends DurableObject<Env> {
               exchanges: this.tools.exchanges(toolModel.rootId, toolModel.round, claim.config),
             }
           : undefined,
-        async () => {
+        async (evidence) => {
           const run = this.run(runId)!;
+          if (this.deletedAt || active.cancelled) throw new GenerationCancelled();
+          this.ctx.storage.transactionSync(() => {
+            this.inputReceipts.submit(
+              runId,
+              run.assistantId,
+              toolModel?.round ?? 0,
+              claim.config!,
+              evidence,
+              this.messages.message(run.assistantId)?.generation?.context,
+            );
+          });
           await this.accounting.start(
             {
               id: `model:${runId}`,
@@ -1921,17 +2051,24 @@ export class Conversation extends DurableObject<Env> {
             },
             modelIdentity(claim.config!),
           );
-          if (!this.deletedAt)
+          if (this.deletedAt || active.cancelled) throw new GenerationCancelled();
+          abort.signal.throwIfAborted();
+          this.ctx.storage.transactionSync(() => {
+            this.inputReceipts.attempt(runId);
             this.query(
               'UPDATE generation_timings SET providerStartedAt=? WHERE runId=?',
               Date.now(),
               runId,
             );
+            this.progress.phase(claim.assistantId!, 'waiting_provider', true);
+          });
+          await this.ctx.storage.sync();
           this.ctx.waitUntil(this.accounting.deliver().finally(() => this.scheduleAlarm()));
         },
         observeOutput,
       );
       await consumeModelStream(body, active, (bytes) => active.buffer.add(bytes));
+      this.progress.phase(claim.assistantId!, 'finalizing');
       await active.buffer.flush();
       const turn = toolModel && !active.cancelled ? body.toolTurn : undefined;
       this.finish(runId, active.cancelled ? 'cancelled' : 'completed', null, turn);
@@ -2000,6 +2137,7 @@ export class Conversation extends DurableObject<Env> {
         Date.now(),
         runId,
       );
+      this.progress.phase(message.id, 'preparing');
       return this.messages.record([this.messages.message(message.id)!]);
     });
     if (!change) return null;
@@ -2110,7 +2248,11 @@ export class Conversation extends DurableObject<Env> {
     }
     if (this.env.GENERATION_METRICS === '1' && !this.meter)
       this.meter = new GenerationMeter(runId, Date.now, 'since-last-resume', 'do-v1');
-    let roundUsage = { usage: message.streamState?.usage ?? {}, usageIsFinal: false };
+    let roundUsage: GenerationUsage = {
+      usage: message.streamState?.usage ?? {},
+      usageIsFinal: false,
+      usageSources: message.streamState?.usageSources,
+    };
     if (message.streamState) {
       const state = message.streamState;
       const parser = new ProviderStream(
@@ -2149,6 +2291,7 @@ export class Conversation extends DurableObject<Env> {
           message.streamState.diagnostics,
         ),
         usage: message.streamState.usage,
+        usageSources: message.streamState.usageSources,
         usageIsFinal:
           message.streamState.usageIsFinal &&
           message.streamState.done &&
@@ -2158,13 +2301,15 @@ export class Conversation extends DurableObject<Env> {
       roundUsage = {
         usage: toolTurn?.usage ?? message.streamState.usage,
         usageIsFinal: toolTurn?.usageIsFinal ?? Boolean(message.generation.usageIsFinal),
+        usageSources: message.streamState.usageSources,
       };
-      if (toolModel) {
+      {
         message.generation = {
           ...message.generation,
-          ...addGenerationUsage(toolModel.round ? prior : undefined, {
+          ...addGenerationUsage(toolModel?.round ? prior : undefined, {
             usage: toolTurn?.usage ?? message.streamState.usage,
             usageIsFinal: toolTurn?.usageIsFinal ?? message.generation.usageIsFinal,
+            usageSources: message.streamState.usageSources,
           }),
         };
       }
@@ -2303,6 +2448,7 @@ export class Conversation extends DurableObject<Env> {
           "UPDATE runs SET config = NULL, context = '[]' WHERE assistantId = ?",
           message.id,
         );
+      this.progress.phase(message.id, finalStatus === 'running' ? 'waiting_tools' : null);
       const terminal = this.messages.record(
         [this.messages.message(message.id)!, ...this.resolveDependentAnswers(runId, finalStatus)],
         run.conversationId,
@@ -2395,9 +2541,11 @@ export class Conversation extends DurableObject<Env> {
             summaryPrefix(prepared.summary),
             images,
             files,
+            { kind: 'message', messageId: answer.parentId! },
           );
           assertContextFits(built.estimate);
           assertStoredContextFits(built.messages, JSON.parse(run.config) as ProviderConfig);
+          this.inputReceipts.select(answer.id, built.selection);
           // Count limits can intentionally omit raw history; token pressure after compression must be explicit.
           if (
             built.estimate.retainedMessages <
@@ -2435,6 +2583,7 @@ export class Conversation extends DurableObject<Env> {
         answer.id,
       );
       this.query('DELETE FROM run_dependencies WHERE runId = ?', run.id);
+      this.progress.phase(answer.id, status === 'queued' ? 'queued' : null);
       updated.push(this.messages.rawMessage(answer.id)!);
     }
     return updated;

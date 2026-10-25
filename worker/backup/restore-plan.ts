@@ -5,11 +5,16 @@ import type { ConversationSettings, Message } from '../../shared/conversation/ty
 import type { ErrorIssue } from '../../shared/errors/descriptor';
 import { problem } from '../../shared/errors/descriptor';
 import { payloadBytes } from '../../shared/streaming/batches';
+import type { InputEvidenceBackup } from '../../shared/streaming/input-receipt';
 
-export function planConversationRestore(
-  backup: ConversationBackup,
-):
-  | { messages: Message[]; settings: ConversationSettings; batches: Message[][] }
+export function planConversationRestore(backup: ConversationBackup):
+  | {
+      messages: Message[];
+      settings: ConversationSettings;
+      batches: Message[][];
+      ids: Map<string, string>;
+      evidence: { messageId: string; input: InputEvidenceBackup }[];
+    }
   | { error: string; issue?: ErrorIssue; status: number } {
   const ids = new Map(backup.messages.map((message) => [message.id, crypto.randomUUID()]));
   const copiedGeneration = (source: BackupMessage) => {
@@ -69,5 +74,10 @@ export function planConversationRestore(
     bytes += size;
   }
   if (batch.length || !batches.length) batches.push(batch);
-  return { messages, settings, batches };
+  const evidence = backup.messages.flatMap((message) =>
+    !message.deletedAt && message.inputEvidence
+      ? [{ messageId: ids.get(message.id)!, input: message.inputEvidence }]
+      : [],
+  );
+  return { messages, settings, batches, ids, evidence };
 }

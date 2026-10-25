@@ -108,14 +108,17 @@ export function installMockUpstream() {
       );
     }
     const modelId = requestBody.model ?? /\/models\/([^/:]+):/.exec(url.pathname)?.[1];
-    if (modelId === 'mcp-long-fixture') {
-      const text = 'START\n' + '0123456789🙂正文\n'.repeat(2400) + '\nEND';
+    if (modelId === 'mcp-long-fixture' || modelId === 'mcp-length-fixture') {
+      const text =
+        modelId === 'mcp-long-fixture'
+          ? 'START\n' + '0123456789🙂正文\n'.repeat(2400) + '\nEND'
+          : 'Saved incomplete argument';
       const reasoning = '思考🧠'.repeat(3000);
       const frame = (delta: object, finish_reason: string | null) =>
         `data: ${JSON.stringify({ choices: [{ index: 0, delta, finish_reason }] })}\n\n`;
       return new Response(
         frame({ content: text, reasoning_content: reasoning }, null) +
-          frame({}, 'stop') +
+          frame({}, modelId === 'mcp-length-fixture' ? 'length' : 'stop') +
           'data: [DONE]\n\n',
         { headers: { 'Content-Type': 'text/event-stream' } },
       );

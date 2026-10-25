@@ -1,4 +1,5 @@
 import { sha256, type ArchiveManifest } from '../../shared/backup/archive';
+import { remapInputAttachments } from '../../shared/streaming/input-receipt';
 import { messageAttachments, messageFiles, messageImages } from '../../shared/conversation/content';
 import { issueOf, problem, type ErrorIssue } from '../../shared/errors/descriptor';
 import { AttachmentStore } from '../attachments/store';
@@ -297,6 +298,9 @@ export class ArchiveRestorer {
       const mapped = new Map(this.imports.files(id).map((file) => [file.sourceId, file.id]));
       const messages = manifest.backup.conversation.messages.map((message) => ({
         ...message,
+        ...(message.inputEvidence
+          ? { inputEvidence: remapInputAttachments(message.inputEvidence, mapped) }
+          : {}),
         parts: message.parts.map((part) =>
           part.type === 'image' || part.type === 'file'
             ? { ...part, attachmentId: mapped.get(part.attachmentId)! }
@@ -322,6 +326,11 @@ export class ArchiveRestorer {
             );
         }
       }
+      await this.attachments.documents.restoreInputEvidence(
+        id,
+        messages.map((m) => m.inputEvidence),
+      );
+      this.checkImport(id, 'finalizing');
       if (messages.some((message) => messageAttachments(message).length)) {
         await this.attachments.pinAttachments(
           id,

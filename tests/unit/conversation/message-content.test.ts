@@ -79,8 +79,8 @@ test('provider context uses answer parts and never replays private reasoning as 
     parts: messageParts('answer', 'private reasoning'),
   };
   assert.deepEqual(contextHistory([user, answer], answer.id), [
-    { role: 'user', content: 'question' },
-    { role: 'assistant', content: 'answer' },
+    { role: 'user', content: 'question', source: { kind: 'message', messageId: 'user' } },
+    { role: 'assistant', content: 'answer', source: { kind: 'message', messageId: 'answer' } },
   ]);
 });
 

@@ -2225,7 +2225,7 @@ function AppContent({ initialSettings }: AppProps) {
                     <input
                       ref={fileInput}
                       type="file"
-                      accept=".pdf,.txt,.md,.csv,.js,.jsx,.ts,.tsx,.py,.rs,.go,.c,.cpp,.h,.css,.json,.yaml,.yml,.toml,.sh"
+                      accept=".pdf,.txt,.typ,.md,.csv,.js,.jsx,.ts,.tsx,.py,.rs,.go,.c,.cpp,.h,.css,.json,.yaml,.yml,.toml,.sh"
                       multiple
                       className="hidden"
                       aria-label={t(($) => $.chooseChatFiles)}

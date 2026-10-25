@@ -19,6 +19,7 @@ import type { SqlQuery } from '../generation/metrics';
 import type { ConversationActivityJournal } from './activity';
 import { ConversationState } from './state';
 import { GenerationCheckpoints } from '../streaming/checkpoints';
+import { GenerationProgressStore } from '../generation/progress';
 
 export type Row = Omit<Message, 'parts' | 'waitingForSummary'> & {
   content: string;
@@ -282,6 +283,8 @@ export class ConversationMessages {
       message.streamVersion ?? null,
       message.durableOffset ?? 0,
     );
+    if (message.role === 'assistant' && isActive(message) && !message.deletedAt)
+      new GenerationProgressStore(this.query).begin(message.id, message.createdAt);
     if (message.role === 'assistant' && !message.deletedAt && message.generation)
       this.query(
         'INSERT INTO message_generations VALUES (?, ?)',

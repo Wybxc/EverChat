@@ -90,7 +90,7 @@ export function providerEvents(
           if (raw.error || raw.type === 'error' || raw.type === 'response.failed' || response.error)
             throw diagnostics(raw, 'stream');
           if (usage.observe(raw, config.provider))
-            yield emit({ type: 'usage', usage: usage.usage });
+            yield emit({ type: 'usage', usage: usage.usage, usageSources: usage.sources });
           if (config.provider === 'openai-responses') {
             const thought = thoughts.observe(raw);
             if (thought) yield emit(thought);
@@ -160,6 +160,7 @@ export function providerEvents(
         message,
         usage: usage.usage,
         usageIsFinal: usage.final && accepted,
+        usageSources: usage.sources,
       });
       if (!accepted)
         throw diagnostics(

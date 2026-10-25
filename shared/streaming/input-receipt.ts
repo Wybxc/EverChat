@@ -1,0 +1,130 @@
+import * as v from 'valibot';
+
+const count = v.pipe(v.number(), v.safeInteger(), v.minValue(0));
+const hash = v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/));
+export const inputReceiptItemSchema = v.strictObject({
+  kind: v.picklist(['message', 'summary', 'system', 'generated', 'document', 'image', 'tool']),
+  role: v.picklist(['system', 'user', 'assistant', 'tool']),
+  sourceId: v.nullable(v.string()),
+  sha256: hash,
+  characters: v.nullable(count),
+  bytes: v.nullable(count),
+  content: v.picklist(['reference', 'snapshot', 'document_snapshot', 'redacted', 'metadata_only']),
+  scope: v.picklist(['logical_input', 'public_projection']),
+  transform: v.optional(v.strictObject({ prefix: v.string(), suffix: v.string() })),
+  attachment: v.optional(v.record(v.string(), v.unknown())),
+  details: v.optional(v.literal('metadata_view')),
+  documentSnapshot: v.optional(
+    v.strictObject({
+      version: v.literal(1),
+      sha256: hash,
+      bytes: count,
+      characters: count,
+    }),
+  ),
+});
+export type InputReceiptItem = v.InferOutput<typeof inputReceiptItemSchema>;
+export const inputReceiptSchema = v.strictObject({
+  stepId: v.string(),
+  messageId: v.string(),
+  round: count,
+  previousStepId: v.nullable(v.string()),
+  assembledAt: count,
+  submissionAttemptedAt: v.nullable(count),
+  requestSha256: v.nullable(hash),
+  requestBytes: v.nullable(count),
+  protocol: v.picklist(['openai-chat', 'openai-responses', 'anthropic', 'gemini']),
+  model: v.string(),
+  estimatedInputTokens: v.nullable(count),
+  estimateMethod: v.nullable(v.literal('approximate-v1')),
+  maxOutputTokens: v.nullable(count),
+  temperature: v.nullable(v.number()),
+  topP: v.nullable(v.number()),
+  reasoningEffort: v.nullable(v.string()),
+  parameterEvidence: v.literal('application_requested'),
+  tools: v.array(v.string()),
+  toolDefinitionsSha256: v.nullable(hash),
+  includedItems: count,
+  omittedMessages: count,
+  summarizedMessages: count,
+  originStepId: v.nullable(v.string()),
+});
+export type InputReceipt = v.InferOutput<typeof inputReceiptSchema>;
+export const contextSummarySchema = v.strictObject({
+  state: v.picklist(['pending', 'assembled', 'submission_attempted', 'unavailable']),
+  receiptRef: v.nullable(v.string()),
+  steps: count,
+  estimatedInputTokens: v.nullable(count),
+  estimateMethod: v.nullable(v.literal('approximate-v1')),
+  omittedMessages: v.nullable(count),
+  summarizedMessages: v.nullable(count),
+  includedItems: v.nullable(count),
+  providerReceipt: v.literal('not_proven'),
+});
+export type ContextSummary = v.InferOutput<typeof contextSummarySchema>;
+export const inputExclusionSchema = v.strictObject({
+  sourceId: v.nullable(v.string()),
+  reason: v.string(),
+  file: v.optional(
+    v.strictObject({
+      attachmentId: v.string(),
+      documentId: v.nullable(v.string()),
+      versionId: v.nullable(v.string()),
+      sha256: hash,
+      textSha256: hash,
+    }),
+  ),
+});
+export type InputExclusion = v.InferOutput<typeof inputExclusionSchema>;
+export const inputEvidenceBackupSchema = v.strictObject({
+  selection: v.array(inputExclusionSchema),
+  steps: v.array(
+    v.strictObject({
+      receipt: inputReceiptSchema,
+      items: v.array(
+        v.strictObject({ item: inputReceiptItemSchema, snapshot: v.optional(v.string()) }),
+      ),
+    }),
+  ),
+});
+export type InputEvidenceBackup = v.InferOutput<typeof inputEvidenceBackupSchema>;
+
+/** Explicit copy/import remaps file identities along with message parts. */
+export function remapInputAttachments(
+  evidence: InputEvidenceBackup | undefined,
+  ids: Map<string, string>,
+) {
+  if (!evidence) return undefined;
+  return {
+    ...evidence,
+    selection: evidence.selection.map((entry) => ({
+      ...entry,
+      ...(entry.file
+        ? {
+            file: {
+              ...entry.file,
+              attachmentId: ids.get(entry.file.attachmentId) ?? entry.file.attachmentId,
+            },
+          }
+        : {}),
+    })),
+    steps: evidence.steps.map((step) => ({
+      ...step,
+      items: step.items.map(({ item, ...rest }) => ({
+        ...rest,
+        item: {
+          ...item,
+          ...(item.attachment && typeof item.attachment.attachmentId === 'string'
+            ? {
+                attachment: {
+                  ...item.attachment,
+                  attachmentId:
+                    ids.get(item.attachment.attachmentId) ?? item.attachment.attachmentId,
+                },
+              }
+            : {}),
+        },
+      })),
+    })),
+  };
+}

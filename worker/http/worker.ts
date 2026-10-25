@@ -2,6 +2,7 @@ import { authReturnTo } from '../../shared/auth/navigation';
 import { problem } from '../../shared/errors/descriptor';
 import { publicSharing } from '../sharing/public';
 import { serveMcp } from '../mcp/handler';
+import { serveMcpAttachment } from '../mcp/attachment-http';
 import { createApi } from './app';
 import { authenticateAccess, type Authenticator } from './auth';
 import type { Env } from './env';
@@ -19,6 +20,8 @@ export function createWorker(
     async fetch(request: Request, env: Env, context: ExecutionContext): Promise<Response> {
       const url = new URL(request.url);
       if (url.pathname === '/mcp' && url.origin === env.APP_ORIGIN) return serveMcp(request, env);
+      if (url.pathname.startsWith('/mcp/attachments/') && url.origin === env.APP_ORIGIN)
+        return serveMcpAttachment(request, env);
       if (/^\/mcp(?:\/|$)/.test(url.pathname)) return json({ error: 'Not found.' }, 404);
       if (/^\/public(?:\/|$)/.test(url.pathname)) return publicSharing(request, env);
       if (url.pathname === '/auth/resume') {

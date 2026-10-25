@@ -4,6 +4,18 @@ import {
   MAX_SYSTEM_PROMPT_LENGTH,
   messageTextFits,
 } from '../../shared/conversation/limits';
+import { generationProgressSchema } from '../../shared/streaming/progress';
+import {
+  contextSummarySchema,
+  inputReceiptSchema,
+  inputReceiptItemSchema,
+  inputExclusionSchema,
+} from '../../shared/streaming/input-receipt';
+import { USAGE_FIELDS, usageSourceSchema } from '../../shared/usage/evidence';
+import type { StreamUsage } from '../../shared/streaming/provider-stream';
+import { generationDiagnosticsSchema } from '../../shared/streaming/diagnostics';
+import { selectedAttachmentSchema } from './attachment-contracts';
+import { discussionSchema } from './discussion-contracts';
 
 const uuid = v.pipe(v.string(), v.uuid());
 const handle = v.pipe(v.string(), v.minLength(1), v.maxLength(2048));
@@ -14,6 +26,15 @@ export const MCP_TOOL_NAMES = [
   'everchat_chat',
   'everchat_run_get',
   'everchat_run_cancel',
+  'everchat_run_context_get',
+  'everchat_run_usage_get',
+  'everchat_conversations_list',
+  'everchat_conversation_read',
+  'everchat_conversation_export',
+  'everchat_attachments_prepare',
+  'everchat_attachments_put',
+  'everchat_attachments_get',
+  'everchat_attachments_delete',
 ] as const;
 export type McpToolName = (typeof MCP_TOOL_NAMES)[number];
 export const helpInputSchema = v.strictObject({ tool: v.optional(v.picklist(MCP_TOOL_NAMES)) });
@@ -36,34 +57,48 @@ export const helpResultSchema = v.strictObject({
   ),
 });
 export type HelpResult = v.InferOutput<typeof helpResultSchema>;
-export const chatSchema = v.strictObject({
-  requestId: uuid,
-  prompt: v.pipe(
-    v.string(),
-    v.maxLength(MAX_MESSAGE_TEXT_BYTES),
-    v.check((text) => Boolean(text.trim()) && messageTextFits(text)),
+export const chatSchema = v.pipe(
+  v.strictObject({
+    requestId: uuid,
+    prompt: v.pipe(
+      v.string(),
+      v.maxLength(MAX_MESSAGE_TEXT_BYTES),
+      v.check((text) => messageTextFits(text)),
+    ),
+    modelRef: v.optional(handle),
+    continuation: v.optional(handle),
+    uploadRef: v.optional(handle),
+    attachments: v.optional(v.array(selectedAttachmentSchema)),
+    discussion: v.optional(discussionSchema),
+    presetId: v.optional(uuid),
+    systemPrompt: v.optional(v.pipe(v.string(), v.maxLength(MAX_SYSTEM_PROMPT_LENGTH))),
+    reasoningEffort: v.optional(
+      v.picklist(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']),
+    ),
+    temperature: v.optional(v.pipe(v.number(), v.finite(), v.minValue(0), v.maxValue(2))),
+    topP: v.optional(v.pipe(v.number(), v.finite(), v.minValue(0), v.maxValue(1))),
+    contextBudget: v.optional(
+      v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(Number.MAX_SAFE_INTEGER)),
+    ),
+    maxOutputTokens: v.optional(
+      v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(Number.MAX_SAFE_INTEGER)),
+    ),
+    recentMessages: v.optional(
+      v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(Number.MAX_SAFE_INTEGER)),
+    ),
+    webSearch: v.optional(v.boolean()),
+    waitMs: wait,
+  }),
+  v.check(
+    (input) => Boolean(input.prompt.trim()) || Boolean(input.attachments?.length),
+    'Provide a prompt or at least one file.',
   ),
-  modelRef: v.optional(handle),
-  continuation: v.optional(handle),
-  presetId: v.optional(uuid),
-  systemPrompt: v.optional(v.pipe(v.string(), v.maxLength(MAX_SYSTEM_PROMPT_LENGTH))),
-  reasoningEffort: v.optional(
-    v.picklist(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']),
+  v.check(
+    (input) =>
+      !input.discussion || (!input.continuation && !input.uploadRef && !input.attachments?.length),
+    'discussion starts a fresh conversation and cannot be combined with continuation or uploadRef/attachments.',
   ),
-  temperature: v.optional(v.pipe(v.number(), v.finite(), v.minValue(0), v.maxValue(2))),
-  topP: v.optional(v.pipe(v.number(), v.finite(), v.minValue(0), v.maxValue(1))),
-  contextBudget: v.optional(
-    v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(Number.MAX_SAFE_INTEGER)),
-  ),
-  maxOutputTokens: v.optional(
-    v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(Number.MAX_SAFE_INTEGER)),
-  ),
-  recentMessages: v.optional(
-    v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(Number.MAX_SAFE_INTEGER)),
-  ),
-  webSearch: v.optional(v.boolean()),
-  waitMs: wait,
-});
+);
 export type ChatArguments = v.InferOutput<typeof chatSchema>;
 export const getSchema = v.strictObject({
   runRef: handle,
@@ -73,6 +108,131 @@ export const getSchema = v.strictObject({
   reasoningCursor: v.optional(handle),
 });
 export type GetArguments = v.InferOutput<typeof getSchema>;
+const offset = v.pipe(v.number(), v.safeInteger(), v.minValue(0));
+export const contextGetSchema = v.strictObject({
+  runRef: handle,
+  view: v.optional(v.picklist(['manifest', 'text', 'metadata', 'exclusions']), 'manifest'),
+  step: v.optional(offset, 0),
+  item: v.optional(offset),
+  cursor: v.optional(handle),
+});
+export type ContextGetArguments = v.InferOutput<typeof contextGetSchema>;
+export const usageGetSchema = v.strictObject({
+  runRef: handle,
+  cursor: v.optional(handle),
+  view: v.optional(v.picklist(['attempts', 'costs']), 'attempts'),
+});
+export type UsageGetArguments = v.InferOutput<typeof usageGetSchema>;
+export const conversationListSchema = v.strictObject({ cursor: v.optional(handle) });
+export const conversationReadSchema = v.strictObject({
+  conversationRef: handle,
+  headId: v.optional(uuid),
+  view: v.optional(v.picklist(['branch', 'branches']), 'branch'),
+  cursor: v.optional(handle),
+  includeReasoning: v.optional(v.boolean(), false),
+  includeTools: v.optional(v.boolean(), false),
+  includeActive: v.optional(v.boolean(), false),
+  fromRound: v.optional(v.pipe(v.number(), v.safeInteger(), v.minValue(1))),
+  toRound: v.optional(v.pipe(v.number(), v.safeInteger(), v.minValue(1))),
+});
+export type ConversationReadArguments = v.InferOutput<typeof conversationReadSchema>;
+const historyRecordSchema = v.variant('kind', [
+  v.strictObject({
+    kind: v.literal('message'),
+    id: uuid,
+    ref: v.string(),
+    parentId: v.nullable(uuid),
+    revisionOf: v.nullable(uuid),
+    role: v.string(),
+    status: v.string(),
+    deleted: v.boolean(),
+    createdAt: v.number(),
+    model: v.nullable(v.string()),
+    modelName: v.nullable(v.string()),
+    providerId: v.nullable(v.string()),
+    round: v.number(),
+    revision: v.number(),
+    summary: v.boolean(),
+    inputReceiptSteps: v.number(),
+  }),
+  v.strictObject({
+    kind: v.literal('text'),
+    messageId: uuid,
+    channel: v.picklist(['content', 'reasoning', 'tools']),
+    offset: v.number(),
+    text: v.string(),
+    final: v.boolean(),
+  }),
+  v.strictObject({
+    kind: v.literal('attachment'),
+    messageId: uuid,
+    index: v.number(),
+    offset: v.number(),
+    json: v.string(),
+    final: v.boolean(),
+  }),
+  v.strictObject({
+    kind: v.literal('summary'),
+    messageId: uuid,
+    offset: v.number(),
+    sourceIds: v.array(uuid),
+    throughId: uuid,
+    final: v.boolean(),
+  }),
+]);
+export const conversationListResultSchema = v.strictObject({
+  conversations: v.array(
+    v.strictObject({
+      ref: v.string(),
+      id: uuid,
+      title: v.string(),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    }),
+  ),
+  hasMore: v.boolean(),
+  nextCursor: v.nullable(v.string()),
+});
+export const conversationReadResultSchema = v.strictObject({
+  conversationRef: v.string(),
+  headId: v.nullable(uuid),
+  revision: v.nullable(v.number()),
+  epoch: v.nullable(v.string()),
+  partial: v.boolean(),
+  heads: v.array(
+    v.strictObject({ id: uuid, createdAt: v.number(), status: v.string(), role: v.string() }),
+  ),
+  records: v.array(historyRecordSchema),
+  hasMore: v.boolean(),
+  nextCursor: v.nullable(v.string()),
+});
+export const conversationExportResultSchema = v.strictObject({
+  conversationRef: v.string(),
+  headId: uuid,
+  revision: v.number(),
+  epoch: v.string(),
+  partial: v.boolean(),
+  format: v.literal('markdown'),
+  text: v.string(),
+  hasMore: v.boolean(),
+  nextCursor: v.nullable(v.string()),
+});
+export const contextResultSchema = v.strictObject({
+  context: contextSummarySchema,
+  receipt: v.nullable(inputReceiptSchema),
+  items: v.array(v.strictObject({ ordinal: offset, ...inputReceiptItemSchema.entries })),
+  exclusions: v.array(v.strictObject({ ordinal: offset, ...inputExclusionSchema.entries })),
+  text: v.nullable(
+    v.strictObject({
+      state: v.picklist(['available', 'content_unavailable', 'redacted', 'metadata_only']),
+      text: v.string(),
+    }),
+  ),
+  textUnit: v.nullable(v.picklist(['utf16', 'unicode_codepoints', 'utf8_bytes'])),
+  hasMore: v.boolean(),
+  nextCursor: v.nullable(v.string()),
+});
+export type ContextResult = v.InferOutput<typeof contextResultSchema>;
 export const cancelSchema = v.strictObject({ runRef: handle });
 export const emptySchema = v.strictObject({});
 export const errorSchema = v.strictObject({
@@ -102,7 +262,109 @@ const pageSchema = v.strictObject({
   text: v.string(),
   hasMore: v.boolean(),
   nextCursor: v.optional(v.string()),
+  resumeCursor: v.nullable(v.string()),
+  contentFinal: v.boolean(),
+  consistency: v.literal('durable'),
+  persistedAt: v.nullable(v.number()),
+  revision: v.nullable(v.number()),
 });
+const progressSchema = v.strictObject({
+  ...generationProgressSchema.entries,
+  toolRound: v.nullable(v.number()),
+  dependency: v.nullable(
+    v.strictObject({
+      type: v.literal('summary'),
+      messageId: v.string(),
+      phase: generationProgressSchema.entries.phase,
+      lastProgressAt: v.nullable(v.number()),
+      revision: v.nullable(v.number()),
+    }),
+  ),
+  observedAt: v.number(),
+  elapsedMs: v.number(),
+  phaseElapsedMs: v.number(),
+  stale: v.boolean(),
+  staleAfterMs: v.number(),
+});
+const completionSchema = v.strictObject({
+  state: v.picklist(['complete', 'incomplete', 'unknown']),
+  truncated: v.nullable(v.boolean()),
+  reason: v.nullable(v.string()),
+  rawFinishReason: v.nullable(v.string()),
+  requiresNewGeneration: v.boolean(),
+});
+export type CompletionResult = v.InferOutput<typeof completionSchema>;
+const nullableCount = v.nullable(v.pipe(v.number(), v.safeInteger(), v.minValue(0)));
+const dimensionSchema = v.strictObject({
+  value: nullableCount,
+  source: usageSourceSchema,
+  knownSubtotal: nullableCount,
+  reportedSteps: nullableCount,
+  expectedSteps: nullableCount,
+  derivation: v.nullable(v.string()),
+});
+const mcpUsageSchema = v.strictObject({
+  ...(Object.fromEntries(USAGE_FIELDS.map((field) => [field, nullableCount])) as Record<
+    keyof StreamUsage,
+    typeof nullableCount
+  >),
+  dimensions: v.strictObject(
+    Object.fromEntries(USAGE_FIELDS.map((field) => [field, dimensionSchema])) as Record<
+      keyof StreamUsage,
+      typeof dimensionSchema
+    >,
+  ),
+  isFinal: v.boolean(),
+  finalized: v.boolean(),
+  completeness: v.picklist(['complete', 'partial', 'unknown']),
+  warnings: v.array(v.literal('inconsistent_usage')),
+});
+export const usageResultSchema = v.strictObject({
+  scope: v.literal('answer_model_steps'),
+  accounting: v.picklist(['unavailable', 'pending_accounting', 'ready']),
+  expectedAttempts: nullableCount,
+  observedAttempts: nullableCount,
+  costs: v.array(
+    v.strictObject({
+      kind: v.picklist(['chat', 'web_search', 'read_webpage']),
+      includedInAnswer: v.boolean(),
+      currency: v.nullable(v.string()),
+      amount: v.nullable(v.string()),
+      knownSubtotal: v.nullable(v.string()),
+      state: v.picklist(['priced', 'partial', 'unpriced']),
+      attempts: v.number(),
+      pricedAttempts: v.number(),
+      finalized: v.boolean(),
+    }),
+  ),
+  excludedCosts: v.array(
+    v.strictObject({ kind: v.picklist(['title', 'summary']), reason: v.string() }),
+  ),
+  attempts: v.array(
+    v.strictObject({
+      id: v.string(),
+      stepId: v.string(),
+      startedAt: v.number(),
+      endedAt: v.nullable(v.number()),
+      model: v.string(),
+      providerName: v.string(),
+      protocol: v.string(),
+      status: v.string(),
+      usage: mcpUsageSchema,
+      cost: v.strictObject({
+        currency: v.nullable(v.string()),
+        amount: v.nullable(v.string()),
+        state: v.picklist(['priced', 'partial', 'unpriced', 'invalid']),
+        source: v.nullable(v.string()),
+        priceEffectiveAt: v.nullable(v.number()),
+        priceId: v.nullable(v.string()),
+      }),
+    }),
+  ),
+  hasMore: v.boolean(),
+  nextCursor: v.nullable(v.string()),
+});
+export type UsageResult = v.InferOutput<typeof usageResultSchema>;
 export const runSchema = v.strictObject({
   status: v.picklist(['accepted', 'running', 'completed', 'interrupted', 'failed', 'cancelled']),
   runRef: v.string(),
@@ -112,19 +374,13 @@ export const runSchema = v.strictObject({
   model: modelSchema,
   output: pageSchema,
   reasoning: v.optional(pageSchema),
+  completion: v.nullable(completionSchema),
+  progress: v.nullable(progressSchema),
+  context: contextSummarySchema,
+  providerResponse: v.nullable(v.unwrap(generationDiagnosticsSchema.entries.response)),
+  pollAfterMs: v.number(),
   finishReason: v.optional(v.string()),
-  usage: v.strictObject({
-    inputTokens: v.optional(v.number()),
-    outputTokens: v.optional(v.number()),
-    totalTokens: v.optional(v.number()),
-    cachedInputTokens: v.optional(v.number()),
-    cacheWriteInputTokens: v.optional(v.number()),
-    reasoningTokens: v.optional(v.number()),
-    uncachedInputTokens: v.optional(v.number()),
-    textOutputTokens: v.optional(v.number()),
-    toolInputTokens: v.optional(v.number()),
-    isFinal: v.boolean(),
-  }),
+  usage: mcpUsageSchema,
   error: v.optional(errorSchema),
   url: v.string(),
 });
@@ -137,10 +393,25 @@ export const modelsSchema = v.strictObject({
       reasoningEfforts: v.array(v.string()),
       contextWindow: v.nullable(v.number()),
       maxOutputTokens: v.nullable(v.number()),
+      imageInput: v.strictObject({
+        supported: v.nullable(v.boolean()),
+        source: v.string(),
+        canAttempt: v.boolean(),
+      }),
     }),
   ),
   presets: v.array(v.strictObject({ id: uuid, name: v.string() })),
   defaultModelRef: v.optional(v.string()),
+  attachments: v.strictObject({
+    storage: v.boolean(),
+    directUpload: v.boolean(),
+    mediaTypes: v.array(v.string()),
+    maxFileBytes: v.number(),
+    inlineRequestBytes: v.number(),
+    documentWorkingSetBytes: v.number(),
+    pdfParserVersion: v.string(),
+    documentInput: v.literal('extracted_text'),
+  }),
 });
 export type ModelsResult = v.InferOutput<typeof modelsSchema>;
 

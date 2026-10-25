@@ -122,6 +122,7 @@ test('image-only questions, retries, branches and budget planning retain referen
     role: 'user',
     content: '',
     images: [image],
+    source: { kind: 'message', messageId: user.id },
   });
   assert.deepEqual(contextSource([user, answer], { retryOf: answer.id }).images, [image]);
   assert.deepEqual(messageImages(user), [image]);

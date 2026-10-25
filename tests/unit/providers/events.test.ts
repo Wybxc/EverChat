@@ -5,6 +5,7 @@ import { ProviderStream } from '../../../shared/streaming/provider-stream';
 import { openProviderStream, ProviderError } from '../../../worker/providers/stream';
 import { providerStreams } from '../../support/providers/streams';
 import { ResponseReasoning } from '../../../worker/providers/response-reasoning';
+import { inputHash, type SubmittedInput } from '../../../worker/providers/input-receipt';
 const config = (provider: ProviderKind): ProviderConfig => ({
   provider,
   baseUrl: 'https://fixture.invalid/v1',
@@ -54,6 +55,38 @@ async function consume(
   return { parser, failure, outputTimes };
 }
 for (const provider of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'] as const) {
+  test(`${provider} input evidence fingerprints the final adapted body before the only fetch`, async (t) => {
+    let evidence: SubmittedInput | undefined;
+    let calls = 0;
+    t.mock.method(globalThis, 'fetch', async (_: unknown, init: RequestInit) => {
+      calls++;
+      assert.ok(evidence);
+      assert.equal(evidence.requestSha256, inputHash(init.body as string));
+      assert.equal(evidence.requestBytes, Buffer.byteLength(init.body as string));
+      assert.doesNotMatch(init.body as string, /sourceId|messageId|"source"/);
+      const fixture = providerStreams[provider];
+      return new Response(fixture.partial + fixture.finish, {
+        headers: { 'content-type': 'text/event-stream' },
+      });
+    });
+    const body = await openProviderStream(
+      config(provider),
+      [{ role: 'user', content: 'material', source: { kind: 'message', messageId: 'message-id' } }],
+      new AbortController().signal,
+      undefined,
+      undefined,
+      undefined,
+      async (value) => {
+        evidence = value;
+      },
+    );
+    await new Response(body).arrayBuffer();
+    assert.equal(calls, 1);
+    assert.equal(evidence!.items[1].item.sourceId, 'message-id');
+    assert.equal(evidence!.items[1].item.sha256, inputHash('material'));
+    assert.equal(evidence!.items[0].snapshot, undefined);
+    assert.doesNotMatch(JSON.stringify(evidence), /private-fixture-key|private system prompt/);
+  });
   test(`${provider} SDK decoding streams separate channels and final usage, while missing native completion retains a non-final prefix`, async (t) => {
     const fixture = providerStreams[provider];
     const full = await consume(t, provider, fixture.partial + fixture.finish);

@@ -4,6 +4,14 @@ import { contextEstimateSchema, type ContextEstimate } from '../conversation/con
 import { errorIssueSchema, type ErrorIssue } from '../errors/descriptor';
 import { providerFailureSchema, type ProviderFailure } from '../providers/failure';
 import type { StreamState, StreamUsage } from './provider-stream';
+import {
+  USAGE_FIELDS,
+  usageSourcesSchema,
+  usageCoverageSchema,
+  type UsageSources,
+  type UsageCoverage,
+  type UsageSource,
+} from '../usage/evidence';
 
 export interface GenerationTiming {
   queueMs?: number;
@@ -19,15 +27,21 @@ export interface GenerationResult {
   interrupted?: true;
   usage: StreamUsage;
   usageIsFinal: boolean;
+  usageSources?: UsageSources;
+  usageCoverage?: UsageCoverage;
   timing?: GenerationTiming;
   context?: ContextEstimate;
   failure?: ProviderFailure;
   issue?: ErrorIssue;
 }
+export type GenerationUsage = Pick<
+  GenerationResult,
+  'usage' | 'usageIsFinal' | 'usageSources' | 'usageCoverage'
+>;
 export function addGenerationUsage(
-  previous: Pick<GenerationResult, 'usage' | 'usageIsFinal'> | undefined,
-  current: Pick<GenerationResult, 'usage' | 'usageIsFinal'>,
-): Pick<GenerationResult, 'usage' | 'usageIsFinal'> {
+  previous: GenerationUsage | undefined,
+  current: GenerationUsage,
+): GenerationUsage {
   const usage = { ...previous?.usage };
   let usageIsFinal = current.usageIsFinal && (previous?.usageIsFinal ?? true);
   if (
@@ -48,7 +62,34 @@ export function addGenerationUsage(
       usageIsFinal = false;
     }
   }
-  return { usage, usageIsFinal };
+  if (current.usageSources === undefined && previous?.usageCoverage === undefined)
+    return { usage, usageIsFinal };
+  const fields: UsageCoverage['fields'] = {};
+  const sources: UsageSources = {};
+  for (const field of USAGE_FIELDS) {
+    const before = previous?.usageCoverage?.fields[field];
+    const reported = (before?.reported ?? 0) + (current.usage[field] === undefined ? 0 : 1);
+    if (!reported) continue;
+    const a = before?.source,
+      b =
+        current.usage[field] === undefined
+          ? undefined
+          : (current.usageSources?.[field] ?? 'unknown');
+    const source: UsageSource =
+      a === 'unknown' || b === 'unknown'
+        ? 'unknown'
+        : a === 'derived' || b === 'derived'
+          ? 'derived'
+          : 'provider_reported';
+    fields[field] = { reported, source };
+    sources[field] = source;
+  }
+  return {
+    usage,
+    usageIsFinal,
+    usageSources: sources,
+    usageCoverage: { steps: (previous?.usageCoverage?.steps ?? 0) + 1, fields },
+  };
 }
 const count = v.optional(
   v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(Number.MAX_SAFE_INTEGER)),
@@ -73,6 +114,8 @@ export const generationSchema = v.strictObject({
     toolInputTokens: count,
   }),
   usageIsFinal: v.boolean(),
+  usageSources: v.optional(usageSourcesSchema),
+  usageCoverage: v.optional(usageCoverageSchema),
   timing: v.optional(v.strictObject({ queueMs: count, firstTokenMs: count, durationMs: count })),
   context: v.optional(contextEstimateSchema),
   failure: v.optional(providerFailureSchema),

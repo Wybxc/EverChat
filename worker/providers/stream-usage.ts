@@ -2,6 +2,7 @@ import type { LanguageModelV4Usage } from '@ai-sdk/provider';
 import { sdkUsage } from '../../shared/usage/normalize';
 import type { ProviderKind } from '../../shared/providers/types';
 import type { StreamUsage } from '../../shared/streaming/provider-stream';
+import type { UsageSources } from '../../shared/usage/evidence';
 const object = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
 const number = (value: unknown) =>
@@ -10,6 +11,7 @@ const number = (value: unknown) =>
 // final usage alone cannot recover Anthropic's initial input or Gemini's raw total.
 export class ProviderUsage {
   usage: StreamUsage = {};
+  sources: UsageSources = {};
   reported = false;
   final = false;
   private nativeFinished = false;
@@ -60,15 +62,19 @@ export class ProviderUsage {
     if (report.inputTokens !== undefined && report.cachedInputTokens !== undefined) {
       const noCache =
         report.inputTokens - report.cachedInputTokens - (report.cacheWriteInputTokens ?? 0);
-      if (report.uncachedInputTokens === undefined && noCache >= 0)
+      if (report.uncachedInputTokens === undefined && noCache >= 0) {
         report.uncachedInputTokens =
           normalized.uncachedInputTokens === noCache ? normalized.uncachedInputTokens : noCache;
+        this.sources.uncachedInputTokens = 'derived';
+      }
     }
     if (report.outputTokens !== undefined && report.reasoningTokens !== undefined) {
       const text = report.outputTokens - report.reasoningTokens;
-      if (report.textOutputTokens === undefined && text >= 0)
+      if (report.textOutputTokens === undefined && text >= 0) {
         report.textOutputTokens =
           normalized.textOutputTokens === text ? normalized.textOutputTokens : text;
+        this.sources.textOutputTokens = 'derived';
+      }
     }
   }
   record(value: unknown, kind: ProviderKind) {
@@ -103,7 +109,10 @@ export class ProviderUsage {
               reasoningTokens: number(outputDetails.reasoning_tokens),
             };
     for (const [key, value] of Object.entries(next))
-      if (value !== undefined) this.usage[key as keyof StreamUsage] = value;
+      if (value !== undefined) {
+        this.usage[key as keyof StreamUsage] = value;
+        this.sources[key as keyof StreamUsage] = 'provider_reported';
+      }
     const report = this.usage;
     if (kind === 'anthropic' && report.uncachedInputTokens !== undefined) {
       report.inputTokens = number(
@@ -111,15 +120,23 @@ export class ProviderUsage {
           (report.cachedInputTokens ?? 0) +
           (report.cacheWriteInputTokens ?? 0),
       );
+      if (report.inputTokens !== undefined) this.sources.inputTokens = 'derived';
     }
     if (kind === 'gemini') {
       // These API counters are disjoint. Keep the reported total; never invent one.
       this.promptInputTokens = number(usage.promptTokenCount) ?? this.promptInputTokens;
-      if (this.promptInputTokens !== undefined)
+      if (this.promptInputTokens !== undefined) {
         report.inputTokens = number(this.promptInputTokens + (report.toolInputTokens ?? 0));
-      if (report.textOutputTokens !== undefined)
+        if (report.inputTokens !== undefined) this.sources.inputTokens = 'derived';
+      }
+      if (report.textOutputTokens !== undefined) {
         report.outputTokens = number(report.textOutputTokens + (report.reasoningTokens ?? 0));
+        if (report.outputTokens !== undefined) this.sources.outputTokens = 'derived';
+      }
     }
-    return Object.values(next).some((value) => value !== undefined);
+    return (
+      Object.values(next).some((value) => value !== undefined) ||
+      (kind === 'gemini' && number(usage.promptTokenCount) !== undefined)
+    );
   }
 }

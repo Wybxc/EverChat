@@ -7,6 +7,7 @@ import {
   assertContextFits,
   assertStoredContextFits,
   buildContext,
+  contextHistory,
   contextEstimateSchema,
   contextSource,
   estimateTextTokens,
@@ -38,6 +39,69 @@ const history: ChatInput[] = [
   { role: 'user', content: '新问题'.repeat(20) },
   { role: 'assistant', content: '新回答'.repeat(20) },
 ];
+
+test('context selection retains source identities and the actual reason each complete history turn was omitted', () => {
+  const messages: Message[] = Array.from({ length: 6 }, (_, index) => ({
+    id: `message-${index}`,
+    role: index % 2 ? 'assistant' : 'user',
+    parts: messageParts(`message ${index}`),
+    status: 'completed',
+    parentId: index ? `message-${index - 1}` : null,
+    runId: null,
+    createdAt: index,
+    revisionOf: null,
+    error: null,
+  }));
+  const prepared = contextHistory(messages, 'message-5');
+  const current = { kind: 'message' as const, messageId: 'new-question' };
+  const limited = buildContext(
+    prepared,
+    'new question',
+    config,
+    { ...defaults, recentMessages: 2 },
+    undefined,
+    [],
+    [],
+    current,
+  );
+  assert.deepEqual(
+    limited.messages.map(({ source }) => source?.messageId),
+    ['message-4', 'message-5', 'new-question'],
+  );
+  assert.deepEqual(
+    limited.selection.omitted.map(({ input, reason }) => [input.source?.messageId, reason]),
+    ['message-0', 'message-1', 'message-2', 'message-3'].map((id) => [id, 'recent_messages']),
+  );
+  const budget = buildContext(prepared.slice(-2), 'new question', config, defaults).estimate
+    .totalTokens;
+  const budgeted = buildContext(prepared, 'new question', config, {
+    ...defaults,
+    contextBudget: budget,
+  });
+  assert.equal(budgeted.estimate.retainedMessages, 2);
+  assert.equal(
+    budgeted.selection.omitted.every(({ reason }) => reason === 'context_budget'),
+    true,
+  );
+  const summarized = buildContext(prepared.slice(2), 'new question', config, defaults, {
+    id: 'summary',
+    content: 'Summary of the first turn',
+    coveredMessages: 2,
+    sourceIds: ['message-0', 'message-1'],
+  });
+  assert.deepEqual(summarized.messages[0].source, { kind: 'summary', messageId: 'summary' });
+  assert.deepEqual(summarized.selection.summarized, ['message-0', 'message-1']);
+  assert.equal(summarized.selection.omitted.length, 0);
+  assert.equal(summarized.estimate.totalTokens > summarized.estimate.inputTokens, true);
+  const excluded = contextHistory(
+    [{ ...messages[0], deletedAt: 10 }, ...messages.slice(1)],
+    'message-5',
+  );
+  assert.deepEqual(
+    excluded.map(({ source }) => source?.messageId),
+    ['message-2', 'message-3', 'message-4', 'message-5'],
+  );
+});
 
 test('large model windows cannot create a context/config row beyond the SQLite task budget', () => {
   const large = 'x'.repeat(768_000);

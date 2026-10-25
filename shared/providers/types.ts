@@ -13,6 +13,8 @@ export interface ChatInput {
   content: string;
   images?: ImagePart[];
   files?: DocumentPart[];
+  /** Application provenance only. Provider adapters never serialize this field. */
+  source?: { kind: 'message' | 'summary' | 'generated'; messageId?: string };
 }
 
 export interface SessionSettings {
@@ -48,6 +50,8 @@ export interface ProviderConfig {
   reasoningEffort?: ReasoningEffort;
   modelMetadata?: ResolvedModelMetadata;
   webTools?: WebToolServiceConfig;
+  /** Internal MCP permission pinned at acceptance, never a supplier parameter. */
+  receiptSystemPrompt?: boolean;
 }
 
 export interface ProviderProfile {
