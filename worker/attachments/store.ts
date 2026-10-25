@@ -615,6 +615,14 @@ export class AttachmentStore {
       // Close the registration synchronously so it cannot be uploaded while deletion awaits R2.
       this.storage.sql.exec('UPDATE attachments SET removed = 1 WHERE id = ?', row.id);
       try {
+        if (!(await this.documents.inputSnapshots.cleanup(row.id))) {
+          this.storage.sql.exec(
+            'UPDATE attachments SET lease=? WHERE id=?',
+            Date.now() + 1000,
+            row.id,
+          );
+          continue;
+        }
         await this.bucket.delete([row.key, `${row.key}/text-v1`]);
         const current = this.row(row.id);
         if (

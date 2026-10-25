@@ -211,6 +211,26 @@ test('native full-text storage and previews exceed RPC object size while excerpt
     expect(manifest.files[0].parsed.reference.characters).toBe(text.length);
     expect(manifest.files[0].parsed.pageOffsets).toEqual([0]);
     expect(manifest.backup.conversation.messages[0].parts[0].selection).toEqual(excerpt.selection);
+    const receipt = (manifest as ArchiveManifest).backup.conversation.messages
+      .flatMap((m) => m.inputEvidence?.steps ?? [])
+      .flatMap((s) => s.items)
+      .map(({ item }) => item)
+      .find((item) => item.kind === 'document')!;
+    expect(receipt.content).toBe('document_snapshot');
+    expect(receipt.attachment?.attachmentId).toBe(file.id);
+    expect(receipt.documentSnapshot?.sha256).toBe(receipt.sha256);
+    const copiedManifest = (await request
+      .get(`/api/conversations/${copyId}/backup/manifest`)
+      .then((r) => r.json())) as ArchiveManifest;
+    const copiedReceipt = copiedManifest.backup.conversation.messages
+      .flatMap((m) => m.inputEvidence?.steps ?? [])
+      .flatMap((s) => s.items)
+      .map(({ item }) => item)
+      .find((item) => item.kind === 'document')!;
+    expect(copiedReceipt.attachment?.attachmentId).toBe(
+      messageFiles(copied.messages[0])[0].attachmentId,
+    );
+    expect(copiedReceipt.documentSnapshot).toEqual(receipt.documentSnapshot);
     const archived = await encodeArchive(manifest as ArchiveManifest, {
       [originalPath(file.id)]: new Uint8Array(
         await (await request.get(attachmentUrl(fixture.id, file.id))).body(),
@@ -241,6 +261,16 @@ test('native full-text storage and previews exceed RPC object size while excerpt
       .get(`/api/conversations/${restoredId}`)
       .then((r) => r.json())) as Snapshot;
     expect(messageFiles(restored.messages[0])[0].selection).toEqual(excerpt.selection);
+    const restoredManifest = (await request
+      .get(`/api/conversations/${restoredId}/backup/manifest`)
+      .then((r) => r.json())) as ArchiveManifest;
+    const restoredReceipt = restoredManifest.backup.conversation.messages
+      .flatMap((m) => m.inputEvidence?.steps ?? [])
+      .flatMap((s) => s.items)
+      .map(({ item }) => item)
+      .find((item) => item.kind === 'document')!;
+    expect(restoredReceipt.attachment?.attachmentId).toBe(restoredFile);
+    expect(restoredReceipt.documentSnapshot).toEqual(receipt.documentSnapshot);
     const restoredText = await request.get(docUrl(restoredId, restoredFile)).then((r) => r.json());
     expect(restoredText.text).toBe(text);
     expect(restoredText.pageOffsets).toEqual([0]);

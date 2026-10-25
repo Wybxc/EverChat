@@ -8,6 +8,16 @@ import { MAX_BUFFERED_TEXT_BYTES } from '../platform/limits';
 
 export const MAX_DOCUMENT_BYTES = Math.min(MAX_ATTACHMENT_BYTES, MAX_BUFFERED_TEXT_BYTES);
 export const DOCUMENT_VERSION = 1;
+export interface DocumentInputSnapshot {
+  version: 1;
+  sha256: string;
+  bytes: number;
+  characters: number;
+}
+export interface LoadedDocumentInput {
+  text: string;
+  inputSnapshot?: DocumentInputSnapshot;
+}
 export const documentMediaTypeSchema = v.picklist([
   'text/plain',
   'text/markdown',

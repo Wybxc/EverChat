@@ -132,8 +132,8 @@ const guides = {
     notes: [
       'Follow nextCursor with the same runRef, view and item. Manifest pagination advances across model steps. Later steps inherit previousStepId and contain only new tool context.',
       'The receipt describes logical inputs and a fingerprint of the final serialized request; it never returns the HTTP body, credentials, images as base64 or private encrypted reasoning.',
-      'System prompts are redacted by default. A website owner may grant readSystemPrompts to this key; only new requests retain effective prompt text, and disabling the permission immediately blocks reads. Old prompts are never reconstructed. File text remains metadata-only at this stage.',
-      'Large item metadata is replaced by details=metadata_view. Read view=metadata with step/item to concatenate the exact JSON in bounded pages. textUnit identifies UTF-16 text or Unicode-code-point metadata offsets; cursors remain opaque.',
+      'System prompts are redacted by default. A website owner may grant readSystemPrompts to this key; only new requests retain effective prompt text, and disabling the permission immediately blocks reads. Old prompts are never reconstructed. New document inputs keep deduplicated private snapshots of the exact injected logical text; images expose verification metadata, not base64.',
+      'Large item metadata is replaced by details=metadata_view. Read view=metadata with step/item to concatenate the exact JSON in bounded pages. textUnit identifies UTF-16 message text, Unicode-code-point metadata or UTF-8-byte document offsets; cursors remain opaque. Missing or deleted file snapshots return content_unavailable and are never rebuilt during a read.',
       'No receipt is invented for historical requests. pending means a selected request has not reached the submission boundary. Reads do not call a model or force checkpoints.',
     ],
   },

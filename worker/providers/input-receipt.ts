@@ -3,7 +3,7 @@ import type { ChatInput, ProviderConfig } from '../../shared/providers/types';
 import type { InputReceiptItem } from '../../shared/streaming/input-receipt';
 import type { ProviderToolRequest } from './tool-turn';
 import { webToolDefinitions } from './tool-turn';
-import { documentKey } from '../../shared/attachments/documents';
+import { documentKey, type DocumentInputSnapshot } from '../../shared/attachments/documents';
 import {
   SUMMARY_CONTEXT_PREFIX,
   SUMMARY_CONTEXT_SUFFIX,
@@ -27,6 +27,7 @@ export function assembledInput(
   context: ChatInput[],
   toolRequest?: ProviderToolRequest,
   documentData?: Map<string, string>,
+  documentSnapshots?: Map<string, DocumentInputSnapshot>,
 ): AssembledInput {
   const items: AssembledInput['items'] = [];
   const text = (
@@ -65,6 +66,7 @@ export function assembledInput(
     for (const file of message.files ?? []) {
       const injected = documentData?.get(documentKey(file));
       if (injected === undefined) throw new Error('Document input evidence is unavailable');
+      const snapshot = documentSnapshots?.get(documentKey(file));
       items.push({
         item: {
           kind: 'document',
@@ -72,8 +74,9 @@ export function assembledInput(
           sourceId: message.source?.messageId ?? null,
           sha256: inputHash(injected),
           characters: injected.length,
-          bytes: null,
-          content: 'metadata_only',
+          bytes: Buffer.byteLength(injected),
+          content: snapshot ? 'document_snapshot' : 'metadata_only',
+          ...(snapshot ? { documentSnapshot: snapshot } : {}),
           scope: 'logical_input',
           attachment: {
             ...file,

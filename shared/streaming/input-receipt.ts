@@ -9,11 +9,19 @@ export const inputReceiptItemSchema = v.strictObject({
   sha256: hash,
   characters: v.nullable(count),
   bytes: v.nullable(count),
-  content: v.picklist(['reference', 'snapshot', 'redacted', 'metadata_only']),
+  content: v.picklist(['reference', 'snapshot', 'document_snapshot', 'redacted', 'metadata_only']),
   scope: v.picklist(['logical_input', 'public_projection']),
   transform: v.optional(v.strictObject({ prefix: v.string(), suffix: v.string() })),
   attachment: v.optional(v.record(v.string(), v.unknown())),
   details: v.optional(v.literal('metadata_view')),
+  documentSnapshot: v.optional(
+    v.strictObject({
+      version: v.literal(1),
+      sha256: hash,
+      bytes: count,
+      characters: count,
+    }),
+  ),
 });
 export type InputReceiptItem = v.InferOutput<typeof inputReceiptItemSchema>;
 export const inputReceiptSchema = v.strictObject({
@@ -66,3 +74,32 @@ export const inputEvidenceBackupSchema = v.strictObject({
   ),
 });
 export type InputEvidenceBackup = v.InferOutput<typeof inputEvidenceBackupSchema>;
+
+/** Explicit copy/import remaps file identities along with message parts. */
+export function remapInputAttachments(
+  evidence: InputEvidenceBackup | undefined,
+  ids: Map<string, string>,
+) {
+  if (!evidence) return undefined;
+  return {
+    ...evidence,
+    steps: evidence.steps.map((step) => ({
+      ...step,
+      items: step.items.map(({ item, ...rest }) => ({
+        ...rest,
+        item: {
+          ...item,
+          ...(item.attachment && typeof item.attachment.attachmentId === 'string'
+            ? {
+                attachment: {
+                  ...item.attachment,
+                  attachmentId:
+                    ids.get(item.attachment.attachmentId) ?? item.attachment.attachmentId,
+                },
+              }
+            : {}),
+        },
+      })),
+    })),
+  };
+}

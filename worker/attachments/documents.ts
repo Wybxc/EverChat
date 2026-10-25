@@ -23,6 +23,8 @@ import {
 import { problem } from '../../shared/errors/descriptor';
 import { HttpError } from '../http/response';
 import { extractDocument } from './parser';
+import { DocumentInputSnapshots } from './input-snapshots';
+import type { InputEvidenceBackup } from '../../shared/streaming/input-receipt';
 
 type Source = Attachment & { key: string };
 type Row = {
@@ -42,6 +44,7 @@ type Row = {
 const digest = async (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
 export class DocumentStore {
   private parsing = new Map<string, Promise<DocumentPart>>();
+  readonly inputSnapshots: DocumentInputSnapshots;
   constructor(
     private storage: DurableObjectStorage,
     private bucket: R2Bucket | undefined,
@@ -49,6 +52,9 @@ export class DocumentStore {
     private original: (conversationId: string, id: string, head?: boolean) => Promise<Response>,
     private settled: (id: string) => void,
   ) {
+    this.inputSnapshots = new DocumentInputSnapshots(storage, bucket, (conversationId, id) =>
+      this.requireSource(conversationId, id),
+    );
     storage.sql
       .exec(`CREATE TABLE IF NOT EXISTS attachment_documents (id TEXT PRIMARY KEY, status TEXT NOT NULL, key TEXT NOT NULL,
       lease INTEGER NOT NULL, token TEXT, sha256 TEXT, characters INTEGER NOT NULL, tokens INTEGER NOT NULL, bytes INTEGER NOT NULL,
@@ -453,15 +459,24 @@ export class DocumentStore {
       },
     });
   }
-  async response(conversationId: string, id: string, ranges?: DocumentRange[]) {
+  async response(
+    conversationId: string,
+    id: string,
+    ranges?: DocumentRange[],
+    captureInput = false,
+  ) {
     const saved = await this.read(conversationId, id);
+    const result = ranges
+      ? {
+          file: await this.selectFrom(saved, ranges),
+          text: selectedDocumentText(saved.text, ranges),
+        }
+      : saved;
+    const inputSnapshot = captureInput
+      ? await this.inputSnapshots.capture(conversationId, result.file, result.text)
+      : undefined;
     return Response.json(
-      ranges
-        ? {
-            file: await this.selectFrom(saved, ranges),
-            text: selectedDocumentText(saved.text, ranges),
-          }
-        : saved,
+      { ...result, ...(inputSnapshot ? { inputSnapshot } : {}) },
       { headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } },
     );
   }
@@ -482,7 +497,46 @@ export class DocumentStore {
       );
   }
   isActive(id: string) {
-    return this.parsing.has(id);
+    return this.parsing.has(id) || this.inputSnapshots.isActive(id);
+  }
+  /** Only explicit copy/import may reconstruct evidence, with an exact hash match. */
+  async restoreInputEvidence(
+    conversationId: string,
+    evidence: (InputEvidenceBackup | undefined)[],
+  ) {
+    const seen = new Set<string>();
+    for (const entry of evidence)
+      for (const step of entry?.steps ?? [])
+        for (const { item } of step.items) {
+          if (item.content !== 'document_snapshot' || !item.documentSnapshot || !item.attachment)
+            continue;
+          const {
+            verification: _,
+            delivery: __,
+            originalVerification: ___,
+            ...metadata
+          } = item.attachment;
+          const file = v.parse(documentPartSchema, metadata),
+            key = `${file.attachmentId}:${item.sha256}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          // Deleted sources stay unavailable; never use current same-name files.
+          if (!this.row(file.attachmentId)) continue;
+          await this.validate(conversationId, file);
+          const saved = await this.read(conversationId, file.attachmentId),
+            text = selectedDocumentText(saved.text, file.selection?.ranges);
+          const captured = await this.inputSnapshots.capture(conversationId, file, text);
+          if (
+            captured.sha256 !== item.sha256 ||
+            JSON.stringify(captured) !== JSON.stringify(item.documentSnapshot)
+          )
+            throw new HttpError(
+              409,
+              '恢复后的文件输入回执与原始指纹不符。',
+              undefined,
+              problem('BACKUP_INVALID'),
+            );
+        }
   }
   lease(id: string) {
     const row = this.row(id);

@@ -47,6 +47,7 @@ export const MIGRATION_TABLES: Record<StoreKind, string[]> = {
     'mcp_requests',
     'mcp_keys',
     'mcp_conversation_grants',
+    'document_input_snapshots',
     'storage_schema',
     'usage_outbox',
     'conversation_metadata',

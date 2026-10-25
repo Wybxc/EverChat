@@ -4,6 +4,7 @@ import { McpError, type ChatArguments, type McpFailure } from '../mcp/contracts'
 import { MCP_REQUESTS_SCHEMA } from '../mcp/schema';
 import { McpKeys, MCP_KEYS_SCHEMA } from '../mcp/keys';
 import { MCP_GRANTS_SCHEMA } from '../mcp/history';
+import { remapInputAttachments } from '../../shared/streaming/input-receipt';
 import * as v from 'valibot';
 import type { DocumentPart, DocumentRange } from '../../shared/attachments/documents';
 import type { AttachmentInput } from '../../shared/attachments/files';
@@ -765,6 +766,9 @@ export class Library extends DurableObject<Env> {
       }
       const messages = saved.messages.map((message) => ({
         ...message,
+        ...(message.inputEvidence
+          ? { inputEvidence: remapInputAttachments(message.inputEvidence, mapped) }
+          : {}),
         parts: message.parts.map((part) =>
           part.type === 'image' || part.type === 'file'
             ? { ...part, attachmentId: mapped.get(part.attachmentId)! }
@@ -773,6 +777,11 @@ export class Library extends DurableObject<Env> {
       }));
       const copiedImages = messages.flatMap(messageImages),
         copiedFiles = messages.flatMap(messageFiles);
+      await this.attachments.documents.restoreInputEvidence(
+        id,
+        messages.map((m) => m.inputEvidence),
+      );
+      check();
       if (copiedImages.length || copiedFiles.length) {
         await this.attachments.pinAttachments(id, copiedImages, copiedFiles);
         check();
@@ -1153,13 +1162,26 @@ export class Library extends DurableObject<Env> {
       this.attachments.documents.select(conversationId, id, ranges),
     );
   }
-  async documentResponse(conversationId: string, id: string, ranges?: DocumentRange[]) {
+  async documentResponse(
+    conversationId: string,
+    id: string,
+    ranges?: DocumentRange[],
+    captureInput = false,
+  ) {
     const result = await this.attachmentAction(() =>
-      this.attachments.documents.response(conversationId, id, ranges),
+      this.attachments.documents.response(conversationId, id, ranges, captureInput),
     );
     return 'error' in result
       ? json({ error: result.error, issue: result.issue }, result.status)
       : result.value;
+  }
+  documentInputPage(
+    conversationId: string,
+    id: string,
+    snapshot: import('../../shared/attachments/documents').DocumentInputSnapshot,
+    offset: number,
+  ) {
+    return this.attachments.documents.inputSnapshots.page(conversationId, id, snapshot, offset);
   }
   async parseDocument(conversationId: string, id: string, input?: PDFExtraction) {
     const action = this.attachmentAction(async () => {

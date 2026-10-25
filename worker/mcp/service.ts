@@ -219,13 +219,22 @@ export class McpChatService {
     if (input.view === 'text') {
       if (input.item === undefined) fail('INVALID_ARGUMENT', 'Specify item from a manifest page.');
       const permissions = await this.library.mcpKeyPermissions(this.principal);
-      const result = await conversation.mcpContextText(
+      const stored = await conversation.mcpContextText(
         assistantId,
         step,
         input.item,
         offset,
         permissions?.readSystemPrompts ?? false,
       );
+      const result =
+        stored?.state === 'document_snapshot'
+          ? await this.library.documentInputPage(
+              record.conversationId,
+              stored.attachmentId,
+              stored.documentSnapshot,
+              offset,
+            )
+          : stored;
       if (
         permissions?.readSystemPrompts &&
         !(await this.library.mcpKeyPermissions(this.principal))?.readSystemPrompts
@@ -245,7 +254,7 @@ export class McpChatService {
       return {
         ...base,
         text: { state: result.state, text: result.text },
-        textUnit: 'utf16',
+        textUnit: stored?.state === 'document_snapshot' ? 'utf8_bytes' : 'utf16',
         hasMore: result.hasMore,
         nextCursor: result.hasMore ? cursor(result.nextOffset) : null,
       };

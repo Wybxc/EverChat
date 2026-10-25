@@ -259,6 +259,19 @@ export class InputReceipts {
     const item = JSON.parse(row.payload) as InputReceiptItem;
     if (item.kind === 'system' && !allowSystem)
       return { state: 'redacted' as const, text: '', hasMore: false, nextOffset: offset };
+    if (
+      item.content === 'document_snapshot' &&
+      item.documentSnapshot &&
+      typeof item.attachment?.attachmentId === 'string'
+    )
+      return {
+        state: 'document_snapshot' as const,
+        text: '',
+        hasMore: false,
+        nextOffset: offset,
+        documentSnapshot: item.documentSnapshot,
+        attachmentId: item.attachment.attachmentId,
+      };
     if (item.content === 'redacted' || item.content === 'metadata_only')
       return {
         state: item.content,

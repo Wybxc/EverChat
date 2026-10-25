@@ -5,6 +5,8 @@ import {
   documentPrompt,
   estimateDocumentTokens,
   type DocumentPart,
+  type LoadedDocumentInput,
+  type DocumentInputSnapshot,
 } from '../../shared/attachments/documents';
 import type { ModelMessage } from 'ai';
 import type { ChatInput, ProviderConfig } from '../../shared/providers/types';
@@ -38,7 +40,7 @@ export async function openProviderStream(
   context: ChatInput[],
   signal: AbortSignal,
   loadImage?: (image: ImagePart) => Promise<Uint8Array>,
-  loadDocument?: (file: DocumentPart) => Promise<string>,
+  loadDocument?: (file: DocumentPart) => Promise<string | LoadedDocumentInput>,
   toolRequest?: ProviderToolRequest,
   beforeRequest?: (input: SubmittedInput) => Promise<void>,
   onOutput?: (receivedAt: number) => void,
@@ -111,12 +113,14 @@ export async function openProviderStream(
     )
       throw new DocumentError('本次文档内容超过单次模型请求的内存保护大小，请选择页码或片段。');
     const documentData = new Map<string, string>();
+    const documentSnapshots = new Map<string, DocumentInputSnapshot>();
     for (const message of context)
       for (const file of message.files ?? []) {
         if (documentData.has(documentKey(file))) continue;
         if (!loadDocument) throw new DocumentError('无法读取已保存的文件解析结果。');
         signal.throwIfAborted();
-        const text = await loadDocument(file);
+        const loaded = await loadDocument(file),
+          text = typeof loaded === 'string' ? loaded : loaded.text;
         const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
         const sha256 = Array.from(new Uint8Array(hash), (byte) =>
           byte.toString(16).padStart(2, '0'),
@@ -127,7 +131,17 @@ export async function openProviderStream(
           sha256 !== file.textSha256
         )
           throw new DocumentError('文件解析内容与已保存的引用不符。');
-        documentData.set(documentKey(file), documentPrompt(file, text));
+        const prompt = documentPrompt(file, text);
+        if (typeof loaded !== 'string' && loaded.inputSnapshot) {
+          if (
+            loaded.inputSnapshot.sha256 !== inputHash(prompt) ||
+            loaded.inputSnapshot.characters !== prompt.length ||
+            loaded.inputSnapshot.bytes !== Buffer.byteLength(prompt)
+          )
+            throw new DocumentError('文件输入快照与实际输入不符。');
+          documentSnapshots.set(documentKey(file), loaded.inputSnapshot);
+        }
+        documentData.set(documentKey(file), prompt);
         secrets.push(text);
       }
     const imageData = new Map<string, Uint8Array>();
@@ -166,7 +180,8 @@ export async function openProviderStream(
     ];
     if (toolRequest)
       prompt.push(...providerToolPrompt(toolRequest.exchanges ?? [], toolRequest.enabled, config));
-    if (beforeRequest) assembled = assembledInput(config, context, toolRequest, documentData);
+    if (beforeRequest)
+      assembled = assembledInput(config, context, toolRequest, documentData, documentSnapshots);
     const result = await coreProviderStream(
       providerModel(config, request),
       config,
