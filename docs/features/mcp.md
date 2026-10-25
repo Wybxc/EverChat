@@ -106,9 +106,9 @@ EverChat 提供同域 `/mcp` 接口，供支持 Streamable HTTP 和自定义请�
 
 `providerResponse` 单独返回供应商实际报告的响应 ID、模型 ID 与时间（可得时）；不作为资料完整送达的证明。回执的生成参数标记 `parameterEvidence: "application_requested"`，表示应用请求的参数；供应商仍可能忽略不支持的设置，不能把配置值当成供应商已接受的事实。
 
-`everchat_run_context_get` 默认读取首个步骤的 manifest，按 `nextCursor` 遍历；后续工具步骤以 `previousStepId` 引用前一步，只记录新的工具资料。用 `view: "exclusions"` 查看省略和摘要覆盖的消息 ID；用 `view: "text"`、`step` 和 manifest 的 `item` 读取逻辑文本。普通消息、摘要包装和应用生成文本按当时依据还原，删除的来源返回 `content_unavailable`。系统提示词保持 `redacted`；文件当前仅返回版本、指纹、实际选区和校验元数据，全文有界读取仍待附件阶段完成。工具内容为 `scope: "public_projection"`，不含供应商私有思考签名或加密续接。请求指纹不附带 HTTP 正文、鉴权头或 base64。
+`everchat_run_context_get` 默认读取首个步骤的 manifest，按 `nextCursor` 遍历；后续工具步骤以 `previousStepId` 引用前一步，只记录新的工具资料。用 `view: "exclusions"` 查看省略和摘要覆盖的消息 ID；用 `view: "text"`、`step` 和 manifest 的 `item` 读取逻辑文本。过大元数据在清单中标为 `details: "metadata_view"`，用 `view: "metadata"` 分页拼接完整 JSON；`textUnit` 标记游标位置的单位。普通消息、摘要包装和应用生成文本按当时依据还原，删除的来源返回 `content_unavailable`。系统提示词默认 `redacted`；网页所有者可在创建／编辑 Key 时授权读取有效提示词，只有授权后新请求保存全文，关闭权限立即拒绝继续读取，历史请求不回填。文件当前仅返回版本、指纹、实际选区和校验元数据，全文有界读取仍待附件阶段完成。工具内容为 `scope: "public_projection"`，不含供应商私有思考签名或加密续接。请求指纹不附带 HTTP 正文、鉴权头或 base64。
 
-`everchat_run_usage_get` 复用账本，按模型步骤分页；`scope: "answer_model_steps"` 不含自动标题、摘要和网页服务费用。`pending_accounting` 表示账本尚未追上任务，查询不会补算或改变价格。费用以十进制币种字符串返回，基于当时价格快照，属于估算；不把不同币种相加。跨步骤费用汇总仍待完成。
+`everchat_run_usage_get` 复用账本，按模型步骤分页；`scope: "answer_model_steps"` 不含自动标题、摘要和网页服务费用。`pending_accounting` 表示账本尚未追上任务，查询不会补算或改变价格。费用以十进制币种字符串返回，基于当时价格快照，属于估算；不把不同币种相加。用 `view: "costs"` 按币种精确汇总所有模型步骤，联网搜索／读取费用单列且不计入回答模型费用；自动标题与摘要因属于其他任务而明确列为排除项。未完全定价时 `amount` 为 null、`knownSubtotal` 保留已知金额，账本变化后费用分页需重新读取。
 
 ## 讨论记录与导出（实现分支，尚未发布）
 

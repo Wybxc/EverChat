@@ -35,7 +35,7 @@ export function assembledInput(
     value: string,
     sourceId: string | null,
   ) => {
-    const snapshot = kind === 'generated';
+    const snapshot = kind === 'generated' || (kind === 'system' && config.receiptSystemPrompt);
     items.push({
       item: {
         kind,
@@ -44,7 +44,7 @@ export function assembledInput(
         sha256: inputHash(value),
         characters: value.length,
         bytes: Buffer.byteLength(value),
-        content: kind === 'system' ? 'redacted' : snapshot ? 'snapshot' : 'reference',
+        content: snapshot ? 'snapshot' : kind === 'system' ? 'redacted' : 'reference',
         scope: 'logical_input',
         ...(kind === 'summary'
           ? { transform: { prefix: SUMMARY_CONTEXT_PREFIX, suffix: SUMMARY_CONTEXT_SUFFIX } }

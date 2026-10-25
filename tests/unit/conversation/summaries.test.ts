@@ -22,6 +22,7 @@ import {
   summaryForPath,
   summaryGeneration,
   summaryPrefix,
+  prepareChatContext,
 } from '../../../shared/conversation/summaries';
 import { type Message } from '../../../shared/conversation/types';
 import { resolveModelMetadata } from '../../../shared/models/metadata';
@@ -78,6 +79,34 @@ const metadata = (window: number) =>
     enabled: true,
     metadataOverrides: { contextWindow: window, maxOutputTokens: 4096 },
   });
+
+test('input selection reports unavailable branch sources without retaining their deleted text', () => {
+  const path = history();
+  path[0].deletedAt = 100;
+  path[2].status = 'failed';
+  const prepared = prepareChatContext(path, path.at(-1)!.id, 'next', config, defaults);
+  assert.deepEqual(
+    prepared.selection.omitted
+      .filter(({ reason }) => reason !== 'unavailable')
+      .map(({ input, reason }) => [input.source?.messageId, reason]),
+    [
+      [path[0].id, 'deleted'],
+      [path[1].id, 'deleted_parent'],
+      [path[2].id, 'not_completed'],
+    ],
+  );
+  assert.ok(
+    prepared.selection.omitted
+      .filter(({ reason }) => reason !== 'unavailable')
+      .every(({ input }) => input.content === ''),
+  );
+  assert.ok(
+    prepared.selection.omitted.some(
+      ({ input, reason }) => input.source?.messageId === path[3].id && reason === 'unavailable',
+    ),
+  );
+  assert.ok(prepared.messages.every((m) => !m.content.includes('预算')));
+});
 
 test('summaries use exact parent paths, prefer the furthest coverage and then its newest replacement', () => {
   const path = history(),

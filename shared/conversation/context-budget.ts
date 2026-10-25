@@ -233,7 +233,13 @@ export function buildContext(
   };
 }
 
-export type ContextOmissionReason = 'context_budget' | 'recent_messages' | 'unavailable';
+export type ContextOmissionReason =
+  | 'context_budget'
+  | 'recent_messages'
+  | 'unavailable'
+  | 'deleted'
+  | 'not_completed'
+  | 'deleted_parent';
 export interface ContextSelection {
   omitted: { input: ChatInput; reason: ContextOmissionReason }[];
   summarized: string[];

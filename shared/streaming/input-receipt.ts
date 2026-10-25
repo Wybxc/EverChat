@@ -13,6 +13,7 @@ export const inputReceiptItemSchema = v.strictObject({
   scope: v.picklist(['logical_input', 'public_projection']),
   transform: v.optional(v.strictObject({ prefix: v.string(), suffix: v.string() })),
   attachment: v.optional(v.record(v.string(), v.unknown())),
+  details: v.optional(v.literal('metadata_view')),
 });
 export type InputReceiptItem = v.InferOutput<typeof inputReceiptItemSchema>;
 export const inputReceiptSchema = v.strictObject({

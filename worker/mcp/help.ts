@@ -39,7 +39,7 @@ export const mcpToolDescriptions = {
   everchat_run_cancel:
     'Explicitly cancel your own generation. Saved partial output remains in the normal conversation. Cancellation is idempotent; completed answers are unchanged.',
   everchat_run_context_get:
-    'Read durable server input receipts for your own run, including selected sources, omissions, files, effective parameters and the adapted request fingerprint. Paginated manifest by default; text and exclusions are explicit views. Submission attempted does not prove provider receipt or model understanding. System prompts and private provider continuation remain redacted.',
+    'Read durable server input receipts for your own run, including selected sources, omissions, files, effective parameters and the adapted request fingerprint. Paginated manifest by default; text, metadata and exclusions are explicit views. Submission attempted does not prove provider receipt or model understanding. System prompt text requires explicit key permission; private provider continuation is never returned.',
   everchat_run_usage_get:
     'Read paginated model-step usage and cost estimates for your own answer. Returns null for unknown counters, evidence sources and immutable price-snapshot metadata. Does not recalculate prices, call a model or expose workspace totals.',
   everchat_conversations_list:
@@ -100,9 +100,15 @@ const guides = {
         description: 'Read model-step token usage and cost estimates.',
         arguments: { runRef: '<result.runRef>' },
       },
+      {
+        description:
+          'Sum model steps exactly by currency and list linked web-service costs separately.',
+        arguments: { runRef: '<result.runRef>', view: 'costs' },
+      },
     ],
     notes: [
       'Amounts are decimal currency strings with up to 12 decimal places, calculated from the recorded price snapshot. They are estimates, not supplier invoices; never add different currencies.',
+      'view=costs sums across steps by kind and currency using integer arithmetic. amount is null unless its scope is fully priced; knownSubtotal preserves only known amounts. Chat is included in the answer total; web_search/read_webpage are related fees, separately listed. Title and summary exclusions are explicit. Follow cost pages with the same view; a changed ledger requires restarting.',
       'Scope is answer model steps. Automatic titles, summaries and web-service fees are excluded. Follow nextCursor to inspect every step; accounting may lag generation completion.',
       'Unknown token values are null. knownSubtotal is not a complete total when reportedSteps is less than expectedSteps. finalized means the task ended, independent of usage completeness.',
       'provider_reported preserves explicit zeros and native totals. derived identifies protocol normalization (Anthropic input components, Gemini prompt plus tool input or text plus thoughts, input minus cache, and output minus reasoning). A conflicting native total is preserved with inconsistent_usage.',
@@ -126,7 +132,8 @@ const guides = {
     notes: [
       'Follow nextCursor with the same runRef, view and item. Manifest pagination advances across model steps. Later steps inherit previousStepId and contain only new tool context.',
       'The receipt describes logical inputs and a fingerprint of the final serialized request; it never returns the HTTP body, credentials, images as base64 or private encrypted reasoning.',
-      'System prompts remain redacted. File items report exact versions, selections and verified extracted-text fingerprints; original document hashes are client declarations. File text is metadata-only in this release.',
+      'System prompts are redacted by default. A website owner may grant readSystemPrompts to this key; only new requests retain effective prompt text, and disabling the permission immediately blocks reads. Old prompts are never reconstructed. File text remains metadata-only at this stage.',
+      'Large item metadata is replaced by details=metadata_view. Read view=metadata with step/item to concatenate the exact JSON in bounded pages. textUnit identifies UTF-16 text or Unicode-code-point metadata offsets; cursors remain opaque.',
       'No receipt is invented for historical requests. pending means a selected request has not reached the submission boundary. Reads do not call a model or force checkpoints.',
     ],
   },

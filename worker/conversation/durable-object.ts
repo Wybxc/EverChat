@@ -831,20 +831,37 @@ export class Conversation extends DurableObject<Env> {
     if (this.deletedAt || !readMcpStatus(this.query.bind(this), assistantId)) return null;
     return this.inputReceipts.exclusions(assistantId, offset);
   }
-  mcpContextText(assistantId: string, round: number, ordinal: number, offset: number) {
+  mcpContextMetadata(assistantId: string, round: number, ordinal: number, offset: number) {
     if (this.deletedAt || !readMcpStatus(this.query.bind(this), assistantId)) return null;
-    return this.inputReceipts.text(assistantId, round, ordinal, offset, (id, at, limit) => {
-      if (
-        !this.query(
-          `SELECT 1 FROM messages WHERE id=? AND NOT EXISTS (SELECT 1 FROM message_deletions WHERE id=?)`,
-          id,
-          id,
-        ).toArray().length
-      )
-        return null;
-      const page = this.journal.page(id, 'content', at, limit);
-      return page.error ? null : page;
-    });
+    return this.inputReceipts.metadata(assistantId, round, ordinal, offset);
+  }
+  mcpContextText(
+    assistantId: string,
+    round: number,
+    ordinal: number,
+    offset: number,
+    allowSystem = false,
+  ) {
+    if (this.deletedAt || !readMcpStatus(this.query.bind(this), assistantId)) return null;
+    return this.inputReceipts.text(
+      assistantId,
+      round,
+      ordinal,
+      offset,
+      (id, at, limit) => {
+        if (
+          !this.query(
+            `SELECT 1 FROM messages WHERE id=? AND NOT EXISTS (SELECT 1 FROM message_deletions WHERE id=?)`,
+            id,
+            id,
+          ).toArray().length
+        )
+          return null;
+        const page = this.journal.page(id, 'content', at, limit);
+        return page.error ? null : page;
+      },
+      allowSystem,
+    );
   }
   mcpPage(
     assistantId: string,

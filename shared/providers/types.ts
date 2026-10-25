@@ -50,6 +50,8 @@ export interface ProviderConfig {
   reasoningEffort?: ReasoningEffort;
   modelMetadata?: ResolvedModelMetadata;
   webTools?: WebToolServiceConfig;
+  /** Internal MCP permission pinned at acceptance, never a supplier parameter. */
+  receiptSystemPrompt?: boolean;
 }
 
 export interface ProviderProfile {

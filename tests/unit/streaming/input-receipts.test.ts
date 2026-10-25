@@ -150,6 +150,45 @@ test('input receipts persist the actual selection, incremental steps and immutab
     receipts.erase('answer');
     assert.equal(receipts.latest('answer'), null);
     assert.ok(receipts.latest('copy'));
+    const permitted = { ...config, receiptSystemPrompt: true };
+    const assembled = assembledInput(permitted, []);
+    const largeMetadata = {
+      ranges: Array.from({ length: 1000 }, (_, i) => ({ start: i * 4, end: i * 4 + 2 })),
+      name: '稿😀.typ',
+    };
+    assembled.items.push({
+      item: {
+        kind: 'document',
+        role: 'user',
+        sourceId: null,
+        sha256: inputHash('text'),
+        characters: 4,
+        bytes: 4,
+        content: 'metadata_only',
+        scope: 'logical_input',
+        attachment: largeMetadata,
+      },
+    });
+    receipts.select('permitted', { omitted: [], summarized: [] });
+    receipts.submit('permitted-step', 'permitted', 0, permitted, {
+      ...assembled,
+      requestSha256: inputHash('wire'),
+      requestBytes: 4,
+    });
+    assert.equal(receipts.text('permitted', 0, 0, 0, () => null)!.state, 'redacted');
+    assert.equal(receipts.text('permitted', 0, 0, 0, () => null, true)!.text, config.systemPrompt);
+    const brief = receipts.page('permitted', 0, 0)!;
+    assert.equal(brief.items![1].details, 'metadata_view');
+    assert.ok(Buffer.byteLength(JSON.stringify(brief)) < 24 * 1024);
+    let metadata = '',
+      at = 0;
+    for (;;) {
+      const page = receipts.metadata('permitted', 0, 1, at)!;
+      metadata += page.text;
+      at = page.nextOffset;
+      if (!page.hasMore) break;
+    }
+    assert.deepEqual(JSON.parse(metadata).attachment, largeMetadata);
   } finally {
     db.close();
   }

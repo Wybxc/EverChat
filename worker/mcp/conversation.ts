@@ -85,6 +85,7 @@ export function readMcpStatus(query: SqlQuery, assistantId: string) {
       context.steps - (context.state === 'assembled' ? 1 : 0),
       usage?.usageIsFinal ?? false,
       !pending,
+      new InputReceipts(query).latest(assistantId)?.protocol,
     ),
     // Provider response bodies, endpoints and arbitrary messages can contain credentials.
     ...(generation?.failure

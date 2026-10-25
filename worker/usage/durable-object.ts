@@ -41,6 +41,9 @@ export class UsageStore extends DurableObject<Env> {
   mcpPage(messageId: string, after?: { startedAt: number; id: string }) {
     return this.ledger.mcpPage(messageId, after);
   }
+  mcpCosts(messageId: string, after?: { kind: string; currency: string }) {
+    return this.ledger.mcpCosts(messageId, after);
+  }
   savePrice(input: UsagePriceInput) {
     return this.ctx.storage.transactionSync(() => this.ledger.savePrice(input));
   }

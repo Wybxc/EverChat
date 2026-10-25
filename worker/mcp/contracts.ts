@@ -90,13 +90,17 @@ export type GetArguments = v.InferOutput<typeof getSchema>;
 const offset = v.pipe(v.number(), v.safeInteger(), v.minValue(0));
 export const contextGetSchema = v.strictObject({
   runRef: handle,
-  view: v.optional(v.picklist(['manifest', 'text', 'exclusions']), 'manifest'),
+  view: v.optional(v.picklist(['manifest', 'text', 'metadata', 'exclusions']), 'manifest'),
   step: v.optional(offset, 0),
   item: v.optional(offset),
   cursor: v.optional(handle),
 });
 export type ContextGetArguments = v.InferOutput<typeof contextGetSchema>;
-export const usageGetSchema = v.strictObject({ runRef: handle, cursor: v.optional(handle) });
+export const usageGetSchema = v.strictObject({
+  runRef: handle,
+  cursor: v.optional(handle),
+  view: v.optional(v.picklist(['attempts', 'costs']), 'attempts'),
+});
 export type UsageGetArguments = v.InferOutput<typeof usageGetSchema>;
 export const conversationListSchema = v.strictObject({ cursor: v.optional(handle) });
 export const conversationReadSchema = v.strictObject({
@@ -205,6 +209,7 @@ export const contextResultSchema = v.strictObject({
       text: v.string(),
     }),
   ),
+  textUnit: v.nullable(v.picklist(['utf16', 'unicode_codepoints', 'utf8_bytes'])),
   hasMore: v.boolean(),
   nextCursor: v.nullable(v.string()),
 });
@@ -277,6 +282,7 @@ const dimensionSchema = v.strictObject({
   knownSubtotal: nullableCount,
   reportedSteps: nullableCount,
   expectedSteps: nullableCount,
+  derivation: v.nullable(v.string()),
 });
 const mcpUsageSchema = v.strictObject({
   ...(Object.fromEntries(USAGE_FIELDS.map((field) => [field, nullableCount])) as Record<
@@ -299,6 +305,22 @@ export const usageResultSchema = v.strictObject({
   accounting: v.picklist(['unavailable', 'pending_accounting', 'ready']),
   expectedAttempts: nullableCount,
   observedAttempts: nullableCount,
+  costs: v.array(
+    v.strictObject({
+      kind: v.picklist(['chat', 'web_search', 'read_webpage']),
+      includedInAnswer: v.boolean(),
+      currency: v.nullable(v.string()),
+      amount: v.nullable(v.string()),
+      knownSubtotal: v.nullable(v.string()),
+      state: v.picklist(['priced', 'partial', 'unpriced']),
+      attempts: v.number(),
+      pricedAttempts: v.number(),
+      finalized: v.boolean(),
+    }),
+  ),
+  excludedCosts: v.array(
+    v.strictObject({ kind: v.picklist(['title', 'summary']), reason: v.string() }),
+  ),
   attempts: v.array(
     v.strictObject({
       id: v.string(),

@@ -127,6 +127,7 @@ test('MCP idempotency freezes accepted configuration before mutable model lookup
   try {
     query(MCP_REQUESTS_SCHEMA);
     query(MCP_GRANTS_SCHEMA);
+    query(MCP_KEYS_SCHEMA);
     const env = {
       AI_PROVIDER: 'openai-chat',
       AI_BASE_URL: 'https://private.example/v1',

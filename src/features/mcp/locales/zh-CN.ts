@@ -28,4 +28,7 @@ export default {
   access: '密钥可调用模型并访问自己创建的 MCP 对话。完整密钥仅在创建时显示。',
   reload: '重试',
   loading: '正在加载 MCP 设置',
+  readSystemPrompts: '允许读取有效系统提示词',
+  systemPromptAccess:
+    '在新请求的输入回执中保留有效提示词全文，仅允许此密钥读取。关闭后立即停止读取，历史请求不补造全文。',
 } as const;

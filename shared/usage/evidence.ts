@@ -38,6 +38,19 @@ export const usageCoverageSchema = v.strictObject({
 });
 export type UsageCoverage = v.InferOutput<typeof usageCoverageSchema>;
 
+function derivation(field: keyof StreamUsage, protocol?: string) {
+  if (field === 'inputTokens' && protocol === 'anthropic')
+    return 'uncached_input + cache_read_input(default 0) + cache_creation_input(default 0)';
+  if (field === 'inputTokens' && protocol === 'gemini')
+    return 'promptTokenCount + toolUsePromptTokenCount(default 0)';
+  if (field === 'outputTokens' && protocol === 'gemini')
+    return 'candidatesTokenCount + thoughtsTokenCount(default 0)';
+  if (field === 'uncachedInputTokens')
+    return 'inputTokens - cachedInputTokens - cacheWriteInputTokens(default 0)';
+  if (field === 'textOutputTokens') return 'outputTokens - reasoningTokens';
+  return null;
+}
+
 export function mcpUsage(
   usage: StreamUsage,
   sources: UsageSources | undefined,
@@ -45,6 +58,7 @@ export function mcpUsage(
   expectedSteps: number,
   isFinal: boolean,
   finalized: boolean,
+  protocol?: string,
 ) {
   const dimensions = Object.fromEntries(
     USAGE_FIELDS.map((field) => {
@@ -60,6 +74,10 @@ export function mcpUsage(
           knownSubtotal,
           reportedSteps,
           expectedSteps,
+          derivation:
+            (coverage?.fields[field]?.source ?? sources?.[field]) === 'derived'
+              ? derivation(field, protocol)
+              : null,
         },
       ];
     }),
@@ -71,6 +89,7 @@ export function mcpUsage(
       knownSubtotal: number | null;
       reportedSteps: number | null;
       expectedSteps: number;
+      derivation: string | null;
     }
   >;
   const counts = Object.fromEntries(

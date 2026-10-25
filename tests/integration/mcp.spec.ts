@@ -51,7 +51,7 @@ async function setup(request: APIRequestContext) {
     async client(mode: 'auto' | 'legacy' = 'auto') {
       const created = (await request
         .post(path, { headers, data: { name: `test-${mode}` } })
-        .then((response) => response.json())) as { id: string; key: string };
+        .then((response) => response.json())) as { id: string; key: string; name: string };
       keys.push(created.id);
       const client = new Client(
         { name: 'everchat-integration', version: '1.0.0' },
@@ -143,6 +143,7 @@ test('MCP modern and legacy clients share the tool contract and all provider pro
         );
         expect(receipt.receipt?.requestSha256).toMatch(/^[a-f0-9]{64}$/);
         expect(receipt.receipt?.estimatedInputTokens).toBeGreaterThan(0);
+        expect(receipt.receipt?.parameterEvidence).toBe('application_requested');
         const current = receipt.items.find((item) => item.kind === 'message')!;
         expect(current.sourceId).toBeTruthy();
         const inputText = await app.call<import('../../worker/mcp/contracts').ContextResult>(
@@ -171,6 +172,22 @@ test('MCP modern and legacy clients share the tool contract and all provider pro
             return usage.observedAttempts;
           })
           .toBe(1);
+        const costs = await app.call<import('../../worker/mcp/contracts').UsageResult>(
+          client,
+          'everchat_run_usage_get',
+          { runRef: run.runRef, view: 'costs' },
+        );
+        expect(costs.accounting).toBe('ready');
+        expect(costs.costs).toEqual([
+          expect.objectContaining({
+            kind: 'chat',
+            includedInAnswer: true,
+            attempts: 1,
+            amount: null,
+            state: 'unpriced',
+          }),
+        ]);
+        expect(costs.excludedCosts.map((c) => c.kind)).toEqual(['title', 'summary']);
         const detailed = await app.call<RunResult>(client, 'everchat_run_get', {
           runRef: run.runRef,
           includeReasoning: true,
@@ -317,10 +334,14 @@ test('MCP authorized history reads and Markdown exports select one stable branch
     const records: typeof heads.records = [];
     let cursor: string | null = null;
     do {
-      const page = await app.call<typeof heads>(owner.client, 'everchat_conversation_read', {
-        ...readArgs,
-        ...(cursor ? { cursor } : {}),
-      });
+      const page: typeof heads = await app.call<typeof heads>(
+        owner.client,
+        'everchat_conversation_read',
+        {
+          ...readArgs,
+          ...(cursor ? { cursor } : {}),
+        },
+      );
       expect(page.revision).toBeGreaterThan(0);
       records.push(...page.records);
       cursor = page.nextCursor;
@@ -329,13 +350,15 @@ test('MCP authorized history reads and Markdown exports select one stable branch
     expect(
       records
         .filter((r) => r.kind === 'text' && r.channel === 'content')
-        .map((r) => r.text)
+        .map((r) => (r.kind === 'text' ? r.text : ''))
         .join(''),
     ).toContain('History first question');
     let markdown = '';
     cursor = null;
     do {
-      const page = await app.call<
+      const page: import('valibot').InferOutput<
+        typeof import('../../worker/mcp/contracts').conversationExportResultSchema
+      > = await app.call<
         import('valibot').InferOutput<
           typeof import('../../worker/mcp/contracts').conversationExportResultSchema
         >
@@ -374,6 +397,53 @@ test('MCP authorized history reads and Markdown exports select one stable branch
           .catch(() => ({ isError: true }))
       ).isError,
     ).toBe(true);
+  } finally {
+    await app.cleanup();
+  }
+});
+
+test('MCP effective system prompt receipts require explicit key permission and revocation blocks further reads', async ({
+  request,
+}) => {
+  const app = await setup(request);
+  try {
+    const owner = await app.client();
+    const catalog = await app.call<ModelsResult>(owner.client, 'everchat_models_list');
+    const run = async () =>
+      app.call<RunResult>(owner.client, 'everchat_chat', {
+        requestId: crypto.randomUUID(),
+        modelRef: catalog.models[0].ref,
+        prompt: 'System receipt check',
+        systemPrompt: 'versioned test system prompt',
+        waitMs: 10000,
+      });
+    const first = await run();
+    const text = async (ref: string) =>
+      app.call<import('../../worker/mcp/contracts').ContextResult>(
+        owner.client,
+        'everchat_run_context_get',
+        { runRef: ref, view: 'text', step: 0, item: 0 },
+      );
+    expect((await text(first.runRef)).text?.state).toBe('redacted');
+    expect(
+      (
+        await request.patch(`${path}/${owner.id}`, {
+          headers,
+          data: { name: owner.name, readSystemPrompts: true },
+        })
+      ).ok(),
+    ).toBe(true);
+    expect((await text(first.runRef)).text?.state).toBe('redacted');
+    const next = await run();
+    expect((await text(next.runRef)).text).toEqual({
+      state: 'available',
+      text: 'versioned test system prompt',
+    });
+    await request.patch(`${path}/${owner.id}`, {
+      headers,
+      data: { name: owner.name, readSystemPrompts: false },
+    });
+    expect((await text(next.runRef)).text?.state).toBe('redacted');
   } finally {
     await app.cleanup();
   }
@@ -561,6 +631,13 @@ for (const mobile of [false, true]) {
     const panel = page.locator('#settings-panel-mcp');
     await panel.getByRole('button', { name: '创建 API 密钥', exact: true }).click();
     const editor = page.getByRole('dialog', { name: '创建 API 密钥', exact: true });
+    await expect(
+      editor.getByRole('checkbox', { name: '允许读取有效系统提示词' }),
+    ).not.toBeChecked();
+    await expect(editor).toHaveCSS('opacity', '1');
+    await page.screenshot({
+      path: `/tmp/everchat-mcp-permission-${mobile ? 'mobile-dark' : 'desktop-light'}.png`,
+    });
     await expect(editor.getByLabel('密钥名称', { exact: true })).toBeFocused();
     await expect(editor.getByRole('button', { name: '创建 API 密钥', exact: true })).toBeDisabled();
     await editor.getByLabel('密钥名称', { exact: true }).fill(name);
@@ -575,7 +652,11 @@ for (const mobile of [false, true]) {
         await page.evaluate((value) => JSON.stringify(localStorage).includes(value), secret),
       ).toBe(false);
       expect(JSON.stringify(list)).not.toContain(secret);
-      expect(key).toMatchObject({ keyHint: `ec_mcp_••••${secret.slice(-6)}`, lastUsedAt: null });
+      expect(key).toMatchObject({
+        keyHint: `ec_mcp_••••${secret.slice(-6)}`,
+        lastUsedAt: null,
+        readSystemPrompts: false,
+      });
       await created.getByRole('button', { name: '已保存', exact: true }).click();
       await expect(page.getByLabel('新 API 密钥', { exact: true })).toHaveCount(0);
       await expect(panel.getByText('Tracking ID', { exact: true })).toHaveCount(0);
@@ -586,8 +667,14 @@ for (const mobile of [false, true]) {
       const rename = page.getByRole('dialog', { name: '重命名', exact: true });
       name += ' renamed';
       await rename.getByLabel('密钥名称', { exact: true }).fill(name);
+      await rename.getByRole('checkbox', { name: '允许读取有效系统提示词' }).check();
       await rename.getByRole('button', { name: '保存', exact: true }).click();
       await expect(rename).toBeHidden();
+      expect(
+        (await page.request.get(path).then((r) => r.json())).keys.find(
+          (item: { id: string }) => item.id === key.id,
+        ).readSystemPrompts,
+      ).toBe(true);
       await expect(
         panel.getByRole('button', { name: `重命名 ${name}`, exact: true }),
       ).toBeVisible();

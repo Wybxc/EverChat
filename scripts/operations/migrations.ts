@@ -144,6 +144,8 @@ export async function migrateStorage(db: DatabaseSync, kind: StoreKind): Promise
     } else if (kind === 'library') {
       query(MCP_REQUESTS_SCHEMA);
       query(MCP_KEYS_SCHEMA);
+      if (!columns('mcp_keys').includes('readSystemPrompts'))
+        query('ALTER TABLE mcp_keys ADD COLUMN readSystemPrompts INTEGER NOT NULL DEFAULT 0');
       query(MCP_GRANTS_SCHEMA);
       // Old protocol creates every root in MCP; a continuation always points
       // to the same Key's stored run. Grant only unambiguous one-Key origins.

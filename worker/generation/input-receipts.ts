@@ -93,7 +93,7 @@ export class InputReceipts {
     if ((previous && previous.round + 1 !== round) || (!previous && round !== 0))
       throw new Error('Input receipt step sequence mismatch');
     const selected = this.query<{ omitted: number; summarized: number }>(
-      `SELECT COALESCE(SUM(json_extract(payload,'$.reason') IN ('context_budget','recent_messages','unavailable')),0) AS omitted,
+      `SELECT COALESCE(SUM(json_extract(payload,'$.reason') NOT IN ('selected','summary_covered')),0) AS omitted,
         COALESCE(SUM(json_extract(payload,'$.reason')='summary_covered'),0) AS summarized
         FROM input_selections WHERE messageId=?`,
       messageId,
@@ -181,14 +181,51 @@ export class InputReceipts {
     if (!row) return null;
     const receipt = JSON.parse(row.payload) as InputReceipt;
     const rows = this.query<{ ordinal: number; payload: string }>(
-      'SELECT ordinal,payload FROM input_receipt_items WHERE stepId=? AND ordinal>=? ORDER BY ordinal LIMIT 9',
+      `SELECT ordinal,CASE WHEN length(CAST(payload AS BLOB))>2048 THEN json_set(json_remove(payload,'$.attachment','$.transform'),'$.details','metadata_view') ELSE payload END AS payload FROM input_receipt_items WHERE stepId=? AND ordinal>=? ORDER BY ordinal LIMIT 9`,
       receipt.stepId,
       offset,
     ).toArray();
-    const items = rows
-      .slice(0, 8)
-      .map(({ ordinal, payload }) => ({ ordinal, ...(JSON.parse(payload) as InputReceiptItem) }));
-    return { receipt, items, hasMore: rows.length > 8, nextOffset: offset + items.length };
+    const items: ({ ordinal: number } & InputReceiptItem)[] = [];
+    let bytes = Buffer.byteLength(JSON.stringify(receipt));
+    for (const { ordinal, payload } of rows.slice(0, 8)) {
+      let item = JSON.parse(payload) as InputReceiptItem;
+      // Large PDF selections and imported metadata have a separate bounded view.
+      if (Buffer.byteLength(payload) > 2048) {
+        const { attachment: _, transform: __, ...brief } = item;
+        item = { ...brief, details: 'metadata_view' };
+      }
+      const value = { ordinal, ...item },
+        size = Buffer.byteLength(JSON.stringify(value));
+      if (items.length && bytes + size > 24 * 1024) break;
+      items.push(value);
+      bytes += size;
+    }
+    return {
+      receipt,
+      items,
+      hasMore: rows.length > items.length,
+      nextOffset: offset + items.length,
+    };
+  }
+  metadata(messageId: string, round: number, ordinal: number, offset: number) {
+    const row = this.query<{ text: string; characters: number }>(
+      `SELECT substr(input_receipt_items.payload,?,2048) AS text,length(input_receipt_items.payload) AS characters
+      FROM input_receipts JOIN input_receipt_items USING(stepId) WHERE messageId=? AND round=? AND ordinal=?`,
+      offset + 1,
+      messageId,
+      round,
+      ordinal,
+    ).toArray()[0];
+    if (!row) return null;
+    if (offset > row.characters)
+      return { state: 'invalid_cursor' as const, text: '', hasMore: false, nextOffset: offset };
+    const nextOffset = offset + Array.from(row.text).length;
+    return {
+      state: 'available' as const,
+      text: row.text,
+      hasMore: nextOffset < row.characters,
+      nextOffset,
+    };
   }
   exclusions(messageId: string, offset: number) {
     return this.query<{ ordinal: number; payload: string }>(
@@ -209,6 +246,7 @@ export class InputReceipts {
       offset: number,
       limit: number,
     ) => { text: string; nextOffset: number; hasMore: boolean } | null,
+    allowSystem = false,
   ) {
     const row = this.query<{ stepId: string; payload: string }>(
       `SELECT input_receipts.stepId,input_receipt_items.payload FROM input_receipts
@@ -219,8 +257,15 @@ export class InputReceipts {
     ).toArray()[0];
     if (!row) return null;
     const item = JSON.parse(row.payload) as InputReceiptItem;
+    if (item.kind === 'system' && !allowSystem)
+      return { state: 'redacted' as const, text: '', hasMore: false, nextOffset: offset };
     if (item.content === 'redacted' || item.content === 'metadata_only')
-      return { state: item.content, text: '', hasMore: false, nextOffset: offset };
+      return {
+        state: item.content,
+        text: '',
+        hasMore: false,
+        nextOffset: offset,
+      };
     if (item.characters === null || offset > item.characters)
       return { state: 'invalid_cursor' as const, text: '', hasMore: false, nextOffset: offset };
     let text = '';

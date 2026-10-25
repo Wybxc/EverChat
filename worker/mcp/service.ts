@@ -164,6 +164,7 @@ export class McpChatService {
       items: [],
       exclusions: [],
       text: null,
+      textUnit: null,
       hasMore: false,
       nextCursor: null,
     };
@@ -201,9 +202,39 @@ export class McpChatService {
         String(input.item ?? ''),
         String(at),
       ]);
+    if (input.view === 'metadata') {
+      if (input.item === undefined) fail('INVALID_ARGUMENT', 'Specify item from a manifest page.');
+      const page = await conversation.mcpContextMetadata(assistantId, step, input.item, offset);
+      if (!page) fail('CONTEXT_NOT_FOUND', 'This input item is unavailable.', 'retrieval');
+      if (page.state === 'invalid_cursor')
+        fail('INVALID_CURSOR', 'This metadata cursor is outside the item.', 'retrieval');
+      return {
+        ...base,
+        text: { state: page.state, text: page.text },
+        textUnit: 'unicode_codepoints',
+        hasMore: page.hasMore,
+        nextCursor: page.hasMore ? cursor(page.nextOffset) : null,
+      };
+    }
     if (input.view === 'text') {
       if (input.item === undefined) fail('INVALID_ARGUMENT', 'Specify item from a manifest page.');
-      const result = await conversation.mcpContextText(assistantId, step, input.item, offset);
+      const permissions = await this.library.mcpKeyPermissions(this.principal);
+      const result = await conversation.mcpContextText(
+        assistantId,
+        step,
+        input.item,
+        offset,
+        permissions?.readSystemPrompts ?? false,
+      );
+      if (
+        permissions?.readSystemPrompts &&
+        !(await this.library.mcpKeyPermissions(this.principal))?.readSystemPrompts
+      )
+        fail(
+          'PERMISSIONS_CHANGED',
+          'API key permissions changed. Retry this read.',
+          'authorization',
+        );
       if (!result) fail('CONTEXT_NOT_FOUND', 'This input item is unavailable.', 'retrieval');
       if (result.state === 'invalid_cursor')
         fail(
@@ -214,6 +245,7 @@ export class McpChatService {
       return {
         ...base,
         text: { state: result.state, text: result.text },
+        textUnit: 'utf16',
         hasMore: result.hasMore,
         nextCursor: result.hasMore ? cursor(result.nextOffset) : null,
       };
@@ -262,11 +294,65 @@ export class McpChatService {
       accounting: 'unavailable' as const,
       expectedAttempts,
       observedAttempts: null,
+      costs: [],
+      excludedCosts: [
+        { kind: 'title' as const, reason: 'conversation_level_not_attributable' },
+        { kind: 'summary' as const, reason: 'separate_summary_message_not_in_answer_model_steps' },
+      ],
       attempts: [],
       hasMore: false,
       nextCursor: null,
     };
     if (!assistantId || !state || !this.env.USAGE) return base;
+    if (input.view === 'costs') {
+      let after: { kind: string; currency: string } | undefined, revision: string | undefined;
+      if (input.cursor) {
+        const [requestId, expected, kind, currency] = decodeRef('costs1', input.cursor, 4);
+        if (requestId !== record.requestId)
+          fail('INVALID_CURSOR', 'This cost cursor belongs to another run.', 'retrieval');
+        after = { kind, currency };
+        revision = expected;
+      }
+      const page = await this.env.USAGE.getByName('personal').mcpCosts(assistantId, after);
+      if (revision !== undefined && revision !== page.revision)
+        fail(
+          'SNAPSHOT_CHANGED',
+          'Accounting changed. Restart the cost summary without a cursor.',
+          'retrieval',
+        );
+      const complete =
+        expectedAttempts !== null && page.count === expectedAttempts && !page.pending;
+      const last = page.records.at(-1);
+      return {
+        ...base,
+        accounting: complete ? 'ready' : 'pending_accounting',
+        observedAttempts: page.count,
+        costs: page.records.map((row) => {
+          const priced =
+            row.priced === row.attempts && row.pending === 0 && (row.kind !== 'chat' || complete);
+          return {
+            kind: row.kind as 'chat' | 'web_search' | 'read_webpage',
+            includedInAnswer: row.kind === 'chat',
+            currency: row.currency || null,
+            amount: priced ? formatAmount(row.amount, 12) : null,
+            knownSubtotal: row.known ? formatAmount(row.amount, 12) : null,
+            state: priced
+              ? ('priced' as const)
+              : row.known
+                ? ('partial' as const)
+                : ('unpriced' as const),
+            attempts: row.attempts,
+            pricedAttempts: row.priced,
+            finalized: row.pending === 0 && state.status !== 'queued' && state.status !== 'running',
+          };
+        }),
+        hasMore: page.hasMore,
+        nextCursor:
+          page.hasMore && last
+            ? encodeRef('costs1', [record.requestId, page.revision, last.kind, last.currency])
+            : null,
+      };
+    }
     let after: { startedAt: number; id: string } | undefined;
     if (input.cursor) {
       const [requestId, time, id] = decodeRef('usage1', input.cursor, 3);
@@ -306,6 +392,7 @@ export class McpChatService {
             1,
             attempt.usageIsFinal,
             attempt.status !== 'running',
+            attempt.protocol,
           ),
           cost: {
             currency: attempt.cost.currency,

@@ -967,15 +967,18 @@ export class Library extends DurableObject<Env> {
   mcpKeysList() {
     return this.mcpKeys().list();
   }
-  mcpKeyCreate(name: string) {
-    return this.mcpKeys().create(name);
+  mcpKeyCreate(name: string, readSystemPrompts = false) {
+    return this.mcpKeys().create(name, readSystemPrompts);
   }
   mcpKeyRevoke(id: string) {
     this.mcpKeys().revoke(id);
     this.ctx.storage.sql.exec('DELETE FROM mcp_conversation_grants WHERE principal=?', id);
   }
-  mcpKeyRename(id: string, name: string) {
-    return this.mcpKeys().rename(id, name);
+  mcpKeyRename(id: string, name: string, readSystemPrompts?: boolean) {
+    return this.mcpKeys().rename(id, name, readSystemPrompts);
+  }
+  mcpKeyPermissions(id: string) {
+    return this.mcpKeys().permissions(id);
   }
   mcpKeyExists(id: string) {
     return this.mcpKeys().exists(id);

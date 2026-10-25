@@ -154,6 +154,60 @@ export class UsageLedger {
     ).one();
     return { records: records.slice(0, 16), hasMore: records.length > 16, ...coverage };
   }
+  mcpCosts(messageId: string, after?: { kind: string; currency: string }) {
+    // Sum six-digit limbs as SQLite integers, never REAL. Individual rates have
+    // at most 15 digits and counters at most 16, so six limbs cover every valid
+    // estimate. The storage platform cannot hold enough rows to overflow a limb's
+    // int64 accumulator. Return each limb as text to preserve JS precision.
+    const limbs = Array.from(
+      { length: 6 },
+      (_, i) =>
+        `CAST(COALESCE(SUM(CAST(substr('000000000000000000000000000000000000' || COALESCE(json_extract(payload,'$.cost.amount'),'0'),${-6 * (i + 1)},6) AS INTEGER)),0) AS TEXT) AS limb${i}`,
+    );
+    const rows = this.query<
+      Record<string, SqlStorageValue> & {
+        kind: string;
+        currency: string;
+        attempts: number;
+        priced: number;
+        pending: number;
+        known: number;
+      }
+    >(
+      `SELECT kind,COALESCE(json_extract(payload,'$.cost.currency'),'') AS currency,COUNT(*) AS attempts,
+       SUM(json_extract(payload,'$.cost.state')='priced') AS priced,SUM(status='running') AS pending,
+       SUM(json_extract(payload,'$.cost.amount') IS NOT NULL) AS known,${limbs.join(',')}
+       FROM usage_attempts WHERE messageId=? AND kind IN ('chat','web_search','read_webpage')
+       ${after ? "AND (kind>? OR (kind=? AND COALESCE(json_extract(payload,'$.cost.currency'),'')>?))" : ''}
+       GROUP BY kind,COALESCE(json_extract(payload,'$.cost.currency'),'') ORDER BY kind,currency LIMIT 17`,
+      messageId,
+      ...(after ? [after.kind, after.kind, after.currency] : []),
+    ).toArray();
+    const coverage = this.query<{ count: number; pending: number; revision: string }>(
+      `SELECT COALESCE(SUM(kind='chat'),0) AS count,COALESCE(SUM(kind='chat' AND status='running'),0) AS pending,
+       CAST(COALESCE(SUM(version),0) AS TEXT) || ':' || COUNT(*) AS revision
+       FROM usage_attempts WHERE messageId=? AND kind IN ('chat','web_search','read_webpage')`,
+      messageId,
+    ).one();
+    return {
+      ...coverage,
+      hasMore: rows.length > 16,
+      records: rows.slice(0, 16).map((row) => ({
+        kind: row.kind,
+        currency: row.currency,
+        attempts: row.attempts,
+        priced: row.priced,
+        pending: row.pending,
+        known: row.known,
+        amount: Array.from(
+          { length: 6 },
+          (_, i) => BigInt(String(row[`limb${i}`])) * 1000000n ** BigInt(i),
+        )
+          .reduce((a, b) => a + b, 0n)
+          .toString(),
+      })),
+    };
+  }
   private rollup(record: UsageRecord, direction: number) {
     const hour = Math.floor(record.startedAt / HOUR) * HOUR;
     const bucket = JSON.stringify([
