@@ -26,7 +26,7 @@ export const mcpToolDescriptions = {
   everchat_chat:
     'Create a normal saved conversation, or continue from an explicit continuation returned by an earlier answer. Supply a UUID requestId; transport retries MUST reuse the same requestId and original arguments. A new requestId intentionally generates again and may incur costs. Waits are bounded; pending generations continue in the background. Poll with everchat_run_get. presetId and systemPrompt are mutually exclusive.',
   everchat_run_get:
-    'Get your own run, optionally wait up to 20 seconds. When output.hasMore is true, call again with output.nextCursor as outputCursor until false. Reasoning is opt-in and separately paginated with reasoningCursor. Disconnecting or ending a wait does not cancel generation.',
+    'Get your own run and persisted partial output, optionally wait up to 20 seconds. Follow output.nextCursor while hasMore is true; at a running tail, save resumeCursor and poll from that position. completion.truncated signals a provider length limit, independent of paging. Reasoning is opt-in and separately paginated. Disconnecting or ending a wait does not cancel generation.',
   everchat_run_cancel:
     'Explicitly cancel your own generation. Saved partial output remains in the normal conversation. Cancellation is idempotent; completed answers are unchanged.',
 } satisfies Record<McpToolName, string>;
@@ -98,6 +98,14 @@ const guides = {
         },
       },
       {
+        description: 'Resume at a running tail after waiting for more saved content.',
+        arguments: {
+          runRef: '<result.runRef>',
+          outputCursor: '<result.output.resumeCursor>',
+          waitMs: 10000,
+        },
+      },
+      {
         description: 'Read the next reasoning page using its independent cursor.',
         arguments: {
           runRef: '<result.runRef>',
@@ -110,7 +118,9 @@ const guides = {
     notes: [
       'Querying a run never starts a new model request. Disconnecting or ending a wait does not cancel the generation.',
       'Append output.text and follow output.nextCursor as outputCursor while output.hasMore is true. Reasoning is opt-in and has its own hasMore/nextCursor and reasoningCursor.',
+      'When hasMore is false and contentFinal is false, save resumeCursor and use it on a later poll to read only newly persisted text. Partial output may lag the live stream; polling never forces a checkpoint.',
       'A completed status does not mean the current page contains the whole answer. Read all remaining pages, including for interrupted, failed or cancelled runs with retained output.',
+      'completion is null while running. completion.truncated=true means a provider length limit: finish reading the saved pages, then use a new requestId and explicit continuation if you want the model to continue. Re-reading the run never generates more. Unknown finish reasons and interrupted streams do not imply a length limit.',
       'Run statuses are accepted, running, completed, interrupted, failed and cancelled. Use a returned continuation only when it is available.',
       'Errors include code, stage and retryable. OUTCOME_UNKNOWN does not prove a model request was never sent; retry the original chat requestId and input rather than starting a new paid request.',
     ],

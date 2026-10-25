@@ -47,14 +47,14 @@ export async function openProviderStream(
     if (requested) throw new ProviderError('供应商请求不能重复发送。');
     requested = true;
     signal.throwIfAborted();
-    await beforeRequest?.();
-    signal.throwIfAborted();
     init = providerRequestInit(config, init, Boolean(toolRequest));
     if (
       typeof init?.body === 'string' &&
       new TextEncoder().encode(init.body).byteLength > MAX_BUFFERED_BODY_BYTES
     )
       throw new ProviderError('模型请求超过单次序列化的内存保护大小，请减少附件或携带的历史。');
+    await beforeRequest?.();
+    signal.throwIfAborted();
     const response = await globalThis.fetch(input, { ...init, signal, redirect: 'manual' });
     responseHeaders = response.headers;
     if (!response.ok) throw await httpProviderError(response, config, secrets);

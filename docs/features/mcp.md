@@ -86,7 +86,10 @@ EverChat 提供同域 `/mcp` 接口，供支持 Streamable HTTP 和自定义请�
 - `requestId` 是业务幂等键，独立于 MCP 请求 ID。传输失败或结果未知时，必须使用**原 requestId 和原参数**重试；仅等待时间可以改变。新 requestId 表示有意发起新模型调用，可能再次计费。
 - 同密钥、同 ID、同参数返回原任务；参数不同返回 `IDEMPOTENCY_CONFLICT`。模型配置在接受时冻结，之后改设置不会改变原任务。
 - 正文通过 `output.text` 返回。如果 `output.hasMore` 为 true，将 `output.nextCursor` 作为下一次查询的 `outputCursor`，逐页拼接至 false。完成状态不代表当前页已含全文。
+- 运行中也可读取已持久化的内容。追上尾部时保存 `resumeCursor`，稍后从此处继续；`contentFinal` 表示是否还会追加。供应商替换先前文本时返回 `OUTPUT_CHANGED`，应丢弃该通道已拼接的内容并不带游标重读。查询不会强制保存实时尾部。
 - 思考默认不返回。使用 `includeReasoning: true` 读取，并通过独立的 `reasoningCursor` 分页。每页最多 8,192 个 UTF-16 单元，不拆开 Unicode 代理对；不截断总内容。
+- `completion` 与分页独立：运行中为 `null`，终态的 `truncated: true` 表示供应商因长度结束。应先读完现有页面，再由调用方用新 `requestId` 与明确 `continuation` 请求继续生成。断流、取消和未知结束原因不会冒充长度截断。
+- `progress` 返回可观测阶段、时间与持久化长度。可区分尚未认领、准备输入、等待供应商、生成、等待工具及最终保存；思考已输出而正文为空也可辨认。`stale` 只提示一分钟未观察到业务进展，不等于失败，不会自动取消或另起计费调用。旧记录没有回填的进展数据时为 `null`。查询不产生 SQL 心跳，`pollAfterMs` 提供建议等待时间。
 - 用量只返回供应商确实提供或现有记录可确认的数据；缺失数据不填零。网页费用统计仍由现有请求账本负责。
 - 错误提供稳定 code、stage、retryable 和可用 HTTP 状态；不返回可能泄漏凭据的原始供应商响应。`OUTCOME_UNKNOWN` 表示结果未确认，不代表供应商未收到请求，不能擅自换 ID 重试。
 
@@ -105,6 +108,8 @@ Wrangler 已将 `/mcp` 交给 Worker 优先处理。协议响应禁止缓存，S
 | `MCP_DEFAULT_MODEL`  | 模型目录中返回的精确 ref；配置后首次提问可省略 modelRef，不跟随网页输入框的临时选择 |
 | `MCP_ALLOWED_MODELS` | 允许调用的模型 ref 的 JSON 数组；未设置时允许已启用且有凭据的模型                   |
 
-本次将 Conversation／Library 存储版本从 2 升到 3；Library 增加密钥表与轻量幂等请求索引，答案仍只保存在普通消息和现有内容分块中。UsageStore／ShareStore 的版本不变。既有部署必须先按[离线迁移流程](../operations/offline-storage-migration.md#mcp-存储版本-3)完成备份、转换、写回和校验，再部署新业务代码；运行时不会自动升级旧库。
+当前实现分支要求 Conversation／Library 存储版本 4，新增紧凑的生成进展记录；正式站点仍以实际部署版本为准。答案继续只保存在普通消息和既有内容分块中。UsageStore／ShareStore 的版本不变。既有部署必须先按[离线迁移流程](../operations/offline-storage-migration.md)完成备份、转换、写回和校验，再部署新业务代码；运行时不会自动升级旧库。旧记录不伪造进展时间。
 
 设计、范围和待验收边界见 [MCP 计划](../plans/everchat-mcp-server-plan.md)。
+
+后续的实际输入回执、运行进展、完整分支读取／导出、附件版本及独立提案／审查见[上下文可见性与讨论记录改进计划](../plans/mcp-discussion-observability-plan.md)，这些扩展尚未上线。

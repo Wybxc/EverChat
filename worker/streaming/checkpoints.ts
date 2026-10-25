@@ -8,6 +8,7 @@ import { payloadBytes, validateBatch, validateCommit } from '../../shared/stream
 import type { StreamCommit } from '../../shared/streaming/protocol';
 import { ProviderStream, type StreamState } from '../../shared/streaming/provider-stream';
 import type { SqlQuery } from '../generation/metrics';
+import { GenerationProgressStore } from '../generation/progress';
 
 export const CHECKPOINT_SCHEMA = `CREATE TABLE IF NOT EXISTS generation_checkpoints (
   runId TEXT PRIMARY KEY, messageId TEXT NOT NULL, chunkSeq INTEGER NOT NULL,
@@ -49,6 +50,25 @@ export class GenerationCheckpoints {
   private preparing = new Map<string, symbol>();
   constructor(private readonly store: SqlQuery) {}
   page(messageId: string, channel: 'content' | 'reasoning', offset: number, limit = 8192) {
+    if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 2)
+      return { error: 'invalid_cursor' as const };
+    // Read only the last bounded chunk to validate a cursor against the actual
+    // UTF-16 length. SQLite length() counts code points, not JS string offsets.
+    const tail = this.store<{ ordinal: number; payload: string }>(
+      'SELECT ordinal,payload FROM message_content_chunks WHERE messageId=? AND channel=? ORDER BY ordinal DESC LIMIT 1',
+      messageId,
+      channel,
+    ).toArray()[0];
+    let baseContent = '';
+    const length = tail
+      ? tail.ordinal * CHUNK_CHARACTERS + (JSON.parse(tail.payload) as string).length
+      : ((baseContent =
+          this.store<{ value: string | null }>(
+            `SELECT ${channel === 'content' ? 'content' : 'reasoning'} AS value FROM messages WHERE id=?`,
+            messageId,
+          ).toArray()[0]?.value ?? ''),
+        baseContent.length);
+    if (offset > length) return { error: 'invalid_cursor' as const };
     const ordinal = Math.floor(offset / CHUNK_CHARACTERS);
     const rows = this.store<{ payload: string }>(
       'SELECT payload FROM message_content_chunks WHERE messageId=? AND channel=? AND ordinal>=? AND ordinal<=? ORDER BY ordinal',
@@ -63,17 +83,15 @@ export class GenerationCheckpoints {
         .map(({ payload }) => JSON.parse(payload) as string)
         .join('')
         .slice(offset % CHUNK_CHARACTERS);
-    else {
-      const column = channel === 'content' ? 'content' : 'reasoning';
-      const row = this.store<{ value: string | null }>(
-        `SELECT ${column} AS value FROM messages WHERE id=?`,
-        messageId,
-      ).toArray()[0];
-      value = (row?.value ?? '').slice(offset);
-    }
+    else value = baseContent.slice(offset);
+    if (offset > 0 && /^[\uDC00-\uDFFF]/.test(value)) return { error: 'invalid_cursor' as const };
     let end = Math.min(value.length, limit);
     if (end < value.length && /[\uD800-\uDBFF]/.test(value[end - 1])) end--;
-    return { text: value.slice(0, end), hasMore: value.length > end, nextOffset: offset + end };
+    return {
+      text: value.slice(0, end),
+      hasMore: offset + end < length,
+      nextOffset: offset + end,
+    };
   }
   read(messageId: string, content = '', reasoning = '') {
     const chunks = this.store<{ channel: string; payload: string }>(
@@ -207,6 +225,16 @@ export class GenerationCheckpoints {
               state,
               digest,
             );
+            new GenerationProgressStore(this.store).content(commit.messageId, {
+              content: {
+                length: parser.content.length,
+                replaced: !parser.content.startsWith(before.content),
+              },
+              reasoning: {
+                length: parser.reasoning.length,
+                replaced: !parser.reasoning.startsWith(before.reasoning),
+              },
+            });
             this.parsers.set(commit.runId, { offset: last.endOffset, parser });
             this.preparing.delete(commit.runId);
             applied = true;

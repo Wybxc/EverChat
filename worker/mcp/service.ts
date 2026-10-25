@@ -11,6 +11,7 @@ import {
   type RunResult,
 } from './contracts';
 import type { McpRecord } from './store';
+import { readCompletion } from './completion';
 
 function unwrap<T>(result: { value: T } | { error: McpFailure }): T {
   if ('error' in result) throw new McpError(result.error);
@@ -155,7 +156,18 @@ export class McpChatService {
       runRef: this.ref(record),
       conversationId: record.conversationId,
       model: record.model,
-      output: { text: '', hasMore: false },
+      output: {
+        text: '',
+        hasMore: false,
+        resumeCursor: null,
+        contentFinal: false,
+        consistency: 'durable' as const,
+        persistedAt: null,
+        revision: null,
+      },
+      completion: null,
+      progress: null,
+      pollAfterMs: 2000,
       usage: { isFinal: false },
       url: url.href,
     };
@@ -163,6 +175,9 @@ export class McpChatService {
       return {
         ...base,
         status: record.failure.code === 'CANCELLED' ? 'cancelled' : 'failed',
+        output: { ...base.output, contentFinal: true },
+        completion: readCompletion(record.failure.code === 'CANCELLED' ? 'cancelled' : 'failed'),
+        pollAfterMs: 0,
         error: record.failure,
       };
     if (!record.submission)
@@ -208,17 +223,22 @@ export class McpChatService {
           ? 'interrupted'
           : state.status;
     const pending = status === 'accepted' || status === 'running';
+    const observedAt = Date.now();
     const page = async (channel: 'content' | 'reasoning', cursor?: string) => {
       let offset = 0;
+      let epoch: number | undefined;
       if (cursor) {
-        const [id, expectedChannel, value] = decodeRef('page1', cursor, 3);
+        const [requestId, id, expectedChannel, epochValue, value] = decodeRef('page2', cursor, 5);
         offset = Number(value);
+        epoch = Number(epochValue);
         if (
+          requestId !== record.requestId ||
           id !== assistantId ||
           expectedChannel !== channel ||
+          !Number.isSafeInteger(epoch) ||
+          epoch < 0 ||
           !Number.isSafeInteger(offset) ||
-          offset < 0 ||
-          offset > 768 * 1024
+          offset < 0
         )
           fail(
             'INVALID_CURSOR',
@@ -226,14 +246,37 @@ export class McpChatService {
             'retrieval',
           );
       }
-      const result = await conversation.mcpPage(assistantId, channel, offset);
+      const result = await conversation.mcpPage(assistantId, channel, offset, epoch);
       if (!result) fail('RUN_NOT_FOUND', 'The answer was deleted or is unavailable.', 'retrieval');
+      if ('error' in result) {
+        if (result.error === 'output_changed')
+          fail(
+            'OUTPUT_CHANGED',
+            'The provider replaced earlier text in this channel. Read it again without a cursor.',
+            'retrieval',
+          );
+        fail(
+          'INVALID_CURSOR',
+          'This cursor is beyond the persisted output or splits a character.',
+          'retrieval',
+        );
+      }
+      const resumeCursor = encodeRef('page2', [
+        record.requestId,
+        assistantId,
+        channel,
+        String(result.epoch),
+        String(result.nextOffset),
+      ]);
       return {
         text: result.text,
         hasMore: result.hasMore,
-        ...(result.hasMore
-          ? { nextCursor: encodeRef('page1', [assistantId, channel, String(result.nextOffset)]) }
-          : {}),
+        resumeCursor,
+        contentFinal: !pending,
+        consistency: 'durable' as const,
+        persistedAt: result.persistedAt,
+        revision: result.revision,
+        ...(result.hasMore ? { nextCursor: resumeCursor } : {}),
       };
     };
     return {
@@ -241,9 +284,21 @@ export class McpChatService {
       status,
       assistantMessageId: assistantId,
       usage: state.usage,
+      completion: readCompletion(status, state),
+      progress: state.progress
+        ? {
+            ...state.progress,
+            observedAt,
+            elapsedMs: Math.max(0, observedAt - state.progress.acceptedAt),
+            phaseElapsedMs: Math.max(0, observedAt - state.progress.phaseStartedAt),
+            stale: pending && observedAt - state.progress.lastProgressAt >= 60_000,
+            staleAfterMs: 60_000,
+          }
+        : null,
+      pollAfterMs: pending ? 2000 : 0,
       ...(state.finishReason ? { finishReason: state.finishReason } : {}),
-      ...(pending ? {} : { output: await page('content', input.outputCursor) }),
-      ...(!pending && input.includeReasoning
+      output: await page('content', input.outputCursor),
+      ...(input.includeReasoning
         ? { reasoning: await page('reasoning', input.reasoningCursor) }
         : {}),
       ...((status === 'completed' || status === 'interrupted') && state.hasContent

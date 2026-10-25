@@ -4,6 +4,7 @@ import {
   MAX_SYSTEM_PROMPT_LENGTH,
   messageTextFits,
 } from '../../shared/conversation/limits';
+import { generationProgressSchema } from '../../shared/streaming/progress';
 
 const uuid = v.pipe(v.string(), v.uuid());
 const handle = v.pipe(v.string(), v.minLength(1), v.maxLength(2048));
@@ -102,7 +103,38 @@ const pageSchema = v.strictObject({
   text: v.string(),
   hasMore: v.boolean(),
   nextCursor: v.optional(v.string()),
+  resumeCursor: v.nullable(v.string()),
+  contentFinal: v.boolean(),
+  consistency: v.literal('durable'),
+  persistedAt: v.nullable(v.number()),
+  revision: v.nullable(v.number()),
 });
+const progressSchema = v.strictObject({
+  ...generationProgressSchema.entries,
+  toolRound: v.nullable(v.number()),
+  dependency: v.nullable(
+    v.strictObject({
+      type: v.literal('summary'),
+      messageId: v.string(),
+      phase: generationProgressSchema.entries.phase,
+      lastProgressAt: v.nullable(v.number()),
+      revision: v.nullable(v.number()),
+    }),
+  ),
+  observedAt: v.number(),
+  elapsedMs: v.number(),
+  phaseElapsedMs: v.number(),
+  stale: v.boolean(),
+  staleAfterMs: v.number(),
+});
+const completionSchema = v.strictObject({
+  state: v.picklist(['complete', 'incomplete', 'unknown']),
+  truncated: v.nullable(v.boolean()),
+  reason: v.nullable(v.string()),
+  rawFinishReason: v.nullable(v.string()),
+  requiresNewGeneration: v.boolean(),
+});
+export type CompletionResult = v.InferOutput<typeof completionSchema>;
 export const runSchema = v.strictObject({
   status: v.picklist(['accepted', 'running', 'completed', 'interrupted', 'failed', 'cancelled']),
   runRef: v.string(),
@@ -112,6 +144,9 @@ export const runSchema = v.strictObject({
   model: modelSchema,
   output: pageSchema,
   reasoning: v.optional(pageSchema),
+  completion: v.nullable(completionSchema),
+  progress: v.nullable(progressSchema),
+  pollAfterMs: v.number(),
   finishReason: v.optional(v.string()),
   usage: v.strictObject({
     inputTokens: v.optional(v.number()),

@@ -121,6 +121,9 @@ test('MCP modern and legacy clients share the tool contract and all provider pro
           waitMs: 10_000,
         });
         expect(run.status).toBe('completed');
+        expect(run.completion).toMatchObject({ state: 'complete', truncated: false });
+        expect(run.progress?.providerRequestedAt).toBeGreaterThan(0);
+        expect(run.progress?.phase).toBeNull();
         expect(run.output.text).toContain('正文');
         expect(run.continuation).toBeTruthy();
         const detailed = await app.call<RunResult>(client, 'everchat_run_get', {
@@ -225,9 +228,12 @@ test('MCP handles independent parallel runs, busy conversations, active cancella
             ...provider,
             models: [
               ...provider.models,
-              ...['usage-partial-cancel', 'mcp-long-fixture', 'diagnostic-disconnect'].map(
-                (id) => ({ ...provider.models[0], id }),
-              ),
+              ...[
+                'usage-partial-cancel',
+                'mcp-long-fixture',
+                'mcp-length-fixture',
+                'diagnostic-disconnect',
+              ].map((id) => ({ ...provider.models[0], id })),
             ],
           },
     );
@@ -264,6 +270,31 @@ test('MCP handles independent parallel runs, busy conversations, active cancella
       waitMs: 2000,
     });
     expect(active.status).toBe('running');
+    let partial = active;
+    await expect
+      .poll(async () => {
+        partial = await app.call<RunResult>(client, 'everchat_run_get', {
+          runRef: active.runRef,
+          waitMs: 0,
+        });
+        return partial.output.text;
+      })
+      .toContain('已报告部分用量');
+    expect(partial.completion).toBeNull();
+    expect(partial.progress?.phase).toBe('generating');
+    expect(partial.output.contentFinal).toBe(false);
+    const prefixCursor = partial.output.resumeCursor!;
+    await expect
+      .poll(async () => {
+        const tail = await app.call<RunResult>(client, 'everchat_run_get', {
+          runRef: active.runRef,
+          outputCursor: prefixCursor,
+          waitMs: 0,
+        });
+        expect(tail.output.text).not.toContain('已报告部分用量');
+        return tail.output.text.length;
+      })
+      .toBeGreaterThan(0);
     const busy = await app.call<RunResult>(client, 'everchat_chat', {
       requestId: crypto.randomUUID(),
       continuation: root.continuation!,
@@ -275,6 +306,8 @@ test('MCP handles independent parallel runs, busy conversations, active cancella
       runRef: active.runRef,
     });
     expect(cancelled.status).toBe('cancelled');
+    expect(cancelled.completion).toMatchObject({ state: 'incomplete', truncated: null });
+    expect(cancelled.progress?.phase).toBeNull();
     expect(cancelled.output.text).toContain('已报告部分用量');
     const interrupted = await app.call<RunResult>(client, 'everchat_chat', {
       requestId: crypto.randomUUID(),
@@ -283,6 +316,7 @@ test('MCP handles independent parallel runs, busy conversations, active cancella
       waitMs: 10_000,
     });
     expect(interrupted.status).toBe('interrupted');
+    expect(interrupted.completion).toMatchObject({ state: 'incomplete', truncated: null });
     expect(interrupted.output.text).toContain('正文');
     const resumed = await app.call<RunResult>(client, 'everchat_chat', {
       requestId: crypto.randomUUID(),
@@ -292,6 +326,22 @@ test('MCP handles independent parallel runs, busy conversations, active cancella
       waitMs: 10_000,
     });
     expect(resumed.status).toBe('completed');
+    const limited = await app.call<RunResult>(client, 'everchat_chat', {
+      requestId: crypto.randomUUID(),
+      modelRef: model('mcp-length-fixture'),
+      prompt: 'Length finish',
+      waitMs: 10_000,
+    });
+    expect(limited.status).toBe('completed');
+    expect(limited.completion).toMatchObject({
+      state: 'incomplete',
+      truncated: true,
+      reason: 'provider_length_limit',
+      requiresNewGeneration: true,
+    });
+    expect(limited.output.hasMore).toBe(false);
+    expect(limited.output.contentFinal).toBe(true);
+    expect(limited.continuation).toBeTruthy();
     const long = await app.call<RunResult>(client, 'everchat_chat', {
       requestId: crypto.randomUUID(),
       modelRef: model('mcp-long-fixture'),

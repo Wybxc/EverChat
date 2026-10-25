@@ -53,6 +53,7 @@ export async function migrateStorage(db: DatabaseSync, kind: StoreKind): Promise
         version !== undefined &&
         version !== 1 &&
         version !== 2 &&
+        version !== 3 &&
         version !== STORAGE_SCHEMA_VERSION
       )
         throw new Error(`Unsupported storage schema version: ${version}`);

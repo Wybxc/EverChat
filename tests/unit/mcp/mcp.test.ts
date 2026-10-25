@@ -8,7 +8,17 @@ import type { SqlQuery } from '../../../worker/generation/metrics';
 import { initializeConversation } from '../../../worker/conversation/schema';
 import { ConversationMessages } from '../../../worker/conversation/messages';
 import { GenerationCheckpoints } from '../../../worker/streaming/checkpoints';
-import { chatSchema, decodeRef, encodeRef, McpError } from '../../../worker/mcp/contracts';
+import {
+  chatSchema,
+  decodeRef,
+  encodeRef,
+  McpError,
+  runSchema,
+} from '../../../worker/mcp/contracts';
+import { readCompletion } from '../../../worker/mcp/completion';
+import { McpChatService } from '../../../worker/mcp/service';
+import { GenerationProgressStore } from '../../../worker/generation/progress';
+import type { McpRecord } from '../../../worker/mcp/store';
 import { readMcpStatus } from '../../../worker/mcp/conversation';
 import { McpKeys, MCP_KEYS_SCHEMA } from '../../../worker/mcp/keys';
 import { MCP_REQUESTS_SCHEMA } from '../../../worker/mcp/schema';
@@ -226,6 +236,7 @@ test('MCP pagination reads complete Unicode text and reasoning without splitting
         actual = '';
       for (;;) {
         const page = journal.page(message.id, channel, offset);
+        assert.ok(!('error' in page));
         assert.ok(page.text.length <= 8192);
         assert.equal(new TextDecoder().decode(new TextEncoder().encode(page.text)), page.text);
         actual += page.text;
@@ -242,6 +253,196 @@ test('MCP pagination reads complete Unicode text and reasoning without splitting
     db.close();
   }
 });
+test('MCP output cursors are bounded by persisted UTF-16 content, not an arbitrary cumulative limit', () => {
+  const { db, query, storage } = database();
+  try {
+    initializeConversation(storage.sql, false);
+    const journal = new GenerationCheckpoints(query);
+    const id = crypto.randomUUID();
+    query(
+      'INSERT INTO messages(id,role,content,reasoning,status,createdAt) VALUES(?,?,?,?,?,?)',
+      id,
+      'assistant',
+      'a'.repeat(8191) + '😀tail',
+      '',
+      'running',
+      Date.now(),
+    );
+    assert.deepEqual(journal.page(id, 'content', 8192), { error: 'invalid_cursor' });
+    assert.deepEqual(journal.page(id, 'content', 100_000), { error: 'invalid_cursor' });
+    assert.deepEqual(journal.page(id, 'content', -1), { error: 'invalid_cursor' });
+    const text = '文'.repeat(800_000) + '😀';
+    journal.compact({
+      id,
+      role: 'assistant',
+      parts: messageParts(text),
+      status: 'completed',
+      runId: crypto.randomUUID(),
+      createdAt: Date.now(),
+      parentId: null,
+      revisionOf: null,
+      error: null,
+    });
+    assert.deepEqual(journal.page(id, 'content', 800_000), {
+      text: '😀',
+      hasMore: false,
+      nextOffset: 800_002,
+    });
+    assert.deepEqual(journal.page(id, 'content', 800_001), { error: 'invalid_cursor' });
+    assert.deepEqual(journal.page(id, 'content', 800_002), {
+      text: '',
+      hasMore: false,
+      nextOffset: 800_002,
+    });
+    assert.deepEqual(journal.page(id, 'content', 800_003), { error: 'invalid_cursor' });
+  } finally {
+    db.close();
+  }
+});
+test('MCP returns persisted running output and a reusable tail cursor without triggering model work', async () => {
+  const { db, query, storage } = database();
+  try {
+    initializeConversation(storage.sql, false);
+    const journal = new GenerationCheckpoints(query);
+    const assistantId = crypto.randomUUID();
+    query(
+      'INSERT INTO messages(id,role,content,reasoning,status,createdAt) VALUES(?,?,?,?,?,?)',
+      assistantId,
+      'assistant',
+      'saved prefix',
+      'thinking',
+      'running',
+      Date.now(),
+    );
+    const progress = new GenerationProgressStore(query);
+    progress.begin(assistantId, Date.now());
+    progress.phase(assistantId, 'waiting_provider', true);
+    progress.content(assistantId, {
+      content: { length: 'saved prefix'.length, replaced: false },
+      reasoning: { length: 'thinking'.length, replaced: false },
+    });
+    const record: McpRecord = {
+      conversationId: crypto.randomUUID(),
+      requestId: crypto.randomUUID(),
+      model: { ref: 'model', id: 'test', name: 'Test', providerName: 'Fixture' },
+      settings: conversationSettingsDefaults(),
+      submission: { runId: crypto.randomUUID(), userId: crypto.randomUUID(), assistantId },
+    };
+    const env = {
+      APP_ORIGIN: 'https://example.test',
+      LIBRARY: {
+        getByName: () => ({
+          mcpRequest: (principal: string) => (principal === 'owner' ? record : undefined),
+        }),
+      },
+      CONVERSATIONS: {
+        getByName: () => ({
+          mcpStatus: (id: string) => readMcpStatus(query, id),
+          mcpPage: (
+            id: string,
+            channel: 'content' | 'reasoning',
+            offset: number,
+            expectedEpoch?: number,
+          ) => {
+            const progress = new GenerationProgressStore(query).get(id);
+            const epoch = progress?.[channel].epoch ?? 0;
+            if (expectedEpoch !== undefined && expectedEpoch !== epoch)
+              return { error: 'output_changed' };
+            return {
+              ...journal.page(id, channel, offset),
+              epoch,
+              persistedAt: progress?.persistedAt ?? null,
+              revision: progress?.revision ?? null,
+            };
+          },
+        }),
+      },
+    } as unknown as Env;
+    const service = new McpChatService(env, { keyId: 'owner' });
+    const runRef = encodeRef('run1', [record.conversationId, record.requestId]);
+    const first = await service.get({ runRef, waitMs: 0, includeReasoning: true });
+    assert.equal(v.safeParse(runSchema, first).success, true);
+    assert.equal(first.output.text, 'saved prefix');
+    assert.equal(first.reasoning?.text, 'thinking');
+    assert.equal(first.output.hasMore, false);
+    assert.equal(first.output.contentFinal, false);
+    assert.equal(first.completion, null);
+    assert.equal(first.progress?.phase, 'generating');
+    assert.equal(first.progress?.content.length, 'saved prefix'.length);
+    const cursor = first.output.resumeCursor!;
+    const input = { runRef, outputCursor: cursor, waitMs: 0, includeReasoning: false };
+    assert.equal((await service.get(input)).output.text, '');
+    query('UPDATE messages SET content=content || ? WHERE id=?', ' suffix', assistantId);
+    assert.equal((await service.get(input)).output.text, ' suffix');
+    query('UPDATE messages SET status=? WHERE id=?', 'completed', assistantId);
+    query(
+      'INSERT INTO message_generations VALUES(?,?)',
+      assistantId,
+      JSON.stringify({
+        usage: {},
+        usageIsFinal: false,
+        finishReason: 'length',
+        rawFinishReason: 'MAX_TOKENS',
+      }),
+    );
+    const ended = await service.get(input);
+    assert.equal(ended.output.contentFinal, true);
+    assert.equal(ended.output.text, ' suffix');
+    assert.equal(ended.completion?.truncated, true);
+    assert.ok(ended.continuation);
+    await assert.rejects(
+      () => service.get({ ...input, outputCursor: first.reasoning!.resumeCursor! }),
+      /cursor/,
+    );
+    const forged = encodeRef('page2', [record.requestId, assistantId, 'content', '0', '9999999']);
+    await assert.rejects(() => service.get({ ...input, outputCursor: forged }), /cursor/);
+    await assert.rejects(
+      () => new McpChatService(env, { keyId: 'other' }).get(input),
+      /unavailable/,
+    );
+    progress.content(assistantId, {
+      content: { length: 'saved prefix suffix'.length, replaced: true },
+      reasoning: { length: 'thinking'.length, replaced: false },
+    });
+    await assert.rejects(
+      () => service.get(input),
+      (error) => error instanceof McpError && error.detail.code === 'OUTPUT_CHANGED',
+    );
+    assert.equal(
+      (await service.get({ runRef, waitMs: 0, includeReasoning: false })).output.text,
+      'saved prefix suffix',
+    );
+  } finally {
+    db.close();
+  }
+});
+test('MCP distinguishes terminal completeness, length limits, interruption and unknown finish codes', () => {
+  assert.equal(readCompletion('running', { finishReason: 'length' }), null);
+  assert.deepEqual(
+    readCompletion('completed', { finishReason: 'length', rawFinishReason: 'MAX_TOKENS' }),
+    {
+      state: 'incomplete',
+      truncated: true,
+      reason: 'provider_length_limit',
+      rawFinishReason: 'MAX_TOKENS',
+      requiresNewGeneration: true,
+    },
+  );
+  assert.equal(readCompletion('completed', { finishReason: 'stop' })?.truncated, false);
+  for (const status of ['interrupted', 'failed', 'cancelled'] as const) {
+    assert.equal(readCompletion(status, { finishReason: 'error' })?.state, 'incomplete');
+    assert.equal(readCompletion(status, { finishReason: 'error' })?.truncated, null);
+  }
+  assert.equal(readCompletion('completed')?.state, 'unknown');
+  assert.equal(
+    readCompletion('completed', { finishReason: 'content-filter' })?.requiresNewGeneration,
+    true,
+  );
+  assert.equal(
+    readCompletion('failed', { rawFinishReason: 'arbitrary private message' })?.rawFinishReason,
+    null,
+  );
+});
 test('MCP references support Unicode IDs; tool input rejects excess bytes, unknown modes and non-finite wait', () => {
   const id = '供应商/模型😀';
   assert.deepEqual(decodeRef('model1', encodeRef('model1', [crypto.randomUUID(), id]), 2)[1], id);
@@ -256,7 +457,7 @@ test('MCP references support Unicode IDs; tool input rejects excess bytes, unkno
     assert.equal(v.safeParse(chatSchema, { ...base, ...extra }).success, false);
   assert.equal(conversationSettingsDefaults().useGlobalMaxOutputTokens, true);
 });
-test('MCP tables are introduced only by offline schema 2 to 3 migration', async () => {
+test('MCP tables are introduced only by offline migration from an earlier schema', async () => {
   const { db, query } = database();
   try {
     db.exec(
@@ -268,6 +469,25 @@ test('MCP tables are introduced only by offline schema 2 to 3 migration', async 
     initializeStorageSchema(query);
     assert.equal(query('SELECT * FROM mcp_keys').toArray().length, 0);
     assert.equal(query('SELECT * FROM mcp_requests').toArray().length, 0);
+  } finally {
+    db.close();
+  }
+});
+test('schema 3 progress storage is added only offline, without fabricated historical receipts', async () => {
+  const { db, query, storage } = database();
+  try {
+    initializeConversation(storage.sql, false);
+    query('DROP TABLE generation_progress');
+    query('UPDATE storage_schema SET version=3');
+    assert.throws(() => initializeConversation(storage.sql, false));
+    assert.equal(
+      query("SELECT 1 FROM sqlite_master WHERE name='generation_progress'").toArray().length,
+      0,
+    );
+    const patch = await migrateStorage(db, 'conversation');
+    initializeConversation(storage.sql, false);
+    assert.equal(query('SELECT * FROM generation_progress').toArray().length, 0);
+    assert.ok(patch.some(({ sql }) => sql.includes('generation_progress')));
   } finally {
     db.close();
   }

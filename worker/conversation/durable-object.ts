@@ -61,6 +61,7 @@ import { GenerationCancelled, ProviderError, providerIssue } from '../generation
 import { GenerationMeter, measuredQuery } from '../generation/metrics';
 import { mergeGenerationDiagnostics } from '../../shared/streaming/diagnostics';
 import { generationTiming } from '../generation/timing';
+import { GenerationProgressStore } from '../generation/progress';
 import type { Env } from '../http/env';
 import { json } from '../http/response';
 import { CompletionOutbox } from '../notifications/outbox';
@@ -154,6 +155,7 @@ export class Conversation extends DurableObject<Env> {
   private readonly subscribers: ConversationSubscribers;
   private readonly messages: ConversationMessages;
   private readonly journal: GenerationCheckpoints;
+  private readonly progress: GenerationProgressStore;
   private readonly tools!: ToolTaskJournal;
   private readonly activeTools = new Map<
     string,
@@ -196,6 +198,7 @@ export class Conversation extends DurableObject<Env> {
         () => !this.deletedAt,
       );
     this.journal = new GenerationCheckpoints(this.query.bind(this));
+    this.progress = new GenerationProgressStore(this.query.bind(this));
     this.messages = new ConversationMessages(
       this.query.bind(this),
       this.journal,
@@ -722,6 +725,7 @@ export class Conversation extends DurableObject<Env> {
         this.query('DELETE FROM message_generations WHERE messageId = ?', message.id);
         this.query('DELETE FROM message_images WHERE messageId = ?', message.id);
         this.query('DELETE FROM message_files WHERE messageId = ?', message.id);
+        this.progress.erase(message.id);
         const tool = this.toolRequest(message.id);
         if (tool) {
           this.query(
@@ -789,9 +793,26 @@ export class Conversation extends DurableObject<Env> {
   mcpStatus(assistantId: string) {
     return this.deletedAt ? null : readMcpStatus(this.query.bind(this), assistantId);
   }
-  mcpPage(assistantId: string, channel: 'content' | 'reasoning', offset: number) {
-    if (this.deletedAt || !readMcpStatus(this.query.bind(this), assistantId)) return null;
-    return this.journal.page(assistantId, channel, offset);
+  mcpPage(
+    assistantId: string,
+    channel: 'content' | 'reasoning',
+    offset: number,
+    expectedEpoch?: number,
+  ) {
+    if (this.deletedAt) return null;
+    const state = readMcpStatus(this.query.bind(this), assistantId);
+    if (!state) return null;
+    const epoch = state.progress?.[channel].epoch ?? 0;
+    if (expectedEpoch !== undefined && expectedEpoch !== epoch)
+      return { error: 'output_changed' as const };
+    const page = this.journal.page(assistantId, channel, offset);
+    if (page.error) return { error: page.error };
+    return {
+      ...page,
+      epoch,
+      persistedAt: state.progress?.persistedAt ?? null,
+      revision: state.progress?.revision ?? null,
+    };
   }
   async submit(
     conversationId: string,
@@ -1088,6 +1109,7 @@ export class Conversation extends DurableObject<Env> {
       if (!parent) this.messages.insert(user);
       const summary = automatic ? this.queueSummary(conversationId, automatic, true) : undefined;
       this.messages.insert(assistant);
+      if (summary) this.progress.phase(assistant.id, 'preparing');
       if (input.tools)
         this.query(
           'INSERT INTO message_web_tools VALUES (?, ?, ?, ?, ?)',
@@ -1274,6 +1296,7 @@ export class Conversation extends DurableObject<Env> {
     );
     if (payload === request.payload) return null;
     this.query('UPDATE message_web_tools SET payload = ? WHERE rootId = ?', payload, rootId);
+    this.progress.advance(request.messageId);
     return request;
   }
   private initializeToolTasks() {
@@ -1493,6 +1516,7 @@ export class Conversation extends DurableObject<Env> {
             STREAM_VERSION,
             state.messageId,
           );
+          this.progress.phase(state.messageId, 'queued');
         }
         const current = this.tools.state(taskId);
         if (round !== current.round || current.phase !== 'queued') return null;
@@ -1922,16 +1946,20 @@ export class Conversation extends DurableObject<Env> {
             modelIdentity(claim.config!),
           );
           if (!this.deletedAt)
-            this.query(
-              'UPDATE generation_timings SET providerStartedAt=? WHERE runId=?',
-              Date.now(),
-              runId,
-            );
+            this.ctx.storage.transactionSync(() => {
+              this.query(
+                'UPDATE generation_timings SET providerStartedAt=? WHERE runId=?',
+                Date.now(),
+                runId,
+              );
+              this.progress.phase(claim.assistantId!, 'waiting_provider', true);
+            });
           this.ctx.waitUntil(this.accounting.deliver().finally(() => this.scheduleAlarm()));
         },
         observeOutput,
       );
       await consumeModelStream(body, active, (bytes) => active.buffer.add(bytes));
+      this.progress.phase(claim.assistantId!, 'finalizing');
       await active.buffer.flush();
       const turn = toolModel && !active.cancelled ? body.toolTurn : undefined;
       this.finish(runId, active.cancelled ? 'cancelled' : 'completed', null, turn);
@@ -2000,6 +2028,7 @@ export class Conversation extends DurableObject<Env> {
         Date.now(),
         runId,
       );
+      this.progress.phase(message.id, 'preparing');
       return this.messages.record([this.messages.message(message.id)!]);
     });
     if (!change) return null;
@@ -2303,6 +2332,7 @@ export class Conversation extends DurableObject<Env> {
           "UPDATE runs SET config = NULL, context = '[]' WHERE assistantId = ?",
           message.id,
         );
+      this.progress.phase(message.id, finalStatus === 'running' ? 'waiting_tools' : null);
       const terminal = this.messages.record(
         [this.messages.message(message.id)!, ...this.resolveDependentAnswers(runId, finalStatus)],
         run.conversationId,
@@ -2435,6 +2465,7 @@ export class Conversation extends DurableObject<Env> {
         answer.id,
       );
       this.query('DELETE FROM run_dependencies WHERE runId = ?', run.id);
+      this.progress.phase(answer.id, status === 'queued' ? 'queued' : null);
       updated.push(this.messages.rawMessage(answer.id)!);
     }
     return updated;
