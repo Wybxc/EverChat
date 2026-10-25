@@ -188,10 +188,26 @@ test('local conversion emits a replayable patch, preserving IDs, timestamps, pin
     // Simulate a missing acknowledgement: each acknowledged batch is applied only
     // once by the maintenance bridge. Normal startup never executes this patch.
     remote.exec('BEGIN');
-    for (const statement of patch)
-      remote.prepare(statement.sql).run(...statement.args.map(decodeValue));
+    for (const statement of patch) {
+      if (statement.args.length)
+        remote.prepare(statement.sql).run(...statement.args.map(decodeValue));
+      else remote.exec(statement.sql);
+    }
     remote.exec('COMMIT');
     assert.deepEqual(snapshot(remote), snapshot(local));
+    for (const name of [
+      'mcp_uploads',
+      'mcp_upload_files',
+      'mcp_attachment_parts',
+      'mcp_upload_files_owner',
+      'mcp_attachment_parts_cleanup',
+    ]) {
+      assert.ok(local.prepare('SELECT 1 FROM sqlite_master WHERE name=?').get(name), name);
+      assert.deepEqual(
+        remote.prepare('SELECT type,sql FROM sqlite_master WHERE name=?').get(name),
+        local.prepare('SELECT type,sql FROM sqlite_master WHERE name=?').get(name),
+      );
+    }
     assert.equal(
       local.prepare('SELECT apiKey FROM web_tool_credentials').get()!.apiKey,
       'private-tavily-key',

@@ -150,7 +150,11 @@ export async function migrateStorage(db: DatabaseSync, kind: StoreKind): Promise
         query('ALTER TABLE mcp_keys ADD COLUMN readSystemPrompts INTEGER NOT NULL DEFAULT 0');
       query(MCP_GRANTS_SCHEMA);
       query(DOCUMENT_INPUT_SNAPSHOTS_SCHEMA);
-      query(MCP_ATTACHMENTS_SCHEMA);
+      // DatabaseSync.prepare executes only the first statement, while the
+      // maintenance bridge's sql.exec executes the entire schema script.
+      // Keep the emitted patch unchanged and build the same complete local DB.
+      db.exec(MCP_ATTACHMENTS_SCHEMA);
+      patch.push({ sql: MCP_ATTACHMENTS_SCHEMA, args: [] });
       // Old protocol creates every root in MCP; a continuation always points
       // to the same Key's stored run. Grant only unambiguous one-Key origins.
       if (exists('conversations'))

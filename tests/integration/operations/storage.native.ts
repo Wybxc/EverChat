@@ -179,6 +179,9 @@ test('native maintenance transport rejects anonymous HTTP, preserves unrelated s
       'web_tool_service',
       'web_tool_credentials',
       'storage_schema',
+      'mcp_uploads',
+      'mcp_upload_files',
+      'mcp_attachment_parts',
     ]) {
       const rows = await (await request('rows', { table, offset: 0 })).json();
       assert.deepEqual(
@@ -186,6 +189,15 @@ test('native maintenance transport rejects anonymous HTTP, preserves unrelated s
         local
           .prepare(`SELECT * FROM ${table}`)
           .all()
+          .map((row) => ({ ...row })),
+      );
+    }
+    for (const name of ['mcp_upload_files_owner', 'mcp_attachment_parts_cleanup']) {
+      assert.deepEqual(
+        await remote.exec("SELECT name,sql FROM sqlite_master WHERE type='index' AND name=?", name),
+        local
+          .prepare("SELECT name,sql FROM sqlite_master WHERE type='index' AND name=?")
+          .all(name)
           .map((row) => ({ ...row })),
       );
     }
