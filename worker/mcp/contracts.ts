@@ -25,6 +25,9 @@ export const MCP_TOOL_NAMES = [
   'everchat_run_cancel',
   'everchat_run_context_get',
   'everchat_run_usage_get',
+  'everchat_conversations_list',
+  'everchat_conversation_read',
+  'everchat_conversation_export',
 ] as const;
 export type McpToolName = (typeof MCP_TOOL_NAMES)[number];
 export const helpInputSchema = v.strictObject({ tool: v.optional(v.picklist(MCP_TOOL_NAMES)) });
@@ -95,6 +98,100 @@ export const contextGetSchema = v.strictObject({
 export type ContextGetArguments = v.InferOutput<typeof contextGetSchema>;
 export const usageGetSchema = v.strictObject({ runRef: handle, cursor: v.optional(handle) });
 export type UsageGetArguments = v.InferOutput<typeof usageGetSchema>;
+export const conversationListSchema = v.strictObject({ cursor: v.optional(handle) });
+export const conversationReadSchema = v.strictObject({
+  conversationRef: handle,
+  headId: v.optional(uuid),
+  view: v.optional(v.picklist(['branch', 'branches']), 'branch'),
+  cursor: v.optional(handle),
+  includeReasoning: v.optional(v.boolean(), false),
+  includeTools: v.optional(v.boolean(), false),
+  includeActive: v.optional(v.boolean(), false),
+  fromRound: v.optional(v.pipe(v.number(), v.safeInteger(), v.minValue(1))),
+  toRound: v.optional(v.pipe(v.number(), v.safeInteger(), v.minValue(1))),
+});
+export type ConversationReadArguments = v.InferOutput<typeof conversationReadSchema>;
+const historyRecordSchema = v.variant('kind', [
+  v.strictObject({
+    kind: v.literal('message'),
+    id: uuid,
+    ref: v.string(),
+    parentId: v.nullable(uuid),
+    revisionOf: v.nullable(uuid),
+    role: v.string(),
+    status: v.string(),
+    deleted: v.boolean(),
+    createdAt: v.number(),
+    model: v.nullable(v.string()),
+    modelName: v.nullable(v.string()),
+    providerId: v.nullable(v.string()),
+    round: v.number(),
+    revision: v.number(),
+    summary: v.boolean(),
+    inputReceiptSteps: v.number(),
+  }),
+  v.strictObject({
+    kind: v.literal('text'),
+    messageId: uuid,
+    channel: v.picklist(['content', 'reasoning', 'tools']),
+    offset: v.number(),
+    text: v.string(),
+    final: v.boolean(),
+  }),
+  v.strictObject({
+    kind: v.literal('attachment'),
+    messageId: uuid,
+    index: v.number(),
+    offset: v.number(),
+    json: v.string(),
+    final: v.boolean(),
+  }),
+  v.strictObject({
+    kind: v.literal('summary'),
+    messageId: uuid,
+    offset: v.number(),
+    sourceIds: v.array(uuid),
+    throughId: uuid,
+    final: v.boolean(),
+  }),
+]);
+export const conversationListResultSchema = v.strictObject({
+  conversations: v.array(
+    v.strictObject({
+      ref: v.string(),
+      id: uuid,
+      title: v.string(),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    }),
+  ),
+  hasMore: v.boolean(),
+  nextCursor: v.nullable(v.string()),
+});
+export const conversationReadResultSchema = v.strictObject({
+  conversationRef: v.string(),
+  headId: v.nullable(uuid),
+  revision: v.nullable(v.number()),
+  epoch: v.nullable(v.string()),
+  partial: v.boolean(),
+  heads: v.array(
+    v.strictObject({ id: uuid, createdAt: v.number(), status: v.string(), role: v.string() }),
+  ),
+  records: v.array(historyRecordSchema),
+  hasMore: v.boolean(),
+  nextCursor: v.nullable(v.string()),
+});
+export const conversationExportResultSchema = v.strictObject({
+  conversationRef: v.string(),
+  headId: uuid,
+  revision: v.number(),
+  epoch: v.string(),
+  partial: v.boolean(),
+  format: v.literal('markdown'),
+  text: v.string(),
+  hasMore: v.boolean(),
+  nextCursor: v.nullable(v.string()),
+});
 export const contextResultSchema = v.strictObject({
   context: contextSummarySchema,
   receipt: v.nullable(inputReceiptSchema),

@@ -20,6 +20,7 @@ import type { ContextSummary } from '../../shared/streaming/input-receipt';
 import { mcpUsage } from '../../shared/usage/evidence';
 import { formatAmount } from '../../shared/usage/pricing';
 import { addGenerationUsage } from '../../shared/streaming/generation';
+import { McpHistoryService } from './history-service';
 
 const unavailableContext: ContextSummary = {
   state: 'unavailable',
@@ -38,6 +39,7 @@ function unwrap<T>(result: { value: T } | { error: McpFailure }): T {
   return result.value;
 }
 export class McpChatService {
+  readonly history: McpHistoryService;
   private readonly principal: string;
   private readonly library;
   constructor(
@@ -46,6 +48,7 @@ export class McpChatService {
     private readonly signal?: AbortSignal,
   ) {
     this.principal = identity.keyId;
+    this.history = new McpHistoryService(env, this.principal);
     this.library = env.LIBRARY.getByName('personal');
   }
   async models() {

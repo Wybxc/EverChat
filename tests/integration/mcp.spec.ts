@@ -94,6 +94,9 @@ test('MCP modern and legacy clients share the tool contract and all provider pro
       const tools = await client.listTools();
       expect(tools.tools.map(({ name }) => name).sort()).toEqual([
         'everchat_chat',
+        'everchat_conversation_export',
+        'everchat_conversation_read',
+        'everchat_conversations_list',
         'everchat_help',
         'everchat_models_list',
         'everchat_run_cancel',
@@ -258,6 +261,119 @@ test('MCP retries, continuation, cancellation and API key isolation are enforced
       headers: { Authorization: `Bearer ${two.key}` },
     });
     expect(privateWithoutCookie.status).toBe(401);
+  } finally {
+    await app.cleanup();
+  }
+});
+
+test('MCP authorized history reads and Markdown exports select one stable branch and never expose another key', async ({
+  request,
+}) => {
+  const app = await setup(request);
+  try {
+    const owner = await app.client(),
+      other = await app.client();
+    const catalog = await app.call<ModelsResult>(owner.client, 'everchat_models_list');
+    const first = await app.call<RunResult>(owner.client, 'everchat_chat', {
+      requestId: crypto.randomUUID(),
+      modelRef: catalog.models[0].ref,
+      prompt: 'History first question',
+      waitMs: 10000,
+    });
+    const second = await app.call<RunResult>(owner.client, 'everchat_chat', {
+      requestId: crypto.randomUUID(),
+      continuation: first.continuation,
+      prompt: 'History second question',
+      waitMs: 10000,
+    });
+    const list = await app.call<
+      import('valibot').InferOutput<
+        typeof import('../../worker/mcp/contracts').conversationListResultSchema
+      >
+    >(owner.client, 'everchat_conversations_list');
+    const item = list.conversations.find((c) => c.id === first.conversationId)!;
+    expect(item).toBeTruthy();
+    const hidden = await app.call<typeof list>(other.client, 'everchat_conversations_list');
+    expect(hidden.conversations.some((c) => c.id === first.conversationId)).toBe(false);
+    const unauthorized = await other.client.callTool({
+      name: 'everchat_conversation_read',
+      arguments: { conversationRef: item.ref, headId: second.assistantMessageId },
+    });
+    expect(unauthorized.isError).toBe(true);
+    expect(unauthorized.structuredContent).toMatchObject({
+      error: { code: 'CONVERSATION_UNAVAILABLE' },
+    });
+    const heads = await app.call<
+      import('valibot').InferOutput<
+        typeof import('../../worker/mcp/contracts').conversationReadResultSchema
+      >
+    >(owner.client, 'everchat_conversation_read', { conversationRef: item.ref, view: 'branches' });
+    expect(heads.heads.map((h) => h.id)).toContain(second.assistantMessageId);
+    const readArgs = {
+      conversationRef: item.ref,
+      headId: second.assistantMessageId,
+      includeReasoning: true,
+    };
+    const records: typeof heads.records = [];
+    let cursor: string | null = null;
+    do {
+      const page = await app.call<typeof heads>(owner.client, 'everchat_conversation_read', {
+        ...readArgs,
+        ...(cursor ? { cursor } : {}),
+      });
+      expect(page.revision).toBeGreaterThan(0);
+      records.push(...page.records);
+      cursor = page.nextCursor;
+    } while (cursor);
+    expect(records.filter((r) => r.kind === 'message').map((r) => r.round)).toEqual([1, 1, 2, 2]);
+    expect(
+      records
+        .filter((r) => r.kind === 'text' && r.channel === 'content')
+        .map((r) => r.text)
+        .join(''),
+    ).toContain('History first question');
+    let markdown = '';
+    cursor = null;
+    do {
+      const page = await app.call<
+        import('valibot').InferOutput<
+          typeof import('../../worker/mcp/contracts').conversationExportResultSchema
+        >
+      >(owner.client, 'everchat_conversation_export', {
+        ...readArgs,
+        ...(cursor ? { cursor } : {}),
+      });
+      markdown += page.text;
+      cursor = page.nextCursor;
+    } while (cursor);
+    expect(markdown).toContain('Round 2');
+    expect(markdown).toContain('History second question');
+    expect(markdown).toContain('MCP test model');
+    const start = await app.call<typeof heads>(
+      owner.client,
+      'everchat_conversation_read',
+      readArgs,
+    );
+    expect(start.nextCursor).toBeTruthy();
+    await app.call<RunResult>(owner.client, 'everchat_chat', {
+      requestId: crypto.randomUUID(),
+      continuation: second.continuation,
+      prompt: 'advance revision',
+      waitMs: 10000,
+    });
+    const changed = await owner.client.callTool({
+      name: 'everchat_conversation_read',
+      arguments: { ...readArgs, cursor: start.nextCursor },
+    });
+    expect(changed.structuredContent).toMatchObject({ error: { code: 'SNAPSHOT_CHANGED' } });
+    await request.delete(`${path}/${owner.id}`, { headers });
+    expect(
+      (
+        await owner.client
+          .callTool({ name: 'everchat_conversation_read', arguments: readArgs })
+          .catch(() => ({ isError: true }))
+      ).isError,
+    ).toBe(true);
   } finally {
     await app.cleanup();
   }

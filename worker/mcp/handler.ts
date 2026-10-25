@@ -18,6 +18,11 @@ import {
   contextResultSchema,
   usageGetSchema,
   usageResultSchema,
+  conversationListSchema,
+  conversationListResultSchema,
+  conversationReadSchema,
+  conversationReadResultSchema,
+  conversationExportResultSchema,
 } from './contracts';
 import { mcpHelp, mcpToolDescriptions } from './help';
 import { McpChatService } from './service';
@@ -144,6 +149,36 @@ export async function serveMcp(request: Request, env: Env) {
             annotations: { readOnlyHint: true, openWorldHint: false },
           },
           (input) => result(() => service.usage(input)),
+        );
+        server.registerTool(
+          'everchat_conversations_list',
+          {
+            description: mcpToolDescriptions.everchat_conversations_list,
+            inputSchema: schema(conversationListSchema),
+            outputSchema: schema(conversationListResultSchema),
+            annotations: { readOnlyHint: true, openWorldHint: false },
+          },
+          ({ cursor }) => result(() => service.history.list(cursor)),
+        );
+        server.registerTool(
+          'everchat_conversation_read',
+          {
+            description: mcpToolDescriptions.everchat_conversation_read,
+            inputSchema: schema(conversationReadSchema),
+            outputSchema: schema(conversationReadResultSchema),
+            annotations: { readOnlyHint: true, openWorldHint: false },
+          },
+          (input) => result(() => service.history.read(input)),
+        );
+        server.registerTool(
+          'everchat_conversation_export',
+          {
+            description: mcpToolDescriptions.everchat_conversation_export,
+            inputSchema: schema(conversationReadSchema),
+            outputSchema: schema(conversationExportResultSchema),
+            annotations: { readOnlyHint: true, openWorldHint: false },
+          },
+          (input) => result(() => service.history.export(input)),
         );
         server.registerTool(
           'everchat_run_cancel',

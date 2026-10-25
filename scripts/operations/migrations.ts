@@ -12,6 +12,7 @@ import { addRecord, emptyTotals } from '../../worker/usage/aggregate';
 import { USAGE_OUTBOX_SCHEMA } from '../../worker/usage/schema';
 import { MCP_REQUESTS_SCHEMA } from '../../worker/mcp/schema';
 import { MCP_KEYS_SCHEMA } from '../../worker/mcp/keys';
+import { MCP_GRANTS_SCHEMA } from '../../worker/mcp/history';
 import { encodeValue, type Statement, type StoreKind } from './storage-protocol';
 
 // Only this Node.js operations module understands previous database formats.
@@ -143,6 +144,16 @@ export async function migrateStorage(db: DatabaseSync, kind: StoreKind): Promise
     } else if (kind === 'library') {
       query(MCP_REQUESTS_SCHEMA);
       query(MCP_KEYS_SCHEMA);
+      query(MCP_GRANTS_SCHEMA);
+      // Old protocol creates every root in MCP; a continuation always points
+      // to the same Key's stored run. Grant only unambiguous one-Key origins.
+      if (exists('conversations'))
+        query(`INSERT OR IGNORE INTO mcp_conversation_grants
+        SELECT r.principal,r.conversationId,${columns('conversations').includes('createdAt') ? 'COALESCE(c.createdAt,0)' : '0'} FROM mcp_requests AS r
+        JOIN mcp_keys AS k ON k.id=r.principal JOIN conversations AS c ON c.id=r.conversationId
+        WHERE NOT EXISTS (SELECT 1 FROM mcp_requests AS other WHERE other.conversationId=r.conversationId AND other.principal!=r.principal)
+        ${exists('conversation_deletions') ? 'AND NOT EXISTS (SELECT 1 FROM conversation_deletions WHERE id=r.conversationId)' : ''}
+        GROUP BY r.principal,r.conversationId`);
       if (
         exists('conversation_metadata') &&
         columns('conversation_metadata').includes('archived')

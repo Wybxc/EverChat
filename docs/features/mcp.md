@@ -34,15 +34,18 @@ EverChat 提供同域 `/mcp` 接口，供支持 Streamable HTTP 和自定义请�
 
 ## 工具与帮助
 
-| 工具                       | 用途                                                                  |
-| -------------------------- | --------------------------------------------------------------------- |
-| `everchat_help`            | 获取全部工具的用法、参数 schema、注意事项和调用示例，也可按工具名查询 |
-| `everchat_models_list`     | 列出可调用模型、能力和预设；不返回供应商端点、密钥或系统提示词内容    |
-| `everchat_chat`            | 新建正常对话并提问，或从明确的 `continuation` 位置继续                |
-| `everchat_run_get`         | 等待同一任务、查询状态并分页读取正文和可选思考内容                    |
-| `everchat_run_cancel`      | 停止自己的任务，保留已生成内容；重复取消不会新增任务                  |
-| `everchat_run_context_get` | 分页读取自己任务的输入回执、来源、排除清单及可读取的逻辑文本          |
-| `everchat_run_usage_get`   | 按模型步骤分页读取 Token 依据、价格快照元数据与费用估计               |
+| 工具                           | 用途                                                                  |
+| ------------------------------ | --------------------------------------------------------------------- |
+| `everchat_help`                | 获取全部工具的用法、参数 schema、注意事项和调用示例，也可按工具名查询 |
+| `everchat_models_list`         | 列出可调用模型、能力和预设；不返回供应商端点、密钥或系统提示词内容    |
+| `everchat_chat`                | 新建正常对话并提问，或从明确的 `continuation` 位置继续                |
+| `everchat_run_get`             | 等待同一任务、查询状态并分页读取正文和可选思考内容                    |
+| `everchat_run_cancel`          | 停止自己的任务，保留已生成内容；重复取消不会新增任务                  |
+| `everchat_run_context_get`     | 分页读取自己任务的输入回执、来源、排除清单及可读取的逻辑文本          |
+| `everchat_run_usage_get`       | 按模型步骤分页读取 Token 依据、价格快照元数据与费用估计               |
+| `everchat_conversations_list`  | 分页发现当前 Key 获授权的正常对话                                     |
+| `everchat_conversation_read`   | 发现分支 head，逐页读取指定分支的结构化记录                           |
+| `everchat_conversation_export` | 逐页导出指定分支或轮次范围的 Markdown                                 |
 
 初次接入可调用 `everchat_help({})` 查看完整说明，或调用 `everchat_help({ "tool": "everchat_chat" })` 只查看某个工具。帮助只返回静态用法，不读取供应商配置、不创建对话、不调用模型；与其他工具一样需要有效的 MCP 密钥。附件功能仍在规划中，不在当前可调用工具内。
 
@@ -106,6 +109,16 @@ EverChat 提供同域 `/mcp` 接口，供支持 Streamable HTTP 和自定义请�
 `everchat_run_context_get` 默认读取首个步骤的 manifest，按 `nextCursor` 遍历；后续工具步骤以 `previousStepId` 引用前一步，只记录新的工具资料。用 `view: "exclusions"` 查看省略和摘要覆盖的消息 ID；用 `view: "text"`、`step` 和 manifest 的 `item` 读取逻辑文本。普通消息、摘要包装和应用生成文本按当时依据还原，删除的来源返回 `content_unavailable`。系统提示词保持 `redacted`；文件当前仅返回版本、指纹、实际选区和校验元数据，全文有界读取仍待附件阶段完成。工具内容为 `scope: "public_projection"`，不含供应商私有思考签名或加密续接。请求指纹不附带 HTTP 正文、鉴权头或 base64。
 
 `everchat_run_usage_get` 复用账本，按模型步骤分页；`scope: "answer_model_steps"` 不含自动标题、摘要和网页服务费用。`pending_accounting` 表示账本尚未追上任务，查询不会补算或改变价格。费用以十进制币种字符串返回，基于当时价格快照，属于估算；不把不同币种相加。跨步骤费用汇总仍待完成。
+
+## 讨论记录与导出（实现分支，尚未发布）
+
+Key 创建的对话会登记显式读取授权，包含以后在该对话中通过网页追加的消息。其他 Key 及网页独立创建的对话默认不可见；知道 ID、URL 或 ref 不会取得授权。撤销 Key 后拒绝后续读取，已经下载的内容无法远程撤回。存量授权只在离线迁移中从无歧义的 MCP 创建记录建立。
+
+先调用 `everchat_conversations_list` 取得 `conversationRef`；调用 `everchat_conversation_read` 并指定 `view: "branches"` 发现分支，再用明确的 `headId` 读取。结果按照提问／回答轮次排列，摘要作为有覆盖边界的附加记录，兄弟分支不混入。长正文、可选思考、附件 JSON 元数据、摘要覆盖列表及可选公开工具资料均可跨页；按 messageId 和通道合并片段，游标保持不透明。
+
+读取固定对话 revision 和 epoch，任意并发修改均保守返回 `SNAPSHOT_CHANGED`，需丢弃旧分页并重新开始。默认拒绝仍在生成的分支；显式 `includeActive: true` 时返回持久化片段并标记 `partial`。不会强刷生成缓冲或为读取调用模型。
+
+`everchat_conversation_export` 使用同样的 head 与读取参数，支持 `fromRound`／`toRound`。逐页拼接 `text` 即为 Markdown，保留模型、时间、消息与分支引用、附件版本和摘要边界；不附带原文件、base64、预签名 URL 或供应商私有续接资料。数据变化时也须重新导出，不能继续拼接旧快照。
 
 `progress.firstContentAt` 和 `lastContentAt` 是持久检查点观察到内容的时间，包含缓冲等待；实际网络首输出时间由既有生成计时单独记录。
 

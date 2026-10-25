@@ -172,6 +172,12 @@ export class McpRequests {
             'CONVERSATION_UNAVAILABLE',
             'Unable to create a conversation. Check workspace capacity.',
           );
+        this.storage.sql.exec(
+          'INSERT INTO mcp_conversation_grants VALUES (?,?,?)',
+          principal,
+          conversationId,
+          Date.now(),
+        );
       }
       const record: McpRecord = {
         conversationId,

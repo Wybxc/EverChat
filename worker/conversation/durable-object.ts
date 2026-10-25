@@ -1,6 +1,8 @@
 import { DurableObject } from 'cloudflare:workers';
 import { readMcpStatus } from '../mcp/conversation';
 import { DocumentError, type DocumentPart } from '../../shared/attachments/documents';
+import { McpHistory } from '../mcp/history';
+import { McpError } from '../mcp/contracts';
 import {
   backupMessage,
   type BackupMessage,
@@ -808,6 +810,18 @@ export class Conversation extends DurableObject<Env> {
   }
   mcpStatus(assistantId: string) {
     return this.deletedAt ? null : readMcpStatus(this.query.bind(this), assistantId);
+  }
+  mcpBranches(after: number) {
+    return this.deletedAt ? null : new McpHistory(this.query.bind(this)).branches(after);
+  }
+  mcpHistory(conversationId: string, headId: string, options: Parameters<McpHistory['read']>[2]) {
+    if (this.deletedAt) return null;
+    try {
+      return { value: new McpHistory(this.query.bind(this)).read(conversationId, headId, options) };
+    } catch (error) {
+      if (error instanceof McpError) return { error: error.detail };
+      throw error;
+    }
   }
   mcpContextPage(assistantId: string, round: number, offset: number) {
     if (this.deletedAt || !readMcpStatus(this.query.bind(this), assistantId)) return null;

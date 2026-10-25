@@ -3,6 +3,7 @@ import { McpRequests, type McpRecord } from '../mcp/store';
 import { McpError, type ChatArguments, type McpFailure } from '../mcp/contracts';
 import { MCP_REQUESTS_SCHEMA } from '../mcp/schema';
 import { McpKeys, MCP_KEYS_SCHEMA } from '../mcp/keys';
+import { MCP_GRANTS_SCHEMA } from '../mcp/history';
 import * as v from 'valibot';
 import type { DocumentPart, DocumentRange } from '../../shared/attachments/documents';
 import type { AttachmentInput } from '../../shared/attachments/files';
@@ -108,6 +109,7 @@ export class Library extends DurableObject<Env> {
     ctx.storage.sql.exec(USAGE_OUTBOX_SCHEMA);
     ctx.storage.sql.exec(MCP_REQUESTS_SCHEMA);
     ctx.storage.sql.exec(MCP_KEYS_SCHEMA);
+    ctx.storage.sql.exec(MCP_GRANTS_SCHEMA);
     this.accounting = new UsageAccounting(ctx.storage.sql.exec.bind(ctx.storage.sql), env, () =>
       ctx.storage.sync(),
     );
@@ -441,6 +443,7 @@ export class Library extends DurableObject<Env> {
         .toArray()[0];
       if (existing?.completed) return existing;
       const deletion = existing ?? { id, deletedAt: Date.now(), completed: 0 };
+      this.ctx.storage.sql.exec('DELETE FROM mcp_conversation_grants WHERE conversationId=?', id);
       this.ctx.storage.sql.exec(
         "UPDATE mcp_requests SET payload=json_remove(payload,'$.prepared') WHERE conversationId=?",
         id,
@@ -969,6 +972,7 @@ export class Library extends DurableObject<Env> {
   }
   mcpKeyRevoke(id: string) {
     this.mcpKeys().revoke(id);
+    this.ctx.storage.sql.exec('DELETE FROM mcp_conversation_grants WHERE principal=?', id);
   }
   mcpKeyRename(id: string, name: string) {
     return this.mcpKeys().rename(id, name);
@@ -1005,6 +1009,31 @@ export class Library extends DurableObject<Env> {
   mcpRequest(principal: string, requestId: string) {
     const record = this.mcpRequests().get(principal, requestId);
     return record && this.get(record.conversationId) ? record : null;
+  }
+  mcpConversationAllowed(principal: string, conversationId: string) {
+    return (
+      this.mcpKeyExists(principal) &&
+      Boolean(this.get(conversationId)) &&
+      this.ctx.storage.sql
+        .exec(
+          'SELECT 1 FROM mcp_conversation_grants WHERE principal=? AND conversationId=?',
+          principal,
+          conversationId,
+        )
+        .toArray().length > 0
+    );
+  }
+  mcpConversations(principal: string, after?: { createdAt: number; id: string }) {
+    if (!this.mcpKeyExists(principal)) return [];
+    return this.ctx.storage.sql
+      .exec<{ id: string; title: string; createdAt: number; updatedAt: number }>(
+        `SELECT c.id,c.title,c.createdAt,c.updatedAt FROM conversations AS c JOIN mcp_conversation_grants AS g ON g.conversationId=c.id
+       WHERE g.principal=? AND NOT EXISTS (SELECT 1 FROM conversation_deletions WHERE id=c.id)
+       ${after ? 'AND (c.createdAt>? OR (c.createdAt=? AND c.id>?))' : ''} ORDER BY c.createdAt,c.id LIMIT 17`,
+        principal,
+        ...(after ? [after.createdAt, after.createdAt, after.id] : []),
+      )
+      .toArray();
   }
   mcpFinish(
     principal: string,

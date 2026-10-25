@@ -8,6 +8,8 @@ import {
   MCP_TOOL_NAMES,
   contextGetSchema,
   usageGetSchema,
+  conversationListSchema,
+  conversationReadSchema,
   type HelpResult,
   type McpToolName,
 } from './contracts';
@@ -20,6 +22,9 @@ export const mcpToolInputs = {
   everchat_run_cancel: cancelSchema,
   everchat_run_context_get: contextGetSchema,
   everchat_run_usage_get: usageGetSchema,
+  everchat_conversations_list: conversationListSchema,
+  everchat_conversation_read: conversationReadSchema,
+  everchat_conversation_export: conversationReadSchema,
 } as const;
 
 export const mcpToolDescriptions = {
@@ -37,9 +42,58 @@ export const mcpToolDescriptions = {
     'Read durable server input receipts for your own run, including selected sources, omissions, files, effective parameters and the adapted request fingerprint. Paginated manifest by default; text and exclusions are explicit views. Submission attempted does not prove provider receipt or model understanding. System prompts and private provider continuation remain redacted.',
   everchat_run_usage_get:
     'Read paginated model-step usage and cost estimates for your own answer. Returns null for unknown counters, evidence sources and immutable price-snapshot metadata. Does not recalculate prices, call a model or expose workspace totals.',
+  everchat_conversations_list:
+    'List normal conversations explicitly authorized for this API key. Conversations created by this key are granted automatically, including later website additions. Other keys and unrelated website conversations are excluded.',
+  everchat_conversation_read:
+    'Read one authorized conversation: use view=branches to discover branch heads, then specify headId for ordered, structured message records. Large bodies and attachment metadata continue across pages. A changed snapshot requires restarting the read; this never calls a model.',
+  everchat_conversation_export:
+    'Export a fixed authorized branch as paginated Markdown, preserving turns, model, time, attachment versions and summary boundaries. Concatenate text pages locally; reasoning and tools are opt-in. No original files or temporary download URLs are included.',
 } satisfies Record<McpToolName, string>;
 
 const guides = {
+  everchat_conversations_list: {
+    examples: [{ description: 'Discover discussions this API key can read.', arguments: {} }],
+    notes: [
+      'A conversationRef is an address, not a capability. Every page checks authorization; revoking the API key stops subsequent access.',
+    ],
+  },
+  everchat_conversation_read: {
+    examples: [
+      {
+        description: 'Discover branch heads.',
+        arguments: { conversationRef: '<conversation.ref>', view: 'branches' },
+      },
+      {
+        description: 'Read an explicit branch.',
+        arguments: {
+          conversationRef: '<conversation.ref>',
+          headId: '00000000-0000-4000-8000-000000000001',
+        },
+      },
+    ],
+    notes: [
+      'Follow nextCursor with exactly the same head and options. Records include message headers, text fragments, JSON attachment fragments, summary coverage and optional public tools. Group fragments by messageId/channel (or attachment index), preserving order.',
+      'BRANCH_ACTIVE requires waiting or includeActive=true; partial pages are durable watermarks, not complete answers. SNAPSHOT_CHANGED means restart without a cursor. The initial implementation conservatively invalidates on any conversation revision.',
+      'Attachment JSON uses code-point offsets; message body offsets use UTF-16. Treat cursors as opaque. Deleted messages are tombstones, with no old text. Sibling answers never enter this branch.',
+    ],
+  },
+  everchat_conversation_export: {
+    examples: [
+      {
+        description: 'Export a branch by turns.',
+        arguments: {
+          conversationRef: '<conversation.ref>',
+          headId: '00000000-0000-4000-8000-000000000001',
+          fromRound: 1,
+          toRound: 3,
+        },
+      },
+    ],
+    notes: [
+      'Concatenate text from all pages verbatim. Read with the same head and options; do not append pages after SNAPSHOT_CHANGED. Export is read-only and never summarizes with a model.',
+      'Only attachment metadata is exported. No API keys, presigned URLs, binary objects or provider private continuation are returned.',
+    ],
+  },
   everchat_run_usage_get: {
     examples: [
       {

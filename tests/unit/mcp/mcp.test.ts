@@ -22,6 +22,7 @@ import type { McpRecord } from '../../../worker/mcp/store';
 import { readMcpStatus } from '../../../worker/mcp/conversation';
 import { McpKeys, MCP_KEYS_SCHEMA } from '../../../worker/mcp/keys';
 import { MCP_REQUESTS_SCHEMA } from '../../../worker/mcp/schema';
+import { MCP_GRANTS_SCHEMA } from '../../../worker/mcp/history';
 import { McpRequests } from '../../../worker/mcp/store';
 import type { Env } from '../../../worker/http/env';
 import type { ProviderSettingsStore } from '../../../worker/providers/store';
@@ -125,6 +126,7 @@ test('MCP idempotency freezes accepted configuration before mutable model lookup
   const { db, query, storage } = database();
   try {
     query(MCP_REQUESTS_SCHEMA);
+    query(MCP_GRANTS_SCHEMA);
     const env = {
       AI_PROVIDER: 'openai-chat',
       AI_BASE_URL: 'https://private.example/v1',
