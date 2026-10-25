@@ -2,7 +2,7 @@
 
 日期：2026-10-25。状态：实施中，尚未发布。现状调研依据 `main`（`3d968bd`）；后续实现与验证记录单列，不将计划写成已上线功能。
 
-当前进度：A2 的阶段／持久进展、A3 的运行中分页／尾部游标／生成截断已在实现分支通过定向验证；A1 已补上下文选择的来源 ID 和省略原因，持久回执／读取工具仍待完成。可信用量、记录管理、版本化附件与讨论组织尚未实施。供应商可能替换先前的思考文本，分页游标因此绑定通道版本，变化时明确返回 `OUTPUT_CHANGED` 并要求重读，不静默漏字。详见[首批实现验证](../measurements/mcp-progress-pagination-2026-10-25.md)。
+当前进度：A2 的阶段／持久进展、A3 的运行中分页／尾部游标／生成截断已在实现分支通过定向验证；A1 已增加来源、省略清单、实际适配请求指纹、持久回执和按需文本读取；A4 已增加字段来源、显式 null、跨步骤覆盖范围和分页价格快照。A1 的文件全文有界读取／系统提示词显式授权、A4 的跨步骤费用汇总，以及 B、C、D 仍待完成，不将这些基础实现视为完整交付。供应商可能替换先前的思考文本，分页游标因此绑定通道版本，变化时明确返回 `OUTPUT_CHANGED` 并要求重读，不静默漏字。详见[首批实现验证](../measurements/mcp-progress-pagination-2026-10-25.md)和[回执与用量验证](../measurements/mcp-input-usage-2026-10-25.md)。
 
 ## 目标与实施顺序
 
@@ -92,6 +92,8 @@ Gemini 等计数接口可作为后续显式的按需预检，不默认每次调�
 | `finalizing`       | 最后检查点／结果正在可靠保存；不能提前报告完成                                 |
 
 返回 `acceptedAt`、`phaseStartedAt`、`providerRequestedAt`、`firstContentAt`、`lastProgressAt`、`lastContentAt`、`observedAt`、`elapsedMs`、`phaseElapsedMs` 和 `revision`。未发生的时间为 `null`。`lastProgressAt` 只因阶段推进或新增语义内容／工具结果更新，查询、网络 keepalive 和重复 checkpoint 不算业务进展；`observedAt` 才表示本次查到了服务端。
+
+当前 `firstContentAt`／`lastContentAt` 是持久检查点首次／最近观察到语义内容的时间，包含缓冲提交的等待，不是网络首 Token 的精确时间。原有生成计时单独记录实际首次输出；接口及帮助不能把两者混为一谈。
 
 运行中开放当前持久化的正文／可选思考分页，附 `durable`／`persistedAt` 说明，预期可能落后约一个现有提交间隔（当前缓冲器以约 1.5 秒及字节阈值提交，并非端到端时延保证）。不为了 MCP 每轮轮询强刷缓冲器，不返回依赖单一实例内存、重连后可能消失的尾部。
 

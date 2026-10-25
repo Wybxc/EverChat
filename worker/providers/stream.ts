@@ -24,6 +24,12 @@ import { httpProviderError, providerFailure } from './failure';
 import { ProviderWireGuard } from './stream-errors';
 import { providerEvents, type ProviderResponse } from './events';
 import { MAX_BUFFERED_BODY_BYTES } from '../../shared/platform/limits';
+import {
+  assembledInput,
+  inputHash,
+  type AssembledInput,
+  type SubmittedInput,
+} from './input-receipt';
 
 export { GenerationCancelled, ProviderError } from '../generation/errors';
 
@@ -34,7 +40,7 @@ export async function openProviderStream(
   loadImage?: (image: ImagePart) => Promise<Uint8Array>,
   loadDocument?: (file: DocumentPart) => Promise<string>,
   toolRequest?: ProviderToolRequest,
-  beforeRequest?: () => Promise<void>,
+  beforeRequest?: (input: SubmittedInput) => Promise<void>,
   onOutput?: (receivedAt: number) => void,
 ): Promise<ProviderResponse> {
   if (!config.apiKey)
@@ -42,6 +48,7 @@ export async function openProviderStream(
   const secrets = context.map((message) => message.content);
   const guard = new ProviderWireGuard();
   let responseHeaders: Headers | undefined;
+  let assembled: AssembledInput | undefined;
   let requested = false;
   const request: typeof fetch = async (input, init) => {
     if (requested) throw new ProviderError('供应商请求不能重复发送。');
@@ -53,7 +60,15 @@ export async function openProviderStream(
       new TextEncoder().encode(init.body).byteLength > MAX_BUFFERED_BODY_BYTES
     )
       throw new ProviderError('模型请求超过单次序列化的内存保护大小，请减少附件或携带的历史。');
-    await beforeRequest?.();
+    if (beforeRequest) {
+      if (typeof init?.body !== 'string' || !assembled)
+        throw new ProviderError('无法确认供应商请求的输入依据。');
+      await beforeRequest({
+        ...assembled,
+        requestSha256: inputHash(init.body),
+        requestBytes: Buffer.byteLength(init.body),
+      });
+    }
     signal.throwIfAborted();
     const response = await globalThis.fetch(input, { ...init, signal, redirect: 'manual' });
     responseHeaders = response.headers;
@@ -151,6 +166,7 @@ export async function openProviderStream(
     ];
     if (toolRequest)
       prompt.push(...providerToolPrompt(toolRequest.exchanges ?? [], toolRequest.enabled, config));
+    if (beforeRequest) assembled = assembledInput(config, context, toolRequest, documentData);
     const result = await coreProviderStream(
       providerModel(config, request),
       config,

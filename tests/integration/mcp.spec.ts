@@ -97,7 +97,9 @@ test('MCP modern and legacy clients share the tool contract and all provider pro
         'everchat_help',
         'everchat_models_list',
         'everchat_run_cancel',
+        'everchat_run_context_get',
         'everchat_run_get',
+        'everchat_run_usage_get',
       ]);
       for (const tool of tools.tools) expect(tool.outputSchema).toBeTruthy();
       const help = await app.call<HelpResult>(client, 'everchat_help');
@@ -126,6 +128,46 @@ test('MCP modern and legacy clients share the tool contract and all provider pro
         expect(run.progress?.phase).toBeNull();
         expect(run.output.text).toContain('正文');
         expect(run.continuation).toBeTruthy();
+        expect(run.context).toMatchObject({
+          state: 'submission_attempted',
+          steps: 1,
+          providerReceipt: 'not_proven',
+        });
+        const receipt = await app.call<import('../../worker/mcp/contracts').ContextResult>(
+          client,
+          'everchat_run_context_get',
+          { runRef: run.runRef },
+        );
+        expect(receipt.receipt?.requestSha256).toMatch(/^[a-f0-9]{64}$/);
+        expect(receipt.receipt?.estimatedInputTokens).toBeGreaterThan(0);
+        const current = receipt.items.find((item) => item.kind === 'message')!;
+        expect(current.sourceId).toBeTruthy();
+        const inputText = await app.call<import('../../worker/mcp/contracts').ContextResult>(
+          client,
+          'everchat_run_context_get',
+          {
+            runRef: run.runRef,
+            view: 'text',
+            step: 0,
+            item: current.ordinal,
+          },
+        );
+        expect(inputText.text).toEqual({ state: 'available', text: 'MCP protocol check' });
+        expect(run.usage.inputTokens).toBeGreaterThan(0);
+        expect(run.usage.finalized).toBe(true);
+        expect(run.usage.dimensions.inputTokens.reportedSteps).toBe(1);
+        await expect
+          .poll(async () => {
+            const usage = await app.call<import('../../worker/mcp/contracts').UsageResult>(
+              client,
+              'everchat_run_usage_get',
+              { runRef: run.runRef },
+            );
+            expect(usage.scope).toBe('answer_model_steps');
+            expect(JSON.stringify(usage)).not.toMatch(/integration-test-key|baseUrl|apiKey/);
+            return usage.observedAttempts;
+          })
+          .toBe(1);
         const detailed = await app.call<RunResult>(client, 'everchat_run_get', {
           runRef: run.runRef,
           includeReasoning: true,
@@ -171,7 +213,12 @@ test('MCP retries, continuation, cancellation and API key isolation are enforced
     });
     expect(conflict.isError).toBe(true);
     expect(conflict.structuredContent).toMatchObject({ error: { code: 'IDEMPOTENCY_CONFLICT' } });
-    for (const name of ['everchat_run_get', 'everchat_run_cancel']) {
+    for (const name of [
+      'everchat_run_get',
+      'everchat_run_cancel',
+      'everchat_run_context_get',
+      'everchat_run_usage_get',
+    ]) {
       const denied = await two.client.callTool({
         name,
         arguments: { runRef: first.runRef, ...(name === 'everchat_run_get' ? { waitMs: 0 } : {}) },

@@ -78,6 +78,29 @@ function fixture() {
     },
   };
 }
+test('MCP usage pages bound model-step records, exclude tools and other answers, and preserve stable ordering', () => {
+  const s = fixture();
+  try {
+    for (let i = 0; i < 19; i++)
+      s.ledger.record(attempt({ id: `model-${String(i).padStart(2, '0')}`, taskId: `task-${i}` }));
+    s.ledger.record(attempt({ id: 'search', kind: 'web_search' }));
+    s.ledger.record(attempt({ id: 'other', messageId: 'other' }));
+    const first = s.ledger.mcpPage('message1');
+    assert.equal(first.count, 19);
+    assert.equal(first.records.length, 16);
+    assert.equal(first.hasMore, true);
+    const last = first.records.at(-1)!;
+    const second = s.ledger.mcpPage('message1', { startedAt: last.startedAt, id: last.id });
+    assert.equal(second.records.length, 3);
+    assert.equal(second.hasMore, false);
+    assert.equal(new Set([...first.records, ...second.records].map(({ id }) => id)).size, 19);
+    assert.ok(
+      first.records.every(({ kind, messageId }) => kind === 'chat' && messageId === 'message1'),
+    );
+  } finally {
+    s.db.close();
+  }
+});
 test('accounting chooses manual prices before endpoint defaults, snapshots them once, and leaves lookup failures unpriced', async () => {
   const s = fixture();
   try {

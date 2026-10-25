@@ -14,6 +14,10 @@ import {
   McpError,
   modelsSchema,
   runSchema,
+  contextGetSchema,
+  contextResultSchema,
+  usageGetSchema,
+  usageResultSchema,
 } from './contracts';
 import { mcpHelp, mcpToolDescriptions } from './help';
 import { McpChatService } from './service';
@@ -120,6 +124,26 @@ export async function serveMcp(request: Request, env: Env) {
             annotations: { readOnlyHint: true, openWorldHint: false },
           },
           (input) => result(() => service.get(input)),
+        );
+        server.registerTool(
+          'everchat_run_context_get',
+          {
+            description: mcpToolDescriptions.everchat_run_context_get,
+            inputSchema: schema(contextGetSchema),
+            outputSchema: schema(contextResultSchema),
+            annotations: { readOnlyHint: true, openWorldHint: false },
+          },
+          (input) => result(() => service.context(input)),
+        );
+        server.registerTool(
+          'everchat_run_usage_get',
+          {
+            description: mcpToolDescriptions.everchat_run_usage_get,
+            inputSchema: schema(usageGetSchema),
+            outputSchema: schema(usageResultSchema),
+            annotations: { readOnlyHint: true, openWorldHint: false },
+          },
+          (input) => result(() => service.usage(input)),
         );
         server.registerTool(
           'everchat_run_cancel',

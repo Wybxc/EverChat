@@ -12,6 +12,7 @@ import {
   type GenerationDiagnostics,
 } from './diagnostics';
 import type { ProviderKind } from '../providers/types';
+import { usageSourcesSchema, type UsageSources } from '../usage/evidence';
 
 export const MAX_EVENT_CHARACTERS = 2_000_000;
 export const FINISH_REASONS = [
@@ -36,7 +37,12 @@ export interface StreamUsage {
 }
 export type GenerationEvent =
   | { type: 'text' | 'reasoning'; text: string; replace?: true }
-  | { type: 'usage'; usage: StreamUsage; diagnostics?: GenerationDiagnostics }
+  | {
+      type: 'usage';
+      usage: StreamUsage;
+      usageSources?: UsageSources;
+      diagnostics?: GenerationDiagnostics;
+    }
   | {
       type: 'finish';
       reason: FinishReason;
@@ -44,6 +50,7 @@ export type GenerationEvent =
       message?: string;
       usage: StreamUsage;
       usageIsFinal: boolean;
+      usageSources?: UsageSources;
       diagnostics?: GenerationDiagnostics;
     };
 export interface StreamState {
@@ -62,6 +69,7 @@ export interface StreamState {
   reasoningDeltas: number;
   usage: StreamUsage;
   usageIsFinal: boolean;
+  usageSources?: UsageSources;
 }
 type ParsedDelta = { kind: 'content' | 'reasoning'; text: string; replace?: true };
 const usageKeys = new Set<keyof StreamUsage>([
@@ -256,6 +264,11 @@ export class ProviderStream {
         this.deltas.push({ kind, text: accepted.slice(before.length) });
       if (accepted.length !== next.length) this.fail(MESSAGE_TEXT_LIMIT_MESSAGE);
     } else if (event.type === 'usage' || event.type === 'finish') {
+      if (event.usageSources !== undefined)
+        this.state.usageSources = {
+          ...this.state.usageSources,
+          ...v.parse(usageSourcesSchema, event.usageSources),
+        };
       if (event.diagnostics !== undefined)
         this.state.diagnostics = mergeGenerationDiagnostics(
           this.state.diagnostics,

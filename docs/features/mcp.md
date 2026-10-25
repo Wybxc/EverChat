@@ -34,13 +34,15 @@ EverChat 提供同域 `/mcp` 接口，供支持 Streamable HTTP 和自定义请�
 
 ## 工具与帮助
 
-| 工具                   | 用途                                                                  |
-| ---------------------- | --------------------------------------------------------------------- |
-| `everchat_help`        | 获取全部工具的用法、参数 schema、注意事项和调用示例，也可按工具名查询 |
-| `everchat_models_list` | 列出可调用模型、能力和预设；不返回供应商端点、密钥或系统提示词内容    |
-| `everchat_chat`        | 新建正常对话并提问，或从明确的 `continuation` 位置继续                |
-| `everchat_run_get`     | 等待同一任务、查询状态并分页读取正文和可选思考内容                    |
-| `everchat_run_cancel`  | 停止自己的任务，保留已生成内容；重复取消不会新增任务                  |
+| 工具                       | 用途                                                                  |
+| -------------------------- | --------------------------------------------------------------------- |
+| `everchat_help`            | 获取全部工具的用法、参数 schema、注意事项和调用示例，也可按工具名查询 |
+| `everchat_models_list`     | 列出可调用模型、能力和预设；不返回供应商端点、密钥或系统提示词内容    |
+| `everchat_chat`            | 新建正常对话并提问，或从明确的 `continuation` 位置继续                |
+| `everchat_run_get`         | 等待同一任务、查询状态并分页读取正文和可选思考内容                    |
+| `everchat_run_cancel`      | 停止自己的任务，保留已生成内容；重复取消不会新增任务                  |
+| `everchat_run_context_get` | 分页读取自己任务的输入回执、来源、排除清单及可读取的逻辑文本          |
+| `everchat_run_usage_get`   | 按模型步骤分页读取 Token 依据、价格快照元数据与费用估计               |
 
 初次接入可调用 `everchat_help({})` 查看完整说明，或调用 `everchat_help({ "tool": "everchat_chat" })` 只查看某个工具。帮助只返回静态用法，不读取供应商配置、不创建对话、不调用模型；与其他工具一样需要有效的 MCP 密钥。附件功能仍在规划中，不在当前可调用工具内。
 
@@ -90,10 +92,22 @@ EverChat 提供同域 `/mcp` 接口，供支持 Streamable HTTP 和自定义请�
 - 思考默认不返回。使用 `includeReasoning: true` 读取，并通过独立的 `reasoningCursor` 分页。每页最多 8,192 个 UTF-16 单元，不拆开 Unicode 代理对；不截断总内容。
 - `completion` 与分页独立：运行中为 `null`，终态的 `truncated: true` 表示供应商因长度结束。应先读完现有页面，再由调用方用新 `requestId` 与明确 `continuation` 请求继续生成。断流、取消和未知结束原因不会冒充长度截断。
 - `progress` 返回可观测阶段、时间与持久化长度。可区分尚未认领、准备输入、等待供应商、生成、等待工具及最终保存；思考已输出而正文为空也可辨认。`stale` 只提示一分钟未观察到业务进展，不等于失败，不会自动取消或另起计费调用。旧记录没有回填的进展数据时为 `null`。查询不产生 SQL 心跳，`pollAfterMs` 提供建议等待时间。
-- 用量只返回供应商确实提供或现有记录可确认的数据；缺失数据不填零。网页费用统计仍由现有请求账本负责。
+- 用量字段缺失时显式返回 `null`，真实零保留。`dimensions` 给出来源、已知小计和覆盖步骤数；有任何模型步骤缺少某字段时，小计不冒充完整总量。`finalized` 表示任务结束，独立于 `completeness`。原始数字冲突时保留并标记 `inconsistent_usage`。
 - 错误提供稳定 code、stage、retryable 和可用 HTTP 状态；不返回可能泄漏凭据的原始供应商响应。`OUTCOME_UNKNOWN` 表示结果未确认，不代表供应商未收到请求，不能擅自换 ID 重试。
 
 首版不提供附件上传、批量历史输入、历史管理或其他 MCP Server 递归调用。
+
+## 输入回执与用量明细（实现分支，尚未发布）
+
+`context` 摘要给出所选／省略／摘要覆盖的数量、实际估算方法与回执状态。`pending` 尚未完成最终组装；`assembled` 已在发送边界组装并保存依据；`submission_attempted` 已尝试发出请求。这些均不证明供应商完整接收或模型理解。历史请求没有回执时为 `unavailable`，不根据当前配置重建。
+
+`providerResponse` 单独返回供应商实际报告的响应 ID、模型 ID 与时间（可得时）；不作为资料完整送达的证明。回执的生成参数标记 `parameterEvidence: "application_requested"`，表示应用请求的参数；供应商仍可能忽略不支持的设置，不能把配置值当成供应商已接受的事实。
+
+`everchat_run_context_get` 默认读取首个步骤的 manifest，按 `nextCursor` 遍历；后续工具步骤以 `previousStepId` 引用前一步，只记录新的工具资料。用 `view: "exclusions"` 查看省略和摘要覆盖的消息 ID；用 `view: "text"`、`step` 和 manifest 的 `item` 读取逻辑文本。普通消息、摘要包装和应用生成文本按当时依据还原，删除的来源返回 `content_unavailable`。系统提示词保持 `redacted`；文件当前仅返回版本、指纹、实际选区和校验元数据，全文有界读取仍待附件阶段完成。工具内容为 `scope: "public_projection"`，不含供应商私有思考签名或加密续接。请求指纹不附带 HTTP 正文、鉴权头或 base64。
+
+`everchat_run_usage_get` 复用账本，按模型步骤分页；`scope: "answer_model_steps"` 不含自动标题、摘要和网页服务费用。`pending_accounting` 表示账本尚未追上任务，查询不会补算或改变价格。费用以十进制币种字符串返回，基于当时价格快照，属于估算；不把不同币种相加。跨步骤费用汇总仍待完成。
+
+`progress.firstContentAt` 和 `lastContentAt` 是持久检查点观察到内容的时间，包含缓冲等待；实际网络首输出时间由既有生成计时单独记录。
 
 ## 部署与存储
 

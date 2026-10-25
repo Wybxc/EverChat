@@ -9,9 +9,29 @@ import {
   type GetArguments,
   type McpFailure,
   type RunResult,
+  type ContextGetArguments,
+  type ContextResult,
+  type UsageGetArguments,
+  type UsageResult,
 } from './contracts';
 import type { McpRecord } from './store';
 import { readCompletion } from './completion';
+import type { ContextSummary } from '../../shared/streaming/input-receipt';
+import { mcpUsage } from '../../shared/usage/evidence';
+import { formatAmount } from '../../shared/usage/pricing';
+import { addGenerationUsage } from '../../shared/streaming/generation';
+
+const unavailableContext: ContextSummary = {
+  state: 'unavailable',
+  receiptRef: null,
+  steps: 0,
+  estimatedInputTokens: null,
+  estimateMethod: null,
+  omittedMessages: null,
+  summarizedMessages: null,
+  includedItems: null,
+  providerReceipt: 'not_proven',
+};
 
 function unwrap<T>(result: { value: T } | { error: McpFailure }): T {
   if ('error' in result) throw new McpError(result.error);
@@ -129,6 +149,178 @@ export class McpChatService {
   async get(input: GetArguments) {
     return this.result(await this.reconcile(await this.owned(input.runRef)), input);
   }
+  async context(input: ContextGetArguments): Promise<ContextResult> {
+    const record = await this.owned(input.runRef);
+    const conversation = this.env.CONVERSATIONS.getByName(record.conversationId);
+    const assistantId = record.submission?.assistantId;
+    const state = assistantId ? await conversation.mcpStatus(assistantId) : null;
+    const context = state?.context ?? unavailableContext;
+    const base = {
+      context: { ...context, receiptRef: context.steps ? input.runRef : null },
+      receipt: null,
+      items: [],
+      exclusions: [],
+      text: null,
+      hasMore: false,
+      nextCursor: null,
+    };
+    if (!assistantId || !state || !context.steps) return base;
+    let step = input.step,
+      offset = 0;
+    if (input.cursor) {
+      const [requestId, view, stepValue, itemValue, offsetValue] = decodeRef(
+        'context1',
+        input.cursor,
+        5,
+      );
+      step = Number(stepValue);
+      offset = Number(offsetValue);
+      if (
+        requestId !== record.requestId ||
+        view !== input.view ||
+        itemValue !== String(input.item ?? '') ||
+        !Number.isSafeInteger(step) ||
+        step < 0 ||
+        !Number.isSafeInteger(offset) ||
+        offset < 0
+      )
+        fail(
+          'INVALID_CURSOR',
+          'This cursor does not belong to the requested input receipt.',
+          'retrieval',
+        );
+    }
+    const cursor = (at: number, round = step) =>
+      encodeRef('context1', [
+        record.requestId,
+        input.view,
+        String(round),
+        String(input.item ?? ''),
+        String(at),
+      ]);
+    if (input.view === 'text') {
+      if (input.item === undefined) fail('INVALID_ARGUMENT', 'Specify item from a manifest page.');
+      const result = await conversation.mcpContextText(assistantId, step, input.item, offset);
+      if (!result) fail('CONTEXT_NOT_FOUND', 'This input item is unavailable.', 'retrieval');
+      if (result.state === 'invalid_cursor')
+        fail(
+          'INVALID_CURSOR',
+          'This cursor is outside the input or splits a character.',
+          'retrieval',
+        );
+      return {
+        ...base,
+        text: { state: result.state, text: result.text },
+        hasMore: result.hasMore,
+        nextCursor: result.hasMore ? cursor(result.nextOffset) : null,
+      };
+    }
+    if (input.view === 'exclusions') {
+      const rows = await conversation.mcpContextExclusions(assistantId, offset);
+      if (!rows) fail('CONTEXT_NOT_FOUND', 'This input receipt is unavailable.', 'retrieval');
+      const exclusions = rows.slice(0, 32);
+      return {
+        ...base,
+        exclusions,
+        hasMore: rows.length > 32,
+        nextCursor: rows.length > 32 ? cursor(exclusions.at(-1)!.ordinal) : null,
+      };
+    }
+    const result = await conversation.mcpContextPage(assistantId, step, offset);
+    if (!result) fail('CONTEXT_NOT_FOUND', 'This input step is unavailable.', 'retrieval');
+    if (!result.receipt || !result.items || result.nextOffset === undefined)
+      fail('INVALID_CURSOR', 'Invalid input receipt cursor.', 'retrieval');
+    const moreSteps = step + 1 < context.steps;
+    return {
+      ...base,
+      receipt: result.receipt,
+      items: result.items,
+      hasMore: result.hasMore || moreSteps,
+      nextCursor: result.hasMore
+        ? cursor(result.nextOffset)
+        : moreSteps
+          ? cursor(0, step + 1)
+          : null,
+    };
+  }
+  async usage(input: UsageGetArguments): Promise<UsageResult> {
+    const record = await this.owned(input.runRef);
+    const assistantId = record.submission?.assistantId;
+    const state = assistantId
+      ? await this.env.CONVERSATIONS.getByName(record.conversationId).mcpStatus(assistantId)
+      : null;
+    const context = state?.context;
+    const expectedAttempts =
+      context && context.state !== 'unavailable'
+        ? context.steps - (context.state === 'assembled' ? 1 : 0)
+        : null;
+    const base = {
+      scope: 'answer_model_steps' as const,
+      accounting: 'unavailable' as const,
+      expectedAttempts,
+      observedAttempts: null,
+      attempts: [],
+      hasMore: false,
+      nextCursor: null,
+    };
+    if (!assistantId || !state || !this.env.USAGE) return base;
+    let after: { startedAt: number; id: string } | undefined;
+    if (input.cursor) {
+      const [requestId, time, id] = decodeRef('usage1', input.cursor, 3);
+      const startedAt = Number(time);
+      if (requestId !== record.requestId || !Number.isSafeInteger(startedAt) || startedAt < 0)
+        fail('INVALID_CURSOR', 'This cursor does not belong to the requested run.', 'retrieval');
+      after = { startedAt, id };
+    }
+    const page = await this.env.USAGE.getByName('personal').mcpPage(assistantId, after);
+    const last = page.records.at(-1);
+    return {
+      ...base,
+      accounting:
+        page.pending || (expectedAttempts !== null && page.count < expectedAttempts)
+          ? 'pending_accounting'
+          : 'ready',
+      observedAttempts: page.count,
+      attempts: page.records.map((attempt) => {
+        const normalized = addGenerationUsage(undefined, {
+          usage: attempt.usage,
+          usageSources: attempt.usageSources,
+          usageIsFinal: attempt.usageIsFinal,
+        });
+        return {
+          id: attempt.id,
+          stepId: attempt.taskId,
+          startedAt: attempt.startedAt,
+          endedAt: attempt.endedAt,
+          model: attempt.model,
+          providerName: attempt.providerName,
+          protocol: attempt.protocol,
+          status: attempt.status,
+          usage: mcpUsage(
+            attempt.usage,
+            attempt.usageSources,
+            normalized.usageCoverage,
+            1,
+            attempt.usageIsFinal,
+            attempt.status !== 'running',
+          ),
+          cost: {
+            currency: attempt.cost.currency,
+            amount: attempt.cost.amount === null ? null : formatAmount(attempt.cost.amount, 12),
+            state: attempt.cost.state,
+            source: attempt.price?.source ?? null,
+            priceEffectiveAt: attempt.price?.effectiveFrom ?? null,
+            priceId: attempt.price?.id ?? null,
+          },
+        };
+      }),
+      hasMore: page.hasMore,
+      nextCursor:
+        page.hasMore && last
+          ? encodeRef('usage1', [record.requestId, String(last.startedAt), last.id])
+          : null,
+    };
+  }
   async cancel(runRef: string) {
     let record = await this.owned(runRef);
     if (!record.failure) {
@@ -167,8 +359,10 @@ export class McpChatService {
       },
       completion: null,
       progress: null,
+      context: unavailableContext,
+      providerResponse: null,
       pollAfterMs: 2000,
-      usage: { isFinal: false },
+      usage: mcpUsage({}, undefined, undefined, 0, false, false),
       url: url.href,
     };
     if (record.failure)
@@ -178,6 +372,7 @@ export class McpChatService {
         output: { ...base.output, contentFinal: true },
         completion: readCompletion(record.failure.code === 'CANCELLED' ? 'cancelled' : 'failed'),
         pollAfterMs: 0,
+        usage: mcpUsage({}, undefined, undefined, 0, false, true),
         error: record.failure,
       };
     if (!record.submission)
@@ -284,6 +479,8 @@ export class McpChatService {
       status,
       assistantMessageId: assistantId,
       usage: state.usage,
+      context: { ...state.context, receiptRef: state.context.steps ? this.ref(record) : null },
+      providerResponse: state.providerResponse,
       completion: readCompletion(status, state),
       progress: state.progress
         ? {

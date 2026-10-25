@@ -5,6 +5,7 @@ import { initializeConversationState } from './state';
 import { COMPLETION_OUTBOX_SCHEMA } from '../notifications/outbox';
 import { USAGE_OUTBOX_SCHEMA } from '../usage/schema';
 import { GENERATION_PROGRESS_SCHEMA } from '../generation/progress';
+import { INPUT_RECEIPTS_SCHEMA } from '../generation/input-receipts';
 export const DELETION_SCHEMA =
   'CREATE TABLE IF NOT EXISTS conversation_deletion (id INTEGER PRIMARY KEY CHECK (id = 1), deletedAt INTEGER NOT NULL)';
 
@@ -77,6 +78,8 @@ export function initializeConversation(sql: SqlStorage, metrics: boolean) {
   sql.exec(CHECKPOINT_SCHEMA);
   sql.exec(CONTENT_CHUNKS_SCHEMA);
   sql.exec(GENERATION_PROGRESS_SCHEMA);
+  for (const statement of INPUT_RECEIPTS_SCHEMA.split(';').filter((part) => part.trim()))
+    sql.exec(statement);
   if (metrics)
     sql.exec(
       'CREATE TABLE IF NOT EXISTS generation_measurements (id INTEGER PRIMARY KEY, payload TEXT NOT NULL)',

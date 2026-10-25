@@ -5,6 +5,14 @@ import {
   messageTextFits,
 } from '../../shared/conversation/limits';
 import { generationProgressSchema } from '../../shared/streaming/progress';
+import {
+  contextSummarySchema,
+  inputReceiptSchema,
+  inputReceiptItemSchema,
+} from '../../shared/streaming/input-receipt';
+import { USAGE_FIELDS, usageSourceSchema } from '../../shared/usage/evidence';
+import type { StreamUsage } from '../../shared/streaming/provider-stream';
+import { generationDiagnosticsSchema } from '../../shared/streaming/diagnostics';
 
 const uuid = v.pipe(v.string(), v.uuid());
 const handle = v.pipe(v.string(), v.minLength(1), v.maxLength(2048));
@@ -15,6 +23,8 @@ export const MCP_TOOL_NAMES = [
   'everchat_chat',
   'everchat_run_get',
   'everchat_run_cancel',
+  'everchat_run_context_get',
+  'everchat_run_usage_get',
 ] as const;
 export type McpToolName = (typeof MCP_TOOL_NAMES)[number];
 export const helpInputSchema = v.strictObject({ tool: v.optional(v.picklist(MCP_TOOL_NAMES)) });
@@ -74,6 +84,34 @@ export const getSchema = v.strictObject({
   reasoningCursor: v.optional(handle),
 });
 export type GetArguments = v.InferOutput<typeof getSchema>;
+const offset = v.pipe(v.number(), v.safeInteger(), v.minValue(0));
+export const contextGetSchema = v.strictObject({
+  runRef: handle,
+  view: v.optional(v.picklist(['manifest', 'text', 'exclusions']), 'manifest'),
+  step: v.optional(offset, 0),
+  item: v.optional(offset),
+  cursor: v.optional(handle),
+});
+export type ContextGetArguments = v.InferOutput<typeof contextGetSchema>;
+export const usageGetSchema = v.strictObject({ runRef: handle, cursor: v.optional(handle) });
+export type UsageGetArguments = v.InferOutput<typeof usageGetSchema>;
+export const contextResultSchema = v.strictObject({
+  context: contextSummarySchema,
+  receipt: v.nullable(inputReceiptSchema),
+  items: v.array(v.strictObject({ ordinal: offset, ...inputReceiptItemSchema.entries })),
+  exclusions: v.array(
+    v.strictObject({ ordinal: offset, sourceId: v.nullable(v.string()), reason: v.string() }),
+  ),
+  text: v.nullable(
+    v.strictObject({
+      state: v.picklist(['available', 'content_unavailable', 'redacted', 'metadata_only']),
+      text: v.string(),
+    }),
+  ),
+  hasMore: v.boolean(),
+  nextCursor: v.nullable(v.string()),
+});
+export type ContextResult = v.InferOutput<typeof contextResultSchema>;
 export const cancelSchema = v.strictObject({ runRef: handle });
 export const emptySchema = v.strictObject({});
 export const errorSchema = v.strictObject({
@@ -135,6 +173,60 @@ const completionSchema = v.strictObject({
   requiresNewGeneration: v.boolean(),
 });
 export type CompletionResult = v.InferOutput<typeof completionSchema>;
+const nullableCount = v.nullable(v.pipe(v.number(), v.safeInteger(), v.minValue(0)));
+const dimensionSchema = v.strictObject({
+  value: nullableCount,
+  source: usageSourceSchema,
+  knownSubtotal: nullableCount,
+  reportedSteps: nullableCount,
+  expectedSteps: nullableCount,
+});
+const mcpUsageSchema = v.strictObject({
+  ...(Object.fromEntries(USAGE_FIELDS.map((field) => [field, nullableCount])) as Record<
+    keyof StreamUsage,
+    typeof nullableCount
+  >),
+  dimensions: v.strictObject(
+    Object.fromEntries(USAGE_FIELDS.map((field) => [field, dimensionSchema])) as Record<
+      keyof StreamUsage,
+      typeof dimensionSchema
+    >,
+  ),
+  isFinal: v.boolean(),
+  finalized: v.boolean(),
+  completeness: v.picklist(['complete', 'partial', 'unknown']),
+  warnings: v.array(v.literal('inconsistent_usage')),
+});
+export const usageResultSchema = v.strictObject({
+  scope: v.literal('answer_model_steps'),
+  accounting: v.picklist(['unavailable', 'pending_accounting', 'ready']),
+  expectedAttempts: nullableCount,
+  observedAttempts: nullableCount,
+  attempts: v.array(
+    v.strictObject({
+      id: v.string(),
+      stepId: v.string(),
+      startedAt: v.number(),
+      endedAt: v.nullable(v.number()),
+      model: v.string(),
+      providerName: v.string(),
+      protocol: v.string(),
+      status: v.string(),
+      usage: mcpUsageSchema,
+      cost: v.strictObject({
+        currency: v.nullable(v.string()),
+        amount: v.nullable(v.string()),
+        state: v.picklist(['priced', 'partial', 'unpriced', 'invalid']),
+        source: v.nullable(v.string()),
+        priceEffectiveAt: v.nullable(v.number()),
+        priceId: v.nullable(v.string()),
+      }),
+    }),
+  ),
+  hasMore: v.boolean(),
+  nextCursor: v.nullable(v.string()),
+});
+export type UsageResult = v.InferOutput<typeof usageResultSchema>;
 export const runSchema = v.strictObject({
   status: v.picklist(['accepted', 'running', 'completed', 'interrupted', 'failed', 'cancelled']),
   runRef: v.string(),
@@ -146,20 +238,11 @@ export const runSchema = v.strictObject({
   reasoning: v.optional(pageSchema),
   completion: v.nullable(completionSchema),
   progress: v.nullable(progressSchema),
+  context: contextSummarySchema,
+  providerResponse: v.nullable(v.unwrap(generationDiagnosticsSchema.entries.response)),
   pollAfterMs: v.number(),
   finishReason: v.optional(v.string()),
-  usage: v.strictObject({
-    inputTokens: v.optional(v.number()),
-    outputTokens: v.optional(v.number()),
-    totalTokens: v.optional(v.number()),
-    cachedInputTokens: v.optional(v.number()),
-    cacheWriteInputTokens: v.optional(v.number()),
-    reasoningTokens: v.optional(v.number()),
-    uncachedInputTokens: v.optional(v.number()),
-    textOutputTokens: v.optional(v.number()),
-    toolInputTokens: v.optional(v.number()),
-    isFinal: v.boolean(),
-  }),
+  usage: mcpUsageSchema,
   error: v.optional(errorSchema),
   url: v.string(),
 });

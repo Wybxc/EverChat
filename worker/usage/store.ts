@@ -138,6 +138,22 @@ export class UsageLedger {
       addRecord(totals, JSON.parse(row.payload));
     return totals;
   }
+  mcpPage(messageId: string, after?: { startedAt: number; id: string }) {
+    const args: SqlStorageValue[] = [messageId];
+    const clause = after ? ' AND (startedAt>? OR (startedAt=? AND id>?))' : '';
+    if (after) args.push(after.startedAt, after.startedAt, after.id);
+    const records = this.query<PayloadRow>(
+      `SELECT payload FROM usage_attempts WHERE messageId=? AND kind='chat'${clause} ORDER BY startedAt,id LIMIT 17`,
+      ...args,
+    )
+      .toArray()
+      .map(({ payload }) => JSON.parse(payload) as UsageRecord);
+    const coverage = this.query<{ count: number; pending: number }>(
+      "SELECT COUNT(*) AS count,COALESCE(SUM(status='running'),0) AS pending FROM usage_attempts WHERE messageId=? AND kind='chat'",
+      messageId,
+    ).one();
+    return { records: records.slice(0, 16), hasMore: records.length > 16, ...coverage };
+  }
   private rollup(record: UsageRecord, direction: number) {
     const hour = Math.floor(record.startedAt / HOUR) * HOUR;
     const bucket = JSON.stringify([

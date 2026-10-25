@@ -6,6 +6,8 @@ import {
   getSchema,
   helpInputSchema,
   MCP_TOOL_NAMES,
+  contextGetSchema,
+  usageGetSchema,
   type HelpResult,
   type McpToolName,
 } from './contracts';
@@ -16,6 +18,8 @@ export const mcpToolInputs = {
   everchat_chat: chatSchema,
   everchat_run_get: getSchema,
   everchat_run_cancel: cancelSchema,
+  everchat_run_context_get: contextGetSchema,
+  everchat_run_usage_get: usageGetSchema,
 } as const;
 
 export const mcpToolDescriptions = {
@@ -29,9 +33,49 @@ export const mcpToolDescriptions = {
     'Get your own run and persisted partial output, optionally wait up to 20 seconds. Follow output.nextCursor while hasMore is true; at a running tail, save resumeCursor and poll from that position. completion.truncated signals a provider length limit, independent of paging. Reasoning is opt-in and separately paginated. Disconnecting or ending a wait does not cancel generation.',
   everchat_run_cancel:
     'Explicitly cancel your own generation. Saved partial output remains in the normal conversation. Cancellation is idempotent; completed answers are unchanged.',
+  everchat_run_context_get:
+    'Read durable server input receipts for your own run, including selected sources, omissions, files, effective parameters and the adapted request fingerprint. Paginated manifest by default; text and exclusions are explicit views. Submission attempted does not prove provider receipt or model understanding. System prompts and private provider continuation remain redacted.',
+  everchat_run_usage_get:
+    'Read paginated model-step usage and cost estimates for your own answer. Returns null for unknown counters, evidence sources and immutable price-snapshot metadata. Does not recalculate prices, call a model or expose workspace totals.',
 } satisfies Record<McpToolName, string>;
 
 const guides = {
+  everchat_run_usage_get: {
+    examples: [
+      {
+        description: 'Read model-step token usage and cost estimates.',
+        arguments: { runRef: '<result.runRef>' },
+      },
+    ],
+    notes: [
+      'Amounts are decimal currency strings with up to 12 decimal places, calculated from the recorded price snapshot. They are estimates, not supplier invoices; never add different currencies.',
+      'Scope is answer model steps. Automatic titles, summaries and web-service fees are excluded. Follow nextCursor to inspect every step; accounting may lag generation completion.',
+      'Unknown token values are null. knownSubtotal is not a complete total when reportedSteps is less than expectedSteps. finalized means the task ended, independent of usage completeness.',
+      'provider_reported preserves explicit zeros and native totals. derived identifies protocol normalization (Anthropic input components, Gemini prompt plus tool input or text plus thoughts, input minus cache, and output minus reasoning). A conflicting native total is preserved with inconsistent_usage.',
+    ],
+  },
+  everchat_run_context_get: {
+    examples: [
+      {
+        description: 'Read the first input step manifest.',
+        arguments: { runRef: '<result.runRef>' },
+      },
+      {
+        description: 'Read a message input item.',
+        arguments: { runRef: '<result.runRef>', view: 'text', step: 0, item: 1 },
+      },
+      {
+        description: 'Read omitted and summarized source IDs.',
+        arguments: { runRef: '<result.runRef>', view: 'exclusions' },
+      },
+    ],
+    notes: [
+      'Follow nextCursor with the same runRef, view and item. Manifest pagination advances across model steps. Later steps inherit previousStepId and contain only new tool context.',
+      'The receipt describes logical inputs and a fingerprint of the final serialized request; it never returns the HTTP body, credentials, images as base64 or private encrypted reasoning.',
+      'System prompts remain redacted. File items report exact versions, selections and verified extracted-text fingerprints; original document hashes are client declarations. File text is metadata-only in this release.',
+      'No receipt is invented for historical requests. pending means a selected request has not reached the submission boundary. Reads do not call a model or force checkpoints.',
+    ],
+  },
   everchat_help: {
     examples: [
       { description: 'Read the full guide.', arguments: {} },
