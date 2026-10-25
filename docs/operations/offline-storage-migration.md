@@ -157,3 +157,11 @@ MCP 发布要求 Conversation／Library 的 `storage_schema` 从 2 升至 3；Us
 私有备份转存到 `.wrangler/operations/storage-2026-10-21-mcp`，目录 0700、文件 0600，逐文件核对 SHA-256。备份不包含 Access 会话令牌、认证日志或附件文件。首次备份遇到网络超时后沿用同一目录续做，未覆盖已经完成的原始备份。独立对象／表的备份和核验读取最多各 4 路并发；写回、回滚及单表分页保持串行。
 
 正式恢复使用本机私有构建配置，显式包含维护前的全部普通部署变量，设置 `keep_vars: false`，以移除临时 `OPS_RUN_ID`、`OPS_ADMIN_EMAIL`；Wrangler 保留已有 Secrets。不能直接关闭 `keep_vars` 却遗漏 Access 身份参数。普通自动部署继续使用仓库的 `keep_vars: true`，私有值不进入 Git。
+
+## MCP 讨论能力存储版本 4（2026-10-25）
+
+生产 180 个对象（179 Conversation、1 Library）已完成 schema 3 → 4 的完整离线流程；1,059 条消息、分支、运行及原有 MCP 请求保持一致。新增输入回执／进展、明确对话授权、文档输入快照和分行的附件上传账本，旧 Key 默认不开放系统提示词全文。UsageStore／ShareStore 版本不变，R2 附件未迁移。
+
+全部对象于 `2026-10-25T08:57:57.042Z` 通过结构、索引／触发器和逐行核验，临时回执清理后恢复业务。178 个原有可见对话全部读回 1,059 条消息，临时运维入口返回 404，临时变量已移除。私有备份保存在 `.wrangler/operations/storage-2026-10-25-mcp`；回滚须先恢复本批原始数据并核验，再恢复旧业务版本。
+
+本地多语句 schema 必须用 Node `db.exec()` 执行，不能用只执行首句的 `db.prepare()` 冒充 workerd `sql.exec()`。发布前已修复这一差异并增加附件表／索引的本地与原生一致性断言，写回补丁没有改变。运维断言只比较摘要、输出数量，禁止失败时打印备份对象或凭据。完整发布、真实 Gemini、R2 与资源采样证据见[上线记录](../measurements/mcp-production-2026-10-25.md)。

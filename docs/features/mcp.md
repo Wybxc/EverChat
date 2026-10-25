@@ -51,7 +51,7 @@ EverChat 提供同域 `/mcp` 接口，供支持 Streamable HTTP 和自定义请�
 | `everchat_attachments_get`     | 查询文件元数据、文本预览和剩余上传地址                                |
 | `everchat_attachments_delete`  | 删除未使用的文件；已进入消息的文件受保护                              |
 
-初次接入可调用 `everchat_help({})` 查看完整说明，或调用 `everchat_help({ "tool": "everchat_chat" })` 只查看某个工具。帮助只返回静态用法，不读取供应商配置、不创建对话、不调用模型；与其他工具一样需要有效的 MCP 密钥。下述新增能力正在实现分支验证，生产尚未升级。
+初次接入可调用 `everchat_help({})` 查看完整说明，或调用 `everchat_help({ "tool": "everchat_chat" })` 只查看某个工具。帮助只返回静态用法，不读取供应商配置、不创建对话、不调用模型；与其他工具一样需要有效的 MCP 密钥。以下能力已于 2026-10-25 发布；已经连接的客户端需刷新工具列表或重新连接，才能发现全部 14 个工具。
 
 先调用 `everchat_models_list`，使用返回的精确 `modelRef`，避免同名模型产生歧义。首次提问示例为工具 arguments，不是完整 JSON-RPC 请求：
 
