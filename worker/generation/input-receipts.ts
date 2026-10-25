@@ -4,6 +4,7 @@ import type {
   InputReceipt,
   InputReceiptItem,
   InputEvidenceBackup,
+  InputExclusion,
 } from '../../shared/streaming/input-receipt';
 import type { SubmittedInput } from '../providers/input-receipt';
 import type { SqlQuery } from './metrics';
@@ -26,7 +27,7 @@ CREATE TABLE IF NOT EXISTS input_receipt_texts (
   PRIMARY KEY(stepId,item,ordinal)
 ) WITHOUT ROWID`;
 
-type SelectionItem = { sourceId: string | null; reason: string };
+type SelectionItem = InputExclusion;
 export class InputReceipts {
   constructor(private readonly query: SqlQuery) {}
   select(messageId: string, selection: ContextSelection) {
@@ -34,10 +35,26 @@ export class InputReceipts {
     // A sentinel distinguishes a new empty plan from a legacy request without evidence.
     const items: SelectionItem[] = [
       { sourceId: null, reason: 'selected' },
-      ...selection.omitted.map(({ input, reason }) => ({
-        sourceId: input.source?.messageId ?? null,
-        reason,
-      })),
+      ...selection.omitted.flatMap<SelectionItem>(({ input, reason }) =>
+        reason === 'superseded_file'
+          ? (input.files ?? []).map((file) => ({
+              sourceId: input.source?.messageId ?? null,
+              reason,
+              file: {
+                attachmentId: file.attachmentId,
+                documentId: file.material?.documentId ?? null,
+                versionId: file.material?.versionId ?? null,
+                sha256: file.sha256,
+                textSha256: file.textSha256,
+              },
+            }))
+          : [
+              {
+                sourceId: input.source?.messageId ?? null,
+                reason,
+              },
+            ],
+      ),
       ...selection.summarized.map((sourceId) => ({ sourceId, reason: 'summary_covered' })),
     ];
     for (const [ordinal, item] of items.entries())
@@ -93,7 +110,7 @@ export class InputReceipts {
     if ((previous && previous.round + 1 !== round) || (!previous && round !== 0))
       throw new Error('Input receipt step sequence mismatch');
     const selected = this.query<{ omitted: number; summarized: number }>(
-      `SELECT COALESCE(SUM(json_extract(payload,'$.reason') NOT IN ('selected','summary_covered')),0) AS omitted,
+      `SELECT COALESCE(SUM(json_extract(payload,'$.reason') NOT IN ('selected','summary_covered','superseded_file','superseded_summary')),0) AS omitted,
         COALESCE(SUM(json_extract(payload,'$.reason')='summary_covered'),0) AS summarized
         FROM input_selections WHERE messageId=?`,
       messageId,

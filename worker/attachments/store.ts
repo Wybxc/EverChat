@@ -99,6 +99,18 @@ export class AttachmentStore {
       .toArray()
       .map((row) => this.public(row));
   }
+  metadata(conversationId: string, id: string) {
+    return this.public(this.require(conversationId, id));
+  }
+  async uploaded(conversationId: string, id: string) {
+    const row = this.require(conversationId, id);
+    if (row.status === 'ready') return true;
+    const object = await this.configuredBucket().head(row.key);
+    this.require(conversationId, id);
+    return Boolean(
+      object && object.size === row.size && object.httpMetadata?.contentType === row.mediaType,
+    );
+  }
   hasSaved(conversationId: string) {
     return Boolean(
       this.storage.sql

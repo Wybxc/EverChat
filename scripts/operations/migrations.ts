@@ -14,6 +14,7 @@ import { MCP_REQUESTS_SCHEMA } from '../../worker/mcp/schema';
 import { MCP_KEYS_SCHEMA } from '../../worker/mcp/keys';
 import { MCP_GRANTS_SCHEMA } from '../../worker/mcp/history';
 import { DOCUMENT_INPUT_SNAPSHOTS_SCHEMA } from '../../worker/attachments/input-snapshots';
+import { MCP_ATTACHMENTS_SCHEMA } from '../../worker/mcp/attachments';
 import { encodeValue, type Statement, type StoreKind } from './storage-protocol';
 
 // Only this Node.js operations module understands previous database formats.
@@ -149,6 +150,7 @@ export async function migrateStorage(db: DatabaseSync, kind: StoreKind): Promise
         query('ALTER TABLE mcp_keys ADD COLUMN readSystemPrompts INTEGER NOT NULL DEFAULT 0');
       query(MCP_GRANTS_SCHEMA);
       query(DOCUMENT_INPUT_SNAPSHOTS_SCHEMA);
+      query(MCP_ATTACHMENTS_SCHEMA);
       // Old protocol creates every root in MCP; a continuation always points
       // to the same Key's stored run. Grant only unambiguous one-Key origins.
       if (exists('conversations'))

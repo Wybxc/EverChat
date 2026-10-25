@@ -62,8 +62,22 @@ export const contextSummarySchema = v.strictObject({
   providerReceipt: v.literal('not_proven'),
 });
 export type ContextSummary = v.InferOutput<typeof contextSummarySchema>;
+export const inputExclusionSchema = v.strictObject({
+  sourceId: v.nullable(v.string()),
+  reason: v.string(),
+  file: v.optional(
+    v.strictObject({
+      attachmentId: v.string(),
+      documentId: v.nullable(v.string()),
+      versionId: v.nullable(v.string()),
+      sha256: hash,
+      textSha256: hash,
+    }),
+  ),
+});
+export type InputExclusion = v.InferOutput<typeof inputExclusionSchema>;
 export const inputEvidenceBackupSchema = v.strictObject({
-  selection: v.array(v.strictObject({ sourceId: v.nullable(v.string()), reason: v.string() })),
+  selection: v.array(inputExclusionSchema),
   steps: v.array(
     v.strictObject({
       receipt: inputReceiptSchema,
@@ -83,6 +97,17 @@ export function remapInputAttachments(
   if (!evidence) return undefined;
   return {
     ...evidence,
+    selection: evidence.selection.map((entry) => ({
+      ...entry,
+      ...(entry.file
+        ? {
+            file: {
+              ...entry.file,
+              attachmentId: ids.get(entry.file.attachmentId) ?? entry.file.attachmentId,
+            },
+          }
+        : {}),
+    })),
     steps: evidence.steps.map((step) => ({
       ...step,
       items: step.items.map(({ item, ...rest }) => ({

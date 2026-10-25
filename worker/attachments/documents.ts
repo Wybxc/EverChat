@@ -427,6 +427,42 @@ export class DocumentStore {
     const pageOffsets = this.pdfData(id)?.pageOffsets;
     return { file, text, ...(pageOffsets ? { pageOffsets } : {}) };
   }
+  async previewPage(conversationId: string, id: string, offset: number) {
+    const file = this.reference(conversationId, id),
+      row = this.row(id)!;
+    const empty = {
+      state: 'content_unavailable' as const,
+      text: '',
+      hasMore: false,
+      nextOffset: offset,
+    };
+    if (!Number.isSafeInteger(offset) || offset < 0 || offset > row.bytes)
+      return { ...empty, state: 'invalid_cursor' as const };
+    if (offset === row.bytes) return { ...empty, state: 'available' as const };
+    const object = await this.bucket!.get(row.key, {
+      range: { offset, length: Math.min(8196, row.bytes - offset) },
+    });
+    this.requireSource(conversationId, id);
+    if (!object) return empty;
+    if (
+      object.size !== row.bytes ||
+      !object.checksums.sha256 ||
+      Buffer.from(object.checksums.sha256).toString('hex') !== file.textSha256
+    ) {
+      await object.body.cancel();
+      return empty;
+    }
+    const bytes = new Uint8Array(await object.arrayBuffer());
+    this.requireSource(conversationId, id);
+    if ((bytes[0] & 0xc0) === 0x80) return { ...empty, state: 'invalid_cursor' as const };
+    let end = Math.min(8192, bytes.length);
+    if (end < bytes.length) while (end && (bytes[end] & 0xc0) === 0x80) end--;
+    const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(
+        bytes.subarray(0, end),
+      ),
+      nextOffset = offset + end;
+    return { state: 'available' as const, text, hasMore: nextOffset < row.bytes, nextOffset };
+  }
   async select(conversationId: string, id: string, ranges: DocumentRange[]): Promise<DocumentPart> {
     const saved = await this.read(conversationId, id);
     return this.selectFrom(saved, ranges);
@@ -486,7 +522,7 @@ export class DocumentStore {
       JSON.stringify(v.parse(documentPartSchema, documentSource(file))) !==
         JSON.stringify(saved.file) ||
       (file.selection &&
-        JSON.stringify(v.parse(documentPartSchema, file)) !==
+        JSON.stringify(v.parse(documentPartSchema, (({ material: _, ...data }) => data)(file))) !==
           JSON.stringify(await this.selectFrom(saved, file.selection.ranges)))
     )
       throw new HttpError(

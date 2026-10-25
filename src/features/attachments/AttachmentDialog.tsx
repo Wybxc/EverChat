@@ -130,7 +130,7 @@ export function AttachmentDialog({
               aria-label={t(($) => $.upload)}
               className="w-full"
               disabled={Boolean(upload) || !navigator.onLine}
-              accept=".png,.jpg,.jpeg,.webp,.txt,.md,.csv,.pdf,.js,.jsx,.ts,.tsx,.py,.rs,.go,.c,.cpp,.h,.css,.json,.yaml,.yml,.toml,.sh"
+              accept=".png,.jpg,.jpeg,.webp,.txt,.typ,.md,.csv,.pdf,.js,.jsx,.ts,.tsx,.py,.rs,.go,.c,.cpp,.h,.css,.json,.yaml,.yml,.toml,.sh"
               onChange={(event) => void selectFiles(event.currentTarget.files)}
             />
           </label>

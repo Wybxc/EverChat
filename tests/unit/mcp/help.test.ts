@@ -58,7 +58,7 @@ for (const mode of ['auto', 'legacy'] as const) {
         ['everchat_chat'],
       );
       for (const arguments_ of [
-        { tool: 'everchat_attachments_prepare' },
+        { tool: 'everchat_not_a_tool' },
         { tool: 'everchat_chat', apiKey: 'not-a-help-argument' },
       ]) {
         const invalid = await client.callTool({ name: 'everchat_help', arguments: arguments_ });

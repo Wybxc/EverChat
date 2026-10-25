@@ -2,7 +2,9 @@ import { DurableObject } from 'cloudflare:workers';
 import { readMcpStatus } from '../mcp/conversation';
 import { DocumentError, type DocumentPart } from '../../shared/attachments/documents';
 import { McpHistory } from '../mcp/history';
-import { McpError } from '../mcp/contracts';
+import { McpError, type McpFailure } from '../mcp/contracts';
+import { discussionSource } from '../mcp/discussion';
+import type { DiscussionCitation } from '../mcp/discussion-contracts';
 import {
   backupMessage,
   type BackupMessage,
@@ -811,6 +813,19 @@ export class Conversation extends DurableObject<Env> {
   mcpStatus(assistantId: string) {
     return this.deletedAt ? null : readMcpStatus(this.query.bind(this), assistantId);
   }
+  mcpDiscussionSource(
+    messageId: string,
+    citation: DiscussionCitation,
+    target: boolean,
+  ): { value: ReturnType<typeof discussionSource> } | { error: McpFailure } | null {
+    if (this.deletedAt) return null;
+    try {
+      return { value: discussionSource(this.query.bind(this), messageId, citation, target) };
+    } catch (error) {
+      if (error instanceof McpError) return { error: error.detail };
+      throw error;
+    }
+  }
   mcpBranches(after: number) {
     return this.deletedAt ? null : new McpHistory(this.query.bind(this)).branches(after);
   }
@@ -910,6 +925,7 @@ export class Conversation extends DurableObject<Env> {
         input.imageIds ?? null,
         input.fileIds ?? null,
         input.fileSelections ?? null,
+        input.materialBindings ?? null,
         input.tools ?? null,
       ]);
       const duplicate = () => {
@@ -1073,7 +1089,11 @@ export class Conversation extends DurableObject<Env> {
             )
           : { value: [] as DocumentPart[] };
       if ('error' in documents) return documents;
-      const files = documents.value;
+      const files = documents.value.map((file) =>
+        input.materialBindings?.[file.attachmentId]
+          ? { ...file, material: input.materialBindings[file.attachmentId] }
+          : file,
+      );
       if ((!content && !images.length && !files.length) || !messageTextFits(content))
         return {
           error: '请输入消息，正文须符合数据库单行存储大小。',

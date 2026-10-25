@@ -21,6 +21,12 @@ import { mcpUsage } from '../../shared/usage/evidence';
 import { formatAmount } from '../../shared/usage/pricing';
 import { addGenerationUsage } from '../../shared/streaming/generation';
 import { McpHistoryService } from './history-service';
+import type {
+  AttachmentsPrepareArguments,
+  AttachmentsPutArguments,
+  AttachmentsGetArguments,
+  AttachmentsResult,
+} from './attachment-contracts';
 
 const unavailableContext: ContextSummary = {
   state: 'unavailable',
@@ -53,6 +59,18 @@ export class McpChatService {
   }
   async models() {
     return unwrap(await this.library.mcpCatalog());
+  }
+  async filesPrepare(input: AttachmentsPrepareArguments) {
+    return unwrap<AttachmentsResult>(await this.library.mcpFilesPrepare(this.principal, input));
+  }
+  async filesPut(input: AttachmentsPutArguments) {
+    return unwrap<AttachmentsResult>(await this.library.mcpFilesPut(this.principal, input));
+  }
+  async filesGet(input: AttachmentsGetArguments) {
+    return unwrap<AttachmentsResult>(await this.library.mcpFilesGet(this.principal, input));
+  }
+  async filesDelete(refs: string[]) {
+    return unwrap(await this.library.mcpFilesDelete(this.principal, refs));
   }
   private ref(record: McpRecord) {
     return encodeRef('run1', [record.conversationId, record.requestId]);
@@ -133,9 +151,9 @@ export class McpChatService {
                 message:
                   accepted.issue?.code === 'CONVERSATION_BUSY'
                     ? 'This conversation already has an active generation.'
-                    : 'The request was rejected. Check model capabilities, parameters and workspace capacity.',
+                    : accepted.error,
                 stage: accepted.stage ?? 'admission',
-                retryable: false,
+                retryable: accepted.issue?.code === 'CONVERSATION_BUSY',
                 httpStatus: accepted.status,
               }
             : { runId: accepted.runId, userId: accepted.userId, assistantId: accepted.assistantId },

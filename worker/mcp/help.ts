@@ -1,5 +1,11 @@
 import { toJsonSchema } from '@valibot/to-json-schema';
 import {
+  attachmentsPrepareSchema,
+  attachmentsPutSchema,
+  attachmentsGetSchema,
+  attachmentsDeleteSchema,
+} from './attachment-contracts';
+import {
   cancelSchema,
   chatSchema,
   emptySchema,
@@ -25,6 +31,10 @@ export const mcpToolInputs = {
   everchat_conversations_list: conversationListSchema,
   everchat_conversation_read: conversationReadSchema,
   everchat_conversation_export: conversationReadSchema,
+  everchat_attachments_prepare: attachmentsPrepareSchema,
+  everchat_attachments_put: attachmentsPutSchema,
+  everchat_attachments_get: attachmentsGetSchema,
+  everchat_attachments_delete: attachmentsDeleteSchema,
 } as const;
 
 export const mcpToolDescriptions = {
@@ -33,7 +43,7 @@ export const mcpToolDescriptions = {
   everchat_models_list:
     'List enabled models and prompt presets. Use the exact stable model ref when calling everchat_chat. Provider endpoints and credentials remain private.',
   everchat_chat:
-    'Create a normal saved conversation, or continue from an explicit continuation returned by an earlier answer. Supply a UUID requestId; transport retries MUST reuse the same requestId and original arguments. A new requestId intentionally generates again and may incur costs. Waits are bounded; pending generations continue in the background. Poll with everchat_run_get. presetId and systemPrompt are mutually exclusive.',
+    'Create a normal saved conversation, continue from an explicit continuation, or start a new independent/review discussion with an explicit source whitelist. Supply a UUID requestId; transport retries MUST reuse the same requestId and original arguments. A new requestId intentionally generates again and may incur costs. Waits are bounded; pending generations continue in the background. Poll with everchat_run_get. presetId and systemPrompt are mutually exclusive.',
   everchat_run_get:
     'Get your own run and persisted partial output, optionally wait up to 20 seconds. Follow output.nextCursor while hasMore is true; at a running tail, save resumeCursor and poll from that position. completion.truncated signals a provider length limit, independent of paging. Reasoning is opt-in and separately paginated. Disconnecting or ending a wait does not cancel generation.',
   everchat_run_cancel:
@@ -48,9 +58,91 @@ export const mcpToolDescriptions = {
     'Read one authorized conversation: use view=branches to discover branch heads, then specify headId for ordered, structured message records. Large bodies and attachment metadata continue across pages. A changed snapshot requires restarting the read; this never calls a model.',
   everchat_conversation_export:
     'Export a fixed authorized branch as paginated Markdown, preserving turns, model, time, attachment versions and summary boundaries. Concatenate text pages locally; reasoning and tools are opt-in. No original files or temporary download URLs are included.',
+  everchat_attachments_prepare:
+    'Prepare a batch of immutable private files in a new or explicitly continued normal conversation. Returns fixed-expiry R2 PUT URLs. Upload bytes with the exact signed headers, then call everchat_chat with uploadRef and selected attachmentRefs; no confirmation call is needed. Never send your EverChat key to R2.',
+  everchat_attachments_put:
+    'Save small actual UTF-8 text or canonical base64 files using MCP only. Reuse uploadId and identical bytes for retries. PDF extraction must be produced by the client. Does not call a model.',
+  everchat_attachments_get:
+    'Inspect files owned by this key, read bounded extracted-text previews, or explicitly read remaining fixed-expiry upload URLs. Metadata reads never accept uploads or start parsing. File refs do not grant access without the key.',
+  everchat_attachments_delete:
+    "Delete this key's unused files. Files referenced by a message or active task are protected. Deletion is idempotent; URL slots remain subject to expiry and delayed cleanup.",
 } satisfies Record<McpToolName, string>;
 
 const guides = {
+  everchat_attachments_prepare: {
+    examples: [
+      {
+        description: 'Prepare a Typst source file without compiling or following includes.',
+        arguments: {
+          uploadId: '00000000-0000-4000-8000-000000000001',
+          files: [
+            {
+              clientFileId: '00000000-0000-4000-8000-000000000002',
+              name: '1021.typ',
+              mediaType: 'text/plain',
+              purpose: 'document',
+              size: 123,
+              sha256: '0'.repeat(64),
+            },
+          ],
+        },
+      },
+    ],
+    notes: [
+      'Normal workflow is prepare -> PUT original and optional PDF text slots -> chat. HTTP success does not prove model input readiness. File preparation does not call a model.',
+      'Use exact signed headers, disable redirects, never attach EverChat/Access credentials, and do not log URLs. URL expiry is fixed and retries do not extend it. Reusing uploadId with different metadata or content is rejected.',
+      'PDF pdfText declares the size/hash of the complete metadata-line + UTF-8-text stream (application/vnd.everchat.pdf-text). Client extraction uses the supported PDF.js version and source hash; Workers do not run PDF.js.',
+      'Large batches return 16 file records per page. Follow nextCursor with everchat_attachments_get, the same uploadRef, and view=uploads to obtain remaining URLs. No additional confirmation is needed.',
+    ],
+  },
+  everchat_attachments_put: {
+    examples: [
+      {
+        description: 'Save a small actual source file with a server-computed hash.',
+        arguments: {
+          uploadId: '00000000-0000-4000-8000-000000000001',
+          files: [
+            {
+              clientFileId: '00000000-0000-4000-8000-000000000002',
+              name: '1021.typ',
+              mediaType: 'text/plain',
+              purpose: 'document',
+              text: '= Background\nActual source text',
+            },
+          ],
+        },
+      },
+    ],
+    notes: [
+      'Supply actual text or canonical padded dataBase64, never local paths or URLs. The total MCP request limit is 2 MiB; use direct PUT for larger files. PDF needs matching extraction data. Returned refs are immutable, not filename aliases.',
+    ],
+  },
+  everchat_attachments_get: {
+    examples: [
+      {
+        description: 'Inspect a batch without accepting or parsing files.',
+        arguments: { uploadRef: '<prepare.uploadRef>' },
+      },
+      {
+        description: 'Read an extracted-text preview.',
+        arguments: { attachmentRef: '<file.attachmentRef>', view: 'text' },
+      },
+    ],
+    notes: [
+      'Metadata and text views are read-only. view=uploads explicitly signs already registered fixed-expiry slots without extending their lease. Text pages use UTF-8-byte cursors. Download original bytes with Bearer authentication at /mcp/attachments/<attachmentRef>; never send keys in query strings.',
+    ],
+  },
+  everchat_attachments_delete: {
+    examples: [
+      {
+        description: 'Delete unused files.',
+        arguments: { attachmentRefs: ['<file.attachmentRef>'] },
+      },
+    ],
+    notes: [
+      'Used files return ATTACHMENT_IN_USE. Deleting a key immediately stops new use; already accepted normal messages remain. R2 PUT URLs cannot be immediately revoked, and late unused objects are cleaned after expiry plus grace.',
+    ],
+  },
   everchat_conversations_list: {
     examples: [{ description: 'Discover discussions this API key can read.', arguments: {} }],
     notes: [
@@ -177,6 +269,20 @@ const guides = {
           waitMs: 0,
         },
       },
+      {
+        description:
+          'Start an independent proposal from one verified user background, without prior answers.',
+        arguments: {
+          requestId: '00000000-0000-4000-8000-000000000003',
+          modelRef: '<models[].ref>',
+          prompt: 'Propose an independent solution.',
+          discussion: {
+            mode: 'independent',
+            background: [{ messageRef: '<record.ref>', revision: 12, sha256: '0'.repeat(64) }],
+          },
+          waitMs: 0,
+        },
+      },
     ],
     notes: [
       'For transport failures or an unknown outcome, retry the same requestId and original input. Only waitMs may change. A new requestId intentionally starts another potentially paid generation.',
@@ -185,7 +291,11 @@ const guides = {
       'presetId and systemPrompt are mutually exclusive. webSearch enables both search and page reading when a web service is configured. Capability-dependent parameters may be rejected by the selected model.',
       'waitMs defaults to 10000 and accepts 0–20000. accepted/running means generation continues in the background; use everchat_run_get with runRef and avoid tight polling.',
       'If the result error is SUBMISSION_UNCONFIRMED, retry everchat_chat with the same requestId and original input to finish admission; polling alone may not submit the generation.',
-      'Only one generation may run in a conversation at a time. Attachments, temporary conversations and model JSON Schema output are not currently supported.',
+      'Only one generation may run in a conversation at a time. Temporary conversations and model JSON Schema output are not supported.',
+      'Files: prepare -> R2 PUT -> chat, or attachments_put for small actual bytes. Pass uploadRef on the first request, attachments[{attachmentRef,mode}] to activate exact versions; a batch does not implicitly attach every file. PDF pageRanges are 1-based inclusive; text ranges are UTF-16 half-open.',
+      'New replacements declare replaces=<old attachmentRef> when uploading to the same explicit continuation. mode=replace removes old material blocks only in this branch; include_both intentionally compares versions; reuse never silently switches an already active document version. Old answers may still discuss old material. Active files remain pinned across history trimming and summaries; oversized materials reject admission instead of being clipped.',
+      'discussion starts a new normal conversation and is mutually exclusive with continuation and uploadRef/attachments. background accepts completed user message citations only. review additionally requires explicit completed answer targets. No parent chain, reasoning or derived summary is inherited. files contains already parsed, key-owned text attachmentRefs; exact bytes and version metadata are saved once as visible background text. Large backgrounds must fit the single-message/context budget; no silent clipping or automatic file compilation.',
+      'Read conversation records first: use ref and revision, concatenate content text, compute its UTF-8 SHA-256 for sha256. Optional UTF-16 half-open range requires quoteHash of the exact selected text; review targets may also carry claimId. Changed revision/hash or invalid quote fails before generation. Quotes are evidence, not system instructions; selection cannot prove semantic independence or correctness.',
     ],
   },
   everchat_run_get: {

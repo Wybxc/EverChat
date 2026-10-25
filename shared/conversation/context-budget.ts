@@ -135,6 +135,7 @@ export function buildContext(
   images: ImagePart[] = [],
   files: DocumentPart[] = [],
   currentSource?: ChatInput['source'],
+  pinned: ChatInput[] = [],
 ): { messages: ChatInput[]; estimate: ContextEstimate; selection: ContextSelection } {
   const metadata = config.modelMetadata ?? {
     ...FALLBACK_MODEL_METADATA,
@@ -156,7 +157,13 @@ export function buildContext(
     ? estimateTextTokens(config.systemPrompt) + MESSAGE_OVERHEAD
     : 0;
   const summaryTokens = summary ? estimateTextTokens(summary.content) + MESSAGE_OVERHEAD : 0;
-  const fixed = inputTokens + MESSAGE_OVERHEAD + systemTokens + REQUEST_OVERHEAD + summaryTokens;
+  const fixed =
+    inputTokens +
+    MESSAGE_OVERHEAD +
+    systemTokens +
+    REQUEST_OVERHEAD +
+    summaryTokens +
+    pinned.reduce((sum, m) => sum + historyTokens(m), 0);
   const selected: ChatInput[] = [];
   let retainedTokens = 0;
   let omittedReason: ContextOmissionReason = 'context_budget';
@@ -210,6 +217,7 @@ export function buildContext(
           },
         ]
       : []),
+    ...pinned,
     ...selected,
     {
       role: 'user',
@@ -239,7 +247,9 @@ export type ContextOmissionReason =
   | 'unavailable'
   | 'deleted'
   | 'not_completed'
-  | 'deleted_parent';
+  | 'deleted_parent'
+  | 'superseded_file'
+  | 'superseded_summary';
 export interface ContextSelection {
   omitted: { input: ChatInput; reason: ContextOmissionReason }[];
   summarized: string[];
@@ -282,11 +292,23 @@ export function measureContextDemand(
   summary?: { id: string; content: string; coveredMessages: number },
   images: ImagePart[] = [],
   files: DocumentPart[] = [],
+  pinned: ChatInput[] = [],
 ): ContextEstimate {
-  const fixed = buildContext([], content, config, settings, summary, images, files).estimate;
+  const fixed = buildContext(
+    [],
+    content,
+    config,
+    settings,
+    summary,
+    images,
+    files,
+    undefined,
+    pinned,
+  ).estimate;
   const tokens = history.reduce((total, message) => total + historyTokens(message), 0);
   const fileAllowance =
     documentTokens(files) +
+    pinned.reduce((sum, message) => sum + documentTokens(message.files), 0) +
     history.reduce((sum, message) => sum + documentTokens(message.files), 0);
   return {
     ...fixed,

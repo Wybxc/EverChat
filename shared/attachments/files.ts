@@ -56,7 +56,7 @@ export function fileMediaType(name: string): AttachmentInput['mediaType'] | null
     pdf: 'application/pdf',
   };
   if (Object.hasOwn(types, extension)) return types[extension];
-  return /^(txt|js|jsx|ts|tsx|py|rs|go|c|cpp|h|css|json|yaml|yml|toml|sh)$/.test(extension)
+  return /^(txt|typ|js|jsx|ts|tsx|py|rs|go|c|cpp|h|css|json|yaml|yml|toml|sh)$/.test(extension)
     ? 'text/plain'
     : null;
 }

@@ -1,9 +1,16 @@
 import { DurableObject } from 'cloudflare:workers';
 import { McpRequests, type McpRecord } from '../mcp/store';
 import { McpError, type ChatArguments, type McpFailure } from '../mcp/contracts';
+import { McpDiscussion } from '../mcp/discussion';
 import { MCP_REQUESTS_SCHEMA } from '../mcp/schema';
 import { McpKeys, MCP_KEYS_SCHEMA } from '../mcp/keys';
 import { MCP_GRANTS_SCHEMA } from '../mcp/history';
+import { McpAttachments, MCP_ATTACHMENTS_SCHEMA, mcpAttachmentFailure } from '../mcp/attachments';
+import type {
+  AttachmentsPrepareArguments,
+  AttachmentsPutArguments,
+  AttachmentsGetArguments,
+} from '../mcp/attachment-contracts';
 import { remapInputAttachments } from '../../shared/streaming/input-receipt';
 import * as v from 'valibot';
 import type { DocumentPart, DocumentRange } from '../../shared/attachments/documents';
@@ -111,6 +118,7 @@ export class Library extends DurableObject<Env> {
     ctx.storage.sql.exec(MCP_REQUESTS_SCHEMA);
     ctx.storage.sql.exec(MCP_KEYS_SCHEMA);
     ctx.storage.sql.exec(MCP_GRANTS_SCHEMA);
+    ctx.storage.sql.exec(MCP_ATTACHMENTS_SCHEMA);
     this.accounting = new UsageAccounting(ctx.storage.sql.exec.bind(ctx.storage.sql), env, () =>
       ctx.storage.sync(),
     );
@@ -182,7 +190,7 @@ export class Library extends DurableObject<Env> {
           'SELECT MIN(nextAt) AS nextAt FROM search_backfill WHERE done = 0 HAVING COUNT(*) > 0',
         )
         .toArray()[0];
-      const cleanup = this.attachments.nextCleanup();
+      const cleanup = this.nextAttachmentCleanup();
       const copy = Math.min(this.copies.nextMaintenance(), this.nextImportMaintenance());
       const notifications = Math.min(
         this.notifications.nextAlarm(),
@@ -446,6 +454,11 @@ export class Library extends DurableObject<Env> {
       const deletion = existing ?? { id, deletedAt: Date.now(), completed: 0 };
       this.ctx.storage.sql.exec('DELETE FROM mcp_conversation_grants WHERE conversationId=?', id);
       this.ctx.storage.sql.exec(
+        'DELETE FROM mcp_upload_files WHERE (principal,uploadId) IN (SELECT principal,uploadId FROM mcp_uploads WHERE conversationId=?)',
+        id,
+      );
+      this.ctx.storage.sql.exec('DELETE FROM mcp_uploads WHERE conversationId=?', id);
+      this.ctx.storage.sql.exec(
         "UPDATE mcp_requests SET payload=json_remove(payload,'$.prepared') WHERE conversationId=?",
         id,
       );
@@ -542,6 +555,7 @@ export class Library extends DurableObject<Env> {
         await this.beginDelete(copy.id);
       }
     await this.attachments.cleanup();
+    await this.mcpAttachments().cleanup();
     await this.imports.cleanup();
     const pending = this.ctx.storage.sql
       .exec<Deletion>('SELECT * FROM conversation_deletions WHERE completed = 0 LIMIT 16')
@@ -595,7 +609,7 @@ export class Library extends DurableObject<Env> {
           'SELECT MIN(nextAt) AS nextAt FROM search_backfill WHERE done = 0 HAVING COUNT(*) > 0',
         )
         .toArray()[0];
-      const cleanup = this.attachments.nextCleanup();
+      const cleanup = this.nextAttachmentCleanup();
       const next = Math.min(
         deletion ? Date.now() + (failed ? 30_000 : 1000) : Infinity,
         indexing ? Math.max(Date.now() + 1000, indexing.nextAt) : Infinity,
@@ -973,6 +987,84 @@ export class Library extends DurableObject<Env> {
   private mcpKeys() {
     return new McpKeys(this.ctx.storage.sql.exec.bind(this.ctx.storage.sql));
   }
+  private mcpAttachments() {
+    return new McpAttachments(
+      this.ctx.storage,
+      this.attachments,
+      this.env.ATTACHMENTS,
+      this.env.APP_ORIGIN ?? '',
+      (id) => this.mcpKeyExists(id),
+      (id) => Boolean(this.get(id)),
+      (id) => this.create(id, '', 'fallback'),
+      (principal, id) => this.mcpRequests().get(principal, id),
+      () => this.attachmentUploadSigner(),
+      (conversationId, id) => this.removeAttachment(conversationId, id),
+    );
+  }
+  private nextAttachmentCleanup() {
+    const next = Math.min(
+      this.attachments.nextCleanup() ?? Infinity,
+      this.mcpAttachments().nextCleanup() ?? Infinity,
+    );
+    return Number.isFinite(next) ? next : undefined;
+  }
+  private async mcpFileAction<T>(
+    principal: string,
+    action: () => Promise<T>,
+    schedule = true,
+  ): Promise<{ value: T } | { error: McpFailure }> {
+    try {
+      if (!this.mcpKeyExists(principal))
+        throw new McpError({
+          code: 'MCP_KEY_REVOKED',
+          message: 'This API key was revoked.',
+          stage: 'authorization',
+          retryable: false,
+        });
+      const value = await action();
+      if (!this.mcpKeyExists(principal))
+        throw new McpError({
+          code: 'MCP_KEY_REVOKED',
+          message: 'This API key was revoked.',
+          stage: 'authorization',
+          retryable: false,
+        });
+      return { value };
+    } catch (e) {
+      return { error: mcpAttachmentFailure(e) };
+    } finally {
+      if (schedule) await this.scheduleMaintenance();
+    }
+  }
+  mcpFilesPrepare(principal: string, input: AttachmentsPrepareArguments) {
+    return this.mcpFileAction(principal, () => this.mcpAttachments().prepare(principal, input));
+  }
+  mcpFilesPut(principal: string, input: AttachmentsPutArguments) {
+    return this.mcpFileAction(principal, () => this.mcpAttachments().put(principal, input));
+  }
+  mcpFilesGet(principal: string, input: AttachmentsGetArguments) {
+    return this.mcpFileAction(
+      principal,
+      () => this.mcpAttachments().get(principal, input),
+      input.view === 'uploads',
+    );
+  }
+  mcpFilesDelete(principal: string, refs: string[]) {
+    return this.mcpFileAction(principal, () => this.mcpAttachments().delete(principal, refs));
+  }
+  async mcpFileResponse(principal: string, ref: string, head: boolean) {
+    const result = await this.mcpFileAction(
+      principal,
+      () => this.mcpAttachments().response(principal, ref, head),
+      false,
+    );
+    return 'error' in result
+      ? json(
+          { error: result.error },
+          result.error.httpStatus ?? (result.error.stage === 'authorization' ? 403 : 409),
+        )
+      : result.value;
+  }
   mcpKeysList() {
     return this.mcpKeys().list();
   }
@@ -1006,7 +1098,7 @@ export class Library extends DurableObject<Env> {
   mcpCatalog() {
     return this.mcpAction(() => this.mcpRequests().catalog());
   }
-  mcpPrepare(principal: string, input: ChatArguments) {
+  async mcpPrepare(principal: string, input: ChatArguments) {
     if (!this.mcpKeyExists(principal))
       return {
         error: {
@@ -1016,7 +1108,46 @@ export class Library extends DurableObject<Env> {
           retryable: false,
         },
       };
-    return this.mcpAction(() => this.mcpRequests().prepare(principal, input));
+    return this.mcpFileAction(
+      principal,
+      async () => {
+        const previous = this.mcpRequests().replay(principal, input);
+        if (previous) return previous;
+        const files = await this.mcpAttachments().resolve(principal, input);
+        const discussionPrompt = await new McpDiscussion(
+          (id) => this.mcpConversationAllowed(principal, id),
+          async (id, messageId, citation, target) => {
+            const result = await this.env.CONVERSATIONS.getByName(id).mcpDiscussionSource(
+              messageId,
+              citation,
+              target,
+            );
+            if (!result)
+              throw new McpError({
+                code: 'DISCUSSION_SOURCE_UNAVAILABLE',
+                message: 'Source conversation was deleted.',
+                stage: 'retrieval',
+                retryable: false,
+              });
+            if ('error' in result) throw new McpError(result.error);
+            return result.value;
+          },
+          (ref) => this.mcpAttachments().discussionFile(principal, ref),
+        ).prepare(input);
+        if (!this.mcpKeyExists(principal))
+          throw new McpError({
+            code: 'MCP_KEY_REVOKED',
+            message: 'This API key was revoked.',
+            stage: 'authorization',
+            retryable: false,
+          });
+        return this.ctx.storage.transactionSync(() => {
+          this.mcpAttachments().bind(principal, input);
+          return this.mcpRequests().prepare(principal, input, files, discussionPrompt);
+        });
+      },
+      Boolean(input.uploadRef || input.attachments?.length),
+    );
   }
   mcpRequest(principal: string, requestId: string) {
     const record = this.mcpRequests().get(principal, requestId);

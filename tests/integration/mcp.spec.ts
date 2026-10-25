@@ -3,6 +3,15 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import type { ProviderSettings } from '../../shared/providers/types';
 import type { HelpResult, ModelsResult, RunResult } from '../../worker/mcp/contracts';
 import { openSpaceSettings } from '../support/browser/ui';
+import { createHash } from 'node:crypto';
+import { documentPrompt } from '../../shared/attachments/documents';
+import type { AttachmentsResult } from '../../worker/mcp/attachment-contracts';
+import { encodeRef } from '../../worker/mcp/contracts';
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { uploadFiles } from '../../scripts/mcp/upload';
+import { textPdf } from '../support/assets/pdf';
 
 const origin = 'http://127.0.0.1:5174',
   headers = { Origin: origin };
@@ -93,6 +102,10 @@ test('MCP modern and legacy clients share the tool contract and all provider pro
       const { client } = await app.client(mode);
       const tools = await client.listTools();
       expect(tools.tools.map(({ name }) => name).sort()).toEqual([
+        'everchat_attachments_delete',
+        'everchat_attachments_get',
+        'everchat_attachments_prepare',
+        'everchat_attachments_put',
         'everchat_chat',
         'everchat_conversation_export',
         'everchat_conversation_read',
@@ -200,6 +213,461 @@ test('MCP modern and legacy clients share the tool contract and all provider pro
         expect(JSON.stringify(normal)).toContain('MCP protocol check');
       }
     }
+  } finally {
+    await app.cleanup();
+  }
+});
+
+test('MCP actual files use immutable key-owned batches, exact input receipts and replay-safe file-only chat', async ({
+  request,
+}) => {
+  const app = await setup(request);
+  try {
+    const { client, key } = await app.client(),
+      other = await app.client();
+    const catalog = await app.call<ModelsResult>(client, 'everchat_models_list');
+    const text = '= 定义🙂\n重要约束与反例\n'.repeat(1200);
+    for (const model of catalog.models) {
+      const args = {
+        uploadId: crypto.randomUUID(),
+        files: [
+          {
+            clientFileId: crypto.randomUUID(),
+            name: '1021.typ',
+            mediaType: 'text/plain',
+            purpose: 'document',
+            text,
+          },
+        ],
+      };
+      const saved = await app.call<AttachmentsResult>(client, 'everchat_attachments_put', args);
+      expect(saved.files[0]).toMatchObject({
+        inputStatus: 'ready',
+        sha256: createHash('sha256').update(text).digest('hex'),
+      });
+      expect(await app.call<AttachmentsResult>(client, 'everchat_attachments_put', args)).toEqual(
+        saved,
+      );
+      const denied = await app.call<{ error: { code: string } }>(
+        other.client,
+        'everchat_attachments_get',
+        { uploadRef: saved.uploadRef },
+      );
+      expect(denied.error.code).toBe('UPLOAD_UNAVAILABLE');
+      const input = {
+        requestId: crypto.randomUUID(),
+        modelRef: model.ref,
+        prompt: '',
+        uploadRef: saved.uploadRef,
+        attachments: [{ attachmentRef: saved.files[0].attachmentRef }],
+        waitMs: 10_000,
+      };
+      const run = await app.call<RunResult>(client, 'everchat_chat', input);
+      expect(run.status, JSON.stringify(run)).toBe('completed');
+      expect(run.conversationId).toBe(saved.conversationId);
+      expect((await app.call<RunResult>(client, 'everchat_chat', input)).runRef).toBe(run.runRef);
+      const manifest = await app.call<import('../../worker/mcp/contracts').ContextResult>(
+        client,
+        'everchat_run_context_get',
+        { runRef: run.runRef },
+      );
+      const file = manifest.items.find((i) => i.kind === 'document')!;
+      expect(file.content).toBe('document_snapshot');
+      let page = await app.call<import('../../worker/mcp/contracts').ContextResult>(
+          client,
+          'everchat_run_context_get',
+          { runRef: run.runRef, view: 'text', item: file.ordinal },
+        ),
+        actual = page.text!.text;
+      expect(page.textUnit).toBe('utf8_bytes');
+      while (page.hasMore) {
+        page = await app.call(client, 'everchat_run_context_get', {
+          runRef: run.runRef,
+          view: 'text',
+          item: file.ordinal,
+          cursor: page.nextCursor,
+        });
+        actual += page.text!.text;
+      }
+      expect(actual).toBe(documentPrompt({ name: '1021.typ', mediaType: 'text/plain' }, text));
+      const preview = await app.call<AttachmentsResult>(client, 'everchat_attachments_get', {
+        attachmentRef: saved.files[0].attachmentRef,
+        view: 'text',
+      });
+      expect(preview.text).toContain('定义');
+      expect(preview.hasMore).toBe(true);
+      const blocked = await app.call<{ files: { deleted: boolean; error: { message: string } }[] }>(
+        client,
+        'everchat_attachments_delete',
+        { attachmentRefs: [saved.files[0].attachmentRef] },
+      );
+      expect(blocked.files[0].deleted).toBe(false);
+      const download = await fetch(`${origin}/mcp/attachments/${saved.files[0].attachmentRef}`, {
+        headers: { Authorization: `Bearer ${key}` },
+      });
+      expect(download.status).toBe(200);
+      expect(await download.text()).toBe(text);
+      expect(
+        (await fetch(`${origin}/mcp/attachments/${saved.files[0].attachmentRef}`)).status,
+      ).toBe(401);
+      const reused = await app.call<{ error: { code: string } }>(client, 'everchat_chat', {
+        ...input,
+        requestId: crypto.randomUUID(),
+      });
+      expect(reused.error.code).toBe('UPLOAD_ALREADY_USED');
+    }
+  } finally {
+    await app.cleanup();
+  }
+});
+
+test('MCP material versions replace only the selected branch, remain pinned and preserve old input receipts', async ({
+  request,
+}) => {
+  test.slow();
+  const app = await setup(request);
+  try {
+    const { client } = await app.client(),
+      catalog = await app.call<ModelsResult>(client, 'everchat_models_list');
+    for (const model of catalog.models) {
+      const upload = async (text: string, continuation?: string, replaces?: string) =>
+        app.call<AttachmentsResult>(client, 'everchat_attachments_put', {
+          uploadId: crypto.randomUUID(),
+          ...(continuation ? { continuation } : {}),
+          files: [
+            {
+              clientFileId: crypto.randomUUID(),
+              name: '1021.typ',
+              mediaType: 'text/plain',
+              purpose: 'document',
+              text,
+              ...(replaces ? { replaces } : {}),
+              versionNote: text,
+            },
+          ],
+        });
+      const first = await upload('VERSION_ONE_DEFINITION'),
+        root = await app.call<RunResult>(client, 'everchat_chat', {
+          requestId: crypto.randomUUID(),
+          prompt: 'Original',
+          modelRef: model.ref,
+          uploadRef: first.uploadRef,
+          attachments: [{ attachmentRef: first.files[0].attachmentRef }],
+          waitMs: 10000,
+        });
+      expect(root.status).toBe('completed');
+      const second = await upload(
+        'VERSION_TWO_DEFINITION',
+        root.continuation!,
+        first.files[0].attachmentRef,
+      );
+      expect(second.files[0].documentRef).toBe(first.files[0].documentRef);
+      expect(second.files[0].versionRef).not.toBe(first.files[0].versionRef);
+      const replacement = await app.call<RunResult>(client, 'everchat_chat', {
+        requestId: crypto.randomUUID(),
+        prompt: 'Replace',
+        continuation: root.continuation,
+        modelRef: model.ref,
+        uploadRef: second.uploadRef,
+        attachments: [{ attachmentRef: second.files[0].attachmentRef, mode: 'replace' }],
+        waitMs: 10000,
+        recentMessages: 1,
+      });
+      expect(replacement.status, JSON.stringify(replacement)).toBe('completed');
+      const manifests = async (run: RunResult) => {
+        let page = await app.call<import('../../worker/mcp/contracts').ContextResult>(
+            client,
+            'everchat_run_context_get',
+            { runRef: run.runRef },
+          ),
+          items = page.items;
+        while (page.hasMore) {
+          page = await app.call(client, 'everchat_run_context_get', {
+            runRef: run.runRef,
+            cursor: page.nextCursor,
+          });
+          items.push(...page.items);
+        }
+        return items.filter((i) => i.kind === 'document');
+      };
+      expect((await manifests(replacement)).map((i) => i.attachment!.attachmentId)).toEqual([
+        second.files[0].parsed!.attachmentId,
+      ]);
+      const omissions = await app.call<import('../../worker/mcp/contracts').ContextResult>(
+        client,
+        'everchat_run_context_get',
+        { runRef: replacement.runRef, view: 'exclusions' },
+      );
+      expect(omissions.exclusions).toContainEqual(
+        expect.objectContaining({
+          reason: 'superseded_file',
+          file: expect.objectContaining({ attachmentId: first.files[0].parsed!.attachmentId }),
+        }),
+      );
+      expect((await manifests(root)).map((i) => i.attachment!.attachmentId)).toEqual([
+        first.files[0].parsed!.attachmentId,
+      ]);
+      const next = await app.call<RunResult>(client, 'everchat_chat', {
+        requestId: crypto.randomUUID(),
+        prompt: 'Next',
+        continuation: replacement.continuation,
+        waitMs: 10000,
+      });
+      expect(next.status).toBe('completed');
+      expect((await manifests(next)).map((i) => i.attachment!.attachmentId)).toEqual([
+        second.files[0].parsed!.attachmentId,
+      ]);
+      const sibling = await app.call<RunResult>(client, 'everchat_chat', {
+        requestId: crypto.randomUUID(),
+        prompt: 'Sibling',
+        continuation: root.continuation,
+        waitMs: 10000,
+        recentMessages: 1,
+      });
+      expect(sibling.status).toBe('completed');
+      expect((await manifests(sibling)).map((i) => i.attachment!.attachmentId)).toEqual([
+        first.files[0].parsed!.attachmentId,
+      ]);
+      const both = await app.call<RunResult>(client, 'everchat_chat', {
+        requestId: crypto.randomUUID(),
+        prompt: 'Compare',
+        continuation: replacement.continuation,
+        attachments: [{ attachmentRef: first.files[0].attachmentRef, mode: 'include_both' }],
+        waitMs: 10000,
+      });
+      expect(both.status, JSON.stringify(both)).toBe('completed');
+      expect((await manifests(both)).length).toBe(2);
+    }
+  } finally {
+    await app.cleanup();
+  }
+});
+
+test('MCP R2 direct files need no confirmation and unready uploads can retry the original requestId', async ({
+  request,
+}) => {
+  const app = await setup(request);
+  try {
+    const { client } = await app.client(),
+      catalog = await app.call<ModelsResult>(client, 'everchat_models_list');
+    const bytes = Buffer.from('实际文件🙂 Budget: 42'),
+      args = {
+        uploadId: crypto.randomUUID(),
+        files: [
+          {
+            clientFileId: crypto.randomUUID(),
+            name: 'notes.md',
+            mediaType: 'text/markdown',
+            purpose: 'document',
+            size: bytes.length,
+            sha256: createHash('sha256').update(bytes).digest('hex'),
+          },
+        ],
+      };
+    const saved = await app.call<AttachmentsResult>(client, 'everchat_attachments_prepare', args);
+    expect(saved.files[0].uploads).toHaveLength(1);
+    const input = {
+      requestId: crypto.randomUUID(),
+      modelRef: catalog.models[0].ref,
+      prompt: 'Explain',
+      uploadRef: saved.uploadRef,
+      attachments: [{ attachmentRef: saved.files[0].attachmentRef }],
+      waitMs: 10_000,
+    };
+    const pending = await app.call<{ error: { code: string } }>(client, 'everchat_chat', input);
+    expect(pending.error).toBeTruthy();
+    const target = saved.files[0].uploads[0];
+    const uploaded = await request.put(target.url, { headers: target.headers, data: bytes });
+    expect(uploaded.status(), await uploaded.text()).toBe(200);
+    const observed = await app.call<AttachmentsResult>(client, 'everchat_attachments_get', {
+      uploadRef: saved.uploadRef,
+    });
+    expect(observed.files[0].uploadStatus).toBe('registered');
+    expect(observed.files[0].inputStatus).toBe('preparing');
+    const run = await app.call<RunResult>(client, 'everchat_chat', input);
+    expect(run.status, JSON.stringify(run)).toBe('completed');
+    expect((await request.put(target.url, { headers: target.headers, data: bytes })).status()).toBe(
+      412,
+    );
+  } finally {
+    await app.cleanup();
+  }
+});
+
+test('MCP local upload helper sends PDF and paginated batches directly, preserving retry identities without a confirmation step', async ({
+  request,
+}) => {
+  const app = await setup(request),
+    directory = await mkdtemp(join(tmpdir(), 'everchat-mcp-helper-')),
+    oldKey = process.env.EVERCHAT_API_KEY,
+    oldUrl = process.env.EVERCHAT_MCP_URL;
+  try {
+    const { client, key } = await app.client(),
+      catalog = await app.call<ModelsResult>(client, 'everchat_models_list');
+    process.env.EVERCHAT_API_KEY = key;
+    process.env.EVERCHAT_MCP_URL = origin + '/mcp';
+    const pdf = join(directory, 'paper.pdf'),
+      notes = join(directory, '1021.typ'),
+      manifest = join(directory, 'manifest.json'),
+      state = join(directory, 'state.json');
+    await writeFile(pdf, textPdf([['First page definition.'], ['Second page evidence.']]));
+    await writeFile(notes, '= Versioned source');
+    await writeFile(
+      manifest,
+      JSON.stringify({
+        files: [
+          { path: pdf },
+          ...Array.from({ length: 16 }, () => ({ path: notes, versionNote: '🙂'.repeat(500) })),
+        ],
+      }),
+    );
+    const uploaded = await uploadFiles(manifest, state);
+    expect(uploaded.files).toHaveLength(17);
+    expect(await uploadFiles(manifest, state)).toEqual(uploaded);
+    const run = await app.call<RunResult>(client, 'everchat_chat', {
+      requestId: crypto.randomUUID(),
+      modelRef: catalog.models[0].ref,
+      prompt: 'Use page two',
+      uploadRef: uploaded.uploadRef,
+      attachments: [
+        {
+          attachmentRef: uploaded.files[0].attachmentRef,
+          selection: { pageRanges: [{ start: 2, end: 2 }] },
+        },
+      ],
+      waitMs: 10000,
+    });
+    expect(run.status, JSON.stringify(run)).toBe('completed');
+    const receipt = await app.call<import('../../worker/mcp/contracts').ContextResult>(
+        client,
+        'everchat_run_context_get',
+        { runRef: run.runRef },
+      ),
+      file = receipt.items.find((i) => i.kind === 'document')!;
+    const actual = await app.call<import('../../worker/mcp/contracts').ContextResult>(
+      client,
+      'everchat_run_context_get',
+      { runRef: run.runRef, view: 'text', item: file.ordinal },
+    );
+    expect(actual.text!.text).toContain('Second page evidence.');
+    expect(actual.text!.text).not.toContain('First page definition.');
+    const deleted = await app.call<{ files: { deleted: boolean }[] }>(
+      client,
+      'everchat_attachments_delete',
+      { attachmentRefs: [uploaded.files[1].attachmentRef] },
+    );
+    expect(deleted.files[0].deleted).toBe(true);
+  } finally {
+    if (oldKey === undefined) delete process.env.EVERCHAT_API_KEY;
+    else process.env.EVERCHAT_API_KEY = oldKey;
+    if (oldUrl === undefined) delete process.env.EVERCHAT_MCP_URL;
+    else process.env.EVERCHAT_MCP_URL = oldUrl;
+    await app.cleanup();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('MCP independent proposals and reviews use verified whitelists, visible snapshots and exact quotes', async ({
+  request,
+}) => {
+  const app = await setup(request);
+  try {
+    const { client } = await app.client(),
+      other = await app.client(),
+      catalog = await app.call<ModelsResult>(client, 'everchat_models_list');
+    const original = await app.call<RunResult>(client, 'everchat_chat', {
+      requestId: crypto.randomUUID(),
+      modelRef: catalog.models[0].ref,
+      prompt: 'Background definition ONLY: 42 units.',
+      waitMs: 10000,
+    });
+    const ref = encodeRef('conversation1', [original.conversationId]);
+    let page = await app.call<
+      import('valibot').InferOutput<
+        typeof import('../../worker/mcp/contracts').conversationReadResultSchema
+      >
+    >(client, 'everchat_conversation_read', {
+      conversationRef: ref,
+      headId: original.assistantMessageId,
+    });
+    const records = [...page.records];
+    while (page.hasMore) {
+      page = await app.call(client, 'everchat_conversation_read', {
+        conversationRef: ref,
+        headId: original.assistantMessageId,
+        cursor: page.nextCursor,
+      });
+      records.push(...page.records);
+    }
+    const citation = (role: string) => {
+      const meta = records.find((r) => r.kind === 'message' && r.role === role)!;
+      if (meta.kind !== 'message') throw new Error();
+      const text = records
+        .filter((r) => r.kind === 'text' && r.channel === 'content' && r.messageId === meta.id)
+        .map((r) => (r.kind === 'text' ? r.text : ''))
+        .join('');
+      return {
+        messageRef: meta.ref,
+        revision: meta.revision,
+        sha256: createHash('sha256').update(text).digest('hex'),
+      };
+    };
+    const background = citation('user'),
+      target = citation('assistant'),
+      args = {
+        requestId: crypto.randomUUID(),
+        modelRef: catalog.models[0].ref,
+        prompt: 'Propose independently',
+        discussion: { mode: 'independent', background: [background] },
+        waitMs: 10000,
+      };
+    const independent = await app.call<RunResult>(client, 'everchat_chat', args);
+    expect(independent.status, JSON.stringify(independent)).toBe('completed');
+    expect(independent.conversationId).not.toBe(original.conversationId);
+    const snapshot = await request
+      .get(`/api/conversations/${independent.conversationId}`)
+      .then((r) => r.json());
+    const saved = snapshot.messages.find((m: { role: string }) => m.role === 'user'),
+      text = saved.parts
+        .filter((p: { type: string }) => p.type === 'text')
+        .map((p: { text: string }) => p.text)
+        .join('');
+    expect(text).toContain('Background definition ONLY');
+    expect(text).toContain('explicit_whitelist');
+    expect(text).not.toContain(target.messageRef);
+    expect(saved.parentId).toBe(null);
+    expect((await app.call<RunResult>(client, 'everchat_chat', args)).runRef).toBe(
+      independent.runRef,
+    );
+    const denied = await app.call<{ error: { code: string } }>(other.client, 'everchat_chat', {
+      ...args,
+      requestId: crypto.randomUUID(),
+    });
+    expect(denied.error.code).toBe('DISCUSSION_ACCESS_DENIED');
+    const invalid = await app.call<{ error: { code: string } }>(client, 'everchat_chat', {
+      ...args,
+      requestId: crypto.randomUUID(),
+      discussion: { mode: 'independent', background: [{ ...background, sha256: '0'.repeat(64) }] },
+    });
+    expect(invalid.error.code).toBe('SOURCE_CHANGED');
+    const review = await app.call<RunResult>(client, 'everchat_chat', {
+      ...args,
+      requestId: crypto.randomUUID(),
+      prompt: 'Review claim C1',
+      discussion: {
+        mode: 'review',
+        background: [background],
+        targets: [
+          {
+            ...target,
+            claimId: 'C1',
+            range: { start: 0, end: Math.min(8, original.output.text.length) },
+            quoteHash: createHash('sha256').update(original.output.text.slice(0, 8)).digest('hex'),
+          },
+        ],
+      },
+    });
+    expect(review.status, JSON.stringify(review)).toBe('completed');
   } finally {
     await app.cleanup();
   }

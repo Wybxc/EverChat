@@ -5,6 +5,7 @@ import type { ChatInput } from '../providers/types';
 import { attachmentInputSchema, MAX_ATTACHMENT_BYTES } from './files';
 import { MAX_PDF_TEXT_BYTES, pdfMetadataSchema } from './pdf';
 import { MAX_BUFFERED_TEXT_BYTES } from '../platform/limits';
+import { materialBindingSchema } from './materials';
 
 export const MAX_DOCUMENT_BYTES = Math.min(MAX_ATTACHMENT_BYTES, MAX_BUFFERED_TEXT_BYTES);
 export const DOCUMENT_VERSION = 1;
@@ -59,6 +60,7 @@ export const documentPartSchema = v.pipe(
     characters: positive(MAX_PDF_TEXT_BYTES),
     tokens: positive(MAX_PDF_TEXT_BYTES * 3),
     selection: v.optional(selectionSchema),
+    material: v.optional(materialBindingSchema),
     csv: v.optional(
       v.strictObject({
         rows: positive(Number.MAX_SAFE_INTEGER),
@@ -85,7 +87,7 @@ export const documentPartSchema = v.pipe(
 export type DocumentPart = v.InferOutput<typeof documentPartSchema>;
 export const documentKey = (file: DocumentPart) => `${file.attachmentId}:${file.textSha256}`;
 export function documentSource(file: DocumentPart): DocumentPart {
-  const { selection, ...source } = file;
+  const { selection, material: _, ...source } = file;
   return selection
     ? {
         ...source,

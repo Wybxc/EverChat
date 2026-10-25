@@ -9,10 +9,13 @@ import {
   contextSummarySchema,
   inputReceiptSchema,
   inputReceiptItemSchema,
+  inputExclusionSchema,
 } from '../../shared/streaming/input-receipt';
 import { USAGE_FIELDS, usageSourceSchema } from '../../shared/usage/evidence';
 import type { StreamUsage } from '../../shared/streaming/provider-stream';
 import { generationDiagnosticsSchema } from '../../shared/streaming/diagnostics';
+import { selectedAttachmentSchema } from './attachment-contracts';
+import { discussionSchema } from './discussion-contracts';
 
 const uuid = v.pipe(v.string(), v.uuid());
 const handle = v.pipe(v.string(), v.minLength(1), v.maxLength(2048));
@@ -28,6 +31,10 @@ export const MCP_TOOL_NAMES = [
   'everchat_conversations_list',
   'everchat_conversation_read',
   'everchat_conversation_export',
+  'everchat_attachments_prepare',
+  'everchat_attachments_put',
+  'everchat_attachments_get',
+  'everchat_attachments_delete',
 ] as const;
 export type McpToolName = (typeof MCP_TOOL_NAMES)[number];
 export const helpInputSchema = v.strictObject({ tool: v.optional(v.picklist(MCP_TOOL_NAMES)) });
@@ -50,34 +57,48 @@ export const helpResultSchema = v.strictObject({
   ),
 });
 export type HelpResult = v.InferOutput<typeof helpResultSchema>;
-export const chatSchema = v.strictObject({
-  requestId: uuid,
-  prompt: v.pipe(
-    v.string(),
-    v.maxLength(MAX_MESSAGE_TEXT_BYTES),
-    v.check((text) => Boolean(text.trim()) && messageTextFits(text)),
+export const chatSchema = v.pipe(
+  v.strictObject({
+    requestId: uuid,
+    prompt: v.pipe(
+      v.string(),
+      v.maxLength(MAX_MESSAGE_TEXT_BYTES),
+      v.check((text) => messageTextFits(text)),
+    ),
+    modelRef: v.optional(handle),
+    continuation: v.optional(handle),
+    uploadRef: v.optional(handle),
+    attachments: v.optional(v.array(selectedAttachmentSchema)),
+    discussion: v.optional(discussionSchema),
+    presetId: v.optional(uuid),
+    systemPrompt: v.optional(v.pipe(v.string(), v.maxLength(MAX_SYSTEM_PROMPT_LENGTH))),
+    reasoningEffort: v.optional(
+      v.picklist(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']),
+    ),
+    temperature: v.optional(v.pipe(v.number(), v.finite(), v.minValue(0), v.maxValue(2))),
+    topP: v.optional(v.pipe(v.number(), v.finite(), v.minValue(0), v.maxValue(1))),
+    contextBudget: v.optional(
+      v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(Number.MAX_SAFE_INTEGER)),
+    ),
+    maxOutputTokens: v.optional(
+      v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(Number.MAX_SAFE_INTEGER)),
+    ),
+    recentMessages: v.optional(
+      v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(Number.MAX_SAFE_INTEGER)),
+    ),
+    webSearch: v.optional(v.boolean()),
+    waitMs: wait,
+  }),
+  v.check(
+    (input) => Boolean(input.prompt.trim()) || Boolean(input.attachments?.length),
+    'Provide a prompt or at least one file.',
   ),
-  modelRef: v.optional(handle),
-  continuation: v.optional(handle),
-  presetId: v.optional(uuid),
-  systemPrompt: v.optional(v.pipe(v.string(), v.maxLength(MAX_SYSTEM_PROMPT_LENGTH))),
-  reasoningEffort: v.optional(
-    v.picklist(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']),
+  v.check(
+    (input) =>
+      !input.discussion || (!input.continuation && !input.uploadRef && !input.attachments?.length),
+    'discussion starts a fresh conversation and cannot be combined with continuation or uploadRef/attachments.',
   ),
-  temperature: v.optional(v.pipe(v.number(), v.finite(), v.minValue(0), v.maxValue(2))),
-  topP: v.optional(v.pipe(v.number(), v.finite(), v.minValue(0), v.maxValue(1))),
-  contextBudget: v.optional(
-    v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(Number.MAX_SAFE_INTEGER)),
-  ),
-  maxOutputTokens: v.optional(
-    v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(Number.MAX_SAFE_INTEGER)),
-  ),
-  recentMessages: v.optional(
-    v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(Number.MAX_SAFE_INTEGER)),
-  ),
-  webSearch: v.optional(v.boolean()),
-  waitMs: wait,
-});
+);
 export type ChatArguments = v.InferOutput<typeof chatSchema>;
 export const getSchema = v.strictObject({
   runRef: handle,
@@ -200,9 +221,7 @@ export const contextResultSchema = v.strictObject({
   context: contextSummarySchema,
   receipt: v.nullable(inputReceiptSchema),
   items: v.array(v.strictObject({ ordinal: offset, ...inputReceiptItemSchema.entries })),
-  exclusions: v.array(
-    v.strictObject({ ordinal: offset, sourceId: v.nullable(v.string()), reason: v.string() }),
-  ),
+  exclusions: v.array(v.strictObject({ ordinal: offset, ...inputExclusionSchema.entries })),
   text: v.nullable(
     v.strictObject({
       state: v.picklist(['available', 'content_unavailable', 'redacted', 'metadata_only']),
@@ -374,10 +393,25 @@ export const modelsSchema = v.strictObject({
       reasoningEfforts: v.array(v.string()),
       contextWindow: v.nullable(v.number()),
       maxOutputTokens: v.nullable(v.number()),
+      imageInput: v.strictObject({
+        supported: v.nullable(v.boolean()),
+        source: v.string(),
+        canAttempt: v.boolean(),
+      }),
     }),
   ),
   presets: v.array(v.strictObject({ id: uuid, name: v.string() })),
   defaultModelRef: v.optional(v.string()),
+  attachments: v.strictObject({
+    storage: v.boolean(),
+    directUpload: v.boolean(),
+    mediaTypes: v.array(v.string()),
+    maxFileBytes: v.number(),
+    inlineRequestBytes: v.number(),
+    documentWorkingSetBytes: v.number(),
+    pdfParserVersion: v.string(),
+    documentInput: v.literal('extracted_text'),
+  }),
 });
 export type ModelsResult = v.InferOutput<typeof modelsSchema>;
 

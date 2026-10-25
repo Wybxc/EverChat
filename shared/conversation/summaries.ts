@@ -16,12 +16,22 @@ import { FALLBACK_MODEL_METADATA } from '../models/metadata';
 import { branchPath } from './branch-path';
 import { type ConversationSettings, type Message } from './types';
 import { type ChatInput, type ProviderConfig } from '../providers/types';
+import { materialContext } from './materials';
 
 export const summaryCoverageSchema = v.pipe(
   v.strictObject({
     throughId: v.pipe(v.string(), v.uuid()),
     sourceIds: v.pipe(v.array(v.pipe(v.string(), v.uuid())), v.minLength(1)),
     automatic: v.optional(v.boolean()),
+    materials: v.optional(
+      v.array(
+        v.strictObject({
+          documentId: v.pipe(v.string(), v.uuid()),
+          versionId: v.pipe(v.string(), v.uuid()),
+          textSha256: v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/)),
+        }),
+      ),
+    ),
   }),
   v.check(
     (coverage) =>
@@ -107,7 +117,8 @@ export function prepareChatContext(
   files: DocumentPart[] = [],
   currentSource?: ChatInput['source'],
 ) {
-  const prepared = summaryContext(messages, parentId),
+  const material = materialContext(messages, parentId, files, currentSource?.messageId);
+  const prepared = summaryContext(material.messages, parentId),
     prefix = prepared.summary ? summaryPrefix(prepared.summary) : undefined;
   const built = buildContext(
     prepared.history,
@@ -116,15 +127,41 @@ export function prepareChatContext(
     settings,
     prefix,
     images,
-    files,
+    material.current,
     currentSource,
+    material.pinned,
   );
+  for (const excluded of material.excluded)
+    built.selection.omitted.push({
+      input: {
+        role: 'user',
+        content: '',
+        files: [excluded.file],
+        source: { kind: 'message', messageId: excluded.sourceId },
+      },
+      reason: 'superseded_file',
+    });
+  for (const id of material.invalidatedSummaries)
+    built.selection.omitted.push({
+      input: { role: 'user', content: '', source: { kind: 'summary', messageId: id } },
+      reason: 'superseded_summary',
+    });
   noteUnavailableSources(messages, parentId, built.selection);
   let automatic: { throughId: string; demand: ReturnType<typeof measureContextDemand> } | undefined;
-  if (settings.autoCompression.enabled) {
+  if (settings.autoCompression.enabled && !material.invalidatedSummaries.length) {
     // Compression cannot reduce the current question or the system instructions.
     assertContextFits(
-      buildContext([], content, config, settings, undefined, images, files).estimate,
+      buildContext(
+        [],
+        content,
+        config,
+        settings,
+        undefined,
+        images,
+        material.current,
+        undefined,
+        material.pinned,
+      ).estimate,
     );
     const demand = measureContextDemand(
       prepared.history,
@@ -133,7 +170,8 @@ export function prepareChatContext(
       settings,
       prefix,
       images,
-      files,
+      material.current,
+      material.pinned,
     );
     if (
       demand.totalTokens >=
@@ -233,12 +271,13 @@ export function summaryGeneration(messages: Message[], throughId: string, config
   );
   if (!through) throw new ContextBudgetError('请选择当前分支中已完成的回答作为摘要边界。');
   const path = branchPath(messages, throughId);
-  const history = contextHistory(messages, throughId);
+  const material = materialContext(messages, throughId);
+  const history = contextHistory(material.messages, throughId);
   if (!history.length) throw new ContextBudgetError('这个范围没有可压缩的已完成内容。');
-  const previous = summaryForPath(messages, path, true);
+  const previous = summaryForPath(material.messages, path, true);
   const prepared = previous
     ? summaryContext(
-        messages.filter(
+        material.messages.filter(
           (message) => !message.summary || message.summary.sourceIds.length < path.length,
         ),
         throughId,
@@ -263,6 +302,7 @@ export function summaryGeneration(messages: Message[], throughId: string, config
     [],
     [],
     { kind: 'generated' },
+    material.pinned,
   );
   noteUnavailableSources(messages, throughId, built.selection);
   assertContextFits(built.estimate);
@@ -276,6 +316,10 @@ export function summaryGeneration(messages: Message[], throughId: string, config
     config: generationConfig,
     estimate: built.estimate,
     selection: built.selection,
-    coverage: { throughId, sourceIds: path.map(({ id }) => id) },
+    coverage: {
+      throughId,
+      sourceIds: path.map(({ id }) => id),
+      ...(material.versions.length ? { materials: material.versions } : {}),
+    },
   };
 }

@@ -46,8 +46,12 @@ EverChat 提供同域 `/mcp` 接口，供支持 Streamable HTTP 和自定义请�
 | `everchat_conversations_list`  | 分页发现当前 Key 获授权的正常对话                                     |
 | `everchat_conversation_read`   | 发现分支 head，逐页读取指定分支的结构化记录                           |
 | `everchat_conversation_export` | 逐页导出指定分支或轮次范围的 Markdown                                 |
+| `everchat_attachments_prepare` | 批量登记并签发固定租约的 R2 PUT 地址                                  |
+| `everchat_attachments_put`     | 用实际 UTF-8 文本或 base64 保存小文件                                 |
+| `everchat_attachments_get`     | 查询文件元数据、文本预览和剩余上传地址                                |
+| `everchat_attachments_delete`  | 删除未使用的文件；已进入消息的文件受保护                              |
 
-初次接入可调用 `everchat_help({})` 查看完整说明，或调用 `everchat_help({ "tool": "everchat_chat" })` 只查看某个工具。帮助只返回静态用法，不读取供应商配置、不创建对话、不调用模型；与其他工具一样需要有效的 MCP 密钥。附件功能仍在规划中，不在当前可调用工具内。
+初次接入可调用 `everchat_help({})` 查看完整说明，或调用 `everchat_help({ "tool": "everchat_chat" })` 只查看某个工具。帮助只返回静态用法，不读取供应商配置、不创建对话、不调用模型；与其他工具一样需要有效的 MCP 密钥。下述新增能力正在实现分支验证，生产尚未升级。
 
 先调用 `everchat_models_list`，使用返回的精确 `modelRef`，避免同名模型产生歧义。首次提问示例为工具 arguments，不是完整 JSON-RPC 请求：
 
@@ -98,7 +102,41 @@ EverChat 提供同域 `/mcp` 接口，供支持 Streamable HTTP 和自定义请�
 - 用量字段缺失时显式返回 `null`，真实零保留。`dimensions` 给出来源、已知小计和覆盖步骤数；有任何模型步骤缺少某字段时，小计不冒充完整总量。`finalized` 表示任务结束，独立于 `completeness`。原始数字冲突时保留并标记 `inconsistent_usage`。
 - 错误提供稳定 code、stage、retryable 和可用 HTTP 状态；不返回可能泄漏凭据的原始供应商响应。`OUTCOME_UNKNOWN` 表示结果未确认，不代表供应商未收到请求，不能擅自换 ID 重试。
 
-首版不提供附件上传、批量历史输入、历史管理或其他 MCP Server 递归调用。
+不提供其他 MCP Server 递归调用或临时调用模式。
+
+## 文件与版本（实现分支，尚未发布）
+
+二进制文件使用 `everchat_attachments_prepare → R2 PUT → everchat_chat`，没有确认步骤。批次超过 16 项时用 `everchat_attachments_get`、原 `uploadRef`、`view: "uploads"` 和游标签发后续地址。请求只登记名称、MIME、大小、SHA-256 和用途，不接受本地路径代替文件字节。PUT 使用原地址与全部签名头，禁止重定向，不发送 EverChat Key 或 Cookie。原文件接收时检查大小与 MIME；生成加载材料时才验证实际输入摘要，不把 HEAD 当作完整性证明。
+
+小文件可用 `everchat_attachments_put` 直接提交 `text` 或 canonical padded `dataBase64`，整个 MCP 请求最多 2 MiB。`.typ` 作为 UTF-8 文本，不编译、不跟随 include。PDF 由客户端使用支持的 PDF.js 提取，原文件和派生文本流分别 PUT；页码选区在 `attachments[].selection.pageRanges` 中指定，页码从 1 开始且包含两端。`ranges` 为 UTF-16 左闭右开位置，两种选区互斥。
+
+首次上传批次创建普通空对话；随后聊天使用原 `uploadRef`，明确列出要激活的 `attachments`。空 prompt 仅在有附件时允许。续聊上传必须使用相同的精确 continuation。上传批次与聊天分别由 `uploadId`、`requestId` 幂等控制，重试保留原 ID 与参数；根批次不能绑定第二个聊天 requestId。
+
+每份文件返回不可变 `attachmentRef`、逻辑 `documentRef`、版本 `versionRef`、原始哈希与解析后的文本哈希。默认同名文件独立；新版本上传时传 `replaces: <旧 attachmentRef>` 建立同一资料身份。调用聊天时：
+
+- `reuse`：沿用指定版本；与当前活动版本冲突时要求明确选择。
+- `replace`：替换当前分支的旧材料块。旧消息、输入回执与兄弟分支保留。
+- `include_both`：有意同时使用多个版本。
+
+材料绑定独立于历史后缀与摘要，激活的文件仍计入每次输入预算；装不下会明确拒绝，不静默截断。换版会停用基于被替换版本的旧摘要，也不会因此自动重新压缩。旧回答里的旧稿结论仍可能在历史中，换版不等于删除那些讨论。排除清单包含旧文件版本与哈希，不将其误算为整条消息被省略。
+
+`get` 的默认元数据视图只检查状态；不接收、不解析，也不发模型请求。文本视图按 UTF-8 字节分页。原文件下载为 `/mcp/attachments/<attachmentRef>`，需要 Bearer Key。Key 删除后拒绝新访问；已签发 PUT 地址无法立即撤销，固定租约到期后延迟清理未使用对象。
+
+本地辅助程序读取清单中的文件，计算哈希并完成批量 PUT，PDF 也在本机提取：
+
+```sh
+pnpm exec tsx scripts/mcp/upload.ts /private/tmp/files.json /private/tmp/upload-state.json
+```
+
+密钥用 `EVERCHAT_API_KEY` 环境变量提供，接口用 `EVERCHAT_MCP_URL` 指定。清单形如 `{"files":[{"path":"/absolute/1021.typ"}]}`，续聊可加 `continuation`，文件可加 `replaces`／`versionNote`。状态文件只保存固定身份与元数据；失败后用相同清单与状态路径重试。换内容应显式选新状态路径。程序输出 refs，不输出正文、密钥或签名地址；再将 refs 交给聊天工具。不要将本机状态文件提交到仓库。
+
+## 独立提案与审查（实现分支，尚未发布）
+
+`everchat_chat.discussion` 新建正常对话，与 `continuation`、`uploadRef`、`attachments` 互斥。`mode: "independent"` 只加入明确的用户背景消息与已解析文本文件；`mode: "review"` 再加入明确的目标回答。两者都不继承来源父链、思考、工具资料或派生摘要。
+
+从结构化记录取得消息 `ref`、`revision`，拼接该消息完整正文并计算 UTF-8 SHA-256，组成 `{messageRef, revision, sha256}` 引用。需要片段时增加 UTF-16 左闭右开 `range` 与选中文本的 `quoteHash`；审查 `targets` 另可带 `claimId`。版本、哈希、范围或引文不符时，在发模型请求前拒绝。背景只能引用完成的用户消息；targets 只能引用完成的回答；全部来源都须获当前 Key 授权。
+
+文件背景由 `discussion.files` 的精确 attachmentRefs 指定，必须已解析。所选正文、版本、出处与白名单策略一次性保存为可见的用户资料消息，随后可正常续聊、复制、备份、读取与导出。当前实现将跨对话背景保存为文本快照，受消息行和上下文预算约束；不跨对话复用二进制图片，也不复制整个对话。服务端只能保证来源选择与引用一致，不能证明材料语义上独立或审查结论正确。
 
 ## 输入回执与用量明细（实现分支，尚未发布）
 

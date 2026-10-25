@@ -26,6 +26,14 @@ import {
 } from './contracts';
 import { mcpHelp, mcpToolDescriptions } from './help';
 import { McpChatService } from './service';
+import {
+  attachmentsPrepareSchema,
+  attachmentsPutSchema,
+  attachmentsGetSchema,
+  attachmentsResultSchema,
+  attachmentsDeleteSchema,
+  attachmentsDeleteResultSchema,
+} from './attachment-contracts';
 
 function schema<T extends GenericSchema>(source: T) {
   const converted = toStandardJsonSchema(source),
@@ -194,6 +202,66 @@ export async function serveMcp(request: Request, env: Env) {
             },
           },
           ({ runRef }) => result(() => service.cancel(runRef)),
+        );
+        server.registerTool(
+          'everchat_attachments_prepare',
+          {
+            description: mcpToolDescriptions.everchat_attachments_prepare,
+            inputSchema: schema(attachmentsPrepareSchema),
+            outputSchema: schema(attachmentsResultSchema),
+            annotations: {
+              readOnlyHint: false,
+              destructiveHint: false,
+              idempotentHint: true,
+              openWorldHint: false,
+            },
+          },
+          (input) => result(() => service.filesPrepare(input)),
+        );
+        server.registerTool(
+          'everchat_attachments_put',
+          {
+            description: mcpToolDescriptions.everchat_attachments_put,
+            inputSchema: schema(attachmentsPutSchema),
+            outputSchema: schema(attachmentsResultSchema),
+            annotations: {
+              readOnlyHint: false,
+              destructiveHint: false,
+              idempotentHint: true,
+              openWorldHint: false,
+            },
+          },
+          (input) => result(() => service.filesPut(input)),
+        );
+        server.registerTool(
+          'everchat_attachments_get',
+          {
+            description: mcpToolDescriptions.everchat_attachments_get,
+            inputSchema: schema(attachmentsGetSchema),
+            outputSchema: schema(attachmentsResultSchema),
+            annotations: {
+              readOnlyHint: false,
+              destructiveHint: false,
+              idempotentHint: true,
+              openWorldHint: false,
+            },
+          },
+          (input) => result(() => service.filesGet(input)),
+        );
+        server.registerTool(
+          'everchat_attachments_delete',
+          {
+            description: mcpToolDescriptions.everchat_attachments_delete,
+            inputSchema: schema(attachmentsDeleteSchema),
+            outputSchema: schema(attachmentsDeleteResultSchema),
+            annotations: {
+              readOnlyHint: false,
+              destructiveHint: true,
+              idempotentHint: true,
+              openWorldHint: false,
+            },
+          },
+          ({ attachmentRefs }) => result(() => service.filesDelete(attachmentRefs)),
         );
         return server;
       },
