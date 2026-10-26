@@ -1,12 +1,10 @@
 import { startupLocaleScript } from './src/platform/i18n/startup';
-import { isSharePage } from './shared/sharing/types';
-import { defineConfig, type Plugin, type ViteDevServer } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { cloudflare } from '@cloudflare/vite-plugin';
 import { VitePWA } from 'vite-plugin-pwa';
 import { fileURLToPath } from 'node:url';
-import { readFile } from 'node:fs/promises';
 import { localAccess } from './scripts/dev/access';
 
 export default defineConfig(async ({ command, mode }) => {
@@ -44,25 +42,6 @@ export default defineConfig(async ({ command, mode }) => {
       startup.plugin,
       {
         name: 'everchat-html-entries',
-        configureServer(server: ViteDevServer) {
-          server.middlewares.use(async (request, response, next) => {
-            const url = new URL(request.url ?? '/', 'http://localhost');
-            if (!['GET', 'HEAD'].includes(request.method ?? '') || !isSharePage(url.pathname))
-              return next();
-            try {
-              const html = await server.transformIndexHtml(
-                '/share.html',
-                await readFile(new URL('./share.html', import.meta.url), 'utf8'),
-              );
-              response.setHeader('Content-Type', 'text/html');
-              response.setHeader('Referrer-Policy', 'no-referrer');
-              response.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
-              response.end(request.method === 'HEAD' ? undefined : html);
-            } catch (error) {
-              next(error);
-            }
-          });
-        },
         transformIndexHtml: (html: string) =>
           html
             .replace('/*__EVERCHAT_LOCALE__*/', startupLocaleScript())
@@ -116,8 +95,6 @@ export default defineConfig(async ({ command, mode }) => {
                     : 'scripts/dev/worker.ts',
                 vars: {
                   ...local.vars,
-                  // Isolated development-only encryption key, never copied into production vars.
-                  SHARE_LINK_KEY: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
                   ...(process.env.EVERCHAT_GENERATION_METRICS === '1'
                     ? { GENERATION_METRICS: '1' }
                     : {}),

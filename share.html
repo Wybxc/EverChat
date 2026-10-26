@@ -8,31 +8,16 @@
     <meta name="robots" content="noindex, nofollow, noarchive" />
     <meta name="everchat-build" content="__EVERCHAT_BUILD__" />
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
-    <title>EverChat</title>
-    <style>
-      body {
-        margin: 0;
-      }
-      .startup {
-        display: grid;
-        min-height: 100dvh;
-        place-items: center;
-        background: #fff;
-        color: #61666b;
-        font:
-          0.875rem system-ui,
-          sans-serif;
-      }
-      @media (prefers-color-scheme: dark) {
-        .startup {
-          background: #151517;
-          color: #a3a7ae;
-        }
-      }
-    </style>
+    <title>__EVERCHAT_SHARE_TITLE__</title>
   </head>
   <body>
-    <div id="root"><div class="startup" role="status" aria-label="EverChat">EverChat</div></div>
+    <div
+      id="root"
+      data-share-id="__EVERCHAT_SHARE_ID__"
+      data-share-expiry="__EVERCHAT_SHARE_EXPIRY__"
+    >
+      <!--EVERCHAT_SHARE-->
+    </div>
     <script type="module" src="/src/share.tsx"></script>
   </body>
 </html>

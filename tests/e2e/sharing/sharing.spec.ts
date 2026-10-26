@@ -79,7 +79,7 @@ for (const mobile of [false, true])
       });
       await publish.click();
       const link = dialog.getByLabel('只读分享链接', { exact: true });
-      await expect(link).toHaveValue(/\/s\/[A-Za-z0-9_-]{22}#[A-Za-z0-9_-]{43}$/);
+      await expect(link).toHaveValue(/\/s\/[A-Za-z0-9_-]{22}$/);
       const url = new URL(await link.inputValue());
       const shareId = url.pathname.split('/')[2];
       const stored = await request.get(`/api/shares/${shareId}/link`).then((r) => r.json());
@@ -104,13 +104,7 @@ for (const mobile of [false, true])
       await expect(sharedRow).toBeVisible();
       await sharedRow.getByRole('button', { name: '删除分享', exact: true }).click();
       await confirm.getByRole('button', { name: '确认删除', exact: true }).click();
-      expect(
-        (
-          await request.get(`/public/shares/${url.pathname.split('/')[2]}`, {
-            headers: { Authorization: `Bearer ${url.hash.slice(1)}` },
-          })
-        ).status(),
-      ).toBe(404);
+      expect((await request.get(url.pathname)).status()).toBe(404);
       await expect(sharedRow).not.toBeVisible();
       await expect(page.getByRole('button', { name: '关闭设置', exact: true })).toBeInViewport();
       await page.getByRole('button', { name: '关闭设置', exact: true }).click();

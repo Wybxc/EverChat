@@ -1,3 +1,6 @@
+import { renderShareMessages } from '../../../worker/sharing/render';
+import { shareDocument } from '../../../worker/sharing/document';
+import type { SharedSnapshot } from '../../../shared/sharing/types';
 import { SHARE_CSP } from '../../../shared/sharing/security';
 import { isSharePage } from '../../../shared/sharing/types';
 import { messageParts } from '../../../shared/conversation/content';
@@ -23,6 +26,53 @@ let assetDelay = 0;
 let swRequests = 0;
 let moduleResponse: 'normal' | 'html' | 'redirect' | 'failure' = 'normal';
 let richMarkdown = false;
+const defaultShare: SharedSnapshot = {
+  share: {
+    id: 'a'.repeat(22),
+    title: '公开 PWA 快照',
+    createdAt: 1,
+    expiresAt: null,
+    messageCount: 4,
+    omittedAttachments: 0,
+    hash: 'fixture',
+  },
+  page: {
+    blocks: [
+      {
+        message: 0,
+        role: 'user',
+        channel: 'text',
+        text: '公开提问\n第二行',
+        omittedAttachments: 0,
+      },
+      {
+        message: 1,
+        role: 'assistant',
+        channel: 'reasoning',
+        modelName: 'Flash 分享模型',
+        text: '**公开思考**\n保留换行',
+        omittedAttachments: 0,
+      },
+      {
+        message: 1,
+        role: 'assistant',
+        channel: 'text',
+        text: '公开正文',
+        omittedAttachments: 0,
+      },
+      { message: 2, role: 'user', channel: 'text', text: '后续提问', omittedAttachments: 0 },
+      {
+        message: 3,
+        role: 'assistant',
+        channel: 'text',
+        text: '全文末尾',
+        omittedAttachments: 0,
+      },
+    ],
+    cursor: null,
+  },
+};
+let publicSnapshot = defaultShare;
 const optionalAsset =
   '/assets/' +
   (await readdir(resolve(builds.a, 'assets'))).find(
@@ -72,6 +122,7 @@ const server = createServer(async (request, response) => {
       moduleResponse?: typeof moduleResponse;
       richMarkdown?: boolean;
       resetSettings?: boolean;
+      publicSnapshot?: SharedSnapshot | null;
     };
     if (input.version) root = builds[input.version];
     if (input.failSettings !== undefined) failSettings = input.failSettings;
@@ -82,6 +133,7 @@ const server = createServer(async (request, response) => {
     if (input.assetDelay !== undefined) assetDelay = input.assetDelay;
     if (input.moduleResponse !== undefined) moduleResponse = input.moduleResponse;
     if (input.richMarkdown !== undefined) richMarkdown = input.richMarkdown;
+    if (input.publicSnapshot !== undefined) publicSnapshot = input.publicSnapshot ?? defaultShare;
     if (input.resetSettings) providerSettings = defaultProviderSettings();
     return json({ ok: true, swRequests, optionalAsset });
   }
@@ -102,59 +154,6 @@ const server = createServer(async (request, response) => {
     response.writeHead(401, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     response.end(JSON.stringify({ error: 'MCP_AUTH_REQUIRED' }));
     return;
-  }
-  if (path === '/public/shares/aaaaaaaaaaaaaaaaaaaaaa') {
-    if (request.headers.authorization !== `Bearer ${'b'.repeat(43)}`) {
-      response.writeHead(404, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-      response.end('{"error":"链接不可用。"}');
-      return;
-    }
-    return json({
-      share: {
-        id: 'a'.repeat(22),
-        title: '公开 PWA 快照',
-        createdAt: 1,
-        expiresAt: null,
-        messageCount: 4,
-        omittedAttachments: 0,
-        hash: 'fixture',
-      },
-      page: {
-        blocks: [
-          {
-            message: 0,
-            role: 'user',
-            channel: 'text',
-            text: '公开提问\n第二行',
-            omittedAttachments: 0,
-          },
-          {
-            message: 1,
-            role: 'assistant',
-            channel: 'reasoning',
-            modelName: 'Flash 分享模型',
-            text: '**公开思考**\n保留换行',
-            omittedAttachments: 0,
-          },
-          {
-            message: 1,
-            role: 'assistant',
-            channel: 'text',
-            text: '公开正文',
-            omittedAttachments: 0,
-          },
-          { message: 2, role: 'user', channel: 'text', text: '后续提问', omittedAttachments: 0 },
-          {
-            message: 3,
-            role: 'assistant',
-            channel: 'text',
-            text: '全文末尾',
-            omittedAttachments: 0,
-          },
-        ],
-        cursor: null,
-      },
-    });
   }
   if (path.startsWith('/auth/') || path.startsWith('/cdn-cgi/access/')) {
     response.writeHead(401, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' });
@@ -266,22 +265,39 @@ const server = createServer(async (request, response) => {
   }
   try {
     // Only the optional migration fixture predates share.html; production has no legacy branch.
-    const shareDocument =
+    const shareShell =
       process.env.EVERCHAT_PWA_LEGACY_BUILD && root === builds.a ? 'index.html' : 'share.html';
     const source = isSharePage(path)
-      ? resolve(root, shareDocument)
+      ? resolve(root, shareShell)
       : path === '/' || !extname(path)
         ? resolve(root, 'index.html')
         : file;
+    if (path === `/public/shares/${publicSnapshot.share.id}/status`)
+      return json({ expiresAt: publicSnapshot.share.expiresAt });
+    if (
+      /^\/s\/[A-Za-z0-9_-]{22}$/.test(path) &&
+      !(process.env.EVERCHAT_PWA_LEGACY_BUILD && root === builds.a)
+    ) {
+      const shell = await readFile(resolve(root, 'share.html'), 'utf8');
+      const result = shareDocument(
+        shell,
+        'zh-CN',
+        publicSnapshot.share,
+        renderShareMessages(publicSnapshot.page.blocks.map((block) => JSON.stringify(block))),
+      );
+      response.writeHead(200, {
+        'Content-Type': 'text/html',
+        'Cache-Control': 'no-store',
+        'Content-Security-Policy': SHARE_CSP,
+        'Referrer-Policy': 'no-referrer',
+      });
+      for await (const chunk of result.body!) response.write(chunk);
+      response.end();
+      return;
+    }
     const body = await readFile(source);
     response.writeHead(200, {
       'Content-Type': types[extname(source)] ?? 'application/octet-stream',
-      ...(isSharePage(path)
-        ? {
-            'Content-Security-Policy': SHARE_CSP,
-            'Referrer-Policy': 'no-referrer',
-          }
-        : {}),
     });
     response.end(body);
   } catch {

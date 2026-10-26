@@ -2,8 +2,8 @@
 import { DurableObject } from 'cloudflare:workers';
 import type { UsageAttempt } from '../../../shared/usage/types';
 import type { SqlQuery } from '../../../worker/generation/metrics';
-import { encryptToken, tokenHash } from '../../../worker/sharing/crypto';
-import { snapshotResponse } from '../../../worker/sharing/response';
+import { shareDocument } from '../../../worker/sharing/document';
+import { renderShareMessages } from '../../../worker/sharing/render';
 import { SHARING_SCHEMA } from '../../../worker/sharing/schema';
 import { ShareRepository, publicShare } from '../../../worker/sharing/store';
 import { UsageOutbox } from '../../../worker/usage/outbox';
@@ -133,26 +133,21 @@ export class UsageSharingMeasurement extends DurableObject<MeasurementEnv> {
         });
       store.finishDraft(row.id, 'synthetic', 10, 10, 0, 'synthetic');
     });
-    const cipher = await encryptToken(
-      this.env.MEASUREMENT_TOKEN,
-      this.env.MEASUREMENT_TOKEN,
-      row.id,
-    );
-    this.ctx.storage.transactionSync(() =>
-      store.publish(
-        row.id,
-        'synthetic',
-        'Synthetic snapshot',
-        tokenHash(this.env.MEASUREMENT_TOKEN),
-        cipher,
-      ),
-    );
+    this.ctx.storage.transactionSync(() => {
+      store.saveHtml(row.id, renderShareMessages(store.payloads(store.get(row.id)!)));
+      store.publish(row.id, 'synthetic', 'Synthetic snapshot');
+    });
     return row.id;
   }
   readShare(id: string) {
     const store = this.shares(),
-      row = store.authorize(id, this.env.MEASUREMENT_TOKEN);
-    return snapshotResponse(publicShare(row), store.payloads(row));
+      row = store.published(id);
+    return shareDocument(
+      '<!doctype html><html lang="en"><title>__EVERCHAT_SHARE_TITLE__</title><body><!--EVERCHAT_SHARE--></body></html>',
+      'en',
+      publicShare(row),
+      store.html(row),
+    );
   }
   closeShare(id: string) {
     this.ctx.storage.transactionSync(() => this.shares().delete(id));

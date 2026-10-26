@@ -1,9 +1,6 @@
 import './style.css';
-import { start } from './features/sharing/PublicShare';
-import { showStartupFailure } from './platform/i18n/startup';
+import 'katex/dist/katex.min.css';
+import 'streamdown/styles.css';
+import { enhancePublicShare } from './features/sharing/public-enhancements';
 
-try {
-  start();
-} catch {
-  showStartupFailure();
-}
+enhancePublicShare();

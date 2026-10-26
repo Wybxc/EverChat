@@ -74,7 +74,11 @@ if (positionals[0] === 'prepare') {
       },
     );
     assert.ok(response.ok, `Measurement HTTP ${response.status}`);
-    return response.json() as Promise<T>;
+    return (
+      response.headers.get('Content-Type')?.includes('text/html')
+        ? response.text()
+        : response.json()
+    ) as Promise<T>;
   };
   if (positionals[0] === 'run') {
     const startedAt = new Date().toISOString(),

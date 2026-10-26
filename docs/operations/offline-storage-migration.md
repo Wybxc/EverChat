@@ -165,3 +165,15 @@ MCP 发布要求 Conversation／Library 的 `storage_schema` 从 2 升至 3；Us
 全部对象于 `2026-10-25T08:57:57.042Z` 通过结构、索引／触发器和逐行核验，临时回执清理后恢复业务。178 个原有可见对话全部读回 1,059 条消息，临时运维入口返回 404，临时变量已移除。私有备份保存在 `.wrangler/operations/storage-2026-10-25-mcp`；回滚须先恢复本批原始数据并核验，再恢复旧业务版本。
 
 本地多语句 schema 必须用 Node `db.exec()` 执行，不能用只执行首句的 `db.prepare()` 冒充 workerd `sql.exec()`。发布前已修复这一差异并增加附件表／索引的本地与原生一致性断言，写回补丁没有改变。运维断言只比较摘要、输出数量，禁止失败时打印备份对象或凭据。完整发布、真实 Gemini、R2 与资源采样证据见[上线记录](../measurements/mcp-production-2026-10-25.md)。
+
+## 公开分享预渲染版本 2
+
+仅 ShareStore 从独立 schema 1 升至 2，其他数据库版本不变。新增 `share_html` 分块及 `htmlCount`，移除 `tokenHash`／`tokenCipher`。保留分享 ID、原快照正文、状态和期限；只为 active 且未到期的快照在本地生成 HTML，不公开草稿或失效快照。旧链接的 fragment 不再参与读取。
+
+```sh
+pnpm ops:storage prepare --config <private-production-config> --sharing-only --directory /private/tmp/everchat-share-ssr --account <account-id>
+```
+
+后续仍严格执行 `preflight → 维护部署 → backup → convert → apply → verify → cleanup → 恢复新版业务`。`--sharing-only` 将清单限定为 SHARES 命名空间及规范 personal 对象；其他存储不运行构造函数或迁移。转换前逐份验证原快照 SHA-256；渲染与结构转换均只在本地进程运行，远端仅执行参数化 SQL。新版访问时不补渲染、不改写旧库。
+
+先等待 PR 的 Required tests 通过，再进入维护窗口，全部核验后合并并恢复新业务版本。原版无法读取 schema 2，撤回时须先恢复原始备份再回滚代码。确认恢复成功后删除已无用途的 `SHARE_LINK_KEY` Worker Secret；其余供应商／R2／通知密钥保留。

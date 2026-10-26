@@ -22,8 +22,7 @@ import {
 import './locales';
 import { ShareContent } from './ShareContent';
 
-export const shareUrl = (id: string, secret: string) =>
-  `${location.origin}${sharePath(id)}#${secret}`;
+export const shareUrl = (id: string) => `${location.origin}${sharePath(id)}`;
 
 export default function ShareDialog({
   conversationId,
@@ -106,12 +105,12 @@ export default function ShareDialog({
             : Date.now() + Number(expiry) * 1000;
       if (expiresAt !== null && (!Number.isSafeInteger(expiresAt) || expiresAt <= Date.now()))
         throw new UiError(uiMessage('sharing', 'invalidExpiry'));
-      const result = await api<{ share: ManagedShare; secret: string }>(
+      const result = await api<{ share: ManagedShare }>(
         `/shares/${preview.share.id}/publish`,
         'POST',
         { hash: preview.share.hash, title: title.trim(), expiresAt },
       );
-      setLink(shareUrl(result.share.id, result.secret));
+      setLink(shareUrl(result.share.id));
       window.dispatchEvent(new Event('everchat:shares-changed'));
     });
   return (

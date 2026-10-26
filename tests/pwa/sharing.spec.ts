@@ -8,7 +8,13 @@ test('controlled public shares stay network-only, skip private startup and do no
 }) => {
   await request.post('/__test/pwa/build', {
     headers,
-    data: { version: 'a', failSettings: false, moduleResponse: 'normal', richMarkdown: false },
+    data: {
+      version: 'a',
+      failSettings: false,
+      moduleResponse: 'normal',
+      richMarkdown: false,
+      publicSnapshot: null,
+    },
   });
   await page.goto('/');
   await expect
@@ -29,7 +35,7 @@ test('controlled public shares stay network-only, skip private startup and do no
       throw new Error('Public pages must not open private databases');
     };
   });
-  await shared.goto(`/s/${'a'.repeat(22)}#${'b'.repeat(43)}`);
+  await shared.goto(`/s/${'a'.repeat(22)}`);
   await expect
     .poll(() => shared.evaluate(() => navigator.serviceWorker.controller?.state))
     .toBe('activated');
@@ -53,13 +59,13 @@ test('controlled public shares stay network-only, skip private startup and do no
       .getByRole('heading', { name: 'EverChat', exact: true }),
   ).toBeVisible();
   await expect(shared.locator('article')).toHaveCount(4);
-  expect(publicCalls.length - previousCalls).toBe(1);
+  expect(publicCalls.length - previousCalls).toBe(0);
   await expect(shared.getByRole('button', { name: '继续阅读' })).toHaveCount(0);
   const user = shared.getByTestId('user-message').first(),
     thought = shared.getByTestId('assistant-message').first().getByTestId('share-reasoning');
-  await expect(user.locator('[data-slot="bubble-content"]')).toHaveText('公开提问\n第二行');
-  await expect(thought).toHaveAttribute('data-closed', '');
-  await thought.getByRole('button', { name: '思考内容', exact: true }).click();
+  await expect(user.locator('[data-share-user-text]')).toHaveText('公开提问\n第二行');
+  await expect(thought).not.toHaveAttribute('open');
+  await thought.locator('summary').click();
   await expect(thought.getByText('公开思考', { exact: true })).toBeVisible();
   await shared.setViewportSize({ width: 390, height: 740 });
   await shared.getByLabel('颜色模式').selectOption('dark');
@@ -80,7 +86,9 @@ test('controlled public shares stay network-only, skip private startup and do no
           ),
         )
       ).flat();
-      return paths.some((path) => path.startsWith('/public/') || path.startsWith('/api/'));
+      return paths.some(
+        (path) => path.startsWith('/public/') || path.startsWith('/api/') || path.startsWith('/s/'),
+      );
     }),
   ).toBe(false);
   await request.post('/__test/pwa/build', { headers, data: { version: 'b' } });
@@ -95,8 +103,7 @@ test('controlled public shares stay network-only, skip private startup and do no
           .map(async (name) => (await (await caches.open(name)).match('/share.html'))!.text()),
       ),
     );
-    expect(cachedShells).toHaveLength(1);
-    expect(cachedShells[0]).toContain('name="everchat-build" content="pwa-test-a"');
+    expect(cachedShells).toHaveLength(0);
     // Direct HTML navigation is also public and must not wait for a private update handshake.
     const direct = await context.newPage();
     await direct.goto('/share.html');
@@ -130,6 +137,7 @@ test('controlled public shares stay network-only, skip private startup and do no
 
 test('shared pages use one document scrollbar and follow content height on desktop and phone', async ({
   page,
+  request,
 }) => {
   const snapshot: SharedSnapshot = {
     share: {
@@ -159,8 +167,8 @@ test('shared pages use one document scrollbar and follow content height on deskt
       ],
     },
   };
-  await page.route('**/public/shares/**', (route) => route.fulfill({ json: snapshot }));
-  await page.goto(`/s/${snapshot.share.id}#${'b'.repeat(43)}`);
+  await request.post('/__test/pwa/build', { headers, data: { publicSnapshot: snapshot } });
+  await page.goto(`/s/${snapshot.share.id}`);
   await expect(
     page.getByText('段落 60。用于检查文档滚动和页面高度。', { exact: true }),
   ).toBeVisible();
@@ -189,6 +197,7 @@ test('shared pages use one document scrollbar and follow content height on deskt
     await expect(page.locator('header')).toBeInViewport();
   }
   snapshot.page.blocks[1].text = '简短回答';
+  await request.post('/__test/pwa/build', { headers, data: { publicSnapshot: snapshot } });
   await page.reload();
   await expect(page.getByText('简短回答', { exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.scrollingElement!.scrollHeight)).toBe(740);
@@ -200,6 +209,7 @@ test('shared pages use one document scrollbar and follow content height on deskt
 
 test('a visible shared snapshot disappears at expiry without extra network requests', async ({
   page,
+  request,
 }) => {
   await page.clock.install();
   const expiresAt = Date.now() + 60 * 86_400_000;
@@ -221,11 +231,11 @@ test('a visible shared snapshot disappears at expiry without extra network reque
     },
   };
   let reads = 0;
-  await page.route('**/public/shares/**', (route) => {
-    reads++;
-    return route.fulfill({ json: snapshot });
+  await request.post('/__test/pwa/build', { headers, data: { publicSnapshot: snapshot } });
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname.startsWith('/public/')) reads++;
   });
-  await page.goto(`/s/${snapshot.share.id}#${'b'.repeat(43)}`);
+  await page.goto(`/s/${snapshot.share.id}`);
   await expect(page.getByText('限时内容', { exact: true })).toBeVisible();
   const initialReads = reads;
   // Long expirations must not overflow the browser's 32-bit timeout delay.

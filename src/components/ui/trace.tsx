@@ -61,6 +61,34 @@ function TraceTitle({ className, ...props }: React.ComponentProps<'span'>) {
   );
 }
 
+/** A read-only trace remains expandable before JavaScript loads. */
+function TraceDetails({
+  children,
+  title,
+  icon,
+  ...props
+}: Omit<React.ComponentProps<'details'>, 'title'> & {
+  title: React.ReactNode;
+  icon: React.ReactNode;
+}) {
+  return (
+    <Trace>
+      <details className="share-reasoning" {...props}>
+        <summary className="flex w-fit cursor-pointer items-center gap-2 rounded-md text-sm text-muted-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
+          <TraceLine>
+            <TraceIcon>{icon}</TraceIcon>
+            <TraceTitle>{title}</TraceTitle>
+          </TraceLine>
+          <ChevronRightIcon className="share-chevron size-4" aria-hidden="true" />
+        </summary>
+        <div className="mt-2 mb-1 ml-2 min-w-0 border-l pr-1 pl-4 leading-relaxed wrap-break-word text-muted-foreground">
+          {children}
+        </div>
+      </details>
+    </Trace>
+  );
+}
+
 function TraceDescription({ className, ...props }: React.ComponentProps<'span'>) {
   return (
     <span
@@ -139,6 +167,7 @@ function TraceCollapsibleContent({
 
 export {
   Trace,
+  TraceDetails,
   TraceLine,
   TraceIcon,
   TraceTitle,

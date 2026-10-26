@@ -48,5 +48,6 @@
 - [Base UI 迁移记录](migrations/base-ui/project.md)：逐组件变更、交互差异、验证结果与包体积对比；[cmdk 依赖调研](research/cmdk-radix-dependency-2026-10-21.md)及 [Command 替换实施](migrations/base-ui/command.md)。
 - [测量命令与报告入口](measurements/README.md)：流处理、工具、通知、用量和分享的复现方法与平台证据。
 - [WebKit 流式结束滚动排查](measurements/webkit-stream-completion-scroll-2026-10-18.md)、[分享全文加载记录](measurements/sharing-fulltext-2026-10-19.md)。
+- [分享页 SSR 考察](research/sharing-ssr-2026-10-26.md)：公开随机地址、首次响应正文、免费层成本及发布时预渲染路线。
 
 界面参考图片保留在 `references/`；测量原始 JSON 保留在 `measurements/`，与对应说明一起阅读。

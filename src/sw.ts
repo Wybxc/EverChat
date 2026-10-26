@@ -10,7 +10,7 @@ import {
   precacheAndRoute,
 } from 'workbox-precaching';
 import { NavigationRoute, registerRoute } from 'workbox-routing';
-import { CacheFirst, NetworkFirst } from 'workbox-strategies';
+import { CacheFirst } from 'workbox-strategies';
 import { CacheExpiration, ExpirationPlugin } from 'workbox-expiration';
 import { isBundledAsset } from './platform/pwa/assets';
 import {
@@ -60,36 +60,34 @@ const modules = new CacheFirst({
 });
 registerRoute(({ url }) => isBundledAsset(url, self.location.origin), modules);
 const navigation = createHandlerBoundToURL('/index.html');
-// Cache only the shell visited under this build; shared conversation data stays network-only.
-const shareDocumentCache = `${cacheNames.runtime}-share-${encodeURIComponent(APP_VERSION)}`;
-const shareNavigation = new NetworkFirst({
-  cacheName: shareDocumentCache,
-  plugins: [
-    validateResource,
-    {
-      cacheWillUpdate: async ({ response }) =>
-        response.headers.get('Content-Type')?.includes('text/html') &&
-        (await response.clone().text()).includes(
-          `name="everchat-build" content="${encodeURIComponent(APP_VERSION)}"`,
-        )
-          ? response
-          : null,
-    },
-  ],
-});
 registerRoute(
   new NavigationRoute(
     async (options) => {
       const publicPage = isSharePage(new URL(options.request.url).pathname);
       if (!publicPage) return navigation(options);
-      const response = await shareNavigation.handle({
-        request: new Request(new URL('/share.html', self.location.origin), {
-          credentials: 'omit',
-          cache: 'no-store',
-          redirect: 'error',
-        }),
-        event: options.event,
-      });
+      let response: Response;
+      try {
+        response = await fetch(
+          new Request(options.request.url, {
+            credentials: 'omit',
+            cache: 'no-store',
+            redirect: 'error',
+          }),
+        );
+      } catch {
+        // A share document now contains private-to-the-link content: never cache it.
+        return new Response(
+          '<!doctype html><html><meta name="viewport" content="width=device-width,initial-scale=1"><title>EverChat</title><main role="alert"><p lang="zh-CN">无法连接，请联网后重试。</p><p lang="en">Could not connect. Reconnect and try again.</p></main></html>',
+          {
+            status: 503,
+            headers: {
+              'Content-Type': 'text/html; charset=utf-8',
+              'Cache-Control': 'no-store',
+              'Content-Security-Policy': SHARE_CSP,
+            },
+          },
+        );
+      }
       const headers = new Headers(response.headers);
       headers.set('Content-Security-Policy', SHARE_CSP);
       headers.set('Referrer-Policy', 'no-referrer');
@@ -115,8 +113,7 @@ self.addEventListener('activate', (event) => {
         if (
           name.startsWith(STATIC_CACHE_PREFIX) &&
           name !== cacheNames.precache &&
-          name !== moduleCache &&
-          name !== shareDocumentCache
+          name !== moduleCache
         ) {
           await caches.delete(name);
           if (name.endsWith('-modules'))
