@@ -16,11 +16,13 @@ import { MCP_GRANTS_SCHEMA } from '../../worker/mcp/history';
 import { DOCUMENT_INPUT_SNAPSHOTS_SCHEMA } from '../../worker/attachments/input-snapshots';
 import { MCP_ATTACHMENTS_SCHEMA } from '../../worker/mcp/attachments';
 import { encodeValue, type Statement, type StoreKind } from './storage-protocol';
+import { migrateShares } from './migrate-shares';
 
 // Only this Node.js operations module understands previous database formats.
 // The returned patch contains values already converted locally, never a parser
 // or a migration callback to execute while serving production traffic.
 export async function migrateStorage(db: DatabaseSync, kind: StoreKind): Promise<Statement[]> {
+  if (kind === 'sharing') return migrateShares(db);
   if (kind === 'usage') throw new Error('Usage cleanup requires cleanIncompleteUsage');
   const patch: Statement[] = [];
   const query: SqlQuery = <T extends Record<string, SqlStorageValue>>(

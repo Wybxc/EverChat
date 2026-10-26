@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Snapshot } from '../../../shared/streaming/protocol';
-import type { SharePreview, SharedSnapshot } from '../../../shared/sharing/types';
+import type { SharePreview } from '../../../shared/sharing/types';
 
 const origin = 'http://127.0.0.1:5174',
   headers = { Origin: origin };
@@ -102,27 +102,32 @@ test('immutable selected-branch sharing stays anonymous, fully readable and dele
       });
     const result = await publish(draft);
     expect(result.status(), await result.text()).toBe(200);
-    const published = (await result.json()) as { share: { id: string }; secret: string };
-    const publicPath = `/public/shares/${published.share.id}`,
-      bearer = { Authorization: `Bearer ${published.secret}` };
-    expect((await anonymous.request.get(publicPath)).status()).toBe(404);
-    const read = await anonymous.request.get(publicPath, { headers: bearer });
-    expect(read.status()).toBe(200);
+    const published = (await result.json()) as { share: { id: string } };
+    expect(published).not.toHaveProperty('secret');
+    const publicPath = `/s/${published.share.id}`;
+    const read = await anonymous.request.get(publicPath);
+    expect(read.status(), await read.text()).toBe(200);
     expect(read.headers()['cache-control']).toBe('no-store');
-    const body = await read.json();
-    expect(JSON.stringify(body)).not.toMatch(
-      /private-|integration-test-key|providerId|conversationId|runId|generation|summary|tokenCipher/,
+    const body = await read.text();
+    expect(body).toContain('<table');
+    expect(body).toContain('const a = 1;');
+    expect(body).not.toMatch(
+      /private-|integration-test-key|providerId|conversationId|runId|tokenCipher/,
     );
-    expect(body.page.cursor).toBeNull();
-    expect(body.page.blocks.some((b: { channel: string }) => b.channel === 'text')).toBe(true);
-    const frozen = JSON.stringify(body);
+    const frozen = body;
+    const noScript = await browser.newContext({ javaScriptEnabled: false, locale: 'zh-CN' });
+    try {
+      const staticPage = await noScript.newPage();
+      await staticPage.goto(publicPath);
+      await expect(staticPage.getByRole('table')).toBeVisible();
+      await expect(staticPage.getByText('第一行', { exact: false }).first()).toBeVisible();
+      await expect(staticPage.locator('.katex').first()).toBeVisible();
+    } finally {
+      await noScript.close();
+    }
     // Creating a new revision neither publishes it nor mutates the frozen branch.
     const second = await submit({ revisionOf: first.userId, content: '另一分支不可公开' });
-    expect(
-      JSON.stringify(
-        await anonymous.request.get(publicPath, { headers: bearer }).then((r) => r.json()),
-      ),
-    ).toBe(frozen);
+    expect(await anonymous.request.get(publicPath).then((r) => r.text())).toBe(frozen);
     const stale = await preview(second.assistantId);
     await submit({ parentId: second.assistantId, content: '预览之后增加' });
     expect((await publish(stale)).status()).toBe(409);
@@ -143,13 +148,13 @@ test('immutable selected-branch sharing stays anonymous, fully readable and dele
         throw new Error('Public page must not open private databases');
       };
     });
-    await page.goto(`/s/${published.share.id}#${published.secret}`);
+    await page.goto(publicPath);
     await expect(page.getByRole('heading', { name: '公开标题', exact: true })).toBeVisible();
     await expect(page.getByRole('table')).toBeVisible();
     await expect(page.locator('.katex').first()).toBeVisible();
     await expect(page.locator('code').first()).toBeVisible();
     const userBubble = page.getByTestId('user-message').first();
-    await expect(userBubble.locator('[data-slot="bubble-content"]')).toHaveText(
+    await expect(userBubble.locator('[data-share-user-text]')).toHaveText(
       '第一行\n第二行\n请检查分享 Markdown',
     );
     expect(
@@ -158,7 +163,7 @@ test('immutable selected-branch sharing stays anonymous, fully readable and dele
         .evaluate((element) => getComputedStyle(element).whiteSpace),
     ).toBe('pre-wrap');
     await expect(page.getByRole('button', { name: '继续阅读', exact: true })).toHaveCount(0);
-    expect(publicCalls.filter((url) => !url.endsWith('/messages'))).toHaveLength(1);
+    expect(publicCalls).toEqual([]);
     expect(privateCalls).toEqual([]);
     expect(tracker).toEqual([]);
     expect(await page.evaluate(() => '__shareXss' in window)).toBe(false);
@@ -167,7 +172,7 @@ test('immutable selected-branch sharing stays anonymous, fully readable and dele
     await page.setViewportSize({ width: 390, height: 740 });
     await page.getByLabel('颜色模式').selectOption('dark');
     await page.screenshot({ path: '/tmp/everchat-public-share-phone.png', fullPage: true });
-    expect((await anonymous.request.head(publicPath, { headers: bearer })).status()).toBe(200);
+    expect((await anonymous.request.head(publicPath)).status()).toBe(200);
     expect(
       (
         await request.patch(`/api/shares/${published.share.id}`, {
@@ -180,37 +185,22 @@ test('immutable selected-branch sharing stays anonymous, fully readable and dele
       (await request.post(`/api/shares/${published.share.id}/revoke`, { headers })).status(),
     ).toBe(404);
     const copy = await request.get(`/api/shares/${published.share.id}/link`).then((r) => r.json());
-    expect(copy.secret).toBe(published.secret);
-    const included = await preview(first.assistantId),
-      includedPublished = await publish(included).then((r) => r.json());
-    const reasoning = await anonymous.request
-      .get(`/public/shares/${included.share.id}`, {
-        headers: { Authorization: `Bearer ${includedPublished.secret}` },
-      })
-      .then((r) => r.json());
-    expect(reasoning.page.blocks.some((b: { channel: string }) => b.channel === 'reasoning')).toBe(
-      true,
-    );
-    // Reasoning is always in the snapshot, but remains collapsed in the public UI.
-    await page.goto(`/s/${included.share.id}#${includedPublished.secret}`);
+    expect(copy.share.id).toBe(published.share.id);
+    expect(copy).not.toHaveProperty('secret');
+    const included = await preview(first.assistantId);
+    await publish(included);
+    const reasoning = await anonymous.request.get(`/s/${included.share.id}`).then((r) => r.text());
+    expect(reasoning).toContain('思考🙂');
+    expect(reasoning).not.toContain(providerName);
+    await page.goto(`/s/${included.share.id}`);
     const thought = page.getByTestId('assistant-message').getByTestId('share-reasoning');
     await expect(
       page.getByTestId('assistant-message').getByRole('heading', { name: modelName, exact: true }),
     ).toBeVisible();
-    expect(
-      reasoning.page.blocks.find((block: { role: string }) => block.role === 'assistant').modelName,
-    ).toBe(modelName);
     await expect(page.getByText(providerName, { exact: false })).toHaveCount(0);
-    expect(
-      reasoning.page.blocks.every(
-        (block: object) => !('providerId' in block) && !('providerName' in block),
-      ),
-    ).toBe(true);
-    await expect(thought.getByRole('button', { name: '思考内容', exact: true })).toHaveText(
-      '思考内容',
-    );
-    await expect(thought).toHaveAttribute('data-closed', '');
-    await thought.getByRole('button', { name: '思考内容', exact: true }).click();
+    await expect(thought).not.toHaveAttribute('open');
+    await thought.locator('summary').click();
+    await expect(thought).toHaveAttribute('open', '');
     await expect(thought).toContainText('思考🙂');
     const timed = await preview(first.assistantId);
     expect(
@@ -237,15 +227,14 @@ test('immutable selected-branch sharing stays anonymous, fully readable and dele
       })
       .then((r) => r.json());
     expect(timedPublication.share.expiresAt).toBe(expiresAt);
-    const timedPath = `/public/shares/${timed.share.id}`,
-      timedBearer = { Authorization: `Bearer ${timedPublication.secret}` };
-    expect((await anonymous.request.get(timedPath, { headers: timedBearer })).status()).toBe(200);
-    await page.goto(`/s/${timed.share.id}#${timedPublication.secret}`);
+    const timedPath = `/s/${timed.share.id}`;
+    expect((await anonymous.request.get(timedPath)).status()).toBe(200);
+    await page.goto(timedPath);
     await expect(page.getByRole('heading', { name: '到期验证', exact: true })).toBeVisible();
     await expect(page.getByRole('alert')).toContainText('链接不可用');
     await expect(page.getByTestId('assistant-message')).toHaveCount(0);
-    expect((await anonymous.request.get(timedPath, { headers: timedBearer })).status()).toBe(404);
-    expect((await anonymous.request.head(timedPath, { headers: timedBearer })).status()).toBe(404);
+    expect((await anonymous.request.get(timedPath)).status()).toBe(404);
+    expect((await anonymous.request.head(timedPath)).status()).toBe(404);
     expect((await request.get(`/api/shares/${timed.share.id}/link`)).status()).toBe(404);
     // The real local DO alarm must remove metadata without a visitor-triggered write.
     await expect
@@ -259,24 +248,18 @@ test('immutable selected-branch sharing stays anonymous, fully readable and dele
     expect((await request.delete(`/api/shares/${published.share.id}`, { headers })).ok()).toBe(
       true,
     );
-    expect((await anonymous.request.get(publicPath, { headers: bearer })).status()).toBe(404);
-    expect((await anonymous.request.head(publicPath, { headers: bearer })).status()).toBe(404);
+    expect((await anonymous.request.get(publicPath)).status()).toBe(404);
+    expect((await anonymous.request.head(publicPath)).status()).toBe(404);
     expect((await request.get(`/api/shares/${published.share.id}/link`)).status()).toBe(404);
     expect(
       (
-        await anonymous.request.get(publicPath + '/messages?cursor=0', { headers: bearer })
+        await anonymous.request.get(`/public/shares/${published.share.id}/messages?cursor=0`)
       ).status(),
     ).toBe(404);
     expect((await request.delete(`/api/conversations/${conversationId}`, { headers })).ok()).toBe(
       true,
     );
-    expect(
-      (
-        await anonymous.request.get(`/public/shares/${included.share.id}`, {
-          headers: { Authorization: `Bearer ${includedPublished.secret}` },
-        })
-      ).status(),
-    ).toBe(404);
+    expect((await anonymous.request.get(`/s/${included.share.id}`)).status()).toBe(404);
     expect((await anonymous.request.get('/api/shares')).status()).toBe(401);
     expect((await request.delete(`/api/shares/${published.share.id}`, { headers })).ok()).toBe(
       true,
@@ -355,18 +338,10 @@ test('large snapshots load completely in one response and deletion invalidates a
         data: { hash: preview.share.hash, title: '大快照' },
       })
       .then((r) => r.json());
-    const bearer = { Authorization: `Bearer ${published.secret}` },
-      path = `/public/shares/${preview.share.id}`;
-    const first = (await request
-      .get(path, { headers: bearer })
-      .then((r) => r.json())) as SharedSnapshot;
-    expect(first.page.cursor).toBeNull();
-    expect(first.page.blocks.length).toBeGreaterThan(4);
-    const content = first.page.blocks
-      .filter((b) => b.role === 'assistant')
-      .map((b) => b.text)
-      .join('');
-    expect(content).toBe(text);
+    expect(published).not.toHaveProperty('secret');
+    const path = `/s/${preview.share.id}`;
+    const first = await request.get(path).then((r) => r.text());
+    expect(first.match(/😀大快照/g)).toHaveLength(15_000);
     const anonymous = await browser.newContext({ locale: 'zh-CN' });
     try {
       const page = await anonymous.newPage(),
@@ -374,9 +349,11 @@ test('large snapshots load completely in one response and deletion invalidates a
       page.on('requestfinished', (r) => {
         if (new URL(r.url()).pathname.startsWith('/public/')) calls.push(r.url());
       });
-      await page.goto(`${origin}/s/${preview.share.id}#${published.secret}`);
-      await expect(page.getByTestId('assistant-message').locator('.markdown')).toHaveText(text);
-      expect(calls).toEqual([origin + path]);
+      await page.goto(origin + path);
+      expect(
+        (await page.getByTestId('assistant-message').locator('.markdown').innerText()).trim(),
+      ).toBe(text);
+      expect(calls).toEqual([]);
       await expect(page.getByRole('button', { name: '继续阅读' })).toHaveCount(0);
       await request.delete(`/api/shares/${preview.share.id}`, { headers });
       await page.reload();
@@ -388,7 +365,7 @@ test('large snapshots load completely in one response and deletion invalidates a
     expect(
       (
         await request.get(path, {
-          headers: { ...bearer, 'If-None-Match': first.share.hash },
+          headers: { 'If-None-Match': preview.share.hash },
         })
       ).status(),
     ).toBe(404);

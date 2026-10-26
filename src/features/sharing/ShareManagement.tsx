@@ -60,8 +60,8 @@ export default function ShareManagement({ active }: { active: boolean }) {
     }
   };
   const copy = async (id: string) => {
-    const result = await api<{ share: ManagedShare; secret: string }>(`/shares/${id}/link`);
-    const url = shareUrl(result.share.id, result.secret);
+    const result = await api<{ share: ManagedShare }>(`/shares/${id}/link`);
+    const url = shareUrl(result.share.id);
     try {
       await navigator.clipboard.writeText(url);
       setNotice(uiMessage('sharing', 'linkCopied'));

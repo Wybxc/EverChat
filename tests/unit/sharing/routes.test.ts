@@ -4,73 +4,90 @@ import { createWorker } from '../../../worker/http/worker';
 import { HttpError } from '../../../worker/http/response';
 import type { Env } from '../../../worker/http/env';
 const origin = 'https://chat.example.com',
-  id = 'a'.repeat(22),
-  token = 'b'.repeat(43);
-test('public sharing bypasses only the private router and refuses cookies, invalid IDs, writes and cross-origin reads', async () => {
+  id = 'a'.repeat(22);
+const template =
+  '<html lang="en"><title>__EVERCHAT_SHARE_TITLE__</title><div id="root" data-share-id="__EVERCHAT_SHARE_ID__" data-share-expiry="__EVERCHAT_SHARE_EXPIRY__"><!--EVERCHAT_SHARE--></div></html>';
+test('public share navigation returns body without credentials, including cross-site links; management stays private', async () => {
   let reads = 0,
-    privateAuth = 0,
-    assets = 0;
+    auth = 0;
   const worker = createWorker(async () => {
-    privateAuth++;
+    auth++;
     throw new HttpError(401, '请登录。');
   });
   const env = {
+    ASSETS: {
+      fetch: (request: Request) => {
+        assert.equal(new URL(request.url).pathname, '/share.html');
+        return new Response(template);
+      },
+    },
     SHARES: {
       getByName: (name: string) => {
         assert.equal(name, 'personal');
         return {
-          read: (given: string, secret: string) => {
+          document: (given: string, html: string, locale: string, head: boolean) => {
             reads++;
             assert.equal(given, id);
-            assert.equal(secret, token);
-            return Response.json({ share: { title: '公开' } });
+            assert.equal(html, template);
+            assert.equal(locale, 'zh-CN');
+            return new Response(head ? null : '<html><p>公开正文</p></html>', {
+              headers: { 'Content-Type': 'text/html' },
+            });
           },
+          status: () => Response.json({ expiresAt: null }),
         };
-      },
-    },
-    ASSETS: {
-      fetch: () => {
-        assets++;
-        return new Response('static');
       },
     },
   } as unknown as Env;
   const fetch = (path: string, init?: RequestInit) =>
     worker.fetch(new Request(origin + path, init), env, {} as ExecutionContext);
-  const headers = { Authorization: `Bearer ${token}` };
   for (const path of ['/api', '/api/session', '/api/shares', '/api/usage/report'])
     assert.equal((await fetch(path)).status, 401);
-  assert.equal(privateAuth, 4);
+  const response = await fetch(`/s/${id}`, {
+    headers: { 'Accept-Language': 'zh-CN,en;q=0.9', 'Sec-Fetch-Site': 'cross-site' },
+  });
+  assert.equal(response.status, 200);
+  assert.match(await response.text(), /公开正文/);
+  for (const [name, value] of Object.entries({
+    'Cache-Control': 'no-store',
+    'Cloudflare-CDN-Cache-Control': 'no-store',
+    'Referrer-Policy': 'no-referrer',
+  }))
+    assert.equal(response.headers.get(name), value);
+  assert.match(response.headers.get('Content-Security-Policy')!, /script-src 'self'/);
+  assert.equal(response.headers.get('Access-Control-Allow-Origin'), null);
+  const head = await fetch(`/s/${id}`, { method: 'HEAD', headers: { 'Accept-Language': 'zh-CN' } });
+  assert.equal(head.status, 200);
+  assert.equal(await head.text(), '');
+  assert.equal(reads, 2);
+  assert.equal(auth, 4);
+  for (const path of ['/s/invalid', `/s/${id}/extra`])
+    assert.equal((await fetch(path)).status, 404);
+  assert.equal((await fetch(`/s/${id}`, { method: 'POST' })).status, 404);
+  assert.equal((await fetch(`/public/shares/${id}`)).status, 404);
+  assert.equal((await fetch(`/public/shares/${id}/status`)).status, 200);
   assert.equal(
-    (await fetch(`/public/shares/${id}`, { headers: { Cookie: 'CF_Authorization=anything' } }))
+    (await fetch(`/public/shares/${id}/status`, { headers: { Origin: 'https://elsewhere.test' } }))
       .status,
     404,
   );
-  assert.equal((await fetch(`/public/shares/${id}?token=${token}`)).status, 404);
-  assert.equal((await fetch('/public/shares/invalid', { headers })).status, 404);
-  assert.equal((await fetch(`/public/shares/${id}`, { method: 'POST', headers })).status, 404);
-  assert.equal(
-    (
-      await fetch(`/public/shares/${id}`, {
-        headers: { ...headers, Origin: 'https://foreign.example' },
-      })
-    ).status,
-    404,
+});
+test('missing and unavailable shares return an HTML error with no leaked content or conditional-cache bypass', async () => {
+  const worker = createWorker();
+  const env = {
+    ASSETS: { fetch: () => new Response(template) },
+    SHARES: {
+      getByName: () => ({
+        document: () => Response.json({ error: 'private error' }, { status: 404 }),
+      }),
+    },
+  } as unknown as Env;
+  const response = await worker.fetch(
+    new Request(`${origin}/s/${id}`, { headers: { 'If-None-Match': 'old' } }),
+    env,
+    {} as ExecutionContext,
   );
-  assert.equal(reads, 0);
-  const result = await fetch(`/public/shares/${id}`, {
-    headers: { ...headers, 'If-None-Match': 'any' },
-  });
-  assert.equal(result.status, 200);
-  assert.equal(result.headers.get('Cache-Control'), 'no-store');
-  assert.equal(result.headers.get('Cloudflare-CDN-Cache-Control'), 'no-store');
-  assert.equal(result.headers.get('Access-Control-Allow-Origin'), null);
-  assert.equal((await fetch(`/public/shares/${id}`, { method: 'HEAD', headers })).status, 200);
-  assert.equal(reads, 2);
-  assert.equal(privateAuth, 4);
-  for (const path of ['/public', '/public/unknown', '/auth', '/auth/unknown'])
-    assert.equal((await fetch(path)).status, 404);
-  assert.equal(assets, 0);
-  assert.equal((await fetch(`/s/${id}`)).status, 200);
-  assert.equal(assets, 1);
+  assert.equal(response.status, 404);
+  assert.match(response.headers.get('Content-Type')!, /text\/html/);
+  assert.doesNotMatch(await response.text(), /private error|__EVERCHAT_/);
 });

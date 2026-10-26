@@ -26,6 +26,7 @@ type Manifest = {
   worker: string;
   objects: Target[];
   usageOnly?: boolean;
+  sharingOnly?: boolean;
 };
 const { positionals, values } = parseArgs({
   allowPositionals: true,
@@ -36,9 +37,11 @@ const { positionals, values } = parseArgs({
     'access-token-file': { type: 'string' },
     'rebuild-search': { type: 'boolean', default: false },
     'usage-only': { type: 'boolean', default: false },
+    'sharing-only': { type: 'boolean', default: false },
   },
 });
 const action = positionals[0];
+assert.ok(!(values['usage-only'] && values['sharing-only']), 'Select one operations scope');
 assert.ok(
   ['prepare', 'preflight', 'backup', 'convert', 'apply', 'verify', 'cleanup', 'rollback'].includes(
     action,
@@ -73,13 +76,19 @@ if (action === 'prepare') {
     .map((value) => value.trim())
     .filter(Boolean);
   assert.equal(emails.length, 1, 'Maintenance requires one explicit administrator email');
-  const objects = await listTargets(values.account, worker, values['usage-only']);
+  const objects = await listTargets(
+    values.account,
+    worker,
+    values['usage-only'],
+    values['sharing-only'],
+  );
   const manifest: Manifest = {
     runId: randomUUID(),
     account: values.account,
     worker,
     objects,
     usageOnly: values['usage-only'],
+    sharingOnly: values['sharing-only'],
   };
   await save('manifest.json', manifest);
   await save('maintenance.json', {
@@ -218,11 +227,16 @@ if (action === 'prepare') {
         return response.json() as Promise<T>;
       };
       const discoverTargets = async () => {
-        const targets = await listTargets(manifest.account, manifest.worker, manifest.usageOnly);
+        const targets = await listTargets(
+          manifest.account,
+          manifest.worker,
+          manifest.usageOnly,
+          manifest.sharingOnly,
+        );
         let offset = 0;
         while (true) {
           const response = await send(
-            `/catalog?offset=${offset}${manifest.usageOnly ? '&kind=usage' : ''}`,
+            `/catalog?offset=${offset}${manifest.usageOnly ? '&kind=usage' : manifest.sharingOnly ? '&kind=sharing' : ''}`,
           );
           assert.equal(response.status, 200, 'Cannot inspect canonical conversation catalog');
           const page = (await response.json()) as Target[];
@@ -376,7 +390,12 @@ function patchPages(statements: Statement[]) {
   return pages;
 }
 
-async function listTargets(account: string, worker: string, usageOnly = false): Promise<Target[]> {
+async function listTargets(
+  account: string,
+  worker: string,
+  usageOnly = false,
+  sharingOnly = false,
+): Promise<Target[]> {
   const response = await cloudflareRead<{
     bindings: { name: string; namespace_id?: string; type: string }[];
   }>(`/accounts/${account}/workers/scripts/${worker}/settings`);
@@ -385,12 +404,14 @@ async function listTargets(account: string, worker: string, usageOnly = false): 
     `Cannot inspect production bindings: HTTP ${response.status}`,
   );
   const objects: Target[] = [];
-  const bindings = usageOnly
-    ? ([['USAGE', 'usage']] as const)
-    : ([
-        ['CONVERSATIONS', 'conversation'],
-        ['LIBRARY', 'library'],
-      ] as const);
+  const bindings = sharingOnly
+    ? ([['SHARES', 'sharing']] as const)
+    : usageOnly
+      ? ([['USAGE', 'usage']] as const)
+      : ([
+          ['CONVERSATIONS', 'conversation'],
+          ['LIBRARY', 'library'],
+        ] as const);
   for (const [name, kind] of bindings) {
     const namespace: string | undefined = response.result.bindings.find(
       (binding) => binding.name === name && binding.type === 'durable_object_namespace',
@@ -419,7 +440,7 @@ async function listTargets(account: string, worker: string, usageOnly = false): 
     } while (cursor);
   }
   assert.ok(
-    objects.some(({ kind }) => kind === (usageOnly ? 'usage' : 'library')),
+    sharingOnly || objects.some(({ kind }) => kind === (usageOnly ? 'usage' : 'library')),
     'No stored target object found',
   );
   return objects.sort((a, b) => a.kind.localeCompare(b.kind) || a.id.localeCompare(b.id));

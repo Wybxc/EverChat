@@ -1,4 +1,4 @@
-export type StoreKind = 'conversation' | 'library' | 'usage';
+export type StoreKind = 'conversation' | 'library' | 'usage' | 'sharing';
 export type WireValue = string | number | null | { blob: string };
 export interface Statement {
   sql: string;
@@ -17,6 +17,7 @@ export interface StorageSnapshot {
   rows: Record<string, Record<string, WireValue>[]>;
 }
 export const MIGRATION_TABLES: Record<StoreKind, string[]> = {
+  sharing: ['storage_schema', 'shares', 'share_blocks', 'share_deletions', 'share_html'],
   usage: ['storage_schema', 'usage_attempts', 'usage_prices', 'usage_rollups'],
   conversation: [
     'storage_schema',

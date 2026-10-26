@@ -59,12 +59,12 @@ test('Cloudflare HTML canonicalization breaks precaching; the deployed routing s
         const html = await publicHtml.text();
         expect(html).toContain('name="everchat-build"');
         expect(html).not.toContain('startup-side');
-        for (const path of ['/share.html', '/s', `/s/${'a'.repeat(22)}?source=test`]) {
+        for (const path of ['/s', `/s/${'a'.repeat(22)}?source=test`]) {
           const document = await request.get(`${origin}${path}`, { maxRedirects: 0 });
           expect(document.status(), path).toBe(200);
-          expect(await document.text(), path).toBe(html);
+          expect(await document.text(), path).toContain('SSR fixture body');
           expect(document.headers()['location'], path).toBeUndefined();
-          expect(document.headers()['x-fixture-worker'], path).toBeUndefined();
+          expect(document.headers()['x-fixture-worker'], path).toBe('invoked');
           expect(document.headers()['content-security-policy'], path).toContain(
             "script-src 'self'",
           );

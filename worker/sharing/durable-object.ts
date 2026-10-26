@@ -4,9 +4,10 @@ import type { ShareBlock, SharePreview } from '../../shared/sharing/types';
 import type { Env } from '../http/env';
 import { HttpError, json } from '../http/response';
 import { initializeStorageSchema } from '../platform/storage-schema';
-import { decryptToken, encryptToken, randomShareSecret, tokenHash } from './crypto';
-import { snapshotResponse } from './response';
-import { SHARING_SCHEMA } from './schema';
+import { shareDocument } from './document';
+import { renderShareMessages } from './render';
+import type { Locale } from '../../shared/i18n/locale';
+import { SHARING_SCHEMA, SHARING_SCHEMA_VERSION } from './schema';
 import { ShareRepository, publicShare, snapshotHasher, unavailable, type ShareRow } from './store';
 
 interface PrepareInput {
@@ -25,7 +26,7 @@ export class ShareStore extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     ctx.storage.transactionSync(() => {
-      initializeStorageSchema(ctx.storage.sql.exec.bind(ctx.storage.sql), 1);
+      initializeStorageSchema(ctx.storage.sql.exec.bind(ctx.storage.sql), SHARING_SCHEMA_VERSION);
       ctx.storage.sql.exec(SHARING_SCHEMA);
     });
     this.repository = new ShareRepository(ctx.storage.sql.exec.bind(ctx.storage.sql));
@@ -46,21 +47,8 @@ export class ShareStore extends DurableObject<Env> {
     if (!row) throw unavailable();
     return row;
   }
-  private secret() {
-    const secret = this.env.SHARE_LINK_KEY;
-    if (!secret || !/^[A-Za-z0-9_-]{43}$/.test(secret))
-      throw new HttpError(503, '分享链接密钥尚未配置。', undefined, problem('SHARE_INCOMPLETE'));
-    return secret;
-  }
-  private async credentials(id: string) {
-    const token = randomShareSecret();
-    return { hash: tokenHash(token), cipher: await encryptToken(token, this.secret(), id) };
-  }
-  private async ownerResult(row: ShareRow) {
-    return {
-      share: this.repository.managed(row),
-      secret: await decryptToken(row.tokenCipher!, this.secret(), row.id),
-    };
+  private ownerResult(row: ShareRow) {
+    return { share: this.repository.managed(row) };
   }
   private async scheduleCleanup() {
     const at = this.repository.nextCleanup();
@@ -89,7 +77,6 @@ export class ShareStore extends DurableObject<Env> {
     });
   }
   private async prepareSnapshot(input: PrepareInput): Promise<SharePreview> {
-    this.secret();
     const row = this.repository.begin(input);
     // Schedule even failed transfers, so an incomplete draft cannot live forever.
     await this.scheduleCleanup();
@@ -224,17 +211,10 @@ export class ShareStore extends DurableObject<Env> {
           undefined,
           problem('SHARE_PREVIEW_STALE'),
         );
-      const token = await this.credentials(id);
-      const row = this.ctx.storage.transactionSync(() =>
-        this.repository.publish(
-          id,
-          input.hash,
-          input.title,
-          token.hash,
-          token.cipher,
-          input.expiresAt,
-        ),
-      );
+      const row = this.ctx.storage.transactionSync(() => {
+        this.repository.saveHtml(id, renderShareMessages(this.repository.payloads(before)));
+        return this.repository.publish(id, input.hash, input.title, input.expiresAt);
+      });
       await this.scheduleCleanup();
       return this.ownerResult(row);
     });
@@ -260,12 +240,18 @@ export class ShareStore extends DurableObject<Env> {
     this.ctx.storage.transactionSync(() => this.repository.deleteConversation(conversationId));
     this.ctx.waitUntil(this.scheduleCleanup());
   }
-  read(id: string, token: string, head = false) {
+  status(id: string) {
     return this.respond(() => {
-      const row = this.repository.authorize(id, token);
+      const row = this.repository.published(id);
+      return { expiresAt: row.expiresAt };
+    });
+  }
+  document(id: string, template: string, locale: Locale, head = false) {
+    return this.respond(() => {
+      const row = this.repository.published(id);
       return head
-        ? new Response(null, { headers: json(null).headers })
-        : snapshotResponse(publicShare(row), this.repository.payloads(row));
+        ? new Response(null, { headers: { 'Content-Type': 'text/html; charset=utf-8' } })
+        : shareDocument(template, locale, publicShare(row), this.repository.html(row));
     });
   }
   async alarm() {

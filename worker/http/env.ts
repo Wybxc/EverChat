@@ -10,7 +10,6 @@ export interface Env {
   LIBRARY: DurableObjectNamespace<Library>;
   USAGE?: DurableObjectNamespace<UsageStore>;
   SHARES?: DurableObjectNamespace<ShareStore>;
-  SHARE_LINK_KEY?: string;
   WEB_TOOLS: Workflow<ToolWorkflowParams>;
   ATTACHMENTS?: R2Bucket;
   R2_ACCOUNT_ID?: string;

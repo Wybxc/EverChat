@@ -1,9 +1,8 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { problem } from '../../shared/errors/descriptor';
 import type { ManagedShare, PublicShare, ShareBlock, SharePage } from '../../shared/sharing/types';
 import type { SqlQuery } from '../generation/metrics';
 import { HttpError } from '../http/response';
-import { randomShareId, tokenMatches } from './crypto';
 
 export interface ShareRow extends Record<string, SqlStorageValue> {
   id: string;
@@ -21,9 +20,8 @@ export interface ShareRow extends Record<string, SqlStorageValue> {
   blockCount: number;
   omittedAttachments: number;
   hash: string;
-  tokenHash: string | null;
-  tokenCipher: string | null;
   expiresAt: number | null;
+  htmlCount: number;
 }
 export const unavailable = () =>
   new HttpError(404, '链接不可用。', undefined, problem('SHARE_UNAVAILABLE'));
@@ -90,10 +88,10 @@ export class ShareRepository {
         );
       return existing;
     }
-    const id = randomShareId(),
+    const id = randomBytes(16).toString('base64url'),
       now = this.now();
     this.query(
-      `INSERT INTO shares VALUES (?, ?, ?, ?, '', ?, ?, ?, 'draft', ?, ?, 0, 0, 0, '', NULL, NULL, NULL)`,
+      `INSERT INTO shares VALUES (?, ?, ?, ?, '', ?, ?, ?, 'draft', ?, ?, 0, 0, 0, '', NULL, 0)`,
       id,
       input.operationId,
       input.conversationId,
@@ -132,17 +130,30 @@ export class ShareRepository {
       id,
     );
   }
-  authorize(id: string, token: string) {
+  published(id: string) {
     const row = this.get(id);
-    if (
-      !row ||
-      row.status !== 'active' ||
-      (row.expiresAt !== null && row.expiresAt <= this.now()) ||
-      !row.tokenHash ||
-      !tokenMatches(token, row.tokenHash)
-    )
+    if (!row || row.status !== 'active' || (row.expiresAt !== null && row.expiresAt <= this.now()))
       throw unavailable();
     return row;
+  }
+  *html(row: ShareRow): Generator<string> {
+    let count = 0;
+    for (const part of this.query<{ seq: number; html: string }>(
+      'SELECT seq, html FROM share_html WHERE shareId=? ORDER BY seq',
+      row.id,
+    )) {
+      if (part.seq !== count++) throw new Error('Incomplete share HTML');
+      yield part.html;
+    }
+    if (!count || count !== row.htmlCount) throw new Error('Incomplete share HTML');
+  }
+  saveHtml(id: string, parts: Iterable<string>) {
+    this.query('DELETE FROM share_html WHERE shareId=?', id);
+    let count = 0;
+    for (const html of parts)
+      this.query('INSERT INTO share_html VALUES (?, ?, ?)', id, count++, html);
+    if (!count) throw new Error('Empty share HTML');
+    this.query('UPDATE shares SET htmlCount=? WHERE id=?', count, id);
   }
   page(row: ShareRow, cursor = 0): SharePage {
     if (cursor < 0 || (cursor >= row.blockCount && cursor !== 0)) throw unavailable();
@@ -169,14 +180,7 @@ export class ShareRepository {
     }
     if (count !== row.blockCount) throw new Error('Incomplete share snapshot');
   }
-  publish(
-    id: string,
-    hash: string,
-    title: string,
-    tokenHash: string,
-    tokenCipher: string,
-    expiresAt: number | null = null,
-  ) {
+  publish(id: string, hash: string, title: string, expiresAt: number | null = null) {
     const row = this.get(id);
     if (!row || row.hash !== hash || !hash || this.deleted(row.conversationId)) throw unavailable();
     if (row.status === 'active') {
@@ -207,13 +211,19 @@ export class ShareRepository {
         undefined,
         problem('SHARE_PREVIEW_STALE'),
       );
+    if (
+      !row.htmlCount ||
+      this.query<{ count: number }>(
+        'SELECT COUNT(*) AS count FROM share_html WHERE shareId=?',
+        id,
+      ).one().count !== row.htmlCount
+    )
+      throw new Error('Share HTML is not ready');
     this.query(
-      "UPDATE shares SET status='active', title=?, updatedAt=?, expiresAt=?, tokenHash=?, tokenCipher=? WHERE id=?",
+      "UPDATE shares SET status='active', title=?, updatedAt=?, expiresAt=? WHERE id=?",
       title,
       this.now(),
       expiresAt,
-      tokenHash,
-      tokenCipher,
       id,
     );
     return this.get(id)!;
@@ -236,17 +246,30 @@ export class ShareRepository {
   deleteConversation(conversationId: string) {
     this.query('INSERT OR IGNORE INTO share_deletions VALUES (?)', conversationId);
     this.query(
+      'DELETE FROM share_html WHERE shareId IN (SELECT id FROM shares WHERE conversationId=?)',
+      conversationId,
+    );
+    this.query(
       'DELETE FROM share_blocks WHERE shareId IN (SELECT id FROM shares WHERE conversationId=?)',
       conversationId,
     );
     this.query('DELETE FROM shares WHERE conversationId=?', conversationId);
   }
   delete(id: string) {
+    this.query('DELETE FROM share_html WHERE shareId=?', id);
     this.query('DELETE FROM share_blocks WHERE shareId=?', id);
     this.query('DELETE FROM shares WHERE id=?', id);
   }
   cleanup() {
     // No per-read writes. Reclamation is bounded and never revives expired snapshots.
+    this.query(
+      `DELETE FROM share_html WHERE (shareId, seq) IN (
+      SELECT b.shareId, b.seq FROM share_html b JOIN shares s ON s.id=b.shareId
+      WHERE s.status='revoked' OR (s.status='draft' AND s.draftUntil<=?)
+      OR (s.status='active' AND s.expiresAt IS NOT NULL AND s.expiresAt<=?) LIMIT 128)`,
+      this.now(),
+      this.now(),
+    );
     this.query(
       `DELETE FROM share_blocks WHERE (shareId, seq) IN (
       SELECT b.shareId, b.seq FROM share_blocks b JOIN shares s ON s.id=b.shareId
@@ -258,7 +281,8 @@ export class ShareRepository {
     this.query(
       `DELETE FROM shares WHERE (status='revoked' OR (status='draft' AND draftUntil<=?)
       OR (status='active' AND expiresAt IS NOT NULL AND expiresAt<=?))
-      AND NOT EXISTS (SELECT 1 FROM share_blocks WHERE shareId=shares.id)`,
+      AND NOT EXISTS (SELECT 1 FROM share_blocks WHERE shareId=shares.id)
+      AND NOT EXISTS (SELECT 1 FROM share_html WHERE shareId=shares.id)`,
       this.now(),
       this.now(),
     );
@@ -268,7 +292,8 @@ export class ShareRepository {
       `SELECT s.id FROM shares s WHERE
       (s.status='revoked' OR (s.status='draft' AND s.draftUntil<=?) OR
        (s.status='active' AND s.expiresAt IS NOT NULL AND s.expiresAt<=?))
-      AND EXISTS (SELECT 1 FROM share_blocks b WHERE b.shareId=s.id) LIMIT 1`,
+      AND (EXISTS (SELECT 1 FROM share_blocks b WHERE b.shareId=s.id)
+      OR EXISTS (SELECT 1 FROM share_html h WHERE h.shareId=s.id)) LIMIT 1`,
       this.now(),
       this.now(),
     ).toArray().length;

@@ -12,7 +12,6 @@ import {
   type StoreKind,
 } from './storage-protocol';
 // Retain the existing Workflow binding/export during this temporary deployment.
-export { ShareStore } from '../../worker/sharing/durable-object';
 export { WebToolWorkflow } from '../../worker/web-tools/workflow';
 
 export class Conversation extends DurableObject {
@@ -160,6 +159,7 @@ export class Conversation extends DurableObject {
 }
 export class Library extends Conversation {}
 export class UsageStore extends Conversation {}
+export class ShareStore extends Conversation {}
 
 type OperationsEnv = {
   OPS_RUN_ID: string;
@@ -167,6 +167,7 @@ type OperationsEnv = {
   CONVERSATIONS: DurableObjectNamespace<Conversation>;
   LIBRARY: DurableObjectNamespace<Library>;
   USAGE: DurableObjectNamespace<UsageStore>;
+  SHARES: DurableObjectNamespace<ShareStore>;
 };
 // Private service-binding transport used by the native integration harness.
 // The temporary HTTP route below separately verifies the operator's Access JWT.
@@ -181,6 +182,18 @@ async function dispatch(request: Request, env: OperationsEnv) {
   if (url.pathname === '/catalog') {
     const offset = Number(url.searchParams.get('offset') ?? 0);
     if (!Number.isSafeInteger(offset) || offset < 0) throw new Error('Invalid catalog offset');
+    if (url.searchParams.get('kind') === 'sharing')
+      return Response.json(
+        offset
+          ? []
+          : [
+              {
+                kind: 'sharing',
+                id: env.SHARES.idFromName('personal').toString(),
+                name: 'personal',
+              },
+            ],
+      );
     if (url.searchParams.get('kind') === 'usage')
       return Response.json(
         offset
@@ -212,9 +225,11 @@ async function dispatch(request: Request, env: OperationsEnv) {
   const namespace =
     input.kind === 'conversation'
       ? env.CONVERSATIONS
-      : input.kind === 'usage'
-        ? env.USAGE
-        : env.LIBRARY;
+      : input.kind === 'sharing'
+        ? env.SHARES
+        : input.kind === 'usage'
+          ? env.USAGE
+          : env.LIBRARY;
   return namespace.get(namespace.idFromString(input.id)).fetch(
     new Request('https://maintenance.invalid/', {
       method: 'POST',

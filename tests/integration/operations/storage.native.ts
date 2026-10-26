@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
 import { resolve } from 'node:path';
+import { createHash } from 'node:crypto';
 import { createTestHarness } from 'wrangler';
 import { migrateStorage } from '../../../scripts/operations/migrations';
 import type { Statement } from '../../../scripts/operations/storage-protocol';
@@ -42,10 +43,14 @@ test('native maintenance transport rejects anonymous HTTP, preserves unrelated s
               { name: 'CONVERSATIONS', class_name: 'Conversation' },
               { name: 'LIBRARY', class_name: 'Library' },
               { name: 'USAGE', class_name: 'UsageStore' },
+              { name: 'SHARES', class_name: 'ShareStore' },
             ],
           },
           migrations: [
-            { tag: 'v1', new_sqlite_classes: ['Conversation', 'Library', 'UsageStore'] },
+            {
+              tag: 'v1',
+              new_sqlite_classes: ['Conversation', 'Library', 'UsageStore', 'ShareStore'],
+            },
           ],
         },
       },
@@ -132,6 +137,73 @@ test('native maintenance transport rejects anonymous HTTP, preserves unrelated s
       { id: 'valid', payload: 'preserved' },
     ]);
     assert.equal((await usageRequest('cleanup')).status, 200);
+    // Sharing upgrades are computed locally; the maintenance DO only executes SQL.
+    const shares = (await worker.getEnv()) as { SHARES: DurableObjectNamespace };
+    const shareId = shares.SHARES.idFromName('personal').toString();
+    const shareRequest = async (action: string, more: Record<string, unknown> = {}) =>
+      client.fetch('https://operations.invalid/', {
+        method: 'POST',
+        body: JSON.stringify({ runId, kind: 'sharing', id: shareId, action, ...more }),
+      });
+    assert.deepEqual(await (await shareRequest('schema')).json(), []);
+    const shareDb = new DatabaseSync(':memory:');
+    try {
+      const payload = JSON.stringify({
+        message: 0,
+        role: 'assistant',
+        channel: 'text',
+        text: '**SSR body**',
+        omittedAttachments: 0,
+      });
+      const digest = createHash('sha256')
+        .update(payload + '\n')
+        .digest('hex');
+      const seed: Statement[] = [
+        {
+          sql: 'CREATE TABLE storage_schema(id INTEGER PRIMARY KEY,version INTEGER); INSERT INTO storage_schema VALUES(1,1)',
+          args: [],
+        },
+        {
+          sql: 'CREATE TABLE shares(id TEXT PRIMARY KEY,operationId TEXT UNIQUE NOT NULL,conversationId TEXT NOT NULL,headId TEXT NOT NULL,sourceVersion TEXT NOT NULL,createdAt INTEGER NOT NULL,updatedAt INTEGER NOT NULL,draftUntil INTEGER NOT NULL,status TEXT NOT NULL,title TEXT NOT NULL,includeReasoning INTEGER NOT NULL,messageCount INTEGER NOT NULL,blockCount INTEGER NOT NULL,omittedAttachments INTEGER NOT NULL,hash TEXT NOT NULL,tokenHash TEXT,tokenCipher TEXT,expiresAt INTEGER)',
+          args: [],
+        },
+        {
+          sql: 'CREATE TABLE share_blocks(shareId TEXT NOT NULL,seq INTEGER NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(shareId,seq)); CREATE TABLE share_deletions(conversationId TEXT PRIMARY KEY)',
+          args: [],
+        },
+        {
+          sql: "INSERT INTO shares VALUES ('public','op','conversation','head','version',1,1,10000,'active','title',1,1,1,0,?,'hash','cipher',NULL)",
+          args: [digest],
+        },
+        { sql: "INSERT INTO share_blocks VALUES ('public',0,?)", args: [payload] },
+      ];
+      for (const statement of seed) {
+        if (statement.args.length)
+          shareDb.prepare(statement.sql).run(...(statement.args as (string | number | null)[]));
+        else shareDb.exec(statement.sql);
+      }
+      assert.equal(
+        (await shareRequest('apply', { job: 'share-seed', page: 0, statements: seed })).status,
+        200,
+      );
+      const statements = await migrateStorage(shareDb, 'sharing');
+      const apply = () => shareRequest('apply', { job: 'share-upgrade', page: 0, statements });
+      assert.equal((await apply()).status, 200);
+      assert.equal((await apply()).status, 200);
+      assert.deepEqual(await (await shareRequest('rows', { table: 'storage_schema' })).json(), [
+        { id: 1, version: 2 },
+      ]);
+      const rows = (await (await shareRequest('rows', { table: 'share_html' })).json()) as {
+        html: string;
+      }[];
+      assert.match(rows.map((row) => row.html).join(''), /SSR body/);
+      const metadata = (await (await shareRequest('rows', { table: 'shares' })).json()) as object[];
+      assert.equal(metadata.length, 1);
+      assert.ok(!('tokenCipher' in metadata[0]));
+      assert.equal((await shareRequest('cleanup')).status, 200);
+    } finally {
+      shareDb.close();
+    }
     const request = async (action: string, more: Record<string, unknown> = {}) =>
       client.fetch('https://operations.invalid/', {
         method: 'POST',

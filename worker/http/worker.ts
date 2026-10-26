@@ -1,6 +1,7 @@
 import { authReturnTo } from '../../shared/auth/navigation';
 import { problem } from '../../shared/errors/descriptor';
-import { publicSharing } from '../sharing/public';
+import { publicSharing, publicShareDocument } from '../sharing/public';
+import { isSharePage } from '../../shared/sharing/types';
 import { serveMcp } from '../mcp/handler';
 import { serveMcpAttachment } from '../mcp/attachment-http';
 import { createApi } from './app';
@@ -19,6 +20,8 @@ export function createWorker(
   return {
     async fetch(request: Request, env: Env, context: ExecutionContext): Promise<Response> {
       const url = new URL(request.url);
+      if (isSharePage(url.pathname) && url.pathname !== '/share.html')
+        return publicShareDocument(request, env);
       if (url.pathname === '/mcp' && url.origin === env.APP_ORIGIN) return serveMcp(request, env);
       if (url.pathname.startsWith('/mcp/attachments/') && url.origin === env.APP_ORIGIN)
         return serveMcpAttachment(request, env);

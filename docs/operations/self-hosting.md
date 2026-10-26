@@ -121,7 +121,7 @@ pnpm exec wrangler secret put AI_API_KEY
 
 ## 可选的分享与后台通知
 
-分享需要 `SHARES` 绑定和 `SHARE_LINK_KEY` Secret。该 Secret 使用密码学随机的 32 字节、base64url 编码，用于加密保存可再次复制的分享令牌。通过 Wrangler Secret 输入，安全备份，不放入 `vars`、前端或 Git；替换密钥会影响已存链接令牌的解密。
+分享需要 `SHARES` 绑定。已发布的 `/s/<随机ID>` 无需登录或额外密钥，首次 HTML 响应包含全文；管理操作仍由 Access 保护。分享不进入 CDN／Service Worker 正文缓存。已有部署升级到预渲染分享时，先按[离线运维指南](offline-storage-migration.md#公开分享预渲染版本-2)转换分享库。
 
 后台 Web Push 需要以下 Secrets：
 

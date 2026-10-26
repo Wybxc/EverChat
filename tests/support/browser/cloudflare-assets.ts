@@ -8,7 +8,9 @@ export async function startCloudflareAssets(root: string, temporary: string) {
   await writeFile(
     main,
     `export default { fetch(request, env) {
-    if (new URL(request.url).pathname.startsWith('/api/')) return Response.json({ authenticated: true, identity: { issuer: 'http://everchat.local.invalid', sub: 'local-developer', email: 'developer@everchat.local' }, providers: [], conversations: [], deletions: [], activity: {}, models: [] });
+    const path = new URL(request.url).pathname;
+    if (path === '/s' || path.startsWith('/s/')) return env.ASSETS.fetch(new Request(new URL('/share.html', request.url))).then(async response => new Response((await response.text()).replace('<!--EVERCHAT_SHARE-->', '<main>SSR fixture body</main>'), { headers: { 'Content-Type': 'text/html', 'Cache-Control': 'no-store', 'X-Fixture-Worker': 'invoked',  'Content-Security-Policy': "script-src 'self'", 'Referrer-Policy': 'no-referrer', 'X-Robots-Tag': 'noindex, nofollow, noarchive' }}));
+    if (path.startsWith('/api/')) return Response.json({ authenticated: true, identity: { issuer: 'http://everchat.local.invalid', sub: 'local-developer', email: 'developer@everchat.local' }, providers: [], conversations: [], deletions: [], activity: {}, models: [] });
     return env.ASSETS.fetch(request).then(response => {
       const headers = new Headers(response.headers);
       headers.set('X-Fixture-Worker', 'invoked');
@@ -36,7 +38,7 @@ export async function startCloudflareAssets(root: string, temporary: string) {
           binding: 'ASSETS',
           html_handling,
           not_found_handling: 'single-page-application',
-          run_worker_first: ['/api/*'],
+          run_worker_first: ['/api/*', '/s', '/s/*'],
         },
       }),
     );
