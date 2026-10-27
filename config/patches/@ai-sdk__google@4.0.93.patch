@@ -1,0 +1,50 @@
+diff --git a/dist/index.js b/dist/index.js
+index b7a994786092e033bb01c8fef484ae5340b8f2a0..953e0fe383be7b8f83262890531c2fceee3f3a67 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -2036,6 +2036,7 @@ var GoogleLanguageModel = class GoogleLanguageModel {
+ 									}
+ 								} else if (part.functionCall.partialArgs != null && activeStreamingToolCalls.length > 0) {
+ 									const active = activeStreamingToolCalls[activeStreamingToolCalls.length - 1];
++									if (providerMeta != null) active.providerMetadata = providerMeta;
+ 									const partialArgs = part.functionCall.partialArgs;
+ 									const { textDelta } = active.accumulator.processPartialArgs(partialArgs);
+ 									if (textDelta.length > 0) controller.enqueue({
+@@ -2046,7 +2047,10 @@ var GoogleLanguageModel = class GoogleLanguageModel {
+ 									});
+ 									if (part.functionCall.willContinue !== true && partialArgs.every((arg) => arg.willContinue !== true)) finishActiveStreamingToolCall(controller);
+ 								}
+-							} else if (isTerminalChunk && activeStreamingToolCalls.length > 0) finishActiveStreamingToolCall(controller);
++							} else if (isTerminalChunk && activeStreamingToolCalls.length > 0) {
++								if (providerMeta != null) activeStreamingToolCalls[activeStreamingToolCalls.length - 1].providerMetadata = providerMeta;
++								finishActiveStreamingToolCall(controller);
++							}
+ 							else if (isCompleteCall) {
+ 								const toolCallId = part.functionCall.id || generateId();
+ 								const toolName = part.functionCall.name;
+diff --git a/src/google-language-model.ts b/src/google-language-model.ts
+index 5303aed3c49cceb9934baa083985eef12e9da19c..85e8062becea919f7210b25a0ec5ce4e71ad7e5c 100644
+--- a/src/google-language-model.ts
++++ b/src/google-language-model.ts
+@@ -1231,6 +1231,9 @@ export class GoogleLanguageModel implements LanguageModelV4 {
+                       activeStreamingToolCalls[
+                         activeStreamingToolCalls.length - 1
+                       ];
++                    if (providerMeta != null) {
++                      active.providerMetadata = providerMeta;
++                    }
+                     const partialArgs = part.functionCall
+                       .partialArgs as PartialArg[];
+                     const { textDelta } =
+@@ -1254,6 +1257,11 @@ export class GoogleLanguageModel implements LanguageModelV4 {
+                   isTerminalChunk &&
+                   activeStreamingToolCalls.length > 0
+                 ) {
++                  if (providerMeta != null) {
++                    activeStreamingToolCalls[
++                      activeStreamingToolCalls.length - 1
++                    ].providerMetadata = providerMeta;
++                  }
+                   finishActiveStreamingToolCall(controller);
+                 } else if (isCompleteCall) {
+                   const toolCallId = part.functionCall.id || generateId();
