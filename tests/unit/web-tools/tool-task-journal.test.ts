@@ -19,7 +19,12 @@ import {
   ToolTaskJournal,
   type StartToolTask,
 } from '../../../worker/web-tools/task-journal';
-import { fragmentedToolBody, toolStream } from '../../support/providers/tool-streams';
+import {
+  fragmentedToolBody,
+  geminiStreamingToolStream,
+  toolStream,
+} from '../../support/providers/tool-streams';
+import { openProviderStream } from '../../../worker/providers/stream';
 
 const enabled = ['web_search', 'read_webpage'] as const;
 const configuration = (
@@ -329,6 +334,59 @@ for (const provider of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'
       1,
     );
   });
+
+test('Gemini late tool signatures survive multiple SQLite rounds and are replayed on their original calls', async (t) => {
+  const { reader, write, begin } = database(t),
+    settings = { ...configuration('gemini'), model: 'gemini-4-argon' },
+    input = begin(start(), settings),
+    requests: Record<string, any>[] = [];
+  t.mock.method(globalThis, 'fetch', async (_url: string, init: RequestInit) => {
+    requests.push(JSON.parse(init.body as string));
+    return new Response(toolStream('gemini'), {
+      headers: { 'content-type': 'text/event-stream' },
+    });
+  });
+  let runId = input.runId;
+  for (const [round, signatureAt] of (['end', 'empty-delta'] as const).entries()) {
+    const callId = `call_${round}`,
+      value = await collectProviderToolTurn(
+        settings,
+        enabled,
+        fragmentedToolBody(geminiStreamingToolStream(signatureAt, callId)),
+        new AbortController().signal,
+      );
+    write((j) => j.claimModel(runId));
+    write((j) => j.saveTurn(runId, value, settings));
+    write((j) => j.claimTool(input.id, callId));
+    write((j) => j.finishTool(input.id, callId, outcome(callId)));
+    const exchanges = reader().exchanges(input.id, round + 1, settings);
+    const next = await openProviderStream(
+      settings,
+      [{ role: 'user', content: '查找资料' }],
+      new AbortController().signal,
+      undefined,
+      undefined,
+      { enabled, exchanges },
+    );
+    const publicWire = await new Response(next).text();
+    assert.doesNotMatch(publicWire, /Replayed|fixture-call_[01]-signature/);
+    const calls = requests
+      .at(-1)!
+      .contents.filter((message: any) => message.role === 'model')
+      .flatMap((message: any) => message.parts.filter((part: any) => part.functionCall));
+    assert.deepEqual(
+      calls.map((part: any) => [part.functionCall.id, part.thoughtSignature]),
+      Array.from({ length: round + 1 }, (_, index) => [
+        `call_${index}`,
+        `fixture-call_${index}-signature`,
+      ]),
+    );
+    if (round === 0) {
+      runId = crypto.randomUUID();
+      write((j) => j.queueModel(input.id, round + 1, runId, crypto.randomUUID(), settings));
+    }
+  }
+});
 
 test('unclaimed, mismatched or malformed model turns never publish executable calls', (t) => {
   const { journal, write, begin } = database(t),

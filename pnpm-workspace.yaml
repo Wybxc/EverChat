@@ -10,3 +10,5 @@ minimumReleaseAgeExclude:
   - '@ai-sdk/provider-utils@5.0.63'
   - '@ai-sdk/provider@4.0.30'
   - '@ai-sdk/valibot@3.0.63'
+patchedDependencies:
+  '@ai-sdk/google@4.0.93': config/patches/@ai-sdk__google@4.0.93.patch

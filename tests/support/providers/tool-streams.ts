@@ -2,6 +2,53 @@ import type { ProviderKind } from '../../../shared/providers/types';
 
 const frame = (event: unknown) => `data: ${JSON.stringify(event)}\n\n`;
 export const toolQuery = 'Cloudflare 文档🙂';
+
+export type GeminiToolSignatureAt =
+  'start' | 'delta' | 'empty-delta' | 'final-delta' | 'end' | 'none';
+export function geminiStreamingToolStream(signatureAt: GeminiToolSignatureAt, id = 'call_0') {
+  const signature = { thoughtSignature: `fixture-${id}-signature` };
+  const chunks = [
+    {
+      functionCall: {
+        id,
+        name: 'web_search',
+        partialArgs: [{ jsonPath: '$.query', stringValue: 'Cloudflare ' }],
+        willContinue: true,
+      },
+      ...(signatureAt === 'start' ? signature : {}),
+    },
+    {
+      functionCall: {
+        partialArgs: [{ jsonPath: '$.query', stringValue: '文档🙂' }],
+        willContinue: true,
+      },
+      ...(signatureAt === 'delta' ? signature : {}),
+    },
+    ...(signatureAt === 'empty-delta'
+      ? [{ functionCall: { partialArgs: [], willContinue: true }, ...signature }]
+      : []),
+    signatureAt === 'final-delta'
+      ? { functionCall: { partialArgs: [], willContinue: false }, ...signature }
+      : { functionCall: {}, ...(signatureAt === 'end' ? signature : {}) },
+  ];
+  return chunks
+    .map((part, index) =>
+      frame({
+        candidates: [
+          {
+            index: 0,
+            content: { role: 'model', parts: [part] },
+            ...(index === chunks.length - 1 ? { finishReason: 'STOP' } : {}),
+          },
+        ],
+        ...(index === chunks.length - 1
+          ? { usageMetadata: { promptTokenCount: 5, candidatesTokenCount: 3, totalTokenCount: 8 } }
+          : {}),
+      }),
+    )
+    .join('');
+}
+
 export function toolStream(
   protocol: ProviderKind,
   options: {

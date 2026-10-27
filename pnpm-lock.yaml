@@ -187,6 +187,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  '@ai-sdk/google@4.0.93': 7e185871a4771209929513b445dae4991360797957cf66512291e916f4c8b27d
+
 importers:
 
   .:
@@ -195,8 +198,8 @@ importers:
         specifier: ^4.0.78
         version: 4.0.78(zod@4.6.5)
       '@ai-sdk/google':
-        specifier: ^4.0.93
-        version: 4.0.93(zod@4.6.5)
+        specifier: 4.0.93
+        version: 4.0.93(patch_hash=7e185871a4771209929513b445dae4991360797957cf66512291e916f4c8b27d)(zod@4.6.5)
       '@ai-sdk/open-responses':
         specifier: 2.0.63
         version: 2.0.63(zod@4.6.5)
@@ -5095,7 +5098,7 @@ snapshots:
       '@vercel/oidc': 3.2.0
       zod: 4.6.5
 
-  '@ai-sdk/google@4.0.93(zod@4.6.5)':
+  '@ai-sdk/google@4.0.93(patch_hash=7e185871a4771209929513b445dae4991360797957cf66512291e916f4c8b27d)(zod@4.6.5)':
     dependencies:
       '@ai-sdk/provider': 4.0.26
       '@ai-sdk/provider-utils': 5.0.58(zod@4.6.5)

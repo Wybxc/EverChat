@@ -13,7 +13,13 @@ import {
 import { openProviderStream } from '../../../worker/providers/stream';
 import { providerToolPrompt, type ProviderToolExchange } from '../../../worker/providers/tool-turn';
 import { toolContinuationChoice } from '../../../worker/providers/tool-turn';
-import { fragmentedToolBody, toolQuery, toolStream } from '../../support/providers/tool-streams';
+import {
+  fragmentedToolBody,
+  geminiStreamingToolStream,
+  toolQuery,
+  toolStream,
+} from '../../support/providers/tool-streams';
+import { providerModel } from '../../../worker/providers/sdk';
 
 const kinds: ProviderKind[] = ['openai-chat', 'openai-responses', 'anthropic', 'gemini'];
 const enabled = ['web_search', 'read_webpage'] as const;
@@ -44,6 +50,61 @@ const outcome = (id: string): WebToolOutcome => ({
   ],
 });
 const signal = () => new AbortController().signal;
+
+for (const signatureAt of ['start', 'delta', 'empty-delta', 'final-delta', 'end', 'none'] as const)
+  test(`Gemini streaming tool signature at ${signatureAt} survives SDK parsing and a JSON continuation`, async (t) => {
+    const config = { ...configuration('gemini'), model: 'gemini-4-argon' },
+      wire = geminiStreamingToolStream(signatureAt),
+      expectedSignature = signatureAt === 'none' ? undefined : 'fixture-call_0-signature';
+    // Inspect the actual SDK output too: the collector could otherwise mask a
+    // missing final metadata value by retaining an earlier tool-input delta.
+    const native = await providerModel(
+      config,
+      async () =>
+        new Response(fragmentedToolBody(wire), {
+          headers: { 'content-type': 'text/event-stream' },
+        }),
+    ).doStream({ prompt: [{ role: 'user', content: [{ type: 'text', text: '查找资料' }] }] });
+    const nativeCalls = [];
+    for await (const part of native.stream) if (part.type === 'tool-call') nativeCalls.push(part);
+    assert.equal(nativeCalls.length, 1);
+    assert.equal(nativeCalls[0].providerMetadata?.google?.thoughtSignature, expectedSignature);
+
+    const turn = await collectProviderToolTurn(config, enabled, fragmentedToolBody(wire), signal());
+    const call = turn.content.find((part) => part.type === 'tool-call')!;
+    assert.equal(call.providerOptions?.google?.thoughtSignature, expectedSignature);
+    assert.deepEqual(turn.calls, [
+      { id: 'call_0', name: 'web_search', input: { query: toolQuery } },
+    ]);
+    const exchanges: ProviderToolExchange[] = JSON.parse(
+      JSON.stringify([{ turn, outcomes: [outcome('call_0')] }]),
+    );
+    const requests: Record<string, any>[] = [];
+    t.mock.method(globalThis, 'fetch', async (_url: string, init: RequestInit) => {
+      requests.push(JSON.parse(init.body as string));
+      return new Response(toolStream('gemini'), {
+        headers: { 'content-type': 'text/event-stream' },
+      });
+    });
+    const next = await openProviderStream(
+      config,
+      [{ role: 'user', content: '查找资料' }],
+      signal(),
+      undefined,
+      undefined,
+      { enabled, exchanges },
+    );
+    const publicWire = await new Response(next).text();
+    const assistant = requests[0].contents.find((message: any) => message.role === 'model');
+    assert.deepEqual(assistant.parts, [
+      {
+        functionCall: { id: 'call_0', name: 'web_search', args: { query: toolQuery } },
+        thoughtSignature: expectedSignature ?? 'skip_thought_signature_validator',
+      },
+    ]);
+    assert.equal(publicWire.includes('Replayed'), signatureAt === 'none');
+    assert.doesNotMatch(publicWire, /fixture-call_0-signature/);
+  });
 
 test('Core applies the selected DeepSeek service query schema using Unicode characters before execution', async () => {
   const config: ProviderConfig = {
@@ -144,7 +205,10 @@ for (const provider of kinds)
 
 for (const provider of kinds)
   test(`${provider} tool continuation preserves IDs, parameters and private reasoning metadata through a JSON checkpoint`, async (t) => {
-    const config = configuration(provider),
+    const config = {
+        ...configuration(provider),
+        ...(provider === 'gemini' ? { model: 'gemini-4-argon' } : {}),
+      },
       requests: Record<string, any>[] = [];
     const wire = toolStream(provider, { count: 2, redacted: true });
     t.mock.method(globalThis, 'fetch', async (_url: string, init: RequestInit) => {
@@ -236,6 +300,7 @@ for (const provider of kinds)
     } else {
       const assistant = body.contents.find((message: any) => message.role === 'model');
       assert.equal(assistant.parts[0].thoughtSignature, 'fixture-signature');
+      assert.equal(assistant.parts[1].thoughtSignature, undefined);
       assert.deepEqual(
         body.contents.at(-1).parts.map((part: any) => part.functionResponse.id),
         ['call_0', 'call_1'],
