@@ -1,6 +1,6 @@
 # 回答「继续生成」计划
 
-状态：实现与本地验收完成，等待 PR 检查及离线升级后发布。日期：2026-10-31。详见[验收记录](../measurements/answer-continuation-2026-10-31.md)。
+状态：已完成并上线。日期：2026-10-31。[PR #15](https://github.com/Wybxc/EverChat/pull/15) 必需检查通过后，完成 schema 5 离线升级、合并和生产验收。详见[验收记录](../measurements/answer-continuation-2026-10-31.md)。
 
 ## 目标与核心决定
 

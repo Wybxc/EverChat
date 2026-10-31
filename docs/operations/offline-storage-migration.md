@@ -183,3 +183,5 @@ pnpm ops:storage prepare --config <private-production-config> --sharing-only --d
 Conversation／Library 从版本 4 升至 5，使用默认完整范围，不能加 `--usage-only` 或 `--sharing-only`。新增空的 `message_continuations` 表及来源索引；原消息、分支、检查点、输入回执、用量和 R2 文件不转换。Library 只升级版本门禁，不重新授予已撤回的 MCP 对话权限。UsageStore 版本 1 和 ShareStore 版本 2 保持不变。
 
 发布前确认没有活跃生成／导入／复制，通过 PR 必需检查后执行完整的 `prepare → preflight → 维护部署 → backup → convert → apply → verify → cleanup`，随后合并并恢复新版业务。维护期间关闭业务构造函数；转换仅在本机进行。版本 4 业务代码不能读取版本 5，回滚必须先恢复本次原始备份并核验。
+
+2026-10-31 已完成上述流程：220 个对象全部从 4 升至 5，1,274 条原有消息及 10 条 MCP 对话授权记录保持一致；逐行核验与临时批次清理通过。恢复后 218 个原有可见对话的存储接口均可读取，运维入口返回 404，原变量／Secrets 保留且临时变量已移除。备份位于本机私有目录 `.wrangler/operations/answer-continuation-2026-10-31`，详见[验收记录](../measurements/answer-continuation-2026-10-31.md)。
