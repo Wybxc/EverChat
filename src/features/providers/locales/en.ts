@@ -36,6 +36,8 @@ export default {
   invalidProbeResult: 'Invalid test result.',
   probeFailed: 'Test failed.',
   aiProviders: 'AI providers',
+  enableProvider: 'Enable provider',
+  providerDisabled: 'Disabled',
   newProvider: 'New provider',
   default: 'Default',
   keyConfigured: 'API key configured',

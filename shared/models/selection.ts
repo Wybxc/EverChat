@@ -9,7 +9,7 @@ export function modelReasoning(provider: ProviderApiKind, model: ProviderModel) 
 
 export function chatModels(settings: ProviderSettings | ProviderSettingsInput): ChatModel[] {
   return settings.providers.flatMap((profile) =>
-    profile.apiKey || ('hasApiKey' in profile && profile.hasApiKey)
+    profile.enabled !== false && (profile.apiKey || ('hasApiKey' in profile && profile.hasApiKey))
       ? profile.models
           .filter((model) => model.enabled)
           .map((model) => {

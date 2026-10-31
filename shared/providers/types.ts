@@ -57,6 +57,8 @@ export interface ProviderConfig {
 export interface ProviderProfile {
   id: string;
   name: string;
+  /** Omitted means enabled; disabling keeps the connection and model settings. */
+  enabled?: boolean;
   provider: ProviderApiKind;
   baseUrl: string;
   models: ProviderModel[];

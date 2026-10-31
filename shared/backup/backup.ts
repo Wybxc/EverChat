@@ -28,6 +28,7 @@ export const MAX_BACKUP_BYTES = MAX_BUFFERED_BODY_BYTES;
 interface BackupProvider {
   id: string;
   name: string;
+  enabled?: boolean;
   provider: ProviderApiKind;
   baseUrl: string;
   models: ProviderModel[];
@@ -364,6 +365,7 @@ export function validateBackup(value: unknown): EverChatBackup {
     if (
       !isUuid(provider.id) ||
       !isString(provider.name, 100) ||
+      (provider.enabled !== undefined && typeof provider.enabled !== 'boolean') ||
       !['openai-chat', 'anthropic', 'openai-responses', 'gemini'].includes(
         String(provider.provider),
       ) ||
@@ -382,6 +384,7 @@ export function validateBackup(value: unknown): EverChatBackup {
     return {
       id: provider.id,
       name: provider.name,
+      ...(typeof provider.enabled === 'boolean' ? { enabled: provider.enabled } : {}),
       provider: provider.provider as ProviderApiKind,
       baseUrl: provider.baseUrl,
       models,

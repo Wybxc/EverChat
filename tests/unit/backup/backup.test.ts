@@ -101,6 +101,7 @@ test('validateBackup accepts version 1 backups and rejects malformed messages', 
         {
           id: crypto.randomUUID(),
           name: '测试供应商',
+          enabled: false,
           provider: 'openai-chat',
           baseUrl: 'https://provider.example/v1',
           models: [{ id: 'test', name: 'Test', enabled: true }],
@@ -114,6 +115,16 @@ test('validateBackup accepts version 1 backups and rejects malformed messages', 
     },
   });
   assert.equal(backup.conversation.title, '测试备份');
+  assert.equal(backup.settings.providers[0].enabled, false);
+  assert.throws(() =>
+    validateBackup({
+      ...backup,
+      settings: {
+        ...backup.settings,
+        providers: [{ ...backup.settings.providers[0], enabled: 'false' }],
+      },
+    }),
+  );
   assert.equal(messageText(backup.conversation.messages[0], 'reasoning'), '思考');
   const saved = backup.conversation.messages[0];
   assert.deepEqual(saved.parts, messageParts('正文', '思考'));
