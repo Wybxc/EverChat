@@ -476,6 +476,31 @@ test('MCP tables are introduced only by offline migration from an earlier schema
     db.close();
   }
 });
+test('continuation schema upgrade preserves revoked MCP conversation grants', async () => {
+  const { db, query } = database();
+  try {
+    db.exec(
+      'CREATE TABLE storage_schema(id INTEGER PRIMARY KEY,version INTEGER); INSERT INTO storage_schema VALUES(1,4); CREATE TABLE conversations(id TEXT PRIMARY KEY,createdAt INTEGER)',
+    );
+    query(MCP_KEYS_SCHEMA);
+    query(MCP_REQUESTS_SCHEMA);
+    const key = new McpKeys(query).create('existing'),
+      conversationId = crypto.randomUUID();
+    query('INSERT INTO conversations VALUES (?,1)', conversationId);
+    query(
+      'INSERT INTO mcp_requests VALUES (?,?,?,?,?)',
+      key.id,
+      crypto.randomUUID(),
+      'hash',
+      conversationId,
+      '{}',
+    );
+    await migrateStorage(db, 'library');
+    assert.equal(query('SELECT 1 FROM mcp_conversation_grants').toArray().length, 0);
+  } finally {
+    db.close();
+  }
+});
 test('schema 3 progress storage is added only offline, without fabricated historical receipts', async () => {
   const { db, query, storage } = database();
   try {

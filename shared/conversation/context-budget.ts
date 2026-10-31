@@ -51,11 +51,12 @@ export class ContextBudgetError extends AppError {
 
 export function contextSource(
   messages: Message[],
-  input: Pick<SubmitInput, 'content' | 'retryOf' | 'revisionOf' | 'parentId'>,
+  input: Pick<SubmitInput, 'content' | 'retryOf' | 'continueOf' | 'revisionOf' | 'parentId'>,
 ) {
-  const previous = input.retryOf
-    ? messages.find((message) => message.id === input.retryOf)
-    : undefined;
+  const previous =
+    input.retryOf || input.continueOf
+      ? messages.find((message) => message.id === (input.retryOf ?? input.continueOf))
+      : undefined;
   const parent = previous
     ? messages.find((message) => message.id === previous.parentId)
     : undefined;
@@ -136,6 +137,7 @@ export function buildContext(
   files: DocumentPart[] = [],
   currentSource?: ChatInput['source'],
   pinned: ChatInput[] = [],
+  requiredTail: ChatInput[] = [],
 ): { messages: ChatInput[]; estimate: ContextEstimate; selection: ContextSelection } {
   const metadata = config.modelMetadata ?? {
     ...FALLBACK_MODEL_METADATA,
@@ -157,13 +159,15 @@ export function buildContext(
     ? estimateTextTokens(config.systemPrompt) + MESSAGE_OVERHEAD
     : 0;
   const summaryTokens = summary ? estimateTextTokens(summary.content) + MESSAGE_OVERHEAD : 0;
+  const requiredTokens = requiredTail.reduce((sum, m) => sum + historyTokens(m), 0);
   const fixed =
     inputTokens +
     MESSAGE_OVERHEAD +
     systemTokens +
     REQUEST_OVERHEAD +
     summaryTokens +
-    pinned.reduce((sum, m) => sum + historyTokens(m), 0);
+    pinned.reduce((sum, m) => sum + historyTokens(m), 0) +
+    requiredTokens;
   const selected: ChatInput[] = [];
   let retainedTokens = 0;
   let omittedReason: ContextOmissionReason = 'context_budget';
@@ -193,7 +197,7 @@ export function buildContext(
     method: 'approximate-v1',
     inputTokens,
     systemTokens,
-    historyTokens: retainedTokens,
+    historyTokens: retainedTokens + requiredTokens,
     totalTokens: fixed + retainedTokens,
     inputBudget,
     contextWindow,
@@ -201,7 +205,7 @@ export function buildContext(
     outputReserve,
     safetyMargin,
     windowSource: metadata.sources.contextWindow,
-    retainedMessages: selected.length,
+    retainedMessages: selected.length + requiredTail.length,
     omittedMessages: history.length - selected.length,
     ...(summary
       ? { summaryTokens, summarizedMessages: summary.coveredMessages, summaryId: summary.id }
@@ -219,6 +223,7 @@ export function buildContext(
       : []),
     ...pinned,
     ...selected,
+    ...requiredTail,
     {
       role: 'user',
       content,
@@ -293,6 +298,7 @@ export function measureContextDemand(
   images: ImagePart[] = [],
   files: DocumentPart[] = [],
   pinned: ChatInput[] = [],
+  requiredTail: ChatInput[] = [],
 ): ContextEstimate {
   const fixed = buildContext(
     [],
@@ -304,17 +310,19 @@ export function measureContextDemand(
     files,
     undefined,
     pinned,
+    requiredTail,
   ).estimate;
   const tokens = history.reduce((total, message) => total + historyTokens(message), 0);
   const fileAllowance =
     documentTokens(files) +
     pinned.reduce((sum, message) => sum + documentTokens(message.files), 0) +
+    requiredTail.reduce((sum, message) => sum + documentTokens(message.files), 0) +
     history.reduce((sum, message) => sum + documentTokens(message.files), 0);
   return {
     ...fixed,
-    historyTokens: tokens,
+    historyTokens: fixed.historyTokens + tokens,
     totalTokens: fixed.totalTokens + tokens,
-    retainedMessages: history.length,
+    retainedMessages: fixed.retainedMessages + history.length,
     omittedMessages: 0,
     ...(fileAllowance ? { documentTokens: fileAllowance } : {}),
   };

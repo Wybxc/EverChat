@@ -35,6 +35,7 @@ export const MIGRATION_TABLES: Record<StoreKind, string[]> = {
     'message_versions',
     'generation_checkpoints',
     'message_content_chunks',
+    'message_continuations',
     'message_search_versions',
     'message_summaries',
     'message_deletions',

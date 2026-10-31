@@ -15,6 +15,7 @@ import type { Message } from '../../../shared/conversation/types';
 import type { StreamUsage } from '../../../shared/streaming/provider-stream';
 import { mergeGenerationDiagnostics } from '../../../shared/streaming/diagnostics';
 import { countCharacters } from './character-count';
+import { answerStages } from '../../../shared/conversation/continuation';
 
 const usageFields = [
   ['inputTokens', 'inputTokensLabel'],
@@ -39,7 +40,13 @@ const compact = {
 const duration = (ms: number) =>
   ms < 1000 ? `${number.format(ms)} ms` : `${(ms / 1000).toFixed(2)} s`;
 
-export function GenerationMetadata({ message }: { message: Message }) {
+export function GenerationMetadata({
+  message,
+  providerNames,
+}: {
+  message: Message;
+  providerNames?: Record<string, string>;
+}) {
   const { t } = useTranslation('chat', { useSuspense: false });
   const { generation } = message;
   const text = messageText(message),
@@ -55,6 +62,26 @@ export function GenerationMetadata({ message }: { message: Message }) {
     enabled: open,
     queryFn: ({ signal }) =>
       api<UsageTotals>(`/usage/answers/${message.id}`, 'GET', undefined, signal),
+    refetchOnWindowFocus: false,
+  });
+  const stages = message.continuation ? answerStages(message) : [];
+  const combinedTokens =
+    stages.length &&
+    stages.every(
+      (stage) => stage.generation?.usageIsFinal && stage.generation.usage.totalTokens !== undefined,
+    )
+      ? stages.reduce((sum, stage) => sum + stage.generation!.usage.totalTokens!, 0)
+      : undefined;
+  const combinedCost = useQuery({
+    queryKey: ['usage', 'answer-composition', message.id, isActive(message)],
+    enabled: open && Boolean(message.continuation),
+    queryFn: ({ signal }) =>
+      api<UsageTotals>(
+        '/usage/answers',
+        'POST',
+        { messageIds: stages.map((stage) => stage.id) },
+        signal,
+      ),
     refetchOnWindowFocus: false,
   });
   if (!generation) return null;
@@ -74,6 +101,9 @@ export function GenerationMetadata({ message }: { message: Message }) {
   );
   const elapsed = generation.timing?.durationMs;
   const summary = [
+    message.continuation
+      ? t(($) => $.continuationStages, { count: message.continuation.stages.length })
+      : '',
     t(($) => $.characterSummary, {
       count: characters.body,
       characters: compact.format(characters.body),
@@ -112,7 +142,65 @@ export function GenerationMetadata({ message }: { message: Message }) {
       <Modal showCloseButton open={open} onOpenChange={setOpen}>
         <div data-testid="message-generation" className="w-full max-w-md space-y-4 p-5 text-xs">
           <ModalTitle>{t(($) => $.generationInfo)}</ModalTitle>
+          {stages.length > 0 && (
+            <section className="flex flex-col gap-3" data-testid="continuation-provenance">
+              <h3 className="font-medium">
+                {t(($) => $.continuationStages, { count: stages.length - 1 })}
+              </h3>
+              {stages.map((stage, index) => (
+                <dl key={stage.id} className="flex flex-col gap-1">
+                  <dt className="font-medium">
+                    {index === 0
+                      ? t(($) => $.originalAnswer)
+                      : t(($) => $.continuationStage, { count: index })}{' '}
+                    ·{' '}
+                    {providerNames?.[stage.providerId ?? '']
+                      ? `${providerNames[stage.providerId!]} · `
+                      : ''}
+                    {stage.modelName || stage.model || 'EverChat'}
+                  </dt>
+                  <dd>
+                    {formatDateTime(stage.createdAt, { dateStyle: 'short', timeStyle: 'medium' })}
+                  </dd>
+                  {index > 0 && <dd>{t(($) => $.continuationInput)}</dd>}
+                  <dd>
+                    {t(($) => $.appendedCharacters, { count: countCharacters(messageText(stage)) })}
+                    {stage.generation?.usage.totalTokens === undefined
+                      ? ''
+                      : ` · ${number.format(stage.generation.usage.totalTokens)} Tokens`}{' '}
+                    ·{' '}
+                    {stage.generation?.interrupted
+                      ? t(($) =>
+                          stage.generation?.interruptionReason === 'cancelled'
+                            ? $.continuationStopped
+                            : $.continuationInterrupted,
+                        )
+                      : stage.generation?.finishReason || stage.status}
+                  </dd>
+                </dl>
+              ))}
+              <p>
+                {t(($) => $.combinedCost)}:{' '}
+                {combinedCost.isPending
+                  ? t(($) => $.loading)
+                  : combinedCost.error
+                    ? t(($) => $.unavailable)
+                    : Object.entries(combinedCost.data?.currencies ?? {})
+                        .map(([currency, amount]) => `${currency} ${formatAmount(amount)}`)
+                        .join(' · ') || t(($) => $.unknown)}
+              </p>
+              <p>
+                {t(($) => $.combinedTokens)}:{' '}
+                {combinedTokens === undefined
+                  ? t(($) => $.unknown)
+                  : `${number.format(combinedTokens)} Tokens`}
+              </p>
+            </section>
+          )}
           <div className="py-2">
+            {message.continuation && (
+              <h3 className="mb-2 font-medium">{t(($) => $.currentExecution)}</h3>
+            )}
             <dl className="space-y-2">
               {(
                 [

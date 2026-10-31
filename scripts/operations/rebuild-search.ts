@@ -1,3 +1,5 @@
+import { ConversationMessages } from '../../worker/conversation/messages';
+import { messageText } from '../../shared/conversation/content';
 import assert from 'node:assert/strict';
 import type { DatabaseSync, SQLInputValue } from 'node:sqlite';
 import type { SearchDocument } from '../../shared/search/query';
@@ -35,6 +37,12 @@ export function* searchDocuments(db: DatabaseSync): Generator<SearchDocument> {
     return;
   if (!exists(db, 'messages')) return;
   const chunks = new GenerationCheckpoints(query(db));
+  const messages = new ConversationMessages(
+    query(db),
+    chunks,
+    () => null,
+    () => {},
+  );
   for (const row of db
     .prepare(
       `SELECT messages.*, COALESCE(message_search_versions.version, 0) AS version
@@ -45,11 +53,13 @@ export function* searchDocuments(db: DatabaseSync): Generator<SearchDocument> {
     )
     .iterate()) {
     assert.ok(row.role === 'user' || row.role === 'assistant');
+    const message = messages.message(String(row.id));
     yield {
       messageId: String(row.id),
       version: Number(row.version),
       role: row.role,
-      ...chunks.read(String(row.id), String(row.content), String(row.reasoning ?? '')),
+      content: messageText(message),
+      reasoning: messageText(message, 'reasoning'),
     };
   }
 }

@@ -77,6 +77,10 @@ export function initializeConversation(sql: SqlStorage, metrics: boolean) {
   initializeConversationState(sql);
   sql.exec(CHECKPOINT_SCHEMA);
   sql.exec(CONTENT_CHUNKS_SCHEMA);
+  sql.exec(`CREATE TABLE IF NOT EXISTS message_continuations (
+    messageId TEXT PRIMARY KEY, sourceId TEXT NOT NULL, payload TEXT NOT NULL
+  )`);
+  sql.exec('CREATE INDEX IF NOT EXISTS continuation_sources ON message_continuations(sourceId)');
   sql.exec(GENERATION_PROGRESS_SCHEMA);
   for (const statement of INPUT_RECEIPTS_SCHEMA.split(';').filter((part) => part.trim()))
     sql.exec(statement);

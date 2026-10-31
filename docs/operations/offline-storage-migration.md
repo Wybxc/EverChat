@@ -177,3 +177,9 @@ pnpm ops:storage prepare --config <private-production-config> --sharing-only --d
 后续仍严格执行 `preflight → 维护部署 → backup → convert → apply → verify → cleanup → 恢复新版业务`。`--sharing-only` 将清单限定为 SHARES 命名空间及规范 personal 对象；其他存储不运行构造函数或迁移。转换前逐份验证原快照 SHA-256；渲染与结构转换均只在本地进程运行，远端仅执行参数化 SQL。新版访问时不补渲染、不改写旧库。
 
 先等待 PR 的 Required tests 通过，再进入维护窗口，全部核验后合并并恢复新业务版本。原版无法读取 schema 2，撤回时须先恢复原始备份再回滚代码。确认恢复成功后删除已无用途的 `SHARE_LINK_KEY` Worker Secret；其余供应商／R2／通知密钥保留。
+
+## 回答续写存储版本 5
+
+Conversation／Library 从版本 4 升至 5，使用默认完整范围，不能加 `--usage-only` 或 `--sharing-only`。新增空的 `message_continuations` 表及来源索引；原消息、分支、检查点、输入回执、用量和 R2 文件不转换。Library 只升级版本门禁，不重新授予已撤回的 MCP 对话权限。UsageStore 版本 1 和 ShareStore 版本 2 保持不变。
+
+发布前确认没有活跃生成／导入／复制，通过 PR 必需检查后执行完整的 `prepare → preflight → 维护部署 → backup → convert → apply → verify → cleanup`，随后合并并恢复新版业务。维护期间关闭业务构造函数；转换仅在本机进行。版本 4 业务代码不能读取版本 5，回滚必须先恢复本次原始备份并核验。

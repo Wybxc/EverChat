@@ -116,8 +116,17 @@ export function prepareChatContext(
   images: ImagePart[] = [],
   files: DocumentPart[] = [],
   currentSource?: ChatInput['source'],
+  requiredTail: ChatInput[] = [],
 ) {
-  const material = materialContext(messages, parentId, files, currentSource?.messageId);
+  const material = materialContext(
+    messages,
+    parentId,
+    requiredTail[0]?.files ?? files,
+    requiredTail[0]?.source?.messageId ?? currentSource?.messageId,
+  );
+  const tail = requiredTail.map((input, index) =>
+    index === 0 ? { ...input, files: material.current } : input,
+  );
   const prepared = summaryContext(material.messages, parentId),
     prefix = prepared.summary ? summaryPrefix(prepared.summary) : undefined;
   const built = buildContext(
@@ -127,9 +136,10 @@ export function prepareChatContext(
     settings,
     prefix,
     images,
-    material.current,
+    tail.length ? [] : material.current,
     currentSource,
     material.pinned,
+    tail,
   );
   for (const excluded of material.excluded)
     built.selection.omitted.push({
@@ -158,9 +168,10 @@ export function prepareChatContext(
         settings,
         undefined,
         images,
-        material.current,
+        tail.length ? [] : material.current,
         undefined,
         material.pinned,
+        tail,
       ).estimate,
     );
     const demand = measureContextDemand(
@@ -170,8 +181,9 @@ export function prepareChatContext(
       settings,
       prefix,
       images,
-      material.current,
+      tail.length ? [] : material.current,
       material.pinned,
+      tail,
     );
     if (
       demand.totalTokens >=
@@ -202,7 +214,7 @@ export function prepareChatContext(
     settings.autoCompression.enabled &&
     !automatic &&
     built.estimate.retainedMessages <
-      historyCountWithinLimit(prepared.history, settings.recentMessages)
+      historyCountWithinLimit(prepared.history, settings.recentMessages) + tail.length
   ) {
     throw new ContextBudgetError(
       '没有可继续压缩的完整历史，回答未调用模型。请提高预算或关闭自动压缩后重试。',

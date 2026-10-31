@@ -37,8 +37,10 @@ export function MessageView({
   conversationId,
   message,
   providerName,
+  providerNames,
   busy,
   onRetry,
+  onContinue,
   onProviderSettings,
   onEdit,
   onQuote,
@@ -56,8 +58,10 @@ export function MessageView({
   conversationId: string;
   message: Message;
   providerName?: string;
+  providerNames?: Record<string, string>;
   busy: boolean;
   onRetry: () => void;
+  onContinue?: () => void;
   onProviderSettings?: () => void;
   onEdit: () => void;
   onQuote: () => void;
@@ -122,6 +126,7 @@ export function MessageView({
   const actions = (
     <MessageActions
       message={message}
+      providerNames={providerNames}
       busy={busy}
       copied={copied}
       forking={forking}
@@ -136,6 +141,7 @@ export function MessageView({
       remove={onDelete}
       fork={() => void fork()}
       retry={onRetry}
+      continueAnswer={onContinue}
       selectBranch={onSelectBranch}
     />
   );
@@ -191,8 +197,16 @@ export function MessageView({
           <MessageHeader className="flex-wrap gap-x-2 gap-y-1 px-0">
             <InfinityIcon className="h-4 w-4 shrink-0" aria-hidden="true" strokeWidth={1.7} />
             <span className="min-w-0 break-words font-semibold text-foreground">
-              {providerName && <>{providerName} · </>}
-              {message.modelName || message.model || 'EverChat'}
+              {message.continuation?.stages.some(
+                (stage) => stage.model !== message.model || stage.providerId !== message.providerId,
+              ) ? (
+                t(($) => $.multipleModels)
+              ) : (
+                <>
+                  {providerName && <>{providerName} · </>}
+                  {message.modelName || message.model || 'EverChat'}
+                </>
+              )}
             </span>
             {message.revisionOf && !message.generation && <span>{t(($) => $.manuallyEdited)}</span>}
             {isActive(message) && (

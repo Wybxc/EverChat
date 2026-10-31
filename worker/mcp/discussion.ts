@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { messageTextFits, MAX_SQL_PAYLOAD_BYTES } from '../../shared/conversation/limits';
 import type { SqlQuery } from '../generation/metrics';
-import { GenerationCheckpoints } from '../streaming/checkpoints';
+import { ConversationContent } from '../conversation/content';
 import { decodeRef, fail } from './contracts';
 import type { ChatArguments } from './contracts';
 import type { DiscussionCitation } from './discussion-contracts';
@@ -41,7 +41,7 @@ export function discussionSource(
     );
   if (row.revision !== citation.revision)
     fail('SOURCE_CHANGED', 'Message revision changed; read the source again.', 'retrieval');
-  const journal = new GenerationCheckpoints(query),
+  const journal = new ConversationContent(query),
     digest = createHash('sha256');
   let offset = 0,
     text = '',

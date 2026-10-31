@@ -2,6 +2,7 @@ import { messageText } from '../../shared/conversation/content';
 import type { Message, SubmitInput } from '../../shared/conversation/types';
 import type { ErrorIssue } from '../../shared/errors/descriptor';
 import { problem } from '../../shared/errors/descriptor';
+import { canContinueAnswer } from '../../shared/conversation/continuation';
 
 export function planSubmissionParent(
   messages: Message[],
@@ -15,7 +16,24 @@ export function planSubmissionParent(
       userParentId: string | null;
     }
   | { error: string; issue?: ErrorIssue; status: number } {
-  const ordinary = !input.retryOf && !input.revisionOf;
+  const ordinary = !input.retryOf && !input.revisionOf && !input.continueOf;
+  if (
+    input.continueOf &&
+    (input.retryOf ||
+      input.revisionOf ||
+      input.summaryThrough ||
+      input.parentId !== undefined ||
+      input.content !== undefined ||
+      input.imageIds !== undefined ||
+      input.fileIds !== undefined ||
+      input.fileSelections !== undefined ||
+      input.materialBindings !== undefined)
+  )
+    return {
+      error: '继续生成不能同时发送新消息或修改来源。',
+      issue: problem('INVALID_REQUEST'),
+      status: 400,
+    };
   if (input.parentId !== undefined && !ordinary)
     return {
       error: '修订或重新生成不能同时指定父消息。',
@@ -43,13 +61,23 @@ export function planSubmissionParent(
     };
   let parent: Message | undefined;
   let previous: Message | undefined;
-  if (input.retryOf) {
+  if (input.retryOf || input.continueOf) {
     previous = messages.find(
-      (m) => m.id === input.retryOf && m.role === 'assistant' && !m.deletedAt && !m.summary,
+      (m) =>
+        m.id === (input.retryOf ?? input.continueOf) &&
+        m.role === 'assistant' &&
+        !m.deletedAt &&
+        !m.summary,
     );
     parent = messages.find((m) => m.id === previous?.parentId);
     if (!previous || !parent || parent.deletedAt)
       return { error: '找不到要重新生成的消息。', issue: problem('NOT_FOUND'), status: 404 };
+    if (input.continueOf && !canContinueAnswer(previous))
+      return {
+        error: '这条回答没有可继续的已保存正文。',
+        issue: problem('INVALID_REQUEST'),
+        status: 409,
+      };
   }
   const original = input.revisionOf
     ? messages.find((m) => m.id === input.revisionOf && m.role === 'user' && !m.deletedAt)

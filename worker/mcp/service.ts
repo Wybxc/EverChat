@@ -121,9 +121,16 @@ export class McpChatService {
       // Duplicate acceptance is checked before any validation that could have changed since the first call.
       record = await this.reconcile(record);
       if (record.prepared) {
-        if (input.continuation && prepared.input.parentId) {
-          const parent = await conversation.mcpStatus(prepared.input.parentId);
-          if (!parent || parent.status !== 'completed' || !parent.hasContent) {
+        const sourceId = prepared.input.continueOf ?? prepared.input.parentId;
+        if (input.continuation && sourceId) {
+          const parent = await conversation.mcpStatus(sourceId);
+          if (
+            !parent ||
+            (prepared.input.continueOf
+              ? parent.status === 'queued' || parent.status === 'running'
+              : parent.status !== 'completed') ||
+            !parent.hasContent
+          ) {
             record = await this.finish(record, {
               code: 'PARENT_UNAVAILABLE',
               message: 'Wait for a completed or retained interrupted answer before continuing.',
@@ -611,11 +618,12 @@ export class McpChatService {
         : null,
       pollAfterMs: pending ? 2000 : 0,
       ...(state.finishReason ? { finishReason: state.finishReason } : {}),
+      ...(state.continuedFrom ? { continuedFrom: state.continuedFrom } : {}),
       output: await page('content', input.outputCursor),
       ...(input.includeReasoning
         ? { reasoning: await page('reasoning', input.reasoningCursor) }
         : {}),
-      ...((status === 'completed' || status === 'interrupted') && state.hasContent
+      ...(!pending && state.hasContent
         ? {
             continuation: encodeRef('continue1', [
               record.conversationId,

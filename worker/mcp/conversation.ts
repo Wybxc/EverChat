@@ -17,13 +17,16 @@ export function readMcpStatus(query: SqlQuery, assistantId: string) {
     dependencyProgress: string | null;
     toolRound: number | null;
     checkpoint: string | null;
+    continuedFrom: string | null;
   }>(
     `SELECT messages.status, message_generations.payload, generation_progress.payload AS progress,
+      json_extract(message_continuations.payload, '$.sourceId') AS continuedFrom,
       generation_checkpoints.state AS checkpoint,
       run_dependencies.summaryId AS dependencyId, dependency_progress.payload AS dependencyProgress,
       json_extract(message_web_tools.payload, '$.round') AS toolRound,
       (messages.content != '' OR EXISTS (SELECT 1 FROM message_content_chunks WHERE messageId=messages.id AND channel='content' AND payload!='""')) AS hasContent
     FROM messages LEFT JOIN message_generations ON message_generations.messageId=messages.id
+    LEFT JOIN message_continuations ON message_continuations.messageId=messages.id
     LEFT JOIN generation_progress ON generation_progress.messageId=messages.id
     LEFT JOIN run_dependencies ON run_dependencies.runId=messages.runId
     LEFT JOIN generation_progress AS dependency_progress ON dependency_progress.messageId=run_dependencies.summaryId
@@ -52,6 +55,7 @@ export function readMcpStatus(query: SqlQuery, assistantId: string) {
     : null;
   return {
     status: row.status,
+    ...(row.continuedFrom ? { continuedFrom: row.continuedFrom } : {}),
     hasContent: Boolean(row.hasContent),
     context,
     providerResponse:

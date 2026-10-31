@@ -60,13 +60,17 @@ export type HelpResult = v.InferOutput<typeof helpResultSchema>;
 export const chatSchema = v.pipe(
   v.strictObject({
     requestId: uuid,
-    prompt: v.pipe(
-      v.string(),
-      v.maxLength(MAX_MESSAGE_TEXT_BYTES),
-      v.check((text) => messageTextFits(text)),
+    prompt: v.optional(
+      v.pipe(
+        v.string(),
+        v.maxLength(MAX_MESSAGE_TEXT_BYTES),
+        v.check((text) => messageTextFits(text)),
+      ),
+      '',
     ),
     modelRef: v.optional(handle),
     continuation: v.optional(handle),
+    continueAnswer: v.optional(v.boolean()),
     uploadRef: v.optional(handle),
     attachments: v.optional(v.array(selectedAttachmentSchema)),
     discussion: v.optional(discussionSchema),
@@ -90,8 +94,21 @@ export const chatSchema = v.pipe(
     waitMs: wait,
   }),
   v.check(
-    (input) => Boolean(input.prompt.trim()) || Boolean(input.attachments?.length),
+    (input) =>
+      Boolean(input.prompt.trim()) ||
+      Boolean(input.attachments?.length) ||
+      Boolean(input.continueAnswer),
     'Provide a prompt or at least one file.',
+  ),
+  v.check(
+    (input) =>
+      !input.continueAnswer ||
+      (Boolean(input.continuation) &&
+        !input.prompt.trim() &&
+        !input.attachments?.length &&
+        !input.uploadRef &&
+        !input.discussion),
+    'continueAnswer requires a continuation handle and cannot include a prompt or attachments.',
   ),
   v.check(
     (input) =>
@@ -143,6 +160,7 @@ const historyRecordSchema = v.variant('kind', [
     ref: v.string(),
     parentId: v.nullable(uuid),
     revisionOf: v.nullable(uuid),
+    continuedFrom: v.optional(v.nullable(uuid)),
     role: v.string(),
     status: v.string(),
     deleted: v.boolean(),
@@ -370,6 +388,7 @@ export const runSchema = v.strictObject({
   runRef: v.string(),
   conversationId: uuid,
   assistantMessageId: v.optional(uuid),
+  continuedFrom: v.optional(uuid),
   continuation: v.optional(v.string()),
   model: modelSchema,
   output: pageSchema,

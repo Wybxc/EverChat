@@ -18,7 +18,7 @@ export const CONTENT_CHUNKS_SCHEMA = `CREATE TABLE IF NOT EXISTS message_content
   messageId TEXT NOT NULL, channel TEXT NOT NULL, ordinal INTEGER NOT NULL, payload TEXT NOT NULL,
   PRIMARY KEY(messageId, channel, ordinal)
 ) WITHOUT ROWID`;
-const CHUNK_CHARACTERS = 4096;
+export const CHUNK_CHARACTERS = 4096;
 type Checkpoint = {
   runId: string;
   messageId: string;

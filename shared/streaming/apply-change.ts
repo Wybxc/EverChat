@@ -2,7 +2,7 @@ import type { Message } from '../conversation/types';
 import type { Snapshot, DurableChange, StreamBatch } from './protocol';
 import { ProviderStream } from './provider-stream';
 import { validateBatch, validateCommit } from './batches';
-import { messageParts, messageText } from '../conversation/content';
+import { localAnswerText, withAnswerDelta } from '../conversation/continuation';
 export function applyChange(snapshot: Snapshot, change: DurableChange): Snapshot {
   if (change.seq <= snapshot.seq) return snapshot;
   if (change.seq !== snapshot.seq + 1) throw new Error('Sync sequence gap');
@@ -45,13 +45,12 @@ export function appendMessage(message: Message, batch: StreamBatch): Message {
     state.protocol,
     state.showReasoning,
     state,
-    messageText(message),
-    messageText(message, 'reasoning'),
+    localAnswerText(message),
+    localAnswerText(message, 'reasoning'),
   );
   parser.feed(bytes);
   return {
-    ...message,
-    parts: messageParts(parser.content, parser.reasoning),
+    ...withAnswerDelta(message, parser.content, parser.reasoning),
     streamState: parser.checkpoint(),
     durableOffset: batch.endOffset,
   };

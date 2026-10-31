@@ -129,13 +129,14 @@ export class UsageLedger {
     ).toArray()[0];
     return row ? JSON.parse(row.payload) : null;
   }
-  answer(messageId: string) {
+  answer(messageId: string | string[]) {
     const totals = emptyTotals();
-    for (const row of this.query<PayloadRow>(
-      'SELECT payload FROM usage_attempts WHERE messageId=?',
-      messageId,
-    ).toArray())
-      addRecord(totals, JSON.parse(row.payload));
+    for (const id of new Set(Array.isArray(messageId) ? messageId : [messageId]))
+      for (const row of this.query<PayloadRow>(
+        'SELECT payload FROM usage_attempts WHERE messageId=?',
+        id,
+      ).toArray())
+        addRecord(totals, JSON.parse(row.payload));
     return totals;
   }
   mcpPage(messageId: string, after?: { startedAt: number; id: string }) {

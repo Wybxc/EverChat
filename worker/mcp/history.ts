@@ -1,5 +1,5 @@
 import type { SqlQuery } from '../generation/metrics';
-import { GenerationCheckpoints } from '../streaming/checkpoints';
+import { ConversationContent } from '../conversation/content';
 import { ConversationState } from '../conversation/state';
 import { encodeRef, fail } from './contracts';
 
@@ -25,6 +25,7 @@ export type HistoryRecord =
       ref: string;
       parentId: string | null;
       revisionOf: string | null;
+      continuedFrom?: string | null;
       role: string;
       status: string;
       deleted: boolean;
@@ -72,7 +73,7 @@ const path = `WITH RECURSIVE path(id,parentId) AS (
 export class McpHistory {
   private readonly journal;
   constructor(private readonly query: SqlQuery) {
-    this.journal = new GenerationCheckpoints(query);
+    this.journal = new ConversationContent(query);
   }
   branches(after: number) {
     const rows = this.query<{
@@ -195,6 +196,7 @@ export class McpHistory {
         id: string;
         parentId: string | null;
         revisionOf: string | null;
+        continuedFrom: string | null;
         role: string;
         status: string;
         createdAt: number;
@@ -205,6 +207,7 @@ export class McpHistory {
         revision: number;
       }>(
         `SELECT m.id,m.parentId,m.revisionOf,m.role,m.status,m.createdAt,m.model,m.modelName,m.providerId,
+         (SELECT json_extract(payload,'$.sourceId') FROM message_continuations WHERE messageId=m.id) AS continuedFrom,
          EXISTS(SELECT 1 FROM message_deletions WHERE id=m.id) AS deleted,
          COALESCE((SELECT version FROM message_versions WHERE messageId=m.id),0) AS revision FROM messages AS m WHERE id=?`,
         id,
@@ -343,7 +346,7 @@ export function markdownRecords(records: HistoryRecord[]) {
   return records
     .map((record) => {
       if (record.kind === 'message')
-        return `\n\n## ${record.summary ? 'Summary' : record.role === 'user' ? 'User' : 'Assistant'} · Round ${record.round}\n\n${JSON.stringify({ id: record.id, parentId: record.parentId, model: record.model, modelName: record.modelName, createdAt: record.createdAt, status: record.status, deleted: record.deleted })}\n\n`;
+        return `\n\n## ${record.summary ? 'Summary' : record.role === 'user' ? 'User' : 'Assistant'} · Round ${record.round}\n\n${JSON.stringify({ id: record.id, parentId: record.parentId, continuedFrom: record.continuedFrom, model: record.model, modelName: record.modelName, createdAt: record.createdAt, status: record.status, deleted: record.deleted })}\n\n`;
       if (record.kind === 'text') {
         if (record.channel === 'content') return record.text;
         const open =

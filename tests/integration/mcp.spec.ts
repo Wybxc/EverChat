@@ -93,6 +93,80 @@ async function setup(request: APIRequestContext) {
   };
 }
 
+test('MCP answer continuation creates composed sibling versions across all protocols without changing normal follow-up semantics', async ({
+  request,
+}) => {
+  const app = await setup(request);
+  try {
+    const { client } = await app.client();
+    const catalog = await app.call<ModelsResult>(client, 'everchat_models_list');
+    for (const model of catalog.models) {
+      const first = await app.call<RunResult>(client, 'everchat_chat', {
+        requestId: crypto.randomUUID(),
+        modelRef: model.ref,
+        prompt: 'A background question',
+        waitMs: 20_000,
+      });
+      expect(first.status).toBe('completed');
+      const continued = await app.call<RunResult>(client, 'everchat_chat', {
+        requestId: crypto.randomUUID(),
+        continuation: first.continuation,
+        continueAnswer: true,
+        waitMs: 20_000,
+      });
+      expect(continued.status).toBe('completed');
+      expect(continued.continuedFrom).toBe(first.assistantMessageId);
+      expect(continued.output.text.startsWith(first.output.text)).toBe(true);
+      expect(continued.output.text.length).toBeGreaterThan(first.output.text.length);
+      const ordinary = await app.call<RunResult>(client, 'everchat_chat', {
+        requestId: crypto.randomUUID(),
+        continuation: continued.continuation,
+        prompt: 'A normal new question',
+        waitMs: 20_000,
+      });
+      expect(ordinary.status).toBe('completed');
+      expect(ordinary.continuedFrom).toBeUndefined();
+      const state = await request
+        .get(`/api/conversations/${first.conversationId}`)
+        .then((r) => r.json());
+      const source = state.messages.find((m: { id: string }) => m.id === first.assistantMessageId);
+      const combined = state.messages.find(
+        (m: { id: string }) => m.id === continued.assistantMessageId,
+      );
+      expect(combined.parentId).toBe(source.parentId);
+      expect(combined.revisionOf).toBe(source.id);
+      expect(state.messages.filter((m: { role: string }) => m.role === 'user')).toHaveLength(2);
+      const receipt = await app.call<import('../../worker/mcp/contracts').ContextResult>(
+        client,
+        'everchat_run_context_get',
+        { runRef: continued.runRef },
+      );
+      const sourceInput = receipt.items.find((item) => item.sourceId === first.assistantMessageId)!;
+      const controlInput = receipt.items.find(
+        (item) => item.kind === 'generated' && item.role === 'user',
+      )!;
+      expect(sourceInput).toBeTruthy();
+      const control = await app.call<import('../../worker/mcp/contracts').ContextResult>(
+        client,
+        'everchat_run_context_get',
+        { runRef: continued.runRef, view: 'text', item: controlInput.ordinal },
+      );
+      expect(control.text?.text).toBe('继续');
+      await request.delete(`/api/conversations/${first.conversationId}/messages/${source.id}`, {
+        headers,
+      });
+      const sourceText = await app.call<import('../../worker/mcp/contracts').ContextResult>(
+        client,
+        'everchat_run_context_get',
+        { runRef: continued.runRef, view: 'text', item: sourceInput.ordinal },
+      );
+      expect(sourceText.text).toEqual({ state: 'available', text: first.output.text });
+    }
+  } finally {
+    await app.cleanup();
+  }
+});
+
 test('MCP modern and legacy clients share the tool contract and all provider protocols save normal conversations', async ({
   request,
 }) => {

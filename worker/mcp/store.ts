@@ -158,7 +158,7 @@ export class McpRequests {
       }
       if (input.presetId && input.systemPrompt !== undefined)
         fail('INVALID_ARGUMENT', 'presetId and systemPrompt are mutually exclusive.');
-      if (!input.prompt.trim() && !input.attachments?.length)
+      if (!input.prompt.trim() && !input.attachments?.length && !input.continueAnswer)
         fail('INVALID_ARGUMENT', 'Provide a prompt or at least one file.');
       if (input.discussion && !discussionPrompt)
         fail(
@@ -257,8 +257,12 @@ export class McpRequests {
         prepared: {
           input: {
             requestId: input.requestId,
-            content: discussionPrompt ?? input.prompt,
-            parentId: parent?.submission?.assistantId ?? null,
+            ...(input.continueAnswer
+              ? { continueOf: parent!.submission!.assistantId }
+              : {
+                  content: discussionPrompt ?? input.prompt,
+                  parentId: parent?.submission?.assistantId ?? null,
+                }),
             selection,
             settings,
             ...(attachments ? { materialBindings: attachments.materialBindings } : {}),
