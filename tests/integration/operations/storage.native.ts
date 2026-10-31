@@ -111,6 +111,13 @@ test('native maintenance transport rejects anonymous HTTP, preserves unrelated s
     );
     assert.equal(savedText.status, 200);
     assert.equal(Buffer.from(await savedText.arrayBuffer()).toString('utf8'), text);
+    await bucket.put(`${sourceKey}/text-v1`, text);
+    const withoutChecksum = await client.fetch(
+      `https://operations.invalid/attachment-text/${attachmentId}`,
+    );
+    assert.equal(withoutChecksum.status, 200);
+    assert.equal(Buffer.from(await withoutChecksum.arrayBuffer()).toString('utf8'), text);
+    await bucket.put(`${sourceKey}/text-v1`, text, { sha256: textHash });
     const indexPayload = '{"version":1}',
       indexHash = createHash('sha256').update(indexPayload).digest('hex');
     const putIndex = (payload = indexPayload, sha256 = indexHash) =>

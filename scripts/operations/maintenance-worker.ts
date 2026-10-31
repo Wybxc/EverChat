@@ -231,12 +231,14 @@ async function dispatch(request: Request, env: OperationsEnv) {
     if (
       attachment[1] === 'text' &&
       (object.size !== saved.bytes ||
-        !object.checksums.sha256 ||
-        Buffer.from(object.checksums.sha256).toString('hex') !== saved.sha256)
+        (object.checksums.sha256 &&
+          Buffer.from(object.checksums.sha256).toString('hex') !== saved.sha256))
     ) {
       await object.body.cancel();
       return new Response('Text checksum mismatch', { status: 409 });
     }
+    // Direct-upload originals can omit R2 checksum metadata. The offline Node
+    // converter verifies every downloaded byte against saved.sha256 before apply.
     if (attachment[1] === 'index' && request.method === 'DELETE') {
       await object.body.cancel();
       if (
