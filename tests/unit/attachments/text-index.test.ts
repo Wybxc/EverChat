@@ -145,3 +145,13 @@ test('position sampling is deterministic, bounded and merges overlapping ranges'
   assert.deepEqual(sampleTextRanges(100, 2, 60), [{ start: 0, end: 100 }]);
   assert.deepEqual(sampleTextRanges(0, 1, 100), []);
 });
+
+test('literal pattern IDs that match Object prototype names retain exact resumable counts', () => {
+  const patterns = ['__proto__', 'constructor', 'toString'].map((id) => ({ id, literal: 'aaa' }));
+  const first = new LiteralScanner(patterns);
+  first.scan(new TextEncoder().encode('aa'), 0);
+  const checkpoint = first.checkpoint();
+  const resumed = new LiteralScanner(patterns, checkpoint.counts, checkpoint.states);
+  resumed.scan(new TextEncoder().encode('aaa'), 2);
+  assert.deepEqual(resumed.checkpoint().counts, Object.fromEntries(patterns.map((p) => [p.id, 3])));
+});

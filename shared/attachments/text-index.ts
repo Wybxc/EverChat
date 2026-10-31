@@ -118,7 +118,13 @@ export class LiteralScanner {
         if (bytes[i] === bytes[j]) j++;
         table[i] = j;
       }
-      return { id, bytes, table, matched: states[id] ?? 0, count: counts[id] ?? 0 };
+      return {
+        id,
+        bytes,
+        table,
+        matched: Object.hasOwn(states, id) ? states[id] : 0,
+        count: Object.hasOwn(counts, id) ? counts[id] : 0,
+      };
     });
   }
   scan(
