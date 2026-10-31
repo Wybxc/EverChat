@@ -30,6 +30,7 @@ test('native maintenance transport rejects anonymous HTTP, preserves unrelated s
           main: resolve('scripts/operations/maintenance-worker.ts'),
           compatibility_date: '2026-10-09',
           compatibility_flags: ['nodejs_compat'],
+          r2_buckets: [{ binding: 'ATTACHMENTS', bucket_name: 'operations-test-attachments' }],
           vars: {
             OPS_RUN_ID: runId,
             OPS_ADMIN_EMAIL: 'operator@example.com',
@@ -90,6 +91,70 @@ test('native maintenance transport rejects anonymous HTTP, preserves unrelated s
       local.exec(sql);
       await remote.exec(sql);
     }
+    const attachmentId = crypto.randomUUID(),
+      text = '\ufeff<html>离线迁移🙂</html>\r\n',
+      textHash = createHash('sha256').update(text).digest('hex'),
+      sourceKey = `attachments/${attachmentId}`;
+    for (const sql of [
+      'CREATE TABLE attachments(id TEXT PRIMARY KEY,key TEXT,status TEXT,removed INTEGER)',
+      'CREATE TABLE attachment_documents(id TEXT PRIMARY KEY,key TEXT,status TEXT,sha256 TEXT,bytes INTEGER,characters INTEGER)',
+      `INSERT INTO attachments VALUES ('${attachmentId}','${sourceKey}','ready',0)`,
+      `INSERT INTO attachment_documents VALUES ('${attachmentId}','${sourceKey}/text-v1','ready','${textHash}',${Buffer.byteLength(text)},${text.length})`,
+    ]) {
+      local.exec(sql);
+      await remote.exec(sql);
+    }
+    const bucket = ((await worker.getEnv()) as { ATTACHMENTS: R2Bucket }).ATTACHMENTS;
+    await bucket.put(`${sourceKey}/text-v1`, text, { sha256: textHash });
+    const savedText = await client.fetch(
+      `https://operations.invalid/attachment-text/${attachmentId}`,
+    );
+    assert.equal(savedText.status, 200);
+    assert.equal(Buffer.from(await savedText.arrayBuffer()).toString('utf8'), text);
+    const indexPayload = '{"version":1}',
+      indexHash = createHash('sha256').update(indexPayload).digest('hex');
+    const putIndex = (payload = indexPayload, sha256 = indexHash) =>
+      client.fetch(`https://operations.invalid/attachment-index/${attachmentId}`, {
+        method: 'PUT',
+        headers: { 'X-Content-SHA256': sha256 },
+        body: payload,
+      });
+    assert.equal((await putIndex(indexPayload, '0'.repeat(64))).status, 409);
+    assert.deepEqual(await (await putIndex()).json(), { created: true });
+    assert.deepEqual(await (await putIndex()).json(), { created: false });
+    assert.equal(
+      (await putIndex('{}', createHash('sha256').update('{}').digest('hex'))).status,
+      409,
+    );
+    assert.equal(
+      await (
+        await client.fetch(`https://operations.invalid/attachment-index/${attachmentId}`)
+      ).text(),
+      indexPayload,
+    );
+    assert.equal(
+      (
+        await client.fetch(`https://operations.invalid/attachment-index/${attachmentId}`, {
+          method: 'DELETE',
+          headers: { 'X-Content-SHA256': '0'.repeat(64) },
+        })
+      ).status,
+      409,
+    );
+    assert.equal(
+      (
+        await client.fetch(`https://operations.invalid/attachment-index/${attachmentId}`, {
+          method: 'DELETE',
+          headers: { 'X-Content-SHA256': indexHash },
+        })
+      ).status,
+      200,
+    );
+    assert.equal(
+      (await client.fetch(`https://operations.invalid/attachment-index/${attachmentId}`)).status,
+      404,
+    );
+    assert.ok(await bucket.head(`${sourceKey}/text-v1`), 'rollback never removes canonical text');
     const catalog = await (
       await client.fetch('https://operations.invalid/catalog?offset=0')
     ).json();

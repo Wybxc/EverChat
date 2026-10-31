@@ -1326,6 +1326,15 @@ export class Library extends DurableObject<Env> {
       await this.scheduleMaintenance();
     }
   }
+  documentContentResponse(conversationId: string, id: string) {
+    return this.attachments.documents.contentResponse(conversationId, id);
+  }
+  documentPreviewPage(conversationId: string, id: string, offset: number) {
+    return this.attachments.documents.previewPage(conversationId, id, offset);
+  }
+  documentToolSource(conversationId: string, file: DocumentPart) {
+    return this.attachments.documents.toolSource(conversationId, file);
+  }
   documentText(conversationId: string, id: string) {
     return this.attachmentAction(() => this.attachments.documents.read(conversationId, id));
   }

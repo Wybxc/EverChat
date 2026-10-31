@@ -9,7 +9,7 @@ import {
   type WebToolCall,
   type WebToolFailure,
   type WebToolOutcome,
-} from '../../shared/web-tools/tasks';
+} from '../../shared/tools/tasks';
 
 export const WEB_TOOL_RESPONSE_BYTES = MAX_BUFFERED_BODY_BYTES;
 const WEB_TOOL_TIMEOUT_MS = 15_000;
@@ -74,6 +74,7 @@ export async function executeWebTool(
   fetcher: WebToolFetch = (request) => fetch(request),
 ): Promise<WebToolOutcome> {
   const call = validateWebToolCall(input, WEB_TOOL_NAMES);
+  if (call.name !== 'web_search' && call.name !== 'read_webpage') throw invalid();
   const failed = (
     error: string,
     code: WebToolFailure['code'] = 'INVALID_RESULT',

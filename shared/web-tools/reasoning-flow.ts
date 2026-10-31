@@ -4,7 +4,7 @@ import {
   type PublicToolCall,
   type PublicToolTask,
   type ReasoningBreak,
-} from './tasks';
+} from '../tools/tasks';
 
 /** Preserve semantic positions when the execution journal refreshes public call states. */
 export function updateToolTask(

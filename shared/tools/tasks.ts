@@ -1,3 +1,8 @@
+import {
+  ATTACHMENT_TOOL_NAMES,
+  attachmentToolSchemas,
+  attachmentToolResultSchema,
+} from '../attachments/tools';
 import { MAX_SQL_PAYLOAD_BYTES } from '../conversation/limits';
 import * as v from 'valibot';
 import { AppError, errorIssueSchema, problem } from '../errors/descriptor';
@@ -5,7 +10,9 @@ import { canAttemptCapability } from '../models/metadata';
 import type { ResolvedModelMetadata } from '../models/types';
 
 export const WEB_TOOL_NAMES = ['web_search', 'read_webpage'] as const;
-export type WebToolName = (typeof WEB_TOOL_NAMES)[number];
+export const TOOL_NAMES = [...WEB_TOOL_NAMES, ...ATTACHMENT_TOOL_NAMES] as const;
+export type WebToolName = (typeof TOOL_NAMES)[number];
+export type NetworkToolName = (typeof WEB_TOOL_NAMES)[number];
 export const MAX_TOOL_INPUT_BYTES = MAX_SQL_PAYLOAD_BYTES;
 export const MAX_WEB_URL_CHARACTERS = 8192;
 const MAX_TOOL_RESULT_BYTES = MAX_SQL_PAYLOAD_BYTES;
@@ -54,11 +61,12 @@ const callId = v.pipe(
   v.check((id) => !/[\u0000-\u0020\u007f]/.test(id)),
 );
 const toolName = v.pipe(v.string(), v.minLength(1), v.maxLength(128), v.regex(/^[a-zA-Z0-9_-]+$/));
-const name = v.picklist(WEB_TOOL_NAMES);
+const name = v.picklist(TOOL_NAMES);
 const webUrlInput = v.pipe(v.string(), v.minLength(1), v.maxLength(MAX_WEB_URL_CHARACTERS));
 const url = v.pipe(webUrlInput, v.check(publicWebUrl, '只允许公开 HTTP 或 HTTPS 网页地址。'));
 // Serializable model constraints. Network-target policy remains a business check.
 export const webToolInputSchemas = {
+  ...attachmentToolSchemas,
   web_search: v.strictObject({ query: safeText(500) }),
   read_webpage: v.strictObject({ url: webUrlInput }),
 };
@@ -80,6 +88,21 @@ export function validateWebToolIdentity(id: string, toolName: string) {
     throw new AppError(problem('TOOL_INVALID'), '模型返回了未启用的工具或无效调用标识。');
 }
 const webToolCallSchema = v.variant('name', [
+  v.strictObject({
+    id: callId,
+    name: v.literal('attachment_info'),
+    input: attachmentToolSchemas.attachment_info,
+  }),
+  v.strictObject({
+    id: callId,
+    name: v.literal('attachment_read'),
+    input: attachmentToolSchemas.attachment_read,
+  }),
+  v.strictObject({
+    id: callId,
+    name: v.literal('attachment_search'),
+    input: attachmentToolSchemas.attachment_search,
+  }),
   v.strictObject({
     id: callId,
     name: v.literal('web_search'),
@@ -140,7 +163,9 @@ export function webToolInputText(call: WebToolCandidate): string {
       : JSON.stringify(call.input)
     : call.name === 'web_search'
       ? call.input.query
-      : call.input.url;
+      : call.name === 'read_webpage'
+        ? call.input.url
+        : JSON.stringify(call.input);
 }
 const sourceSchema = v.strictObject({
   title: safeText(300),
@@ -153,6 +178,7 @@ const webToolOutcomeSchema = v.variant('status', [
     name,
     status: v.literal('completed'),
     sources: v.array(sourceSchema),
+    attachment: v.optional(attachmentToolResultSchema),
     warnings: v.optional(v.pipe(v.array(safeText(200)), v.maxLength(5))),
   }),
   v.strictObject({
@@ -188,6 +214,7 @@ export interface PublicToolCall {
   call: WebToolCandidate;
   state: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
   result?: WebToolOutcome;
+  progress?: { scannedBytes: number };
 }
 export interface PublicToolTask {
   status: 'active' | 'completed' | 'failed' | 'cancelled';
@@ -248,6 +275,9 @@ export const publicToolTaskSchema = v.pipe(
         call: candidateSchema,
         state: v.picklist(['queued', 'running', 'completed', 'failed', 'cancelled']),
         result: v.optional(webToolOutcomeSchema),
+        progress: v.optional(
+          v.strictObject({ scannedBytes: v.pipe(v.number(), v.safeInteger(), v.minValue(0)) }),
+        ),
       }),
     ),
   }),
@@ -268,7 +298,7 @@ export const publicToolTaskSchema = v.pipe(
         )
           return false;
         try {
-          validateWebToolCandidate(item.call, WEB_TOOL_NAMES);
+          validateWebToolCandidate(item.call, TOOL_NAMES);
           if (item.result) validateWebToolOutcome(item.result);
         } catch {
           return false;
@@ -311,9 +341,9 @@ export function assertWebToolSupport(
 ) {
   if (
     !enabled.length ||
-    enabled.length > WEB_TOOL_NAMES.length ||
+    enabled.length > TOOL_NAMES.length ||
     new Set(enabled).size !== enabled.length ||
-    enabled.some((name) => !WEB_TOOL_NAMES.includes(name))
+    enabled.some((name) => !TOOL_NAMES.includes(name))
   )
     throw new AppError(problem('TOOL_INVALID'), '工具选择无效。');
   if (!canAttemptCapability(metadata, 'toolCalls'))

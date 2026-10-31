@@ -263,7 +263,6 @@ test('invalid, incomplete, foreign, unparsed and over-budget documents fail befo
         415,
       ],
       [Buffer.from('valid prefix text \u001bescape'), 'control.txt', 'text/plain', 415],
-      [Buffer.from('a,b\n1'), 'bad.csv', 'text/csv', 415],
     ] as const) {
       const bad = await upload(request, fixture.id, bytes, name, mediaType);
       const endpoint = documentUrl(fixture.id, bad.id);
@@ -384,7 +383,7 @@ test('document retries, revisions and summaries retain branch references and pro
   }
 });
 
-test('large raw files remain storable while parsing rejects excessive working sets before loading them', async ({
+test('large raw text is prepared incrementally and previewed by ranges beyond the full-read memory guard', async ({
   request,
 }) => {
   const fixture = await setup(request);
@@ -397,8 +396,11 @@ test('large raw files remain storable while parsing rejects excessive working se
       'text/plain',
     );
     const response = await request.post(documentUrl(fixture.id, file.id), { headers });
-    expect(response.status()).toBe(413);
-    expect((await response.json()).error).toContain('内存保护');
+    expect(response.status()).toBe(200);
+    expect((await response.json()).characters).toBe(file.size);
+    const page = await request.get(`${documentUrl(fixture.id, file.id)}/page?offset=0`);
+    expect((await page.json()).text).toBe('x'.repeat(8192));
+    expect((await request.get(documentUrl(fixture.id, file.id))).status()).toBe(413);
     expect((await request.head(attachmentUrl(fixture.id, file.id))).status()).toBe(200);
   } finally {
     await fixture.cleanup();
@@ -511,22 +513,19 @@ test('deletion interleaved with parsing or acceptance never leaves an orphan or 
       .toBe(false);
     const next = await upload(request, fixture.id);
     await parse(request, fixture.id, next.id);
-    await control(request, { holdTextRead: next.id });
-    const accepting = fixture.submit({
+    expect(
+      (
+        await request.delete(`/api/conversations/${fixture.id}/attachments/${next.id}`, { headers })
+      ).status(),
+    ).toBe(200);
+    const accepting = await fixture.submit({
       parentId: null,
       requestId: crypto.randomUUID(),
       content: '',
       selection: fixture.selection,
       fileIds: [next.id],
     });
-    await expect.poll(async () => (await control(request)).textWaiting).toBe(true);
-    expect(
-      (
-        await request.delete(`/api/conversations/${fixture.id}/attachments/${next.id}`, { headers })
-      ).status(),
-    ).toBe(200);
-    await control(request, { releaseText: true });
-    expect((await accepting).status()).toBeGreaterThanOrEqual(400);
+    expect(accepting.status()).toBeGreaterThanOrEqual(400);
     expect((await fixture.snapshot()).messages).toHaveLength(0);
     await control(request, { id: next.id, expire: true });
     await expect
@@ -598,10 +597,12 @@ test('file-only offline queue retains references and sends when online; failed p
     await page.reload();
     const editor = page.getByRole('textbox', { name: '消息', exact: true });
     await editor.fill('保留失败草稿');
-    await page
-      .getByLabel('选择聊天文件')
-      .setInputFiles({ name: 'bad.csv', mimeType: 'text/csv', buffer: Buffer.from('a,b\n1') });
-    await expect(page.getByRole('alert')).toContainText('CSV');
+    await page.getByLabel('选择聊天文件').setInputFiles({
+      name: 'bad.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from([0xc3, 0x28]),
+    });
+    await expect(page.getByRole('alert')).toContainText('UTF-8');
     await expect(editor).toHaveValue('保留失败草稿');
     expect((await fixture.snapshot()).messages).toHaveLength(0);
     await page

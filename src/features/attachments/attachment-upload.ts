@@ -14,7 +14,7 @@ import { authenticatedUploadSignal } from '../../platform/xhr';
 import { t } from './locales';
 
 export async function prepareAttachment(file: File, signal: AbortSignal): Promise<AttachmentInput> {
-  const mediaType = fileMediaType(file.name);
+  const mediaType = fileMediaType(file.name, file.type);
   if (!mediaType || file.size > MAX_ATTACHMENT_BYTES || !file.size)
     throw new UiError(uiMessage('attachments', 'invalidUpload'));
   const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
@@ -24,6 +24,7 @@ export async function prepareAttachment(file: File, signal: AbortSignal): Promis
     name: file.name,
     size: file.size,
     mediaType,
+    originalMediaType: file.type,
     sha256: Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join(
       '',
     ),

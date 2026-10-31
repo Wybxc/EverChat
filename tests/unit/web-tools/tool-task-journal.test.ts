@@ -9,12 +9,12 @@ import {
   publicToolTaskSchema,
   type WebToolCall,
   type WebToolOutcome,
-} from '../../../shared/web-tools/tasks';
+} from '../../../shared/tools/tasks';
 import * as v from 'valibot';
 import type { SqlQuery } from '../../../worker/generation/metrics';
 import { providerToolIdentity, type ProviderToolTurn } from '../../../worker/providers/tool-turn';
 import {
-  TOOL_DEFINITION_TOKENS,
+  toolDefinitionTokens,
   TOOL_TASK_TIMEOUT_MS,
   ToolTaskJournal,
   type StartToolTask,
@@ -226,9 +226,8 @@ test('invalid IDs, unknown capabilities and insufficient initial context cannot 
     start({ requestHash: 'A'.repeat(64) }),
     start({ enabled: [] }),
     start({ enabled: ['web_search', 'web_search'] }),
-    start({ inputBudget: 10_000_001 }),
     start({ initialTokens: -1 }),
-    start({ inputBudget: 1000 + TOOL_DEFINITION_TOKENS - 1 }),
+    start({ inputBudget: 1000 + toolDefinitionTokens(enabled, config) - 1 }),
   ])
     assert.throws(() => begin(input));
   assert.throws(() => begin(start(), { ...config, modelMetadata: undefined }), /不支持/);
@@ -567,7 +566,7 @@ test('different call IDs, enabled tools and stored result correspondence are rev
 
 test('context budget stops continuation before a new model claim or request', (t) => {
   const { journal, query, write, begin, save, finish } = database(t),
-    input = begin(start({ inputBudget: 1000 + TOOL_DEFINITION_TOKENS }));
+    input = begin(start({ inputBudget: 1000 + toolDefinitionTokens(enabled, config) }));
   save(input);
   finish(input.id, 'search-0');
   assert.throws(

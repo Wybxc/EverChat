@@ -1,3 +1,5 @@
+import { TEXT_INDEX_SCHEMA } from '../../worker/attachments/documents';
+import { ATTACHMENT_FORMATS_SCHEMA } from '../../worker/attachments/store';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import type { DatabaseSync, SQLInputValue } from 'node:sqlite';
@@ -62,6 +64,7 @@ export async function migrateStorage(db: DatabaseSync, kind: StoreKind): Promise
         version !== 2 &&
         version !== 3 &&
         version !== 4 &&
+        version !== 5 &&
         version !== STORAGE_SCHEMA_VERSION
       )
         throw new Error(`Unsupported storage schema version: ${version}`);
@@ -149,6 +152,8 @@ export async function migrateStorage(db: DatabaseSync, kind: StoreKind): Promise
       }
       if (exists('events')) query('DROP TABLE events');
     } else if (kind === 'library') {
+      query(TEXT_INDEX_SCHEMA);
+      query(ATTACHMENT_FORMATS_SCHEMA);
       query(MCP_REQUESTS_SCHEMA);
       query(MCP_KEYS_SCHEMA);
       if (!columns('mcp_keys').includes('readSystemPrompts'))

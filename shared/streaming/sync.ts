@@ -8,7 +8,7 @@ import {
 } from './protocol';
 import { MAX_COMMIT_BYTES, validateBatch } from './batches';
 import { messageText } from '../conversation/content';
-import { validReasoningBreaks } from '../web-tools/tasks';
+import { validReasoningBreaks } from '../tools/tasks';
 import { answerStages } from '../conversation/continuation';
 
 function validToolPositions(snapshot: Snapshot) {

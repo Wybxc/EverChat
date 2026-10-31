@@ -242,6 +242,9 @@ export class McpAttachments {
           id,
           name: data.name,
           mediaType: data.mediaType,
+          ...(data.originalMediaType !== undefined
+            ? { originalMediaType: data.originalMediaType }
+            : {}),
           size: data.size,
           sha256: data.sha256,
         });
@@ -546,7 +549,7 @@ export class McpAttachments {
       await this.attachments.receive(conversationId, id);
       this.file(principal, selection.attachmentRef);
       if (owned.data.purpose === 'image') {
-        if (selection.selection || selection.mode !== 'reuse')
+        if (selection.selection || selection.mode !== 'reuse' || selection.inputMode !== 'auto')
           fail(
             'INVALID_ARGUMENT',
             'Image inputs do not accept document selection or replacement mode.',
@@ -603,9 +606,10 @@ export class McpAttachments {
           parsed.characters,
         );
       }
-      files.push(
-        ranges ? await this.attachments.documents.select(conversationId, id, ranges) : parsed,
-      );
+      files.push({
+        ...(ranges ? await this.attachments.documents.select(conversationId, id, ranges) : parsed),
+        inputMode: selection.inputMode,
+      });
       materialBindings[id] = {
         documentId: owned.data.documentId,
         versionId: id,

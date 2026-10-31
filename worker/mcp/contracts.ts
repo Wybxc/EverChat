@@ -430,6 +430,9 @@ export const modelsSchema = v.strictObject({
     documentWorkingSetBytes: v.number(),
     pdfParserVersion: v.string(),
     documentInput: v.literal('extracted_text'),
+    textInputModes: v.array(v.picklist(['auto', 'inline', 'on_demand'])),
+    textTools: v.array(v.string()),
+    textEncoding: v.literal('UTF-8'),
   }),
 });
 export type ModelsResult = v.InferOutput<typeof modelsSchema>;

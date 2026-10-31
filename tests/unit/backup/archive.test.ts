@@ -14,9 +14,9 @@ import {
 import { BACKUP_FORMAT, BACKUP_VERSION } from '../../../shared/backup/backup';
 import { decodeArchive, decodeBackup, encodeArchive } from '../../../shared/backup/codec';
 
-async function fixture() {
+async function fixture(content = '资料🙂\n安全文本') {
   const id = crypto.randomUUID(),
-    text = new TextEncoder().encode('资料🙂\n安全文本'),
+    text = new TextEncoder().encode(content),
     hash = await sha256(text);
   const reference = {
     type: 'file' as const,
@@ -86,6 +86,12 @@ test('stored ZIP roundtrips exact Unicode originals, extracted text and immutabl
   assert.deepEqual(result.manifest, manifest);
   for (const [path, bytes] of Object.entries(entries))
     assert.deepEqual(result.entries[path], bytes);
+});
+test('text archives beyond the PDF full-read working set remain restorable', async () => {
+  const { manifest, entries } = await fixture('x'.repeat(33 * 1024 * 1024));
+  const result = await decodeArchive(await encodeArchive(manifest, entries));
+  assert.equal(result.manifest.files[0].parsed?.bytes, 33 * 1024 * 1024);
+  assert.equal(result.entries[extractedPath(manifest.files[0].id)].length, 33 * 1024 * 1024);
 });
 test('missing, extra, mismatched and duplicate file records are rejected before producing a restorable archive', async () => {
   const { manifest, entries } = await fixture(),

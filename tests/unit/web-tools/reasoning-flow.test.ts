@@ -7,7 +7,7 @@ import {
   validReasoningBreaks,
   type PublicToolCall,
   type PublicToolTask,
-} from '../../../shared/web-tools/tasks';
+} from '../../../shared/tools/tasks';
 
 const call = (round: number, id = `call-${round}`): PublicToolCall => ({
   round,

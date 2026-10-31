@@ -1,6 +1,6 @@
 import * as v from 'valibot';
 import { documentRangesSchema } from '../../shared/attachments/documents';
-import { attachmentInputSchema } from '../../shared/attachments/files';
+import { attachmentUploadInputSchema } from '../../shared/attachments/files';
 import { problem } from '../../shared/errors/descriptor';
 import { conversationId, requireAuth, requireConversation, uuidSchema } from '../http/access';
 import type { ApiRouter } from '../http/app';
@@ -18,7 +18,10 @@ export function registerAttachmentsRoutes(app: ApiRouter) {
     await requireAuth(context);
     const id = conversationId(context),
       library = await requireConversation(context, id);
-    const input = await parseBody(context, v.pipe(v.array(attachmentInputSchema), v.minLength(1)));
+    const input = await parseBody(
+      context,
+      v.pipe(v.array(attachmentUploadInputSchema), v.minLength(1)),
+    );
     const result = await library.prepareAttachmentUploads(id, input);
     return 'error' in result
       ? json({ error: result.error, issue: result.issue }, result.status)
@@ -82,6 +85,20 @@ export function registerAttachmentsRoutes(app: ApiRouter) {
     return library.documentResponse(id, attachmentId(context));
   });
 
+  app.get('/conversations/:id/attachments/:attachmentId/document/content', async (context) => {
+    await requireAuth(context);
+    const id = conversationId(context),
+      library = await requireConversation(context, id);
+    return library.documentContentResponse(id, attachmentId(context));
+  });
+  app.get('/conversations/:id/attachments/:attachmentId/document/page', async (context) => {
+    await requireAuth(context);
+    const id = conversationId(context),
+      library = await requireConversation(context, id);
+    const offset = Number(context.req.query('offset') ?? 0);
+    if (!Number.isSafeInteger(offset) || offset < 0) throw new HttpError(400, '无效文件位置。');
+    return json(await library.documentPreviewPage(id, attachmentId(context), offset));
+  });
   app.post('/conversations/:id/attachments/:attachmentId/document/selection', async (context) => {
     await requireAuth(context);
     const id = conversationId(context),

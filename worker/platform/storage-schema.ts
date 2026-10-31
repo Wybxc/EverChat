@@ -1,7 +1,7 @@
 import { AppError, problem } from '../../shared/errors/descriptor';
 import type { SqlQuery } from '../generation/metrics';
 
-export const STORAGE_SCHEMA_VERSION = 5;
+export const STORAGE_SCHEMA_VERSION = 6;
 export const STORAGE_SCHEMA =
   'CREATE TABLE IF NOT EXISTS storage_schema (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL)';
 

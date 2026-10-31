@@ -1,3 +1,4 @@
+import { ATTACHMENT_TOOL_JOBS_SCHEMA } from '../attachments/tool-runner';
 import { createHash } from 'node:crypto';
 import * as v from 'valibot';
 import {
@@ -16,10 +17,11 @@ import {
   type WebToolCandidate,
   type WebToolName,
   type WebToolOutcome,
-} from '../../shared/web-tools/tasks';
+} from '../../shared/tools/tasks';
 import type { SqlQuery } from '../generation/metrics';
 import {
   providerToolIdentity,
+  webToolDefinitions,
   providerToolPrompt,
   validateProviderToolTurn,
   type ProviderToolExchange,
@@ -27,7 +29,8 @@ import {
 } from '../providers/tool-turn';
 
 export const TOOL_TASK_TIMEOUT_MS = 10 * 60_000;
-export const TOOL_DEFINITION_TOKENS = 2048;
+export const toolDefinitionTokens = (enabled: readonly WebToolName[], config: ProviderConfig) =>
+  estimateTextTokens(JSON.stringify(webToolDefinitions(enabled, config))) + 32;
 type Terminal = 'completed' | 'failed' | 'cancelled';
 type Root = {
   id: string;
@@ -85,6 +88,7 @@ interface ToolCallView {
   call: WebToolCandidate;
   state: Call['state'];
   result?: WebToolOutcome;
+  progress?: { scannedBytes: number };
 }
 interface ToolNotification {
   rootId: string;
@@ -121,6 +125,7 @@ export class ToolTaskJournal {
     private readonly query: SqlQuery,
     private readonly now: () => number = Date.now,
   ) {
+    query(ATTACHMENT_TOOL_JOBS_SCHEMA);
     query(`CREATE TABLE IF NOT EXISTS web_tool_tasks (
       id TEXT PRIMARY KEY, requestHash TEXT NOT NULL, identity TEXT NOT NULL, enabled TEXT NOT NULL,
       status TEXT NOT NULL, round INTEGER NOT NULL, createdAt INTEGER NOT NULL, deadline INTEGER NOT NULL,
@@ -176,6 +181,7 @@ export class ToolTaskJournal {
   erase(rootId: string) {
     const root = this.query<Root>('SELECT * FROM web_tool_tasks WHERE id = ?', rootId).toArray()[0];
     if (root?.status === 'active') taskError('请先停止工具任务。');
+    this.query('DELETE FROM attachment_tool_jobs WHERE rootId = ?', rootId);
     this.query('DELETE FROM web_tool_notifications WHERE rootId = ?', rootId);
     this.query('DELETE FROM web_tool_calls WHERE rootId = ?', rootId);
     this.query('DELETE FROM web_tool_models WHERE rootId = ?', rootId);
@@ -221,6 +227,22 @@ export class ToolTaskJournal {
       error: root.error,
     };
   }
+  remainingTokens(rootId: string, runId: string) {
+    const root = this.root(rootId),
+      model = this.model(runId)!;
+    const spent = this.calls(runId).reduce(
+      (sum, c) => sum + (c.outcome ? estimateTextTokens(c.outcome) + 32 : 0),
+      0,
+    );
+    return Math.max(
+      0,
+      root.inputBudget -
+        model.plannedTokens -
+        spent -
+        (model.turn ? estimateTextTokens(JSON.stringify(JSON.parse(model.turn).content)) + 32 : 0) -
+        256,
+    );
+  }
   create(input: StartToolTask, config: ProviderConfig): ToolTaskState {
     if (
       ![input.id, input.runId, input.messageId].every((id) => v.is(uuid, id)) ||
@@ -252,10 +274,9 @@ export class ToolTaskJournal {
     if (
       !Number.isSafeInteger(input.inputBudget) ||
       input.inputBudget < 1 ||
-      input.inputBudget > 10_000_000 ||
       !Number.isSafeInteger(input.initialTokens) ||
       input.initialTokens < 0 ||
-      input.initialTokens + TOOL_DEFINITION_TOKENS > input.inputBudget
+      input.initialTokens + toolDefinitionTokens(input.enabled, config) > input.inputBudget
     )
       taskError('上下文没有足够的工具调用预算。');
     if (
@@ -280,7 +301,7 @@ export class ToolTaskJournal {
       input.runId,
       input.id,
       input.messageId,
-      input.initialTokens + TOOL_DEFINITION_TOKENS,
+      input.initialTokens + toolDefinitionTokens(input.enabled, config),
     );
     return this.state(input.id);
   }
@@ -504,7 +525,7 @@ export class ToolTaskJournal {
     const exchanges = this.exchanges(rootId, round, config);
     const planned =
       root.initialTokens +
-      TOOL_DEFINITION_TOKENS +
+      toolDefinitionTokens(JSON.parse(root.enabled), config) +
       exchanges.reduce(
         (sum, exchange) =>
           sum +
@@ -534,6 +555,18 @@ export class ToolTaskJournal {
     return this.calls(runId).map((row) => ({
       call: JSON.parse(row.payload),
       state: row.state,
+      ...(row.state === 'running' && row.payload.includes('attachment_search')
+        ? {
+            progress: {
+              scannedBytes:
+                this.query<{ scanned: number }>(
+                  "SELECT json_extract(payload,'$.scanned') AS scanned FROM attachment_tool_jobs WHERE rootId=? AND id=?",
+                  row.rootId,
+                  row.callId,
+                ).toArray()[0]?.scanned ?? 0,
+            },
+          }
+        : {}),
       ...(row.outcome !== null ? { result: JSON.parse(row.outcome) } : {}),
     }));
   }
@@ -573,6 +606,7 @@ export class ToolTaskJournal {
         call.callId,
       );
     }
+    this.query('DELETE FROM attachment_tool_jobs WHERE rootId=?', id);
     // Private signed reasoning is needed only while this root is active.
     this.query('UPDATE web_tool_models SET turn = NULL WHERE rootId = ?', id);
     this.notify(root, root.round);
@@ -589,6 +623,7 @@ export class ToolTaskJournal {
       "SELECT web_tool_calls.* FROM web_tool_calls JOIN web_tool_tasks ON web_tool_tasks.id = rootId WHERE status = 'active' AND state = 'running'",
     ).toArray()) {
       const original = JSON.parse(call.payload) as WebToolCandidate;
+      if (original.name.startsWith('attachment_')) continue;
       this.finishTool(call.rootId, call.callId, {
         id: original.id,
         name: original.name,

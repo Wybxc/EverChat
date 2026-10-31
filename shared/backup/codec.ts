@@ -1,6 +1,6 @@
 import { unzipSync, zipSync, type Zippable } from 'fflate';
 import { MAX_ATTACHMENT_BYTES } from '../attachments/files';
-import { MAX_PDF_TEXT_BYTES, validatePdfText } from '../attachments/pdf';
+import { validatePdfText } from '../attachments/pdf';
 import { AppError, problem } from '../errors/descriptor';
 import {
   ARCHIVE_FORMAT,
@@ -102,7 +102,7 @@ async function validateArchiveData(manifest: ArchiveManifest, entries: Record<st
         (await sha256(bytes)) !== ref.textSha256
       )
         throw new AppError(problem('BACKUP_INVALID'), '备份提取文本大小或校验和不符。');
-      const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes);
+      const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
       if (
         text.length !== ref.characters ||
         !text.trim() ||
@@ -147,12 +147,7 @@ export async function decodeArchive(bytes: Uint8Array): Promise<ArchiveData> {
   // The filter runs before fflate allocates or inflates any entry. Only stored ZIP entries are accepted.
   const entries = unzipSync(bytes, {
     filter(file) {
-      const limit =
-        file.name === ARCHIVE_MANIFEST
-          ? MAX_BACKUP_BYTES
-          : file.name.startsWith('documents/')
-            ? MAX_PDF_TEXT_BYTES
-            : MAX_ATTACHMENT_BYTES;
+      const limit = file.name === ARCHIVE_MANIFEST ? MAX_BACKUP_BYTES : MAX_ATTACHMENT_BYTES;
       if (
         !allowed.test(file.name) ||
         seen.has(file.name) ||

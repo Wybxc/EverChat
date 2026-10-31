@@ -68,10 +68,13 @@ self.onmessage = async (
           await (await privateGet(attachmentUrl(request.id, file.id))).arrayBuffer(),
         );
         if (file.parsed) {
-          const saved = (await (
-            await privateGet(`/api/conversations/${request.id}/attachments/${file.id}/document`)
-          ).json()) as { text: string };
-          entries[extractedPath(file.id)] = new TextEncoder().encode(saved.text);
+          entries[extractedPath(file.id)] = new Uint8Array(
+            await (
+              await privateGet(
+                `/api/conversations/${request.id}/attachments/${file.id}/document/content`,
+              )
+            ).arrayBuffer(),
+          );
         }
         progress(Math.round(((index + 1) / Math.max(1, total)) * 90), 'readingFiles');
       }

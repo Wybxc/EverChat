@@ -13,7 +13,7 @@ import type { Env } from '../http/env';
 import type { ProviderSettingsStore } from '../providers/store';
 import type { ResolvedAttachments } from './attachments';
 import { canAttemptCapability } from '../../shared/models/metadata';
-import { attachmentInputSchema, MAX_ATTACHMENT_BYTES } from '../../shared/attachments/files';
+import { ATTACHMENT_MEDIA_TYPES, MAX_ATTACHMENT_BYTES } from '../../shared/attachments/files';
 import { MAX_DOCUMENT_BYTES } from '../../shared/attachments/documents';
 import { PDF_PARSER_VERSION } from '../../shared/attachments/pdf';
 import {
@@ -92,12 +92,15 @@ export class McpRequests {
           this.env.R2_ACCESS_KEY_ID &&
           this.env.R2_SECRET_ACCESS_KEY,
         ),
-        mediaTypes: [...attachmentInputSchema.entries.mediaType.options],
+        mediaTypes: [...ATTACHMENT_MEDIA_TYPES],
         maxFileBytes: MAX_ATTACHMENT_BYTES,
         inlineRequestBytes: 2 * 1024 * 1024,
         documentWorkingSetBytes: MAX_DOCUMENT_BYTES,
         pdfParserVersion: PDF_PARSER_VERSION,
         documentInput: 'extracted_text',
+        textInputModes: ['auto', 'inline', 'on_demand'],
+        textTools: ['attachment_info', 'attachment_read', 'attachment_search'],
+        textEncoding: 'UTF-8',
       },
       presets: this.presets().map(({ id, name }) => ({ id, name })),
       ...(defaultModelRef && models.some(({ ref }) => ref === defaultModelRef)
@@ -271,6 +274,9 @@ export class McpRequests {
               : {}),
             ...(attachments?.files.length
               ? {
+                  fileInputModes: Object.fromEntries(
+                    attachments.files.map((f) => [f.attachmentId, f.inputMode ?? 'auto']),
+                  ),
                   fileIds: attachments.files.map((f) => f.attachmentId),
                   fileSelections: Object.fromEntries(
                     attachments.files

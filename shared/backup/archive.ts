@@ -1,7 +1,7 @@
 import * as v from 'valibot';
-import { documentPartSchema, documentSource, MAX_DOCUMENT_BYTES } from '../attachments/documents';
-import { attachmentInputSchema } from '../attachments/files';
-import { MAX_PDF_TEXT_BYTES, pdfExtractionSchema } from '../attachments/pdf';
+import { documentPartSchema, documentSource } from '../attachments/documents';
+import { attachmentInputSchema, MAX_ATTACHMENT_BYTES } from '../attachments/files';
+import { pdfExtractionSchema } from '../attachments/pdf';
 import { branchPath } from '../conversation/branch-path';
 import { messageAttachments } from '../conversation/content';
 import { type Message } from '../conversation/types';
@@ -22,7 +22,7 @@ const fileSchema = v.strictObject({
   parsed: v.optional(
     v.strictObject({
       reference: documentPartSchema,
-      bytes: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(MAX_PDF_TEXT_BYTES)),
+      bytes: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(MAX_ATTACHMENT_BYTES)),
       pageOffsets: pdfExtractionSchema.entries.pageOffsets,
     }),
   ),
@@ -71,8 +71,7 @@ export function validateArchiveManifest(value: unknown): ArchiveManifest {
       const ref = file.parsed.reference;
       if (
         ref.selection ||
-        (ref.mediaType !== 'application/pdf' &&
-          (file.parsed.bytes > MAX_DOCUMENT_BYTES || file.parsed.pageOffsets)) ||
+        (ref.mediaType !== 'application/pdf' && file.parsed.pageOffsets) ||
         ref.attachmentId !== file.id ||
         ['name', 'mediaType', 'size', 'sha256'].some(
           (field) => ref[field as keyof typeof ref] !== file[field as keyof ArchiveFile],

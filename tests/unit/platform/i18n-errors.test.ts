@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import * as v from 'valibot';
 import { AppError, problem, readErrorIssue } from '../../../shared/errors/descriptor';
 import { generationSchema } from '../../../shared/streaming/generation';
-import { validateWebToolOutcome } from '../../../shared/web-tools/tasks';
+import { validateWebToolOutcome } from '../../../shared/tools/tasks';
 import { Autosave } from '../../../src/platform/autosave';
 import { api } from '../../../src/platform/api';
 import {

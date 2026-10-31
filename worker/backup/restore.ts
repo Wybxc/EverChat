@@ -78,6 +78,9 @@ export class ArchiveRestorer {
             name: file.name,
             size: file.size,
             mediaType: file.mediaType,
+            ...(file.originalMediaType !== undefined
+              ? { originalMediaType: file.originalMediaType }
+              : {}),
             sha256: file.sha256,
           });
         this.ctx.storage.sql.exec(
@@ -165,10 +168,22 @@ export class ArchiveRestorer {
         throw new HttpError(400, '此原文件没有提取文本。', undefined, problem('BACKUP_INVALID'));
       }
       const reference = mapped.file.parsed.reference;
+      if (!reference.pdf) {
+        const result = await this.attachments.documents.restoreCanonical(
+          id,
+          mapped.id,
+          reference,
+          mapped.file.parsed.bytes,
+          body,
+        );
+        if (JSON.stringify({ ...result, attachmentId: sourceId }) !== JSON.stringify(reference))
+          throw new HttpError(409, '恢复后的解析资料与备份不符。');
+        return { value: result };
+      }
       const bytes = await this.readImportText(body, mapped.file.parsed.bytes);
       if ((await sha256(bytes)) !== reference.textSha256)
         throw new HttpError(409, '提取文本的校验和不符。', undefined, problem('BACKUP_INVALID'));
-      const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes);
+      const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
       this.checkImport(id, 'uploading');
       const result = await this.attachments.documents.parse(
         id,
@@ -312,7 +327,10 @@ export class ArchiveRestorer {
         await response.body?.cancel();
         this.checkImport(id, 'finalizing');
         if (file.parsed) {
-          const text = await this.attachments.documents.read(id, fileId);
+          const parsed = this.attachments.documents.reference(id, fileId);
+          const text = file.parsed.reference.pdf
+            ? await this.attachments.documents.read(id, fileId)
+            : { file: parsed };
           this.checkImport(id, 'finalizing');
           if (
             JSON.stringify({ ...text.file, attachmentId: file.id }) !==

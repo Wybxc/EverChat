@@ -1,3 +1,6 @@
+import { ATTACHMENT_TOOL_NAMES } from '../../shared/attachments/tools';
+import { hasOnDemandFiles } from '../../shared/attachments/input-mode';
+import { AttachmentToolRunner, ATTACHMENT_TOOL_JOBS_SCHEMA } from '../attachments/tool-runner';
 import { DurableObject } from 'cloudflare:workers';
 import { readMcpStatus } from '../mcp/conversation';
 import { DocumentError, type DocumentPart } from '../../shared/attachments/documents';
@@ -107,7 +110,7 @@ import {
   type WebToolCall,
   type WebToolName,
   type WebToolOutcome,
-} from '../../shared/web-tools/tasks';
+} from '../../shared/tools/tasks';
 import { providerFailure } from '../providers/failure';
 import { type ProviderToolTurn } from '../providers/tool-turn';
 import { executeWebTool, type WebToolFetch } from '../web-tools/service';
@@ -165,6 +168,11 @@ export class Conversation extends DurableObject<Env> {
   private readonly journal: GenerationCheckpoints;
   private readonly progress: GenerationProgressStore;
   private readonly inputReceipts: InputReceipts;
+  private attachmentProgressAt = new Map<string, number>();
+  private attachmentSteps = new Map<
+    string,
+    Promise<ToolTaskState & { attachmentPending?: boolean }>
+  >();
   private readonly tools!: ToolTaskJournal;
   private readonly activeTools = new Map<
     string,
@@ -262,6 +270,7 @@ export class Conversation extends DurableObject<Env> {
         },
       });
       ctx.storage.transactionSync(() => this.titles!.recover());
+      this.query(ATTACHMENT_TOOL_JOBS_SCHEMA);
       this.tools = new ToolTaskJournal(this.query.bind(this));
       ctx.storage.transactionSync(() => this.tools.recover());
       for (const run of this.query<Run>(
@@ -956,6 +965,7 @@ export class Conversation extends DurableObject<Env> {
         input.imageIds ?? null,
         input.fileIds ?? null,
         input.fileSelections ?? null,
+        input.fileInputModes ?? null,
         input.materialBindings ?? null,
         input.tools ?? null,
       ]);
@@ -1051,37 +1061,8 @@ export class Conversation extends DurableObject<Env> {
         }
         const pinned = await this.pinContextAttachments(conversationId, prepared.context);
         if (pinned) return pinned;
-        const runId = crypto.randomUUID();
-        const summary: Message = {
-          id: crypto.randomUUID(),
-          role: 'assistant',
-          parts: [],
-          status: 'queued',
-          createdAt: Date.now(),
-          runId,
-          parentId: input.summaryThrough,
-          revisionOf: null,
-          error: null,
-          summary: prepared.coverage,
-          providerId: prepared.config.providerId,
-          model: prepared.config.model,
-          modelName: prepared.config.modelName || prepared.config.model,
-          streamVersion: STREAM_VERSION,
-          durableOffset: 0,
-          generation: { usage: {}, usageIsFinal: false, context: prepared.estimate },
-        };
-        this.messages.insert(summary);
-        this.query(
-          'INSERT INTO runs (id, conversationId, assistantId, context, chunkSeq, updatedAt, config, streamVersion, executor) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)',
-          runId,
-          conversationId,
-          summary.id,
-          JSON.stringify(prepared.context),
-          Date.now(),
-          JSON.stringify(prepared.config),
-          STREAM_VERSION,
-          'do-v1',
-        );
+        const summary = this.queueSummary(conversationId, prepared, false);
+        const runId = summary.runId!;
         const change = this.messages.record(
           [this.messages.rawMessage(summary.id)!],
           conversationId,
@@ -1123,6 +1104,14 @@ export class Conversation extends DurableObject<Env> {
             )
           : { value: [] as ImagePart[] };
       if ('error' in references) return references;
+      if (
+        input.fileInputModes &&
+        Object.entries(input.fileInputModes).some(
+          ([id, mode]) =>
+            !(input.fileIds ?? []).includes(id) || !['auto', 'inline', 'on_demand'].includes(mode),
+        )
+      )
+        return { error: '附件输入方式无效。', status: 400, issue: problem('ATTACHMENT_INVALID') };
       const images = references.value;
       const documents = parent
         ? { value: messageFiles(parent) }
@@ -1134,11 +1123,18 @@ export class Conversation extends DurableObject<Env> {
             )
           : { value: [] as DocumentPart[] };
       if ('error' in documents) return documents;
-      const files = documents.value.map((file) =>
-        input.materialBindings?.[file.attachmentId]
-          ? { ...file, material: input.materialBindings[file.attachmentId] }
-          : file,
-      );
+      const files = documents.value
+        .map((file) => ({
+          ...file,
+          ...(input.fileInputModes?.[file.attachmentId]
+            ? { inputMode: input.fileInputModes[file.attachmentId] }
+            : {}),
+        }))
+        .map((file) =>
+          input.materialBindings?.[file.attachmentId]
+            ? { ...file, material: input.materialBindings[file.attachmentId] }
+            : file,
+        );
       if ((!content && !images.length && !files.length) || !messageTextFits(content))
         return {
           error: '请输入消息，正文须符合数据库单行存储大小。',
@@ -1280,12 +1276,16 @@ export class Conversation extends DurableObject<Env> {
       this.messages.insert(assistant);
       if (!automatic) this.inputReceipts.select(assistant.id, contextSelection);
       if (summary) this.progress.phase(assistant.id, 'preparing');
-      if (input.tools)
+      const enabledTools = [
+        ...(input.tools ?? []),
+        ...(hasOnDemandFiles(context) ? ATTACHMENT_TOOL_NAMES : []),
+      ];
+      if (enabledTools.length)
         this.query(
           'INSERT INTO message_web_tools VALUES (?, ?, ?, ?, ?)',
           assistant.id,
           input.requestId,
-          JSON.stringify(input.tools),
+          JSON.stringify(enabledTools),
           createHash('sha256').update(fingerprint).digest('hex'),
           JSON.stringify({
             status: 'active',
@@ -1389,6 +1389,15 @@ export class Conversation extends DurableObject<Env> {
       STREAM_VERSION,
       'do-v1',
     );
+    if (hasOnDemandFiles(prepared.context))
+      this.query(
+        'INSERT INTO message_web_tools VALUES (?, ?, ?, ?, ?)',
+        summary.id,
+        crypto.randomUUID(),
+        JSON.stringify(ATTACHMENT_TOOL_NAMES),
+        createHash('sha256').update(JSON.stringify(prepared.context)).digest('hex'),
+        JSON.stringify({ status: 'active', round: 0, calls: [], reasoningBreaks: [] }),
+      );
     return summary;
   }
   protected webToolsConfigured(
@@ -1491,7 +1500,7 @@ export class Conversation extends DurableObject<Env> {
               requestHash: request.requestHash,
               enabled: JSON.parse(request.enabled),
               inputBudget: estimate.inputBudget,
-              initialTokens: estimate.totalTokens,
+              initialTokens: estimate.totalTokens - (estimate.toolTokens ?? 0),
             },
             JSON.parse(run.config),
           );
@@ -1656,7 +1665,10 @@ export class Conversation extends DurableObject<Env> {
     this.expireToolTasks();
     return this.tools.state(taskId);
   }
-  async scheduleToolModel(taskId: string, round: number): Promise<ToolTaskState> {
+  async scheduleToolModel(
+    taskId: string,
+    round: number,
+  ): Promise<ToolTaskState & { attachmentPending?: boolean }> {
     const state = this.toolTaskState(taskId);
     if (state.status !== 'active') return state;
     if (!Number.isSafeInteger(round) || round < 0 || round > state.round + 1)
@@ -1728,12 +1740,89 @@ export class Conversation extends DurableObject<Env> {
     await this.ctx.storage.sync();
     return this.toolTaskState(taskId);
   }
+  private async runAttachmentTool(
+    taskId: string,
+    call: Extract<
+      WebToolCall,
+      { name: 'attachment_info' | 'attachment_read' | 'attachment_search' }
+    >,
+  ): Promise<ToolTaskState & { attachmentPending?: boolean }> {
+    const state = this.toolTaskState(taskId),
+      saved = this.tools.publicCalls(state.runId).find((item) => item.call.id === call.id)!;
+    if (saved.result || saved.state === 'cancelled') return state;
+    this.ctx.storage.transactionSync(() => this.tools.claimTool(taskId, call.id));
+    const run = this.run(state.runId)!;
+    const available = (JSON.parse(run.context) as ChatInput[]).flatMap((m) =>
+      (m.files ?? []).filter((f) => f.delivery === 'on_demand'),
+    );
+    const runner = new AttachmentToolRunner(
+      this.query.bind(this),
+      this.env.ATTACHMENTS!,
+      async (ref) => {
+        const file = available.find(
+          (f) => f.attachmentId === ref.attachmentId && f.textSha256 === ref.textSha256,
+        );
+        if (!file) throw new Error('File version is not available in this request');
+        return this.env.LIBRARY.getByName('personal').documentToolSource(run.conversationId, file);
+      },
+    );
+    let outcome: WebToolOutcome;
+    try {
+      const remaining = this.tools.remainingTokens(taskId, state.runId);
+      const step = await runner.step(taskId, call, remaining);
+      if (step.pending) {
+        if (Date.now() - (this.attachmentProgressAt.get(taskId) ?? 0) >= 500) {
+          this.attachmentProgressAt.set(taskId, Date.now());
+          const change = this.ctx.storage.transactionSync(() => this.refreshToolMessage(taskId));
+          if (change) this.broadcast(change);
+        }
+        await this.ctx.storage.sync();
+        return { ...this.toolTaskState(taskId), attachmentPending: true };
+      }
+      outcome = step.outcome;
+    } catch (error) {
+      outcome = {
+        id: call.id,
+        name: call.name,
+        status: 'failed',
+        error: (error instanceof Error ? error.message : '附件工具执行失败。').slice(0, 500),
+        issue: problem('ATTACHMENT_INVALID'),
+      };
+    }
+    const latest = this.toolTaskState(taskId);
+    if (latest.status !== 'active') return latest;
+    const update = this.ctx.storage.transactionSync(() => {
+      this.tools.finishTool(taskId, call.id, outcome);
+      this.query('DELETE FROM attachment_tool_jobs WHERE rootId=? AND id=?', taskId, call.id);
+      return this.refreshToolMessage(taskId);
+    });
+    if (update) this.broadcast(update);
+    await this.ctx.storage.sync();
+    return this.toolTaskState(taskId);
+  }
   async runWebTool(taskId: string, callId: string): Promise<ToolTaskState> {
     const state = this.toolTaskState(taskId);
     if (state.status !== 'active') return state;
     const key = `${taskId}:${callId}`,
       existing = this.activeTools.get(key);
     if (existing) return existing.result;
+    const candidate = this.tools.publicCalls(state.runId).find((item) => item.call.id === callId);
+    if (
+      candidate &&
+      !candidate.call.invalid &&
+      (candidate.call.name === 'attachment_info' ||
+        candidate.call.name === 'attachment_read' ||
+        candidate.call.name === 'attachment_search')
+    ) {
+      let running = this.attachmentSteps.get(key);
+      if (!running) {
+        running = this.runAttachmentTool(taskId, candidate.call).finally(() =>
+          this.attachmentSteps.delete(key),
+        );
+        this.attachmentSteps.set(key, running);
+      }
+      return running;
+    }
     const claimed = this.ctx.storage.transactionSync(() => this.tools.claimTool(taskId, callId));
     if (!claimed) return this.tools.state(taskId);
     const usageId = `web:${createHash('sha256')
@@ -1796,7 +1885,7 @@ export class Conversation extends DurableObject<Env> {
                           taskId,
                           conversationId: this.run(state.runId)!.conversationId,
                           messageId: this.run(state.runId)!.assistantId,
-                          kind: call.name,
+                          kind: call.name === 'web_search' ? 'web_search' : 'read_webpage',
                         },
                         {
                           providerId: `web:${provider}`,

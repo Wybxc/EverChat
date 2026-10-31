@@ -1,3 +1,7 @@
+import { createWriteStream } from 'node:fs';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { rebuildTextIndexes, type TextIndexObject } from './rebuild-text-indexes';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { chmod, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
@@ -156,6 +160,12 @@ if (action === 'prepare') {
         const cleanup = target.kind === 'usage' ? cleanIncompleteUsage(db) : null;
         const patch = cleanup?.statements ?? (await migrateStorage(db, target.kind));
         if (cleanup) await save(`${prefix}.cleanup.json`, cleanup.counts);
+        if (target.kind === 'library') {
+          const indexes = await rebuildTextIndexes(db, directory),
+            marker = patch.pop()!;
+          patch.push(...indexes.statements, marker);
+          await save(`${prefix}.text-indexes.json`, indexes.objects);
+        }
         if (target.kind === 'library' && values['rebuild-search']) {
           assert.equal(
             manifest.objects.filter(({ kind }) => kind === 'library').length,
@@ -206,7 +216,7 @@ if (action === 'prepare') {
         ...init,
         redirect: 'manual',
         signal: AbortSignal.timeout(30000),
-        headers,
+        headers: { ...headers, ...init.headers },
       });
     {
       const identityResponse = await send('/identity');
@@ -278,12 +288,43 @@ if (action === 'prepare') {
           const file = `${base(target)}.before.json`;
           if (!(await hasFile(file))) await save(file, await snapshot(target));
         });
+        for (const target of manifest.objects.filter((t) => t.kind === 'library')) {
+          const backup = await load<Snapshot>(`${base(target)}.before.json`);
+          const live = new Set(
+            (backup.rows.attachments ?? [])
+              .filter((r) => r.removed === 0 && r.status === 'ready')
+              .map((r) => r.id),
+          );
+          for (const row of backup.rows.attachment_documents ?? []) {
+            if (row.status !== 'ready' || !live.has(row.id)) continue;
+            const path = join(directory, `${row.id}.text.bin`);
+            if (await stat(path).catch(() => null)) continue;
+            const response = await send(`/attachment-text/${row.id}`);
+            assert.equal(response.status, 200, 'Cannot download saved text for offline indexing');
+            const temporary = `${path}.tmp`;
+            await pipeline(
+              Readable.fromWeb(response.body as import('node:stream/web').ReadableStream),
+              createWriteStream(temporary, { mode: 0o600 }),
+            );
+            await rename(temporary, path);
+          }
+        }
         await save('backup-complete.json', { objects: manifest.objects.length });
       } else if (action === 'apply') {
         assert.ok(
           await hasFile('conversion-complete.json'),
           'Convert every object locally before writing any patch',
         );
+        for (const target of manifest.objects.filter((t) => t.kind === 'library')) {
+          for (const index of await load<TextIndexObject[]>(`${base(target)}.text-indexes.json`)) {
+            const response = await send(`/attachment-index/${index.id}`, {
+              method: 'PUT',
+              headers: { ...headers, 'X-Content-SHA256': index.sha256 },
+              body: await readFile(join(directory, index.file)),
+            });
+            assert.equal(response.status, 200, 'Cannot publish a prepared text index');
+          }
+        }
         for (const target of manifest.objects) {
           const patch = await load<{ job: string; statements: Statement[] }>(
             `${base(target)}.patch.json`,
@@ -312,6 +353,19 @@ if (action === 'prepare') {
             `Verification failed for ${base(target)}`,
           );
         });
+        for (const target of manifest.objects.filter((t) => t.kind === 'library')) {
+          for (const index of await load<TextIndexObject[]>(`${base(target)}.text-indexes.json`)) {
+            const response = await send(`/attachment-index/${index.id}`);
+            assert.equal(response.status, 200, 'Text index is missing after migration');
+            assert.equal(
+              createHash('sha256')
+                .update(new Uint8Array(await response.arrayBuffer()))
+                .digest('hex'),
+              index.sha256,
+              'Text index verification failed',
+            );
+          }
+        }
         await save('verified.json', {
           objects: manifest.objects.length,
           verifiedAt: new Date().toISOString(),
@@ -346,6 +400,24 @@ if (action === 'prepare') {
             hash(before),
             `Rollback verification failed for ${base(target)}`,
           );
+          if (target.kind === 'library' && (await hasFile(`${base(target)}.text-indexes.json`))) {
+            const retained = new Set(
+              (before.rows.attachment_text_indexes ?? []).map((row) => row.id),
+            );
+            for (const index of await load<TextIndexObject[]>(
+              `${base(target)}.text-indexes.json`,
+            )) {
+              if (retained.has(index.id)) continue;
+              const response = await send(`/attachment-index/${index.id}`, {
+                method: 'DELETE',
+                headers: { 'X-Content-SHA256': index.sha256 },
+              });
+              assert.ok(
+                [200, 404].includes(response.status),
+                'Cannot remove a newly prepared text index during rollback',
+              );
+            }
+          }
         }
         await save('rolled-back.json', { objects: manifest.objects.length });
       }

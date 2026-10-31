@@ -30,7 +30,7 @@ import type { ConversationSettings } from '../../../shared/conversation/types';
 import { canAttemptCapability, MAX_MODEL_TOKENS } from '../../../shared/models/metadata';
 import { modelSelectionKey } from '../../../shared/models/selection';
 import type { ChatModel, ReasoningEffort } from '../../../shared/models/types';
-import { WEB_TOOL_NAMES } from '../../../shared/web-tools/tasks';
+import { WEB_TOOL_NAMES } from '../../../shared/tools/tasks';
 import { Modal, ModalTitle } from '../../components/Modal';
 import { AutosaveToast } from '../../components/AutosaveToast';
 import { api } from '../../platform/api';

@@ -19,10 +19,19 @@ export async function directUpload(
   ).json();
   const input = files.find((file) => file.id === id);
   if (!input) return receiveAttachment(request, conversationId, id);
-  const { name, size, mediaType, sha256 } = input;
+  const { name, size, mediaType, sha256, originalMediaType } = input;
   const prepared = await request.post(`/api/conversations/${conversationId}/attachments/uploads`, {
     headers: attachmentHeaders,
-    data: [{ id, name, size, mediaType, sha256 }],
+    data: [
+      {
+        id,
+        name,
+        size,
+        mediaType,
+        sha256,
+        ...(originalMediaType !== undefined ? { originalMediaType } : {}),
+      },
+    ],
   });
   if (!prepared.ok()) return prepared;
   const [target]: AttachmentUpload[] = await prepared.json();

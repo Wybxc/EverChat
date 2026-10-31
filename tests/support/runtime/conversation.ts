@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { StreamBatch } from '../../../shared/streaming/protocol';
 import type { WebToolServiceConfig } from '../../../shared/web-tools/service';
-import type { WebToolCall, WebToolName, WebToolOutcome } from '../../../shared/web-tools/tasks';
+import type { WebToolCall, WebToolName, WebToolOutcome } from '../../../shared/tools/tasks';
 import type { Env } from '../../../worker/http/env';
 import { Conversation as ProductionConversation } from '../../../worker/index';
 import type { openProviderStream } from '../../../worker/providers/stream';

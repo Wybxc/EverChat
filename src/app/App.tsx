@@ -1,3 +1,4 @@
+import { canAttemptCapability } from '../../shared/models/metadata';
 import {
   canContinueAnswer,
   CONTINUE_REQUEST,
@@ -65,7 +66,7 @@ import {
 import { modelSelectionKey } from '../../shared/models/selection';
 import { type ModelSelection, type ReasoningEffort } from '../../shared/models/types';
 import type { SearchResult } from '../../shared/search/query';
-import { assertWebToolSupport, WEB_TOOL_NAMES } from '../../shared/web-tools/tasks';
+import { assertWebToolSupport, WEB_TOOL_NAMES } from '../../shared/tools/tasks';
 import {
   ActionMenu,
   ActionMenuItem,
@@ -1101,6 +1102,9 @@ function AppContent({ initialSettings }: AppProps) {
         content: draft.trim(),
         ...(draftFiles.length
           ? {
+              fileInputModes: Object.fromEntries(
+                draftFiles.map((file) => [file.attachmentId, file.inputMode ?? 'auto']),
+              ),
               fileIds: draftFiles.map((file) => file.attachmentId),
               fileSelections: Object.fromEntries(
                 draftFiles
@@ -1266,6 +1270,12 @@ function AppContent({ initialSettings }: AppProps) {
               content,
               revisionOf: messageMutation.id,
               imageIds: messageImages(mutationMessage).map((image) => image.attachmentId),
+              fileInputModes: Object.fromEntries(
+                messageFiles(mutationMessage).map((file) => [
+                  file.attachmentId,
+                  file.inputMode ?? 'auto',
+                ]),
+              ),
               fileIds: messageFiles(mutationMessage).map((file) => file.attachmentId),
               fileSelections: Object.fromEntries(
                 messageFiles(mutationMessage)
@@ -2218,6 +2228,7 @@ function AppContent({ initialSettings }: AppProps) {
                       <DocumentPreviews
                         conversationId={selected}
                         files={draftFiles}
+                        toolsSupported={canAttemptCapability(selectedModel?.metadata, 'toolCalls')}
                         onChange={imageProgress ? undefined : updateDocument}
                         budgetFor={(file) =>
                           contextPreview?.estimate
@@ -2313,7 +2324,6 @@ function AppContent({ initialSettings }: AppProps) {
                     <input
                       ref={fileInput}
                       type="file"
-                      accept=".pdf,.txt,.typ,.md,.csv,.js,.jsx,.ts,.tsx,.py,.rs,.go,.c,.cpp,.h,.css,.json,.yaml,.yml,.toml,.sh"
                       multiple
                       className="hidden"
                       aria-label={t(($) => $.chooseChatFiles)}

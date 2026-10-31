@@ -16,7 +16,7 @@ export function extractDocument(
     );
   let text: string;
   try {
-    text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes);
+    text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
   } catch {
     throw new HttpError(415, '文本文件必须使用 UTF-8 编码。', undefined, problem('TEXT_INVALID'));
   }
@@ -46,14 +46,14 @@ export function extractDocument(
             ? 'CSV 各行的列数必须一致。'
             : '';
         if (failure) {
+          columns = 0;
           parser.abort();
-          throw new HttpError(415, failure, undefined, problem('TEXT_INVALID'));
         }
       },
     });
     if (!rows)
       throw new HttpError(415, 'CSV 没有可用于问答的数据。', undefined, problem('TEXT_INVALID'));
-    csv = { rows, columns };
+    if (columns) csv = { rows, columns };
   }
   return { text, ...(csv ? { csv } : {}) };
 }

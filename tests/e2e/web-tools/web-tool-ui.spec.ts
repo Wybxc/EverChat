@@ -4,7 +4,7 @@ import type { ConversationSettings } from '../../../shared/conversation/types';
 import type { ProviderKind, ProviderSettings } from '../../../shared/providers/types';
 import type { Snapshot } from '../../../shared/streaming/protocol';
 import type { WebToolServiceSettings } from '../../../shared/web-tools/service';
-import type { WebToolName } from '../../../shared/web-tools/tasks';
+import type { WebToolName } from '../../../shared/tools/tasks';
 import { chooseChatModel, openSpaceSettings } from '../../support/browser/ui';
 
 const origin = 'http://127.0.0.1:5174',

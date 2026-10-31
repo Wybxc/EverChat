@@ -1,5 +1,5 @@
 import type { ProviderConfig } from '../../../shared/providers/types';
-import type { WebToolName } from '../../../shared/web-tools/tasks';
+import type { WebToolName } from '../../../shared/tools/tasks';
 import { providerModel } from '../../../worker/providers/sdk';
 import { coreProviderStream } from '../../../worker/providers/core';
 import { providerEvents } from '../../../worker/providers/events';

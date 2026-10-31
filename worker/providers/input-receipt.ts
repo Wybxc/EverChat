@@ -3,7 +3,11 @@ import type { ChatInput, ProviderConfig } from '../../shared/providers/types';
 import type { InputReceiptItem } from '../../shared/streaming/input-receipt';
 import type { ProviderToolRequest } from './tool-turn';
 import { webToolDefinitions } from './tool-turn';
-import { documentKey, type DocumentInputSnapshot } from '../../shared/attachments/documents';
+import {
+  documentKey,
+  documentInputKey,
+  type DocumentInputSnapshot,
+} from '../../shared/attachments/documents';
 import {
   SUMMARY_CONTEXT_PREFIX,
   SUMMARY_CONTEXT_SUFFIX,
@@ -64,9 +68,10 @@ export function assembledInput(
       message.source?.messageId ?? null,
     );
     for (const file of message.files ?? []) {
-      const injected = documentData?.get(documentKey(file));
+      const injected = documentData?.get(documentInputKey(file));
       if (injected === undefined) throw new Error('Document input evidence is unavailable');
-      const snapshot = documentSnapshots?.get(documentKey(file));
+      const snapshot =
+        file.delivery === 'on_demand' ? undefined : documentSnapshots?.get(documentKey(file));
       items.push({
         item: {
           kind: 'document',
@@ -75,16 +80,26 @@ export function assembledInput(
           sha256: inputHash(injected),
           characters: injected.length,
           bytes: Buffer.byteLength(injected),
-          content: snapshot ? 'document_snapshot' : 'metadata_only',
+          content:
+            file.delivery === 'on_demand'
+              ? 'snapshot'
+              : snapshot
+                ? 'document_snapshot'
+                : 'metadata_only',
           ...(snapshot ? { documentSnapshot: snapshot } : {}),
           scope: 'logical_input',
           attachment: {
             ...file,
-            verification: 'extracted_text_verified',
-            delivery: 'extracted_text',
+            verification:
+              file.delivery === 'on_demand'
+                ? 'manifest_metadata_verified'
+                : 'extracted_text_verified',
+            delivery: file.delivery === 'on_demand' ? 'manifest_only' : 'extracted_text',
+            ...(file.delivery === 'on_demand' ? { contentRead: false } : {}),
             originalVerification: 'client_declared',
           },
         },
+        ...(file.delivery === 'on_demand' ? { snapshot: injected } : {}),
       });
     }
     for (const image of message.images ?? [])

@@ -15,6 +15,7 @@ import { HttpError, json, parseBody } from '../http/response';
 const submitSchema = v.object({
   requestId: uuidSchema,
   content: v.optional(v.string()),
+  fileInputModes: v.optional(v.record(uuidSchema, v.picklist(['auto', 'inline', 'on_demand']))),
   fileSelections: v.optional(v.record(uuidSchema, documentRangesSchema)),
   fileIds: v.optional(
     v.pipe(

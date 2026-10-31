@@ -17,7 +17,7 @@ import type { PromptPreset } from '../presets/types';
 import { modelSchema } from '../providers/settings';
 import type { ProviderApiKind } from '../providers/types';
 import { addGenerationUsage, generationSchema } from '../streaming/generation';
-import { publicToolTaskSchema, validReasoningBreaks } from '../web-tools/tasks';
+import { publicToolTaskSchema, validReasoningBreaks } from '../tools/tasks';
 import { inputEvidenceBackupSchema, type InputEvidenceBackup } from '../streaming/input-receipt';
 
 export const BACKUP_FORMAT = 'everchat-backup';

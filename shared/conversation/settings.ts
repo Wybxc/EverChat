@@ -2,7 +2,7 @@ import * as v from 'valibot';
 import { AppError, problem } from '../errors/descriptor';
 import { MAX_MODEL_TOKENS, validateOutputLimit } from '../models/metadata';
 import type { ProviderConfig } from '../providers/types';
-import { WEB_TOOL_NAMES } from '../web-tools/tasks';
+import { WEB_TOOL_NAMES } from '../tools/tasks';
 import { MAX_SQL_PAYLOAD_BYTES, MAX_SYSTEM_PROMPT_LENGTH } from './limits';
 import type { ConversationSettings } from './types';
 

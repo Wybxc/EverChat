@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import * as v from 'valibot';
 import {
   attachmentInputSchema,
+  attachmentUploadInputSchema,
   attachmentSignatureMatches,
   MAX_ATTACHMENT_BYTES,
 } from '../../../shared/attachments/files';
@@ -14,7 +15,7 @@ const input = {
   mediaType: 'text/markdown',
   sha256: 'a'.repeat(64),
 };
-test('attachment metadata accepts bounded files and rejects unsafe paths, executable types, malformed checksums and sizes', () => {
+test('attachment metadata accepts text candidates and rejects unsafe paths, unsupported image types, malformed checksums and sizes', () => {
   assert.equal(v.safeParse(attachmentInputSchema, input).success, true);
   for (const patch of [
     { size: 0 },
@@ -25,11 +26,24 @@ test('attachment metadata accepts bounded files and rejects unsafe paths, execut
     { name: 'bad\nheader' },
     { name: '   ' },
     { sha256: 'A'.repeat(64) },
-    { mediaType: 'image/svg+xml' },
-    { mediaType: 'text/html' },
+    { mediaType: 'image/gif' },
     { key: 'private/object' },
   ]) {
     assert.equal(v.safeParse(attachmentInputSchema, { ...input, ...patch }).success, false);
+  }
+});
+test('upload metadata preserves the original MIME while normalizing text formats', () => {
+  for (const mediaType of [
+    'text/html; charset=utf-8',
+    'image/svg+xml',
+    'application/x-custom-text',
+    '',
+  ]) {
+    assert.deepEqual(v.parse(attachmentUploadInputSchema, { ...input, mediaType }), {
+      ...input,
+      mediaType: 'text/plain',
+      originalMediaType: mediaType,
+    });
   }
 });
 test('file signatures reject spoofed raster and PDF types while permitting only bounded text prefixes', () => {

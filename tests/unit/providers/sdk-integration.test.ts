@@ -15,7 +15,7 @@ import { mergeGenerationDiagnostics } from '../../../shared/streaming/diagnostic
 import { generationSchema } from '../../../shared/streaming/generation';
 import { ProviderStream, encodeGenerationEvent } from '../../../shared/streaming/provider-stream';
 import { webToolDefinitions } from '../../../worker/providers/tool-turn';
-import { validateWebToolCall } from '../../../shared/web-tools/tasks';
+import { validateWebToolCall } from '../../../shared/tools/tasks';
 import { ProviderUsage } from '../../../worker/providers/stream-usage';
 import type { ProviderConfig } from '../../../shared/providers/types';
 import { AppError, problem } from '../../../shared/errors/descriptor';

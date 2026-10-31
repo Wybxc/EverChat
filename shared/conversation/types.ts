@@ -2,7 +2,7 @@ import type { MessagePart } from './content';
 import type { StreamState } from '../streaming/provider-stream';
 import type { GenerationResult } from '../streaming/generation';
 import type { SummaryCoverage } from './summaries';
-import type { PublicToolTask, WebToolName } from '../web-tools/tasks';
+import type { PublicToolTask, WebToolName } from '../tools/tasks';
 import type { ModelSelection, ReasoningEffort } from '../models/types';
 import type { ActivityIndex, ConversationActivity } from './activity';
 import type { TitleSource, TitleTaskInfo } from './titles';
@@ -91,6 +91,7 @@ export interface SubmitInput {
   content?: string;
   imageIds?: string[];
   fileIds?: string[];
+  fileInputModes?: Record<string, 'auto' | 'inline' | 'on_demand'>;
   fileSelections?: Record<string, import('../attachments/documents').DocumentRange[]>;
   materialBindings?: Record<string, import('../attachments/materials').MaterialBinding>;
   retryOf?: string;

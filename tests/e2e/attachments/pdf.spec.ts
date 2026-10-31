@@ -342,9 +342,10 @@ test('model capacity guides page selection and an original-text excerpt can be s
       .getByLabel('选择聊天文件')
       .setInputFiles({ name: 'capacity.pdf', mimeType: 'application/pdf', buffer: bytes });
     const send = page.getByRole('button', { name: '发送消息', exact: true });
-    await expect(send).toBeDisabled();
     await page.getByRole('button', { name: '预览 capacity.pdf' }).click();
     const dialog = page.getByRole('dialog');
+    await dialog.getByRole('combobox', { name: 'capacity.pdf 的输入方式' }).selectOption('inline');
+    await expect(dialog.getByRole('status')).toContainText('当前约');
     await dialog.getByRole('button', { name: '按容量选择前几页' }).click();
     await expect(dialog.getByLabel('发送页码')).toHaveValue('1-1');
     await expect(dialog.locator('pre')).toContainText('Page 1:');
