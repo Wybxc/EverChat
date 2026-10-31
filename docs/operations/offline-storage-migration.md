@@ -195,3 +195,5 @@ Conversation／Library 从版本 4 升至 5，使用默认完整范围，不能�
 `apply` 先经临时维护接口上传索引，再导入 SQL 元数据；重复索引上传按长度和内容哈希幂等确认，冲突拒绝。`verify` 同时验证 SQL 和索引对象的哈希。`rollback` 恢复原表，并按本次清单与匹配哈希删除新增索引，保留迁移前已经存在的索引。临时文本／索引读写接口只在维护部署中存在，正式程序恢复后移除。
 
 运维目录新增的 `.text.bin`、`.index.json` 和 `.text-indexes.json` 同样是私有备份，不能提交到仓库或上传公开 CI 制品。
+
+北京时间 2026-11-01 完成生产升级校验：225 个 Conversation 与 1 个 Library 从版本 5 升至 6，1,322 条原有消息保留，4 份文本完成本地校验及稀疏索引生成。全部对象的结构、索引／触发器、逐行值和索引对象于 `2026-10-31T16:02:19.100Z` 核验通过。私有备份位于 `.wrangler/operations/on-demand-attachments-2026-10-31`；维护前业务版本为 `b2dc729a-e048-4baa-a4c4-e0edbd0a23b9`。业务恢复与生产验收见 [PR #17](https://github.com/Wybxc/EverChat/pull/17) 和[执行记录](../measurements/on-demand-attachments-2026-10-31.md)。

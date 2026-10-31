@@ -10,7 +10,7 @@
 | [EverChat MCP Server](everchat-mcp-server-plan.md)                                    | 已上线，生产接口及界面验收通过 | 统一自动化聊天、精确续聊、幂等与分页结果；四个核心工具，可删除 API Key 与管理页           |
 | [MCP 上下文可见性与讨论记录](mcp-discussion-observability-plan.md)                    | 已上线，生产功能验收通过       | 输入回执、持久进展、截断与用量、分支读取／导出、文件版本及白名单独立提案／审查；性能单列  |
 | [EverChat MCP 附件](mcp-attachments-plan.md)                                          | 已上线，离线升级与 R2 验收通过 | 批量 R2 PUT、小文件上传、Typst／PDF、不可变版本与固定材料、输入回执；辅助程序及保护性删除 |
-| [文本附件按需读取](on-demand-attachment-reading-plan.md)                              | 已实施，待 PR 与生产验收       | 放宽 HTML 等文本格式、三个通用工具、R2 范围读取、稀疏索引、有界扫描、统一上下文与回执     |
+| [文本附件按需读取](on-demand-attachment-reading-plan.md)                              | 已实施，生产离线升级校验通过   | 放宽 HTML 等文本格式、三个通用工具、R2 范围读取、稀疏索引、有界扫描、统一上下文与回执     |
 | [网页附件 R2 直传](r2-direct-upload-plan.md)                                          | 已上线，本地及生产签名验证通过 | 浏览器预签名 PUT、批量登记、HEAD 接收、防覆盖、进度／取消及延迟清理；PR #9 已合并发布     |
 | [AI Elements 与 Chart 界面优化](ai-elements-chart-ui-plan.md)                         | 设计完成，待实施               | 消息／思考与工具／输入组合、统一图表、滚动组件对照与迁移、分享展示复用                    |
 | [new-api 连接信息导入](new-api-connection-import-plan.md)                             | 设计完成，待实施               | 粘贴识别、配置预览、地址映射、重复识别和模型获取                                          |

@@ -1,6 +1,6 @@
 # 文本附件按需读取计划
 
-日期：2026-10-31。状态：已实施，本地验收完成，待 PR 检查及生产离线升级。实施证据见[执行记录](../measurements/on-demand-attachments-2026-10-31.md)。
+日期：2026-10-31。状态：已实施，本地验收及生产离线升级校验完成。发布与验收证据见[执行记录](../measurements/on-demand-attachments-2026-10-31.md)。
 
 关联：[MCP 附件](mcp-attachments-plan.md)、[上下文可见性与讨论记录](mcp-discussion-observability-plan.md)、[免费层资源政策](../architecture/free-tier-resource-policy.md)、[离线存储迁移](../operations/offline-storage-migration.md)。
 
