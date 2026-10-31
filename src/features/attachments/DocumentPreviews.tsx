@@ -1,3 +1,4 @@
+import { NativeSelect } from '@/components/ui/native-select';
 import { Button } from '@/components/ui/button';
 import {
   Attachment,
@@ -33,11 +34,13 @@ export function DocumentPreviews({
   remove,
   onChange,
   budgetFor,
+  toolsSupported = true,
 }: {
   conversationId: string;
   files: DocumentPart[];
   remove?: (id: string) => void;
   onChange?: (file: DocumentPart) => void;
+  toolsSupported?: boolean;
   budgetFor?: (file: DocumentPart) => number | undefined;
 }) {
   const { t } = useTranslation('attachments', { useSuspense: false });
@@ -49,6 +52,9 @@ export function DocumentPreviews({
   const [original, setOriginal] = useState<DocumentPart | null>(null),
     [pageOffsets, setPageOffsets] = useState<number[] | undefined>();
   const title = useId();
+  const [offsets, setOffsets] = useState([0]),
+    [nextOffset, setNextOffset] = useState<number | null>(null);
+  const offset = offsets.at(-1)!;
   useEffect(() => {
     setPreview(null);
   }, [conversationId]);
@@ -60,6 +66,29 @@ export function DocumentPreviews({
     setPageOffsets(undefined);
     setText('');
     setError('');
+    setNextOffset(null);
+    if (!preview.pdf) {
+      void api<{ state: string; text: string; hasMore: boolean; nextOffset: number }>(
+        `/conversations/${conversationId}/attachments/${preview.attachmentId}/document/page?offset=${offset}`,
+        'GET',
+        undefined,
+        abort.signal,
+      )
+        .then((page) => {
+          if (abort.signal.aborted) return;
+          if (page.state !== 'available') throw new Error(t(($) => $.readFailed));
+          setText(page.text);
+          setNextOffset(page.hasMore ? page.nextOffset : null);
+        })
+        .catch((error) => {
+          if (!abort.signal.aborted)
+            setError(errorMessage(error, uiMessage('attachments', 'readFailed')));
+        })
+        .finally(() => {
+          if (!abort.signal.aborted) setLoading(false);
+        });
+      return () => abort.abort();
+    }
     void api<{ file: DocumentPart; text: string; pageOffsets?: number[] }>(
       `/conversations/${conversationId}/attachments/${preview.attachmentId}/document`,
       'GET',
@@ -84,7 +113,7 @@ export function DocumentPreviews({
         if (!abort.signal.aborted) setLoading(false);
       });
     return () => abort.abort();
-  }, [preview, conversationId]);
+  }, [preview, conversationId, offset, t]);
   if (!files.length) return null;
   return (
     <>
@@ -110,19 +139,24 @@ export function DocumentPreviews({
             <AttachmentTrigger
               type="button"
               aria-label={t(($) => $.preview, { name: file.name })}
-              onClick={() => setPreview(file)}
+              onClick={() => {
+                setOffsets([0]);
+                setPreview(file);
+              }}
             />
-            {remove && (
+            {(remove || onChange) && (
               <AttachmentActions>
-                <AttachmentAction
-                  variant="ghost"
-                  size="icon"
-                  type="button"
-                  aria-label={t(($) => $.remove, { name: file.name })}
-                  onClick={() => remove(file.attachmentId)}
-                >
-                  <X className="h-[0.8125rem] w-[0.8125rem]" />
-                </AttachmentAction>
+                {remove && (
+                  <AttachmentAction
+                    variant="ghost"
+                    size="icon"
+                    type="button"
+                    aria-label={t(($) => $.remove, { name: file.name })}
+                    onClick={() => remove?.(file.attachmentId)}
+                  >
+                    <X className="h-[0.8125rem] w-[0.8125rem]" />
+                  </AttachmentAction>
+                )}
               </AttachmentActions>
             )}
           </Attachment>
@@ -142,6 +176,28 @@ export function DocumentPreviews({
               <ModalTitle id={title} className="min-w-0 flex-1 truncate font-medium">
                 {preview.name}
               </ModalTitle>
+              {onChange && (
+                <NativeSelect
+                  size="sm"
+                  className="w-auto"
+                  aria-label={t(($) => $.inputMode, { name: preview.name })}
+                  value={preview.inputMode ?? 'auto'}
+                  onChange={(event) => {
+                    const file = {
+                      ...preview,
+                      inputMode: event.currentTarget.value as DocumentPart['inputMode'],
+                    };
+                    onChange(file);
+                    setPreview(file);
+                  }}
+                >
+                  <option value="auto">{t(($) => $.modeAuto)}</option>
+                  <option value="inline">{t(($) => $.modeInline)}</option>
+                  <option value="on_demand" disabled={!toolsSupported}>
+                    {t(($) => $.modeOnDemand)}
+                  </option>
+                </NativeSelect>
+              )}
               <Button
                 variant="ghost"
                 size="icon"
@@ -175,7 +231,10 @@ export function DocumentPreviews({
                 pageOffsets={pageOffsets}
                 budget={budgetFor?.(preview)}
                 onApply={(file) => {
-                  onChange(file);
+                  onChange({
+                    ...file,
+                    ...(preview.inputMode ? { inputMode: preview.inputMode } : {}),
+                  });
                   setPreview(null);
                 }}
               />
@@ -190,6 +249,30 @@ export function DocumentPreviews({
                     {selectedDocumentText(text, preview.selection?.ranges)}
                   </pre>
                 )}
+              </div>
+            )}
+            {!preview.pdf && (offsets.length > 1 || nextOffset !== null) && (
+              <div className="flex shrink-0 items-center justify-end gap-2 border-t border-border px-4 py-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={loading || offsets.length < 2}
+                  onClick={() => setOffsets((current) => current.slice(0, -1))}
+                >
+                  {t(($) => $.previousPage)}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={loading || nextOffset === null}
+                  onClick={() => {
+                    if (nextOffset !== null) setOffsets((current) => [...current, nextOffset]);
+                  }}
+                >
+                  {t(($) => $.nextPage)}
+                </Button>
               </div>
             )}
           </div>

@@ -9,7 +9,7 @@ import {
   validateWebToolCall,
   validateWebToolOutcome,
   type WebToolOutcome,
-} from '../../../shared/web-tools/tasks';
+} from '../../../shared/tools/tasks';
 import { openProviderStream } from '../../../worker/providers/stream';
 import { providerToolPrompt, type ProviderToolExchange } from '../../../worker/providers/tool-turn';
 import { toolContinuationChoice } from '../../../worker/providers/tool-turn';

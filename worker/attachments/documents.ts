@@ -1,3 +1,7 @@
+import { TextReader, textObjectMatches } from './text-reader';
+import { indexText, TextIndexer, type TextIndex } from '../../shared/attachments/text-index';
+import type { TextToolSource } from '../../shared/attachments/tools';
+import { estimateTextTokens } from '../../shared/conversation/token-estimate';
 import { createHash } from 'node:crypto';
 import * as v from 'valibot';
 import {
@@ -42,6 +46,8 @@ type Row = {
   errorStatus: number | null;
 } & Record<string, SqlStorageValue>;
 const digest = async (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
+export const TEXT_INDEX_SCHEMA =
+  'CREATE TABLE IF NOT EXISTS attachment_text_indexes (id TEXT PRIMARY KEY, key TEXT NOT NULL, sha256 TEXT NOT NULL, bytes INTEGER NOT NULL, lines INTEGER NOT NULL)';
 export class DocumentStore {
   private parsing = new Map<string, Promise<DocumentPart>>();
   readonly inputSnapshots: DocumentInputSnapshots;
@@ -52,6 +58,7 @@ export class DocumentStore {
     private original: (conversationId: string, id: string, head?: boolean) => Promise<Response>,
     private settled: (id: string) => void,
   ) {
+    storage.sql.exec(TEXT_INDEX_SCHEMA);
     this.inputSnapshots = new DocumentInputSnapshots(storage, bucket, (conversationId, id) =>
       this.requireSource(conversationId, id),
     );
@@ -78,6 +85,14 @@ export class DocumentStore {
       .exec<Row>('SELECT * FROM attachment_documents WHERE id = ?', id)
       .toArray()[0];
   }
+  private textIntegrity(conversationId: string, row: Row) {
+    const source = this.requireSource(conversationId, row.id);
+    return {
+      bytes: row.bytes,
+      sourceSha256: row.sha256!,
+      validatedOriginal: row.key === source.key && row.sha256 === source.sha256,
+    };
+  }
   parsedReference(conversationId: string, id: string) {
     return this.row(id)?.status === 'ready' ? this.reference(conversationId, id) : undefined;
   }
@@ -87,6 +102,86 @@ export class DocumentStore {
     return reference
       ? { reference, bytes: this.row(id)!.bytes, ...(pageOffsets ? { pageOffsets } : {}) }
       : undefined;
+  }
+  async contentResponse(conversationId: string, id: string) {
+    this.reference(conversationId, id);
+    const row = this.row(id)!;
+    const object = await this.bucket!.get(row.key);
+    this.requireSource(conversationId, id);
+    if (!object || !textObjectMatches(object, this.textIntegrity(conversationId, row))) {
+      await object?.body.cancel();
+      throw new HttpError(409, '文件文本不可用或完整性校验失败。');
+    }
+    return new Response(object.body, {
+      headers: {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'X-Content-Type-Options': 'nosniff',
+        'Cache-Control': 'no-store',
+        'Content-Disposition': 'attachment',
+      },
+    });
+  }
+  /** Explicit copies preserve canonical text, even if extraction policy changes later. */
+  async cloneParsed(
+    sourceConversation: string,
+    id: string,
+    targetConversation: string,
+    targetId: string,
+  ) {
+    const file = this.reference(sourceConversation, id),
+      row = this.row(id)!,
+      target = this.requireSource(targetConversation, targetId);
+    const response = await this.contentResponse(sourceConversation, id),
+      key = `${target.key}/text-v1`;
+    if (!response.body) throw new HttpError(409, '文件文本不存在。');
+    await this.bucket!.put(key, response.body, {
+      sha256: file.textSha256,
+      httpMetadata: { contentType: 'text/plain; charset=utf-8' },
+    });
+    const index = this.storage.sql
+      .exec<{ key: string; sha256: string; bytes: number; lines: number }>(
+        'SELECT * FROM attachment_text_indexes WHERE id=?',
+        id,
+      )
+      .toArray()[0];
+    if (!index) throw new HttpError(409, '文件索引缺失，请先执行离线维护。');
+    const savedIndex = await this.bucket!.get(index.key);
+    if (!savedIndex) throw new HttpError(409, '文件索引不存在。');
+    const indexKey = `${target.key}/text-index-v1`;
+    await this.bucket!.put(indexKey, savedIndex.body, {
+      sha256: index.sha256,
+      httpMetadata: { contentType: 'application/json' },
+    });
+    this.requireSource(sourceConversation, id);
+    this.requireSource(targetConversation, targetId);
+    this.storage.transactionSync(() => {
+      this.storage.sql.exec(
+        "INSERT INTO attachment_documents VALUES (?, 'ready', ?, 0, NULL, ?, ?, ?, ?, ?, NULL, NULL)",
+        targetId,
+        key,
+        row.sha256,
+        row.characters,
+        row.tokens,
+        row.bytes,
+        row.csv,
+      );
+      this.storage.sql.exec(
+        'INSERT INTO attachment_text_indexes VALUES(?,?,?,?,?)',
+        targetId,
+        indexKey,
+        index.sha256,
+        index.bytes,
+        index.lines,
+      );
+      const pdf = this.pdfData(id);
+      if (pdf)
+        this.storage.sql.exec(
+          'INSERT INTO attachment_pdf_metadata VALUES(?,?)',
+          targetId,
+          JSON.stringify(pdf),
+        );
+    });
+    return this.reference(targetConversation, targetId);
   }
   unconfirmed(id: string) {
     const row = this.row(id);
@@ -105,13 +200,6 @@ export class DocumentStore {
       throw new HttpError(409, '文件尚未上传完成。', undefined, problem('ATTACHMENT_INVALID'));
     if (!v.safeParse(documentMediaTypeSchema, source.mediaType).success)
       throw new HttpError(415, '请选择文本文件或 PDF。', undefined, problem('ATTACHMENT_INVALID'));
-    if (source.mediaType !== 'application/pdf' && source.size > MAX_DOCUMENT_BYTES)
-      throw new HttpError(
-        413,
-        '文本文件超过单次全文解析的内存保护大小，请拆分文件。',
-        undefined,
-        problem('REQUEST_TOO_LARGE'),
-      );
     return source;
   }
   reference(conversationId: string, id: string): DocumentPart {
@@ -130,6 +218,9 @@ export class DocumentStore {
       name: source.name,
       size: source.size,
       mediaType: source.mediaType,
+      ...(source.originalMediaType !== undefined
+        ? { originalMediaType: source.originalMediaType }
+        : {}),
       sha256: source.sha256,
       version: DOCUMENT_VERSION,
       textSha256: row.sha256,
@@ -281,6 +372,243 @@ export class DocumentStore {
       this.settled(id);
     }
   }
+  private async saveIndex(id: string, key: string, index: TextIndex) {
+    const payload = JSON.stringify(index),
+      sha256 = await digest(new TextEncoder().encode(payload));
+    const saved = await this.bucket!.put(key, payload, {
+      sha256,
+      httpMetadata: { contentType: 'application/json' },
+    });
+    if (!saved) throw new HttpError(503, '文本索引保存失败。');
+    this.storage.sql.exec(
+      'INSERT OR REPLACE INTO attachment_text_indexes VALUES (?, ?, ?, ?, ?)',
+      id,
+      key,
+      sha256,
+      index.bytes,
+      index.lines,
+    );
+  }
+  async toolSource(conversationId: string, file: DocumentPart): Promise<TextToolSource> {
+    if (
+      JSON.stringify(v.parse(documentPartSchema, documentSource(file))) !==
+      JSON.stringify(this.reference(conversationId, file.attachmentId))
+    )
+      throw new HttpError(409, '文件版本引用无效。');
+    const row = this.row(file.attachmentId)!,
+      source = this.reference(conversationId, file.attachmentId);
+    const saved = this.storage.sql
+      .exec<{ key: string; sha256: string; bytes: number; lines: number }>(
+        'SELECT * FROM attachment_text_indexes WHERE id=?',
+        file.attachmentId,
+      )
+      .toArray()[0];
+    if (!saved) throw new HttpError(409, '文件索引缺失，请先执行离线附件索引维护。');
+    // Selection offsets belong to the source UTF-16 text. Map using sparse coordinates,
+    // never grant the surrounding gaps to a model tool.
+    const ranges = file.selection
+      ? await this.selectionByteRanges(file, saved)
+      : [{ start: 0, end: row.bytes }];
+    return {
+      attachmentId: file.attachmentId,
+      textSha256: file.textSha256,
+      name: file.name,
+      mediaType: file.mediaType,
+      sourceSha256: row.sha256!,
+      validatedOriginal: this.textIntegrity(conversationId, row).validatedOriginal,
+      key: row.key,
+      indexKey: saved.key,
+      indexSha256: saved.sha256,
+      bytes: row.bytes,
+      characters: source.characters,
+      lines: saved.lines,
+      ranges,
+      ...(this.pdfData(file.attachmentId)?.pageOffsets
+        ? { pageOffsets: this.pdfData(file.attachmentId)!.pageOffsets }
+        : {}),
+    };
+  }
+  private async selectionByteRanges(file: DocumentPart, saved: { key: string; sha256: string }) {
+    const row = this.row(file.attachmentId)!,
+      reader = new TextReader(this.bucket!, {
+        attachmentId: file.attachmentId,
+        textSha256: file.textSha256,
+        sourceSha256: row.sha256!,
+        name: file.name,
+        mediaType: file.mediaType,
+        key: row.key,
+        indexKey: saved.key,
+        indexSha256: saved.sha256,
+        bytes: row.bytes,
+        characters: file.characters,
+        lines: 1,
+        ranges: [],
+      });
+    const ranges = [];
+    for (const r of file.selection!.ranges)
+      ranges.push({ start: await reader.byteAt(r.start), end: await reader.byteAt(r.end) });
+    return ranges;
+  }
+  private async parseLargeText(conversationId: string, source: Source, token: string) {
+    const response = await this.original(conversationId, source.id),
+      reader = response.body!.getReader();
+    const indexer = new TextIndexer(),
+      hash = createHash('sha256');
+    let bytes = 0,
+      sampledBytes = 0;
+    const sampleBytes = new Uint8Array(8192);
+    let index: TextIndex;
+    try {
+      for (;;) {
+        const part = await reader.read();
+        if (part.done) break;
+        indexer.append(part.value);
+        hash.update(part.value);
+        bytes += part.value.byteLength;
+        const count = Math.min(part.value.length, sampleBytes.length - sampledBytes);
+        sampleBytes.set(part.value.subarray(0, count), sampledBytes);
+        sampledBytes += count;
+      }
+      index = indexer.finish();
+    } catch (error) {
+      await reader.cancel().catch(() => {});
+      throw new HttpError(
+        415,
+        error instanceof Error ? error.message : '文件必须是 UTF-8 文本。',
+        undefined,
+        problem('TEXT_INVALID'),
+      );
+    }
+    if (!indexer.hasText)
+      throw new HttpError(415, '文件没有可用于问答的文本。', undefined, problem('TEXT_INVALID'));
+    const sample = new TextDecoder('utf-8', { fatal: false, ignoreBOM: true }).decode(
+      sampleBytes.subarray(0, sampledBytes),
+    );
+    if (bytes !== source.size || hash.digest('hex') !== source.sha256)
+      throw new HttpError(409, '文本完整性校验失败。');
+    this.requireSource(conversationId, source.id);
+    if (this.row(source.id)?.token !== token) throw new HttpError(409, '文件解析认领已失效。');
+    await this.saveIndex(source.id, `${source.key}/text-index-v1`, index);
+    this.storage.sql.exec(
+      "UPDATE attachment_documents SET status='ready', lease=0, key=?, sha256=?, characters=?, tokens=?, bytes=? WHERE id=?",
+      source.key,
+      source.sha256,
+      index.characters,
+      Math.ceil((estimateTextTokens(sample) * index.characters) / Math.max(1, sample.length)) + 128,
+      index.bytes,
+      source.id,
+    );
+    await this.storage.sync();
+    return this.reference(conversationId, source.id);
+  }
+  /** Restore saved canonical text verbatim, preserving its recorded estimator and version. */
+  async restoreCanonical(
+    conversationId: string,
+    id: string,
+    expected: DocumentPart,
+    expectedBytes: number,
+    body: ReadableStream<Uint8Array>,
+  ) {
+    const source = this.requireSource(conversationId, id),
+      existing = this.row(id);
+    if (existing) {
+      await body.cancel();
+      if (
+        existing.status === 'ready' &&
+        existing.sha256 === expected.textSha256 &&
+        existing.bytes === expectedBytes
+      )
+        return this.reference(conversationId, id);
+      throw new HttpError(409, '文件恢复已在进行或需要清理。');
+    }
+    const key = `${source.key}/text-v1`,
+      token = crypto.randomUUID(),
+      indexer = new TextIndexer(),
+      digest = createHash('sha256');
+    this.storage.sql.exec(
+      "INSERT INTO attachment_documents VALUES (?, 'parsing', ?, ?, ?, ?, 0, 0, 0, NULL, NULL, NULL)",
+      id,
+      key,
+      Date.now() + ATTACHMENT_LEASE,
+      token,
+      expected.textSha256,
+    );
+    const restore = async () => {
+      const fixed = new FixedLengthStream(expectedBytes),
+        abort = new AbortController();
+      const timer = setTimeout(() => abort.abort(new Error('Text restore timed out')), 90_000);
+      try {
+        await this.storage.sync();
+        const copying = body
+          .pipeThrough(
+            new TransformStream<Uint8Array, Uint8Array>({
+              transform(bytes, controller) {
+                indexer.append(bytes);
+                digest.update(bytes);
+                controller.enqueue(bytes);
+              },
+            }),
+          )
+          .pipeTo(fixed.writable, { signal: abort.signal });
+        const saving = this.bucket!.put(key, fixed.readable, {
+          sha256: expected.textSha256,
+          httpMetadata: { contentType: 'text/plain; charset=utf-8' },
+        }).catch((error) => {
+          abort.abort(error);
+          throw error;
+        });
+        const results = await Promise.allSettled([copying, saving]);
+        for (const result of results) if (result.status === 'rejected') throw result.reason;
+        const saved = (results[1] as PromiseFulfilledResult<R2Object | null>).value;
+        if (!saved || saved.size !== expectedBytes)
+          throw new HttpError(409, '备份文本未完整保存。');
+        const index = indexer.finish();
+        if (
+          index.bytes !== expectedBytes ||
+          index.characters !== expected.characters ||
+          digest.digest('hex') !== expected.textSha256
+        )
+          throw new HttpError(409, '备份文本的大小、字符数或校验和不符。');
+        this.requireSource(conversationId, id);
+        if (this.row(id)?.token !== token) throw new HttpError(409, '文件恢复认领已失效。');
+        await this.saveIndex(id, `${source.key}/text-index-v1`, index);
+        this.storage.sql.exec(
+          "UPDATE attachment_documents SET status='ready',lease=0,sha256=?,characters=?,tokens=?,bytes=?,csv=? WHERE id=?",
+          expected.textSha256,
+          expected.characters,
+          expected.tokens,
+          expectedBytes,
+          expected.csv ? JSON.stringify(expected.csv) : null,
+          id,
+        );
+        await this.storage.sync();
+        return this.reference(conversationId, id);
+      } catch (error) {
+        this.storage.sql.exec(
+          "UPDATE attachment_documents SET status='cleaning',token=NULL,lease=? WHERE id=?",
+          Date.now(),
+          id,
+        );
+        try {
+          await this.bucket!.delete([key, `${source.key}/text-index-v1`]);
+          this.erase(id);
+        } catch {
+          /* The lease schedules cleanup. */
+        }
+        throw error;
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+    const promise = restore();
+    this.parsing.set(id, promise);
+    try {
+      return await promise;
+    } finally {
+      this.parsing.delete(id);
+      this.settled(id);
+    }
+  }
   private async parseSource(
     conversationId: string,
     source: Source,
@@ -291,6 +619,10 @@ export class DocumentStore {
     let putStarted = false;
     try {
       await this.storage.sync();
+      if (!prepared && source.size > 1024 * 1024) {
+        putStarted = true;
+        return await this.parseLargeText(conversationId, source, token);
+      }
       const response = await this.original(conversationId, source.id, Boolean(prepared));
       const extracted =
         prepared ??
@@ -325,6 +657,7 @@ export class DocumentStore {
       this.requireSource(conversationId, source.id);
       if (this.row(source.id)?.token !== token)
         throw new HttpError(409, '文件解析认领已失效。', undefined, problem('ATTACHMENT_INVALID'));
+      await this.saveIndex(source.id, `${source.key}/text-index-v1`, indexText(bytes));
       this.storage.sql.exec(
         "UPDATE attachment_documents SET status = 'ready', lease = 0, sha256 = ?, characters = ?, tokens = ?, bytes = ?, csv = ? WHERE id = ?",
         sha256,
@@ -357,7 +690,7 @@ export class DocumentStore {
             source.id,
           );
           try {
-            await this.bucket!.delete(key);
+            await this.bucket!.delete([key, `${source.key}/text-index-v1`]);
             this.erase(source.id);
           } catch {
             this.storage.sql.exec(
@@ -391,12 +724,7 @@ export class DocumentStore {
         undefined,
         problem('ATTACHMENT_INVALID'),
       );
-    const checksum = object.checksums.sha256
-      ? Array.from(new Uint8Array(object.checksums.sha256), (byte) =>
-          byte.toString(16).padStart(2, '0'),
-        ).join('')
-      : null;
-    if (object.size !== row.bytes || checksum !== row.sha256) {
+    if (!textObjectMatches(object, this.textIntegrity(conversationId, row))) {
       await object.body.cancel().catch(() => {});
       throw new HttpError(
         409,
@@ -404,6 +732,10 @@ export class DocumentStore {
         undefined,
         problem('ATTACHMENT_INVALID'),
       );
+    }
+    if (row.bytes > MAX_DOCUMENT_BYTES) {
+      await object.body.cancel();
+      throw new HttpError(413, '文件超过单次全文读取工作集，请使用按需读取。');
     }
     const bytes = new Uint8Array(await object.arrayBuffer());
     this.requireSource(conversationId, id);
@@ -414,8 +746,8 @@ export class DocumentStore {
         undefined,
         problem('ATTACHMENT_INVALID'),
       );
-    const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes);
-    if (text.length !== file.characters || estimateDocumentTokens(file, text) !== file.tokens)
+    const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
+    if (text.length !== file.characters)
       throw new HttpError(
         409,
         '解析结果长度或预算不符。',
@@ -428,8 +760,8 @@ export class DocumentStore {
     return { file, text, ...(pageOffsets ? { pageOffsets } : {}) };
   }
   async previewPage(conversationId: string, id: string, offset: number) {
-    const file = this.reference(conversationId, id),
-      row = this.row(id)!;
+    this.reference(conversationId, id);
+    const row = this.row(id)!;
     const empty = {
       state: 'content_unavailable' as const,
       text: '',
@@ -444,11 +776,7 @@ export class DocumentStore {
     });
     this.requireSource(conversationId, id);
     if (!object) return empty;
-    if (
-      object.size !== row.bytes ||
-      !object.checksums.sha256 ||
-      Buffer.from(object.checksums.sha256).toString('hex') !== file.textSha256
-    ) {
+    if (!textObjectMatches(object, this.textIntegrity(conversationId, row))) {
       await object.body.cancel();
       return empty;
     }
@@ -517,13 +845,20 @@ export class DocumentStore {
     );
   }
   async validate(conversationId: string, file: DocumentPart) {
-    const saved = await this.read(conversationId, file.attachmentId);
+    const saved = { file: this.reference(conversationId, file.attachmentId) };
     if (
       JSON.stringify(v.parse(documentPartSchema, documentSource(file))) !==
         JSON.stringify(saved.file) ||
       (file.selection &&
-        JSON.stringify(v.parse(documentPartSchema, (({ material: _, ...data }) => data)(file))) !==
-          JSON.stringify(await this.selectFrom(saved, file.selection.ranges)))
+        JSON.stringify(
+          v.parse(
+            documentPartSchema,
+            (({ material: _, inputMode: __, delivery: ___, ...data }) => data)(file),
+          ),
+        ) !==
+          JSON.stringify(
+            await this.select(conversationId, file.attachmentId, file.selection.ranges),
+          ))
     )
       throw new HttpError(
         409,
@@ -579,6 +914,7 @@ export class DocumentStore {
     return row?.status === 'parsing' ? row.lease : 0;
   }
   erase(id: string) {
+    this.storage.sql.exec('DELETE FROM attachment_text_indexes WHERE id = ?', id);
     this.storage.sql.exec('DELETE FROM attachment_documents WHERE id = ?', id);
     this.storage.sql.exec('DELETE FROM attachment_pdf_metadata WHERE id = ?', id);
   }
@@ -618,7 +954,10 @@ export class DocumentStore {
         row.id,
       );
       try {
-        await this.bucket.delete(row.key);
+        const sourceKey = row.key.endsWith('/text-v1')
+          ? row.key.slice(0, -'/text-v1'.length)
+          : row.key;
+        await this.bucket.delete([`${sourceKey}/text-v1`, `${sourceKey}/text-index-v1`]);
         this.erase(row.id);
       } catch {
         this.storage.sql.exec(

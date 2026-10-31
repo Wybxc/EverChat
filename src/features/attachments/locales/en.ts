@@ -1,4 +1,10 @@
 export default {
+  previousPage: 'Previous excerpt',
+  nextPage: 'Next excerpt',
+  modeOnDemand: 'On demand',
+  modeInline: 'Full text',
+  modeAuto: 'Auto',
+  inputMode: 'Input mode for {{name}}',
   invalidUpload: 'Choose an image, text, code or PDF file up to 100 MB.',
   invalidName: 'Invalid filename. Rename it and try again.',
   uploadFailed: 'Attachment upload failed.',
@@ -23,7 +29,8 @@ export default {
   storageRequired: 'Uploading requires a connection and configured file storage.',
   waitSync: 'Wait for the chat to sync before adding attachments.',
   visionRequired: 'This model does not support images. Choose a vision model.',
-  invalidDocument: 'Choose a PDF or a UTF-8 text, code or CSV file up to 32 MiB.',
+  invalidDocument:
+    'Choose a PDF or UTF-8 text, including HTML, XML, SVG, code and extensionless files.',
   chatChanged: 'Chat changed',
   settingsRequired: 'Fix the chat parameters before adding attachments.',
   extracting: 'Extracting {{name}} · {{page}}/{{pages}}',

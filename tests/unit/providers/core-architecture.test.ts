@@ -5,7 +5,7 @@ import { valibotSchema } from '@ai-sdk/valibot';
 import { experimental_streamTextLowMemory as streamText, tool, wrapLanguageModel } from 'ai';
 import { resolveModelMetadata } from '../../../shared/models/metadata';
 import type { ProviderConfig, ProviderKind } from '../../../shared/providers/types';
-import { webToolInputSchemas } from '../../../shared/web-tools/tasks';
+import { webToolInputSchemas } from '../../../shared/tools/tasks';
 import { providerGenerationOptions, providerModel } from '../../../worker/providers/sdk';
 import { ProviderToolCollector } from '../../../worker/providers/tool-turn';
 import { ProviderWireGuard } from '../../../worker/providers/stream-errors';

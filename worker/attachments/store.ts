@@ -31,6 +31,8 @@ type Row = Attachment & {
   token: string | null;
   removed: number;
 } & Record<string, SqlStorageValue>;
+export const ATTACHMENT_FORMATS_SCHEMA =
+  'CREATE TABLE IF NOT EXISTS attachment_formats (id TEXT PRIMARY KEY, mediaType TEXT NOT NULL)';
 export class AttachmentStore {
   readonly documents: DocumentStore;
   private active = new Set<string>();
@@ -39,6 +41,7 @@ export class AttachmentStore {
     private bucket: R2Bucket | undefined,
     private exists: (id: string) => boolean,
   ) {
+    storage.sql.exec(ATTACHMENT_FORMATS_SCHEMA);
     storage.sql
       .exec(`CREATE TABLE IF NOT EXISTS attachments (id TEXT PRIMARY KEY, conversationId TEXT NOT NULL, name TEXT NOT NULL,
       size INTEGER NOT NULL, mediaType TEXT NOT NULL, sha256 TEXT NOT NULL, status TEXT NOT NULL, createdAt INTEGER NOT NULL,
@@ -77,7 +80,21 @@ export class AttachmentStore {
   }
   private public(row: Row): Attachment {
     const { id, conversationId, name, size, mediaType, sha256, status, createdAt, error } = row;
-    return { id, conversationId, name, size, mediaType, sha256, status, createdAt, error };
+    const originalMediaType = this.storage.sql
+      .exec<{ mediaType: string }>('SELECT mediaType FROM attachment_formats WHERE id=?', id)
+      .toArray()[0]?.mediaType;
+    return {
+      id,
+      conversationId,
+      name,
+      size,
+      mediaType,
+      sha256,
+      status,
+      createdAt,
+      error,
+      ...(originalMediaType !== undefined ? { originalMediaType } : {}),
+    };
   }
   private require(conversationId: string, id: string) {
     if (!this.exists(conversationId))
@@ -85,7 +102,7 @@ export class AttachmentStore {
     const row = this.row(id);
     if (!row || row.conversationId !== conversationId || row.removed)
       throw new HttpError(404, '找不到附件。', undefined, problem('NOT_FOUND'));
-    return row;
+    return { ...row, ...this.public(row) };
   }
   list(conversationId: string) {
     this.configuredBucket();
@@ -128,9 +145,17 @@ export class AttachmentStore {
   archiveFiles(conversationId: string) {
     return this.list(conversationId)
       .filter((file) => file.status === 'ready')
-      .map(({ id, name, size, mediaType, sha256 }) => {
+      .map(({ id, name, size, mediaType, sha256, originalMediaType }) => {
         const parsed = this.documents.archiveReference(conversationId, id);
-        return { id, name, size, mediaType, sha256, ...(parsed ? { parsed } : {}) };
+        return {
+          id,
+          name,
+          size,
+          mediaType,
+          sha256,
+          ...(originalMediaType !== undefined ? { originalMediaType } : {}),
+          ...(parsed ? { parsed } : {}),
+        };
       });
   }
   images(conversationId: string, ids: string[]): ImagePart[] {
@@ -218,12 +243,14 @@ export class AttachmentStore {
         problem('ATTACHMENT_INVALID'),
       );
     const parsed = this.documents.parsedReference(sourceId, id);
-    const document = parsed ? await this.documents.read(sourceId, id) : undefined;
     this.register(targetId, {
       id: cloneId,
       name: source.name,
       size: source.size,
       mediaType: source.mediaType,
+      ...(source.originalMediaType !== undefined
+        ? { originalMediaType: source.originalMediaType }
+        : {}),
       sha256: source.sha256,
     });
     const response = await this.response(sourceId, id);
@@ -235,20 +262,9 @@ export class AttachmentStore {
       await response.body.cancel().catch(() => {});
     }
     this.require(sourceId, id);
-    if (document) {
-      const result = await this.documents.parse(
-        targetId,
-        cloneId,
-        document.file.pdf
-          ? {
-              sourceSha256: source.sha256,
-              text: document.text,
-              pdf: document.file.pdf,
-              ...(document.pageOffsets ? { pageOffsets: document.pageOffsets } : {}),
-            }
-          : undefined,
-      );
-      if (JSON.stringify({ ...result, attachmentId: id }) !== JSON.stringify(document.file))
+    if (parsed) {
+      const result = await this.documents.cloneParsed(sourceId, id, targetId, cloneId);
+      if (JSON.stringify({ ...result, attachmentId: id }) !== JSON.stringify(parsed))
         throw new HttpError(
           409,
           '复制后的解析资料与原文件不符。',
@@ -269,6 +285,7 @@ export class AttachmentStore {
         if (
           existing.removed ||
           existing.conversationId !== conversationId ||
+          this.public(existing).originalMediaType !== input.originalMediaType ||
           ['name', 'size', 'mediaType', 'sha256'].some(
             (field) => existing[field] !== input[field as keyof AttachmentInput],
           )
@@ -295,6 +312,12 @@ export class AttachmentStore {
         `attachments/${conversationId}/${input.id}/${crypto.randomUUID()}`,
         createdAt + ATTACHMENT_LEASE,
       );
+      if (input.originalMediaType !== undefined)
+        this.storage.sql.exec(
+          'INSERT INTO attachment_formats VALUES (?, ?)',
+          input.id,
+          input.originalMediaType,
+        );
       return this.public(this.row(input.id)!);
     });
   }
@@ -635,7 +658,7 @@ export class AttachmentStore {
           );
           continue;
         }
-        await this.bucket.delete([row.key, `${row.key}/text-v1`]);
+        await this.bucket.delete([row.key, `${row.key}/text-v1`, `${row.key}/text-index-v1`]);
         const current = this.row(row.id);
         if (
           current &&
@@ -644,6 +667,7 @@ export class AttachmentStore {
         ) {
           this.storage.sql.exec('DELETE FROM attachments WHERE id = ?', row.id);
           this.storage.sql.exec('DELETE FROM attachment_usage WHERE id = ?', row.id);
+          this.storage.sql.exec('DELETE FROM attachment_formats WHERE id=?', row.id);
           this.documents.erase(row.id);
         }
       } catch {

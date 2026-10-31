@@ -1,8 +1,9 @@
-import { documentKey } from '../../shared/attachments/documents';
+import { documentKey, documentInputKey } from '../../shared/attachments/documents';
 import {
   assertDocumentContext,
   DocumentError,
   documentPrompt,
+  documentManifestPrompt,
   estimateDocumentTokens,
   type DocumentPart,
   type LoadedDocumentInput,
@@ -20,7 +21,7 @@ import {
 import { providerModel, providerRequestInit } from './sdk';
 import { providerToolPrompt, type ProviderToolRequest } from './tool-turn';
 import { coreProviderStream } from './core';
-import { assertWebToolSupport } from '../../shared/web-tools/tasks';
+import { assertWebToolSupport } from '../../shared/tools/tasks';
 import { sdkProviderError } from './sdk-diagnostics';
 import { httpProviderError, providerFailure } from './failure';
 import { ProviderWireGuard } from './stream-errors';
@@ -107,7 +108,11 @@ export async function openProviderStream(
     if (
       context.reduce(
         (bytes, message) =>
-          bytes + (message.files ?? []).reduce((sum, file) => sum + file.characters, 0),
+          bytes +
+          (message.files ?? []).reduce(
+            (sum, file) => sum + (file.delivery === 'on_demand' ? 0 : file.characters),
+            0,
+          ),
         0,
       ) > MAX_BUFFERED_BODY_BYTES
     )
@@ -116,7 +121,11 @@ export async function openProviderStream(
     const documentSnapshots = new Map<string, DocumentInputSnapshot>();
     for (const message of context)
       for (const file of message.files ?? []) {
-        if (documentData.has(documentKey(file))) continue;
+        if (documentData.has(documentInputKey(file))) continue;
+        if (file.delivery === 'on_demand') {
+          documentData.set(documentInputKey(file), documentManifestPrompt(file));
+          continue;
+        }
         if (!loadDocument) throw new DocumentError('无法读取已保存的文件解析结果。');
         signal.throwIfAborted();
         const loaded = await loadDocument(file),
@@ -125,11 +134,7 @@ export async function openProviderStream(
         const sha256 = Array.from(new Uint8Array(hash), (byte) =>
           byte.toString(16).padStart(2, '0'),
         ).join('');
-        if (
-          text.length !== file.characters ||
-          estimateDocumentTokens(file, text) !== file.tokens ||
-          sha256 !== file.textSha256
-        )
+        if (text.length !== file.characters || sha256 !== file.textSha256)
           throw new DocumentError('文件解析内容与已保存的引用不符。');
         const prompt = documentPrompt(file, text);
         if (typeof loaded !== 'string' && loaded.inputSnapshot) {
@@ -141,7 +146,7 @@ export async function openProviderStream(
             throw new DocumentError('文件输入快照与实际输入不符。');
           documentSnapshots.set(documentKey(file), loaded.inputSnapshot);
         }
-        documentData.set(documentKey(file), prompt);
+        documentData.set(documentInputKey(file), prompt);
         secrets.push(text);
       }
     const imageData = new Map<string, Uint8Array>();
@@ -167,7 +172,7 @@ export async function openProviderStream(
                 ...(message.content ? [{ type: 'text' as const, text: message.content }] : []),
                 ...(message.files ?? []).map((file) => ({
                   type: 'text' as const,
-                  text: documentData.get(documentKey(file))!,
+                  text: documentData.get(documentInputKey(file))!,
                 })),
                 ...(message.images ?? []).map((image) => ({
                   type: 'file' as const,

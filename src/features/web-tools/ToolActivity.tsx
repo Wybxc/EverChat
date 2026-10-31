@@ -9,10 +9,10 @@ import {
   TraceLine,
   TraceTitle,
 } from '@/components/ui/trace';
-import { ArrowUpRight, Globe, Search } from 'lucide-react';
+import { ArrowUpRight, FileText, Globe, Search } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { problem } from '../../../shared/errors/descriptor';
-import { webToolInputText, type PublicToolCall } from '../../../shared/web-tools/tasks';
+import { webToolInputText, type PublicToolCall } from '../../../shared/tools/tasks';
 import { useDisclosureController, useDisclosureState } from '../../components/Disclosure';
 import { issueMessage, renderUiMessage } from '../../platform/i18n/messages';
 import { PAUSE_FOLLOW_EVENT } from '../chat/scroll-intent';
@@ -88,20 +88,39 @@ function ToolCallView({ item, messageId }: { item: PublicToolCall; messageId: st
               : undefined
       }
     >
-      <TraceIcon>{call.name === 'web_search' ? <Search /> : <Globe />}</TraceIcon>
+      <TraceIcon>
+        {call.name.startsWith('attachment_') ? (
+          <FileText />
+        ) : call.name === 'web_search' ? (
+          <Search />
+        ) : (
+          <Globe />
+        )}
+      </TraceIcon>
       <TraceTitle title={input}>
         {call.name === 'web_search'
           ? t(($) => $.search)
           : call.name === 'read_webpage'
             ? t(($) => $.fetch)
-            : call.name}{' '}
+            : call.name === 'attachment_info'
+              ? t(($) => $.attachmentInfo)
+              : call.name === 'attachment_read'
+                ? t(($) => $.attachmentRead)
+                : call.name === 'attachment_search'
+                  ? t(($) => $.attachmentSearch)
+                  : call.name}{' '}
         · {input}
         <span className="sr-only">{t(($) => $.round, { round: round + 1 })}</span>
       </TraceTitle>
       <TraceDescription>
         {t(($) => $[labels[state]])}
+        {item.progress
+          ? ` · ${t(($) => $.scanned, { bytes: item.progress.scannedBytes.toLocaleString() })}`
+          : ''}
         {result?.status === 'completed'
-          ? ` · ${t(($) => $.sourcesCount, { count: result.sources.length })}`
+          ? result.attachment
+            ? ` · ${t(($) => $.attachmentResults, { count: result.attachment.fragments.length + result.attachment.matches.length })}`
+            : ` · ${t(($) => $.sourcesCount, { count: result.sources.length })}`
           : ''}
       </TraceDescription>
     </TraceLine>
@@ -119,7 +138,32 @@ function ToolCallView({ item, messageId }: { item: PublicToolCall; messageId: st
           <TraceCollapsibleTrigger>{line}</TraceCollapsibleTrigger>
           <TraceCollapsibleContent>
             {result.status === 'completed' ? (
-              result.sources.length ? (
+              result.attachment ? (
+                <div className="flex max-h-64 flex-col gap-2 overflow-auto">
+                  {result.attachment.files.map((file) => (
+                    <p key={file.attachmentId}>
+                      {file.name} ·{' '}
+                      {t(($) => $.fileCoordinates, {
+                        bytes: file.bytes.toLocaleString(),
+                        lines: file.lines.toLocaleString(),
+                      })}
+                    </p>
+                  ))}
+                  {result.attachment.fragments.map((fragment, index) => (
+                    <div key={index}>
+                      <p>{t(($) => $.byteRange, { start: fragment.start, end: fragment.end })}</p>
+                      <pre className="whitespace-pre-wrap break-words">{fragment.text}</pre>
+                    </div>
+                  ))}
+                  {!!Object.keys(result.attachment.counts).length && (
+                    <pre className="whitespace-pre-wrap break-all">
+                      {JSON.stringify(result.attachment.counts, null, 2)}
+                    </pre>
+                  )}
+                  {result.attachment.hasMore && <p>{t(($) => $.moreText)}</p>}
+                  {!result.attachment.scanComplete && <p>{t(($) => $.scanIncomplete)}</p>}
+                </div>
+              ) : result.sources.length ? (
                 <Trace>
                   {[...new Map(result.sources.map((source) => [source.url, source])).values()].map(
                     (source) => (

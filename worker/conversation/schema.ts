@@ -1,3 +1,4 @@
+import { ATTACHMENT_TOOL_JOBS_SCHEMA } from '../attachments/tool-runner';
 import { CHECKPOINT_SCHEMA, CONTENT_CHUNKS_SCHEMA } from '../streaming/checkpoints';
 import { initializeStorageSchema } from '../platform/storage-schema';
 import { CONVERSATION_ACTIVITY_SCHEMA } from './activity';
@@ -12,6 +13,7 @@ export const DELETION_SCHEMA =
 export function initializeConversation(sql: SqlStorage, metrics: boolean) {
   initializeStorageSchema(sql.exec.bind(sql));
   sql.exec(DELETION_SCHEMA);
+  sql.exec(ATTACHMENT_TOOL_JOBS_SCHEMA);
   sql.exec(USAGE_OUTBOX_SCHEMA);
   if (sql.exec('SELECT deletedAt FROM conversation_deletion WHERE id = 1').toArray().length) return;
   sql.exec(`CREATE TABLE IF NOT EXISTS messages (

@@ -292,6 +292,93 @@ test('MCP modern and legacy clients share the tool contract and all provider pro
   }
 });
 
+test('MCP on-demand HTML tools return manifest and submitted fragment evidence across all protocols', async ({
+  request,
+}) => {
+  const app = await setup(request);
+  try {
+    const current = await (await request.get('/api/settings/providers')).json();
+    const providers = app.providers.map((provider) => ({
+      ...provider,
+      models: [
+        {
+          ...provider.models[0],
+          id: `tools-attachment-${provider.provider}`,
+          metadataOverrides: { ...provider.models[0].metadataOverrides, toolCalls: true },
+        },
+      ],
+    }));
+    expect(
+      (
+        await request.put('/api/settings/providers', {
+          headers,
+          data: { ...current, providers, activeModel: providers[0].models[0].id },
+        })
+      ).ok(),
+    ).toBe(true);
+    const { client } = await app.client(),
+      catalog = await app.call<ModelsResult>(client, 'everchat_models_list');
+    for (const model of catalog.models) {
+      const text = '<html>\n' + '背景材料\n'.repeat(100000) + '模型应读到这里🙂\n</html>';
+      const saved = await app.call<AttachmentsResult>(client, 'everchat_attachments_put', {
+        uploadId: crypto.randomUUID(),
+        files: [
+          {
+            clientFileId: crypto.randomUUID(),
+            name: 'reference.html',
+            purpose: 'document',
+            mediaType: 'text/html',
+            text,
+          },
+        ],
+      });
+      expect(saved.files[0].inputStatus).toBe('ready');
+      const run = await app.call<RunResult>(client, 'everchat_chat', {
+        requestId: crypto.randomUUID(),
+        modelRef: model.ref,
+        uploadRef: saved.uploadRef,
+        attachments: [{ attachmentRef: saved.files[0].attachmentRef, inputMode: 'on_demand' }],
+        prompt: '定位并读取目标段落',
+        waitMs: 10000,
+      });
+      expect(run.status, JSON.stringify(run)).toBe('completed');
+      expect(run.output.text).toContain('已按需读取附件');
+      const receipt = await app.call<import('../../worker/mcp/contracts').ContextResult>(
+        client,
+        'everchat_run_context_get',
+        { runRef: run.runRef },
+      );
+      const manifest = receipt.items.find((item) => item.kind === 'document')!;
+      expect(manifest.attachment).toMatchObject({
+        delivery: 'manifest_only',
+        contentRead: false,
+        verification: 'manifest_metadata_verified',
+      });
+      const content = await app.call<import('../../worker/mcp/contracts').ContextResult>(
+        client,
+        'everchat_run_context_get',
+        { runRef: run.runRef, view: 'text', item: manifest.ordinal },
+      );
+      expect(content.text?.text).toContain('Not yet read');
+      expect(content.text?.text).not.toContain('模型应读到这里');
+      const items = [...receipt.items];
+      let next = receipt.nextCursor;
+      while (next) {
+        const page = await app.call<import('../../worker/mcp/contracts').ContextResult>(
+          client,
+          'everchat_run_context_get',
+          { runRef: run.runRef, cursor: next },
+        );
+        items.push(...page.items);
+        next = page.nextCursor;
+      }
+      expect(items.filter((item) => item.kind === 'tool')).toHaveLength(2);
+    }
+  } finally {
+    await app.cleanup();
+  }
+});
+
 test('MCP actual files use immutable key-owned batches, exact input receipts and replay-safe file-only chat', async ({
   request,
 }) => {
@@ -333,7 +420,7 @@ test('MCP actual files use immutable key-owned batches, exact input receipts and
         modelRef: model.ref,
         prompt: '',
         uploadRef: saved.uploadRef,
-        attachments: [{ attachmentRef: saved.files[0].attachmentRef }],
+        attachments: [{ attachmentRef: saved.files[0].attachmentRef, inputMode: 'inline' }],
         waitMs: 10_000,
       };
       const run = await app.call<RunResult>(client, 'everchat_chat', input);

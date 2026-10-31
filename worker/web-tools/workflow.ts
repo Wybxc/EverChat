@@ -17,6 +17,7 @@ const reference = (state: ToolTaskState) => ({
   phase: state.phase,
   round: state.round,
   calls: [...state.calls],
+  attachmentPending: 'attachmentPending' in state && state.attachmentPending === true,
 });
 
 // Step results contain only small durable references/status, never model bodies, keys or tool outputs.
@@ -45,10 +46,20 @@ export class WebToolWorkflow extends WorkflowEntrypoint<Env, ToolWorkflowParams>
         if (state.round !== round || state.phase !== 'tools')
           throw new Error('Unexpected tool round');
         for (const [index, callId] of state.calls.entries()) {
-          const result = await step.do(`tool-${round}-${index}`, retry, async () =>
-            reference(await conversation().runWebTool(taskId, callId)),
-          );
-          if (result.status !== 'active') return { status: result.status };
+          for (let batch = 0; ; batch++) {
+            const result = await step.do(`tool-${round}-${index}-${batch}`, retry, async () => {
+              // Keep scan checkpoints in the DO. Bundle bounded RPCs so a large
+              // attachment does not spend one of Free's 1,024 steps per R2 block.
+              let state;
+              for (let chunk = 0; chunk < 16; chunk++) {
+                state = reference(await conversation().runWebTool(taskId, callId));
+                if (state.status !== 'active' || !state.attachmentPending) break;
+              }
+              return state!;
+            });
+            if (result.status !== 'active') return { status: result.status };
+            if (!result.attachmentPending) break;
+          }
         }
       }
     } catch {

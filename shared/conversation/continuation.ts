@@ -3,7 +3,7 @@ import { isActive } from './message-state';
 import type { AnswerStage, Message } from './types';
 import * as v from 'valibot';
 import { generationSchema } from '../streaming/generation';
-import { publicToolTaskSchema } from '../web-tools/tasks';
+import { publicToolTaskSchema } from '../tools/tasks';
 
 const length = v.pipe(v.number(), v.safeInteger(), v.minValue(0));
 const name = v.optional(v.nullable(v.string()));

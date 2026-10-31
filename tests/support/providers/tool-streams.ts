@@ -275,10 +275,11 @@ export function toolFinalStream(
   protocol: ProviderKind,
   workload?: { chunks: number; size: number },
   reasoning?: string,
+  answer = '**工具回答🙂**\n结论。',
 ) {
   const pieces = workload
     ? Array.from({ length: workload.chunks }, () => 'x'.repeat(workload.size - 2) + '🙂')
-    : ['**工具回答🙂**\n结论。'];
+    : [answer];
   const text = pieces.join('');
   if (protocol === 'openai-chat')
     return (

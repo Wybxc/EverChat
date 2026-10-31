@@ -14,7 +14,7 @@ import type { ProviderConfig } from '../../shared/providers/types';
 import type { SearchDocument } from '../../shared/search/query';
 import { STREAM_VERSION, payloadBytes } from '../../shared/streaming/batches';
 import type { Change, Snapshot } from '../../shared/streaming/protocol';
-import { type PublicToolTask } from '../../shared/web-tools/tasks';
+import { type PublicToolTask } from '../../shared/tools/tasks';
 import type { SqlQuery } from '../generation/metrics';
 import type { ConversationActivityJournal } from './activity';
 import { ConversationState } from './state';

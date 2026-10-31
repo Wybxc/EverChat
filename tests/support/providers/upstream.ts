@@ -279,6 +279,63 @@ export function installMockUpstream() {
         usage: { prompt_tokens: 10, completion_tokens: 4, total_tokens: 14 },
       });
     }
+    const attachmentModel =
+      /^tools-attachment-(openai-chat|openai-responses|anthropic|gemini)$/.exec(modelId ?? '');
+    if (attachmentModel) {
+      const kind = attachmentModel[1] as ProviderKind,
+        serialized = JSON.stringify(requestBody);
+      const values: Record<string, unknown>[] = [];
+      const visit = (value: unknown, depth = 0) => {
+        if (depth > 20) return;
+        if (Array.isArray(value)) {
+          value.forEach((v) => visit(v, depth + 1));
+          return;
+        }
+        if (value && typeof value === 'object') {
+          values.push(value as Record<string, unknown>);
+          Object.values(value).forEach((v) => visit(v, depth + 1));
+        } else if (typeof value === 'string') {
+          const start = value.indexOf('{');
+          if (start >= 0) {
+            try {
+              visit(JSON.parse(value.slice(start)), depth + 1);
+            } catch {}
+          }
+        }
+      };
+      visit(requestBody);
+      const file = values.find(
+        (v) => typeof v.attachmentId === 'string' && typeof v.textSha256 === 'string',
+      );
+      if (!file)
+        return Response.json({ error: 'Missing immutable attachment manifest' }, { status: 400 });
+      const ref = { attachmentId: file.attachmentId, textSha256: file.textSha256 };
+      let wire;
+      if (serialized.includes('call_attachment_1')) {
+        if (!serialized.includes('模型应读到这里🙂'))
+          return Response.json({ error: 'Missing actual attachment result' }, { status: 400 });
+        wire = toolFinalStream(kind, undefined, undefined, '已按需读取附件：模型应读到这里🙂');
+      } else if (serialized.includes('call_attachment_0')) {
+        const match = values.find((v) => v.patternId === 'target' && typeof v.start === 'number');
+        if (!match) return Response.json({ error: 'Missing search position' }, { status: 400 });
+        wire = toolStream(kind, {
+          name: 'attachment_read',
+          input: JSON.stringify({ file: ref, ranges: [{ start: match.start, end: match.end }] }),
+        }).replaceAll('call_0', 'call_attachment_1');
+      } else {
+        if (serialized.includes('模型应读到这里🙂'))
+          return Response.json({ error: 'Unexpected inline source' }, { status: 400 });
+        wire = toolStream(kind, {
+          name: 'attachment_search',
+          input: JSON.stringify({
+            files: [ref],
+            patterns: [{ id: 'target', literal: '模型应读到这里🙂' }],
+            mode: 'positions',
+          }),
+        }).replaceAll('call_0', 'call_attachment_0');
+      }
+      return new Response(wire, { headers: { 'Content-Type': 'text/event-stream' } });
+    }
     const toolModel =
       /^tools-(?:(loop|multi|pause|service|flow|robust)-)?(?:(large|sustained)-)?(openai-chat|openai-responses|anthropic|gemini)$/.exec(
         modelId ?? '',

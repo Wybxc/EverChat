@@ -60,9 +60,71 @@ const parse = (
   mediaType: Exclude<DocumentPart['mediaType'], 'application/pdf'> = 'text/plain',
 ) => extractDocument(Buffer.from(value), mediaType);
 
+test('omitted on-demand history reserves no tool definitions; explicit modes respect model support', () => {
+  const capable = { ...config, modelMetadata: { ...config.modelMetadata!, toolCalls: true } };
+  const built = buildContext(
+    [{ role: 'user', content: 'old', files: [{ ...file, inputMode: 'on_demand' }] }],
+    'new',
+    capable,
+    { recentMessages: 0, contextBudget: 500 },
+  );
+  assert.equal(built.estimate.toolTokens, undefined);
+  assert.ok(built.estimate.totalTokens < 500);
+  assert.equal(built.messages.length, 1);
+  assert.throws(
+    () =>
+      buildContext(
+        [],
+        'new',
+        {
+          ...capable,
+          modelMetadata: {
+            ...capable.modelMetadata,
+            toolCalls: false,
+            sources: { ...capable.modelMetadata.sources, toolCalls: 'manual' },
+          },
+        },
+        DEFAULT_CONVERSATION_SETTINGS,
+        undefined,
+        [],
+        [{ ...file, inputMode: 'on_demand' }],
+      ),
+    /不支持/,
+  );
+});
+
+for (const provider of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'] as const) {
+  test(`${provider}: the same text version keeps manifest and inline delivery distinct`, async (t) => {
+    let reads = 0;
+    t.mock.method(globalThis, 'fetch', async (_input: unknown, init: RequestInit) => {
+      const body = JSON.stringify(JSON.parse(init.body as string));
+      assert.ok(body.includes('Not yet read'));
+      assert.ok(body.includes('预算：42 元'));
+      return new Response(providerStreams[provider].partial + providerStreams[provider].finish, {
+        headers: { 'Content-Type': 'text/event-stream' },
+      });
+    });
+    const output = await openProviderStream(
+      { ...config, provider },
+      [
+        { role: 'user', content: '', files: [{ ...file, delivery: 'on_demand' }] },
+        { role: 'user', content: '', files: [{ ...file, delivery: 'inline' }] },
+      ],
+      new AbortController().signal,
+      undefined,
+      async () => {
+        reads++;
+        return text;
+      },
+    );
+    await output.cancel();
+    assert.equal(reads, 1);
+  });
+}
+
 test('UTF-8 extraction preserves code, Markdown and line endings without executing or truncating text', () => {
   for (const mediaType of ['text/plain', 'text/markdown'] as const)
-    assert.deepEqual(parse(`\ufeff${text}\r\n`, mediaType), { text: `${text}\r\n` });
+    assert.deepEqual(parse(`\ufeff${text}\r\n`, mediaType), { text: `\ufeff${text}\r\n` });
   for (const invalid of [Buffer.from([0xc3, 0x28]), Buffer.from([0xff]), Buffer.from([0xe2, 0x82])])
     assert.throws(() => extractDocument(invalid, 'text/plain'), /UTF-8/);
   for (const invalid of [' ', '\r\n\t', 'text\u0000binary', 'text\u001bescape', 'text\u007f'])
@@ -71,11 +133,11 @@ test('UTF-8 extraction preserves code, Markdown and line endings without executi
   assert.equal(parse('a'.repeat(64001)).text.length, 64001);
   assert.equal(parse('中'.repeat(44000)).text.length, 44000);
 });
-test('restricted CSV accepts quoted commas, quotes and newlines, keeps formulas literal and rejects inconsistent or malformed records', () => {
+test('restricted CSV accepts quoted commas, quotes and newlines, keeps formulas literal and preserves malformed CSV as plain text', () => {
   const csv = 'name,value\r\n"one,two","line1\nline2"\r\n"a""b",=SUM(A1)\r\n\r\n';
   assert.deepEqual(parse(csv, 'text/csv'), { text: csv, csv: { rows: 3, columns: 2 } });
   for (const invalid of ['a,b\n1', 'a,b\n1,2,3', 'a,b\n"unclosed,2', 'a,b\n"bad"x,2'])
-    assert.throws(() => parse(invalid, 'text/csv'), /CSV/);
+    assert.deepEqual(parse(invalid, 'text/csv'), { text: invalid });
   assert.deepEqual(parse('a\n'.repeat(2000), 'text/csv').csv, { rows: 2000, columns: 1 });
   assert.deepEqual(parse('a\n'.repeat(2001), 'text/csv').csv, { rows: 2001, columns: 1 });
   assert.deepEqual(parse(Array(100).fill('x').join(','), 'text/csv').csv, {
@@ -95,7 +157,7 @@ test('document parts store only bounded versioned references and canonical messa
     { csv: { rows: 1, columns: 1 } },
   ])
     assert.equal(v.safeParse(documentPartSchema, { ...file, ...patch }).success, false);
-  assert.equal(v.safeParse(documentPartSchema, { ...file, mediaType: 'text/csv' }).success, false);
+  assert.equal(v.safeParse(documentPartSchema, { ...file, mediaType: 'text/csv' }).success, true);
   assert.ok(v.safeParse(messagePartsSchema, [file]).success);
   assert.ok(v.safeParse(messagePartsSchema, [{ type: 'text', text: '请解释' }, file]).success);
   for (const invalid of [
@@ -143,7 +205,7 @@ test('file-only questions retain their references through retries, branches, sum
   );
   assert.equal(built.estimate.documentTokens, file.tokens * 2);
   assert.equal(built.estimate.inputTokens, file.tokens);
-  assert.deepEqual(built.messages.at(-1)?.files, [file]);
+  assert.deepEqual(built.messages.at(-1)?.files, [{ ...file, delivery: 'inline' }]);
   assert.throws(
     () =>
       assertContextFits(
@@ -159,7 +221,9 @@ test('file-only questions retain their references through retries, branches, sum
       ),
     /超过/,
   );
-  assert.deepEqual(summaryGeneration(messages, answer.id, config).context[0].files, [file]);
+  assert.deepEqual(summaryGeneration(messages, answer.id, config).context[0].files, [
+    { ...file, delivery: 'inline' },
+  ]);
   assert.deepEqual(summaryContext(messages, answer.id).history[0].files, [file]);
   assert.deepEqual(contextHistory([{ ...user, deletedAt: 2 }, answer], answer.id), []);
   assert.ok(!JSON.stringify(built).includes(text));

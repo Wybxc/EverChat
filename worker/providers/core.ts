@@ -10,7 +10,7 @@ import {
 } from 'ai';
 import * as v from 'valibot';
 import type { ProviderConfig } from '../../shared/providers/types';
-import { webToolInputSchemasFor } from '../../shared/web-tools/tasks';
+import { webToolInputSchemasFor } from '../../shared/tools/tasks';
 import { providerGenerationOptions } from './sdk';
 import {
   ProviderToolCollector,

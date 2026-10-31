@@ -26,7 +26,7 @@ pnpm ops:storage preflight --config <private-production-config> --directory /pri
 
 同一时间只启动一个 `cloudflared access login` 进程，使用当前进程给出的链接，等命令成功退出后再取令牌。独立 PWA 的导航缓存可能拦截根路径，因此命令行登录使用 `/auth/resume`。浏览器显示成功不能代替 CLI 完成和 `preflight` 成功。
 
-临时部署保留 Worker 名称、DO 类和命名空间、Workflow、R2 绑定、域名和 Access。普通业务请求统一返回 503；已有业务 WebSocket／上游连接随部署中断。临时 `/api/__operations/` 同时接受 Access 边缘认证和应用 JWT 签名、邮箱验证，POST 还校验 Origin。只有配置的单个运维邮箱可以调用；临时接口随正式版本恢复而移除，不新增长期令牌或放宽 Access。`preflight` 只验证原服务的认证恢复入口，不唤醒数据库；必须成功后才进入维护窗口。
+临时部署保留 Worker 名称、DO 类和命名空间、Workflow、R2 绑定、域名和 Access。普通业务请求统一返回 503；已有业务 WebSocket／上游连接随部署中断。临时 `/api/__operations/` 同时接受 Access 边缘认证和应用 JWT 签名、邮箱验证，POST／PUT／DELETE 还校验 Origin。只有配置的单个运维邮箱可以调用；临时接口随正式版本恢复而移除，不新增长期令牌或放宽 Access。`preflight` 只验证原服务的认证恢复入口，不唤醒数据库；必须成功后才进入维护窗口。
 
 ```sh
 pnpm exec wrangler deploy --config /private/tmp/everchat-storage-maintenance/maintenance.json
@@ -185,3 +185,15 @@ Conversation／Library 从版本 4 升至 5，使用默认完整范围，不能�
 发布前确认没有活跃生成／导入／复制，通过 PR 必需检查后执行完整的 `prepare → preflight → 维护部署 → backup → convert → apply → verify → cleanup`，随后合并并恢复新版业务。维护期间关闭业务构造函数；转换仅在本机进行。版本 4 业务代码不能读取版本 5，回滚必须先恢复本次原始备份并核验。
 
 2026-10-31 已完成上述流程：220 个对象全部从 4 升至 5，1,274 条原有消息及 10 条 MCP 对话授权记录保持一致；逐行核验与临时批次清理通过。恢复后 218 个原有可见对话的存储接口均可读取，运维入口返回 404，原变量／Secrets 保留且临时变量已移除。备份位于本机私有目录 `.wrangler/operations/answer-continuation-2026-10-31`，详见[验收记录](../measurements/answer-continuation-2026-10-31.md)。
+
+## 文本附件索引升级（版本 5 → 6）
+
+本次为 Library 增加 `attachment_text_indexes`、`attachment_formats`，为 Conversation 增加 `attachment_tool_jobs`。沿用上述维护窗口及完整升级顺序，不提供在线建索引或历史格式回退。
+
+`backup` 除涉及表的私有备份外，还流式保存已准备附件的规范文本为 `<attachment-id>.text.bin`。原始文件仍在原 R2 键下，不复制原文件。`convert` 在 Node 中逐块验证已有规范文本的哈希、字节和字符数，生成稀疏索引文件及 SQL 补丁；不重新提取旧文本、不改变旧文本版本。文件损坏或缺失必须先解决，不能跳过并宣称升级成功。
+
+`apply` 先经临时维护接口上传索引，再导入 SQL 元数据；重复索引上传按长度和内容哈希幂等确认，冲突拒绝。`verify` 同时验证 SQL 和索引对象的哈希。`rollback` 恢复原表，并按本次清单与匹配哈希删除新增索引，保留迁移前已经存在的索引。临时文本／索引读写接口只在维护部署中存在，正式程序恢复后移除。
+
+运维目录新增的 `.text.bin`、`.index.json` 和 `.text-indexes.json` 同样是私有备份，不能提交到仓库或上传公开 CI 制品。
+
+北京时间 2026-11-01 完成生产升级校验：225 个 Conversation 与 1 个 Library 从版本 5 升至 6，1,322 条原有消息保留，4 份文本完成本地校验及稀疏索引生成。全部对象的结构、索引／触发器、逐行值和索引对象于 `2026-10-31T16:02:19.100Z` 核验通过。私有备份位于 `.wrangler/operations/on-demand-attachments-2026-10-31`；维护前业务版本为 `b2dc729a-e048-4baa-a4c4-e0edbd0a23b9`。业务恢复与生产验收见 [PR #17](https://github.com/Wybxc/EverChat/pull/17) 和[执行记录](../measurements/on-demand-attachments-2026-10-31.md)。

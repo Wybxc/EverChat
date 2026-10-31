@@ -14,7 +14,7 @@ import { canAttemptCapability, resolveModelMetadata } from '../../../shared/mode
 import type { ProviderModel } from '../../../shared/models/types';
 import { mergeProviderSettings, modelSchema } from '../../../shared/providers/settings';
 import type { ProviderSettingsInput } from '../../../shared/providers/types';
-import { assertWebToolSupport } from '../../../shared/web-tools/tasks';
+import { assertWebToolSupport } from '../../../shared/tools/tasks';
 import { providerGenerationOptions } from '../../../worker/providers/sdk';
 
 const model: ProviderModel = { id: 'catalog-fixture', name: 'My model', enabled: true };

@@ -62,6 +62,15 @@ export class Conversation extends DurableObject {
             .toArray()
             .map(({ id }) => id)
         : [];
+    } else if (input.action === 'attachment-text') {
+      const id = (input as { attachmentId?: string }).attachmentId;
+      result =
+        sql
+          .exec(
+            "SELECT d.key,d.sha256,d.bytes,a.key AS sourceKey FROM attachment_documents d JOIN attachments a ON a.id=d.id WHERE d.id=? AND d.status='ready' AND a.status='ready' AND a.removed=0",
+            id ?? '',
+          )
+          .toArray()[0] ?? null;
     } else if (input.action === 'schema') {
       result = sql
         .exec<{ name: string; sql: string }>(
@@ -162,6 +171,7 @@ export class UsageStore extends Conversation {}
 export class ShareStore extends Conversation {}
 
 type OperationsEnv = {
+  ATTACHMENTS?: R2Bucket;
   OPS_RUN_ID: string;
   OPS_ADMIN_EMAIL?: string;
   CONVERSATIONS: DurableObjectNamespace<Conversation>;
@@ -178,6 +188,72 @@ export class Operations extends WorkerEntrypoint<OperationsEnv> {
 }
 async function dispatch(request: Request, env: OperationsEnv) {
   const url = new URL(request.url);
+  const attachment = /^\/attachment-(text|index)\/([a-f0-9-]{36})$/.exec(url.pathname);
+  if (attachment) {
+    if (!env.ATTACHMENTS) throw new Error('Attachment storage is not configured');
+    const lookup = await env.LIBRARY.getByName('personal').fetch(
+      new Request('https://maintenance.invalid/', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'attachment-text', attachmentId: attachment[2] }),
+      }),
+    );
+    const saved = (await lookup.json()) as {
+      key: string;
+      sha256: string;
+      bytes: number;
+      sourceKey: string;
+    } | null;
+    if (!saved) return new Response('Not found', { status: 404 });
+    const key = attachment[1] === 'text' ? saved.key : `${saved.sourceKey}/text-index-v1`;
+    if (attachment[1] === 'index' && request.method === 'PUT') {
+      const bytes = new Uint8Array(await request.arrayBuffer());
+      if (bytes.length > 512 * 1024) return new Response('Index too large', { status: 413 });
+      const sha256 = createHash('sha256').update(bytes).digest('hex');
+      if (sha256 !== request.headers.get('X-Content-SHA256'))
+        return new Response('Checksum mismatch', { status: 409 });
+      const exists = await env.ATTACHMENTS.head(key);
+      if (exists) {
+        if (
+          !exists.checksums.sha256 ||
+          Buffer.from(exists.checksums.sha256).toString('hex') !== sha256
+        )
+          return new Response('Conflicting index', { status: 409 });
+        return Response.json({ created: false });
+      }
+      await env.ATTACHMENTS.put(key, bytes, {
+        sha256,
+        httpMetadata: { contentType: 'application/json' },
+      });
+      return Response.json({ created: true });
+    }
+    const object = await env.ATTACHMENTS.get(key);
+    if (!object) return new Response('Not found', { status: 404 });
+    if (
+      attachment[1] === 'text' &&
+      (object.size !== saved.bytes ||
+        (object.checksums.sha256 &&
+          Buffer.from(object.checksums.sha256).toString('hex') !== saved.sha256))
+    ) {
+      await object.body.cancel();
+      return new Response('Text checksum mismatch', { status: 409 });
+    }
+    // Direct-upload originals can omit R2 checksum metadata. The offline Node
+    // converter verifies every downloaded byte against saved.sha256 before apply.
+    if (attachment[1] === 'index' && request.method === 'DELETE') {
+      await object.body.cancel();
+      if (
+        !object.checksums.sha256 ||
+        Buffer.from(object.checksums.sha256).toString('hex') !==
+          request.headers.get('X-Content-SHA256')
+      )
+        return new Response('Checksum mismatch', { status: 409 });
+      await env.ATTACHMENTS.delete(key);
+      return Response.json({ deleted: true });
+    }
+    return new Response(object.body, {
+      headers: { 'Content-Type': 'application/octet-stream', 'Cache-Control': 'no-store' },
+    });
+  }
   if (url.pathname === '/identity') return Response.json({ runId: env.OPS_RUN_ID });
   if (url.pathname === '/catalog') {
     const offset = Number(url.searchParams.get('offset') ?? 0);
@@ -245,7 +321,10 @@ export default {
         const identity = await authenticateAccess(request, env);
         if (!env.OPS_ADMIN_EMAIL || identity.email !== env.OPS_ADMIN_EMAIL.toLowerCase())
           throw new HttpError(403, '此身份不能执行运维操作。');
-        if (request.method === 'POST' && request.headers.get('Origin') !== env.APP_ORIGIN)
+        if (
+          ['POST', 'PUT', 'DELETE'].includes(request.method) &&
+          request.headers.get('Origin') !== env.APP_ORIGIN
+        )
           throw new HttpError(403, '无效来源。');
         const target = new URL(request.url);
         target.pathname = target.pathname.slice('/api/__operations'.length);

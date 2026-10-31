@@ -1,11 +1,7 @@
 import type { RefObject } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import * as v from 'valibot';
-import {
-  documentMediaTypeSchema,
-  MAX_DOCUMENT_BYTES,
-  type DocumentPart,
-} from '../../../shared/attachments/documents';
+import { documentMediaTypeSchema, type DocumentPart } from '../../../shared/attachments/documents';
 import { fileMediaType } from '../../../shared/attachments/files';
 import { type ImagePart } from '../../../shared/attachments/images';
 import type { PDFExtraction } from '../../../shared/attachments/pdf';
@@ -86,8 +82,7 @@ export function useChatAttachments({
       operation = { origin, controller };
     imageUpload.current = operation;
     const kindOf = (file: File) =>
-      forcedKind ??
-      ((file.type || fileMediaType(file.name))?.startsWith('image/') ? 'image' : 'file');
+      forcedKind ?? (fileMediaType(file.name, file.type)?.startsWith('image/') ? 'image' : 'file');
     setImageProgress({
       name: inputFiles[0].name,
       percent: 0,
@@ -120,12 +115,10 @@ export function useChatAttachments({
           if (kind === 'image' && !canAttemptCapability(selectedModel?.metadata, 'imageInput'))
             throw new UiError(uiMessage('attachments', 'visionRequired'));
           setImageProgress({ name: file.name, percent: 0, kind, state: 'processing' });
-          const mediaType = fileMediaType(file.name);
+          const mediaType = fileMediaType(file.name, file.type);
           if (
             kind === 'file' &&
-            (!v.safeParse(documentMediaTypeSchema, mediaType).success ||
-              !file.size ||
-              (mediaType !== 'application/pdf' && file.size > MAX_DOCUMENT_BYTES))
+            (!v.safeParse(documentMediaTypeSchema, mediaType).success || !file.size)
           )
             throw new UiError(uiMessage('attachments', 'invalidDocument'));
           const prepared =

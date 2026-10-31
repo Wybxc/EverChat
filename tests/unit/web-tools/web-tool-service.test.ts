@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { WebToolServiceConfig } from '../../../shared/web-tools/service';
-import type { WebToolCall } from '../../../shared/web-tools/tasks';
+import type { WebToolCall } from '../../../shared/tools/tasks';
 import {
   executeWebTool,
   WEB_TOOL_RESPONSE_BYTES,

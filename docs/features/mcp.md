@@ -186,8 +186,16 @@ Wrangler 已将 `/mcp` 交给 Worker 优先处理。协议响应禁止缓存，S
 | `MCP_DEFAULT_MODEL`  | 模型目录中返回的精确 ref；配置后首次提问可省略 modelRef，不跟随网页输入框的临时选择 |
 | `MCP_ALLOWED_MODELS` | 允许调用的模型 ref 的 JSON 数组；未设置时允许已启用且有凭据的模型                   |
 
-当前实现分支要求 Conversation／Library 存储版本 4，新增紧凑的生成进展记录；正式站点仍以实际部署版本为准。答案继续只保存在普通消息和既有内容分块中。UsageStore／ShareStore 的版本不变。既有部署必须先按[离线迁移流程](../operations/offline-storage-migration.md)完成备份、转换、写回和校验，再部署新业务代码；运行时不会自动升级旧库。旧记录不伪造进展时间。
+当前实现要求 Conversation／Library 存储版本 6，新增紧凑的生成进展记录；正式站点仍以实际部署版本为准。答案继续只保存在普通消息和既有内容分块中。UsageStore／ShareStore 的版本不变。既有部署必须先按[离线迁移流程](../operations/offline-storage-migration.md)完成备份、转换、写回和校验，再部署新业务代码；运行时不会自动升级旧库。旧记录不伪造进展时间。
 
 设计、范围和待验收边界见 [MCP 计划](../plans/everchat-mcp-server-plan.md)。
 
 后续的实际输入回执、运行进展、完整分支读取／导出、附件版本及独立提案／审查见[上下文可见性与讨论记录改进计划](../plans/mcp-discussion-observability-plan.md)，这些扩展尚未上线。
+
+## 文本附件按需读取
+
+`everchat_chat.attachments[]` 可设置 `inputMode: "auto" | "inline" | "on_demand"`，默认自动。大文本自动改为文件清单与模型侧读取工具；明确全文则继续受模型上下文和整包工作集约束。已知不支持工具的模型拒绝显式按需。网页搜索关闭也可使用附件工具。
+
+HTML、SVG、未知后缀等 UTF-8 文本沿用原有批量签发、上传、调用流程，无需增加确认步骤；原始 MIME 与规范处理类型分别记录。模型侧提供 `attachment_info`、`attachment_read`、`attachment_search`，不是新增的对外 MCP 工具。`everchat_help` 包含行为说明。
+
+输入回执的附件项使用 `delivery: "manifest_only"`、`contentRead: false` 标记仅提交清单。`view: "text"` 可读取当时清单；读取后续模型步骤的 tool 项可核对真正返回和提交的片段、范围与哈希。必须跟随 `nextCursor` 遍历所有步骤，不能只读取第一步就判断工具没有返回内容。

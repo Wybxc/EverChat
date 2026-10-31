@@ -1,3 +1,6 @@
+import { toolDefinitions } from '../tools/definitions';
+import { ATTACHMENT_TOOL_NAMES } from '../attachments/tools';
+import { resolveDocumentModes } from '../attachments/input-mode';
 import * as v from 'valibot';
 import { assertDocumentContext, documentTokens, type DocumentPart } from '../attachments/documents';
 import { assertImageContext, type ImagePart } from '../attachments/images';
@@ -154,6 +157,37 @@ export function buildContext(
       : contextWindow - (contextScope === 'combined' ? outputReserve : 0),
   );
   const inputBudget = Math.min(capacity, settings.contextBudget ?? capacity);
+  // Choose modes before suffix selection so long history files do not force out useful turns.
+  const textBase = estimateTextTokens(content) + estimateTextTokens(config.systemPrompt) + 64;
+  const groups = resolveDocumentModes(
+    [
+      files,
+      ...requiredTail.map((m) => m.files ?? []),
+      ...pinned.map((m) => m.files ?? []),
+      ...history.map((m) => m.files ?? []),
+    ],
+    config,
+    Math.max(0, inputBudget - textBase) / 2,
+  );
+  files = groups[0];
+  let groupIndex = 1;
+  const replaceFiles = (message: ChatInput): ChatInput => {
+    const files = groups[groupIndex++];
+    return message.files ? { ...message, files } : message;
+  };
+  requiredTail = requiredTail.map(replaceFiles);
+  pinned = pinned.map(replaceFiles);
+  history = history.map(replaceFiles);
+  const attachmentToolTokens = groups.some((group) => group.some((f) => f.delivery === 'on_demand'))
+    ? estimateTextTokens(JSON.stringify(toolDefinitions(ATTACHMENT_TOOL_NAMES, config))) + 32
+    : 0;
+  let toolTokens = [
+    files,
+    ...requiredTail.map((m) => m.files ?? []),
+    ...pinned.map((m) => m.files ?? []),
+  ].some((group) => group.some((file) => file.delivery === 'on_demand'))
+    ? attachmentToolTokens
+    : 0;
   const inputTokens = estimateTextTokens(content) + documentTokens(files);
   const systemTokens = config.systemPrompt
     ? estimateTextTokens(config.systemPrompt) + MESSAGE_OVERHEAD
@@ -188,7 +222,15 @@ export function buildContext(
     }
     let tokens = 0;
     for (let i = start; i < end; i++) tokens += historyTokens(history[i]);
-    if (fixed + retainedTokens + tokens > inputBudget) break;
+    const nextTools =
+      toolTokens ||
+      (history
+        .slice(start, end)
+        .some((message) => message.files?.some((file) => file.delivery === 'on_demand'))
+        ? attachmentToolTokens
+        : 0);
+    if (fixed + retainedTokens + tokens + nextTools > inputBudget) break;
+    toolTokens = nextTools;
     selected.unshift(...history.slice(start, end));
     retainedTokens += tokens;
     end = start;
@@ -198,13 +240,14 @@ export function buildContext(
     inputTokens,
     systemTokens,
     historyTokens: retainedTokens + requiredTokens,
-    totalTokens: fixed + retainedTokens,
+    totalTokens: fixed + retainedTokens + toolTokens,
     inputBudget,
     contextWindow,
     contextScope,
     outputReserve,
     safetyMargin,
     windowSource: metadata.sources.contextWindow,
+    ...(toolTokens ? { toolTokens } : {}),
     retainedMessages: selected.length + requiredTail.length,
     omittedMessages: history.length - selected.length,
     ...(summary

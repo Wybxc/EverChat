@@ -1,5 +1,9 @@
 import * as v from 'valibot';
-import { attachmentInputSchema } from '../../shared/attachments/files';
+import {
+  attachmentInputSchema,
+  attachmentMediaTypeInputSchema,
+  normalizeAttachmentMetadata,
+} from '../../shared/attachments/files';
 import { documentRangesSchema } from '../../shared/attachments/documents';
 import { pdfExtractionSchema, MAX_PDF_TEXT_BYTES } from '../../shared/attachments/pdf';
 
@@ -8,7 +12,8 @@ const uuid = attachmentInputSchema.entries.id;
 const fileMetadata = {
   clientFileId: uuid,
   name: attachmentInputSchema.entries.name,
-  mediaType: attachmentInputSchema.entries.mediaType,
+  mediaType: attachmentMediaTypeInputSchema,
+  originalMediaType: attachmentInputSchema.entries.originalMediaType,
   purpose: v.picklist(['image', 'document']),
   replaces: v.optional(ref),
   versionNote: v.optional(v.pipe(v.string(), v.maxLength(1000))),
@@ -27,12 +32,15 @@ export const attachmentsPrepareSchema = v.strictObject({
   continuation: v.optional(ref),
   files: v.pipe(
     v.array(
-      v.strictObject({
-        ...fileMetadata,
-        size: attachmentInputSchema.entries.size,
-        sha256: attachmentInputSchema.entries.sha256,
-        pdfText: v.optional(derivedSchema),
-      }),
+      v.pipe(
+        v.strictObject({
+          ...fileMetadata,
+          size: attachmentInputSchema.entries.size,
+          sha256: attachmentInputSchema.entries.sha256,
+          pdfText: v.optional(derivedSchema),
+        }),
+        v.transform(normalizeAttachmentMetadata),
+      ),
     ),
     v.minLength(1),
   ),
@@ -51,6 +59,7 @@ export const attachmentsPutSchema = v.strictObject({
           extraction: v.optional(pdfExtractionSchema),
         }),
         v.check((file) => (file.text === undefined) !== (file.dataBase64 === undefined)),
+        v.transform(normalizeAttachmentMetadata),
       ),
     ),
     v.minLength(1),
@@ -63,6 +72,7 @@ const pageRange = v.strictObject({
 });
 export const selectedAttachmentSchema = v.strictObject({
   attachmentRef: ref,
+  inputMode: v.optional(v.picklist(['auto', 'inline', 'on_demand']), 'auto'),
   mode: v.optional(v.picklist(['reuse', 'replace', 'include_both']), 'reuse'),
   selection: v.optional(
     v.pipe(

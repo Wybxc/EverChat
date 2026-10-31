@@ -43,7 +43,7 @@ export const mcpToolDescriptions = {
   everchat_models_list:
     'List enabled models and prompt presets. Use the exact stable model ref when calling everchat_chat. Provider endpoints and credentials remain private.',
   everchat_chat:
-    'Create a normal saved conversation, continue from an explicit continuation, or start a new independent/review discussion with an explicit source whitelist. Supply a UUID requestId; transport retries MUST reuse the same requestId and original arguments. A new requestId intentionally generates again and may incur costs. Waits are bounded; pending generations continue in the background. Poll with everchat_run_get. presetId and systemPrompt are mutually exclusive.',
+    'Create a normal saved conversation, continue from an explicit continuation, or start a new independent/review discussion with an explicit source whitelist. Supply a UUID requestId; transport retries MUST reuse the same requestId and original arguments. A new requestId intentionally generates again and may incur costs. Waits are bounded; pending generations continue in the background. Poll with everchat_run_get. presetId and systemPrompt are mutually exclusive. Each document attachment accepts inputMode=auto (default), inline, or on_demand. Large auto files are available to model-side attachment_info/read/search tools; availability is not evidence of reading. Inspect run_context_get for submitted manifests and returned tool fragments.',
   everchat_run_get:
     'Get your own run and persisted partial output, optionally wait up to 20 seconds. Follow output.nextCursor while hasMore is true; at a running tail, save resumeCursor and poll from that position. completion.truncated signals a provider length limit, independent of paging. Reasoning is opt-in and separately paginated. Disconnecting or ending a wait does not cancel generation.',
   everchat_run_cancel:
@@ -59,7 +59,7 @@ export const mcpToolDescriptions = {
   everchat_conversation_export:
     'Export a fixed authorized branch as paginated Markdown, preserving turns, model, time, attachment versions and summary boundaries. Concatenate text pages locally; reasoning and tools are opt-in. No original files or temporary download URLs are included.',
   everchat_attachments_prepare:
-    'Prepare a batch of immutable private files in a new or explicitly continued normal conversation. Returns fixed-expiry R2 PUT URLs. Upload bytes with the exact signed headers, then call everchat_chat with uploadRef and selected attachmentRefs; no confirmation call is needed. Never send your EverChat key to R2.',
+    'Prepare a batch of immutable private files in a new or explicitly continued normal conversation. Returns fixed-expiry R2 PUT URLs. Upload bytes with the exact signed headers, then call everchat_chat with uploadRef and selected attachmentRefs; no confirmation call is needed. Text includes HTML/XML/SVG and unknown extensions after UTF-8 validation; markup is source text, never executed. Never send your EverChat key to R2.',
   everchat_attachments_put:
     'Save small actual UTF-8 text or canonical base64 files using MCP only. Reuse uploadId and identical bytes for retries. PDF extraction must be produced by the client. Does not call a model.',
   everchat_attachments_get:
@@ -297,7 +297,7 @@ const guides = {
       'For transport failures or an unknown outcome, retry the same requestId and original input. Only waitMs may change. A new requestId intentionally starts another potentially paid generation.',
       'Without continuation, this creates a normal saved conversation. Continuation identifies an exact answer position and only works for this API key. Wait for a usable answer before continuing.',
       'The first call needs modelRef unless an automation default is configured. A continuation inherits its prior model unless modelRef is supplied.',
-      'presetId and systemPrompt are mutually exclusive. webSearch enables both search and page reading when a web service is configured. Capability-dependent parameters may be rejected by the selected model.',
+      'presetId and systemPrompt are mutually exclusive. Each document attachment accepts inputMode=auto (default), inline, or on_demand. Large auto files are available to model-side attachment_info/read/search tools; availability is not evidence of reading. Inspect run_context_get for submitted manifests and returned tool fragments. webSearch enables both search and page reading when a web service is configured. Capability-dependent parameters may be rejected by the selected model.',
       'waitMs defaults to 10000 and accepts 0–20000. accepted/running means generation continues in the background; use everchat_run_get with runRef and avoid tight polling.',
       'If the result error is SUBMISSION_UNCONFIRMED, retry everchat_chat with the same requestId and original input to finish admission; polling alone may not submit the generation.',
       'Only one generation may run in a conversation at a time. Temporary conversations and model JSON Schema output are not supported.',
