@@ -93,6 +93,67 @@ async function setup(request: APIRequestContext) {
   };
 }
 
+test('disabled providers disappear from MCP and reject stale model refs and continuations while retaining saved answers', async ({
+  request,
+}) => {
+  const app = await setup(request);
+  try {
+    const { client } = await app.client();
+    const before = await app.call<ModelsResult>(client, 'everchat_models_list');
+    const model = before.models[0];
+    const first = await app.call<RunResult>(client, 'everchat_chat', {
+      requestId: crypto.randomUUID(),
+      modelRef: model.ref,
+      prompt: 'before disabling',
+      waitMs: 20_000,
+    });
+    expect(first.status).toBe('completed');
+    const settings = (await request
+      .get('/api/settings/providers')
+      .then((r) => r.json())) as ProviderSettings;
+    const updated = await request.put('/api/settings/providers', {
+      headers,
+      data: {
+        ...settings,
+        providers: settings.providers.map((p) =>
+          p.id === app.providers[0].id ? { ...p, enabled: false } : p,
+        ),
+      },
+    });
+    expect(updated.ok()).toBe(true);
+    expect(await updated.json()).toMatchObject({ activeProviderId: app.providers[1].id });
+    const after = await app.call<ModelsResult>(client, 'everchat_models_list');
+    expect(after.models.map((m) => m.ref)).not.toContain(model.ref);
+    expect(after.models).toHaveLength(3);
+    for (const selection of [{ modelRef: model.ref }, { continuation: first.continuation }]) {
+      const denied = await client.callTool({
+        name: 'everchat_chat',
+        arguments: {
+          requestId: crypto.randomUUID(),
+          prompt: 'must not generate',
+          ...selection,
+        },
+      });
+      expect(denied.isError).toBe(true);
+      expect(denied.structuredContent).toMatchObject({ error: { code: 'MODEL_UNAVAILABLE' } });
+    }
+    const snapshot = await request
+      .get(`/api/conversations/${first.conversationId}`)
+      .then((r) => r.json());
+    expect(snapshot.messages).toHaveLength(2);
+    expect(
+      snapshot.messages.find((m: { id: string }) => m.id === first.assistantMessageId).status,
+    ).toBe('completed');
+    const backup = await request
+      .get(`/api/conversations/${first.conversationId}/backup`)
+      .then((r) => r.json());
+    expect(backup.settings.providers[0].enabled).toBe(false);
+    expect(backup.settings.providers[0].models[0].enabled).toBe(true);
+  } finally {
+    await app.cleanup();
+  }
+});
+
 test('MCP answer continuation creates composed sibling versions across all protocols without changing normal follow-up semantics', async ({
   request,
 }) => {

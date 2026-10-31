@@ -22,6 +22,10 @@ import {
 } from '../providers/config';
 import { ProviderModelError, fetchProviderModels } from './models';
 
+// Sparse availability flags use the DO's existing KV storage; no SQL upgrade or
+// historical backfill is needed. They commit atomically with the provider rows.
+const disabledProviderKey = (id: string) => `providers/disabled/${id}`;
+
 export class ProviderSettingsStore {
   constructor(
     private readonly storage: DurableObjectStorage,
@@ -102,6 +106,9 @@ export class ProviderSettingsStore {
         providers: profiles.map((profile) => ({
           id: profile.id,
           name: profile.name,
+          ...(this.storage.kv.get(disabledProviderKey(profile.id)) === true
+            ? { enabled: false }
+            : {}),
           provider: profile.provider,
           baseUrl: profile.baseUrl,
           models: JSON.parse(profile.models),
@@ -171,9 +178,10 @@ export class ProviderSettingsStore {
     const settings = this.providerSettingsData();
     return {
       title: settings.title,
-      providers: settings.providers.map(({ id, name, provider, baseUrl, models }) => ({
+      providers: settings.providers.map(({ id, name, enabled, provider, baseUrl, models }) => ({
         id,
         name,
+        ...(enabled !== undefined ? { enabled } : {}),
         provider,
         baseUrl,
         models,
@@ -222,10 +230,11 @@ export class ProviderSettingsStore {
     importedPresets?: PromptPreset[],
     options: { restoreModelMetadata?: boolean; preserveKeysAcrossConnections?: boolean } = {},
   ): { settings: ProviderSettings } | { error: string; issue?: ErrorIssue; status?: number } {
+    const current = this.providerSettingsData();
     let settings: ProviderSettingsInput;
     let presets: PromptPreset[] = [];
     try {
-      settings = mergeProviderSettings(this.providerSettingsData(), input, options);
+      settings = mergeProviderSettings(current, input, options);
       if (importedPresets) presets = this.presets.prepareRestore(importedPresets);
     } catch (error) {
       return {
@@ -241,7 +250,12 @@ export class ProviderSettingsStore {
         JSON.stringify(settings.title ?? DEFAULT_TITLE_SETTINGS),
       );
       this.storage.sql.exec('DELETE FROM provider_profiles');
+      const retained = new Set(settings.providers.map((profile) => profile.id));
+      for (const profile of current.providers)
+        if (!retained.has(profile.id)) this.storage.kv.delete(disabledProviderKey(profile.id));
       for (const profile of settings.providers) {
+        if (profile.enabled === false) this.storage.kv.put(disabledProviderKey(profile.id), true);
+        else this.storage.kv.delete(disabledProviderKey(profile.id));
         this.storage.sql.exec(
           'INSERT INTO provider_profiles (id, name, provider, baseUrl, models, apiKey) VALUES (?, ?, ?, ?, ?, ?)',
           profile.id,

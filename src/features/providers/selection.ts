@@ -2,7 +2,7 @@ import type { ProviderSettings } from '../../../shared/providers/types';
 
 export function availableModels(settings: ProviderSettings) {
   return settings.providers.flatMap((profile) =>
-    profile.hasApiKey || profile.apiKey?.trim()
+    profile.enabled !== false && (profile.hasApiKey || profile.apiKey?.trim())
       ? profile.models
           .filter((model) => model.enabled && model.id.trim())
           .map((model) => ({ profile, model }))

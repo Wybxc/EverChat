@@ -35,6 +35,8 @@ export default {
   invalidProbeResult: '测试结果无效。',
   probeFailed: '测试失败。',
   aiProviders: 'AI 供应商',
+  enableProvider: '启用供应商',
+  providerDisabled: '已禁用',
   newProvider: '新供应商',
   default: '默认',
   keyConfigured: '密钥已配置',

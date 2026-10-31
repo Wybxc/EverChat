@@ -2,6 +2,8 @@ import { MAX_MODEL_TOKENS } from '../../../shared/models/metadata';
 import { MAX_SYSTEM_PROMPT_LENGTH } from '../../../shared/conversation/limits';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { chatModels } from '../../../shared/models/selection';
+import { availableModels, reconcile } from '../../../src/features/providers/selection';
 import type { ProviderKind, ProviderSettingsInput } from '../../../shared/providers/types';
 import type { Env } from '../../../worker/http/env';
 import {
@@ -30,6 +32,64 @@ const settings = {
   systemPrompt: 'system',
   maxOutputTokens: 128,
 };
+
+test('disabling the default provider preserves credentials and model toggles and selects an available fallback', () => {
+  const fallbackId = crypto.randomUUID();
+  const input = {
+    ...settings,
+    providers: [
+      { ...settings.providers[0], enabled: false, apiKey: '' },
+      { ...settings.providers[0], id: crypto.randomUUID(), enabled: false },
+      { ...settings.providers[0], id: crypto.randomUUID(), apiKey: '' },
+      { ...settings.providers[0], id: fallbackId },
+    ],
+  };
+  const saved = mergeProviderSettings(settings, input);
+  assert.equal(saved.activeProviderId, fallbackId);
+  assert.equal(saved.activeModel, 'test-model');
+  assert.equal(saved.providers[0].apiKey, 'private-key');
+  assert.deepEqual(saved.providers[0].models, settings.providers[0].models);
+  assert.deepEqual(
+    chatModels(saved).map((model) => model.providerId),
+    [fallbackId],
+  );
+  assert.equal(runtimeProviderConfig(saved)?.providerId, fallbackId);
+  assert.equal(runtimeProviderConfig(saved, { providerId: profileId, model: 'test-model' }), null);
+  const view = publicProviderSettings(saved);
+  assert.deepEqual(
+    availableModels(view).map(({ profile }) => profile.id),
+    [fallbackId],
+  );
+  assert.equal(reconcile({ ...view, activeProviderId: profileId }).activeProviderId, fallbackId);
+});
+
+test('all providers can be disabled and re-enabled without changing model selections or keys', () => {
+  const disabled = mergeProviderSettings(settings, {
+    ...settings,
+    providers: [{ ...settings.providers[0], enabled: false }],
+  });
+  assert.equal(disabled.activeProviderId, null);
+  assert.equal(disabled.activeModel, '');
+  assert.equal(runtimeProviderConfig(disabled), null);
+  assert.deepEqual(chatModels(disabled), []);
+  const restored = reconcile(
+    publicProviderSettings({
+      ...disabled,
+      providers: [{ ...disabled.providers[0], enabled: true }],
+    }),
+    true,
+  );
+  assert.equal(restored.activeProviderId, profileId);
+  assert.equal(restored.activeModel, 'test-model');
+  assert.deepEqual(restored.providers[0].models, settings.providers[0].models);
+  assert.equal(runtimeProviderConfig(restored)?.apiKey, 'private-key');
+  assert.throws(() =>
+    mergeProviderSettings(settings, {
+      ...settings,
+      providers: [{ ...settings.providers[0], enabled: 'false' }],
+    }),
+  );
+});
 
 test('large model lists, prompts and explicit output limits share their new save bounds', () => {
   const models = [

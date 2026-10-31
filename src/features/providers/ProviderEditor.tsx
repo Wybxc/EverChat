@@ -1,9 +1,11 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Spinner } from '@/components/ui/spinner';
+import { Switch } from '@/components/ui/switch';
 import { useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Pencil, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
@@ -56,6 +58,7 @@ function probeIdentity(
   return profile && model
     ? JSON.stringify([
         profile.id,
+        profile.enabled !== false,
         profile.provider,
         profile.baseUrl.trim().replace(/\/+$/, ''),
         key,
@@ -209,29 +212,32 @@ export function ProviderEditor({
     );
     if (patch.models && patch.models.length < profile.models.length)
       setModelListRevision((value) => value + 1);
-    update({
-      ...current,
-      providers: current.providers.map((profile) =>
-        profile.id === id
-          ? {
-              ...profile,
-              ...patch,
-              models: (patch.models ?? profile.models).map((model) =>
-                connectionChanged
-                  ? {
-                      ...model,
-                      reportedMetadata: undefined,
-                      directoryMetadata: undefined,
-                      testedCapabilities: undefined,
-                    }
-                  : keyChanged
-                    ? { ...model, testedCapabilities: undefined }
-                    : model,
-              ),
-            }
-          : profile,
-      ),
-    });
+    update(
+      {
+        ...current,
+        providers: current.providers.map((profile) =>
+          profile.id === id
+            ? {
+                ...profile,
+                ...patch,
+                models: (patch.models ?? profile.models).map((model) =>
+                  connectionChanged
+                    ? {
+                        ...model,
+                        reportedMetadata: undefined,
+                        directoryMetadata: undefined,
+                        testedCapabilities: undefined,
+                      }
+                    : keyChanged
+                      ? { ...model, testedCapabilities: undefined }
+                      : model,
+                ),
+              }
+            : profile,
+        ),
+      },
+      patch.enabled === true,
+    );
   };
   const changeModel = (index: number, patch: Partial<ProviderModel>) => {
     if (!selected) return;
@@ -506,6 +512,9 @@ export function ProviderEditor({
                     {settings.activeProviderId === profile.id && (
                       <Badge>{t(($) => $.default)}</Badge>
                     )}
+                    {profile.enabled === false && (
+                      <Badge variant="secondary">{t(($) => $.providerDisabled)}</Badge>
+                    )}
                     <span
                       aria-label={
                         profile.hasApiKey || profile.apiKey?.trim()
@@ -554,6 +563,18 @@ export function ProviderEditor({
                   <h3 className="min-w-0 flex-1 truncate text-lg font-semibold">
                     {selected.name || t(($) => $.newProvider)}
                   </h3>
+                  <FieldGroup className="w-auto">
+                    <Field className="flex-row items-center gap-2">
+                      <FieldLabel htmlFor={`provider-enabled-${selected.id}`}>
+                        {t(($) => $.enableProvider)}
+                      </FieldLabel>
+                      <Switch
+                        id={`provider-enabled-${selected.id}`}
+                        checked={selected.enabled !== false}
+                        onCheckedChange={(enabled) => changeProvider(selected.id, { enabled })}
+                      />
+                    </Field>
+                  </FieldGroup>
                   <Button
                     variant="ghost"
                     size="icon"

@@ -63,6 +63,7 @@ export const modelSchema = v.object({
 const profileSchema = v.object({
   id: v.pipe(v.string(), v.uuid()),
   name: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(100)),
+  enabled: v.optional(v.boolean()),
   provider: v.picklist(providerTypes),
   baseUrl: v.pipe(v.string(), v.trim(), v.maxLength(2048)),
   models: v.array(modelSchema),
@@ -181,6 +182,18 @@ export function mergeProviderSettings(
     ...parsed.output,
     providers,
   };
+  if (
+    providers.some(
+      (profile) => profile.id === settings.activeProviderId && profile.enabled === false,
+    )
+  ) {
+    const replacement = providers.find(
+      (profile) =>
+        profile.enabled !== false && profile.apiKey && profile.models.some((m) => m.enabled),
+    );
+    settings.activeProviderId = replacement?.id ?? null;
+    settings.activeModel = replacement?.models.find((model) => model.enabled)?.id ?? '';
+  }
   if (settings.activeProviderId) {
     const active = providers.find((profile) => profile.id === settings.activeProviderId);
     if (

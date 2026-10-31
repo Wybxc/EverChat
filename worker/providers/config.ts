@@ -93,7 +93,7 @@ export function runtimeProviderConfig(
   const modelId = selection?.model ?? settings.activeModel;
   const selected =
     providerId && modelId
-      ? settings.providers.find((profile) => profile.id === providerId)
+      ? settings.providers.find((profile) => profile.id === providerId && profile.enabled !== false)
       : undefined;
   const model = selected?.models.find((model) => model.id === modelId && model.enabled);
   if (selected?.apiKey && model) {
