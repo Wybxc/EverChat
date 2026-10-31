@@ -25,6 +25,7 @@ export interface GenerationResult {
   diagnostics?: GenerationDiagnostics;
   /** A retained ordinary answer whose supplier stream ended before successful completion. */
   interrupted?: true;
+  interruptionReason?: 'cancelled' | 'failure';
   usage: StreamUsage;
   usageIsFinal: boolean;
   usageSources?: UsageSources;
@@ -102,6 +103,7 @@ export const generationSchema = v.strictObject({
   finishMessage: v.optional(v.pipe(v.string(), v.maxLength(4096))),
   diagnostics: v.optional(generationDiagnosticsSchema),
   interrupted: v.optional(v.literal(true)),
+  interruptionReason: v.optional(v.picklist(['cancelled', 'failure'])),
   usage: v.strictObject({
     inputTokens: count,
     outputTokens: count,

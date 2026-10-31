@@ -1,3 +1,8 @@
+import {
+  canContinueAnswer,
+  CONTINUE_REQUEST,
+  localAnswerText,
+} from '../../shared/conversation/continuation';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
@@ -221,14 +226,16 @@ function AppContent({ initialSettings }: AppProps) {
   );
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
+  const pendingContinuations = useRef(new Set<string>());
   const { pending, pendingRef, setPending, followRequests, commitPending, deliver } = useOutbox({
     authenticated: Boolean(session?.authenticated),
     sessionRef,
     selectedRef,
     getView: () => ({ head: branches.head, version: branches.navigationVersion.current }),
     onAccepted: (accepted, item) => {
+      if (item.input.continueOf) pendingContinuations.current.add(accepted.assistantId);
       branches.choose(accepted.assistantId, { automatic: true });
-      scrollToBottom();
+      if (!item.input.continueOf) scrollToBottom();
       if (item.input.revisionOf) {
         prepareMutationFocus(
           item.conversation.id,
@@ -596,7 +603,7 @@ function AppContent({ initialSettings }: AppProps) {
       pauseFollowing();
       branches.choose(original.id);
       beginMessageEdit(original, item.input.content ?? '');
-    } else if (!item.input.summaryThrough) {
+    } else if (!item.input.summaryThrough && !item.input.retryOf && !item.input.continueOf) {
       setDraft(item.input.content ?? '');
       setDraftImages(item.images ?? []);
       setDraftFiles(item.files ?? []);
@@ -911,7 +918,7 @@ function AppContent({ initialSettings }: AppProps) {
     const source = contextSource(snapshot.messages, input);
     const images = inline ? (source.images ?? []) : draftImages;
     const files = inline ? (source.files ?? []) : draftFiles;
-    const requestView = input.revisionOf ?? input.retryOf ?? branches.head;
+    const requestView = input.revisionOf ?? input.continueOf ?? input.retryOf ?? branches.head;
     if (requestView && requestView !== branches.head) {
       pauseFollowing();
       branches.choose(requestView);
@@ -974,14 +981,42 @@ function AppContent({ initialSettings }: AppProps) {
           },
           settings.output,
         );
+        const continuationSource = input.continueOf
+          ? snapshot.messages.find((message) => message.id === input.continueOf)
+          : undefined;
+        const continuationQuestion = continuationSource
+          ? snapshot.messages.find((message) => message.id === continuationSource.parentId)
+          : undefined;
+        if (
+          input.continueOf &&
+          (!continuationSource || !continuationQuestion || !canContinueAnswer(continuationSource))
+        )
+          return reject(uiMessage('chat', 'continueUnavailable'));
         const prepared = prepareChatContext(
           snapshot.messages,
           source.parentId,
-          source.content,
+          input.continueOf ? CONTINUE_REQUEST : source.content,
           config,
           settings.output,
-          input.retryOf ? source.images : images,
-          input.retryOf ? source.files : files,
+          input.continueOf ? [] : input.retryOf ? source.images : images,
+          input.continueOf ? [] : input.retryOf ? source.files : files,
+          input.continueOf ? { kind: 'generated' } : undefined,
+          continuationSource && continuationQuestion
+            ? [
+                {
+                  role: 'user',
+                  content: messageText(continuationQuestion),
+                  images: source.images,
+                  files: source.files,
+                  source: { kind: 'message', messageId: continuationQuestion.id },
+                },
+                {
+                  role: 'assistant',
+                  content: messageText(continuationSource),
+                  source: { kind: 'message', messageId: continuationSource.id },
+                },
+              ]
+            : [],
         );
         if (prepared.automatic) {
           const selection = settings.output.autoCompression.model;
@@ -1020,8 +1055,8 @@ function AppContent({ initialSettings }: AppProps) {
       modelLabel: generationModel
         ? `${generationModel.providerName} · ${generationModel.name}`
         : input.selection?.model,
-      images: input.retryOf ? undefined : images,
-      files: input.retryOf ? undefined : files,
+      images: input.retryOf || input.continueOf ? undefined : images,
+      files: input.retryOf || input.continueOf ? undefined : files,
     };
     if (!commitPending([...pendingRef.current, item]))
       return reject(uiMessage('app', 'storageFull'));
@@ -1030,7 +1065,7 @@ function AppContent({ initialSettings }: AppProps) {
     if (!conversations.some((item) => item.id === conversation.id)) {
       rememberConversation(conversation);
     }
-    if (!input.retryOf && !inline) {
+    if (!input.retryOf && !input.continueOf && !inline) {
       writeChatCache(`draft:${selected ?? 'new'}`, { text: '' });
       setDraft('');
       setDraftImages([]);
@@ -1042,7 +1077,7 @@ function AppContent({ initialSettings }: AppProps) {
       id: conversation.id,
       version: navigationVersion,
     });
-    if (branches.navigationVersion.current === navigationVersion) {
+    if (!input.continueOf && branches.navigationVersion.current === navigationVersion) {
       scrollToBottom();
       if (!inline) editor.current?.focus({ preventScroll: true });
     }
@@ -1110,6 +1145,55 @@ function AppContent({ initialSettings }: AppProps) {
       await api(`/conversations/${selected}/cancel`, 'POST', { runId: active.runId });
     } catch (error) {
       setError(errorMessage(error, uiMessage('app', 'stopFailed')));
+    }
+  };
+  useEffect(() => {
+    for (const answer of snapshot.messages) {
+      if (!pendingContinuations.current.has(answer.id) || isActive(answer)) continue;
+      pendingContinuations.current.delete(answer.id);
+      if (
+        answer.id === branches.head &&
+        answer.continuation &&
+        (answer.status === 'failed' || answer.status === 'cancelled') &&
+        !localAnswerText(answer).trim()
+      ) {
+        const source = snapshot.messages.find(
+          (message) => message.id === answer.continuation!.sourceId,
+        );
+        if (source && !source.deletedAt) branches.choose(source.id, { automatic: true });
+      }
+    }
+  }, [snapshot.messages, branches.head]);
+  const continueLocks = useRef(new Set<string>());
+  const continueAnswer = async (message: Message) => {
+    if (generationBlocked || !navigator.onLine || !canContinueAnswer(message)) return;
+    if (!selectedModel) {
+      setRequestedSettingsTab('providers');
+      openSettings();
+      return;
+    }
+    if (continueLocks.current.has(message.id)) return;
+    continueLocks.current.add(message.id);
+    const navigationVersion = branches.navigationVersion.current;
+    try {
+      const bytes = await crypto.subtle.digest(
+        'SHA-256',
+        new TextEncoder().encode(messageText(message)),
+      );
+      const sourceTextSha256 = Array.from(new Uint8Array(bytes), (byte) =>
+        byte.toString(16).padStart(2, '0'),
+      ).join('');
+      if (
+        selectedRef.current !== selected ||
+        branches.navigationVersion.current !== navigationVersion
+      )
+        return;
+      await queue({ requestId: crypto.randomUUID(), continueOf: message.id, sourceTextSha256 });
+    } catch (error) {
+      if (selectedRef.current === selected)
+        setError(errorMessage(error, uiMessage('app', 'sendFailed')));
+    } finally {
+      continueLocks.current.delete(message.id);
     }
   };
   const retry = async (message: Message) => {
@@ -1795,8 +1879,10 @@ function AppContent({ initialSettings }: AppProps) {
                             conversationId={selected!}
                             message={message}
                             providerName={session?.providerNames?.[message.providerId ?? '']}
+                            providerNames={session?.providerNames}
                             busy={messageBlocked || Boolean(messageMutation)}
                             onRetry={() => void retry(message)}
+                            onContinue={() => void continueAnswer(message)}
                             onProviderSettings={() => {
                               setRequestedProviderId(message.providerId ?? undefined);
                               setRequestedSettingsTab('providers');
@@ -1923,7 +2009,9 @@ function AppContent({ initialSettings }: AppProps) {
                           <p className="text-sm leading-7 whitespace-pre-wrap">
                             {currentPending.input.summaryThrough
                               ? t(($) => $.summaryRequest)
-                              : (currentPending.input.content ?? t(($) => $.newVersion))}
+                              : currentPending.input.continueOf
+                                ? renderUiMessage(uiMessage('chat', 'continueAnswer'))
+                                : (currentPending.input.content ?? t(($) => $.newVersion))}
                           </p>
                           <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
                             <CloudOff className="h-[0.75rem] w-[0.75rem]" />

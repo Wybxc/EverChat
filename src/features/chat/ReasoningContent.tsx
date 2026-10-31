@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/trace';
 import './locales';
 import { messageText } from '../../../shared/conversation/content';
+import { answerStages } from '../../../shared/conversation/continuation';
 import { isActive } from '../../../shared/conversation/message-state';
 import type { Message } from '../../../shared/conversation/types';
 import { reasoningBlocks } from '../../../shared/web-tools/reasoning-flow';
@@ -26,6 +27,26 @@ import {
 } from '@/components/ui/message-scroller';
 
 export function ReasoningContent({ message }: { message: Message }) {
+  const { t } = useTranslation('chat', { useSuspense: false });
+  if (message.continuation)
+    return (
+      <div className="flex flex-col gap-1">
+        {answerStages(message).map((stage, index) =>
+          messageText(stage, 'reasoning') || stage.tools?.calls.length ? (
+            <div key={stage.id}>
+              <span className="text-xs text-muted-foreground">
+                {index === 0
+                  ? t(($) => $.originalAnswer)
+                  : t(($) => $.continuationStage, { count: index })}
+              </span>
+              <ChatScrollProvider>
+                <ReasoningPane message={stage} defaultOpen={false} />
+              </ChatScrollProvider>
+            </div>
+          ) : null,
+        )}
+      </div>
+    );
   if (!messageText(message, 'reasoning') && !message.tools?.calls.length) return null;
   return (
     <ChatScrollProvider>
@@ -34,10 +55,16 @@ export function ReasoningContent({ message }: { message: Message }) {
   );
 }
 
-function ReasoningPane({ message }: { message: Message }) {
+function ReasoningPane({
+  message,
+  defaultOpen = true,
+}: {
+  message: Message;
+  defaultOpen?: boolean;
+}) {
   const { t } = useTranslation('chat', { useSuspense: false });
   const scroll = useChatScroll(message.id);
-  const [open, setOpen] = useDisclosureState(`reasoning:${message.id}`, true);
+  const [open, setOpen] = useDisclosureState(`reasoning:${message.id}`, defaultOpen);
   const reasoning = messageText(message, 'reasoning');
   if (!reasoning && !message.tools?.calls.length) return null;
   const blocks = reasoningBlocks(reasoning, message.tools);

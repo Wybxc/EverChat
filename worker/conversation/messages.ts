@@ -20,6 +20,7 @@ import type { ConversationActivityJournal } from './activity';
 import { ConversationState } from './state';
 import { GenerationCheckpoints } from '../streaming/checkpoints';
 import { GenerationProgressStore } from '../generation/progress';
+import { answerStage } from '../../shared/conversation/continuation';
 
 export type Row = Omit<Message, 'parts' | 'waitingForSummary'> & {
   content: string;
@@ -29,6 +30,7 @@ export type Row = Omit<Message, 'parts' | 'waitingForSummary'> & {
   imageResult?: string | null;
   fileResult?: string | null;
   toolResult?: string | null;
+  continuationResult?: string | null;
   waitingForSummary?: string | null;
 } & Record<string, SqlStorageValue>;
 
@@ -48,6 +50,7 @@ export class ConversationMessages {
       imageResult,
       fileResult,
       toolResult,
+      continuationResult,
       waitingForSummary,
       content,
       reasoning,
@@ -59,8 +62,9 @@ export class ConversationMessages {
         : { content, reasoning: reasoning ?? '' };
     return {
       ...message,
-      ...(toolResult && !message.deletedAt
-        ? { tools: JSON.parse(toolResult) as PublicToolTask }
+      ...(toolResult ? { tools: JSON.parse(toolResult) as PublicToolTask } : {}),
+      ...(continuationResult
+        ? { continuation: { stages: [], ...JSON.parse(continuationResult) } }
         : {}),
       parts: [
         ...messageParts(text.content, text.reasoning),
@@ -94,12 +98,18 @@ export class ConversationMessages {
       ? 'NULL AS imageResult, NULL AS fileResult, NULL AS toolResult'
       : 'message_images.payload AS imageResult, message_files.payload AS fileResult, message_web_tools.payload AS toolResult';
     return this.query<Row>(
-      `SELECT ${columns}, message_deletions.deletedAt, message_generations.payload AS generationResult, message_summaries.payload AS summaryResult, ${attachments}, run_dependencies.summaryId AS waitingForSummary FROM messages LEFT JOIN message_deletions ON message_deletions.id = messages.id LEFT JOIN message_generations ON message_generations.messageId = messages.id LEFT JOIN message_summaries ON message_summaries.messageId = messages.id LEFT JOIN message_images ON message_images.messageId = messages.id LEFT JOIN message_files ON message_files.messageId = messages.id LEFT JOIN message_web_tools ON message_web_tools.messageId = messages.id LEFT JOIN run_dependencies ON run_dependencies.runId = messages.runId ORDER BY messages.rowid`,
+      `SELECT ${columns}, message_continuations.payload AS continuationResult, message_deletions.deletedAt, message_generations.payload AS generationResult, message_summaries.payload AS summaryResult, ${attachments}, run_dependencies.summaryId AS waitingForSummary FROM messages LEFT JOIN message_continuations ON message_continuations.messageId = messages.id LEFT JOIN message_deletions ON message_deletions.id = messages.id LEFT JOIN message_generations ON message_generations.messageId = messages.id LEFT JOIN message_summaries ON message_summaries.messageId = messages.id LEFT JOIN message_images ON message_images.messageId = messages.id LEFT JOIN message_files ON message_files.messageId = messages.id LEFT JOIN message_web_tools ON message_web_tools.messageId = messages.id LEFT JOIN run_dependencies ON run_dependencies.runId = messages.runId ORDER BY messages.rowid`,
     );
   }
 
   all(): Message[] {
-    return Array.from(this.rows(), (row) => this.materialize(this.decorate(row)));
+    const local = new Map(
+      Array.from(this.rows(), (row) => {
+        const message = this.decorate(row);
+        return [message.id, message] as const;
+      }),
+    );
+    return [...local.values()].map((message) => this.compose(this.materialize(message), local));
   }
 
   count(): number {
@@ -126,7 +136,12 @@ export class ConversationMessages {
       )
         needed.add(message.id);
     }
-    return graph.map((message) => (needed.has(message.id) ? this.message(message.id)! : message));
+    const local = new Map([...needed].map((id) => [id, this.rawMessage(id)!]));
+    return graph.map((message) =>
+      needed.has(message.id)
+        ? this.compose(this.materialize(local.get(message.id)!), local)
+        : message,
+    );
   }
 
   settings(): ConversationSettings {
@@ -145,7 +160,7 @@ export class ConversationMessages {
 
   rawMessage(id: string): Message | undefined {
     const row = this.query<Row>(
-      'SELECT messages.*, message_deletions.deletedAt, message_generations.payload AS generationResult, message_summaries.payload AS summaryResult, message_images.payload AS imageResult, message_files.payload AS fileResult, message_web_tools.payload AS toolResult, run_dependencies.summaryId AS waitingForSummary FROM messages LEFT JOIN message_deletions ON message_deletions.id = messages.id LEFT JOIN message_generations ON message_generations.messageId = messages.id LEFT JOIN message_summaries ON message_summaries.messageId = messages.id LEFT JOIN message_images ON message_images.messageId = messages.id LEFT JOIN message_files ON message_files.messageId = messages.id LEFT JOIN message_web_tools ON message_web_tools.messageId = messages.id LEFT JOIN run_dependencies ON run_dependencies.runId = messages.runId WHERE messages.id = ?',
+      'SELECT messages.*, message_continuations.payload AS continuationResult, message_deletions.deletedAt, message_generations.payload AS generationResult, message_summaries.payload AS summaryResult, message_images.payload AS imageResult, message_files.payload AS fileResult, message_web_tools.payload AS toolResult, run_dependencies.summaryId AS waitingForSummary FROM messages LEFT JOIN message_continuations ON message_continuations.messageId = messages.id LEFT JOIN message_deletions ON message_deletions.id = messages.id LEFT JOIN message_generations ON message_generations.messageId = messages.id LEFT JOIN message_summaries ON message_summaries.messageId = messages.id LEFT JOIN message_images ON message_images.messageId = messages.id LEFT JOIN message_files ON message_files.messageId = messages.id LEFT JOIN message_web_tools ON message_web_tools.messageId = messages.id LEFT JOIN run_dependencies ON run_dependencies.runId = messages.runId WHERE messages.id = ?',
       id,
     ).toArray()[0];
     return row && this.decorate(row);
@@ -153,7 +168,79 @@ export class ConversationMessages {
 
   message(id: string): Message | undefined {
     const message = this.rawMessage(id);
-    return message && this.materialize(message);
+    return message && this.compose(this.materialize(message));
+  }
+
+  private compose(message: Message, cache = new Map<string, Message>()): Message {
+    if (message.deletedAt)
+      return {
+        ...message,
+        parts: [],
+        tools: undefined,
+        generation: undefined,
+        continuation: undefined,
+      };
+    if (!message.continuation || message.continuation.detached) return message;
+    const chain: Message[] = [],
+      seen = new Set([message.id]);
+    let current = message;
+    while (current.continuation && !current.continuation.detached) {
+      const id = current.continuation.sourceId;
+      if (seen.has(id)) throw new Error('Cyclic answer continuation');
+      seen.add(id);
+      const source = cache.get(id) ?? this.rawMessage(id);
+      if (!source) throw new Error('Missing answer continuation source');
+      cache.set(id, source);
+      chain.push(source);
+      current = source;
+    }
+    chain.reverse();
+    return {
+      ...message,
+      parts: messageParts(
+        chain.map((part) => messageText(part)).join('') + messageText(message),
+        chain.map((part) => messageText(part, 'reasoning')).join('') +
+          messageText(message, 'reasoning'),
+      ),
+      continuation: {
+        ...message.continuation,
+        stages: chain.flatMap((part) =>
+          part.continuation?.detached
+            ? [...part.continuation.stages, answerStage(part)]
+            : [answerStage({ ...part, continuation: undefined })],
+        ),
+      },
+    };
+  }
+
+  retainSource(messageId: string) {
+    return (
+      this.query(
+        'SELECT 1 FROM message_continuations WHERE sourceId=? LIMIT 1',
+        messageId,
+      ).toArray().length > 0
+    );
+  }
+  pruneDeletedSources() {
+    for (;;) {
+      const rows = this.query<{ id: string }>(
+        `SELECT m.id FROM messages m JOIN message_deletions d ON d.id=m.id
+        WHERE NOT EXISTS (SELECT 1 FROM message_continuations c WHERE c.sourceId=m.id)
+        AND (m.content!='' OR m.reasoning IS NOT NULL
+          OR EXISTS (SELECT 1 FROM message_content_chunks WHERE messageId=m.id)
+          OR EXISTS (SELECT 1 FROM message_continuations WHERE messageId=m.id)
+          OR EXISTS (SELECT 1 FROM message_generations WHERE messageId=m.id)
+          OR EXISTS (SELECT 1 FROM message_web_tools WHERE messageId=m.id))`,
+      ).toArray();
+      if (!rows.length) return;
+      for (const { id } of rows) {
+        this.query("UPDATE messages SET content='',reasoning=NULL,error=NULL WHERE id=?", id);
+        this.journal.erase(id);
+        this.query('DELETE FROM message_continuations WHERE messageId=?', id);
+        this.query('DELETE FROM message_generations WHERE messageId=?', id);
+        this.query('DELETE FROM message_web_tools WHERE messageId=?', id);
+      }
+    }
   }
 
   seq(): number {
@@ -193,6 +280,14 @@ export class ConversationMessages {
   }
 
   record(messages: Message[], conversationId?: string, settings?: ConversationSettings): Change {
+    messages = messages.map((message) =>
+      message.deletedAt ||
+      (message.continuation &&
+        !message.continuation.detached &&
+        !message.continuation.stages.length)
+        ? this.compose(message)
+        : message,
+    );
     const activity = this.activity?.record();
     const seq = this.advance(messages.map((message) => message.id));
     if (conversationId)
@@ -285,6 +380,15 @@ export class ConversationMessages {
     );
     if (message.role === 'assistant' && isActive(message) && !message.deletedAt)
       new GenerationProgressStore(this.query).begin(message.id, message.createdAt);
+    if (message.continuation) {
+      const { stages, ...reference } = message.continuation;
+      this.query(
+        'INSERT INTO message_continuations VALUES (?, ?, ?)',
+        message.id,
+        reference.detached ? '' : reference.sourceId,
+        JSON.stringify({ ...reference, ...(reference.detached ? { stages } : {}) }),
+      );
+    }
     if (message.role === 'assistant' && !message.deletedAt && message.generation)
       this.query(
         'INSERT INTO message_generations VALUES (?, ?)',

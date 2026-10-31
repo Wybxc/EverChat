@@ -90,6 +90,8 @@ import { ConversationMessages, type Row } from './messages';
 import { DELETION_SCHEMA, initializeConversation } from './schema';
 import { ConversationState, requestFingerprint } from './state';
 import { planSubmissionParent } from './submission-plan';
+import { CONTINUE_REQUEST, localAnswerText } from '../../shared/conversation/continuation';
+import { ConversationContent } from './content';
 import { ConversationTitles, TITLE_JOBS_SCHEMA } from './titles';
 
 import { createHash } from 'node:crypto';
@@ -322,7 +324,27 @@ export class Conversation extends DurableObject<Env> {
     const saved = backupMessage(message);
     if (!message.deletedAt && message.role === 'assistant') {
       const inputEvidence = this.inputReceipts.export(message.id);
-      if (inputEvidence) saved.inputEvidence = inputEvidence;
+      if (inputEvidence) {
+        // A portable branch may omit its sibling source, or that source may be
+        // deleted. Freeze only the inherited public input in the export, never
+        // duplicate prefixes in live storage or retain private provider state.
+        let length = 0;
+        const prefixes = new Map(
+          message.continuation?.stages.map((stage) => {
+            length += stage.contentLength;
+            return [stage.id, length] as const;
+          }),
+        );
+        for (const step of inputEvidence.steps)
+          for (const entry of step.items) {
+            const end = entry.item.sourceId ? prefixes.get(entry.item.sourceId) : undefined;
+            if (end !== undefined && entry.item.content === 'reference') {
+              entry.item = { ...entry.item, content: 'snapshot' };
+              entry.snapshot = messageText(message).slice(0, end);
+            }
+          }
+        saved.inputEvidence = inputEvidence;
+      }
     }
     return saved;
   }
@@ -386,7 +408,7 @@ export class Conversation extends DurableObject<Env> {
   ): { messages: BackupMessage[]; settings: ConversationSettings } | Failure {
     if (this.deletedAt)
       return { error: '这个对话已删除。', issue: problem('CONVERSATION_DELETED'), status: 410 };
-    let messages = Array.from(this.messages.rows(), (row) => this.messages.decorate(row));
+    let messages = this.messages.all();
     if (headId !== undefined) {
       const head = messages.find((message) => message.id === headId);
       if (!head || head.deletedAt)
@@ -413,9 +435,7 @@ export class Conversation extends DurableObject<Env> {
     }
     // Read settings and the durable prefix together; never copy browser-only previews or start a generation.
     return {
-      messages: messages.map((message) =>
-        this.backupWithEvidence(this.messages.materialize(message)),
-      ),
+      messages: messages.map((message) => this.backupWithEvidence(message)),
       settings: this.messages.settings(),
     };
   }
@@ -526,7 +546,7 @@ export class Conversation extends DurableObject<Env> {
     return {
       documents: page
         .filter((row) => !isActive(row))
-        .map((row) => this.messages.searchDocument(this.messages.decorate(row), row.version)),
+        .map((row) => this.messages.searchDocument(this.messages.message(row.id)!, row.version)),
       after: page.at(-1)?.ordinal ?? after,
       done: rows.length <= 4,
     };
@@ -544,7 +564,7 @@ export class Conversation extends DurableObject<Env> {
           'SELECT * FROM search_outbox ORDER BY version LIMIT 4',
         ).toArray();
         for (const item of pending) {
-          const message = this.messages.rawMessage(item.messageId);
+          const message = this.messages.message(item.messageId);
           if (!message || this.deletedAt) continue;
           await this.env.LIBRARY.getByName('personal').applySearchDocuments(item.conversationId, [
             this.messages.searchDocument(message, item.version),
@@ -734,14 +754,17 @@ export class Conversation extends DurableObject<Env> {
         ),
       ];
       for (const message of affected) {
-        this.journal.erase(message.id);
-        this.query(
-          'UPDATE messages SET content = ?, reasoning = NULL, error = NULL WHERE id = ?',
-          '',
-          message.id,
-        );
+        const retained = this.messages.retainSource(message.id);
+        if (!retained) this.journal.erase(message.id);
+        if (!retained)
+          this.query(
+            'UPDATE messages SET content = ?, reasoning = NULL, error = NULL WHERE id = ?',
+            '',
+            message.id,
+          );
         this.query('INSERT INTO message_deletions VALUES (?, ?)', message.id, deletedAt);
-        this.query('DELETE FROM message_generations WHERE messageId = ?', message.id);
+        if (!retained)
+          this.query('DELETE FROM message_generations WHERE messageId = ?', message.id);
         this.query('DELETE FROM message_images WHERE messageId = ?', message.id);
         this.query('DELETE FROM message_files WHERE messageId = ?', message.id);
         this.progress.erase(message.id);
@@ -754,7 +777,8 @@ export class Conversation extends DurableObject<Env> {
           );
           this.tools.erase(tool.rootId);
           this.query('DELETE FROM tool_workflows WHERE rootId = ?', tool.rootId);
-          this.query('DELETE FROM message_web_tools WHERE messageId = ?', message.id);
+          if (!retained)
+            this.query('DELETE FROM message_web_tools WHERE messageId = ?', message.id);
         }
         if (message.runId)
           this.query('DELETE FROM generation_timings WHERE runId = ?', message.runId);
@@ -766,6 +790,7 @@ export class Conversation extends DurableObject<Env> {
           message.id,
         );
       }
+      this.messages.pruneDeletedSources();
       const change = this.messages.record(
         affected.map((message) => this.messages.rawMessage(message.id)!),
         conversationId,
@@ -866,13 +891,17 @@ export class Conversation extends DurableObject<Env> {
       (id, at, limit) => {
         if (
           !this.query(
-            `SELECT 1 FROM messages WHERE id=? AND NOT EXISTS (SELECT 1 FROM message_deletions WHERE id=?)`,
+            `WITH RECURSIVE sources(id) AS (
+          SELECT sourceId FROM message_continuations WHERE messageId=? AND sourceId!=''
+          UNION SELECT c.sourceId FROM message_continuations c JOIN sources s ON c.messageId=s.id WHERE c.sourceId!=''
+        ) SELECT 1 FROM messages WHERE id=? AND (NOT EXISTS (SELECT 1 FROM message_deletions WHERE id=?) OR id IN (SELECT id FROM sources))`,
+            assistantId,
             id,
             id,
           ).toArray().length
         )
           return null;
-        const page = this.journal.page(id, 'content', at, limit);
+        const page = new ConversationContent(this.query.bind(this)).page(id, 'content', at, limit);
         return page.error ? null : page;
       },
       allowSystem,
@@ -890,7 +919,7 @@ export class Conversation extends DurableObject<Env> {
     const epoch = state.progress?.[channel].epoch ?? 0;
     if (expectedEpoch !== undefined && expectedEpoch !== epoch)
       return { error: 'output_changed' as const };
-    const page = this.journal.page(assistantId, channel, offset);
+    const page = new ConversationContent(this.query.bind(this)).page(assistantId, channel, offset);
     if (page.error) return { error: page.error };
     return {
       ...page,
@@ -915,6 +944,8 @@ export class Conversation extends DurableObject<Env> {
       const fingerprint = requestFingerprint([
         input.content ?? null,
         input.retryOf ?? null,
+        input.continueOf ?? null,
+        input.sourceTextSha256 ?? null,
         input.revisionOf ?? null,
         input.parentId ?? null,
         input.selection?.providerId ?? null,
@@ -1001,7 +1032,11 @@ export class Conversation extends DurableObject<Env> {
           status: 409,
         };
       const messages = this.messages.forHead(
-        input.summaryThrough ?? input.retryOf ?? input.revisionOf ?? input.parentId,
+        input.summaryThrough ??
+          input.continueOf ??
+          input.retryOf ??
+          input.revisionOf ??
+          input.parentId,
       );
       if (input.summaryThrough) {
         let prepared;
@@ -1069,6 +1104,16 @@ export class Conversation extends DurableObject<Env> {
       const plan = planSubmissionParent(messages, input);
       if ('error' in plan) return plan;
       const { parent, previous, original, content, userParentId } = plan;
+      const continuing = input.continueOf ? previous : undefined;
+      const sourceHash = continuing
+        ? createHash('sha256').update(messageText(continuing)).digest('hex')
+        : undefined;
+      if (input.sourceTextSha256 && input.sourceTextSha256 !== sourceHash)
+        return {
+          error: '回答内容已变化，请同步后重新继续。',
+          issue: problem('INVALID_REQUEST'),
+          status: 409,
+        };
       const references = parent
         ? { value: messageImages(parent) }
         : input.imageIds?.length
@@ -1113,6 +1158,24 @@ export class Conversation extends DurableObject<Env> {
       }
       const runId = crypto.randomUUID();
       const userId = parent?.id ?? crypto.randomUUID();
+      const requestContent = continuing ? CONTINUE_REQUEST : content;
+      const requiredTail: ChatInput[] =
+        continuing && parent
+          ? [
+              {
+                role: 'user',
+                content,
+                images,
+                files,
+                source: { kind: 'message', messageId: parent.id },
+              },
+              {
+                role: 'assistant',
+                content: messageText(continuing),
+                source: { kind: 'message', messageId: continuing.id },
+              },
+            ]
+          : [];
       let context: ChatInput[];
       let contextSelection: ContextSelection;
       let contextEstimate;
@@ -1121,12 +1184,13 @@ export class Conversation extends DurableObject<Env> {
         const built = prepareChatContext(
           messages,
           parent ? parent.parentId : userParentId,
-          content,
+          requestContent,
           generationConfig,
           settings,
-          images,
-          files,
-          { kind: 'message', messageId: userId },
+          continuing ? [] : images,
+          continuing ? [] : files,
+          continuing ? { kind: 'generated' } : { kind: 'message', messageId: userId },
+          requiredTail,
         );
         context = built.messages;
         contextSelection = built.selection;
@@ -1181,6 +1245,17 @@ export class Conversation extends DurableObject<Env> {
         runId,
         parentId: user.id,
         revisionOf: previous?.id ?? null,
+        ...(continuing
+          ? {
+              continuation: {
+                sourceId: continuing.id,
+                sourceTextSha256: sourceHash!,
+                prefixTextLength: messageText(continuing).length,
+                prefixReasoningLength: messageText(continuing, 'reasoning').length,
+                stages: [],
+              },
+            }
+          : {}),
         error: null,
         providerId: generationConfig.providerId,
         model: generationConfig.model,
@@ -1238,10 +1313,11 @@ export class Conversation extends DurableObject<Env> {
           summary.id,
           JSON.stringify({
             parentId: parent ? parent.parentId : userParentId,
-            content,
+            content: requestContent,
             settings,
-            images,
-            files,
+            images: continuing ? [] : images,
+            files: continuing ? [] : files,
+            requiredTail,
           }),
         );
       const change = this.messages.record(
@@ -2237,7 +2313,8 @@ export class Conversation extends DurableObject<Env> {
   ) {
     if (this.deletedAt) return;
     const run = this.run(runId);
-    const message = run && this.messages.message(run.assistantId);
+    const local = run && this.messages.rawMessage(run.assistantId);
+    const message = local && this.messages.materialize(local);
     if (!run || !message || message.runId !== runId || !isActive(message)) return;
     const toolModel = this.tools.model(runId),
       toolRequest = this.toolRequest(message.id),
@@ -2336,6 +2413,16 @@ export class Conversation extends DurableObject<Env> {
           runId,
         ).toArray()[0];
     if (
+      message.continuation &&
+      status === 'completed' &&
+      !messageText(message).trim() &&
+      !toolTurn?.calls.length
+    ) {
+      status = 'failed';
+      error = '供应商未返回新增正文，原回答已保留。';
+      failureIssue = problem('GENERATION_INTERRUPTED');
+    }
+    if (
       status === 'completed' &&
       message.summary &&
       (!messageText(message).trim() || message.streamState?.finishReason === 'length')
@@ -2423,13 +2510,15 @@ export class Conversation extends DurableObject<Env> {
       const executionStatus = finalStatus;
       // Seal useful supplier output as a chat version; execution and tool accounting still fail.
       if (
-        retainPartial &&
-        finalStatus === 'failed' &&
+        ((retainPartial && finalStatus === 'failed') ||
+          (message.continuation && (finalStatus === 'failed' || finalStatus === 'cancelled'))) &&
         !message.summary &&
         messageText(message).trim()
       ) {
         finalStatus = 'completed';
         message.generation!.interrupted = true;
+        message.generation!.interruptionReason =
+          executionStatus === 'cancelled' ? 'cancelled' : 'failure';
       }
       this.query(
         'INSERT INTO message_generations (messageId, payload) VALUES (?, ?) ON CONFLICT(messageId) DO UPDATE SET payload = excluded.payload',
@@ -2486,8 +2575,8 @@ export class Conversation extends DurableObject<Env> {
       const report = this.meter.report(
         executionStatus,
         this.ctx.storage.sql.databaseSize,
-        messageText(final).length,
-        messageText(final, 'reasoning').length,
+        localAnswerText(final).length,
+        localAnswerText(final, 'reasoning').length,
       );
       this.meter = undefined;
       // One diagnostic row per generation, excluded from the measured application SQL window.
@@ -2522,12 +2611,20 @@ export class Conversation extends DurableObject<Env> {
           : '自动摘要失败，回答未调用模型。原始历史保留，请调整配置后主动重试。';
       if (summaryStatus === 'completed' && !run.cancelRequested) {
         try {
-          const { parentId, content, settings, images, files } = JSON.parse(dependency.payload) as {
+          const {
+            parentId,
+            content,
+            settings,
+            images,
+            files,
+            requiredTail = [],
+          } = JSON.parse(dependency.payload) as {
             parentId: string | null;
             content: string;
             settings: ConversationSettings;
             images: ImagePart[];
             files: DocumentPart[];
+            requiredTail?: ChatInput[];
           };
           if (!run.config) throw new AppError(problem('INVALID_REQUEST'), '回答配置已丢失。');
           const prepared = summaryContext(this.messages.forHead(parentId), parentId);
@@ -2541,7 +2638,11 @@ export class Conversation extends DurableObject<Env> {
             summaryPrefix(prepared.summary),
             images,
             files,
-            { kind: 'message', messageId: answer.parentId! },
+            answer.continuation
+              ? { kind: 'generated' }
+              : { kind: 'message', messageId: answer.parentId! },
+            [],
+            requiredTail,
           );
           assertContextFits(built.estimate);
           assertStoredContextFits(built.messages, JSON.parse(run.config) as ProviderConfig);

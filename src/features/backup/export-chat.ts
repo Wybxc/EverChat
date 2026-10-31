@@ -1,5 +1,6 @@
 import { messageFiles, messageImages, messageText } from '../../../shared/conversation/content';
 import type { Message } from '../../../shared/conversation/types';
+import { answerStages } from '../../../shared/conversation/continuation';
 import { problem } from '../../../shared/errors/descriptor';
 import type { Locale } from '../../../shared/i18n/locale';
 import { renderIssue } from '../../platform/i18n/messages';
@@ -25,8 +26,34 @@ export function exportChatFile(
         : 'EverChat';
   const model = (message: Message) =>
     message.role === 'assistant' && (message.modelName || message.model)
-      ? t(($) => $.model, { name: message.modelName || message.model! })
+      ? t(($) => $.model, {
+          name: [
+            ...new Set(
+              answerStages(message)
+                .map((stage) => stage.modelName || stage.model)
+                .filter(Boolean),
+            ),
+          ].join(' / '),
+        })
       : '';
+  const provenance = (message: Message) =>
+    message.continuation
+      ? t(($) => $.continuationSource, {
+          id: message.continuation.sourceId,
+          count: message.continuation.stages.length,
+        })
+      : '';
+  const reasoning = (message: Message) =>
+    message.continuation
+      ? answerStages(message)
+          .map((stage, index) =>
+            messageText(stage, 'reasoning')
+              ? `#### ${index + 1} · ${stage.modelName || stage.model || 'EverChat'}\n\n${messageText(stage, 'reasoning')}`
+              : '',
+          )
+          .filter(Boolean)
+          .join('\n\n')
+      : messageText(message, 'reasoning');
   const statuses = {
     pending: 'pending',
     queued: 'queued',
@@ -54,10 +81,11 @@ export function exportChatFile(
       [
         `## ${role(message)}${message.revisionOf ? t(($) => $.newVersion) : ''}`,
         model(message),
+        provenance(message),
         messageText(message),
         attachments(message),
         messageText(message, 'reasoning')
-          ? `### ${t(($) => $.reasoning)}\n\n${messageText(message, 'reasoning')}`
+          ? `### ${t(($) => $.reasoning)}\n\n${reasoning(message)}`
           : '',
         status(message),
       ]
@@ -77,7 +105,7 @@ export function exportChatFile(
     const body = messages
       .map(
         (message) =>
-          `<article><h2>${escapeHtml(role(message) + (message.revisionOf ? t(($) => $.newVersion) : ''))}</h2>${model(message) ? `<p class="meta">${escapeHtml(model(message))}</p>` : ''}<pre>${escapeHtml([messageText(message), attachments(message)].filter(Boolean).join('\n'))}</pre>${messageText(message, 'reasoning') ? `<details open><summary>${escapeHtml(t(($) => $.reasoning))}</summary><pre>${escapeHtml(messageText(message, 'reasoning'))}</pre></details>` : ''}${status(message) ? `<p class="error">${escapeHtml(status(message))}</p>` : ''}</article>`,
+          `<article><h2>${escapeHtml(role(message) + (message.revisionOf ? t(($) => $.newVersion) : ''))}</h2>${model(message) ? `<p class="meta">${escapeHtml(model(message))}</p>` : ''}${provenance(message) ? `<p class="meta">${escapeHtml(provenance(message))}</p>` : ''}<pre>${escapeHtml([messageText(message), attachments(message)].filter(Boolean).join('\n'))}</pre>${messageText(message, 'reasoning') ? `<details open><summary>${escapeHtml(t(($) => $.reasoning))}</summary><pre>${escapeHtml(reasoning(message))}</pre></details>` : ''}${status(message) ? `<p class="error">${escapeHtml(status(message))}</p>` : ''}</article>`,
       )
       .join('');
     const html = `<!doctype html><html lang="${locale}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${escapeHtml(title)}</title><style>body{font:16px/1.7 system-ui,sans-serif;max-width:54rem;margin:2rem auto;padding:0 1rem;color:#1f2937}article{border-top:1px solid #d1d5db;padding:1.5rem 0}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}.meta{color:#6b7280;font-size:.875rem}.error{color:#b91c1c}summary{cursor:pointer}</style></head><body><h1>${escapeHtml(title)}</h1>${body}</body></html>`;

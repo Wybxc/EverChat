@@ -22,6 +22,7 @@ export default {
   historySummary: 'History summary',
   you: 'You',
   model: 'Model: {{name}}',
+  continuationSource: 'Continued from {{id}}; {{count}} continuation(s).',
   reasoning: 'Reasoning',
   status: 'Status: {{status}}',
   newVersion: ' · New version',

@@ -35,7 +35,7 @@ export class UsageStore extends DurableObject<Env> {
   dimensions() {
     return this.ledger.dimensions();
   }
-  answer(messageId: string) {
+  answer(messageId: string | string[]) {
     return this.ledger.answer(messageId);
   }
   mcpPage(messageId: string, after?: { startedAt: number; id: string }) {

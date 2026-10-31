@@ -52,13 +52,16 @@ export async function migrateStorage(db: DatabaseSync, kind: StoreKind): Promise
       .map(({ name }) => name);
   db.exec('BEGIN IMMEDIATE');
   try {
-    if (exists('storage_schema')) {
-      const version = db.prepare('SELECT version FROM storage_schema WHERE id=1').get()?.version;
+    const version = exists('storage_schema')
+      ? db.prepare('SELECT version FROM storage_schema WHERE id=1').get()?.version
+      : undefined;
+    if (version !== undefined) {
       if (
         version !== undefined &&
         version !== 1 &&
         version !== 2 &&
         version !== 3 &&
+        version !== 4 &&
         version !== STORAGE_SCHEMA_VERSION
       )
         throw new Error(`Unsupported storage schema version: ${version}`);
@@ -159,7 +162,7 @@ export async function migrateStorage(db: DatabaseSync, kind: StoreKind): Promise
       patch.push({ sql: MCP_ATTACHMENTS_SCHEMA, args: [] });
       // Old protocol creates every root in MCP; a continuation always points
       // to the same Key's stored run. Grant only unambiguous one-Key origins.
-      if (exists('conversations'))
+      if (Number(version ?? 0) < 4 && exists('conversations'))
         query(`INSERT OR IGNORE INTO mcp_conversation_grants
         SELECT r.principal,r.conversationId,${columns('conversations').includes('createdAt') ? 'COALESCE(c.createdAt,0)' : '0'} FROM mcp_requests AS r
         JOIN mcp_keys AS k ON k.id=r.principal JOIN conversations AS c ON c.id=r.conversationId

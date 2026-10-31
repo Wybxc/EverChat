@@ -29,6 +29,8 @@ const submitSchema = v.object({
     ),
   ),
   retryOf: v.optional(uuidSchema),
+  continueOf: v.optional(uuidSchema),
+  sourceTextSha256: v.optional(v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/))),
   revisionOf: v.optional(uuidSchema),
   parentId: v.optional(v.nullable(uuidSchema)),
   summaryThrough: v.optional(uuidSchema),
@@ -124,6 +126,25 @@ export function registerConversationRoutes(app: ApiRouter) {
       tooLarge: '消息或会话参数太长。',
     })) as SubmitInput;
     if (
+      input.continueOf &&
+      (input.content !== undefined ||
+        input.retryOf ||
+        input.revisionOf ||
+        input.summaryThrough ||
+        input.parentId !== undefined ||
+        input.imageIds !== undefined ||
+        input.fileIds !== undefined ||
+        input.fileSelections !== undefined)
+    )
+      throw new HttpError(
+        400,
+        '继续生成不能同时发送新消息或修改来源。',
+        undefined,
+        problem('INVALID_REQUEST'),
+      );
+    if (input.sourceTextSha256 && !input.continueOf)
+      throw new HttpError(400, '来源哈希仅用于继续生成。', undefined, problem('INVALID_REQUEST'));
+    if (
       input.fileSelections &&
       Object.keys(input.fileSelections).some((id) => !input.fileIds?.includes(id))
     )
@@ -167,6 +188,7 @@ export function registerConversationRoutes(app: ApiRouter) {
       !input.summaryThrough &&
       !input.revisionOf &&
       !input.retryOf &&
+      !input.continueOf &&
       input.parentId === undefined
     )
       throw new HttpError(400, '发送消息必须指定父消息。', undefined, problem('INVALID_REQUEST'));

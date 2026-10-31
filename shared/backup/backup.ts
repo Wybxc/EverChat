@@ -1,3 +1,4 @@
+import { answerStages, continuationSchema } from '../conversation/continuation';
 import { MAX_BUFFERED_BODY_BYTES } from '../platform/limits';
 import * as v from 'valibot';
 import { mergeGenerationDiagnostics } from '../streaming/diagnostics';
@@ -55,6 +56,7 @@ export interface BackupMessage {
   generation?: Message['generation'];
   summary?: Message['summary'];
   tools?: Message['tools'];
+  continuation?: Message['continuation'];
   inputEvidence?: InputEvidenceBackup;
   deletedAt?: number | null;
 }
@@ -111,6 +113,9 @@ export function backupMessage(message: Message): BackupMessage {
     providerId: message.providerId ?? null,
     model: message.model ?? null,
     modelName: message.modelName ?? null,
+    ...(!message.deletedAt && message.continuation
+      ? { continuation: { ...message.continuation, detached: true as const } }
+      : {}),
     ...(!message.deletedAt && message.role === 'assistant' && generation ? { generation } : {}),
     ...(message.summary ? { summary: message.summary } : {}),
     ...(!message.deletedAt && message.tools
@@ -219,6 +224,29 @@ export function validateBackup(value: unknown): EverChatBackup {
       ...(message.deletedAt ? { deletedAt: message.deletedAt } : {}),
       ...(summary?.success ? { summary: summary.output } : {}),
     } as BackupMessage;
+    const continuation =
+      message.continuation === undefined
+        ? undefined
+        : v.safeParse(continuationSchema, message.continuation);
+    if (
+      continuation &&
+      (!continuation.success ||
+        message.role !== 'assistant' ||
+        continuation.output.prefixTextLength > messageText({ parts: parts.output }).length ||
+        continuation.output.prefixReasoningLength >
+          messageText({ parts: parts.output }, 'reasoning').length)
+    )
+      throw new AppError(problem('BACKUP_INVALID'), '备份中的续写来源无效。');
+    if (
+      continuation?.success &&
+      answerStages({ ...fields, continuation: continuation.output } as Message)
+        .slice(0, -1)
+        .some(
+          (stage) =>
+            stage.tools && !validReasoningBreaks(stage.tools, messageText(stage, 'reasoning')),
+        )
+    )
+      throw new AppError(problem('BACKUP_INVALID'), '备份中的续写工具过程无效。');
     const rawGeneration = message.generation;
     if (message.deletedAt) return { ...fields, parts: [], error: null };
     const generation =
@@ -260,12 +288,23 @@ export function validateBackup(value: unknown): EverChatBackup {
       (!tools.success ||
         message.role !== 'assistant' ||
         (tools.output.status !== message.status &&
-          !(retained && tools.output.status === 'failed')) ||
-        !validReasoningBreaks(tools.output, messageText({ parts: parts.output }, 'reasoning')))
+          !(
+            retained &&
+            (tools.output.status === 'failed' || tools.output.status === 'cancelled')
+          )) ||
+        !validReasoningBreaks(
+          tools.output,
+          messageText({ parts: parts.output }, 'reasoning').slice(
+            continuation?.success ? continuation.output.prefixReasoningLength : 0,
+          ),
+        ))
     )
       throw new AppError(problem('BACKUP_INVALID'), '备份中的工具过程无效。');
     return {
       ...fields,
+      ...(continuation?.success
+        ? { continuation: { ...continuation.output, detached: true as const } }
+        : {}),
       ...(generation?.success ? { generation: generation.output } : {}),
       ...(tools?.success ? { tools: tools.output } : {}),
       ...(evidence?.success ? { inputEvidence: evidence.output } : {}),

@@ -72,6 +72,14 @@ function filter(context: AppContext): UsageFilter {
 }
 
 export function registerUsageRoutes(app: ApiRouter) {
+  app.post('/usage/answers', async (context) => {
+    await requireAuth(context);
+    const { messageIds } = await parseBody(
+      context,
+      v.strictObject({ messageIds: v.array(uuidSchema) }),
+    );
+    return json(await store(context).answer(messageIds));
+  });
   app.get('/usage/dimensions', async (context) => {
     await requireAuth(context);
     return json(await store(context).dimensions());

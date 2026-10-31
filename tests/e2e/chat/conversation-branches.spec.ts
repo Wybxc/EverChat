@@ -181,7 +181,12 @@ test('continuing an older branch keeps alternate answers out of the provider con
         data: { runId: editedSubmission.runId },
       })
       .then((response) => response.json());
-    expect(editedContext.context).toEqual([{ role: 'user', content: '修改第一条消息' }]);
+    expect(
+      editedContext.context.map(({ role, content }: { role: string; content: string }) => ({
+        role,
+        content,
+      })),
+    ).toEqual([{ role: 'user', content: '修改第一条消息' }]);
     await expect
       .poll(
         async () =>
@@ -734,7 +739,12 @@ test('regeneration and cancelled answers remain versions, and continuing exclude
         data: { runId: submission.runId },
       })
       .then((response) => response.json());
-    expect(run.context).toEqual([
+    expect(
+      run.context.map(({ role, content }: { role: string; content: string }) => ({
+        role,
+        content,
+      })),
+    ).toEqual([
       { role: 'user', content: '原始提问' },
       { role: 'user', content: '失败后直接继续' },
     ]);

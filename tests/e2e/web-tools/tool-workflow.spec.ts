@@ -111,6 +111,57 @@ async function setup(
 }
 
 for (const provider of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'] as const)
+  test(`${provider} answer continuation starts a fresh tool workflow and preserves stage-local tool anchors`, async ({
+    request,
+  }) => {
+    const f = await setup(request, provider);
+    try {
+      await expect.poll(async () => (await f.snapshot()).messages[1].status).toBe('completed');
+      const source = (await f.snapshot()).messages[1];
+      const response = await request.post(`/api/conversations/${f.id}/messages`, {
+        headers,
+        data: {
+          requestId: crypto.randomUUID(),
+          continueOf: source.id,
+          tools: ['web_search', 'read_webpage'],
+        },
+      });
+      expect(response.status()).toBe(202);
+      const accepted = await response.json();
+      const input = await request
+        .post(`/api/__test/conversations/${f.id}/context`, {
+          headers,
+          data: { runId: accepted.runId },
+        })
+        .then((r) => r.json());
+      expect(
+        input.context.map(({ role, content }: { role: string; content: string }) => ({
+          role,
+          content,
+        })),
+      ).toEqual([
+        { role: 'user', content: '查询 Cloudflare 文档' },
+        { role: 'assistant', content: messageText(source) },
+        { role: 'user', content: '继续' },
+      ]);
+      expect(JSON.stringify(input.context)).not.toMatch(/thoughtSignature|tool-call|tool-result/);
+      await expect
+        .poll(
+          async () =>
+            (await f.snapshot()).messages.find((m) => m.id === accepted.assistantId)?.status,
+        )
+        .toBe('completed');
+      const answer = (await f.snapshot()).messages.find((m) => m.id === accepted.assistantId)!;
+      expect(messageText(answer)).toBe(messageText(source) + messageText(source));
+      expect(answer.continuation?.stages[0].tools).toEqual(source.tools);
+      expect(answer.tools?.calls).toHaveLength(2);
+      expect((await f.snapshot()).messages[1]).toEqual(source);
+    } finally {
+      await f.cleanup();
+    }
+  });
+
+for (const provider of ['openai-chat', 'openai-responses', 'anthropic', 'gemini'] as const)
   test(`${provider} native Workflow completes a durable model-tool-model exchange without a connected client`, async ({
     request,
   }) => {

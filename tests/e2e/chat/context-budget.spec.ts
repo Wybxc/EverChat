@@ -155,7 +155,12 @@ test('cloud budgeting rejects oversized fixed input, keeps a complete branch suf
     expect(accepted.status()).toBe(202);
     const task = (await accepted.json()) as Submission;
     const pinned = await fixture.run(task.runId);
-    expect(pinned.context).toEqual([
+    expect(
+      pinned.context.map(({ role, content }: { role: string; content: string }) => ({
+        role,
+        content,
+      })),
+    ).toEqual([
       { role: 'user', content: '新问题'.repeat(20) },
       { role: 'assistant', content: '新回答'.repeat(20) },
       { role: 'user', content: 'next' },
@@ -228,9 +233,11 @@ test('cloud budgeting rejects oversized fixed input, keeps a complete branch suf
     });
     expect(revision.status()).toBe(202);
     const revisionTask = (await revision.json()) as Submission;
-    expect((await fixture.run(revisionTask.runId)).context).toEqual([
-      { role: 'user', content: 'revised root' },
-    ]);
+    expect(
+      (await fixture.run(revisionTask.runId)).context.map(
+        ({ role, content }: { role: string; content: string }) => ({ role, content }),
+      ),
+    ).toEqual([{ role: 'user', content: 'revised root' }]);
     await fixture.stop(revisionTask.runId);
   } finally {
     await fixture.cleanup();

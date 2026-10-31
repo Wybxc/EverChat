@@ -78,6 +78,21 @@ function fixture() {
     },
   };
 }
+test('composed answer cost reads count each execution once and never mutate the ledger', () => {
+  const s = fixture();
+  try {
+    s.ledger.record(attempt());
+    s.ledger.record(attempt({ id: 'continued', messageId: 'message2' }));
+    const before = s.db.prepare('SELECT payload FROM usage_attempts ORDER BY id').all();
+    const total = s.ledger.answer(['message1', 'message2', 'message1']);
+    assert.equal(total.requests, 2);
+    const amount = s.ledger.answer('message1').currencies.CNY;
+    assert.equal(total.currencies.CNY, (BigInt(amount) * 2n).toString());
+    assert.deepEqual(s.db.prepare('SELECT payload FROM usage_attempts ORDER BY id').all(), before);
+  } finally {
+    s.db.close();
+  }
+});
 test('MCP usage pages bound model-step records, exclude tools and other answers, and preserve stable ordering', () => {
   const s = fixture();
   try {

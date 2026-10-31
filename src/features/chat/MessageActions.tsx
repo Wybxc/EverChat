@@ -11,8 +11,10 @@ import {
   Pencil,
   Quote,
   RefreshCw,
+  Play,
   Trash2,
 } from 'lucide-react';
+import { canContinueAnswer } from '../../../shared/conversation/continuation';
 import type { Message } from '../../../shared/conversation/types';
 import { isActive } from '../../../shared/conversation/message-state';
 import { ActionMenu } from '../../components/ActionMenu';
@@ -21,6 +23,7 @@ import { GenerationMetadata } from './GenerationMetadata';
 
 export function MessageActions({
   message,
+  providerNames,
   busy,
   copied,
   forking,
@@ -34,10 +37,12 @@ export function MessageActions({
   remove,
   fork,
   retry,
+  continueAnswer,
   selectBranch,
   showFollowing,
 }: {
   message: Message;
+  providerNames?: Record<string, string>;
   busy: boolean;
   copied: boolean;
   forking: boolean;
@@ -51,6 +56,7 @@ export function MessageActions({
   remove: () => void;
   fork: () => void;
   retry: () => void;
+  continueAnswer?: () => void;
   selectBranch: () => void;
   showFollowing: () => void;
 }) {
@@ -63,6 +69,21 @@ export function MessageActions({
       className={`message-actions mt-1 flex flex-wrap items-center gap-0.5 text-muted-foreground ${user ? 'justify-end' : ''}`}
     >
       <BranchSwitcher {...branch} />
+      {continueAnswer &&
+        canContinueAnswer(message) &&
+        (message.generation?.interrupted ||
+          message.generation?.finishReason === 'length' ||
+          message.status === 'cancelled' ||
+          message.status === 'failed') && (
+          <IconButton
+            type="button"
+            label={t(($) => $.continueAnswer)}
+            onClick={continueAnswer}
+            disabled={busy || !navigator.onLine}
+          >
+            <Play />
+          </IconButton>
+        )}
       {hasFollowing && (
         <button
           type="button"
@@ -108,6 +129,21 @@ export function MessageActions({
         icon={<MoreHorizontal className="h-[1.0625rem] w-[1.0625rem]" />}
         placement="dropdown-top dropdown-end"
       >
+        {!user &&
+          !(
+            message.generation?.interrupted ||
+            message.generation?.finishReason === 'length' ||
+            message.status === 'cancelled' ||
+            message.status === 'failed'
+          ) && (
+            <ActionMenuItem
+              disabled={!continueAnswer || busy || !navigator.onLine || !canContinueAnswer(message)}
+              onClick={continueAnswer}
+            >
+              <Play />
+              {t(($) => $.continueAnswer)}
+            </ActionMenuItem>
+          )}
         {!user && (
           <ActionMenuItem onClick={quote} aria-label={t(($) => $.quoteMessage)}>
             <Quote className="h-[0.9375rem] w-[0.9375rem]" />
@@ -141,7 +177,7 @@ export function MessageActions({
           {t(($) => $.deleteMessage)}
         </ActionMenuItem>
       </ActionMenu>
-      {!user && <GenerationMetadata message={message} />}
+      {!user && <GenerationMetadata message={message} providerNames={providerNames} />}
     </div>
   );
 }

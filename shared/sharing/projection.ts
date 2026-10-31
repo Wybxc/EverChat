@@ -1,3 +1,4 @@
+import { answerStages } from '../conversation/continuation';
 import { branchPath } from '../conversation/branch-path';
 import { messageAttachments, messageText } from '../conversation/content';
 import type { Message } from '../conversation/types';
@@ -14,9 +15,26 @@ export function projectShare(messages: Message[], headId: string) {
     throw new AppError(problem('SHARE_INCOMPLETE'), '当前分支没有可分享的消息。');
   const projected = visible.map((message) => ({
     role: message.role,
-    modelName: message.role === 'assistant' ? message.modelName || message.model : undefined,
+    modelName:
+      message.role === 'assistant'
+        ? [
+            ...new Set(
+              answerStages(message)
+                .map((stage) => stage.modelName || stage.model)
+                .filter(Boolean),
+            ),
+          ].join(' / ') || undefined
+        : undefined,
     text: messageText(message),
-    reasoning: messageText(message, 'reasoning'),
+    reasoning: message.continuation
+      ? answerStages(message)
+          .filter((stage) => messageText(stage, 'reasoning'))
+          .map(
+            (stage, index) =>
+              `### ${index + 1} · ${stage.modelName || stage.model || 'EverChat'}\n\n${messageText(stage, 'reasoning')}`,
+          )
+          .join('\n\n---\n\n')
+      : messageText(message, 'reasoning'),
     omittedAttachments: messageAttachments(message).length,
   }));
   return {

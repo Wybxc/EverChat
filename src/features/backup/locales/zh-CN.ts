@@ -22,6 +22,7 @@ export default {
   historySummary: '历史摘要',
   you: '你',
   model: '模型：{{name}}',
+  continuationSource: '续写来源：{{id}}；共 {{count}} 次续写。',
   reasoning: '思考过程',
   status: '状态：{{status}}',
   newVersion: ' · 新版本',

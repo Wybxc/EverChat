@@ -40,6 +40,19 @@ export function planConversationRestore(backup: ConversationBackup):
     providerId: source.providerId,
     model: source.model,
     modelName: source.modelName,
+    ...(!source.deletedAt && source.continuation
+      ? {
+          continuation: {
+            ...source.continuation,
+            detached: true as const,
+            sourceId: ids.get(source.continuation.sourceId) ?? source.continuation.sourceId,
+            stages: source.continuation.stages.map((stage) => ({
+              ...stage,
+              id: ids.get(stage.id) ?? stage.id,
+            })),
+          },
+        }
+      : {}),
     ...(!source.deletedAt && source.role === 'assistant' && source.generation
       ? { generation: copiedGeneration(source) }
       : {}),

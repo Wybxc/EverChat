@@ -9,11 +9,13 @@ import {
 import { MAX_COMMIT_BYTES, validateBatch } from './batches';
 import { messageText } from '../conversation/content';
 import { validReasoningBreaks } from '../web-tools/tasks';
+import { answerStages } from '../conversation/continuation';
 
 function validToolPositions(snapshot: Snapshot) {
-  return snapshot.messages.every(
-    (message) =>
-      !message.tools || validReasoningBreaks(message.tools, messageText(message, 'reasoning')),
+  return snapshot.messages.every((message) =>
+    answerStages(message).every(
+      (stage) => !stage.tools || validReasoningBreaks(stage.tools, messageText(stage, 'reasoning')),
+    ),
   );
 }
 

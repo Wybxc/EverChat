@@ -252,6 +252,14 @@ const guides = {
   everchat_chat: {
     examples: [
       {
+        description: 'Append a continuation as a new answer version, preserving the source.',
+        arguments: {
+          requestId: '00000000-0000-4000-8000-000000000001',
+          continuation: '<run.continuation>',
+          continueAnswer: true,
+        },
+      },
+      {
         description: 'Start a saved conversation. Replace the model ref and generate a fresh UUID.',
         arguments: {
           requestId: 'b60fbbac-edcf-43c6-9bf1-d1f1881ab2d5',
@@ -285,6 +293,7 @@ const guides = {
       },
     ],
     notes: [
+      'continuation normally selects the parent for a new user prompt. Set continueAnswer=true with no prompt or attachments to send 继续 and append new output in a sibling version. Output contains the composed answer; usage belongs to this execution. Later normal prompts use one composed assistant message. Inspect input receipts for the actual request.',
       'For transport failures or an unknown outcome, retry the same requestId and original input. Only waitMs may change. A new requestId intentionally starts another potentially paid generation.',
       'Without continuation, this creates a normal saved conversation. Continuation identifies an exact answer position and only works for this API key. Wait for a usable answer before continuing.',
       'The first call needs modelRef unless an automation default is configured. A continuation inherits its prior model unless modelRef is supplied.',

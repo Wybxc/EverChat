@@ -30,6 +30,30 @@ export interface Message {
   durableOffset?: number;
   liveOffset?: number;
   tools?: PublicToolTask;
+  continuation?: AnswerContinuation;
+}
+
+/** Immutable execution provenance; lengths address the composed UTF-16 channels. */
+export interface AnswerStage {
+  id: string;
+  status: MessageStatus;
+  createdAt: number;
+  contentLength: number;
+  reasoningLength: number;
+  providerId?: string | null;
+  model?: string | null;
+  modelName?: string | null;
+  generation?: GenerationResult;
+  tools?: PublicToolTask;
+}
+export interface AnswerContinuation {
+  sourceId: string;
+  sourceTextSha256: string;
+  prefixTextLength: number;
+  prefixReasoningLength: number;
+  stages: AnswerStage[];
+  /** Portable copies store the complete channels with self-contained provenance. */
+  detached?: true;
 }
 
 export interface ConversationInfo {
@@ -70,6 +94,8 @@ export interface SubmitInput {
   fileSelections?: Record<string, import('../attachments/documents').DocumentRange[]>;
   materialBindings?: Record<string, import('../attachments/materials').MaterialBinding>;
   retryOf?: string;
+  continueOf?: string;
+  sourceTextSha256?: string;
   revisionOf?: string;
   parentId?: string | null;
   summaryThrough?: string;

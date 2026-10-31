@@ -88,6 +88,19 @@ EverChat 提供同域 `/mcp` 接口，供支持 Streamable HTTP 和自定义请�
 
 续聊未指定模型时继承上次调用；显式指定 `modelRef` 可切换模型。预设／系统提示词、推理强度、Temperature、Top P、上下文预算、输出预算与联网开关均有统一可选参数，完整字段以客户端发现的工具 schema 为准。`presetId` 与 `systemPrompt` 互斥。`webSearch: true` 同时开启现有网页搜索和读取工具，仍需部署者事先配置联网服务。
 
+要把新增输出接在上次回答末尾，而非发送下一条普通提问，使用：
+
+```json
+{
+  "requestId": "a12d7448-91e2-4155-b1b5-498f68ac064d",
+  "continuation": "<来源回答返回的位置>",
+  "continueAnswer": true,
+  "waitMs": 10000
+}
+```
+
+不附带 prompt、附件或讨论资料；服务端实际发送「继续」。来源必须已终止且有新增正文。`output` 返回拼接全文，`continuedFrom` 标明来源，新版本与来源共用原提问。之后正常续聊把它作为一条 assistant 历史消息。每次继续独立计费，返回的 `usage` 和输入回执只属于本次请求；历史阅读／导出的 `continuedFrom` 保留来源关系。`progress` 的正文和思考长度表示本次执行增量，输出分页偏移表示拼接全文。原回答的思考、工具调用和供应商签名不会作为新请求的工具历史重放。
+
 同一对话同时只允许一个生成，忙碌时明确报错。需要并行比较时，为不同请求创建独立对话。
 
 ## 重试、分页与错误
@@ -97,7 +110,7 @@ EverChat 提供同域 `/mcp` 接口，供支持 Streamable HTTP 和自定义请�
 - 正文通过 `output.text` 返回。如果 `output.hasMore` 为 true，将 `output.nextCursor` 作为下一次查询的 `outputCursor`，逐页拼接至 false。完成状态不代表当前页已含全文。
 - 运行中也可读取已持久化的内容。追上尾部时保存 `resumeCursor`，稍后从此处继续；`contentFinal` 表示是否还会追加。供应商替换先前文本时返回 `OUTPUT_CHANGED`，应丢弃该通道已拼接的内容并不带游标重读。查询不会强制保存实时尾部。
 - 思考默认不返回。使用 `includeReasoning: true` 读取，并通过独立的 `reasoningCursor` 分页。每页最多 8,192 个 UTF-16 单元，不拆开 Unicode 代理对；不截断总内容。
-- `completion` 与分页独立：运行中为 `null`，终态的 `truncated: true` 表示供应商因长度结束。应先读完现有页面，再由调用方用新 `requestId` 与明确 `continuation` 请求继续生成。断流、取消和未知结束原因不会冒充长度截断。
+- `completion` 与分页独立：运行中为 `null`，终态的 `truncated: true` 表示供应商因长度结束。应先读完现有页面，再由调用方用新 `requestId`、明确 `continuation` 和 `continueAnswer: true` 请求继续生成。断流、取消和未知结束原因不会冒充长度截断。
 - `progress` 返回可观测阶段、时间与持久化长度。可区分尚未认领、准备输入、等待供应商、生成、等待工具及最终保存；思考已输出而正文为空也可辨认。`stale` 只提示一分钟未观察到业务进展，不等于失败，不会自动取消或另起计费调用。旧记录没有回填的进展数据时为 `null`。查询不产生 SQL 心跳，`pollAfterMs` 提供建议等待时间。
 - 用量字段缺失时显式返回 `null`，真实零保留。`dimensions` 给出来源、已知小计和覆盖步骤数；有任何模型步骤缺少某字段时，小计不冒充完整总量。`finalized` 表示任务结束，独立于 `completeness`。原始数字冲突时保留并标记 `inconsistent_usage`。
 - 错误提供稳定 code、stage、retryable 和可用 HTTP 状态；不返回可能泄漏凭据的原始供应商响应。`OUTCOME_UNKNOWN` 表示结果未确认，不代表供应商未收到请求，不能擅自换 ID 重试。
