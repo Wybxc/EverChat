@@ -11,6 +11,11 @@ import {
 } from '../../../worker/platform/storage-schema';
 import type { SqlQuery } from '../../../worker/generation/metrics';
 import { initializeConversationMetadata } from '../../../worker/library/metadata';
+import {
+  localSnapshot,
+  restoreSnapshot,
+  rollbackSnapshot,
+} from '../../../scripts/operations/storage-snapshot';
 
 function storage(db: DatabaseSync) {
   const query: SqlQuery = <T extends Record<string, SqlStorageValue>>(
@@ -48,6 +53,132 @@ const snapshot = (db: DatabaseSync) =>
     .prepare("SELECT name,sql FROM sqlite_master WHERE type='table' ORDER BY name")
     .all()
     .map(({ name, sql }) => ({ name, sql, rows: db.prepare(`SELECT * FROM "${name}"`).all() }));
+
+test('offline rollback rotates synchronization epochs without changing source backups or message sequences', () => {
+  for (const kind of ['conversation', 'library'] as const) {
+    const db = new DatabaseSync(':memory:'),
+      restoredDb = new DatabaseSync(':memory:');
+    try {
+      if (kind === 'conversation') {
+        initializeConversation(storage(db).sql, false);
+        db.exec('UPDATE conversation_state SET seq=12');
+      } else {
+        initializeStorageSchema(storage(db).query);
+        db.exec(
+          "CREATE TABLE library_state(id INTEGER PRIMARY KEY,epoch TEXT,revision INTEGER); INSERT INTO library_state VALUES(1,'original-library',42)",
+        );
+      }
+      const table = kind === 'conversation' ? 'conversation_state' : 'library_state';
+      const original = JSON.parse(JSON.stringify(localSnapshot(db, kind)));
+      const unchanged = structuredClone(original);
+      const restored = rollbackSnapshot(original);
+      assert.deepEqual(original, unchanged);
+      assert.notEqual(restored.rows[table][0].epoch, original.rows[table][0].epoch);
+      assert.deepEqual(
+        { ...restored.rows[table][0], epoch: original.rows[table][0].epoch },
+        original.rows[table][0],
+      );
+      assert.deepEqual(restored.indexes, original.indexes);
+      restoreSnapshot(restoredDb, restored);
+      assert.equal(JSON.stringify(localSnapshot(restoredDb, kind)), JSON.stringify(restored));
+    } finally {
+      db.close();
+      restoredDb.close();
+    }
+  }
+});
+
+test('schema 6 requires offline upgrade; the replayed patch preserves branches and adds the pending index', async () => {
+  const local = new DatabaseSync(':memory:'),
+    remote = new DatabaseSync(':memory:');
+  try {
+    for (const db of [local, remote]) {
+      initializeConversation(storage(db).sql, false);
+      db.exec(`UPDATE conversation_state SET epoch='preserved-conversation';
+        DROP INDEX messages_pending;
+        UPDATE storage_schema SET version=6;
+        INSERT INTO messages(id,role,parentId,content,status,createdAt) VALUES
+          ('question','user',NULL,'Question','completed',1),
+          ('answer','assistant','question','First answer','completed',2),
+          ('alternative','assistant','question','Other answer','completed',3);`);
+    }
+    const original = snapshot(remote);
+    assert.throws(() => initializeConversation(storage(remote).sql, false), /本地运维迁移/);
+    assert.deepEqual(snapshot(remote), original);
+    const messages = remote.prepare('SELECT * FROM messages ORDER BY id').all();
+    const patch = await migrateStorage(local, 'conversation');
+    for (const { sql, args } of patch)
+      args.length ? remote.prepare(sql).run(...args.map(decodeValue)) : remote.exec(sql);
+    assert.deepEqual(snapshot(remote), snapshot(local));
+    assert.deepEqual(remote.prepare('SELECT * FROM messages ORDER BY id').all(), messages);
+    assert.equal(
+      remote.prepare('SELECT epoch FROM conversation_state WHERE id=1').get()!.epoch,
+      'preserved-conversation',
+    );
+    assert.match(
+      String(
+        remote.prepare("SELECT sql FROM sqlite_master WHERE name='messages_pending'").get()!.sql,
+      ),
+      /WHERE status IN \('queued',\s*'running'\)/,
+    );
+    initializeConversation(storage(remote).sql, false);
+  } finally {
+    local.close();
+    remote.close();
+  }
+});
+
+test('schema 6 Library state and triggers are created offline, backed up and stable on repeat conversion', async () => {
+  const local = new DatabaseSync(':memory:'),
+    remote = new DatabaseSync(':memory:');
+  try {
+    for (const db of [local, remote])
+      db.exec(`CREATE TABLE storage_schema(id INTEGER PRIMARY KEY,version INTEGER);
+        INSERT INTO storage_schema VALUES(1,6);
+        CREATE TABLE conversations(id TEXT PRIMARY KEY,title TEXT,createdAt INTEGER,updatedAt INTEGER);
+        INSERT INTO conversations VALUES('a','Original',1,1);
+        CREATE TABLE conversation_metadata(id TEXT PRIMARY KEY,pinned INTEGER);
+        INSERT INTO conversation_metadata VALUES('a',1);
+        CREATE TABLE conversation_titles(id TEXT PRIMARY KEY,source TEXT,task TEXT);
+        INSERT INTO conversation_titles VALUES('a','manual',NULL);
+        CREATE TABLE conversation_activity(id TEXT PRIMARY KEY,version INTEGER,payload TEXT);
+        INSERT INTO conversation_activity VALUES('a',2,'{"status":"idle","version":2,"updatedAt":1}');
+        CREATE TABLE conversation_deletions(id TEXT PRIMARY KEY,deletedAt INTEGER,completed INTEGER);
+        CREATE TABLE conversation_copies(id TEXT PRIMARY KEY,status TEXT,viewHeadId TEXT,copiedHeadId TEXT);
+        CREATE TABLE archive_imports(id TEXT PRIMARY KEY,status TEXT);`);
+    const original = snapshot(remote);
+    assert.throws(() => initializeStorageSchema(storage(remote).query), /本地运维迁移/);
+    assert.deepEqual(snapshot(remote), original);
+    const patch = await migrateStorage(local, 'library');
+    for (const { sql, args } of patch)
+      args.length ? remote.prepare(sql).run(...args.map(decodeValue)) : remote.exec(sql);
+    assert.deepEqual(snapshot(remote), snapshot(local));
+    assert.equal(remote.prepare('SELECT pinned FROM conversation_metadata').get()!.pinned, 1);
+    assert.equal(remote.prepare('SELECT version FROM conversation_activity').get()!.version, 2);
+    assert.equal(remote.prepare('SELECT title FROM conversations').get()!.title, 'Original');
+    assert.equal(
+      remote.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='trigger'").get()!.n,
+      21,
+    );
+    const state = remote.prepare('SELECT * FROM library_state').get();
+    assert.equal(state!.revision, 0);
+    assert.ok(state!.epoch);
+    await migrateStorage(remote, 'library');
+    assert.deepEqual(remote.prepare('SELECT * FROM library_state').get(), state);
+    remote.exec("UPDATE conversations SET title='Changed' WHERE id='a'");
+    assert.equal(remote.prepare('SELECT revision FROM library_state').get()!.revision, 1);
+    for (const name of [
+      'library_state',
+      'conversation_activity',
+      'conversation_titles',
+      'title_reservations',
+    ])
+      assert.ok(MIGRATION_TABLES.library.includes(name), name);
+  } finally {
+    local.close();
+    remote.close();
+  }
+});
 
 test('retired summary settings and private wire storage are cleaned only by a replayable offline patch', async () => {
   const local = new DatabaseSync(':memory:'),

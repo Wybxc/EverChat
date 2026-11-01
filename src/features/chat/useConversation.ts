@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import ReconnectingWebSocket from 'reconnecting-websocket';
+import { syncRetryDelay } from '../../platform/sync/backoff';
 import { isActive } from '../../../shared/conversation/message-state';
 import {
   type Snapshot,
@@ -42,10 +42,13 @@ export function useConversation(
 
   useEffect(() => {
     let alive = true;
-    let socket: ReconnectingWebSocket | undefined;
+    let socket: WebSocket | undefined;
     let request: AbortController | undefined;
     let heartbeat: ReturnType<typeof setInterval> | undefined;
     let retry: ReturnType<typeof setTimeout> | undefined;
+    let lease: ReturnType<typeof setTimeout> | undefined;
+    let handshake: ReturnType<typeof setTimeout> | undefined;
+    let needsSnapshot = false;
     let attempt = 0;
     let generation = 0;
     let lastHeartbeat = Date.now();
@@ -82,6 +85,8 @@ export function useConversation(
     const stopHeartbeat = () => {
       if (heartbeat) clearInterval(heartbeat);
       heartbeat = undefined;
+      clearTimeout(lease);
+      clearTimeout(handshake);
     };
     const rememberDeletion = (deletedAt: number) => {
       generation++;
@@ -95,35 +100,28 @@ export function useConversation(
       if (id) deletionNotice.current?.(id, deletedAt);
     };
     const startHeartbeat = () => {
-      stopHeartbeat();
-      attempt = 0;
+      if (heartbeat) clearInterval(heartbeat);
       lastHeartbeat = Date.now();
       heartbeat = setInterval(() => {
         if (Date.now() - lastHeartbeat > 60_000) {
-          socket?.reconnect();
+          socket?.close();
           return;
         }
-        if (socket?.readyState === ReconnectingWebSocket.OPEN) {
+        if (socket?.readyState === WebSocket.OPEN) {
+          attempt = 0;
           socket.send('ping');
-          socket.send('session-check');
-          socket.send(
-            JSON.stringify({
-              type: 'sync-check',
-              seq: sync.durable.seq,
-              epoch: sync.durable.epoch,
-            }),
-          );
         }
       }, 20_000);
     };
     const connect = async () => {
-      if (!alive || !enabled) return;
+      if (!alive || !enabled || document.visibilityState === 'hidden') return;
       const token = ++generation;
       request?.abort();
       request = new AbortController();
       if (retry) clearTimeout(retry);
       stopHeartbeat();
       if (socket) {
+        socket.onclose = null;
         socket.close();
         socket = undefined;
       }
@@ -145,30 +143,33 @@ export function useConversation(
       }
       setLoading(sync.durable.messages.length === 0);
       try {
-        const first = await api<SnapshotPage>(
-          `/conversations/${id}?after=0`,
-          'GET',
-          undefined,
-          request.signal,
-        );
-        let page = first;
-        const cloud: Snapshot = { ...first.snapshot, messages: [...first.snapshot.messages] };
-        while (!page.done) {
-          const next = await api<SnapshotPage>(
-            `/conversations/${id}?after=${page.after}`,
+        if (needsSnapshot || !sync.durable.epoch) {
+          const first = await api<SnapshotPage>(
+            `/conversations/${id}?after=0`,
             'GET',
             undefined,
             request.signal,
           );
-          if (next.after <= page.after || next.snapshot.epoch !== cloud.epoch)
-            throw new UiError(uiMessage('chat', 'paginationChanged'));
-          cloud.messages.push(...next.snapshot.messages);
-          page = next;
+          let page = first;
+          const cloud: Snapshot = { ...first.snapshot, messages: [...first.snapshot.messages] };
+          while (!page.done) {
+            const next = await api<SnapshotPage>(
+              `/conversations/${id}?after=${page.after}`,
+              'GET',
+              undefined,
+              request.signal,
+            );
+            if (next.after <= page.after || next.snapshot.epoch !== cloud.epoch)
+              throw new UiError(uiMessage('chat', 'paginationChanged'));
+            cloud.messages.push(...next.snapshot.messages);
+            page = next;
+          }
+          if (!alive || token !== generation) return;
+          setAuthoritativeFor(id);
+          setConnectionError('');
+          receive({ type: 'snapshot', snapshot: cloud });
+          needsSnapshot = false;
         }
-        if (!alive || token !== generation) return;
-        setAuthoritativeFor(id);
-        setConnectionError('');
-        receive({ type: 'snapshot', snapshot: cloud });
         const socketUrl = () => {
           const url = new URL(`/api/conversations/${id}/sync`, location.href);
           url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -176,12 +177,8 @@ export function useConversation(
           if (sync.durable.epoch) url.searchParams.set('epoch', sync.durable.epoch);
           return url.toString();
         };
-        socket = new ReconnectingWebSocket(socketUrl, [], {
-          maxReconnectionDelay: 15_000,
-          minReconnectionDelay: 1_000,
-          reconnectionDelayGrowFactor: 2,
-          connectionTimeout: 10_000,
-        });
+        socket = new WebSocket(socketUrl());
+        handshake = setTimeout(() => socket?.close(), 15_000);
         socket.onopen = () => {
           if (alive && token === generation) {
             resetPreview();
@@ -189,8 +186,9 @@ export function useConversation(
           }
         };
         socket.onmessage = (event) => {
-          if (!alive || token !== generation || event.data === 'pong') return;
+          if (!alive || token !== generation) return;
           lastHeartbeat = Date.now();
+          if (event.data === 'pong') return;
           try {
             const packet = JSON.parse(event.data) as SyncPacket;
             if (packet.type === 'deleted') {
@@ -198,7 +196,7 @@ export function useConversation(
               return;
             }
             receive(packet);
-            if (packet.type === 'preview' && socket?.readyState === ReconnectingWebSocket.OPEN) {
+            if (packet.type === 'preview' && socket?.readyState === WebSocket.OPEN) {
               socket.send(
                 JSON.stringify({
                   type: 'preview-ack',
@@ -209,13 +207,29 @@ export function useConversation(
               );
             }
             if (packet.type === 'ready') {
+              if (!Number.isSafeInteger(packet.revalidateAt) || packet.revalidateAt <= Date.now())
+                throw new Error('Invalid access lease');
+              clearTimeout(handshake);
+              lease = setTimeout(
+                () => void connect(),
+                Math.max(1, packet.revalidateAt - Date.now()),
+              );
+              setAuthoritativeFor(id);
+              setConnectionError('');
               setConnection('connected');
               setSyncedAt(Date.now());
             }
           } catch {
+            needsSnapshot = true;
+            stopHeartbeat();
+            if (socket) {
+              socket.onclose = null;
+              socket.close();
+              socket = undefined;
+            }
             resetPreview();
             setConnection('connecting');
-            void connect();
+            retry = setTimeout(() => void connect(), syncRetryDelay(attempt++));
           }
         };
         socket.onclose = (event) => {
@@ -232,12 +246,27 @@ export function useConversation(
             return;
           }
           setConnection(navigator.onLine ? 'connecting' : 'offline');
-          if (navigator.onLine) {
+          if (navigator.onLine && document.visibilityState !== 'hidden') {
             socket?.close();
-            retry = setTimeout(() => void connect(), Math.min(15_000, 1000 * 2 ** attempt++));
+            // A failed upgrade hides its HTTP status. Check permission without
+            // reloading message history, then use the same HTTP failure path.
+            void api(`/conversations/${id}/access`).then(
+              () => {
+                if (alive && token === generation)
+                  retry = setTimeout(() => void connect(), syncRetryDelay(attempt++));
+              },
+              (error: unknown) => {
+                if (alive && token === generation) failed(error);
+              },
+            );
           }
         };
       } catch (error) {
+        failed(error);
+      } finally {
+        if (alive && token === generation) setLoading(false);
+      }
+      function failed(error: unknown) {
         if (!alive || token !== generation) return;
         if (error instanceof ApiError && error.status === 401) {
           unauthorized.current();
@@ -262,15 +291,10 @@ export function useConversation(
         }
         setConnectionError(errorMessage(error, uiMessage('chat', 'syncFailed')));
         setConnection(navigator.onLine ? 'connecting' : 'offline');
-        if (navigator.onLine)
-          retry = setTimeout(
-            () => {
-              void connect();
-            },
-            Math.min(15_000, 1_000 * 2 ** attempt++),
-          );
-      } finally {
-        if (alive && token === generation) setLoading(false);
+        if (navigator.onLine && document.visibilityState !== 'hidden')
+          retry = setTimeout(() => {
+            void connect();
+          }, syncRetryDelay(attempt++));
       }
     };
     const online = () => {
@@ -282,6 +306,7 @@ export function useConversation(
       if (retry) clearTimeout(retry);
       stopHeartbeat();
       if (socket) {
+        socket.onclose = null;
         socket.close();
         socket = undefined;
       }
@@ -290,12 +315,10 @@ export function useConversation(
       setLoading(false);
     };
     const visible = () => {
-      if (document.visibilityState === 'hidden') writer.flush();
-      if (
-        document.visibilityState === 'visible' &&
-        socket?.readyState !== ReconnectingWebSocket.OPEN
-      )
-        online();
+      if (document.visibilityState === 'hidden') {
+        writer.flush();
+        offline();
+      } else online();
     };
     void connect();
     window.addEventListener('everchat:network-ready', online);

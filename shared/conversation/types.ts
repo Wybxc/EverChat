@@ -67,6 +67,7 @@ export interface ConversationInfo {
 }
 
 export interface LibrarySnapshot {
+  watermark: import('../library/protocol').LibraryWatermark;
   conversations: ConversationInfo[];
   activity: ActivityIndex;
   deletions: { id: string; deletedAt: number }[];

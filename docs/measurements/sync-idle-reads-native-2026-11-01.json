@@ -1,0 +1,439 @@
+{
+  "version": 1,
+  "startedAt": "2026-11-01T07:37:32.138Z",
+  "finishedAt": "2026-11-01T07:37:34.487Z",
+  "runtime": "local-workerd",
+  "scope": "Synthetic rows in ephemeral local SQLite DOs. Native SQL cursor counters, not production billing or CPU. Forced eviction is not a platform hibernation timing measurement. Revision/cache candidates exist only in this fixture. Control messages use a synthetic socket; network ping auto-response is not measured.",
+  "libraries": [
+    {
+      "conversations": 0,
+      "warm": {
+        "statements": 90,
+        "rowsRead": 120,
+        "rowsWritten": 0
+      },
+      "calls": 30,
+      "coldConstructor": {
+        "statements": 55,
+        "rowsRead": 93,
+        "rowsWritten": 1
+      },
+      "coldSnapshot": {
+        "statements": 3,
+        "rowsRead": 4,
+        "rowsWritten": 0
+      },
+      "revisionChecks": {
+        "statements": 30,
+        "rowsRead": 30,
+        "rowsWritten": 0
+      },
+      "persistedSnapshots": {
+        "statements": 30,
+        "rowsRead": 30,
+        "rowsWritten": 0
+      },
+      "changed": null
+    },
+    {
+      "conversations": 10,
+      "warm": {
+        "statements": 90,
+        "rowsRead": 1830,
+        "rowsWritten": 0
+      },
+      "calls": 30,
+      "coldConstructor": {
+        "statements": 55,
+        "rowsRead": 93,
+        "rowsWritten": 1
+      },
+      "coldSnapshot": {
+        "statements": 3,
+        "rowsRead": 61,
+        "rowsWritten": 0
+      },
+      "revisionChecks": {
+        "statements": 30,
+        "rowsRead": 30,
+        "rowsWritten": 0
+      },
+      "persistedSnapshots": {
+        "statements": 30,
+        "rowsRead": 30,
+        "rowsWritten": 0
+      },
+      "changed": {
+        "statements": 6,
+        "rowsRead": 64,
+        "rowsWritten": 2
+      }
+    },
+    {
+      "conversations": 225,
+      "warm": {
+        "statements": 90,
+        "rowsRead": 40530,
+        "rowsWritten": 0
+      },
+      "calls": 30,
+      "coldConstructor": {
+        "statements": 55,
+        "rowsRead": 93,
+        "rowsWritten": 1
+      },
+      "coldSnapshot": {
+        "statements": 3,
+        "rowsRead": 1351,
+        "rowsWritten": 0
+      },
+      "revisionChecks": {
+        "statements": 30,
+        "rowsRead": 30,
+        "rowsWritten": 0
+      },
+      "persistedSnapshots": {
+        "statements": 30,
+        "rowsRead": 30,
+        "rowsWritten": 0
+      },
+      "changed": {
+        "statements": 6,
+        "rowsRead": 1354,
+        "rowsWritten": 2
+      }
+    },
+    {
+      "conversations": 1000,
+      "warm": {
+        "statements": 90,
+        "rowsRead": 180030,
+        "rowsWritten": 0
+      },
+      "calls": 30,
+      "coldConstructor": {
+        "statements": 55,
+        "rowsRead": 93,
+        "rowsWritten": 1
+      },
+      "coldSnapshot": {
+        "statements": 3,
+        "rowsRead": 6001,
+        "rowsWritten": 0
+      },
+      "revisionChecks": {
+        "statements": 30,
+        "rowsRead": 30,
+        "rowsWritten": 0
+      },
+      "persistedSnapshots": {
+        "statements": 30,
+        "rowsRead": 30,
+        "rowsWritten": 0
+      },
+      "changed": {
+        "statements": 6,
+        "rowsRead": 6004,
+        "rowsWritten": 2
+      }
+    }
+  ],
+  "conversations": [
+    {
+      "messages": 0,
+      "coldConstructor": {
+        "statements": 64,
+        "rowsRead": 89,
+        "rowsWritten": 1
+      },
+      "coldStatements": [
+        {
+          "statement": "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT GLOB 'sqlite_*' AND name NOT GLOB '__cf_*' AND name != '__miniflare_do_name'",
+          "rowsRead": 74
+        },
+        {
+          "statement": "SELECT deletedAt FROM conversation_deletion WHERE id = 1",
+          "rowsRead": 2
+        },
+        {
+          "statement": "SELECT version FROM storage_schema WHERE id = 1",
+          "rowsRead": 1
+        },
+        {
+          "statement": "SELECT id FROM conversation_state WHERE id = 1",
+          "rowsRead": 1
+        },
+        {
+          "statement": "SELECT * FROM usage_outbox",
+          "rowsRead": 1
+        },
+        {
+          "statement": "UPDATE title_jobs SET state='delivering',config=NULL,error=?,nextAt=? WHERE state='running'",
+          "rowsRead": 1
+        }
+      ],
+      "pendingIndexEquivalence": {
+        "before": [],
+        "after": []
+      },
+      "unindexedPlan": [
+        "SCAN runs",
+        "SEARCH messages USING INDEX sqlite_autoindex_messages_1 (id=?)"
+      ],
+      "indexedPlan": [
+        "SEARCH messages USING INDEX sync_probe_pending (status=?)",
+        "SEARCH runs USING INDEX sqlite_autoindex_runs_1 (id=?)"
+      ],
+      "indexedColdConstructor": {
+        "statements": 64,
+        "rowsRead": 91,
+        "rowsWritten": 1
+      },
+      "session": {
+        "statements": 0,
+        "rowsRead": 0,
+        "rowsWritten": 0
+      },
+      "sync": {
+        "statements": 60,
+        "rowsRead": 60,
+        "rowsWritten": 0
+      }
+    },
+    {
+      "messages": 20,
+      "coldConstructor": {
+        "statements": 64,
+        "rowsRead": 128,
+        "rowsWritten": 1
+      },
+      "coldStatements": [
+        {
+          "statement": "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT GLOB 'sqlite_*' AND name NOT GLOB '__cf_*' AND name != '__miniflare_do_name'",
+          "rowsRead": 74
+        },
+        {
+          "statement": "SELECT runs.* FROM runs JOIN messages ON messages.id = runs.assistantId AND messages.runId = runs.id WHERE messages.status IN ('queued', 'running')",
+          "rowsRead": 40
+        },
+        {
+          "statement": "SELECT deletedAt FROM conversation_deletion WHERE id = 1",
+          "rowsRead": 2
+        },
+        {
+          "statement": "SELECT version FROM storage_schema WHERE id = 1",
+          "rowsRead": 1
+        },
+        {
+          "statement": "SELECT id FROM conversation_state WHERE id = 1",
+          "rowsRead": 1
+        },
+        {
+          "statement": "SELECT * FROM usage_outbox",
+          "rowsRead": 1
+        }
+      ],
+      "pendingIndexEquivalence": {
+        "before": [
+          {
+            "id": "run-0"
+          },
+          {
+            "id": "run-1"
+          }
+        ],
+        "after": [
+          {
+            "id": "run-0"
+          },
+          {
+            "id": "run-1"
+          }
+        ]
+      },
+      "unindexedPlan": [
+        "SCAN runs",
+        "SEARCH messages USING INDEX sqlite_autoindex_messages_1 (id=?)"
+      ],
+      "indexedPlan": [
+        "SEARCH messages USING INDEX sync_probe_pending (status=?)",
+        "SEARCH runs USING INDEX sqlite_autoindex_runs_1 (id=?)"
+      ],
+      "indexedColdConstructor": {
+        "statements": 64,
+        "rowsRead": 91,
+        "rowsWritten": 1
+      },
+      "session": {
+        "statements": 0,
+        "rowsRead": 0,
+        "rowsWritten": 0
+      },
+      "sync": {
+        "statements": 60,
+        "rowsRead": 60,
+        "rowsWritten": 0
+      }
+    },
+    {
+      "messages": 200,
+      "coldConstructor": {
+        "statements": 64,
+        "rowsRead": 488,
+        "rowsWritten": 1
+      },
+      "coldStatements": [
+        {
+          "statement": "SELECT runs.* FROM runs JOIN messages ON messages.id = runs.assistantId AND messages.runId = runs.id WHERE messages.status IN ('queued', 'running')",
+          "rowsRead": 400
+        },
+        {
+          "statement": "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT GLOB 'sqlite_*' AND name NOT GLOB '__cf_*' AND name != '__miniflare_do_name'",
+          "rowsRead": 74
+        },
+        {
+          "statement": "SELECT deletedAt FROM conversation_deletion WHERE id = 1",
+          "rowsRead": 2
+        },
+        {
+          "statement": "SELECT version FROM storage_schema WHERE id = 1",
+          "rowsRead": 1
+        },
+        {
+          "statement": "SELECT id FROM conversation_state WHERE id = 1",
+          "rowsRead": 1
+        },
+        {
+          "statement": "SELECT * FROM usage_outbox",
+          "rowsRead": 1
+        }
+      ],
+      "pendingIndexEquivalence": {
+        "before": [
+          {
+            "id": "run-0"
+          },
+          {
+            "id": "run-1"
+          }
+        ],
+        "after": [
+          {
+            "id": "run-0"
+          },
+          {
+            "id": "run-1"
+          }
+        ]
+      },
+      "unindexedPlan": [
+        "SCAN runs",
+        "SEARCH messages USING INDEX sqlite_autoindex_messages_1 (id=?)"
+      ],
+      "indexedPlan": [
+        "SEARCH messages USING INDEX sync_probe_pending (status=?)",
+        "SEARCH runs USING INDEX sqlite_autoindex_runs_1 (id=?)"
+      ],
+      "indexedColdConstructor": {
+        "statements": 64,
+        "rowsRead": 91,
+        "rowsWritten": 1
+      },
+      "session": {
+        "statements": 0,
+        "rowsRead": 0,
+        "rowsWritten": 0
+      },
+      "sync": {
+        "statements": 60,
+        "rowsRead": 60,
+        "rowsWritten": 0
+      }
+    },
+    {
+      "messages": 1000,
+      "coldConstructor": {
+        "statements": 64,
+        "rowsRead": 2088,
+        "rowsWritten": 1
+      },
+      "coldStatements": [
+        {
+          "statement": "SELECT runs.* FROM runs JOIN messages ON messages.id = runs.assistantId AND messages.runId = runs.id WHERE messages.status IN ('queued', 'running')",
+          "rowsRead": 2000
+        },
+        {
+          "statement": "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT GLOB 'sqlite_*' AND name NOT GLOB '__cf_*' AND name != '__miniflare_do_name'",
+          "rowsRead": 74
+        },
+        {
+          "statement": "SELECT deletedAt FROM conversation_deletion WHERE id = 1",
+          "rowsRead": 2
+        },
+        {
+          "statement": "SELECT version FROM storage_schema WHERE id = 1",
+          "rowsRead": 1
+        },
+        {
+          "statement": "SELECT id FROM conversation_state WHERE id = 1",
+          "rowsRead": 1
+        },
+        {
+          "statement": "SELECT * FROM usage_outbox",
+          "rowsRead": 1
+        }
+      ],
+      "pendingIndexEquivalence": {
+        "before": [
+          {
+            "id": "run-0"
+          },
+          {
+            "id": "run-1"
+          }
+        ],
+        "after": [
+          {
+            "id": "run-0"
+          },
+          {
+            "id": "run-1"
+          }
+        ]
+      },
+      "unindexedPlan": [
+        "SCAN runs",
+        "SEARCH messages USING INDEX sqlite_autoindex_messages_1 (id=?)"
+      ],
+      "indexedPlan": [
+        "SEARCH messages USING INDEX sync_probe_pending (status=?)",
+        "SEARCH runs USING INDEX sqlite_autoindex_runs_1 (id=?)"
+      ],
+      "indexedColdConstructor": {
+        "statements": 64,
+        "rowsRead": 91,
+        "rowsWritten": 1
+      },
+      "session": {
+        "statements": 0,
+        "rowsRead": 0,
+        "rowsWritten": 0
+      },
+      "sync": {
+        "statements": 60,
+        "rowsRead": 60,
+        "rowsWritten": 0
+      }
+    }
+  ],
+  "polling": {
+    "intervalMs": 40,
+    "phaseMs": 240,
+    "focused": 5,
+    "blurred": 6,
+    "hidden": 0,
+    "failedVisible": 6,
+    "simulatedDocument": true
+  },
+  "complete": true
+}

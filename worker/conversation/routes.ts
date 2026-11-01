@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import { ACCESS_REVALIDATION_SECONDS } from '../../shared/library/protocol';
 import { documentRangesSchema } from '../../shared/attachments/documents';
 import {
   MAX_MESSAGE_TEXT_BYTES,
@@ -111,7 +112,9 @@ export function registerConversationRoutes(app: ApiRouter) {
     headers.set('X-Session-Expires', String(principal.expires));
     headers.set(
       'X-Session-Revalidate',
-      String(Math.min(principal.expires, Math.floor(Date.now() / 1000) + 300)),
+      String(
+        Math.min(principal.expires, Math.floor(Date.now() / 1000) + ACCESS_REVALIDATION_SECONDS),
+      ),
     );
     headers.delete('Cf-Access-Jwt-Assertion');
     headers.delete('Cookie');

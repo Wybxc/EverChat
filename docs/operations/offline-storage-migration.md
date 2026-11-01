@@ -197,3 +197,21 @@ Conversation／Library 从版本 4 升至 5，使用默认完整范围，不能�
 运维目录新增的 `.text.bin`、`.index.json` 和 `.text-indexes.json` 同样是私有备份，不能提交到仓库或上传公开 CI 制品。
 
 北京时间 2026-11-01 完成生产升级校验：225 个 Conversation 与 1 个 Library 从版本 5 升至 6，1,322 条原有消息保留，4 份文本完成本地校验及稀疏索引生成。全部对象的结构、索引／触发器、逐行值和索引对象于 `2026-10-31T16:02:19.100Z` 核验通过。私有备份位于 `.wrangler/operations/on-demand-attachments-2026-10-31`；维护前业务版本为 `b2dc729a-e048-4baa-a4c4-e0edbd0a23b9`。业务恢复与生产验收见 [PR #17](https://github.com/Wybxc/EverChat/pull/17) 和[执行记录](../measurements/on-demand-attachments-2026-10-31.md)。
+
+## 空闲同步存储版本 7
+
+状态：代码和本地验证完成，**尚未迁移生产或发布**。Conversation／Library 从 schema 6 升至 7，UsageStore／ShareStore 不变。新业务拒绝打开 schema 6，不能直接推送部署跳过维护窗口。
+
+变化范围：
+
+- Library 新增单行 `library_state`，以及七张列表业务表的 21 个修订号 trigger；不增加同步事件历史。备份同时纳入 `conversation_activity`、`conversation_titles`、`title_reservations`，保留原有任务状态。
+- Conversation 新增 `messages_pending` 部分索引。保留消息、分支、运行、检查点、幂等结果和对话同步 epoch；不重发模型请求。
+- R2 附件、用量和分享数据不转换。默认运维流程仍核验已有文本索引，不能因本次仅增加 SQL 结构而跳过完整性核对。
+
+通过 PR 必需检查后，暂停自动部署和新任务，等待现有生成／复制／导入完成；使用新的私有运维目录和默认完整范围执行 `prepare → preflight → 维护部署 → backup → convert → apply → verify → cleanup`。不要添加 `--usage-only` 或 `--sharing-only`。发现对象时包括已删除和被复制／导入引用的对象。
+
+`convert` 只在本机 SQLite 创建状态、trigger 和索引。schema 6 → 7 时初始化新的 Library epoch／revision；对同一当前版本数据库重复转换保持状态不变。检查每个 `.after.json`、补丁及 schema 标记，全部对象的结构、索引／trigger 和逐行值核验完成后，再恢复新版业务并恢复自动部署。构造函数不承担历史转换。
+
+需要回滚时，先部署维护版本，执行同批备份的 `rollback`，核验并清理，再恢复匹配的旧业务代码。脚本保留原始 `.before.json`，首次回滚在本机生成 `.rollback.json`，为已有 Library／Conversation 同步状态更换 epoch，正文、分支、seq 和 revision 均保持原值。先持久保存该文件再远端写回，续做沿用同一文件和补丁哈希，核验目标为 `.rollback.json`。该文件同样按私有备份管理，不得提交。
+
+生产恢复后验证无缓存／有缓存打开、跨端新增／改名／置顶／删除、生成生命周期、连接续期、前后台切换、通知和 Access 撤回。资源验收按[修复后记录](../measurements/sync-idle-reads-after-2026-11-01.md)进行；本地行数不替代实际平台休眠、CPU 与全天用量采样。

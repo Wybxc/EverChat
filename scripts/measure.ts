@@ -13,6 +13,7 @@ const help = `Usage: pnpm measure <command> [options]
                   Default: Cloudflare. Local fixture: --runtime local, port 5182
   usage           --runtime local|cloudflare (default: local)
                   Cloudflare actions: prepare|run|metrics --directory <private-dir>
+  sync-reads      Local workerd SQL read experiments; --output <report.json>
   metrics         Cloudflare platform analytics for an isolated validation report
   tail            Sanitized logs from an isolated validation Worker
 
@@ -25,7 +26,7 @@ if (!command || command === '--help' || args.includes('--help')) {
   process.exit(command ? 0 : 1);
 }
 assert.ok(
-  ['stream', 'tools', 'notifications', 'usage', 'metrics', 'tail'].includes(command),
+  ['stream', 'tools', 'notifications', 'usage', 'sync-reads', 'metrics', 'tail'].includes(command),
   'Unknown measurement command',
 );
 function take(name: string) {
@@ -76,6 +77,10 @@ switch (command) {
   case 'usage':
     entry = runtime === 'local' ? 'usage-ledger' : 'usage-sharing-cloudflare';
     assert.ok(runtime !== 'local' || args.length === 0, 'Local usage measurement takes no options');
+    break;
+  case 'sync-reads':
+    assert.equal(runtime, 'local', 'Sync read experiments are local only');
+    entry = 'sync-reads';
     break;
   default:
     assert.equal(runtime, 'cloudflare', 'This command reads Cloudflare platform data');

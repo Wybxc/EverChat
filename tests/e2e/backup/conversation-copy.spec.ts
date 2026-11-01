@@ -281,8 +281,16 @@ test('copying an older answer copies only its parent path, retains settings and 
       })
       .then((response) => response.json());
     expect(context.context).toEqual([
-      ...path.map((message) => ({ role: message.role, content: messageText(message) })),
-      { role: 'user', content: '在副本中继续' },
+      ...copy.snapshot.messages.map((message) => ({
+        role: message.role,
+        content: messageText(message),
+        source: { kind: 'message', messageId: message.id },
+      })),
+      {
+        role: 'user',
+        content: '在副本中继续',
+        source: { kind: 'message', messageId: accepted.userId },
+      },
     ]);
     expect(context.config).toMatchObject({
       systemPrompt: 'Conversation prompt',
@@ -371,8 +379,16 @@ test('user and assistant copy actions open independent URLs, preserve the source
       'user',
     ]);
     expect(context.context.slice(-2)).toEqual([
-      { role: 'user', content: '复制到这里的提问' },
-      { role: 'user', content: '补充说明' },
+      {
+        role: 'user',
+        content: '复制到这里的提问',
+        source: { kind: 'message', messageId: copied.messages[2].id },
+      },
+      {
+        role: 'user',
+        content: '补充说明',
+        source: { kind: 'message', messageId: after.messages[3].id },
+      },
     ]);
 
     await page.goto(`/c/${fixture.id}`);
@@ -556,8 +572,16 @@ test('copying a streaming answer takes only its durable prefix without stopping 
       })
       .then((response) => response.json());
     expect(context.context).toEqual([
-      { role: 'user', content: '后台继续的问题' },
-      { role: 'user', content: '继续未回答的提问' },
+      {
+        role: 'user',
+        content: '后台继续的问题',
+        source: { kind: 'message', messageId: copy.messages[0].id },
+      },
+      {
+        role: 'user',
+        content: '继续未回答的提问',
+        source: { kind: 'message', messageId: continued.userId },
+      },
     ]);
     await expect
       .poll(

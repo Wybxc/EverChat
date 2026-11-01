@@ -139,7 +139,9 @@ test('large completed history crosses the DO response boundary and recovers from
     const latest = await subscribe(request, id, stored);
     try {
       expect(latest.snapshot()).toEqual(stored);
-      expect(latest.packets).toEqual([{ type: 'ready', seq: 501 }]);
+      expect(latest.packets).toEqual([
+        { type: 'ready', seq: 501, revalidateAt: expect.any(Number) },
+      ]);
     } finally {
       latest.socket.terminate();
     }
@@ -243,7 +245,9 @@ test('previews precede commits and reconnecting subscribers recover the same dur
     const afterFinal = await subscribe(request, id, stored);
     sockets.push(afterFinal.socket);
     expect(afterFinal.snapshot()).toEqual(stored);
-    expect(afterFinal.packets).toEqual([{ type: 'ready', seq: stored.seq }]);
+    expect(afterFinal.packets).toEqual([
+      { type: 'ready', seq: stored.seq, revalidateAt: expect.any(Number) },
+    ]);
   } finally {
     for (const socket of sockets) socket.terminate();
     expect((await request.put('/api/settings/providers', { headers, data: initial })).ok()).toBe(

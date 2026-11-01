@@ -2931,7 +2931,16 @@ export class Conversation extends DurableObject<Env> {
         undefined,
         socket,
       );
-    this.subscribers.send(JSON.stringify({ type: 'ready', seq: current.seq }), undefined, socket);
+    const attachment = socket.deserializeAttachment() as Attachment;
+    this.subscribers.send(
+      JSON.stringify({
+        type: 'ready',
+        seq: current.seq,
+        revalidateAt: Math.min(attachment.expires, attachment.revalidate) * 1000,
+      }),
+      undefined,
+      socket,
+    );
     // No await between the state baseline, readiness and tail subscription.
     for (const batch of this.activeGeneration?.buffer.previewTail ?? [])
       this.preview(batch, socket);

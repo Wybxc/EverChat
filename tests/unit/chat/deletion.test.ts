@@ -32,7 +32,7 @@ test('a confirmed deletion removes saved and preview contents and rejects delaye
   assert.deepEqual(sync.view, { messages: [], seq: 2, deletedAt: 100 });
   assert.equal(sync.hasPreview, false);
   assert.equal(sync.receive({ type: 'snapshot', snapshot: before }), false);
-  assert.equal(sync.receive({ type: 'ready', seq: 2 }), false);
+  assert.equal(sync.receive({ type: 'ready', seq: 2, revalidateAt: Date.now() + 300_000 }), false);
   assert.deepEqual(sync.durable.messages, []);
 });
 

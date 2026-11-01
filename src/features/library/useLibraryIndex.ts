@@ -1,12 +1,16 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   mergeActivity,
   type ActivityIndex,
   type ConversationActivity,
 } from '../../../shared/conversation/activity';
 import type { ConversationInfo, LibrarySnapshot } from '../../../shared/conversation/types';
-import { api, ApiError } from '../../platform/api';
+import { ApiError } from '../../platform/api';
+import { coversLibraryVersion } from '../../../shared/library/protocol';
+import { controlSnapshot, subscribeControl } from '../../platform/sync/control';
+import { syncRetryDelay } from '../../platform/sync/backoff';
+import { loadLibraryIndex } from './index-cache';
 import { uiMessage } from '../../platform/i18n/messages';
 import { read, storageEpoch, write } from '../../platform/storage';
 import type { Pending } from '../chat/cache';
@@ -24,63 +28,80 @@ export function useLibraryIndex({
   onUnauthorized: () => void;
 }) {
   const queryClient = useQueryClient();
-  const [localConversations, setLocalConversations] = useState<ConversationInfo[]>(() =>
-    read('library', []),
+  const baseline = useRef(read<LibrarySnapshot | null>('library-index', null));
+  const control = useSyncExternalStore(subscribeControl, controlSnapshot);
+  const lastAttempt = useRef('');
+  const deletionCallback = useRef(onDeleted);
+  deletionCallback.current = onDeleted;
+  const [localConversations, setLocalConversations] = useState<ConversationInfo[]>(
+    () => baseline.current?.conversations ?? [],
   );
-  const [activities, setActivities] = useState<ActivityIndex>(() => read('library-activity', {}));
+  const [activities, setActivities] = useState<ActivityIndex>(
+    () => baseline.current?.activity ?? {},
+  );
   const activityRef = useRef(activities);
-  const seenAt = useRef<Record<string, number>>({});
-  const [clock, setClock] = useState(Date.now);
-  const [online, setOnline] = useState(navigator.onLine);
+  const cacheEpoch = storageEpoch();
+  const baselineEpoch = useRef(cacheEpoch);
+  useEffect(() => {
+    if (baselineEpoch.current === cacheEpoch) return;
+    baselineEpoch.current = cacheEpoch;
+    baseline.current = null;
+    lastAttempt.current = '';
+    activityRef.current = {};
+    setActivities({});
+    setLocalConversations([]);
+  }, [cacheEpoch]);
   const observeActivity = useCallback((id: string, activity: ConversationActivity) => {
     if (deletedAt(id)) return;
     const previous = activityRef.current;
     const next = mergeActivity(previous, id, activity);
-    if ((previous[id]?.version ?? 0) <= activity.version) seenAt.current[id] = Date.now();
     if (next !== previous) {
       activityRef.current = next;
       setActivities(next);
-      write('library-activity', next);
     }
   }, []);
-  const hasActivity = Object.values(activities).some((item) => item.status !== 'idle');
-  useEffect(() => {
-    const update = () => {
-      setOnline(navigator.onLine);
-      setClock(Date.now());
-    };
-    window.addEventListener('online', update);
-    window.addEventListener('offline', update);
-    const timer = hasActivity ? setInterval(() => setClock(Date.now()), 5000) : undefined;
-    return () => {
-      clearInterval(timer);
-      window.removeEventListener('online', update);
-      window.removeEventListener('offline', update);
-    };
-  }, [hasActivity]);
   const libraryQuery = useQuery({
     queryKey: ['conversations'],
     queryFn: async ({ signal }) => {
       const epoch = storageEpoch();
-      let page: LibrarySnapshot;
-      do {
-        page = await api<LibrarySnapshot>(
-          `/conversations?after=${read('library-deletion-cursor', 0)}`,
-          'GET',
-          undefined,
-          signal,
-        );
-        if (epoch !== storageEpoch()) throw new DOMException('Session changed', 'AbortError');
-        for (const deletion of page.deletions) onDeleted(deletion.id, deletion.deletedAt);
+      const page = await loadLibraryIndex(baseline.current, signal);
+      if (epoch !== storageEpoch()) throw new DOMException('Session changed', 'AbortError');
+      for (const deletion of page.deletions)
+        deletionCallback.current(deletion.id, deletion.deletedAt);
+      if (baseline.current && baseline.current.watermark.epoch !== page.watermark.epoch) {
+        activityRef.current = page.activity;
+        setActivities(page.activity);
+      } else
         for (const [id, activity] of Object.entries(page.activity)) observeActivity(id, activity);
-        write('library-deletion-cursor', page.deletionCursor);
-      } while (page.hasMoreDeletions);
+      // Keep the list, activity, cursor and watermark in one recoverable value.
+      baseline.current = { ...page, deletions: [] };
+      write('library-index', baseline.current);
       return page.conversations;
     },
     enabled: enabled,
-    initialData: () => read<ConversationInfo[] | undefined>('library', undefined),
-    refetchInterval: 10_000,
+    initialData: () => baseline.current?.conversations,
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: (count, error) =>
+      count < 2 && (!(error instanceof ApiError) || error.status === 429 || error.status >= 500),
+    retryDelay: (attempt) => syncRetryDelay(attempt + 2),
   });
+  useEffect(() => {
+    if (!enabled || !control.ready || !control.watermark || libraryQuery.isFetching) return;
+    if (coversLibraryVersion(baseline.current?.watermark, control.watermark)) return;
+    const target = JSON.stringify([control.connection, control.watermark]);
+    if (libraryQuery.isError && lastAttempt.current === target) return;
+    lastAttempt.current = target;
+    void libraryQuery.refetch({ cancelRefetch: false });
+  }, [
+    enabled,
+    control,
+    libraryQuery.isFetching,
+    libraryQuery.isError,
+    libraryQuery.dataUpdatedAt,
+    libraryQuery.refetch,
+  ]);
   const conversations = useMemo(() => {
     const cloud = libraryQuery.data ?? [];
     const cloudIds = new Set(cloud.map((item) => item.id));
@@ -105,11 +126,10 @@ export function useLibraryIndex({
       onUnauthorized();
     if (enabled && libraryQuery.data) {
       setLocalConversations(libraryQuery.data);
-      write('library', libraryQuery.data);
     }
   }, [enabled, libraryQuery.data, libraryQuery.error, onUnauthorized]);
   const refreshLibrary = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    void queryClient.invalidateQueries({ queryKey: ['conversations'] }, { cancelRefetch: false });
     void queryClient.invalidateQueries({ queryKey: ['body-search'] });
   }, [queryClient]);
 
@@ -117,17 +137,11 @@ export function useLibraryIndex({
     (id: string) => {
       const next = { ...activityRef.current };
       delete next[id];
-      delete seenAt.current[id];
       activityRef.current = next;
       setActivities(next);
-      write('library-activity', next);
       setLocalConversations((items) => items.filter((item) => item.id !== id));
       queryClient.setQueryData<ConversationInfo[]>(['conversations'], (items) =>
         items?.filter((item) => item.id !== id),
-      );
-      write(
-        'library',
-        read<ConversationInfo[]>('library', []).filter((item) => item.id !== id),
       );
     },
     [queryClient],
@@ -135,17 +149,20 @@ export function useLibraryIndex({
   const rememberConversation = (conversation: ConversationInfo) => {
     const items = [conversation, ...localConversations];
     setLocalConversations(items);
-    write('library', items);
   };
   return {
     conversations,
     activities,
     observeActivity,
-    activityFresh: (id: string) =>
-      online && !libraryQuery.isError && clock - (seenAt.current[id] ?? 0) < 25_000,
+    activityFresh: (_id: string) =>
+      control.ready &&
+      !libraryQuery.isError &&
+      Boolean(
+        control.watermark && coversLibraryVersion(baseline.current?.watermark, control.watermark),
+      ),
     savedIds: new Set((libraryQuery.data ?? []).map((item) => item.id)),
     libraryLoading: !conversations.length && libraryQuery.isLoading,
-    libraryError: libraryQuery.isError ? uiMessage('library', 'updateFailed') : '',
+    libraryError: libraryQuery.isError || control.error ? uiMessage('library', 'updateFailed') : '',
     setLocalConversations,
     rememberConversation,
     refreshLibrary,

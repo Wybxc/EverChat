@@ -24,6 +24,14 @@ export function registerLibraryRoutes(app: ApiRouter) {
     return json(await context.env.LIBRARY.getByName('personal').indexSnapshot(after));
   });
 
+  app.get('/conversations/deletions', async (context) => {
+    await requireAuth(context);
+    const after = Number(context.req.query('after') ?? 0);
+    if (!Number.isSafeInteger(after) || after < 0)
+      throw new HttpError(400, '对话同步游标无效。', undefined, problem('INVALID_REQUEST'));
+    return json(await context.env.LIBRARY.getByName('personal').deletionPage(after));
+  });
+
   app.post('/conversations', async (context) => {
     await requireAuth(context);
     const { id, title, titleSource } = await parseBody(context, conversationSchema);
@@ -47,6 +55,12 @@ export function registerLibraryRoutes(app: ApiRouter) {
       return context.env.CONVERSATIONS.getByName(id).snapshotPageResponse(cursor);
     }
     return context.env.CONVERSATIONS.getByName(id).snapshotResponse();
+  });
+
+  app.get('/conversations/:id/access', async (context) => {
+    await requireAuth(context);
+    await requireConversation(context, conversationId(context));
+    return json({ authorized: true });
   });
 
   app.patch('/conversations/:id', async (context) => {

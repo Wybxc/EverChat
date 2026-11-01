@@ -43,6 +43,9 @@ export function initializeConversation(sql: SqlStorage, metrics: boolean) {
     "CREATE INDEX IF NOT EXISTS messages_activity ON messages(status) WHERE role = 'assistant'",
   );
   sql.exec(
+    "CREATE INDEX IF NOT EXISTS messages_pending ON messages(status) WHERE status IN ('queued','running')",
+  );
+  sql.exec(
     'CREATE TABLE IF NOT EXISTS message_generations (messageId TEXT PRIMARY KEY, payload TEXT NOT NULL)',
   );
   sql.exec(

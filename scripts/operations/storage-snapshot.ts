@@ -40,6 +40,14 @@ export function restoreSnapshot(db: DatabaseSync, snapshot: StorageSnapshot) {
     db.prepare(statement.sql).run(...(statement.args.map(decodeValue) as SQLInputValue[]));
 }
 
+/** A restored database starts a new synchronization domain, even at the same schema version. */
+export function rollbackSnapshot(snapshot: StorageSnapshot): StorageSnapshot {
+  const restored = structuredClone(snapshot);
+  for (const table of ['library_state', 'conversation_state'])
+    for (const row of restored.rows[table] ?? []) row.epoch = crypto.randomUUID();
+  return restored;
+}
+
 export function localSnapshot(db: DatabaseSync, kind: StoreKind): StorageSnapshot {
   const schema = (
     db

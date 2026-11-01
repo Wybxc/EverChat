@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import { ACCESS_REVALIDATION_SECONDS, type LibraryWatermark } from '../../shared/library/protocol';
 import { problem } from '../../shared/errors/descriptor';
 import {
   allowedPushEndpoint,
@@ -42,6 +43,7 @@ type Connection = {
   instanceId: string;
   owner: string;
   expires: number;
+  revalidate: number;
 };
 
 export class NotificationRegistry {
@@ -104,7 +106,13 @@ export class NotificationRegistry {
     );
     return value;
   }
-  connect(request: Request, owner: string, expires: number, instanceId: string) {
+  connect(
+    request: Request,
+    owner: string,
+    expires: number,
+    instanceId: string,
+    ready?: (socket: WebSocket, revalidateAt: number) => void,
+  ) {
     if (!v.is(notificationDeviceSchema.entries.instanceId, instanceId))
       throw new HttpError(400, '通知实例格式无效。', undefined, problem('NOTIFICATION_INVALID'));
     const device = this.row(instanceId);
@@ -119,20 +127,22 @@ export class NotificationRegistry {
       throw new HttpError(426, '需要实时连接。', undefined, problem('NOTIFICATION_INVALID'));
     const pair = new WebSocketPair();
     this.ctx.acceptWebSocket(pair[1], [instanceId]);
+    const revalidate = Math.min(
+      expires,
+      Math.floor(this.now() / 1000) + ACCESS_REVALIDATION_SECONDS,
+    );
     pair[1].serializeAttachment({
       instanceId,
       owner,
       expires,
+      revalidate,
     } satisfies Connection);
-    pair[1].send(JSON.stringify({ type: 'ready' } satisfies NotificationPacket));
+    ready?.(pair[1], revalidate * 1000);
     return new Response(null, { status: 101, webSocket: pair[0] });
   }
   message(socket: WebSocket, data: string | ArrayBuffer) {
     const connection = socket.deserializeAttachment() as Connection | null;
-    if (!connection || connection.expires * 1000 <= this.now()) {
-      socket.close(4401, 'Session expired');
-      return;
-    }
+    if (!this.valid(socket, connection)) return;
     if (typeof data !== 'string' || data.length > 512) return;
     try {
       const value = JSON.parse(data);
@@ -159,15 +169,45 @@ export class NotificationRegistry {
       /* Invalid control messages cannot change a subscription. */
     }
   }
+  private valid(socket: WebSocket, connection: Connection | null): connection is Connection {
+    if (
+      !connection ||
+      !Number.isFinite(connection.expires) ||
+      connection.expires * 1000 <= this.now()
+    ) {
+      socket.close(4401, 'Session expired');
+      return false;
+    }
+    if (!Number.isFinite(connection.revalidate) || connection.revalidate * 1000 <= this.now()) {
+      socket.close(4404, 'Revalidate access');
+      return false;
+    }
+    return true;
+  }
+  broadcastLibrary(library: LibraryWatermark) {
+    const packet = JSON.stringify({
+      type: 'library-changed',
+      library,
+    } satisfies NotificationPacket);
+    for (const socket of this.ctx.getWebSockets()) {
+      if (!this.valid(socket, socket.deserializeAttachment() as Connection | null)) continue;
+      try {
+        socket.send(packet);
+      } catch {
+        socket.close(1011, 'Reconnect to sync');
+      }
+    }
+  }
   private sockets(owner: string, instanceId?: string) {
     return this.ctx.getWebSockets(instanceId).filter((socket) => {
       const data = socket.deserializeAttachment() as Connection | null;
-      const device = data && this.row(data.instanceId);
-      if (!data || data.expires * 1000 <= this.now() || (device && device.owner !== data.owner)) {
+      if (!this.valid(socket, data)) return false;
+      const device = this.row(data!.instanceId);
+      if (device && device.owner !== data!.owner) {
         socket.close(4401, 'Session expired');
         return false;
       }
-      return data.owner === owner && socket.readyState === WebSocket.OPEN;
+      return data!.owner === owner && socket.readyState === WebSocket.OPEN;
     });
   }
   enqueue(input: AnswerCompletion) {

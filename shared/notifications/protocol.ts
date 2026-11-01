@@ -62,4 +62,5 @@ export function allowedPushEndpoint(value: string) {
 export type NotificationPacket =
   | { type: 'check'; id: string }
   | { type: 'local'; completion: AnswerCompletion; revision: number }
-  | { type: 'ready' };
+  | { type: 'ready'; library: import('../library/protocol').LibraryWatermark; revalidateAt: number }
+  | { type: 'library-changed'; library: import('../library/protocol').LibraryWatermark };

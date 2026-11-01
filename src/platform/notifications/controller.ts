@@ -8,12 +8,12 @@ import {
   NOTIFICATION_CHANNEL,
   type NotificationDevice,
   type NotificationMode,
-  type NotificationPacket,
 } from '../../../shared/notifications/protocol';
 import { identityKey } from '../../../shared/auth/types';
 import { api } from '../api';
 import { serializePushSubscription, InvalidPushSubscriptionError } from './subscription';
-import { networkIdentity, notifyAuthFailure } from '../auth';
+import { networkIdentity } from '../auth';
+import { onControlPacket, sendControl, startControl, stopControl } from '../sync/control';
 import {
   acknowledgeNotificationPreference,
   changeNotificationPreference,
@@ -65,12 +65,8 @@ const permission = () =>
     : Notification.permission;
 let owner: string | null = null;
 let channel: BroadcastChannel | null = null;
-let socket: WebSocket | null = null;
-let reconnect: ReturnType<typeof setTimeout> | undefined;
-let heartbeat: ReturnType<typeof setInterval> | undefined;
 let stopped = true,
-  generation = 0,
-  retry = 1000;
+  generation = 0;
 let syncing: Promise<void> | null = null;
 let navigating: ((conversationId: string, messageId: string) => void) | null = null;
 const registration = async () => {
@@ -110,67 +106,13 @@ async function refresh() {
   });
   return value;
 }
-const closeSocket = () => {
-  clearTimeout(reconnect);
-  clearInterval(heartbeat);
-  const old = socket;
-  socket = null;
-  if (old) {
-    old.onclose = null;
-    old.close();
-  }
-};
+const closeSocket = stopControl;
 function connect(value: NotificationPreference) {
   if (stopped || !authorized() || !navigator.onLine) {
     closeSocket();
     return;
   }
-  if (socket) return;
-  const current = generation;
-  const url = new URL(
-    `/api/notifications/sync?instance=${encodeURIComponent(value.instanceId)}`,
-    location.origin,
-  );
-  url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const ws = (socket = new WebSocket(url));
-  ws.onopen = () => {
-    retry = 1000;
-    heartbeat = setInterval(() => {
-      if (ws.readyState === WebSocket.OPEN) ws.send('ping');
-    }, 30_000);
-  };
-  ws.onmessage = (event) => {
-    if (stopped || current !== generation || socket !== ws || !authorized()) return;
-    if (event.data === 'pong') return;
-    try {
-      const packet = JSON.parse(event.data) as NotificationPacket;
-      if (packet.type === 'check' && typeof packet.id === 'string')
-        ws.send(
-          JSON.stringify({
-            type: 'check',
-            id: packet.id,
-            foreground: document.visibilityState === 'visible' && document.hasFocus(),
-          }),
-        );
-      if (packet.type === 'local' && v.is(completionSchema, packet.completion))
-        void registration()
-          .then((reg) => reg.active?.postMessage({ channel: NOTIFICATION_CHANNEL, ...packet }))
-          .catch(fail);
-    } catch {
-      /* Ignore malformed control packets. */
-    }
-  };
-  ws.onclose = (event) => {
-    clearInterval(heartbeat);
-    if (socket === ws) socket = null;
-    if (event.code === 4401) {
-      notifyAuthFailure(401);
-      return;
-    }
-    if (stopped || current !== generation) return;
-    reconnect = setTimeout(() => void refresh().then(connect).catch(fail), retry);
-    retry = Math.min(15_000, retry * 2);
-  };
+  startControl(owner!, value.instanceId);
 }
 const keyBytes = (key: string) =>
   Uint8Array.from(atob(key.replace(/-/g, '+').replace(/_/g, '/')), (character) =>
@@ -188,6 +130,7 @@ async function synchronizeNow() {
   const expectedOwner = owner,
     current = generation;
   let subscription: PushSubscription | null = null;
+  let subscriptionChanged = false;
   let reason: NotificationState['error'] = '';
   if (value.enabled && value.mode !== 'never' && permission() === 'granted') {
     const reg = await registration();
@@ -205,10 +148,13 @@ async function synchronizeNow() {
           await subscription.unsubscribe();
           subscription = null;
         }
-        subscription ??= await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: publicKey,
-        });
+        if (!subscription) {
+          subscription = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: publicKey,
+          });
+          subscriptionChanged = true;
+        }
       } catch {
         reason = 'pushFailed';
       }
@@ -223,7 +169,7 @@ async function synchronizeNow() {
   if (stopped || current !== generation || expectedOwner !== owner) return;
   const latest = await notificationPreference();
   if (latest.revision !== value.revision) return synchronizeNow();
-  if (value.push !== Boolean(subscription)) {
+  if (value.push !== Boolean(subscription) || subscriptionChanged) {
     value = await changeNotificationPreference({ push: Boolean(subscription) });
     await refresh();
   }
@@ -233,6 +179,11 @@ async function synchronizeNow() {
     mode: value.enabled && permission() === 'granted' ? value.mode : 'never',
     subscription: subscription ? serializePushSubscription(subscription) : null,
   };
+  if (value.syncedRevision === value.revision) {
+    // Connection/focus recovery is not a notification settings write.
+    emit({ error: reason });
+    return;
+  }
   const saved = await api<NotificationDevice>('/notifications/device', 'PUT', input);
   if (stopped || current !== generation) return;
   if (
@@ -275,6 +226,21 @@ export function startNotifications(
   channel =
     typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(NOTIFICATION_CHANNEL);
   if (channel) channel.onmessage = () => void refresh().then(connect).catch(fail);
+  const stopPackets = onControlPacket((packet) => {
+    if (stopped || !authorized()) return;
+    if (packet.type === 'check')
+      sendControl(
+        JSON.stringify({
+          type: 'check',
+          id: packet.id,
+          foreground: document.visibilityState === 'visible' && document.hasFocus(),
+        }),
+      );
+    if (packet.type === 'local')
+      void registration()
+        .then((reg) => reg.active?.postMessage({ channel: NOTIFICATION_CHANNEL, ...packet }))
+        .catch(fail);
+  });
   const resume = () => {
     void (async () => {
       const value = await refresh();
@@ -307,6 +273,7 @@ export function startNotifications(
     stopped = true;
     generation++;
     closeSocket();
+    stopPackets();
     channel?.close();
     channel = null;
     navigating = null;

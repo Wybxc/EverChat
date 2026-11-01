@@ -2,28 +2,29 @@
 
 统一入口为 `pnpm measure <command> [options]`，帮助为 `pnpm measure --help`。这些测量按需运行，不纳入日常 `pnpm check`。本地使用模拟模型与工具服务；Cloudflare 模式只连接事先显式部署的隔离验证 Worker，不操作生产对话或配置。
 
-| 命令                                                            | 范围                                                                                 |
-| --------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `pnpm measure stream`                                           | 本地正文、思考、断线续传及诊断计数                                                   |
-| `pnpm measure stream --runtime cloudflare --suite functional`   | 部署后四协议、取消、慢客户端等功能验证                                               |
-| `pnpm measure stream --runtime cloudflare --suite sustained`    | 分钟级持续生成                                                                       |
-| `pnpm measure stream --runtime cloudflare --suite reconnect`    | 使用已有报告验证重连                                                                 |
-| `pnpm measure stream --runtime cloudflare --suite history`      | 使用合成历史验证读取与重放                                                           |
-| `pnpm measure tools`                                            | 本地工具诊断计数；用 `--scenario multi-round` 单独验证五轮工具、六次模型请求正常完成 |
-| `pnpm measure tools --mode platform --suite functional`         | 本地真实 Workflow，关闭诊断计数；`all` 包含 large／sustained                         |
-| `pnpm measure tools --runtime cloudflare --suite functional`    | 同一平台执行器连接独立工具验证 Worker                                                |
-| `pnpm measure notifications --suite transport`                  | 隔离 Web Push 加密、VAPID 与模拟网关                                                 |
-| `pnpm measure notifications --suite pipeline`                   | outbox、Alarm、Library 和多设备通知管线                                              |
-| `pnpm measure usage`                                            | 本地 SQLite 合成账本，无网络请求                                                     |
-| `pnpm measure usage --runtime cloudflare prepare\|run\|metrics` | 合成用量／分享的隔离平台准备、运行及指标查询                                         |
-| `pnpm measure metrics`                                          | 根据完整测量报告读取 Cloudflare 平台分析                                             |
-| `pnpm measure tail`                                             | 脱敏记录独立验证 Worker 的日志指标                                                   |
+| 命令                                                             | 范围                                                                                 |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `pnpm measure stream`                                            | 本地正文、思考、断线续传及诊断计数                                                   |
+| `pnpm measure stream --runtime cloudflare --suite functional`    | 部署后四协议、取消、慢客户端等功能验证                                               |
+| `pnpm measure stream --runtime cloudflare --suite sustained`     | 分钟级持续生成                                                                       |
+| `pnpm measure stream --runtime cloudflare --suite reconnect`     | 使用已有报告验证重连                                                                 |
+| `pnpm measure stream --runtime cloudflare --suite history`       | 使用合成历史验证读取与重放                                                           |
+| `pnpm measure tools`                                             | 本地工具诊断计数；用 `--scenario multi-round` 单独验证五轮工具、六次模型请求正常完成 |
+| `pnpm measure tools --mode platform --suite functional`          | 本地真实 Workflow，关闭诊断计数；`all` 包含 large／sustained                         |
+| `pnpm measure tools --runtime cloudflare --suite functional`     | 同一平台执行器连接独立工具验证 Worker                                                |
+| `pnpm measure notifications --suite transport`                   | 隔离 Web Push 加密、VAPID 与模拟网关                                                 |
+| `pnpm measure notifications --suite pipeline`                    | outbox、Alarm、Library 和多设备通知管线                                              |
+| `pnpm measure usage`                                             | 本地 SQLite 合成账本，无网络请求                                                     |
+| `pnpm measure sync-reads --output /tmp/everchat-sync-reads.json` | 本地 workerd：列表、冷构造、候选索引与页面轮询的合成读取实验                         |
+| `pnpm measure usage --runtime cloudflare prepare\|run\|metrics`  | 合成用量／分享的隔离平台准备、运行及指标查询                                         |
+| `pnpm measure metrics`                                           | 根据完整测量报告读取 Cloudflare 平台分析                                             |
+| `pnpm measure tail`                                              | 脱敏记录独立验证 Worker 的日志指标                                                   |
 
 参数沿用各套件的明确校验，例如 `--output`、`--url`、`--credentials`、`--source`、`--account`。诊断和平台执行不合并计量口径：本地 SQL 计数、分配空间和墙钟时间均不等于 Cloudflare CPU、账单或账户额度。
 
 流式的 `functional`／`sustained` 与工具平台的 `functional` 支持 `--scenarios <名称,名称>`，用于只补测中断后未完成的场景。报告明确记录选择范围及预期数量；部分窗口继续保留 `complete: false`，不能改标为全套通过，也不能把重叠采样窗口相加。
 
-普通流 `sustained` 默认发送 16,000 字输入，支持 `--input-repeats <1..4000>` 调整合成输入（每次重复 4 字），报告记录实际输入长度。小输入可单独验收分钟级输出与重连，不能当作原大输入负载的资源对照。平台订阅与网页一致，每 20 秒发送心跳、会话与游标检查，60 秒无同步活动则断开恢复；非法应用事件仍失败。
+普通流 `sustained` 默认发送 16,000 字输入，支持 `--input-repeats <1..4000>` 调整合成输入（每次重复 4 字），报告记录实际输入长度。小输入可单独验收分钟级输出与重连，不能当作原大输入负载的资源对照。该执行器保留旧版负载：每 20 秒发送心跳、会话与游标检查，60 秒无同步活动则断开恢复；非法应用事件仍失败。空闲同步修复后网页仅保留自动 ping／pong，不能再把该执行器的资源数值直接等同于当前网页。
 
 流式平台执行器对 4002、异常网络关闭及明确的临时网络错误，从已确认快照重新订阅，不重新发起模型请求；JSON／同步协议损坏始终报错。HTTP 连接与整次请求期限均为 90 秒，仅 GET 在收到响应头前的临时网络错误最多尝试三次，共用整次期限；写请求、HTTP 错误和响应正文解析错误不重试。报告记录失败阶段及错误代码，不保存错误正文或凭据。分钟级场景依据服务端 `generation.timing.durationMs` 验证真实生成时间，另列客户端观测耗时。
 
@@ -34,9 +35,12 @@ pnpm measure stream --chunks 12 --interval 5 --size 32 --output /tmp/everchat-st
 pnpm measure tools --scenario multi-round --chunks 12 --interval 5 --size 32 --output /tmp/everchat-tools.json
 pnpm measure tools --mode platform --suite functional --output /tmp/everchat-platform
 pnpm measure usage
+pnpm measure sync-reads --output /tmp/everchat-sync-reads.json
 ```
 
 本地启动器持有进程及临时状态，正常结束、启动失败和执行异常均关闭进程并移除其临时目录。Worker 输出不进入报告，避免绑定或凭据泄露。协议订阅统一处理握手超时、就绪前关闭、解析失败、增量确认和断线。
+
+`sync-reads` 仅支持本地运行，复用生产 Library／Conversation 实现和原生 cursor 计数，数据全部为合成内容；额外修订号、持久快照和候选索引只存在于临时夹具。`pendingAlreadyIndexed` 标记正式实现是否已有 pending 索引；内部升级处理器计数使用原生 socket pair，不含 JWT、路由及网络。强制重建不代表平台休眠时机，模拟页面状态不代替 PWA 真机验收；报告在运行时成功清理后标记 `complete: true`。见[原基线](sync-idle-reads-2026-11-01.md)及[修复后复测](sync-idle-reads-after-2026-11-01.md)。
 
 ## Cloudflare 隔离环境
 
