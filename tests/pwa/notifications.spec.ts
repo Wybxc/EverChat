@@ -28,7 +28,13 @@ async function fixture(context: BrowserContext, page: Page) {
   await context.routeWebSocket('**/api/notifications/sync?*', (ws) => {
     sockets.add(ws);
     ws.onClose(() => sockets.delete(ws));
-    ws.send(JSON.stringify({ type: 'ready' }));
+    ws.send(
+      JSON.stringify({
+        type: 'ready',
+        library: { epoch: 'pwa-fixture', revision: 0 },
+        revalidateAt: Date.now() + 300_000,
+      }),
+    );
     ws.onMessage((data) => {
       if (data === 'ping') ws.send('pong');
       else {

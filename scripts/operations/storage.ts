@@ -21,7 +21,12 @@ import {
   type StoreKind,
   type TableSchema,
 } from './storage-protocol';
-import { localSnapshot, restoreSnapshot, snapshotStatements } from './storage-snapshot';
+import {
+  localSnapshot,
+  restoreSnapshot,
+  rollbackSnapshot,
+  snapshotStatements,
+} from './storage-snapshot';
 
 type Target = { kind: StoreKind; id: string; name?: string };
 type Manifest = {
@@ -382,7 +387,15 @@ if (action === 'prepare') {
           'Rollback requires complete original backups',
         );
         for (const target of manifest.objects) {
-          const before = await load<Snapshot>(`${base(target)}.before.json`);
+          const restoredFile = `${base(target)}.rollback.json`;
+          if (!(await hasFile(restoredFile)))
+            await save(
+              restoredFile,
+              rollbackSnapshot(await load<Snapshot>(`${base(target)}.before.json`)),
+            );
+          // Persist new epochs before the first remote write so interrupted
+          // rollback resumes the exact same patch and verification target.
+          const before = await load<Snapshot>(restoredFile);
           const statements: Statement[] = MIGRATION_TABLES[target.kind].map((table) => ({
             sql: `DROP TABLE IF EXISTS ${quoteIdentifier(table)}`,
             args: [],

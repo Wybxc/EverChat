@@ -1,0 +1,732 @@
+{
+  "version": 1,
+  "source": "Cloudflare GraphQL read-only aggregate queries",
+  "queriedAt": "2026-11-01T01:35:49.141Z",
+  "quotaWindow": {
+    "start": "2026-10-31T00:00:00Z",
+    "end": "2026-11-01T00:00:00Z"
+  },
+  "scope": "Production aggregate counters only. Namespace/account identifiers, credentials, requests and conversation content omitted. Adaptive analytics may differ from exact billing. No device or method-level attribution.",
+  "daily": {
+    "Conversation": {
+      "rowsRead": 861036,
+      "rowsWritten": 27506
+    },
+    "Library": {
+      "rowsRead": 4264432,
+      "rowsWritten": 2056
+    },
+    "UsageStore": {
+      "rowsRead": 2137,
+      "rowsWritten": 1209
+    },
+    "ShareStore": {
+      "rowsRead": 40,
+      "rowsWritten": 4
+    }
+  },
+  "hours": {
+    "2026-10-31T23:00:00Z": {
+      "Library": {
+        "rowsRead": 0,
+        "rowsWritten": 0,
+        "invocations": [
+          {
+            "type": "jsrpc",
+            "status": "scriptThrewException",
+            "errors": 288,
+            "requests": 288
+          },
+          {
+            "type": "http",
+            "status": "scriptThrewException",
+            "errors": 181,
+            "requests": 181
+          }
+        ]
+      }
+    },
+    "2026-10-31T18:00:00Z": {
+      "Conversation": {
+        "rowsRead": 30384,
+        "rowsWritten": 0,
+        "invocations": [
+          {
+            "type": "jsrpc",
+            "status": "clientDisconnected",
+            "errors": 12,
+            "requests": 12
+          },
+          {
+            "type": "http",
+            "status": "clientDisconnected",
+            "errors": 2,
+            "requests": 2
+          },
+          {
+            "type": "http",
+            "status": "success",
+            "errors": 0,
+            "requests": 10
+          },
+          {
+            "type": "hibernation",
+            "status": "success",
+            "errors": 0,
+            "requests": 360
+          }
+        ]
+      },
+      "Library": {
+        "rowsRead": 436400,
+        "rowsWritten": 0,
+        "invocations": [
+          {
+            "type": "jsrpc",
+            "status": "success",
+            "errors": 0,
+            "requests": 372
+          }
+        ]
+      }
+    },
+    "2026-10-31T16:00:00Z": {
+      "Library": {
+        "rowsRead": 503901,
+        "rowsWritten": 433,
+        "invocations": [
+          {
+            "type": "http",
+            "status": "responseStreamDisconnected",
+            "errors": 2,
+            "requests": 2
+          },
+          {
+            "type": "jsrpc",
+            "status": "success",
+            "errors": 0,
+            "requests": 1320
+          },
+          {
+            "type": "http",
+            "status": "success",
+            "errors": 0,
+            "requests": 228
+          },
+          {
+            "type": "hibernation",
+            "status": "success",
+            "errors": 0,
+            "requests": 7
+          },
+          {
+            "type": "hibernation",
+            "status": "scriptThrewException",
+            "errors": 1,
+            "requests": 1
+          },
+          {
+            "type": "alarm",
+            "status": "success",
+            "errors": 0,
+            "requests": 11
+          },
+          {
+            "type": "jsrpc",
+            "status": "clientDisconnected",
+            "errors": 27,
+            "requests": 27
+          }
+        ]
+      },
+      "ShareStore": {
+        "rowsRead": 40,
+        "rowsWritten": 4,
+        "invocations": [
+          {
+            "type": "jsrpc",
+            "status": "success",
+            "errors": 0,
+            "requests": 2
+          }
+        ]
+      },
+      "Conversation": {
+        "rowsRead": 219349,
+        "rowsWritten": 8527,
+        "invocations": [
+          {
+            "type": "jsrpc",
+            "status": "success",
+            "errors": 0,
+            "requests": 552
+          },
+          {
+            "type": "jsrpc",
+            "status": "clientDisconnected",
+            "errors": 270,
+            "requests": 270
+          },
+          {
+            "type": "alarm",
+            "status": "clientDisconnected",
+            "errors": 37,
+            "requests": 37
+          },
+          {
+            "type": "http",
+            "status": "success",
+            "errors": 0,
+            "requests": 7981
+          },
+          {
+            "type": "http",
+            "status": "responseStreamDisconnected",
+            "errors": 6,
+            "requests": 6
+          },
+          {
+            "type": "hibernation",
+            "status": "success",
+            "errors": 0,
+            "requests": 4872
+          },
+          {
+            "type": "alarm",
+            "status": "success",
+            "errors": 0,
+            "requests": 47
+          },
+          {
+            "type": "http",
+            "status": "clientDisconnected",
+            "errors": 8,
+            "requests": 8
+          }
+        ]
+      },
+      "UsageStore": {
+        "rowsRead": 589,
+        "rowsWritten": 415,
+        "invocations": [
+          {
+            "type": "jsrpc",
+            "status": "success",
+            "errors": 0,
+            "requests": 111
+          }
+        ]
+      }
+    },
+    "2026-10-31T19:00:00Z": {
+      "Conversation": {
+        "rowsRead": 21956,
+        "rowsWritten": 0,
+        "invocations": [
+          {
+            "type": "hibernation",
+            "status": "success",
+            "errors": 0,
+            "requests": 260
+          },
+          {
+            "type": "jsrpc",
+            "status": "clientDisconnected",
+            "errors": 8,
+            "requests": 8
+          },
+          {
+            "type": "hibernation",
+            "status": "scriptThrewException",
+            "errors": 2,
+            "requests": 2
+          },
+          {
+            "type": "http",
+            "status": "responseStreamDisconnected",
+            "errors": 1,
+            "requests": 1
+          },
+          {
+            "type": "http",
+            "status": "clientDisconnected",
+            "errors": 2,
+            "requests": 2
+          },
+          {
+            "type": "http",
+            "status": "success",
+            "errors": 0,
+            "requests": 5
+          }
+        ]
+      },
+      "Library": {
+        "rowsRead": 311144,
+        "rowsWritten": 0,
+        "invocations": [
+          {
+            "type": "hibernation",
+            "status": "scriptThrewException",
+            "errors": 1,
+            "requests": 1
+          },
+          {
+            "type": "jsrpc",
+            "status": "success",
+            "errors": 0,
+            "requests": 267
+          },
+          {
+            "type": "jsrpc",
+            "status": "scriptThrewException",
+            "errors": 165,
+            "requests": 165
+          },
+          {
+            "type": "http",
+            "status": "scriptThrewException",
+            "errors": 67,
+            "requests": 67
+          }
+        ]
+      }
+    },
+    "2026-10-31T17:00:00Z": {
+      "Conversation": {
+        "rowsRead": 30147,
+        "rowsWritten": 0,
+        "invocations": [
+          {
+            "type": "jsrpc",
+            "status": "clientDisconnected",
+            "errors": 11,
+            "requests": 11
+          },
+          {
+            "type": "http",
+            "status": "clientDisconnected",
+            "errors": 2,
+            "requests": 2
+          },
+          {
+            "type": "hibernation",
+            "status": "success",
+            "errors": 0,
+            "requests": 357
+          },
+          {
+            "type": "http",
+            "status": "success",
+            "errors": 0,
+            "requests": 9
+          }
+        ]
+      },
+      "Library": {
+        "rowsRead": 434459,
+        "rowsWritten": 6,
+        "invocations": [
+          {
+            "type": "alarm",
+            "status": "success",
+            "errors": 0,
+            "requests": 3
+          },
+          {
+            "type": "jsrpc",
+            "status": "success",
+            "errors": 0,
+            "requests": 367
+          }
+        ]
+      }
+    },
+    "2026-10-31T22:00:00Z": {
+      "Library": {
+        "rowsRead": 0,
+        "rowsWritten": 0,
+        "invocations": [
+          {
+            "type": "http",
+            "status": "scriptThrewException",
+            "errors": 241,
+            "requests": 241
+          },
+          {
+            "type": "jsrpc",
+            "status": "scriptThrewException",
+            "errors": 586,
+            "requests": 586
+          }
+        ]
+      }
+    },
+    "2026-10-31T21:00:00Z": {
+      "Library": {
+        "rowsRead": 0,
+        "rowsWritten": 0,
+        "invocations": [
+          {
+            "type": "http",
+            "status": "scriptThrewException",
+            "errors": 231,
+            "requests": 231
+          },
+          {
+            "type": "jsrpc",
+            "status": "scriptThrewException",
+            "errors": 584,
+            "requests": 584
+          }
+        ]
+      }
+    },
+    "2026-10-31T20:00:00Z": {
+      "Library": {
+        "rowsRead": 0,
+        "rowsWritten": 0,
+        "invocations": [
+          {
+            "type": "http",
+            "status": "scriptThrewException",
+            "errors": 228,
+            "requests": 228
+          },
+          {
+            "type": "jsrpc",
+            "status": "scriptThrewException",
+            "errors": 584,
+            "requests": 584
+          }
+        ]
+      }
+    }
+  },
+  "libraryFiveMinutes": {
+    "2026-10-31T19:15:00Z": {
+      "rowsRead": 36392,
+      "rowsWritten": 0,
+      "invocations": [
+        {
+          "type": "jsrpc",
+          "status": "success",
+          "errors": 0,
+          "requests": 31
+        }
+      ]
+    },
+    "2026-10-31T19:45:00Z": {
+      "rowsRead": 0,
+      "rowsWritten": 0,
+      "invocations": [
+        {
+          "type": "jsrpc",
+          "status": "scriptThrewException",
+          "errors": 48,
+          "requests": 48
+        },
+        {
+          "type": "http",
+          "status": "scriptThrewException",
+          "errors": 20,
+          "requests": 20
+        }
+      ]
+    },
+    "2026-10-31T18:35:00Z": {
+      "rowsRead": 36240,
+      "rowsWritten": 0,
+      "invocations": [
+        {
+          "type": "jsrpc",
+          "status": "success",
+          "errors": 0,
+          "requests": 31
+        }
+      ]
+    },
+    "2026-10-31T19:55:00Z": {
+      "rowsRead": 0,
+      "rowsWritten": 0,
+      "invocations": [
+        {
+          "type": "http",
+          "status": "scriptThrewException",
+          "errors": 19,
+          "requests": 19
+        },
+        {
+          "type": "jsrpc",
+          "status": "scriptThrewException",
+          "errors": 48,
+          "requests": 48
+        }
+      ]
+    },
+    "2026-10-31T18:50:00Z": {
+      "rowsRead": 36392,
+      "rowsWritten": 0,
+      "invocations": [
+        {
+          "type": "jsrpc",
+          "status": "success",
+          "errors": 0,
+          "requests": 31
+        }
+      ]
+    },
+    "2026-10-31T18:45:00Z": {
+      "rowsRead": 36392,
+      "rowsWritten": 0,
+      "invocations": [
+        {
+          "type": "jsrpc",
+          "status": "success",
+          "errors": 0,
+          "requests": 31
+        }
+      ]
+    },
+    "2026-10-31T18:55:00Z": {
+      "rowsRead": 36240,
+      "rowsWritten": 0,
+      "invocations": [
+        {
+          "type": "jsrpc",
+          "status": "success",
+          "errors": 0,
+          "requests": 31
+        }
+      ]
+    },
+    "2026-10-31T19:35:00Z": {
+      "rowsRead": 36392,
+      "rowsWritten": 0,
+      "invocations": [
+        {
+          "type": "jsrpc",
+          "status": "success",
+          "errors": 0,
+          "requests": 31
+        }
+      ]
+    },
+    "2026-10-31T18:15:00Z": {
+      "rowsRead": 36392,
+      "rowsWritten": 0,
+      "invocations": [
+        {
+          "type": "jsrpc",
+          "status": "success",
+          "errors": 0,
+          "requests": 31
+        }
+      ]
+    },
+    "2026-10-31T18:40:00Z": {
+      "rowsRead": 36392,
+      "rowsWritten": 0,
+      "invocations": [
+        {
+          "type": "jsrpc",
+          "status": "success",
+          "errors": 0,
+          "requests": 31
+        }
+      ]
+    },
+    "2026-10-31T18:10:00Z": {
+      "rowsRead": 36392,
+      "rowsWritten": 0,
+      "invocations": [
+        {
+          "type": "jsrpc",
+          "status": "success",
+          "errors": 0,
+          "requests": 31
+        }
+      ]
+    },
+    "2026-10-31T18:20:00Z": {
+      "rowsRead": 36392,
+      "rowsWritten": 0,
+      "invocations": [
+        {
+          "type": "jsrpc",
+          "status": "success",
+          "errors": 0,
+          "requests": 31
+        }
+      ]
+    },
+    "2026-10-31T19:20:00Z": {
+      "rowsRead": 36392,
+      "rowsWritten": 0,
+      "invocations": [
+        {
+          "type": "jsrpc",
+          "status": "success",
+          "errors": 0,
+          "requests": 31
+        }
+      ]
+    },
+    "2026-10-31T18:30:00Z": {
+      "rowsRead": 36392,
+      "rowsWritten": 0,
+      "invocations": [
+        {
+          "type": "jsrpc",
+          "status": "success",
+          "errors": 0,
+          "requests": 31
+        }
+      ]
+    },
+    "2026-10-31T19:25:00Z": {
+      "rowsRead": 35132,
+      "rowsWritten": 0,
+      "invocations": [
+        {
+          "type": "jsrpc",
+          "status": "success",
+          "errors": 0,
+          "requests": 31
+        }
+      ]
+    },
+    "2026-10-31T19:30:00Z": {
+      "rowsRead": 36240,
+      "rowsWritten": 0,
+      "invocations": [
+        {
+          "type": "jsrpc",
+          "status": "success",
+          "errors": 0,
+          "requests": 31
+        }
+      ]
+    },
+    "2026-10-31T18:00:00Z": {
+      "rowsRead": 36392,
+      "rowsWritten": 0,
+      "invocations": [
+        {
+          "type": "jsrpc",
+          "status": "success",
+          "errors": 0,
+          "requests": 31
+        }
+      ]
+    },
+    "2026-10-31T19:40:00Z": {
+      "rowsRead": 22680,
+      "rowsWritten": 0,
+      "invocations": [
+        {
+          "type": "hibernation",
+          "status": "scriptThrewException",
+          "errors": 1,
+          "requests": 1
+        },
+        {
+          "type": "jsrpc",
+          "status": "success",
+          "errors": 0,
+          "requests": 18
+        },
+        {
+          "type": "jsrpc",
+          "status": "scriptThrewException",
+          "errors": 19,
+          "requests": 19
+        },
+        {
+          "type": "http",
+          "status": "scriptThrewException",
+          "errors": 9,
+          "requests": 9
+        }
+      ]
+    },
+    "2026-10-31T19:10:00Z": {
+      "rowsRead": 37652,
+      "rowsWritten": 0,
+      "invocations": [
+        {
+          "type": "jsrpc",
+          "status": "success",
+          "errors": 0,
+          "requests": 32
+        }
+      ]
+    },
+    "2026-10-31T19:50:00Z": {
+      "rowsRead": 0,
+      "rowsWritten": 0,
+      "invocations": [
+        {
+          "type": "jsrpc",
+          "status": "scriptThrewException",
+          "errors": 50,
+          "requests": 50
+        },
+        {
+          "type": "http",
+          "status": "scriptThrewException",
+          "errors": 19,
+          "requests": 19
+        }
+      ]
+    },
+    "2026-10-31T18:25:00Z": {
+      "rowsRead": 36392,
+      "rowsWritten": 0,
+      "invocations": [
+        {
+          "type": "jsrpc",
+          "status": "success",
+          "errors": 0,
+          "requests": 31
+        }
+      ]
+    },
+    "2026-10-31T19:05:00Z": {
+      "rowsRead": 36392,
+      "rowsWritten": 0,
+      "invocations": [
+        {
+          "type": "jsrpc",
+          "status": "success",
+          "errors": 0,
+          "requests": 31
+        }
+      ]
+    },
+    "2026-10-31T18:05:00Z": {
+      "rowsRead": 36392,
+      "rowsWritten": 0,
+      "invocations": [
+        {
+          "type": "jsrpc",
+          "status": "success",
+          "errors": 0,
+          "requests": 31
+        }
+      ]
+    },
+    "2026-10-31T19:00:00Z": {
+      "rowsRead": 33872,
+      "rowsWritten": 0,
+      "invocations": [
+        {
+          "type": "jsrpc",
+          "status": "success",
+          "errors": 0,
+          "requests": 31
+        }
+      ]
+    }
+  }
+}

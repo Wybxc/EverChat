@@ -19,6 +19,7 @@ import { DOCUMENT_INPUT_SNAPSHOTS_SCHEMA } from '../../worker/attachments/input-
 import { MCP_ATTACHMENTS_SCHEMA } from '../../worker/mcp/attachments';
 import { encodeValue, type Statement, type StoreKind } from './storage-protocol';
 import { migrateShares } from './migrate-shares';
+import { LIBRARY_STATE_SCHEMA, libraryStateTriggers } from '../../worker/library/state';
 
 // Only this Node.js operations module understands previous database formats.
 // The returned patch contains values already converted locally, never a parser
@@ -65,6 +66,7 @@ export async function migrateStorage(db: DatabaseSync, kind: StoreKind): Promise
         version !== 3 &&
         version !== 4 &&
         version !== 5 &&
+        version !== 6 &&
         version !== STORAGE_SCHEMA_VERSION
       )
         throw new Error(`Unsupported storage schema version: ${version}`);
@@ -201,6 +203,13 @@ export async function migrateStorage(db: DatabaseSync, kind: StoreKind): Promise
         );
         query("UPDATE web_tool_service SET apiKey=''");
       }
+      query(LIBRARY_STATE_SCHEMA);
+      query('INSERT OR IGNORE INTO library_state VALUES (1, ?, 0)', crypto.randomUUID());
+      // Format upgrades start a new cursor domain; repeating an already applied
+      // conversion is idempotent. No runtime path resets or repairs this state.
+      if (version !== STORAGE_SCHEMA_VERSION)
+        query('UPDATE library_state SET epoch=? WHERE id=1', crypto.randomUUID());
+      for (const statement of libraryStateTriggers(exists)) query(statement);
     }
     // The version gate stays closed throughout an interrupted remote import.
     db.prepare('DELETE FROM storage_schema').run();

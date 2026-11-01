@@ -69,7 +69,7 @@ export type SyncPacket =
   | { type: 'resync' }
   | { type: 'state'; after: number; snapshot: Snapshot }
   | { type: 'snapshot'; snapshot: Snapshot }
-  | { type: 'ready'; seq: number }
+  | { type: 'ready'; seq: number; revalidateAt: number }
   | { type: 'deleted'; deletedAt: number };
 
 export type GenerationExecutor = 'do-v1';

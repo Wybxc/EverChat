@@ -94,7 +94,7 @@ function registry(t: TestContext) {
     );
   let store = reader();
   function socket(instanceId: string, expires = 10000, owner = 'owner') {
-    let attachment: unknown = { instanceId, owner, expires };
+    let attachment: unknown = { instanceId, owner, expires, revalidate: expires };
     const packets: { type: string; id?: string }[] = [];
     return {
       instanceId,
@@ -213,6 +213,25 @@ test('device ownership, endpoint validation, monotonic revisions and enable time
   f.store.enqueue({ ...f.completion, completedAt: f.now() });
   await f.store.flush();
   assert.equal(f.sent.length, 1);
+});
+
+test('Library changes broadcast without device reads and expire at the revalidation boundary', (t) => {
+  const f = registry(t);
+  const ws = f.connect(crypto.randomUUID());
+  ws.serializeAttachment({
+    instanceId: ws.instanceId,
+    owner: 'owner',
+    expires: 10000,
+    revalidate: f.now() / 1000 + 1,
+  });
+  f.store.broadcastLibrary({ epoch: 'fixture', revision: 1 });
+  assert.deepEqual(ws.packets, [
+    { type: 'library-changed', library: { epoch: 'fixture', revision: 1 } },
+  ]);
+  f.advance(1000);
+  f.store.broadcastLibrary({ epoch: 'fixture', revision: 2 });
+  assert.equal(ws.packets.length, 1);
+  assert.equal(ws.closed, true);
 });
 test('a foreground window suppresses conditional push across all tabs; a later background completion is sent once after restart', async (t) => {
   const f = registry(t),

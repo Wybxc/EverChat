@@ -8,6 +8,7 @@ import { test } from 'node:test';
 import { rebuildTextIndexes } from '../../../scripts/operations/rebuild-text-indexes';
 import { migrateStorage } from '../../../scripts/operations/migrations';
 import { indexText } from '../../../shared/attachments/text-index';
+import { STORAGE_SCHEMA_VERSION } from '../../../worker/platform/storage-schema';
 
 test('offline conversion builds immutable indexes from canonical backup bytes and rejects corruption', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'everchat-text-indexes-')),
@@ -43,7 +44,10 @@ test('offline conversion builds immutable indexes from canonical backup bytes an
     const payload = await readFile(join(directory, result.objects[0].file));
     assert.equal(createHash('sha256').update(payload).digest('hex'), result.objects[0].sha256);
     assert.deepEqual(JSON.parse(payload.toString()), indexText(bytes));
-    assert.equal(db.prepare('SELECT version FROM storage_schema').get()!.version, 6);
+    assert.equal(
+      db.prepare('SELECT version FROM storage_schema').get()!.version,
+      STORAGE_SCHEMA_VERSION,
+    );
     await writeFile(join(directory, `${id}.text.bin`), 'corrupted');
     await assert.rejects(rebuildTextIndexes(db, directory), /checksum/);
   } finally {

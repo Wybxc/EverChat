@@ -76,6 +76,8 @@ import { WebToolSettings } from '../web-tools/settings';
 import { LIBRARY_ACTIVITY_SCHEMA, LibraryActivityIndex } from './activity';
 import { initializeConversationMetadata } from './metadata';
 import { LibraryTitles, TITLE_INDEX_SCHEMA } from './titles';
+import { initializeLibraryState, LibraryState } from './state';
+import { sameLibraryVersion, type LibraryWatermark } from '../../shared/library/protocol';
 
 type Deletion = { id: string; deletedAt: number; completed: number } & Record<
   string,
@@ -108,6 +110,9 @@ export class Library extends DurableObject<Env> {
   private readonly webTools: WebToolSettings;
   private readonly activity: LibraryActivityIndex;
   private readonly titles: LibraryTitles;
+  private readonly indexState: LibraryState;
+  private indexPublishing = false;
+  private publishedIndex?: LibraryWatermark;
   private readonly interruptedImportFiles = new Set<string>();
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -155,6 +160,10 @@ export class Library extends DurableObject<Env> {
       (id) => Boolean(this.get(id)),
     );
     this.providers = new ProviderSettingsStore(ctx.storage, env, this.presets);
+    ctx.storage.transactionSync(() =>
+      initializeLibraryState(ctx.storage.sql.exec.bind(ctx.storage.sql)),
+    );
+    this.indexState = new LibraryState(ctx.storage.sql.exec.bind(ctx.storage.sql));
     this.searchIndex = new SearchIndex(ctx.storage);
     this.attachments = new AttachmentStore(ctx.storage, env.ATTACHMENTS, (id) =>
       Boolean(this.internalConversation(id)),
@@ -181,6 +190,25 @@ export class Library extends DurableObject<Env> {
     // Historical indexing is an offline operation. Only explicit copy/import
     // jobs may enqueue a full scan; ordinary writes use the conversation outbox.
     ctx.waitUntil(this.scheduleMaintenance());
+  }
+  private publishIndex() {
+    if (this.indexPublishing || !this.ctx.getWebSockets().length) return;
+    this.indexPublishing = true;
+    this.ctx.waitUntil(
+      (async () => {
+        try {
+          // The notification is advisory; publish only after durable transaction commit.
+          await this.ctx.storage.sync();
+          const watermark = this.indexState.current();
+          if (!sameLibraryVersion(this.publishedIndex, watermark)) {
+            this.notifications.broadcastLibrary(watermark);
+            this.publishedIndex = watermark;
+          }
+        } finally {
+          this.indexPublishing = false;
+        }
+      })(),
+    );
   }
   private async scheduleMaintenance() {
     await this.ctx.storage.transaction(async () => {
@@ -250,7 +278,7 @@ export class Library extends DurableObject<Env> {
       .toArray()
       .map(decorate);
   }
-  indexSnapshot(after: number) {
+  deletionPage(after: number) {
     const rows = this.ctx.storage.sql
       .exec<{ seq: number; id: string; deletedAt: number }>(
         'SELECT rowid AS seq, id, deletedAt FROM conversation_deletions WHERE rowid > ? ORDER BY rowid LIMIT 257',
@@ -259,15 +287,22 @@ export class Library extends DurableObject<Env> {
       .toArray();
     const page = rows.slice(0, 256);
     return {
-      conversations: this.list(),
-      activity: this.activity.snapshot(),
       deletions: page.map(({ id, deletedAt }) => ({ id, deletedAt })),
       deletionCursor: page.at(-1)?.seq ?? after,
       hasMoreDeletions: rows.length > 256,
     };
   }
+  indexSnapshot(after: number) {
+    return {
+      conversations: this.list(),
+      activity: this.activity.snapshot(),
+      ...this.deletionPage(after),
+      watermark: this.indexState.current(),
+    };
+  }
   reportActivity(id: string, activity: ConversationActivity) {
     this.activity.accept(id, activity);
+    this.publishIndex();
   }
   protected sendNotificationPush(device: NotificationDevice, completion: AnswerCompletion) {
     return sendWebPush(this.env, device, completion);
@@ -352,6 +387,14 @@ export class Library extends DurableObject<Env> {
         owner,
         expires,
         url.searchParams.get('instance') ?? '',
+        (socket, revalidateAt) =>
+          socket.send(
+            JSON.stringify({
+              type: 'ready',
+              library: this.indexState.current(),
+              revalidateAt,
+            }),
+          ),
       );
     } catch (error) {
       if (error instanceof HttpError)
@@ -363,7 +406,7 @@ export class Library extends DurableObject<Env> {
     this.notifications.message(socket, data);
   }
   webSocketClose(socket: WebSocket, code: number, reason: string) {
-    socket.close(code, reason);
+    socket.close([1005, 1006, 1015].includes(code) ? 1000 : code, reason);
   }
   webSocketError(socket: WebSocket) {
     socket.close(1011, 'Connection error');
@@ -399,14 +442,17 @@ export class Library extends DurableObject<Env> {
     const existing = this.get(id);
     if (existing) return existing;
     const now = Date.now();
-    this.ctx.storage.sql.exec(
-      'INSERT OR IGNORE INTO conversations VALUES (?, ?, ?, ?)',
-      id,
-      title,
-      now,
-      now,
-    );
-    this.titles.create(id, source);
+    this.ctx.storage.transactionSync(() => {
+      this.ctx.storage.sql.exec(
+        'INSERT OR IGNORE INTO conversations VALUES (?, ?, ?, ?)',
+        id,
+        title,
+        now,
+        now,
+      );
+      this.titles.create(id, source);
+    });
+    this.publishIndex();
     return this.get(id)!;
   }
   touch(id: string) {
@@ -416,6 +462,7 @@ export class Library extends DurableObject<Env> {
         Date.now(),
         id,
       );
+    this.publishIndex();
   }
   update(id: string, patch: { title?: string; pinned?: boolean }) {
     if (this.deletedAt(id))
@@ -440,13 +487,14 @@ export class Library extends DurableObject<Env> {
       }
       this.searchIndex.changed();
     });
+    this.publishIndex();
     return this.get(id)!;
   }
   async beginDelete(id: string) {
     // A deletion tombstone also blocks an in-flight preview from being published later.
     // Abort deletion when revocation is unavailable; never acknowledge with a live public link.
     await this.env.SHARES?.getByName('personal').deleteConversation(id);
-    return this.ctx.storage.transaction(async () => {
+    const result = await this.ctx.storage.transaction(async () => {
       const existing = this.ctx.storage.sql
         .exec<Deletion>('SELECT * FROM conversation_deletions WHERE id = ?', id)
         .toArray()[0];
@@ -491,6 +539,8 @@ export class Library extends DurableObject<Env> {
       await this.ctx.storage.setAlarm(Date.now() + 1000);
       return deletion;
     });
+    this.publishIndex();
+    return result;
   }
   completeDelete(id: string) {
     this.ctx.storage.transactionSync(() => {
@@ -501,6 +551,7 @@ export class Library extends DurableObject<Env> {
       this.ctx.storage.sql.exec('DELETE FROM title_reservations WHERE conversationId = ?', id);
       this.ctx.storage.sql.exec('UPDATE conversation_deletions SET completed = 1 WHERE id = ?', id);
     });
+    this.publishIndex();
   }
   async alarm() {
     await this.accounting.deliver();
@@ -621,6 +672,7 @@ export class Library extends DurableObject<Env> {
       if (Number.isFinite(next)) await this.ctx.storage.setAlarm(next);
       else await this.ctx.storage.deleteAlarm();
     });
+    this.publishIndex();
   }
   async duplicate(
     sourceId: string,
@@ -920,7 +972,11 @@ export class Library extends DurableObject<Env> {
     }
   }
   async beginImport(id: string, body: ReadableStream<Uint8Array>): Promise<ImportResult> {
-    return this.restorer.beginImport(id, body);
+    try {
+      return await this.restorer.beginImport(id, body);
+    } finally {
+      this.publishIndex();
+    }
   }
   importStatus(id: string) {
     return this.restorer.importStatus(id);
@@ -954,21 +1010,27 @@ export class Library extends DurableObject<Env> {
   }
   reserveTitle(id: string, taskId: string, automatic: boolean, expectedVersion = 0) {
     if (!this.get(id)) return { rejected: '对话已删除' };
-    return this.ctx.storage.transactionSync(() =>
+    const result = this.ctx.storage.transactionSync(() =>
       this.titles.reserve(id, taskId, automatic, expectedVersion),
     );
+    this.publishIndex();
+    return result;
   }
   startTitle(id: string, taskId: string, version: number) {
     if (!this.get(id)) return false;
-    return this.ctx.storage.transactionSync(() => this.titles.running(id, taskId, version));
+    const result = this.ctx.storage.transactionSync(() => this.titles.running(id, taskId, version));
+    this.publishIndex();
+    return result;
   }
   finishTitle(id: string, taskId: string, version: number, title: string | null, error?: string) {
     if (!this.get(id)) return false;
-    return this.ctx.storage.transactionSync(() => {
+    const result = this.ctx.storage.transactionSync(() => {
       const changed = this.titles.finish(id, taskId, version, title, error);
       if (changed && title) this.searchIndex.changed();
       return changed;
     });
+    this.publishIndex();
+    return result;
   }
   providerConfig(selection?: ModelSelection, effort?: ReasoningEffort): ProviderConfig | null {
     return this.providers.providerConfig(selection, effort);

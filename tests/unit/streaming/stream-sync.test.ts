@@ -150,7 +150,7 @@ test('reconnection discards ephemeral output and accepts durable replay before t
   sync.resetPreview();
   assert.deepEqual(sync.view.messages, [message]);
   sync.receive(commit);
-  sync.receive({ type: 'ready', seq: 1 });
+  sync.receive({ type: 'ready', seq: 1, revalidateAt: Date.now() + 300_000 });
   sync.receive({ type: 'preview', batch: first }); // Already saved, so no double append.
   sync.receive({ type: 'preview', batch: second });
   sync.receive({ type: 'preview', batch: second });
@@ -174,7 +174,10 @@ test('missing previews, conflicting duplicates and gaps trigger recovery without
     () => sync.receive({ type: 'preview', batch: { ...second, chunkSeq: 3 } }),
     /sequence gap/,
   );
-  assert.throws(() => sync.receive({ type: 'ready', seq: 2 }), /readiness gap/);
+  assert.throws(
+    () => sync.receive({ type: 'ready', seq: 2, revalidateAt: Date.now() + 300_000 }),
+    /readiness gap/,
+  );
   assert.throws(() => sync.receive(commitAck({ ...commit, seq: 2 })), /sequence gap/);
   assert.equal(sync.durable.seq, 0);
   const altered = { ...first, data: encodeBytes(wire('**其他🙂**', '先思考')) };

@@ -177,6 +177,7 @@ const server = createServer(async (request, response) => {
   if (path === '/api/settings/presets') return json([]);
   if (path === '/api/conversations')
     return json({
+      watermark: { epoch: 'pwa-fixture', revision: 0 },
       conversations: [{ id: conversationId, title, createdAt: 1, updatedAt: 1, pinned: false }],
       deletions: [],
       activity: {},
