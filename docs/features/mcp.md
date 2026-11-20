@@ -10,6 +10,8 @@ EverChat 提供同域 `/mcp` 接口。Streamable HTTP 客户端可通过浏览�
 
 OAuth 支持使用 Client ID Metadata Document（CIMD）的客户端。授权范围 `mcp:use` 允许调用模型并访问本连接创建的对话、任务和附件。模型调用可能产生费用，系统提示词正文不会向 OAuth 客户端公开。刷新期间可使用原有的 `runRef`、`continuation` 和 `requestId`。
 
+EverChat 随版本固定 [Codex](https://chatgpt.com/oauth/codex/client.json) 和 [ChatGPT](https://chatgpt.com/oauth/client.json) 的官方稳定客户端 ID 及回调地址。遇到 Workers 访问客户端元数据时的 403 时，这两个客户端仍可发起授权。其他 CIMD 客户端的元数据由 Worker 在线读取并校验。 [Cloudflare 上游记录](https://github.com/cloudflare/workers-oauth-provider/issues/333)
+
 「设置 → MCP → 已授权应用」显示连接及到期、最近使用时间。授权有效期为 30 天。在此断开连接会立即停用访问令牌和刷新令牌，已经接受的生成及其网页对话会保留。重新授权会建立一个新连接。网页登录退出与 MCP 授权是独立的操作。
 
 ## 创建与管理密钥

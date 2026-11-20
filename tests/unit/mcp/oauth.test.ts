@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { test } from 'node:test';
 import type { Env } from '../../../worker/http/env';
-import { matchesRedirectUri } from '../../../worker/mcp/oauth-client';
+import { discoverMcpClient, matchesRedirectUri } from '../../../worker/mcp/oauth-client';
 import { McpOAuthStore } from '../../../worker/mcp/oauth-store';
 
 test('OAuth callback matching only varies the port of a registered loopback redirect', () => {
@@ -23,6 +23,29 @@ test('OAuth callback matching only varies the port of a registered loopback redi
     matchesRedirectUri('https://client.test:48476/callback', 'https://client.test/callback', false),
     false,
   );
+});
+
+test('Stable Codex and ChatGPT client IDs use their published callbacks without a Worker subrequest', async (context) => {
+  const fetch = context.mock.method(globalThis, 'fetch', () =>
+    Promise.reject(new Error('unavailable')),
+  );
+  const issuer = 'https://everchat.test';
+  const codex = await discoverMcpClient('https://chatgpt.com/oauth/codex/client.json', issuer);
+  assert.deepEqual(codex?.redirect_uris, [
+    'http://127.0.0.1/callback',
+    'http://localhost/callback',
+  ]);
+  assert.equal(codex?.application_type, 'native');
+  const chatgpt = await discoverMcpClient('https://chatgpt.com/oauth/client.json', issuer);
+  assert.deepEqual(chatgpt?.redirect_uris, [
+    'https://chatgpt.com/connector_platform_oauth_redirect',
+  ]);
+  assert.equal(fetch.mock.callCount(), 0);
+  assert.equal(
+    await discoverMcpClient('https://chatgpt.com/oauth/client.json?other', issuer),
+    null,
+  );
+  assert.equal(fetch.mock.callCount(), 1);
 });
 
 test('OAuth stores hashes, expires credentials, and rechecks the current Access allowlist', (context) => {

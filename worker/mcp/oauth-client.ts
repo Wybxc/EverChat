@@ -14,6 +14,26 @@ const clientMetadata = v.object({
   application_type: v.optional(v.string()),
 });
 
+// Workers can receive a 403 fetching these public CIMD documents. Use their
+// published callback registrations for the exact stable IDs.
+const pinnedClients = new Map([
+  [
+    'https://chatgpt.com/oauth/codex/client.json',
+    {
+      client_name: 'Codex',
+      redirect_uris: ['http://127.0.0.1/callback', 'http://localhost/callback'],
+      application_type: 'native',
+    },
+  ],
+  [
+    'https://chatgpt.com/oauth/client.json',
+    {
+      client_name: 'ChatGPT',
+      redirect_uris: ['https://chatgpt.com/connector_platform_oauth_redirect'],
+    },
+  ],
+]);
+
 export function validRedirectUri(value: string) {
   if (!/^https?:\/\//.test(value) || /[\s\\#]/u.test(value)) return null;
   const url = URL.parse(value);
@@ -47,6 +67,8 @@ export function matchesRedirectUri(requested: string, registered: string, native
 }
 
 export async function discoverMcpClient(clientId: string, issuer: string) {
+  const pinned = pinnedClients.get(clientId);
+  if (pinned) return { client_id: clientId, ...pinned };
   if (clientId.length > maxClientId || !/^https:\/\//.test(clientId) || /[\s\\#]/u.test(clientId))
     return null;
   const url = URL.parse(clientId);
@@ -67,7 +89,10 @@ export async function discoverMcpClient(clientId: string, issuer: string) {
     const response = await fetch(url.href, {
       redirect: 'manual',
       signal: AbortSignal.timeout(5000),
-      headers: { Accept: 'application/json' },
+      headers: {
+        Accept: 'application/json',
+        'User-Agent': 'EverChat-MCP (+https://github.com/Wybxc/EverChat)',
+      },
     });
     if (!response.ok || !response.body) {
       await response.body?.cancel();
