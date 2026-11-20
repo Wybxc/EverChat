@@ -22,6 +22,7 @@ export interface Env {
   APP_ORIGIN?: string;
   MCP_ALLOWED_MODELS?: string;
   MCP_DEFAULT_MODEL?: string;
+  MCP_OAUTH_ENABLED?: string;
   AI_API_KEY?: string;
   AI_PROVIDER: string;
   AI_BASE_URL: string;

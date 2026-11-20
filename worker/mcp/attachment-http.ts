@@ -1,4 +1,4 @@
-import { authenticateMcp } from './auth';
+import { authenticateMcp, mcpHttpError } from './auth';
 import type { Env } from '../http/env';
 import { json, HttpError } from '../http/response';
 
@@ -12,14 +12,12 @@ export async function serveMcpAttachment(request: Request, env: Env) {
   try {
     const principal = await authenticateMcp(request, env);
     return env.LIBRARY.getByName('personal').mcpFileResponse(
-      principal.keyId,
+      principal.id,
       match[1],
       request.method === 'HEAD',
     );
   } catch (error) {
-    return json(
-      { error: error instanceof HttpError ? error.message : 'File unavailable.' },
-      error instanceof HttpError ? error.status : 503,
-    );
+    if (error instanceof HttpError) return mcpHttpError(request, env, error);
+    return json({ error: 'File unavailable.' }, 503);
   }
 }

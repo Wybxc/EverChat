@@ -144,6 +144,7 @@ export class McpRequests {
     input: ChatArguments,
     attachments?: ResolvedAttachments,
     discussionPrompt?: string,
+    readSystemPrompts = false,
   ): McpRecord {
     const fingerprint = this.fingerprint(input);
     return this.storage.transactionSync(() => {
@@ -196,14 +197,7 @@ export class McpRequests {
       const selection: ModelSelection = { providerId, model: modelId };
       const config = this.providers.providerConfig(selection, input.reasoningEffort);
       if (!config) fail('MODEL_UNAVAILABLE', 'The selected model is unavailable.');
-      config.receiptSystemPrompt = Boolean(
-        this.storage.sql
-          .exec<{ readSystemPrompts: number }>(
-            'SELECT readSystemPrompts FROM mcp_keys WHERE id=?',
-            principal,
-          )
-          .toArray()[0]?.readSystemPrompts,
-      );
+      config.receiptSystemPrompt = readSystemPrompts;
       if (input.reasoningEffort && !model.reasoningEfforts.includes(input.reasoningEffort))
         fail(
           'UNSUPPORTED_PARAMETER',

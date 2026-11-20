@@ -3,7 +3,7 @@
   "name": "everchat",
   "main": "worker/index.ts",
   "compatibility_date": "2026-10-09",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "assets": {
     "binding": "ASSETS",
     "html_handling": "none",
@@ -19,6 +19,8 @@
       "/public/*",
       "/mcp",
       "/mcp/*",
+      "/.well-known/oauth-protected-resource/mcp",
+      "/.well-known/oauth-authorization-server",
     ],
   },
   "workers_dev": false,

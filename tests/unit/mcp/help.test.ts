@@ -12,9 +12,9 @@ for (const mode of ['auto', 'legacy'] as const) {
     let revoked = false;
     const library = {
       async mcpAuthenticate(key: string) {
-        return key === 'ec_mcp_help_test' && !revoked ? { keyId: 'test-key' } : null;
+        return key === 'ec_mcp_help_test' && !revoked ? { id: 'test-key' } : null;
       },
-      async mcpKeyExists() {
+      async mcpPrincipalExists() {
         return !revoked;
       },
     };

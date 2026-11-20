@@ -4,6 +4,8 @@ import { McpError, type ChatArguments, type McpFailure } from '../mcp/contracts'
 import { McpDiscussion } from '../mcp/discussion';
 import { MCP_REQUESTS_SCHEMA } from '../mcp/schema';
 import { McpKeys, MCP_KEYS_SCHEMA } from '../mcp/keys';
+import { McpOAuthStore, type McpAuthorizationRequest } from '../mcp/oauth-store';
+import { mcpRevoked, oauthPrincipalPrefix } from '../mcp/principal';
 import { MCP_GRANTS_SCHEMA } from '../mcp/history';
 import { McpAttachments, MCP_ATTACHMENTS_SCHEMA, mcpAttachmentFailure } from '../mcp/attachments';
 import type {
@@ -219,6 +221,7 @@ export class Library extends DurableObject<Env> {
         )
         .toArray()[0];
       const cleanup = this.nextAttachmentCleanup();
+      const oauth = this.mcpOAuth().nextCleanup();
       const copy = Math.min(this.copies.nextMaintenance(), this.nextImportMaintenance());
       const notifications = Math.min(
         this.notifications.nextAlarm(),
@@ -227,6 +230,7 @@ export class Library extends DurableObject<Env> {
       if (
         !pending &&
         cleanup === undefined &&
+        !Number.isFinite(oauth) &&
         !Number.isFinite(copy) &&
         !Number.isFinite(notifications)
       )
@@ -234,7 +238,7 @@ export class Library extends DurableObject<Env> {
       const alarm = await this.ctx.storage.getAlarm();
       const next = Math.max(
         Date.now() + 1000,
-        Math.min(pending?.nextAt ?? Infinity, cleanup ?? Infinity, copy, notifications),
+        Math.min(pending?.nextAt ?? Infinity, cleanup ?? Infinity, oauth, copy, notifications),
       );
       if (alarm === null || alarm > next) await this.ctx.storage.setAlarm(next);
     });
@@ -607,6 +611,7 @@ export class Library extends DurableObject<Env> {
       }
     await this.attachments.cleanup();
     await this.mcpAttachments().cleanup();
+    this.mcpOAuth().cleanup();
     await this.imports.cleanup();
     const pending = this.ctx.storage.sql
       .exec<Deletion>('SELECT * FROM conversation_deletions WHERE completed = 0 LIMIT 16')
@@ -665,6 +670,7 @@ export class Library extends DurableObject<Env> {
         deletion ? Date.now() + (failed ? 30_000 : 1000) : Infinity,
         indexing ? Math.max(Date.now() + 1000, indexing.nextAt) : Infinity,
         cleanup === undefined ? Infinity : Math.max(Date.now() + 1000, cleanup),
+        Math.max(Date.now() + 1000, this.mcpOAuth().nextCleanup()),
         this.copies.nextMaintenance(),
         this.nextImportMaintenance(),
         this.notifications.nextAlarm(),
@@ -1049,13 +1055,16 @@ export class Library extends DurableObject<Env> {
   private mcpKeys() {
     return new McpKeys(this.ctx.storage.sql.exec.bind(this.ctx.storage.sql));
   }
+  private mcpOAuth() {
+    return new McpOAuthStore(this.ctx.storage, this.env);
+  }
   private mcpAttachments() {
     return new McpAttachments(
       this.ctx.storage,
       this.attachments,
       this.env.ATTACHMENTS,
       this.env.APP_ORIGIN ?? '',
-      (id) => this.mcpKeyExists(id),
+      (id) => this.mcpPrincipalExists(id),
       (id) => Boolean(this.get(id)),
       (id) => this.create(id, '', 'fallback'),
       (principal, id) => this.mcpRequests().get(principal, id),
@@ -1076,21 +1085,9 @@ export class Library extends DurableObject<Env> {
     schedule = true,
   ): Promise<{ value: T } | { error: McpFailure }> {
     try {
-      if (!this.mcpKeyExists(principal))
-        throw new McpError({
-          code: 'MCP_KEY_REVOKED',
-          message: 'This API key was revoked.',
-          stage: 'authorization',
-          retryable: false,
-        });
+      if (!this.mcpPrincipalExists(principal)) throw new McpError(mcpRevoked(principal));
       const value = await action();
-      if (!this.mcpKeyExists(principal))
-        throw new McpError({
-          code: 'MCP_KEY_REVOKED',
-          message: 'This API key was revoked.',
-          stage: 'authorization',
-          retryable: false,
-        });
+      if (!this.mcpPrincipalExists(principal)) throw new McpError(mcpRevoked(principal));
       return { value };
     } catch (e) {
       return { error: mcpAttachmentFailure(e) };
@@ -1140,14 +1137,43 @@ export class Library extends DurableObject<Env> {
   mcpKeyRename(id: string, name: string, readSystemPrompts?: boolean) {
     return this.mcpKeys().rename(id, name, readSystemPrompts);
   }
-  mcpKeyPermissions(id: string) {
+  mcpPrincipalPermissions(id: string) {
+    if (id.startsWith(oauthPrincipalPrefix))
+      return this.mcpPrincipalExists(id) ? { readSystemPrompts: false } : null;
     return this.mcpKeys().permissions(id);
   }
-  mcpKeyExists(id: string) {
-    return this.mcpKeys().exists(id);
+  mcpPrincipalExists(id: string) {
+    return id.startsWith(oauthPrincipalPrefix)
+      ? this.mcpOAuth().active(id.slice(oauthPrincipalPrefix.length))
+      : this.mcpKeys().exists(id);
   }
   mcpAuthenticate(key: string) {
     return this.mcpKeys().authenticate(key);
+  }
+  mcpOAuthBegin(owner: AccessIdentity, request: McpAuthorizationRequest) {
+    const pending = this.mcpOAuth().begin(owner, request);
+    this.ctx.waitUntil(this.scheduleMaintenance());
+    return pending;
+  }
+  mcpOAuthDecide(owner: AccessIdentity, id: string, proof: string, approve: boolean) {
+    const decision = this.mcpOAuth().decide(owner, id, proof, approve);
+    if (decision?.code) this.ctx.waitUntil(this.scheduleMaintenance());
+    return decision;
+  }
+  mcpOAuthExchange(input: Parameters<McpOAuthStore['exchange']>[0]) {
+    return this.mcpOAuth().exchange(input);
+  }
+  mcpOAuthRefresh(input: Parameters<McpOAuthStore['refresh']>[0]) {
+    return this.mcpOAuth().refresh(input);
+  }
+  mcpOAuthAuthenticate(token: string) {
+    return this.mcpOAuth().authenticate(token);
+  }
+  mcpOAuthList(owner: AccessIdentity) {
+    return this.mcpOAuth().list(owner);
+  }
+  mcpOAuthRevoke(owner: AccessIdentity, id: string) {
+    this.mcpOAuth().revoke(owner, id);
   }
   private mcpAction<T>(action: () => T): { value: T } | { error: McpFailure } {
     try {
@@ -1161,15 +1187,6 @@ export class Library extends DurableObject<Env> {
     return this.mcpAction(() => this.mcpRequests().catalog());
   }
   async mcpPrepare(principal: string, input: ChatArguments) {
-    if (!this.mcpKeyExists(principal))
-      return {
-        error: {
-          code: 'MCP_KEY_REVOKED',
-          message: 'This API key was revoked.',
-          stage: 'authorization',
-          retryable: false,
-        },
-      };
     return this.mcpFileAction(
       principal,
       async () => {
@@ -1196,28 +1213,30 @@ export class Library extends DurableObject<Env> {
           },
           (ref) => this.mcpAttachments().discussionFile(principal, ref),
         ).prepare(input);
-        if (!this.mcpKeyExists(principal))
-          throw new McpError({
-            code: 'MCP_KEY_REVOKED',
-            message: 'This API key was revoked.',
-            stage: 'authorization',
-            retryable: false,
-          });
+        const permissions = this.mcpPrincipalPermissions(principal);
+        if (!permissions) throw new McpError(mcpRevoked(principal));
         return this.ctx.storage.transactionSync(() => {
           this.mcpAttachments().bind(principal, input);
-          return this.mcpRequests().prepare(principal, input, files, discussionPrompt);
+          return this.mcpRequests().prepare(
+            principal,
+            input,
+            files,
+            discussionPrompt,
+            permissions.readSystemPrompts,
+          );
         });
       },
       Boolean(input.uploadRef || input.attachments?.length),
     );
   }
   mcpRequest(principal: string, requestId: string) {
+    if (!this.mcpPrincipalExists(principal)) return null;
     const record = this.mcpRequests().get(principal, requestId);
     return record && this.get(record.conversationId) ? record : null;
   }
   mcpConversationAllowed(principal: string, conversationId: string) {
     return (
-      this.mcpKeyExists(principal) &&
+      this.mcpPrincipalExists(principal) &&
       Boolean(this.get(conversationId)) &&
       this.ctx.storage.sql
         .exec(
@@ -1229,7 +1248,7 @@ export class Library extends DurableObject<Env> {
     );
   }
   mcpConversations(principal: string, after?: { createdAt: number; id: string }) {
-    if (!this.mcpKeyExists(principal)) return [];
+    if (!this.mcpPrincipalExists(principal)) return [];
     return this.ctx.storage.sql
       .exec<{ id: string; title: string; createdAt: number; updatedAt: number }>(
         `SELECT c.id,c.title,c.createdAt,c.updatedAt FROM conversations AS c JOIN mcp_conversation_grants AS g ON g.conversationId=c.id

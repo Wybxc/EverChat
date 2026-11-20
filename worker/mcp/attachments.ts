@@ -11,6 +11,7 @@ import { HttpError } from '../http/response';
 import { readErrorIssue } from '../../shared/errors/descriptor';
 import { MAX_MESSAGE_TEXT_BYTES } from '../../shared/conversation/limits';
 import { decodeRef, encodeRef, fail, McpError, type ChatArguments } from './contracts';
+import { mcpRevoked } from './principal';
 import type { McpRecord } from './store';
 import type { MaterialBinding } from '../../shared/attachments/materials';
 import type {
@@ -100,7 +101,7 @@ export class McpAttachments {
     private attachments: AttachmentStore,
     private bucket: R2Bucket | undefined,
     private origin: string,
-    private keyExists: (key: string) => boolean,
+    private principalExists: (id: string) => boolean,
     private exists: (id: string) => boolean,
     private create: (id: string) => unknown,
     private request: (principal: string, id: string) => McpRecord | undefined,
@@ -108,8 +109,7 @@ export class McpAttachments {
     private remove: (conversationId: string, id: string) => Promise<unknown>,
   ) {}
   private authorize(principal: string) {
-    if (!this.keyExists(principal))
-      fail('MCP_KEY_REVOKED', 'This API key was revoked.', 'authorization');
+    if (!this.principalExists(principal)) throw new McpError(mcpRevoked(principal));
   }
   private batch(principal: string, ref: string) {
     this.authorize(principal);

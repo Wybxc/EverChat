@@ -4,6 +4,8 @@ import type { ProviderSettings } from '../../shared/providers/types';
 import type { HelpResult, ModelsResult, RunResult } from '../../worker/mcp/contracts';
 import { openSpaceSettings } from '../support/browser/ui';
 import { createHash } from 'node:crypto';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { documentPrompt } from '../../shared/attachments/documents';
 import type { AttachmentsResult } from '../../worker/mcp/attachment-contracts';
 import { encodeRef } from '../../worker/mcp/contracts';
@@ -12,6 +14,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { uploadFiles } from '../../scripts/mcp/upload';
 import { textPdf } from '../support/assets/pdf';
+import type { McpOAuthConnection } from '../../shared/mcp/types';
 
 const origin = 'http://127.0.0.1:5174',
   headers = { Origin: origin };
@@ -55,24 +58,28 @@ async function setup(request: APIRequestContext) {
   const keys: string[] = [],
     conversations = new Set<string>(),
     clients: Client[] = [];
+  async function connect(token: string, mode: 'auto' | 'legacy' = 'auto') {
+    const client = new Client(
+      { name: 'everchat-integration', version: '1.0.0' },
+      { versionNegotiation: { mode } },
+    );
+    clients.push(client);
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL('/mcp', origin), {
+        requestInit: { headers: { Authorization: `Bearer ${token}` } },
+      }),
+    );
+    return client;
+  }
   return {
     providers,
+    connect,
     async client(mode: 'auto' | 'legacy' = 'auto') {
       const created = (await request
         .post(path, { headers, data: { name: `test-${mode}` } })
         .then((response) => response.json())) as { id: string; key: string; name: string };
       keys.push(created.id);
-      const client = new Client(
-        { name: 'everchat-integration', version: '1.0.0' },
-        { versionNegotiation: { mode } },
-      );
-      clients.push(client);
-      await client.connect(
-        new StreamableHTTPClientTransport(new URL('/mcp', origin), {
-          requestInit: { headers: { Authorization: `Bearer ${created.key}` } },
-        }),
-      );
-      return { client, ...created };
+      return { client: await connect(created.key, mode), ...created };
     },
     async call<T>(client: Client, name: string, arguments_: Record<string, unknown> = {}) {
       const result = await client.callTool({ name, arguments: arguments_ });
@@ -92,6 +99,304 @@ async function setup(request: APIRequestContext) {
     },
   };
 }
+
+const oauthClientId = 'https://mcp-client.test/client.json';
+const oauthResource = `${origin}/mcp`;
+const authorizePath = '/auth/mcp/authorize';
+const tokenPath = '/mcp/oauth/token';
+const grantPath = '/api/settings/mcp/oauth-grants';
+const verifier = 'everchat-oauth-integration-verifier-0123456789';
+const callbackUri = 'http://127.0.0.1:43173/callback';
+type TestTokens = {
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+  scope: string;
+};
+
+function authorization(overrides: Record<string, string> = {}) {
+  return `${authorizePath}?${new URLSearchParams({
+    response_type: 'code',
+    client_id: oauthClientId,
+    redirect_uri: callbackUri,
+    resource: oauthResource,
+    code_challenge: createHash('sha256').update(verifier).digest('base64url'),
+    code_challenge_method: 'S256',
+    scope: 'mcp:use',
+    state: 'mcp-test-state',
+    ...overrides,
+  })}`;
+}
+
+function exchange(
+  request: APIRequestContext,
+  code: string,
+  overrides: Record<string, string> = {},
+) {
+  return request.post(tokenPath, {
+    form: {
+      grant_type: 'authorization_code',
+      client_id: oauthClientId,
+      redirect_uri: callbackUri,
+      resource: oauthResource,
+      code,
+      code_verifier: verifier,
+      ...overrides,
+    },
+  });
+}
+
+function refresh(request: APIRequestContext, refreshToken: string) {
+  return request.post(tokenPath, {
+    form: {
+      grant_type: 'refresh_token',
+      client_id: oauthClientId,
+      resource: oauthResource,
+      refresh_token: refreshToken,
+    },
+  });
+}
+
+async function consent(request: APIRequestContext, decision: 'allow' | 'deny' = 'allow') {
+  const response = await request.get(authorization());
+  expect(response.status()).toBe(200);
+  const transaction = /name="transaction" value="([^"]+)"/.exec(await response.text())?.[1];
+  expect(transaction).toBeTruthy();
+  const callback = await request.post(authorizePath, {
+    headers,
+    form: { transaction: transaction!, decision },
+    maxRedirects: 0,
+  });
+  expect(callback.status()).toBe(303);
+  return new URL(callback.headers().location).searchParams;
+}
+
+async function connections(request: APIRequestContext) {
+  const response = await request.get(grantPath);
+  expect(response.status()).toBe(200);
+  const result = (await response.json()) as { enabled: boolean; connections: McpOAuthConnection[] };
+  expect(result.enabled).toBe(true);
+  return result.connections;
+}
+
+test('MCP OAuth discovers, authorizes in a browser, preserves ownership across refresh, and disconnects', async ({
+  page,
+}) => {
+  const request = page.request;
+  const app = await setup(request);
+  const baseline = new Set((await connections(request)).map(({ id }) => id));
+  const callbackServer = createServer((_request, response) => response.end('OAuth callback'));
+  await new Promise<void>((resolve, reject) => {
+    callbackServer.once('error', reject);
+    callbackServer.listen(0, '127.0.0.1', resolve);
+  });
+  const browserCallback = `http://127.0.0.1:${(callbackServer.address() as AddressInfo).port}/callback`;
+  try {
+    const anonymous = await request.get('/mcp', { maxRedirects: 0 });
+    expect(anonymous.status()).toBe(401);
+    const metadataUrl = `${origin}/.well-known/oauth-protected-resource/mcp`;
+    expect(anonymous.headers()['www-authenticate']).toContain(`resource_metadata="${metadataUrl}"`);
+    expect(anonymous.headers()['www-authenticate']).toContain('scope="mcp:use"');
+    const metadata = await request.get(metadataUrl).then((r) => r.json());
+    expect(metadata).toMatchObject({
+      resource: oauthResource,
+      authorization_servers: [origin],
+      scopes_supported: ['mcp:use'],
+    });
+    const authorizationServer = await request
+      .get('/.well-known/oauth-authorization-server')
+      .then((r) => r.json());
+    expect(authorizationServer).toMatchObject({
+      issuer: origin,
+      authorization_endpoint: origin + authorizePath,
+      token_endpoint: origin + tokenPath,
+      client_id_metadata_document_supported: true,
+      authorization_response_iss_parameter_supported: true,
+      code_challenge_methods_supported: ['S256'],
+    });
+
+    expect((await page.goto(authorization({ redirect_uri: browserCallback })))?.status()).toBe(200);
+    await expect(page.getByRole('heading', { name: '连接应用到 EverChat' })).toBeVisible();
+    await expect(page.getByText('Example OAuth app · mcp-client.test')).toBeVisible();
+    await Promise.all([
+      page.waitForURL((url) => url.origin + url.pathname === browserCallback, { timeout: 10_000 }),
+      page.getByRole('button', { name: '允许访问' }).click(),
+    ]);
+    const callback = new URL(page.url()).searchParams;
+    expect(callback.get('iss')).toBe(origin);
+    expect(callback.get('state')).toBe('mcp-test-state');
+    const code = callback.get('code')!;
+    expect(code).toBeTruthy();
+    const validRedirect = { redirect_uri: browserCallback };
+    const invalidVerifier = await exchange(request, code, {
+      ...validRedirect,
+      code_verifier: 'a'.repeat(43),
+    });
+    expect(await invalidVerifier.json()).toEqual({ error: 'invalid_grant' });
+    const wrongResource = await exchange(request, code, {
+      ...validRedirect,
+      resource: `${origin}/api`,
+    });
+    expect(await wrongResource.json()).toEqual({ error: 'invalid_target' });
+    const result = await exchange(request, code, validRedirect);
+    expect(result.status()).toBe(200);
+    expect(result.headers()['cache-control']).toBe('no-store');
+    const initial = (await result.json()) as TestTokens;
+    expect(initial).toMatchObject({ token_type: 'Bearer', scope: 'mcp:use' });
+    const active = (await connections(request)).find(({ id }) => !baseline.has(id))!;
+    expect(active.name).toBe('Example OAuth app');
+    expect(active.lastUsedAt).toBeNull();
+
+    const client = await app.connect(initial.access_token);
+    const catalog = await app.call<ModelsResult>(client, 'everchat_models_list');
+    const fileText = 'OAuth-owned document';
+    const saved = await app.call<AttachmentsResult>(client, 'everchat_attachments_put', {
+      uploadId: crypto.randomUUID(),
+      files: [
+        {
+          clientFileId: crypto.randomUUID(),
+          name: 'oauth.txt',
+          mediaType: 'text/plain',
+          purpose: 'document',
+          text: fileText,
+        },
+      ],
+    });
+    const file = saved.files[0].attachmentRef;
+    const runInput = {
+      requestId: crypto.randomUUID(),
+      prompt: '',
+      modelRef: catalog.models[0].ref,
+      uploadRef: saved.uploadRef,
+      attachments: [{ attachmentRef: file, inputMode: 'inline' }],
+      systemPrompt: 'Test prompt for redaction',
+    };
+    const run = await app.call<RunResult>(client, 'everchat_chat', runInput);
+    expect(run.status).toBe('completed');
+    const receipt = await app.call<import('../../worker/mcp/contracts').ContextResult>(
+      client,
+      'everchat_run_context_get',
+      { runRef: run.runRef, view: 'text', item: 0 },
+    );
+    expect(receipt.text?.state).toBe('redacted');
+
+    const otherCode = (await consent(request)).get('code')!;
+    const otherToken = (await exchange(request, otherCode).then((r) => r.json())) as TestTokens;
+    const other = await app.connect(otherToken.access_token);
+    expect(
+      await app.call(other, 'everchat_run_get', { runRef: run.runRef, waitMs: 0 }),
+    ).toMatchObject({ error: { code: 'RUN_NOT_FOUND' } });
+    expect(
+      await app.call(other, 'everchat_attachments_get', { uploadRef: saved.uploadRef }),
+    ).toMatchObject({
+      error: { code: 'UPLOAD_UNAVAILABLE' },
+    });
+
+    const refreshed = await refresh(request, initial.refresh_token);
+    expect(refreshed.status()).toBe(200);
+    const next = (await refreshed.json()) as TestTokens;
+    expect(next.access_token).not.toBe(initial.access_token);
+    expect(next.refresh_token).not.toBe(initial.refresh_token);
+    const renewed = await app.connect(next.access_token, 'legacy');
+    expect((await app.call<RunResult>(renewed, 'everchat_chat', runInput)).runRef).toBe(run.runRef);
+    const download = () =>
+      request.get(`/mcp/attachments/${file}`, {
+        headers: { Authorization: `Bearer ${next.access_token}` },
+      });
+    expect(await download().then((r) => r.text())).toBe(fileText);
+    const privateApi = await fetch(`${origin}${grantPath}`, {
+      headers: { Authorization: `Bearer ${next.access_token}` },
+    });
+    expect(privateApi.status).toBe(401);
+    expect(
+      (await connections(request)).find(({ id }) => id === active.id)?.lastUsedAt,
+    ).toBeGreaterThan(0);
+
+    // Keep one visible connection so the UI action identifies the grant under test.
+    for (const connection of await connections(request))
+      if (!baseline.has(connection.id) && connection.id !== active.id)
+        await request.delete(`${grantPath}/${connection.id}`, { headers });
+    await page.goto('/');
+    await openSpaceSettings(page);
+    await page.getByRole('tab', { name: 'MCP', exact: true }).click();
+    await page.getByRole('button', { name: '断开 Example OAuth app 的连接' }).click();
+    const confirmation = page.getByRole('alertdialog', { name: '断开此应用的连接？' });
+    await confirmation.getByRole('button', { name: '断开连接', exact: true }).click();
+    await expect(page.getByText('暂无已授权应用')).toBeVisible();
+    const revoked = await download();
+    expect(revoked.status()).toBe(401);
+    expect(revoked.headers()['www-authenticate']).toContain('error="invalid_token"');
+    expect(await refresh(request, next.refresh_token).then((r) => r.json())).toEqual({
+      error: 'invalid_grant',
+    });
+    expect((await request.get(`/api/conversations/${run.conversationId}/storage`)).status()).toBe(
+      200,
+    );
+  } finally {
+    callbackServer.close();
+    for (const { id } of await connections(request))
+      if (!baseline.has(id)) await request.delete(`${grantPath}/${id}`, { headers });
+    await app.cleanup();
+  }
+});
+
+test('MCP OAuth rejects unregistered redirects, cross-origin consent, and replayed credentials', async ({
+  request,
+}) => {
+  const signIn = await request.get(authorization(), { maxRedirects: 0 });
+  expect(signIn.status()).toBe(303);
+  expect(signIn.headers().location).toMatch(/^\/__dev\/access\/login\?/);
+  await request.post('/__dev/access/login');
+  const invalidRedirect = await request.get(
+    authorization({ redirect_uri: 'https://unregistered.example/callback' }),
+    { maxRedirects: 0 },
+  );
+  expect(invalidRedirect.status()).toBe(400);
+  expect(invalidRedirect.headers().location).toBeUndefined();
+  const unsafeScope = await request.get(authorization({ scope: 'prompts:read' }), {
+    maxRedirects: 0,
+  });
+  expect(unsafeScope.status()).toBe(303);
+  expect(new URL(unsafeScope.headers().location).searchParams.get('error')).toBe('invalid_scope');
+  const crossed = await request.post(authorizePath, {
+    headers: { Origin: 'https://untrusted.example' },
+    form: { transaction: crypto.randomUUID(), decision: 'allow' },
+    maxRedirects: 0,
+  });
+  expect(crossed.status()).toBe(403);
+  const denied = await consent(request, 'deny');
+  expect(denied.get('iss')).toBe(origin);
+  expect(denied.get('state')).toBe('mcp-test-state');
+  expect(denied.get('error')).toBe('access_denied');
+  expect(denied.has('code')).toBe(false);
+
+  const code = (await consent(request)).get('code')!;
+  const codeResults = await Promise.all([exchange(request, code), exchange(request, code)]);
+  expect(codeResults.map((r) => r.status()).sort()).toEqual([200, 400]);
+  const once = (await codeResults.find((r) => r.ok())!.json()) as TestTokens;
+  expect(
+    (
+      await request.get('/mcp', { headers: { Authorization: `Bearer ${once.access_token}` } })
+    ).status(),
+  ).toBe(401);
+
+  const freshCode = (await consent(request)).get('code')!;
+  const tokens = (await exchange(request, freshCode).then((r) => r.json())) as TestTokens;
+  const refreshResults = await Promise.all([
+    refresh(request, tokens.refresh_token),
+    refresh(request, tokens.refresh_token),
+  ]);
+  expect(refreshResults.map((r) => r.status()).sort()).toEqual([200, 400]);
+  const rotated = (await refreshResults.find((r) => r.ok())!.json()) as TestTokens;
+  expect(
+    (
+      await request.get('/mcp', { headers: { Authorization: `Bearer ${rotated.access_token}` } })
+    ).status(),
+  ).toBe(401);
+  expect((await connections(request)).filter(({ name }) => name === 'Example OAuth app')).toEqual(
+    [],
+  );
+});
 
 test('disabled providers disappear from MCP and reject stale model refs and continuations while retaining saved answers', async ({
   request,

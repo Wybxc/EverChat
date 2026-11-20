@@ -71,7 +71,7 @@ test('MCP API keys are hash-only, independently scoped and immediately revocable
     const keys = new McpKeys(query),
       first = keys.create('script'),
       second = keys.create('client');
-    assert.deepEqual(keys.authenticate(first.key), { keyId: first.id });
+    assert.deepEqual(keys.authenticate(first.key), { id: first.id });
     assert.equal(
       keys.authenticate(first.key.slice(0, -1) + (first.key.endsWith('a') ? 'b' : 'a')),
       null,
@@ -84,7 +84,7 @@ test('MCP API keys are hash-only, independently scoped and immediately revocable
     keys.revoke(first.id);
     keys.revoke(first.id);
     assert.equal(keys.authenticate(first.key), null);
-    assert.deepEqual(keys.authenticate(second.key), { keyId: second.id });
+    assert.deepEqual(keys.authenticate(second.key), { id: second.id });
   } finally {
     db.close();
   }
@@ -361,7 +361,7 @@ test('MCP returns persisted running output and a reusable tail cursor without tr
         }),
       },
     } as unknown as Env;
-    const service = new McpChatService(env, { keyId: 'owner' });
+    const service = new McpChatService(env, { id: 'owner' });
     const runRef = encodeRef('run1', [record.conversationId, record.requestId]);
     const first = await service.get({ runRef, waitMs: 0, includeReasoning: true });
     assert.equal(v.safeParse(runSchema, first).success, true);
@@ -399,10 +399,7 @@ test('MCP returns persisted running output and a reusable tail cursor without tr
     );
     const forged = encodeRef('page2', [record.requestId, assistantId, 'content', '0', '9999999']);
     await assert.rejects(() => service.get({ ...input, outputCursor: forged }), /cursor/);
-    await assert.rejects(
-      () => new McpChatService(env, { keyId: 'other' }).get(input),
-      /unavailable/,
-    );
+    await assert.rejects(() => new McpChatService(env, { id: 'other' }).get(input), /unavailable/);
     progress.content(assistantId, {
       content: { length: 'saved prefix suffix'.length, replaced: true },
       reasoning: { length: 'thinking'.length, replaced: false },

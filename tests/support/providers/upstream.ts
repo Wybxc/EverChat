@@ -11,6 +11,15 @@ export function installMockUpstream() {
   globalThis.fetch = async (input, init) => {
     const request = new Request(input, init);
     const url = new URL(request.url);
+    if (url.origin === 'https://mcp-client.test' && url.pathname === '/client.json')
+      return Response.json({
+        client_id: url.href,
+        client_name: 'Example OAuth app',
+        redirect_uris: ['http://127.0.0.1/callback'],
+        application_type: 'native',
+        token_endpoint_auth_method: 'private_key_jwt',
+        token_endpoint_auth_methods_supported: ['none', 'private_key_jwt'],
+      });
     if (url.hostname !== 'provider.test') return upstreamFetch(input, init);
     if (
       request.headers.get('Authorization') !== 'Bearer integration-test-key' &&

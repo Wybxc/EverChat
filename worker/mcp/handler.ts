@@ -3,7 +3,8 @@ import { toStandardJsonSchema } from '@valibot/to-json-schema';
 import type { GenericSchema } from 'valibot';
 import type { Env } from '../http/env';
 import { HttpError, json } from '../http/response';
-import { authenticateMcp } from './auth';
+import { authenticateMcp, mcpHttpError } from './auth';
+import { mcpRevoked } from './principal';
 import {
   cancelSchema,
   chatSchema,
@@ -64,13 +65,8 @@ export async function serveMcp(request: Request, env: Env) {
         const result = async (action: () => Promise<object>) => {
           try {
             const value = await action();
-            if (!(await env.LIBRARY.getByName('personal').mcpKeyExists(principal.keyId)))
-              throw new McpError({
-                code: 'MCP_KEY_REVOKED',
-                message: 'This API key was revoked.',
-                stage: 'authorization',
-                retryable: false,
-              });
+            if (!(await env.LIBRARY.getByName('personal').mcpPrincipalExists(principal.id)))
+              throw new McpError(mcpRevoked(principal.id));
             return {
               content: [{ type: 'text' as const, text: JSON.stringify(value) }],
               structuredContent: value as Record<string, unknown>,
@@ -273,12 +269,7 @@ export async function serveMcp(request: Request, env: Env) {
     headers.set('X-Content-Type-Options', 'nosniff');
     return new Response(response.body, { status: response.status, headers });
   } catch (error) {
-    if (error instanceof HttpError)
-      return json(
-        { error: error.message, code: error.code },
-        error.status,
-        error.status === 401 ? { 'WWW-Authenticate': 'Bearer realm="EverChat MCP"' } : undefined,
-      );
+    if (error instanceof HttpError) return mcpHttpError(request, env, error);
     return json({ error: 'MCP is temporarily unavailable.' }, 503);
   }
 }

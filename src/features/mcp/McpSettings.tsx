@@ -15,6 +15,7 @@ import { api } from '../../platform/api';
 import { errorMessage, renderUiMessage } from '../../platform/i18n/messages';
 import type { McpKeyInfo } from '../../../shared/mcp/types';
 import { McpKeyList } from './McpKeyList';
+import { McpOAuthConnections } from './McpOAuthConnections';
 import './locales';
 
 const queryKey = ['mcp-keys'];
@@ -117,14 +118,6 @@ export default function McpSettings() {
   );
   return (
     <div className="flex min-w-0 flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-base font-medium">{t(($) => $.keys)}</h2>
-        <Button disabled={!query.data || pending} onClick={() => edit({ kind: 'create' })}>
-          <Plus data-icon="inline-start" />
-          {t(($) => $.create)}
-        </Button>
-      </div>
-      <p className="text-sm text-muted-foreground">{t(($) => $.access)}</p>
       <Field>
         <FieldLabel htmlFor="mcp-endpoint">{t(($) => $.endpoint)}</FieldLabel>
         <InputGroup>
@@ -145,6 +138,15 @@ export default function McpSettings() {
           </InputGroupAddon>
         </InputGroup>
       </Field>
+      <McpOAuthConnections />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-base font-medium">{t(($) => $.keys)}</h2>
+        <Button disabled={!query.data || pending} onClick={() => edit({ kind: 'create' })}>
+          <Plus data-icon="inline-start" />
+          {t(($) => $.create)}
+        </Button>
+      </div>
+      <p className="text-sm text-muted-foreground">{t(($) => $.access)}</p>
       {query.data ? (
         <McpKeyList
           keys={query.data.keys}

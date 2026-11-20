@@ -6,3 +6,11 @@ export interface McpKeyInfo {
   lastUsedAt: number | null;
   readSystemPrompts: boolean;
 }
+export interface McpOAuthConnection {
+  id: string;
+  name: string;
+  redirectOrigin: string;
+  createdAt: number;
+  expiresAt: number;
+  lastUsedAt: number | null;
+}

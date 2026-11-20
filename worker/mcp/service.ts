@@ -1,4 +1,4 @@
-import type { McpPrincipal } from './keys';
+import type { McpPrincipal } from './principal';
 import type { Env } from '../http/env';
 import {
   decodeRef,
@@ -53,7 +53,7 @@ export class McpChatService {
     identity: McpPrincipal,
     private readonly signal?: AbortSignal,
   ) {
-    this.principal = identity.keyId;
+    this.principal = identity.id;
     this.history = new McpHistoryService(env, this.principal);
     this.library = env.LIBRARY.getByName('personal');
   }
@@ -243,7 +243,7 @@ export class McpChatService {
     }
     if (input.view === 'text') {
       if (input.item === undefined) fail('INVALID_ARGUMENT', 'Specify item from a manifest page.');
-      const permissions = await this.library.mcpKeyPermissions(this.principal);
+      const permissions = await this.library.mcpPrincipalPermissions(this.principal);
       const stored = await conversation.mcpContextText(
         assistantId,
         step,
@@ -262,7 +262,7 @@ export class McpChatService {
           : stored;
       if (
         permissions?.readSystemPrompts &&
-        !(await this.library.mcpKeyPermissions(this.principal))?.readSystemPrompts
+        !(await this.library.mcpPrincipalPermissions(this.principal))?.readSystemPrompts
       )
         fail(
           'PERMISSIONS_CHANGED',
