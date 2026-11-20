@@ -2,6 +2,7 @@
 import { SignJWT, exportJWK, generateKeyPair } from 'jose';
 import type { Plugin } from 'vite';
 import { authReturnTo } from '../../shared/auth/navigation';
+import { mcpAuthorizePath } from '../../worker/mcp/oauth-config';
 
 export async function localAccess() {
   const { privateKey, publicKey } = await generateKeyPair('RS256');
@@ -47,8 +48,15 @@ export async function localAccess() {
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end('{"ok":true}');
           } else {
+            const target = url.searchParams.get('returnTo');
+            const authorization = target?.startsWith(`${mcpAuthorizePath}?`)
+              ? URL.parse(target, origin)
+              : null;
             res.writeHead(303, {
-              Location: authReturnTo(url.searchParams.get('returnTo'), origin),
+              Location:
+                authorization?.origin === origin && authorization.pathname === mcpAuthorizePath
+                  ? authorization.pathname + authorization.search
+                  : authReturnTo(target, origin),
             });
             res.end();
           }

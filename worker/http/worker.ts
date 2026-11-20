@@ -4,6 +4,7 @@ import { publicSharing, publicShareDocument } from '../sharing/public';
 import { isSharePage } from '../../shared/sharing/types';
 import { serveMcp } from '../mcp/handler';
 import { serveMcpAttachment } from '../mcp/attachment-http';
+import { serveMcpOAuth } from '../mcp/oauth-http';
 import { createApi } from './app';
 import { authenticateAccess, type Authenticator } from './auth';
 import type { Env } from './env';
@@ -22,6 +23,8 @@ export function createWorker(
       const url = new URL(request.url);
       if (isSharePage(url.pathname) && url.pathname !== '/share.html')
         return publicShareDocument(request, env);
+      const oauth = serveMcpOAuth(request, url, env, authenticate, localLogin);
+      if (oauth) return oauth;
       if (url.pathname === '/mcp' && url.origin === env.APP_ORIGIN) return serveMcp(request, env);
       if (url.pathname.startsWith('/mcp/attachments/') && url.origin === env.APP_ORIGIN)
         return serveMcpAttachment(request, env);

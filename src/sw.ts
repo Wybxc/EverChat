@@ -100,6 +100,7 @@ registerRoute(
         /^\/auth(?:\/|$)/,
         /^\/public(?:\/|$)/,
         /^\/mcp(?:\/|$)/,
+        /^\/\.well-known\/(?:oauth-protected-resource\/mcp|oauth-authorization-server)$/,
         /^\/cdn-cgi(?:\/|$)/,
       ],
     },

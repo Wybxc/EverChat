@@ -1,6 +1,16 @@
 # MCP 自动化聊天
 
-EverChat 提供同域 `/mcp` 接口，供支持 Streamable HTTP 和自定义请求头的 MCP 客户端调用已配置的模型。每次调用都保存为普通对话，可在网页中查看、搜索和继续。MCP 不提供临时模式或模型 JSON Schema 输出。
+EverChat 提供同域 `/mcp` 接口。Streamable HTTP 客户端可通过浏览器 OAuth 授权或使用 API Key。生成结果保存为普通对话，可在网页中查看、搜索和继续。MCP 不提供临时模式或模型 JSON Schema 输出。
+
+## 用 OAuth 连接
+
+1. 在客户端添加「设置 → MCP」显示的接口地址，例如 `https://chat.example.com/mcp`，选择 OAuth。
+2. 在浏览器通过 Cloudflare Access 登录 EverChat，核对应用名称和回调地址，再点「允许访问」。
+3. 返回客户端。客户端会交换授权码，并在访问令牌过期时刷新。
+
+OAuth 支持使用 Client ID Metadata Document（CIMD）的客户端。授权范围 `mcp:use` 允许调用模型并访问本连接创建的对话、任务和附件。模型调用可能产生费用，系统提示词正文不会向 OAuth 客户端公开。刷新期间可使用原有的 `runRef`、`continuation` 和 `requestId`。
+
+「设置 → MCP → 已授权应用」显示连接及到期、最近使用时间。授权有效期为 30 天。在此断开连接会立即停用访问令牌和刷新令牌，已经接受的生成及其网页对话会保留。重新授权会建立一个新连接。网页登录退出与 MCP 授权是独立的操作。
 
 ## 创建与管理密钥
 
@@ -30,7 +40,7 @@ EverChat 提供同域 `/mcp` 接口，供支持 Streamable HTTP 和自定义请�
 }
 ```
 
-这只是连接参数示例，具体外层配置按客户端文档填写。客户端必须支持自定义请求头；仅支持交互式 OAuth 的宿主暂不支持。无需单独 MCP 域名、Cloudflare Service Token 或 Access AUD。
+这是 API Key 的连接参数示例。具体外层配置按客户端文档填写。使用 OAuth 时只填写接口地址，并完成浏览器授权。
 
 ## 工具与帮助
 
@@ -51,7 +61,7 @@ EverChat 提供同域 `/mcp` 接口，供支持 Streamable HTTP 和自定义请�
 | `everchat_attachments_get`     | 查询文件元数据、文本预览和剩余上传地址                                |
 | `everchat_attachments_delete`  | 删除未使用的文件；已进入消息的文件受保护                              |
 
-初次接入可调用 `everchat_help({})` 查看完整说明，或调用 `everchat_help({ "tool": "everchat_chat" })` 只查看某个工具。帮助只返回静态用法，不读取供应商配置、不创建对话、不调用模型；与其他工具一样需要有效的 MCP 密钥。以下能力已于 2026-10-25 发布；已经连接的客户端需刷新工具列表或重新连接，才能发现全部 14 个工具。
+初次接入可调用 `everchat_help({})` 查看完整说明，或调用 `everchat_help({ "tool": "everchat_chat" })` 只查看某个工具。帮助只返回静态用法，与其他工具一样需要有效的 MCP 凭据。以下能力已于 2026-10-25 发布；已经连接的客户端需刷新工具列表或重新连接，才能发现全部 14 个工具。
 
 先调用 `everchat_models_list`，使用返回的精确 `modelRef`，避免同名模型产生歧义。首次提问示例为工具 arguments，不是完整 JSON-RPC 请求：
 
@@ -133,7 +143,7 @@ EverChat 提供同域 `/mcp` 接口，供支持 Streamable HTTP 和自定义请�
 
 材料绑定独立于历史后缀与摘要，激活的文件仍计入每次输入预算；装不下会明确拒绝，不静默截断。换版会停用基于被替换版本的旧摘要，也不会因此自动重新压缩。旧回答里的旧稿结论仍可能在历史中，换版不等于删除那些讨论。排除清单包含旧文件版本与哈希，不将其误算为整条消息被省略。
 
-`get` 的默认元数据视图只检查状态；不接收、不解析，也不发模型请求。文本视图按 UTF-8 字节分页。原文件下载为 `/mcp/attachments/<attachmentRef>`，需要 Bearer Key。Key 删除后拒绝新访问；已签发 PUT 地址无法立即撤销，固定租约到期后延迟清理未使用对象。
+`get` 的默认元数据视图只检查状态；不接收、不解析，也不发模型请求。文本视图按 UTF-8 字节分页。原文件下载为 `/mcp/attachments/<attachmentRef>`，使用创建附件的同一连接的 Bearer 凭据。连接撤销后拒绝新访问，已签发的 PUT 地址在固定租约到期时失效。
 
 本地辅助程序读取清单中的文件，计算哈希并完成批量 PUT，PDF 也在本机提取：
 
@@ -175,9 +185,9 @@ Key 创建的对话会登记显式读取授权，包含以后在该对话中通�
 
 ## 部署与存储
 
-网站的 `/api`、`/auth` 继续由现有 Cloudflare Access 保护。`/mcp` 必须允许到达 Worker，随后由 EverChat API Key 鉴权；如果 Access 已经只覆盖私有路径，无需额外设置。如果仍有整站 Access 规则，需单独为精确 `/mcp` 配置 Bypass，不能放开密钥管理接口 `/api/settings/mcp/keys`。
+Cloudflare Access 保护 `/api` 和 `/auth`，包括浏览器同意页 `/auth/mcp/authorize`。将 `/mcp`、`/mcp/*`、`/.well-known/oauth-protected-resource/mcp` 和 `/.well-known/oauth-authorization-server` 直接交给 Worker。Worker 对资源请求校验 Bearer 凭据，在 `/mcp/oauth/token` 校验授权码或刷新令牌。
 
-Wrangler 已将 `/mcp` 交给 Worker 优先处理。协议响应禁止缓存，SW 排除该路径；浏览器调用要求同源，原生客户端可以不发送 Origin。未知或已删除的密钥返回 401，跨来源浏览器请求返回 403。
+无凭据和失效凭据都会收到指向 OAuth 元数据的 401 响应。元数据、令牌端点和浏览器授权走各自的路由。MCP 和附件下载接受同源浏览器请求及没有 Origin 的原生客户端请求。OAuth 状态使用现有 Library Durable Object 的 SQLite 键值存储，升级本功能无需转换对话或密钥数据。
 
 可选服务端变量：
 
@@ -185,6 +195,7 @@ Wrangler 已将 `/mcp` 交给 Worker 优先处理。协议响应禁止缓存，S
 | -------------------- | ----------------------------------------------------------------------------------- |
 | `MCP_DEFAULT_MODEL`  | 模型目录中返回的精确 ref；配置后首次提问可省略 modelRef，不跟随网页输入框的临时选择 |
 | `MCP_ALLOWED_MODELS` | 允许调用的模型 ref 的 JSON 数组；未设置时允许已启用且有凭据的模型                   |
+| `MCP_OAUTH_ENABLED`  | 设为 `0` 时关闭 OAuth。设置有效 `APP_ORIGIN` 的部署默认开放 OAuth                   |
 
 当前实现要求 Conversation／Library 存储版本 6，新增紧凑的生成进展记录；正式站点仍以实际部署版本为准。答案继续只保存在普通消息和既有内容分块中。UsageStore／ShareStore 的版本不变。既有部署必须先按[离线迁移流程](../operations/offline-storage-migration.md)完成备份、转换、写回和校验，再部署新业务代码；运行时不会自动升级旧库。旧记录不伪造进展时间。
 

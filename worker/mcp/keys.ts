@@ -1,6 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { SqlQuery } from '../generation/metrics';
 import type { McpKeyInfo } from '../../shared/mcp/types';
+import type { McpPrincipal } from './principal';
 
 export const MCP_KEYS_SCHEMA = `CREATE TABLE IF NOT EXISTS mcp_keys (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, hash TEXT NOT NULL, keyHint TEXT NOT NULL,
@@ -9,9 +10,6 @@ export const MCP_KEYS_SCHEMA = `CREATE TABLE IF NOT EXISTS mcp_keys (
 // A coarse usage timestamp is sufficient for the management list. Persist at most
 // once per key per hour, rather than writing for every MCP status poll.
 const LAST_USED_INTERVAL = 60 * 60 * 1000;
-export interface McpPrincipal {
-  keyId: string;
-}
 export class McpKeys {
   constructor(private readonly query: SqlQuery) {}
   list(): McpKeyInfo[] {
@@ -72,6 +70,6 @@ export class McpKeys {
     const now = Date.now();
     if (row.lastUsedAt === null || now - row.lastUsedAt >= LAST_USED_INTERVAL)
       this.query('UPDATE mcp_keys SET lastUsedAt=? WHERE id=?', now, match[1]);
-    return { keyId: match[1] };
+    return { id: match[1] };
   }
 }

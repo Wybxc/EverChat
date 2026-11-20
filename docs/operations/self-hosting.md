@@ -34,7 +34,7 @@ chat.example.com/auth
 chat.example.com/auth/*
 ```
 
-前端、静态资源、`sw.js` 和 `/s/:id` 分享页面公开；`/public/shares/:id` 也须可匿名到达 Worker，由分享令牌和有效期校验控制读取。`/mcp` 同样需要可到达 Worker，由 EverChat 自己的可撤销 API Key 鉴权，接入步骤见 [MCP 指南](../features/mcp.md)。不要将私有 API 配为 Everyone 或 Bypass。覆盖整个域名的其他 Access 应用也不能继续拦截这些入口。
+前端、静态资源、`sw.js` 和 `/s/:id` 分享页面公开。`/public/shares/:id` 须可匿名到达 Worker，由分享令牌和有效期校验控制读取。MCP 的 `/mcp`、`/mcp/*`、`/.well-known/oauth-protected-resource/mcp` 和 `/.well-known/oauth-authorization-server` 也须直接到达 Worker。浏览器授权页 `/auth/mcp/authorize` 使用现有 Access 应用。联机方式及关闭 OAuth 的配置见 [MCP 指南](../features/mcp.md)。
 
 Worker 会再次校验 JWT 的签名、issuer、audience、有效期和允许身份；修改请求与 WebSocket 仍有同源检查。仅设置变量不会启用边缘 Access 规则。应用当前是共享的个人空间，不按多个允许身份隔离数据。
 
