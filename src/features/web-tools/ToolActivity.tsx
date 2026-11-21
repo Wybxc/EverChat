@@ -24,6 +24,7 @@ const labels = {
   completed: 'completed',
   failed: 'failed',
   cancelled: 'cancelled',
+  approval: 'approval',
 } as const;
 const callId = (messageId: string, id: string) => `tool-${messageId}-${id}`;
 
@@ -81,7 +82,7 @@ function ToolCallView({ item, messageId }: { item: PublicToolCall; messageId: st
       status={
         state === 'running'
           ? 'running'
-          : state === 'queued'
+          : state === 'queued' || state === 'approval'
             ? 'pending'
             : state === 'failed'
               ? 'error'
@@ -118,9 +119,11 @@ function ToolCallView({ item, messageId }: { item: PublicToolCall; messageId: st
           ? ` · ${t(($) => $.scanned, { bytes: item.progress.scannedBytes.toLocaleString() })}`
           : ''}
         {result?.status === 'completed'
-          ? result.attachment
-            ? ` · ${t(($) => $.attachmentResults, { count: result.attachment.fragments.length + result.attachment.matches.length })}`
-            : ` · ${t(($) => $.sourcesCount, { count: result.sources.length })}`
+          ? result.remoteOutput !== undefined
+            ? ''
+            : result.attachment
+              ? ` · ${t(($) => $.attachmentResults, { count: result.attachment.fragments.length + result.attachment.matches.length })}`
+              : ` · ${t(($) => $.sourcesCount, { count: result.sources.length })}`
           : ''}
       </TraceDescription>
     </TraceLine>
@@ -138,7 +141,11 @@ function ToolCallView({ item, messageId }: { item: PublicToolCall; messageId: st
           <TraceCollapsibleTrigger>{line}</TraceCollapsibleTrigger>
           <TraceCollapsibleContent>
             {result.status === 'completed' ? (
-              result.attachment ? (
+              result.remoteOutput !== undefined ? (
+                <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words">
+                  {result.remoteOutput}
+                </pre>
+              ) : result.attachment ? (
                 <div className="flex max-h-64 flex-col gap-2 overflow-auto">
                   {result.attachment.files.map((file) => (
                     <p key={file.attachmentId}>

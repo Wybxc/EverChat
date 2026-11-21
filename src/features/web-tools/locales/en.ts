@@ -16,6 +16,7 @@ export default {
   completed: 'Completed',
   failed: 'Failed',
   cancelled: 'Stopped',
+  approval: 'Awaiting approval',
   search: 'Search',
   fetch: 'Read page',
   viewContent: 'View content',

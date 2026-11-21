@@ -140,7 +140,7 @@ export function backupMessage(message: Message): BackupMessage {
                 ...message.tools,
                 status: 'failed' as const,
                 calls: message.tools.calls.map((item) =>
-                  ['queued', 'running'].includes(item.state)
+                  ['queued', 'approval', 'running'].includes(item.state)
                     ? { ...item, state: 'cancelled' as const }
                     : item,
                 ),

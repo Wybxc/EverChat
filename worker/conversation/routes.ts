@@ -12,6 +12,7 @@ import { problem } from '../../shared/errors/descriptor';
 import { conversationId, requireAuth, requireConversation, uuidSchema } from '../http/access';
 import type { ApiRouter } from '../http/app';
 import { HttpError, json, parseBody } from '../http/response';
+import { remoteMcpApprovalSchema } from '../../shared/tools/remote-mcp';
 
 const submitSchema = v.object({
   requestId: uuidSchema,
@@ -264,5 +265,37 @@ export function registerConversationRoutes(app: ApiRouter) {
       ok: true,
       activity: await context.env.CONVERSATIONS.getByName(id).cancel(runId),
     });
+  });
+  app.post('/conversations/:id/messages/:messageId/tool-approval', async (context) => {
+    await requireAuth(context);
+    const id = conversationId(context),
+      message = context.req.param('messageId');
+    await requireConversation(context, id);
+    if (!v.is(uuidSchema, message))
+      throw new HttpError(404, '找不到这条消息。', undefined, problem('NOT_FOUND'));
+    const { callId, decision } = await parseBody(
+      context,
+      v.strictObject({
+        callId: v.pipe(v.string(), v.minLength(1), v.maxLength(256)),
+        decision: remoteMcpApprovalSchema,
+      }),
+      { maxBytes: 2048, tooLarge: '确认请求过大。' },
+    );
+    try {
+      await context.env.CONVERSATIONS.getByName(id).decideRemoteTool(
+        id,
+        message,
+        callId,
+        decision.approve,
+      );
+      return json({ ok: true });
+    } catch {
+      throw new HttpError(
+        409,
+        '该远程 MCP 调用已完成、过期或不可确认。',
+        undefined,
+        problem('TOOL_INVALID'),
+      );
+    }
   });
 }

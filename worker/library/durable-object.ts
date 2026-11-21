@@ -71,6 +71,13 @@ import { ArchiveImports, type ImportResult } from '../backup/imports';
 import { ArchiveRestorer } from '../backup/restore';
 import type { Env } from '../http/env';
 import { HttpError, json, readJsonStream } from '../http/response';
+import { RemoteMcpStore } from '../remote-mcp/store';
+import type {
+  RemoteMcpConnectionInput,
+  RemoteMcpSelection,
+  ResolvedRemoteMcp,
+  RemoteMcpCall,
+} from '../../shared/tools/remote-mcp';
 import { sendWebPush } from '../notifications/push';
 import { NotificationRegistry } from '../notifications/registry';
 import { initializeStorageSchema } from '../platform/storage-schema';
@@ -316,6 +323,30 @@ export class Library extends DurableObject<Env> {
   }
   protected sendNotificationPush(device: NotificationDevice, completion: AnswerCompletion) {
     return sendWebPush(this.env, device, completion);
+  }
+  private remoteMcp() {
+    return new RemoteMcpStore(this.ctx.storage);
+  }
+  listRemoteMcp() {
+    return this.remoteMcp().list();
+  }
+  saveRemoteMcp(id: string, input: RemoteMcpConnectionInput) {
+    return this.remoteMcp().save(id, input);
+  }
+  removeRemoteMcp(id: string) {
+    return this.remoteMcp().remove(id);
+  }
+  remoteMcpCatalog(id: string) {
+    return this.remoteMcp().catalog(id, true);
+  }
+  resolveRemoteMcp(selections: RemoteMcpSelection[]) {
+    return this.remoteMcp().resolve(selections);
+  }
+  remoteMcpCredential(
+    connection: ResolvedRemoteMcp,
+    call: Pick<RemoteMcpCall, 'connection' | 'tool'>,
+  ) {
+    return this.remoteMcp().credential(connection, call);
   }
   async probeProviderModel(id: string, model: string, capability: ProbeCapability) {
     const profile = await this.providerForModelList(id, model);

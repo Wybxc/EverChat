@@ -7,6 +7,7 @@ const kinds = {
   probe: 'kindProbe',
   web_search: 'webSearch',
   read_webpage: 'webFetch',
+  remote_mcp: 'remoteMcp',
 } as const;
 const statuses = {
   running: 'statusRunning',

@@ -48,6 +48,8 @@ import type { ErrorIssue } from '../../shared/errors/descriptor';
 import { AppError, issueOf, problem } from '../../shared/errors/descriptor';
 import type { ChatInput, ProviderConfig } from '../../shared/providers/types';
 import { mergeServerToolActivity } from '../../shared/tools/server-tools';
+import { REMOTE_MCP_TOOL } from '../../shared/tools/remote-mcp';
+import { callRemoteMcpTool } from '../remote-mcp/client';
 import type { SearchPage } from '../../shared/search/query';
 import { projectShare } from '../../shared/sharing/projection';
 import { commitAck, STREAM_VERSION, validateCommit } from '../../shared/streaming/batches';
@@ -1151,6 +1153,12 @@ export class Conversation extends DurableObject<Env> {
       let generationConfig: ProviderConfig;
       try {
         generationConfig = applyConversationSettings(config, settings);
+        if (settings.remoteMcp?.length) {
+          assertWebToolSupport(generationConfig.modelMetadata, [REMOTE_MCP_TOOL]);
+          generationConfig.remoteMcp = await this.env.LIBRARY.getByName(
+            'personal',
+          ).resolveRemoteMcp(settings.remoteMcp);
+        }
         if (
           generationConfig.serverTools?.some(({ tool }) => tool === 'image-generation') &&
           !this.env.ATTACHMENTS
@@ -1300,6 +1308,7 @@ export class Conversation extends DurableObject<Env> {
       const enabledTools = [
         ...(input.tools ?? []),
         ...(hasOnDemandFiles(context) ? ATTACHMENT_TOOL_NAMES : []),
+        ...(generationConfig.remoteMcp?.length ? [REMOTE_MCP_TOOL] : []),
       ];
       if (enabledTools.length || needsServerToolRounds(generationConfig))
         this.query(
@@ -1828,6 +1837,18 @@ export class Conversation extends DurableObject<Env> {
       existing = this.activeTools.get(key);
     if (existing) return existing.result;
     const candidate = this.tools.publicCalls(state.runId).find((item) => item.call.id === callId);
+    if (candidate?.state === 'approval') return { ...state, approvalPending: true };
+    if (candidate?.call.name === REMOTE_MCP_TOOL && !candidate.call.invalid) {
+      const call = candidate.call;
+      if (!this.ctx.storage.transactionSync(() => this.tools.claimTool(taskId, callId)))
+        return this.toolTaskState(taskId);
+      const abort = new AbortController();
+      const result = this.runRemoteTool(state, call, abort.signal).finally(() =>
+        this.activeTools.delete(key),
+      );
+      this.activeTools.set(key, { abort, result });
+      return result;
+    }
     if (
       candidate &&
       !candidate.call.invalid &&
@@ -1969,6 +1990,120 @@ export class Conversation extends DurableObject<Env> {
     })();
     this.activeTools.set(key, { abort, result });
     return result;
+  }
+  private async runRemoteTool(
+    state: ToolTaskState,
+    call: Extract<WebToolCall, { name: typeof REMOTE_MCP_TOOL }>,
+    signal: AbortSignal,
+  ) {
+    const run = this.run(state.runId)!;
+    const config = JSON.parse(run.config!) as ProviderConfig;
+    const selected = config.remoteMcp?.find((entry) => entry.id === call.input.connection);
+    const change = this.ctx.storage.transactionSync(() => this.refreshToolMessage(state.id));
+    if (change) this.broadcast(change);
+    const usageId = `mcp-tool:${createHash('sha256')
+      .update(JSON.stringify([run.conversationId, state.id, call.id]))
+      .digest('hex')}`;
+    let outcome: WebToolOutcome;
+    try {
+      if (!selected) throw new Error('Missing MCP authorization');
+      const credential = await this.env.LIBRARY.getByName('personal').remoteMcpCredential(
+        selected,
+        {
+          connection: call.input.connection,
+          tool: call.input.tool,
+        },
+      );
+      signal.throwIfAborted();
+      await this.accounting.start(
+        {
+          id: usageId,
+          taskId: run.id,
+          conversationId: run.conversationId,
+          messageId: state.messageId,
+          kind: 'remote_mcp',
+        },
+        {
+          providerId: selected.id,
+          providerName: selected.name,
+          protocol: 'mcp',
+          model: call.input.tool,
+          modelName: call.input.tool,
+        },
+      );
+      await this.ctx.storage.sync();
+      signal.throwIfAborted();
+      const result = await callRemoteMcpTool(
+        credential,
+        call.input.tool,
+        call.input.arguments,
+        signal,
+      );
+      outcome = result.isError
+        ? {
+            id: call.id,
+            name: call.name,
+            status: 'failed',
+            error: '远程 MCP 服务返回了工具错误。',
+            issue: problem('TOOL_FAILED'),
+          }
+        : {
+            id: call.id,
+            name: call.name,
+            status: 'completed',
+            sources: [],
+            remoteOutput: result.output,
+          };
+    } catch {
+      outcome = {
+        id: call.id,
+        name: call.name,
+        status: 'failed',
+        error: '未收到远程 MCP 调用结果。服务端可能已经执行，请先核实。',
+        issue: problem('TOOL_FAILED'),
+      };
+    }
+    const next = this.ctx.storage.transactionSync(() => {
+      this.accounting.finish(usageId, {
+        status: signal.aborted ? 'cancelled' : outcome.status,
+        usage: {},
+        usageIsFinal: outcome.status === 'completed',
+      });
+      if (this.tools.state(state.id).status !== 'active') return null;
+      this.tools.finishTool(state.id, call.id, outcome);
+      return this.refreshToolMessage(state.id);
+    });
+    if (next) this.broadcast(next);
+    this.ctx.waitUntil(this.accounting.deliver().finally(() => this.scheduleAlarm()));
+    await this.ctx.storage.sync();
+    return this.toolTaskState(state.id);
+  }
+  async decideRemoteTool(
+    conversationId: string,
+    messageId: string,
+    callId: string,
+    approve: boolean,
+  ) {
+    const request = this.toolRequest(messageId);
+    if (!request || this.deletedAt)
+      throw new AppError(problem('NOT_FOUND'), '找不到待确认的调用。');
+    const { reference, change } = this.ctx.storage.transactionSync(() => ({
+      reference: this.tools.decideRemoteCall(request.rootId, callId, approve),
+      change: this.refreshToolMessage(request.rootId, conversationId),
+    }));
+    if (change) this.broadcast(change);
+    await this.ctx.storage.sync();
+    this.ctx.waitUntil(
+      (async () => {
+        const instance = await this.env.WEB_TOOLS.get(
+          toolWorkflowId(conversationId, request.rootId),
+        );
+        await instance.sendEvent({
+          type: `approval-${reference.round}-${reference.index}`,
+          payload: { callId },
+        });
+      })().catch(() => {}),
+    );
   }
   async failToolTask(taskId: string): Promise<ToolTaskState> {
     const state = this.toolTaskState(taskId);

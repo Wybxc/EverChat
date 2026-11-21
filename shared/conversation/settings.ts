@@ -4,6 +4,7 @@ import { MAX_MODEL_TOKENS, validateOutputLimit } from '../models/metadata';
 import type { ProviderConfig } from '../providers/types';
 import { WEB_TOOL_NAMES } from '../tools/tasks';
 import { modelServerToolsSchema, resolveServerTools } from '../tools/server-tools';
+import { remoteMcpSelectionsSchema } from '../tools/remote-mcp';
 import { MAX_SQL_PAYLOAD_BYTES, MAX_SYSTEM_PROMPT_LENGTH } from './limits';
 import type { ConversationSettings } from './types';
 
@@ -17,6 +18,7 @@ export const DEFAULT_CONVERSATION_SETTINGS: ConversationSettings = {
   contextBudget: null,
   tools: [],
   serverTools: [],
+  remoteMcp: [],
   autoCompression: { enabled: false, threshold: 80, model: null },
 };
 export const conversationSettingsSchema = v.pipe(
@@ -40,6 +42,7 @@ export const conversationSettingsSchema = v.pipe(
       v.check((tools) => new Set(tools).size === tools.length),
     ),
     serverTools: v.optional(modelServerToolsSchema, []),
+    remoteMcp: v.optional(remoteMcpSelectionsSchema, []),
     autoCompression: v.strictObject({
       enabled: v.boolean(),
       threshold: v.pipe(v.number(), v.integer(), v.minValue(50), v.maxValue(95)),

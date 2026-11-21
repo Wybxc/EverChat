@@ -21,7 +21,11 @@ export const emptyTotals = (): UsageTotals => ({
 export function addRecord(totals: UsageTotals, record: UsageRecord, direction = 1) {
   totals.requests += direction;
   if (record.answer) totals.answers += direction;
-  if (record.kind !== 'web_search' && record.kind !== 'read_webpage')
+  if (
+    record.kind !== 'web_search' &&
+    record.kind !== 'read_webpage' &&
+    record.kind !== 'remote_mcp'
+  )
     totals.modelRequests += direction;
   if (record.status === 'completed') totals.completed += direction;
   if (!record.usageIsFinal) totals.incomplete += direction;

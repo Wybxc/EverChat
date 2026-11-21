@@ -18,6 +18,7 @@ const reference = (state: ToolTaskState) => ({
   round: state.round,
   calls: [...state.calls],
   attachmentPending: 'attachmentPending' in state && state.attachmentPending === true,
+  approvalPending: state.approvalPending === true,
 });
 
 // Step results contain only small durable references/status, never model bodies, keys or tool outputs.
@@ -58,6 +59,17 @@ export class WebToolWorkflow extends WorkflowEntrypoint<Env, ToolWorkflowParams>
               return state!;
             });
             if (result.status !== 'active') return { status: result.status };
+            if (result.approvalPending) {
+              try {
+                await step.waitForEvent(`tool-approval-${round}-${index}-${batch}`, {
+                  type: `approval-${round}-${index}`,
+                  timeout: '30 seconds',
+                });
+              } catch {
+                // The approval itself is durable. Recheck if event delivery was interrupted.
+              }
+              continue;
+            }
             if (!result.attachmentPending) break;
           }
         }

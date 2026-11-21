@@ -42,6 +42,7 @@ import { PromptPresetPicker } from '../presets/PromptPresets';
 import { useWebToolSettings } from '../web-tools/web-tool-settings';
 import { writeChatCache as write } from './cache';
 import { ProviderTools } from './ProviderTools';
+import { RemoteMcpControls } from './RemoteMcpControls';
 import './locales';
 
 const withContextDefaults = conversationSettingsDefaults;
@@ -561,6 +562,12 @@ export function ConversationSettingsDialog({
                   open={open && tab === 'tools'}
                   settings={settings.serverTools}
                   onChange={(serverTools) => update({ serverTools })}
+                />
+                <RemoteMcpControls
+                  open={open && tab === 'tools'}
+                  enabled={canAttemptCapability(model?.metadata, 'toolCalls')}
+                  selected={settings.remoteMcp}
+                  onChange={(remoteMcp) => update({ remoteMcp })}
                 />
                 {service.isError && !service.data && (
                   <div className="flex items-center gap-2 text-xs">

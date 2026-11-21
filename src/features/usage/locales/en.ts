@@ -70,6 +70,7 @@ export default {
   deepseekWeb: 'DeepSeek web',
   webSearch: 'Web search',
   webFetch: 'Page fetch',
+  remoteMcp: 'Remote MCP',
   tabs: 'Usage categories',
   overview: 'Overview',
   providers: 'Providers',

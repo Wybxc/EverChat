@@ -15,6 +15,7 @@ export default {
   completed: '已完成',
   failed: '失败',
   cancelled: '已停止',
+  approval: '等待确认',
   search: '搜索',
   fetch: '读取网页',
   viewContent: '查看内容',

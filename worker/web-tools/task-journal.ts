@@ -10,6 +10,7 @@ import { estimateTextTokens } from '../../shared/conversation/token-estimate';
 import type { ErrorIssue } from '../../shared/errors/descriptor';
 import { AppError, problem } from '../../shared/errors/descriptor';
 import type { ProviderConfig } from '../../shared/providers/types';
+import { MAX_REMOTE_MCP_CALLS, REMOTE_MCP_TOOL } from '../../shared/tools/remote-mcp';
 import {
   validateWebToolOutcome,
   type PublicToolTask,
@@ -70,7 +71,7 @@ type Call = {
   ordinal: number;
   callId: string;
   payload: string;
-  state: 'queued' | 'running' | Terminal;
+  state: 'queued' | 'approval' | 'running' | Terminal;
   outcome: string | null;
 } & Record<string, SqlStorageValue>;
 export interface ToolTaskState {
@@ -86,6 +87,7 @@ export interface ToolTaskState {
   calls: string[];
   error: string | null;
   issue?: ErrorIssue;
+  approvalPending?: true;
 }
 interface ToolCallView {
   call: WebToolCandidate;
@@ -336,6 +338,24 @@ export class ToolTaskJournal {
     )
       taskError('模型步骤未认领或供应商身份变化。');
     validateProviderToolTurn(turn, JSON.parse(root.enabled), config);
+    const remoteCount = turn.calls.filter((call) => call.name === REMOTE_MCP_TOOL).length;
+    if (
+      remoteCount &&
+      remoteCount +
+        this.query<{ total: number }>(
+          "SELECT COUNT(*) AS total FROM web_tool_calls WHERE rootId=? AND json_extract(payload,'$.name')=?",
+          root.id,
+          REMOTE_MCP_TOOL,
+        ).one().total >
+        MAX_REMOTE_MCP_CALLS
+    )
+      taskError('已达到本轮远程 MCP 调用次数上限。');
+    const callState = (call: WebToolCandidate): Call['state'] =>
+      call.invalid
+        ? 'failed'
+        : call.name === REMOTE_MCP_TOOL && call.approval
+          ? 'approval'
+          : 'queued';
     let text = 0,
       reasoning = 0;
     for (const part of turn.content) {
@@ -358,7 +378,7 @@ export class ToolTaskJournal {
       ...turn.calls.map((call) => ({
         round: model.round,
         call,
-        state: call.invalid ? ('failed' as const) : ('queued' as const),
+        state: callState(call),
         ...(call.invalid
           ? {
               result: {
@@ -394,7 +414,7 @@ export class ToolTaskJournal {
         ordinal,
         call.id,
         serialized(call),
-        call.invalid ? 'failed' : 'queued',
+        callState(call),
         call.invalid
           ? serialized({
               id: call.id,
@@ -429,6 +449,37 @@ export class ToolTaskJournal {
     );
     this.query('UPDATE web_tool_tasks SET toolRequests = toolRequests + 1 WHERE id = ?', rootId);
     return true;
+  }
+  decideRemoteCall(rootId: string, callId: string, approve: boolean) {
+    const root = this.root(rootId);
+    this.active(root);
+    const model = this.current(root);
+    const row = this.calls(model.runId).find((item) => item.callId === callId);
+    if (!row) taskError('找不到待确认的远程 MCP 调用。');
+    const call = JSON.parse(row!.payload) as WebToolCandidate;
+    if (call.invalid || call.name !== REMOTE_MCP_TOOL || !call.approval)
+      taskError('该工具调用无需确认。');
+    if (row!.state === 'approval') {
+      this.query(
+        'UPDATE web_tool_calls SET state=?,outcome=? WHERE rootId=? AND callId=?',
+        approve ? 'queued' : 'failed',
+        approve
+          ? null
+          : serialized({
+              id: callId,
+              name: REMOTE_MCP_TOOL,
+              status: 'failed',
+              error: '用户拒绝了远程 MCP 调用。',
+              issue: problem('TOOL_INVALID'),
+            } satisfies WebToolOutcome),
+        rootId,
+        callId,
+      );
+    } else {
+      const denied = row!.outcome && JSON.parse(row!.outcome).error === '用户拒绝了远程 MCP 调用。';
+      if (approve ? denied : !denied) taskError('该调用已经作出不同的确认。');
+    }
+    return { round: root.round, index: row!.ordinal };
   }
   finishTool(rootId: string, callId: string, value: WebToolOutcome): boolean {
     const root = this.root(rootId),
@@ -594,7 +645,7 @@ export class ToolTaskJournal {
       id,
     );
     for (const call of this.query<Call>(
-      "SELECT * FROM web_tool_calls WHERE rootId = ? AND state IN ('queued', 'running')",
+      "SELECT * FROM web_tool_calls WHERE rootId = ? AND state IN ('queued', 'approval', 'running')",
       id,
     ).toArray()) {
       const original = JSON.parse(call.payload) as WebToolCandidate;

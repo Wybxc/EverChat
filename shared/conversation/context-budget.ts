@@ -135,7 +135,7 @@ export function buildContext(
   content: string,
   config: Pick<
     ProviderConfig,
-    'systemPrompt' | 'maxOutputTokens' | 'modelMetadata' | 'serverTools'
+    'systemPrompt' | 'maxOutputTokens' | 'modelMetadata' | 'serverTools' | 'remoteMcp'
   >,
   settings: Pick<ConversationSettings, 'recentMessages' | 'contextBudget'>,
   summary?: { id: string; content: string; coveredMessages: number; sourceIds?: string[] },
@@ -184,9 +184,9 @@ export function buildContext(
   const attachmentToolTokens = groups.some((group) => group.some((f) => f.delivery === 'on_demand'))
     ? estimateTextTokens(JSON.stringify(toolDefinitions(ATTACHMENT_TOOL_NAMES, config))) + 32
     : 0;
-  const serverToolTokens = config.serverTools?.length
-    ? estimateTextTokens(JSON.stringify(config.serverTools)) + 32
-    : 0;
+  const serverToolTokens =
+    (config.serverTools?.length ? estimateTextTokens(JSON.stringify(config.serverTools)) + 32 : 0) +
+    (config.remoteMcp?.length ? estimateTextTokens(JSON.stringify(config.remoteMcp)) + 96 : 0);
   let usedAttachmentTools = [
     files,
     ...requiredTail.map((m) => m.files ?? []),
