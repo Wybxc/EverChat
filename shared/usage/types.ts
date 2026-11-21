@@ -1,6 +1,7 @@
 import * as v from 'valibot';
 import type { StreamUsage } from '../streaming/provider-stream';
 import type { UsageSources } from './evidence';
+import type { ServerToolUsage } from './server-tools';
 
 export const usageKinds = [
   'chat',
@@ -55,6 +56,7 @@ export interface UsageAttempt {
   usage: StreamUsage;
   usageIsFinal: boolean;
   usageSources?: UsageSources;
+  serverToolUsage?: ServerToolUsage[];
   /** True only for the first model call of a new answer, not every tool round. */
   answer?: boolean;
   firstTokenMs?: number;

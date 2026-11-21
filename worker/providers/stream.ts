@@ -19,9 +19,14 @@ import {
   type ImagePart,
 } from '../../shared/attachments/images';
 import { providerModel, providerRequestInit } from './sdk';
-import { providerToolPrompt, type ProviderToolRequest } from './tool-turn';
+import {
+  assertProviderToolSupport,
+  providerToolPrompt,
+  toolContinuationChoice,
+  type ProviderToolRequest,
+} from './tool-turn';
+import { applyServerToolReplay } from './server-tool-replay';
 import { coreProviderStream } from './core';
-import { assertWebToolSupport } from '../../shared/tools/tasks';
 import { sdkProviderError } from './sdk-diagnostics';
 import { httpProviderError, providerFailure } from './failure';
 import { ProviderWireGuard } from './stream-errors';
@@ -53,11 +58,37 @@ export async function openProviderStream(
   let responseHeaders: Headers | undefined;
   let assembled: AssembledInput | undefined;
   let requested = false;
+  const exchanges = toolRequest?.exchanges ?? [];
+  const replayMarkers = exchanges.map(({ turn }) =>
+    turn.serverReplay ? `everchat-replay-${crypto.randomUUID()}` : '',
+  );
+  const replays = exchanges.flatMap(({ turn }, index) =>
+    turn.serverReplay
+      ? [
+          {
+            replay: turn.serverReplay,
+            marker: replayMarkers[index],
+            callIds: turn.calls.map(({ id }) => id),
+          },
+        ]
+      : [],
+  );
   const request: typeof fetch = async (input, init) => {
     if (requested) throw new ProviderError('供应商请求不能重复发送。');
     requested = true;
     signal.throwIfAborted();
-    init = providerRequestInit(config, init, Boolean(toolRequest));
+    init = providerRequestInit(
+      config,
+      init,
+      Boolean(toolRequest),
+      toolRequest && (toolRequest.toolChoice ?? toolContinuationChoice(exchanges)),
+    );
+    if (replays.length) {
+      if (typeof init?.body !== 'string') throw new ProviderError('无法序列化服务端工具续接。');
+      const payload = JSON.parse(init.body);
+      applyServerToolReplay(payload, replays);
+      init = { ...init, body: JSON.stringify(payload) };
+    }
     if (
       typeof init?.body === 'string' &&
       new TextEncoder().encode(init.body).byteLength > MAX_BUFFERED_BODY_BYTES
@@ -98,7 +129,7 @@ export async function openProviderStream(
   try {
     if (toolRequest) {
       try {
-        assertWebToolSupport(config.modelMetadata, toolRequest.enabled);
+        assertProviderToolSupport(config, toolRequest.enabled);
       } catch (error) {
         throw new ProviderError(error instanceof Error ? error.message : '工具配置无效。');
       }
@@ -184,7 +215,7 @@ export async function openProviderStream(
       ),
     ];
     if (toolRequest)
-      prompt.push(...providerToolPrompt(toolRequest.exchanges ?? [], toolRequest.enabled, config));
+      prompt.push(...providerToolPrompt(exchanges, toolRequest.enabled, config, replayMarkers));
     if (beforeRequest)
       assembled = assembledInput(config, context, toolRequest, documentData, documentSnapshots);
     const result = await coreProviderStream(
@@ -203,6 +234,7 @@ export async function openProviderStream(
       () => responseHeaders,
       result.native,
       onOutput,
+      replays.map(({ replay }) => replay),
     );
   } catch (error) {
     await guard.cancel();

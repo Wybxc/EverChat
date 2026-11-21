@@ -1,4 +1,6 @@
 export default {
+  providerToolUnits: { call: '次调用', query: '次查询', 'image-query': '次图片查询' },
+  providerToolEvidence: { observed: '流式记录', reported: '供应商报告' },
   rateInput: '每百万输入 Token',
   rateOutput: '每百万输出 Token',
   rateReasoning: '每百万思考 Token',

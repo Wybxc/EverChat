@@ -12,6 +12,8 @@ import { ProviderUsage } from './stream-usage';
 import type { ProviderToolTurn } from './tool-turn';
 import type { ProviderNativeState } from './core';
 import type { ProviderWireGuard } from './stream-errors';
+import { ServerToolTrace } from './server-tool-activity';
+import type { ServerToolReplay } from './server-tool-replay';
 
 export interface ProviderResponse extends ReadableStream<Uint8Array> {
   toolTurn?: ProviderToolTurn;
@@ -30,11 +32,15 @@ export function providerEvents(
   headers: () => Headers | undefined,
   native: ProviderNativeState,
   onOutput?: (receivedAt: number) => void,
+  replays?: readonly ServerToolReplay[],
 ): ProviderResponse {
   const reader = input.getReader(),
     usage = new ProviderUsage(),
     thoughts = new ResponseReasoning();
   const collector = native.collector;
+  const serverTools = config.serverTools?.length
+    ? new ServerToolTrace(config, [config.apiKey ?? '', config.systemPrompt, ...secrets], replays)
+    : undefined;
   const budget = new ProviderStream(config.provider, true);
   let body: ProviderResponse;
   const diagnostics = (error: unknown, stage: 'stream' | 'protocol' = 'protocol') =>
@@ -89,6 +95,9 @@ export function providerEvents(
           }
           if (raw.error || raw.type === 'error' || raw.type === 'response.failed' || response.error)
             throw diagnostics(raw, 'stream');
+          serverTools?.observe(raw);
+          const activity = serverTools?.drain();
+          if (activity) yield emit(activity);
           if (usage.observe(raw, config.provider))
             yield emit({ type: 'usage', usage: usage.usage, usageSources: usage.sources });
           if (config.provider === 'openai-responses') {
@@ -102,7 +111,19 @@ export function providerEvents(
           finished = true;
           continue;
         }
-        if (part.type === 'tool-call') collector?.acceptCall(part);
+        if (part.type === 'tool-call' && !part.providerExecuted) collector?.acceptCall(part);
+        if (
+          serverTools &&
+          ((part.type === 'tool-call' && part.providerExecuted) || part.type === 'tool-result')
+        ) {
+          serverTools.sdk(
+            part.toolName,
+            part.toolCallId,
+            part.type === 'tool-call' ? 'running' : 'completed',
+          );
+          const activity = serverTools.drain();
+          if (activity) yield emit(activity);
+        }
         if (part.type === 'start-step') {
           for (const detail of native.diagnostics.splice(0)) {
             const info = sdkDiagnostics(detail, config, secrets, headers());
@@ -117,7 +138,9 @@ export function providerEvents(
           yield emit({ type: 'reasoning', text: part.text });
         else if (
           !collector &&
-          ['tool-input-start', 'tool-call', 'tool-result', 'file', 'source'].includes(part.type)
+          ((part.type === 'tool-input-start' && (!serverTools || !part.providerExecuted)) ||
+            (part.type === 'tool-call' && (!serverTools || !part.providerExecuted)) ||
+            (!serverTools && ['tool-result', 'file', 'source'].includes(part.type)))
         )
           throw new Error('模型返回了未启用的工具或不支持的内容。');
       }
@@ -130,7 +153,8 @@ export function providerEvents(
         !finished
       )
         throw new Error('供应商连接提前结束，缺少完整结束标记。');
-      const reason = finish.finishReason.unified;
+      const paused = finish.finishReason.raw === 'pause_turn' && Boolean(collector && serverTools);
+      const reason = paused ? 'tool-calls' : finish.finishReason.unified;
       usage.mergeSdk(finish.usage);
       for (const detail of native.diagnostics.splice(0)) {
         const info = sdkDiagnostics(detail, config, secrets, headers());
@@ -153,6 +177,9 @@ export function providerEvents(
       if (accepted && collector) {
         body.toolTurn = collector.finish(usage.usage, usage.final);
       }
+      if (!paused) serverTools?.finish();
+      const activity = serverTools?.drain();
+      if (activity) yield emit(activity);
       yield emit({
         type: 'finish',
         reason,

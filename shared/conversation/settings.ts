@@ -3,6 +3,7 @@ import { AppError, problem } from '../errors/descriptor';
 import { MAX_MODEL_TOKENS, validateOutputLimit } from '../models/metadata';
 import type { ProviderConfig } from '../providers/types';
 import { WEB_TOOL_NAMES } from '../tools/tasks';
+import { modelServerToolsSchema, resolveServerTools } from '../tools/server-tools';
 import { MAX_SQL_PAYLOAD_BYTES, MAX_SYSTEM_PROMPT_LENGTH } from './limits';
 import type { ConversationSettings } from './types';
 
@@ -15,6 +16,7 @@ export const DEFAULT_CONVERSATION_SETTINGS: ConversationSettings = {
   recentMessages: null,
   contextBudget: null,
   tools: [],
+  serverTools: [],
   autoCompression: { enabled: false, threshold: 80, model: null },
 };
 export const conversationSettingsSchema = v.pipe(
@@ -37,6 +39,7 @@ export const conversationSettingsSchema = v.pipe(
       v.maxLength(WEB_TOOL_NAMES.length),
       v.check((tools) => new Set(tools).size === tools.length),
     ),
+    serverTools: v.optional(modelServerToolsSchema, []),
     autoCompression: v.strictObject({
       enabled: v.boolean(),
       threshold: v.pipe(v.number(), v.integer(), v.minValue(50), v.maxValue(95)),
@@ -136,6 +139,7 @@ export function applyConversationSettings(
     : settings.maxOutputTokens;
   validateOutputLimit(config.modelMetadata, maxOutputTokens);
   const support = samplingSupport(config);
+  const serverTools = resolveServerTools(config, settings.serverTools);
   const temperature =
     support.temperatureMax === null ? undefined : (settings.temperature ?? undefined);
   const topP = support.topPMin === null ? undefined : (settings.topP ?? undefined);
@@ -160,5 +164,6 @@ export function applyConversationSettings(
     maxOutputTokens,
     temperature,
     topP,
+    ...(serverTools.length ? { serverTools } : {}),
   };
 }

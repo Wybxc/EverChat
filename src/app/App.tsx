@@ -570,7 +570,7 @@ function AppContent({ initialSettings }: AppProps) {
         ? (snapshot.settings ?? DEFAULT_CONVERSATION_SETTINGS)
         : newConversationSettings;
   const resetNewTools = () => {
-    const settings = { ...newConversationSettings, tools: [] };
+    const settings = { ...newConversationSettings, tools: [], serverTools: [] };
     setNewConversationSettings(settings);
     write('conversation-settings:new', settings);
     writeChatCache('conversation-settings-draft:new', { settings, dirty: false });
@@ -2377,6 +2377,17 @@ function AppContent({ initialSettings }: AppProps) {
                       }}
                       webEnabled={Boolean(conversationSettings.tools?.length)}
                       toggleWeb={() => toolsToggleRef.current?.()}
+                      providerToolsEnabled={Boolean(
+                        conversationSettings.serverTools?.some(
+                          (item) =>
+                            item.providerId === selectedModel?.providerId &&
+                            item.model === selectedModel?.model,
+                        ),
+                      )}
+                      openTools={() => {
+                        setFocusWebTools(true);
+                        setConversationSettingsOpen(true);
+                      }}
                       estimate={contextPreview?.estimate}
                       focusComposer={() => editor.current?.focus({ preventScroll: true })}
                     />

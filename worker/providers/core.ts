@@ -12,6 +12,7 @@ import * as v from 'valibot';
 import type { ProviderConfig } from '../../shared/providers/types';
 import { webToolInputSchemasFor } from '../../shared/tools/tasks';
 import { providerGenerationOptions } from './sdk';
+import { sdkServerTools } from './server-tools';
 import {
   ProviderToolCollector,
   webToolDefinitions,
@@ -80,7 +81,7 @@ export async function coreProviderStream(
   });
   const inputSchemas = webToolInputSchemasFor(config.webTools?.provider);
   const definitions = request ? webToolDefinitions(request.enabled, config) : undefined;
-  const tools = definitions
+  const functions = definitions
     ? Object.fromEntries(
         definitions.map((definition) => [
           definition.name,
@@ -103,11 +104,12 @@ export async function coreProviderStream(
         ]),
       )
     : undefined;
+  const tools = { ...functions, ...sdkServerTools(config) };
   const result = streamText({
     model: wrapped,
     messages,
     allowSystemInMessages: true,
-    tools,
+    tools: Object.keys(tools).length ? tools : undefined,
     ...(request
       ? { toolChoice: request.toolChoice ?? toolContinuationChoice(request.exchanges ?? []) }
       : {}),

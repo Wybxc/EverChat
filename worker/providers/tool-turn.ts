@@ -30,6 +30,11 @@ import {
   type WebToolOutcome,
 } from '../../shared/tools/tasks';
 import { ProviderError } from '../generation/errors';
+import {
+  ServerToolReplayCollector,
+  validateServerToolReplay,
+  type ServerToolReplay,
+} from './server-tool-replay';
 
 const MAX_TOOL_TURN_CONTEXT_BYTES = MAX_SQL_PAYLOAD_BYTES;
 type AssistantPart =
@@ -39,7 +44,8 @@ export interface ProviderToolTurn {
   identity: string;
   content: AssistantPart[];
   calls: WebToolCandidate[];
-  finishReason: 'stop' | 'length' | 'tool-calls';
+  finishReason: 'stop' | 'length' | 'tool-calls' | 'pause';
+  serverReplay?: ServerToolReplay;
   usage: StreamUsage;
   usageIsFinal: boolean;
 }
@@ -54,6 +60,14 @@ export interface ProviderToolRequest {
 }
 export const providerToolIdentity = (config: ProviderConfig) =>
   JSON.stringify([config.provider, config.baseUrl, config.model]);
+export const needsServerToolRounds = (config: ProviderConfig) =>
+  config.provider === 'anthropic' && Boolean(config.serverTools?.length);
+export const pendingProviderToolTurn = (turn?: ProviderToolTurn) =>
+  Boolean(turn?.calls.length || turn?.finishReason === 'pause');
+export function assertProviderToolSupport(config: ProviderConfig, enabled: readonly WebToolName[]) {
+  if (enabled.length || !needsServerToolRounds(config))
+    assertWebToolSupport(config.modelMetadata, enabled);
+}
 const bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).byteLength;
 const object = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value)
@@ -133,6 +147,7 @@ function toolWireIdentity(config: ProviderConfig) {
 
 /** Stop requesting a broken service or repeating the same failed action without progress. */
 export function toolContinuationChoice(exchanges: ProviderToolExchange[]): 'auto' | 'none' {
+  if (exchanges.at(-1)?.turn.finishReason === 'pause') return 'auto';
   if (
     exchanges.some((exchange) =>
       exchange.outcomes.some((outcome) => outcome.status === 'failed' && outcome.failure?.terminal),
@@ -211,13 +226,15 @@ export function validateProviderToolTurn(
   if (
     turn.identity !== providerToolIdentity(config) ||
     !Array.isArray(turn.content) ||
-    !turn.content.length ||
+    (!turn.content.length && turn.finishReason !== 'pause') ||
     !Array.isArray(turn.calls) ||
     bytes(turn) > MAX_TOOL_TURN_CONTEXT_BYTES ||
-    !['stop', 'length', 'tool-calls'].includes(turn.finishReason) ||
+    !['stop', 'length', 'tool-calls', 'pause'].includes(turn.finishReason) ||
+    (turn.finishReason === 'pause' && (!needsServerToolRounds(config) || !turn.serverReplay)) ||
     turn.calls.length > 0 !== (turn.finishReason === 'tool-calls')
   )
     throw new ProviderError('工具续接状态与原调用不符。');
+  if (turn.serverReplay) validateServerToolReplay(turn.serverReplay, config, turn.calls);
   let text = 0,
     reasoning = 0;
   for (const part of turn.content) {
@@ -228,7 +245,8 @@ export function validateProviderToolTurn(
   }
   if (
     text + reasoning > MAX_MESSAGE_TEXT_BYTES ||
-    (!turn.calls.length && !turn.content.some((part) => part.type === 'text' && part.text.trim()))
+    (!pendingProviderToolTurn(turn) &&
+      !turn.content.some((part) => part.type === 'text' && part.text.trim()))
   )
     throw new ProviderError('工具续接正文或思考内容无效。');
   const actual = turn.content.filter((part) => part.type === 'tool-call'),
@@ -254,6 +272,8 @@ export function validateProviderToolTurn(
 export class ProviderToolCollector {
   private readonly content: AssistantPart[] = [];
   private readonly calls: WebToolCandidate[] = [];
+  private readonly serverIds = new Set<string>();
+  private readonly replay;
   private readonly blocks = new Map<
     string,
     LanguageModelV4TextPart | LanguageModelV4ReasoningPart
@@ -275,14 +295,33 @@ export class ProviderToolCollector {
     private readonly config: ProviderConfig,
     private readonly enabled: readonly WebToolName[],
   ) {
-    assertWebToolSupport(config.modelMetadata, enabled);
+    assertProviderToolSupport(config, enabled);
     this.wireIdentity = toolWireIdentity(config);
+    this.replay = config.serverTools?.length ? new ServerToolReplayCollector(config) : undefined;
   }
   add(part: LanguageModelV4StreamPart) {
-    const { content, blocks, toolBlocks, wireIdentity } = this;
+    const { config, content, blocks, toolBlocks, wireIdentity } = this;
     if (part.type === 'raw') {
-      wireIdentity.observe(object(part.rawValue));
+      const raw = object(part.rawValue);
+      wireIdentity.observe(raw);
+      this.replay?.observe(raw);
       return;
+    }
+    if (this.replay) {
+      if (part.type === 'tool-input-start' && part.providerExecuted) {
+        if (this.serverIds.size >= 96) throw new ProviderError('供应商工具调用次数超过限制。');
+        this.serverIds.add(part.id);
+        return;
+      }
+      if (
+        ((part.type === 'tool-input-delta' || part.type === 'tool-input-end') &&
+          this.serverIds.has(part.id)) ||
+        (part.type === 'tool-call' && part.providerExecuted) ||
+        part.type === 'tool-result' ||
+        part.type === 'source' ||
+        part.type === 'file'
+      )
+        return;
     }
     const add = (part: AssistantPart) => {
       content.push(part);
@@ -364,6 +403,14 @@ export class ProviderToolCollector {
       block.rawComplete = true;
     } else if (part.type === 'finish') {
       if (
+        !this.finishReason &&
+        part.finishReason.raw === 'pause_turn' &&
+        needsServerToolRounds(config)
+      ) {
+        this.finishReason = 'pause';
+        return;
+      }
+      if (
         this.finishReason ||
         !['stop', 'length', 'tool-calls'].includes(part.finishReason.unified)
       )
@@ -428,7 +475,9 @@ export class ProviderToolCollector {
       blocks.size ||
       [...toolBlocks.values()].some((block) => !block.complete) ||
       calls.length > 0 !== (finishReason === 'tool-calls') ||
-      (!calls.length && !content.some((part) => part.type === 'text' && part.text.trim()))
+      (!calls.length &&
+        finishReason !== 'pause' &&
+        !content.some((part) => part.type === 'text' && part.text.trim()))
     )
       throw new ProviderError('供应商未完整返回工具调用或文字回答。');
     if (calls.length) assertPrivateReasoning(config, content);
@@ -441,6 +490,8 @@ export class ProviderToolCollector {
       usage,
       usageIsFinal,
     };
+    const replay = this.replay?.finish(calls, finishReason === 'pause');
+    if (replay) turn.serverReplay = replay;
     if (bytes(turn) > MAX_TOOL_TURN_CONTEXT_BYTES)
       throw new ProviderError('工具续接内容超过保存限制。');
     validateProviderToolTurn(turn, enabled, config);
@@ -452,13 +503,14 @@ export function providerToolPrompt(
   exchanges: ProviderToolExchange[],
   enabled: readonly WebToolName[],
   config: ProviderConfig,
+  replayMarkers?: readonly string[],
 ): ModelMessage[] {
   const prompt: ModelMessage[] = [],
     used = new Set<string>();
   try {
-    for (const { turn, outcomes } of exchanges) {
+    for (const [index, { turn, outcomes }] of exchanges.entries()) {
       validateProviderToolTurn(turn, enabled, config);
-      if (turn.finishReason !== 'tool-calls' || outcomes.length !== turn.calls.length)
+      if (!pendingProviderToolTurn(turn) || outcomes.length !== turn.calls.length)
         throw new Error();
       const actual = turn.content.filter((part) => part.type === 'tool-call');
       const results = turn.calls.map((candidate) => {
@@ -494,7 +546,15 @@ export function providerToolPrompt(
               : { type: 'error-text' as const, value: outcome.error },
         };
       });
-      prompt.push({ role: 'assistant', content: turn.content }, { role: 'tool', content: results });
+      const marker = replayMarkers?.[index];
+      prompt.push({
+        role: 'assistant',
+        content:
+          marker && turn.serverReplay?.type !== 'deepseek-chat'
+            ? [{ type: 'text', text: marker }]
+            : turn.content,
+      });
+      if (results.length) prompt.push({ role: 'tool', content: results });
     }
   } catch {
     throw new ProviderError('工具续接状态或结果与原调用不符。');

@@ -133,7 +133,10 @@ export function historyCountWithinLimit(history: ChatInput[], recentMessages: nu
 export function buildContext(
   history: ChatInput[],
   content: string,
-  config: Pick<ProviderConfig, 'systemPrompt' | 'maxOutputTokens' | 'modelMetadata'>,
+  config: Pick<
+    ProviderConfig,
+    'systemPrompt' | 'maxOutputTokens' | 'modelMetadata' | 'serverTools'
+  >,
   settings: Pick<ConversationSettings, 'recentMessages' | 'contextBudget'>,
   summary?: { id: string; content: string; coveredMessages: number; sourceIds?: string[] },
   images: ImagePart[] = [],
@@ -181,7 +184,10 @@ export function buildContext(
   const attachmentToolTokens = groups.some((group) => group.some((f) => f.delivery === 'on_demand'))
     ? estimateTextTokens(JSON.stringify(toolDefinitions(ATTACHMENT_TOOL_NAMES, config))) + 32
     : 0;
-  let toolTokens = [
+  const serverToolTokens = config.serverTools?.length
+    ? estimateTextTokens(JSON.stringify(config.serverTools)) + 32
+    : 0;
+  let usedAttachmentTools = [
     files,
     ...requiredTail.map((m) => m.files ?? []),
     ...pinned.map((m) => m.files ?? []),
@@ -223,18 +229,19 @@ export function buildContext(
     let tokens = 0;
     for (let i = start; i < end; i++) tokens += historyTokens(history[i]);
     const nextTools =
-      toolTokens ||
+      usedAttachmentTools ||
       (history
         .slice(start, end)
         .some((message) => message.files?.some((file) => file.delivery === 'on_demand'))
         ? attachmentToolTokens
         : 0);
-    if (fixed + retainedTokens + tokens + nextTools > inputBudget) break;
-    toolTokens = nextTools;
+    if (fixed + retainedTokens + tokens + nextTools + serverToolTokens > inputBudget) break;
+    usedAttachmentTools = nextTools;
     selected.unshift(...history.slice(start, end));
     retainedTokens += tokens;
     end = start;
   }
+  const toolTokens = usedAttachmentTools + serverToolTokens;
   const estimate: ContextEstimate = {
     method: 'approximate-v1',
     inputTokens,

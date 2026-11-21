@@ -39,6 +39,7 @@ export function RecordCost({ record }: { record: UsageRecord }) {
 type Locate = ((conversationId: string, messageId: string) => void) | undefined;
 function RequestDetails({ record, onLocate }: { record: UsageRecord; onLocate: Locate }) {
   const { t } = useTranslation('usage', { useSuspense: false });
+  const { t: chat } = useTranslation('chat', { useSuspense: false });
 
   return (
     <details className="py-2">
@@ -52,6 +53,17 @@ function RequestDetails({ record, onLocate }: { record: UsageRecord; onLocate: L
           {record.usageIsFinal ? t(($) => $.finalUsage) : t(($) => $.incompleteUsage)} ·{' '}
           <RecordCost record={record} />
         </p>
+        {!!record.serverToolUsage?.length && (
+          <ul className="space-y-1">
+            {record.serverToolUsage.map((usage) => (
+              <li key={`${usage.tool}:${usage.unit}`}>
+                {chat(($) => $.providerToolNames[usage.tool])} · {formatNumber(usage.count)}{' '}
+                {t(($) => $.providerToolUnits[usage.unit])} ·{' '}
+                {t(($) => $.providerToolEvidence[usage.source])}
+              </li>
+            ))}
+          </ul>
+        )}
         <p>
           {t(($) => $.usageDetails, {
             input:

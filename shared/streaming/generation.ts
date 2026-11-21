@@ -4,6 +4,7 @@ import { contextEstimateSchema, type ContextEstimate } from '../conversation/con
 import { errorIssueSchema, type ErrorIssue } from '../errors/descriptor';
 import { providerFailureSchema, type ProviderFailure } from '../providers/failure';
 import type { StreamState, StreamUsage } from './provider-stream';
+import { serverToolActivitySchema, type ServerToolActivity } from '../tools/server-tools';
 import {
   USAGE_FIELDS,
   usageSourcesSchema,
@@ -30,6 +31,7 @@ export interface GenerationResult {
   usageIsFinal: boolean;
   usageSources?: UsageSources;
   usageCoverage?: UsageCoverage;
+  serverTools?: ServerToolActivity[];
   timing?: GenerationTiming;
   context?: ContextEstimate;
   failure?: ProviderFailure;
@@ -118,6 +120,7 @@ export const generationSchema = v.strictObject({
   usageIsFinal: v.boolean(),
   usageSources: v.optional(usageSourcesSchema),
   usageCoverage: v.optional(usageCoverageSchema),
+  serverTools: v.optional(serverToolActivitySchema),
   timing: v.optional(v.strictObject({ queueMs: count, firstTokenMs: count, durationMs: count })),
   context: v.optional(contextEstimateSchema),
   failure: v.optional(providerFailureSchema),

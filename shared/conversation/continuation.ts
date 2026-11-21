@@ -49,6 +49,10 @@ export function canContinueAnswer(message: Message) {
     !message.deletedAt &&
     !message.summary &&
     !isActive(message) &&
+    ![
+      message.generation,
+      ...(message.continuation?.stages.map((stage) => stage.generation) ?? []),
+    ].some((generation) => generation?.serverTools?.some(({ vendor }) => vendor === 'deepseek')) &&
     Boolean(messageText(message).trim()) &&
     (!message.continuation || Boolean(localAnswerText(message).trim()))
   );
