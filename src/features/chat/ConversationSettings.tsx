@@ -44,6 +44,7 @@ import { writeChatCache as write } from './cache';
 import { ProviderTools } from './ProviderTools';
 import { RemoteMcpControls } from './RemoteMcpControls';
 import { hostedMcpVendor } from '../../../shared/tools/remote-mcp';
+import type { ServerToolProbeKind } from '../../../shared/tools/server-tools';
 import './locales';
 
 const withContextDefaults = conversationSettingsDefaults;
@@ -124,6 +125,7 @@ export function ConversationSettingsDialog({
   open,
   close,
   onDraft,
+  onServerToolVerified,
   managePresets,
   manageWebTools,
   focusTools = false,
@@ -139,6 +141,7 @@ export function ConversationSettingsDialog({
   open: boolean;
   close: () => void;
   onDraft: (settings: ConversationSettings) => void;
+  onServerToolVerified: (model: ChatModel, tool: ServerToolProbeKind, testedAt: number) => void;
   managePresets: () => void;
   manageWebTools: () => void;
   focusTools?: boolean;
@@ -566,6 +569,7 @@ export function ConversationSettingsDialog({
                   )}
                   settings={settings.serverTools}
                   onChange={(serverTools) => update({ serverTools })}
+                  onVerified={onServerToolVerified}
                 />
                 <RemoteMcpControls
                   open={open && tab === 'tools'}

@@ -603,6 +603,57 @@ test('configuring a service from conversation parameters returns to the same dia
   }
 });
 
+test('a successful provider tool probe is available to the composer without reloading', async ({
+  page,
+  context,
+}) => {
+  const f = await setup(context.request, 'openai-responses');
+  try {
+    f.config.providers[0].baseUrl = 'https://api.openai.com/v1';
+    expect(
+      (
+        await context.request.put('/api/settings/providers', {
+          headers,
+          data: f.config,
+        })
+      ).ok(),
+    ).toBe(true);
+    await page.route('**/server-tools/test', (route) =>
+      route.fulfill({ json: { confirmed: true, tool: 'web-search', testedAt: Date.now() } }),
+    );
+    // Observe admission without dispatching a request to the real provider.
+    await page.route('**/api/conversations/*/messages', (route) =>
+      route.fulfill({ status: 400, json: { error: 'Fixture intercepted model submission.' } }),
+    );
+    await page.goto('/');
+    const modal = await parameters(page);
+    const tools = modal.getByRole('region', { name: '供应商工具', exact: true });
+    await tools.getByRole('button', { name: '测试联网搜索', exact: true }).click();
+    await expect(tools.getByRole('status')).toHaveText('供应商已执行该工具。');
+    const toggle = tools.getByRole('switch', { name: '联网搜索', exact: true });
+    await toggle.click();
+    await expect(toggle).toBeChecked();
+    await modal.getByRole('button', { name: '关闭会话参数', exact: true }).click();
+    await page.getByLabel('消息', { exact: true }).fill('查询 RFC 9110');
+    const submitted = page.waitForRequest(
+      (request) =>
+        /\/api\/conversations\/[^/]+\/messages$/.test(request.url()) && request.method() === 'POST',
+    );
+    await page.getByRole('button', { name: '发送消息', exact: true }).click();
+    const request = await submitted;
+    f.ids.push(/\/conversations\/([^/]+)\//.exec(request.url())![1]);
+    expect(request.postDataJSON().settings.serverTools).toEqual([
+      {
+        providerId: f.providerId,
+        model: f.model,
+        tools: [{ tool: 'web-search' }],
+      },
+    ]);
+  } finally {
+    await f.cleanup();
+  }
+});
+
 test('invalid new-conversation parameters reject attachments before creating a cloud conversation and preserve the draft', async ({
   page,
   context,
