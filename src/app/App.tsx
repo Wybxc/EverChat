@@ -56,7 +56,11 @@ import {
   conversationSettingsSchema,
   DEFAULT_CONVERSATION_SETTINGS,
 } from '../../shared/conversation/settings';
-import { prepareChatContext, summaryGeneration } from '../../shared/conversation/summaries';
+import {
+  prepareChatContext,
+  summaryContext,
+  summaryGeneration,
+} from '../../shared/conversation/summaries';
 import {
   type ConversationInfo,
   type ConversationSettings,
@@ -109,9 +113,7 @@ import { useBranchScrollAnchor } from '../features/chat/useBranchScrollAnchor';
 import { useChatDraft } from '../features/chat/useChatDraft';
 import { useChatModel } from '../features/chat/useChatModel';
 import { useComposerLayout } from '../features/chat/useComposerLayout';
-import { useComposerSize } from '../features/chat/useComposerSize';
 import { usePromptHistory } from '../features/chat/usePromptHistory';
-import { useContextPreview } from '../features/chat/useContextPreview';
 import { useConversation } from '../features/chat/useConversation';
 import {
   ConversationActionDialogs,
@@ -257,7 +259,7 @@ function AppContent({ initialSettings }: AppProps) {
   });
   const chatDraft = useChatDraft(selected);
   const {
-    draft,
+    draftText,
     setDraft,
     draftFiles,
     setDraftFiles,
@@ -417,7 +419,7 @@ function AppContent({ initialSettings }: AppProps) {
         setDraftFiles([]);
       }
     },
-    [forgetConversation],
+    [forgetConversation, setDraft],
   );
   const currentPending = pending.find((item) => item.conversation.id === selected);
   const {
@@ -577,18 +579,13 @@ function AppContent({ initialSettings }: AppProps) {
     write('conversation-settings:new', settings);
     writeChatCache('conversation-settings-draft:new', { settings, dirty: false });
   };
-  const { previewHistory, contextPreview } = useContextPreview({
-    messages: snapshot.messages,
-    parentId: branches.continuationParentId,
-    draft,
-    draftImages,
-    draftFiles,
-    conversationSettings,
-    selectedModel,
-    models,
-    reasoningEffort,
-    session,
-  });
+  const previewHistory = useMemo(() => {
+    try {
+      return summaryContext(snapshot.messages, branches.continuationParentId);
+    } catch {
+      return null;
+    }
+  }, [snapshot.messages, branches.continuationParentId]);
   const visibleConversations = conversations;
 
   const { backupOperation, backupTask, exportBackup, importBackup, cancelBackup } = useBackup({
@@ -651,7 +648,6 @@ function AppContent({ initialSettings }: AppProps) {
       selectedModel.reasoningEfforts.includes(saved as ReasoningEffort) ? saved : '',
     );
   }, [selectedModel]);
-  useComposerSize(editor, draft);
   const promptHistory = usePromptHistory(
     `${selected ?? 'new'}:${branches.head ?? ''}`,
     branches.path,
@@ -1092,8 +1088,9 @@ function AppContent({ initialSettings }: AppProps) {
   };
   const submit = async (event?: SubmitEvent<HTMLFormElement>) => {
     event?.preventDefault();
+    const content = draftText.getSnapshot().trim();
     if (
-      (!draft.trim() && !draftImages.length && !draftFiles.length) ||
+      (!content && !draftImages.length && !draftFiles.length) ||
       generationBlocked ||
       !selectedModel
     )
@@ -1104,7 +1101,7 @@ function AppContent({ initialSettings }: AppProps) {
     try {
       await queue({
         requestId: crypto.randomUUID(),
-        content: draft.trim(),
+        content,
         ...(draftFiles.length
           ? {
               fileInputModes: Object.fromEntries(
@@ -1316,7 +1313,8 @@ function AppContent({ initialSettings }: AppProps) {
   const quote = (message: Message) => {
     const source = messageText(message).trim();
     if (!source) return;
-    const prefix = draft.trim() ? `${draft.trim()}\n\n` : '';
+    const draft = draftText.getSnapshot().trim();
+    const prefix = draft ? `${draft}\n\n` : '';
     const available = Math.max(0, MAX_MESSAGE_TEXT_BYTES - jsonTextBytes(prefix));
     const quoted = source
       .split(/\r?\n/u)
@@ -2223,7 +2221,21 @@ function AppContent({ initialSettings }: AppProps) {
                 )}
               <ChatComposer
                 onSubmit={submit}
-                attachments={
+                draftText={draftText}
+                editor={editor}
+                context={{
+                  messages: snapshot.messages,
+                  parentId: branches.continuationParentId,
+                  previewHistory,
+                  draftImages,
+                  draftFiles,
+                  conversationSettings,
+                  selectedModel,
+                  models,
+                  reasoningEffort,
+                  session,
+                }}
+                attachments={(contextPreview) =>
                   selected &&
                   (draftFiles.length > 0 || draftImages.length > 0) && (
                     <div
@@ -2263,7 +2275,7 @@ function AppContent({ initialSettings }: AppProps) {
                     />
                   )
                 }
-                input={
+                input={(draft) => (
                   <InputGroupTextarea
                     onPaste={(event) => {
                       const files = Array.from(event.clipboardData.files);
@@ -2297,10 +2309,10 @@ function AppContent({ initialSettings }: AppProps) {
                       }
                     }}
                   />
-                }
+                )}
                 toolbarRef={toolbarRef}
                 compact={compactComposer}
-                toolbar={
+                toolbar={(draft, contextPreview) => (
                   <>
                     {session.attachmentsConfigured && (
                       <ActionMenu
@@ -2430,8 +2442,8 @@ function AppContent({ initialSettings }: AppProps) {
                       </InputGroupButton>
                     )}
                   </>
-                }
-                notices={
+                )}
+                notices={(contextPreview) => (
                   <>
                     {contextPreview?.estimate && (
                       <ContextEstimateNotices
@@ -2445,7 +2457,7 @@ function AppContent({ initialSettings }: AppProps) {
                       </p>
                     )}
                   </>
-                }
+                )}
               />
             </div>
           </div>

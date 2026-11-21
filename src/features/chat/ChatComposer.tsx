@@ -1,9 +1,17 @@
-import type { ComponentProps, ReactNode, Ref } from 'react';
+import { useDeferredValue, useSyncExternalStore } from 'react';
+import type { ComponentProps, ReactNode, Ref, RefObject } from 'react';
 import { InputGroup, InputGroupAddon } from '@/components/ui/input-group';
+import type { DraftTextStore } from './useChatDraft';
+import { useComposerSize } from './useComposerSize';
+import { useContextPreview } from './useContextPreview';
 
-/** Presentation only: the caller owns the one draft, input handlers and submission lifecycle. */
+type ContextPreview = ReturnType<typeof useContextPreview>;
+
 export function ChatComposer({
   onSubmit,
+  draftText,
+  editor,
+  context,
   attachments,
   upload,
   input,
@@ -13,24 +21,33 @@ export function ChatComposer({
   notices,
 }: {
   onSubmit: ComponentProps<'form'>['onSubmit'];
-  attachments: ReactNode;
+  draftText: DraftTextStore;
+  editor: RefObject<HTMLTextAreaElement | null>;
+  context: Omit<Parameters<typeof useContextPreview>[0], 'draft'>;
+  attachments: (preview: ContextPreview) => ReactNode;
   upload: ReactNode;
-  input: ReactNode;
-  toolbar: ReactNode;
+  input: (draft: string) => ReactNode;
+  toolbar: (draft: string, preview: ContextPreview) => ReactNode;
   toolbarRef: Ref<HTMLDivElement>;
   compact: boolean;
-  notices: ReactNode;
+  notices: (preview: ContextPreview) => ReactNode;
 }) {
+  // Only the composer subscribes to each keystroke. Submission still reads the current draft.
+  const draft = useSyncExternalStore(draftText.subscribe, draftText.getSnapshot);
+  const previewDraft = useDeferredValue(draft);
+  const preview = useContextPreview({ ...context, draft: previewDraft });
+  const attachmentContent = attachments(preview);
+  useComposerSize(editor, draft);
   return (
     <form onSubmit={onSubmit}>
       <InputGroup data-testid="chat-composer" className="chat-composer">
-        {(attachments || upload) && (
+        {(attachmentContent || upload) && (
           <InputGroupAddon align="block-start" className="flex-col items-stretch gap-1 p-0">
-            {attachments}
+            {attachmentContent}
             {upload}
           </InputGroupAddon>
         )}
-        {input}
+        {input(draft)}
         <InputGroupAddon
           align="block-end"
           tone="default"
@@ -39,10 +56,10 @@ export function ChatComposer({
           data-testid="composer-toolbar"
           data-compact={compact}
         >
-          {toolbar}
+          {toolbar(draft, preview)}
         </InputGroupAddon>
       </InputGroup>
-      {notices}
+      {notices(preview)}
     </form>
   );
 }
