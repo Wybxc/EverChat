@@ -179,6 +179,7 @@ export default {
   compactionCostHint: '开启后会额外调用摘要模型，产生供应商费用。原始消息保留。',
   toolsUnsupported: '当前模型不支持工具调用。',
   toolsUnknown: '工具能力未识别，可尝试。',
+  webPreferenceHint: '开启后优先使用当前模型提供的联网工具。',
   webServiceSettings: '联网服务设置',
   configureWebService: '配置联网服务',
   webSettingsFailed: '无法读取联网服务配置。',

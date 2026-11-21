@@ -18,6 +18,8 @@ import { type ConversationSettings, type Message } from '../../../shared/convers
 import { modelSelectionKey } from '../../../shared/models/selection';
 import type { ChatModel } from '../../../shared/models/types';
 import { type ReasoningEffort } from '../../../shared/models/types';
+import { preferredServerWebTools } from '../../../shared/tools/server-tools';
+import { WEB_TOOL_NAMES } from '../../../shared/tools/tasks';
 import { UiError, errorMessage, uiMessage } from '../../platform/i18n/messages';
 
 export function useContextPreview({
@@ -85,6 +87,13 @@ export function useContextPreview({
         settings.output,
         draftImages,
         draftFiles,
+        undefined,
+        [],
+        preferredServerWebTools(
+          selectedModel,
+          settings.output,
+          settings.output.tools.length ? WEB_TOOL_NAMES : undefined,
+        ),
       );
       if (prepared.automatic) {
         const selection = settings.output.autoCompression.model;

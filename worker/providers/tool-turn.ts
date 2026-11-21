@@ -1,4 +1,5 @@
 import { toolDefinitions as webToolDefinitions } from '../../shared/tools/definitions';
+import { canCombineServerAndLocalTools } from '../../shared/tools/server-tools';
 export { toolDefinitions as webToolDefinitions } from '../../shared/tools/definitions';
 import type { ModelMessage, TypedToolCall, ToolSet } from 'ai';
 import {
@@ -77,12 +78,7 @@ export function assertProviderToolSupport(config: ProviderConfig, enabled: reado
     hasHosted && !config.remoteMcp?.some(({ executor }) => executor !== 'provider')
       ? enabled.filter((name) => name !== REMOTE_MCP_TOOL)
       : enabled;
-  if (
-    local.length &&
-    config.serverTools?.length &&
-    config.provider === 'gemini' &&
-    /^gemini-2\./.test(config.model)
-  )
+  if (local.length && config.serverTools?.length && !canCombineServerAndLocalTools(config))
     throw new ProviderError('Gemini 2.x 的供应商工具无法与 EverChat 函数在同一轮使用。');
   if (local.length || (!hasHosted && !needsServerToolRounds(config)))
     assertWebToolSupport(config.modelMetadata, local);

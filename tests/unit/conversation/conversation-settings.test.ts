@@ -1,4 +1,4 @@
-import { MAX_MODEL_TOKENS } from '../../../shared/models/metadata';
+import { MAX_MODEL_TOKENS, resolveModelMetadata } from '../../../shared/models/metadata';
 import { MAX_SYSTEM_PROMPT_LENGTH } from '../../../shared/conversation/limits';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -10,7 +10,11 @@ import {
   DEFAULT_CONVERSATION_SETTINGS as defaults,
   samplingSupport,
 } from '../../../shared/conversation/settings';
+import { prepareChatContext } from '../../../shared/conversation/summaries';
 import type { ProviderConfig } from '../../../shared/providers/types';
+import type { DocumentPart } from '../../../shared/attachments/documents';
+import { preferredServerWebTools } from '../../../shared/tools/server-tools';
+import { WEB_TOOL_NAMES } from '../../../shared/tools/tasks';
 import { Autosave } from '../../../src/platform/autosave';
 
 const config: ProviderConfig = {
@@ -94,6 +98,93 @@ test('conversation tools default to off and accept only independent, unique read
   ]) {
     assert.equal(v.safeParse(conversationSettingsSchema, { ...defaults, tools }).success, false);
   }
+});
+
+test('web search adds supported native tools once and leaves manual choices independent', () => {
+  const providerId = crypto.randomUUID();
+  const model: ProviderConfig = {
+    ...config,
+    providerId,
+    provider: 'anthropic',
+    baseUrl: 'https://api.anthropic.com/v1',
+    model: 'claude-sonnet-4-6',
+  };
+  const settings = {
+    ...defaults,
+    serverTools: [{ providerId, model: model.model, tools: [{ tool: 'web-search' as const }] }],
+  };
+  const selected = applyConversationSettings(model, settings);
+  const automatic = prepareChatContext(
+    [],
+    null,
+    'Find sources',
+    selected,
+    settings,
+    [],
+    [],
+    undefined,
+    [],
+    preferredServerWebTools(selected, settings, WEB_TOOL_NAMES),
+  );
+  assert.equal(automatic.usesNativeWebTools, true);
+  assert.deepEqual(
+    automatic.config.serverTools?.map(({ tool }) => tool),
+    ['web-search', 'web-fetch'],
+  );
+  assert.deepEqual(
+    selected.serverTools?.map(({ tool }) => tool),
+    ['web-search'],
+  );
+  const off = prepareChatContext([], null, 'Find sources', selected, settings);
+  assert.equal(off.usesNativeWebTools, false);
+  assert.deepEqual(off.config.serverTools, selected.serverTools);
+});
+
+test('automatic native web preserves Gemini 2 on-demand document access', () => {
+  const modelId = 'gemini-2.5-flash';
+  const model: ProviderConfig = {
+    ...config,
+    provider: 'gemini',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+    model: modelId,
+    modelMetadata: resolveModelMetadata('gemini', {
+      id: modelId,
+      name: 'Gemini',
+      enabled: true,
+      metadataOverrides: { toolCalls: true },
+    }),
+  };
+  const file: DocumentPart = {
+    type: 'file',
+    attachmentId: crypto.randomUUID(),
+    name: 'source.txt',
+    mediaType: 'text/plain',
+    size: 50,
+    sha256: '0'.repeat(64),
+    textSha256: '0'.repeat(64),
+    version: 1,
+    characters: 50,
+    tokens: 20,
+  };
+  const withFile = (inputMode: DocumentPart['inputMode']) =>
+    prepareChatContext(
+      [],
+      null,
+      'Use sources',
+      model,
+      defaults,
+      [],
+      [{ ...file, inputMode }],
+      undefined,
+      [],
+      preferredServerWebTools(model, defaults, WEB_TOOL_NAMES),
+    );
+  const onDemand = withFile('on_demand');
+  assert.equal(onDemand.usesNativeWebTools, false);
+  assert.equal(onDemand.messages.at(-1)?.files?.[0].delivery, 'on_demand');
+  const inline = withFile('inline');
+  assert.equal(inline.usesNativeWebTools, true);
+  assert.equal(inline.messages.at(-1)?.files?.[0].delivery, 'inline');
 });
 
 test('reasoning and model sampling gates match current supplier and SDK restrictions', () => {

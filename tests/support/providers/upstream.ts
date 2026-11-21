@@ -20,6 +20,43 @@ export function installMockUpstream() {
         token_endpoint_auth_method: 'private_key_jwt',
         token_endpoint_auth_methods_supported: ['none', 'private_key_jwt'],
       });
+    if (
+      url.href === 'https://api.deepseek.com/v1/chat/completions' &&
+      request.headers.get('Authorization') === 'Bearer integration-test-key'
+    ) {
+      const { tools = [] } = await request.json<{ tools?: { type: string }[] }>();
+      const types = tools.map(({ type }) => type);
+      if (
+        new Set(types).size !== types.length ||
+        types.some((type) => !['deepseek_web_search', 'deepseek_read_url'].includes(type))
+      )
+        return Response.json(
+          { error: 'Expected only distinct DeepSeek native web tools' },
+          { status: 400 },
+        );
+      const activity = types.map((type) => ({
+        choices: [
+          {
+            index: 0,
+            delta: {},
+            server_tool_event: {
+              type: 'call_completed',
+              call: {
+                id: `fixture-${type}`,
+                type,
+                status: 'completed',
+                sources: [{ title: 'Cloudflare 文档', url: 'https://developers.cloudflare.com/' }],
+              },
+            },
+          },
+        ],
+      }));
+      const { partial, finish } = providerStreams['openai-chat'];
+      return new Response(
+        partial + activity.map((event) => `data: ${JSON.stringify(event)}\n\n`).join('') + finish,
+        { headers: { 'Content-Type': 'text/event-stream' } },
+      );
+    }
     if (url.hostname !== 'provider.test') return upstreamFetch(input, init);
     if (
       request.headers.get('Authorization') !== 'Bearer integration-test-key' &&

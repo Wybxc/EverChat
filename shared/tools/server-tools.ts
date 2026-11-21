@@ -1,6 +1,8 @@
 import * as v from 'valibot';
+import type { ConversationSettings } from '../conversation/types';
 import type { ProviderConfig } from '../providers/types';
 import { AppError, problem } from '../errors/descriptor';
+import type { WebToolName } from './tasks';
 
 export const SERVER_TOOL_KINDS = [
   'web-search',
@@ -234,6 +236,33 @@ export function selectedModelServerTools(
   return (
     selections?.find((item) => item.providerId === model.providerId && item.model === model.model)
       ?.tools ?? []
+  );
+}
+
+export function canCombineServerAndLocalTools(model: Pick<Model, 'provider' | 'model'>) {
+  return model.provider !== 'gemini' || !/^gemini-2\./.test(model.model);
+}
+
+export function preferredServerWebTools(
+  model: Model & { providerId?: string },
+  settings: Pick<ConversationSettings, 'serverTools' | 'remoteMcp'>,
+  requested: readonly WebToolName[] = [],
+) {
+  if (!requested.length) return [];
+  if (
+    model.provider === 'gemini' &&
+    selectedModelServerTools(model, settings.serverTools).some(({ tool }) => tool === 'file-search')
+  )
+    return [];
+  if (
+    !canCombineServerAndLocalTools(model) &&
+    settings.remoteMcp?.some(({ executor }) => executor !== 'provider')
+  )
+    return [];
+  return serverToolCatalog(model).filter(
+    ({ tool }) =>
+      (tool === 'web-search' && requested.includes('web_search')) ||
+      (tool === 'web-fetch' && requested.includes('read_webpage')),
   );
 }
 

@@ -209,12 +209,12 @@ export function registerConversationRoutes(app: ApiRouter) {
       : baseConfig;
     if (!config)
       throw new HttpError(400, '所选模型不支持此思维强度。', undefined, problem('INVALID_REQUEST'));
-    if (input.tools) config.webTools = await library.webToolConfig();
     const result = await context.env.CONVERSATIONS.getByName(id).submit(
       id,
       input,
       config,
       await library.titleConfig(true),
+      { preferNativeWebTools: true },
     );
     if ('error' in result) return json(result, result.status);
     await library.touch(id);
