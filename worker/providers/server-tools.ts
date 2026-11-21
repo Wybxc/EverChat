@@ -7,7 +7,7 @@ import type { ResolvedServerTool } from '../../shared/tools/server-tools';
 
 const MAX_SERVER_TOOL_CALLS = 4;
 
-function sdkTool({ vendor, tool, resourceIds }: ResolvedServerTool) {
+function sdkTool({ vendor, tool, resourceIds }: ResolvedServerTool, maxCalls: number) {
   switch (vendor) {
     case 'openai':
       switch (tool) {
@@ -30,15 +30,21 @@ function sdkTool({ vendor, tool, resourceIds }: ResolvedServerTool) {
       }
       return;
     case 'anthropic':
-      if (tool === 'web-search')
-        return anthropic.tools.webSearch_20250305({ maxUses: MAX_SERVER_TOOL_CALLS });
+      if (tool === 'web-search') return anthropic.tools.webSearch_20250305({ maxUses: maxCalls });
       if (tool === 'web-fetch')
         return anthropic.tools.webFetch_20250910({
-          maxUses: MAX_SERVER_TOOL_CALLS,
+          maxUses: maxCalls,
           maxContentTokens: 8000,
           citations: { enabled: true },
         });
       if (tool === 'code-execution') return anthropic.tools.codeExecution_20250825();
+      if (tool === 'advisor')
+        return anthropic.tools.advisor_20260301({
+          model: 'claude-opus-5-5',
+          maxUses: 1,
+          maxTokens: 1024,
+        });
+      if (tool === 'tool-search') return anthropic.tools.toolSearchBm25_20251119();
       return;
     case 'google':
       if (tool === 'web-search') return google.tools.googleSearch({});
@@ -52,7 +58,7 @@ function sdkTool({ vendor, tool, resourceIds }: ResolvedServerTool) {
 export function sdkServerTools(config: ProviderConfig): ToolSet {
   const tools: ToolSet = {};
   for (const item of config.serverTools ?? []) {
-    const definition = sdkTool(item);
+    const definition = sdkTool(item, config.serverToolCallLimit ?? MAX_SERVER_TOOL_CALLS);
     if (!definition) continue;
     // Anthropic maps the provider definition to its canonical native name.
     // The alias keeps a simultaneous EverChat web_search distinct in Core.
@@ -71,7 +77,8 @@ export function addServerToolOptions(
 ) {
   const tools = config.serverTools ?? [];
   const vendor = tools[0]?.vendor;
-  if (vendor === 'openai') body.max_tool_calls = MAX_SERVER_TOOL_CALLS;
+  if (vendor === 'openai')
+    body.max_tool_calls = config.serverToolCallLimit ?? MAX_SERVER_TOOL_CALLS;
   if (choice === 'none') return;
   if (vendor === 'deepseek' || vendor === 'openrouter')
     body.tools = [

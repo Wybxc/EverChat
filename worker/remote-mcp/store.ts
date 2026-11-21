@@ -96,7 +96,11 @@ export class RemoteMcpStore {
         const selected = tools.filter(({ name }) => selection.tools.includes(name));
         if (selected.length !== selection.tools.length) throw stale();
         const { hasToken: _, ...identity } = connection;
-        return { ...identity, tools: selected };
+        return {
+          ...identity,
+          tools: selected,
+          ...(selection.executor ? { executor: selection.executor } : {}),
+        };
       }),
     );
   }

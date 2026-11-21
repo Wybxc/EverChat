@@ -459,6 +459,26 @@ export class ToolTaskJournal {
     const call = JSON.parse(row!.payload) as WebToolCandidate;
     if (call.invalid || call.name !== REMOTE_MCP_TOOL || !call.approval)
       taskError('该工具调用无需确认。');
+    if (!call.invalid && call.name === REMOTE_MCP_TOOL && call.hosted) {
+      if (row!.state === 'approval') {
+        const outcome: WebToolOutcome = {
+          id: callId,
+          name: REMOTE_MCP_TOOL,
+          status: 'completed',
+          sources: [],
+          approved: approve,
+        };
+        this.query(
+          "UPDATE web_tool_calls SET state='completed',outcome=? WHERE rootId=? AND callId=?",
+          serialized(outcome),
+          rootId,
+          callId,
+        );
+      } else if (!row!.outcome || JSON.parse(row!.outcome).approved !== approve) {
+        taskError('该调用已经作出不同的确认。');
+      }
+      return { round: root.round, index: row!.ordinal };
+    }
     if (row!.state === 'approval') {
       this.query(
         'UPDATE web_tool_calls SET state=?,outcome=? WHERE rootId=? AND callId=?',

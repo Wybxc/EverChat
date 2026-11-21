@@ -2,7 +2,11 @@ import type { DocumentPart } from '../attachments/documents';
 import type { ImagePart } from '../attachments/images';
 import type { WebToolServiceConfig } from '../web-tools/service';
 import type { TitleSettings } from '../conversation/titles';
-import type { ReportedServerTools, ResolvedServerTool } from '../tools/server-tools';
+import type {
+  ReportedServerTools,
+  ResolvedServerTool,
+  TestedServerTools,
+} from '../tools/server-tools';
 import type { ResolvedRemoteMcp } from '../tools/remote-mcp';
 import type {
   ChatModel,
@@ -54,6 +58,8 @@ export interface ProviderConfig {
   webTools?: WebToolServiceConfig;
   serverTools?: ResolvedServerTool[];
   reportedServerTools?: ReportedServerTools;
+  testedServerTools?: TestedServerTools;
+  serverToolCallLimit?: number;
   remoteMcp?: ResolvedRemoteMcp[];
   /** Internal MCP permission pinned at acceptance, never a supplier parameter. */
   receiptSystemPrompt?: boolean;

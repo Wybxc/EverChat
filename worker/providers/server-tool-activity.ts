@@ -1,5 +1,7 @@
 import * as v from 'valibot';
 import type { ProviderConfig } from '../../shared/providers/types';
+import { hostedMcpVendor, providerMcpConnections } from '../../shared/tools/remote-mcp';
+import { hostedMcpTool } from './hosted-mcp';
 import { inputHash } from './input-receipt';
 import type { ServerToolReplay } from './server-tool-replay';
 import { serverToolUnitRate, type ServerToolUsage } from '../../shared/usage/server-tools';
@@ -28,6 +30,7 @@ const responsesTools: Record<string, ServerToolKind> = {
   image_generation_call: 'image-generation',
   shell_call: 'shell',
   shell_call_output: 'shell',
+  mcp_call: 'remote-mcp',
 };
 
 export class ServerToolTrace {
@@ -44,8 +47,11 @@ export class ServerToolTrace {
     private readonly secrets: readonly string[],
     replays?: readonly ServerToolReplay[],
   ) {
-    this.vendor = config.serverTools?.[0]?.vendor;
-    this.enabled = new Set(config.serverTools?.map(({ tool }) => tool));
+    const hasHostedMcp = providerMcpConnections(config).length > 0;
+    this.vendor =
+      config.serverTools?.[0]?.vendor ?? (hasHostedMcp ? hostedMcpVendor(config) : undefined);
+    this.enabled = new Set<ServerToolKind>(config.serverTools?.map(({ tool }) => tool));
+    if (hasHostedMcp) this.enabled.add('remote-mcp');
     for (const replay of replays ?? []) {
       if (replay.type !== 'anthropic') continue;
       for (const block of replay.blocks) this.anthropicBlock(block);
@@ -233,7 +239,12 @@ export class ServerToolTrace {
         ? 'web-fetch'
         : responsesTools[type];
     if (!tool) return;
-    const status = type === 'shell_call_output' ? 'completed' : state(item.status);
+    if (tool === 'remote-mcp' && !hostedMcpTool(this.config, item.server_label, item.name)) return;
+    const status = item.error
+      ? 'failed'
+      : type === 'shell_call_output'
+        ? 'completed'
+        : state(item.status);
     const activity = this.update(
       string(type === 'shell_call' || type === 'shell_call_output' ? item.call_id : item.id),
       tool,
@@ -247,6 +258,11 @@ export class ServerToolTrace {
   }
 
   private anthropicBlock(block: RecordValue) {
+    if (block.type === 'mcp_tool_use') {
+      if (hostedMcpTool(this.config, block.server_name, block.name))
+        this.update(string(block.id), 'remote-mcp', 'running');
+      return;
+    }
     if (block.type === 'server_tool_use') {
       const name = string(block.name);
       const tool =
@@ -254,9 +270,13 @@ export class ServerToolTrace {
           ? 'web-search'
           : name === 'web_fetch' || name === 'deepseek_read_url'
             ? 'web-fetch'
-            : name.includes('code_execution')
-              ? 'code-execution'
-              : undefined;
+            : name === 'advisor'
+              ? 'advisor'
+              : name.startsWith('tool_search')
+                ? 'tool-search'
+                : name.includes('code_execution')
+                  ? 'code-execution'
+                  : undefined;
       if (tool) this.update(string(block.id), tool, 'running');
     } else if (string(block.type).endsWith('_tool_result')) {
       const id = string(block.tool_use_id);
@@ -264,6 +284,7 @@ export class ServerToolTrace {
       if (!call) return;
       const content = object(block.content);
       const failed =
+        block.is_error === true ||
         string(content.type).endsWith('_error') ||
         Boolean(content.error_code) ||
         (typeof content.return_code === 'number' && content.return_code !== 0);

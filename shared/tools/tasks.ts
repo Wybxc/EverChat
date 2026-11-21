@@ -95,6 +95,7 @@ const webToolCallSchema = v.variant('name', [
     name: v.literal(REMOTE_MCP_TOOL),
     input: remoteMcpCallSchema,
     approval: v.optional(remoteMcpDecisionSchema),
+    hosted: v.optional(v.literal(true)),
   }),
   v.strictObject({
     id: callId,
@@ -188,6 +189,7 @@ const webToolOutcomeSchema = v.variant('status', [
     sources: v.array(sourceSchema),
     attachment: v.optional(attachmentToolResultSchema),
     remoteOutput: v.optional(v.pipe(v.string(), v.maxLength(8192))),
+    approved: v.optional(v.boolean()),
     warnings: v.optional(v.pipe(v.array(safeText(200)), v.maxLength(5))),
   }),
   v.strictObject({

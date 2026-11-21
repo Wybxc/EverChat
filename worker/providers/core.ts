@@ -13,6 +13,7 @@ import type { ProviderConfig } from '../../shared/providers/types';
 import { webToolInputSchemasFor } from '../../shared/tools/tasks';
 import { providerGenerationOptions } from './sdk';
 import { sdkServerTools } from './server-tools';
+import { providerMcpConnections } from '../../shared/tools/remote-mcp';
 import {
   ProviderToolCollector,
   webToolDefinitions,
@@ -34,11 +35,12 @@ export async function coreProviderStream(
   messages: ModelMessage[],
   signal: AbortSignal,
   request?: ProviderToolRequest,
+  secrets?: readonly string[],
 ) {
   let connected = false;
   const native: ProviderNativeState = {
     diagnostics: [],
-    collector: request ? new ProviderToolCollector(config, request.enabled) : undefined,
+    collector: request ? new ProviderToolCollector(config, request.enabled, secrets) : undefined,
   };
   const wrapped = wrapLanguageModel({
     model,
@@ -116,7 +118,10 @@ export async function coreProviderStream(
     maxRetries: 0,
     includeRawChunks: true,
     abortSignal: signal,
-    ...providerGenerationOptions(config, Boolean(definitions?.length)),
+    ...providerGenerationOptions(
+      config,
+      Boolean(definitions?.length || providerMcpConnections(config).length),
+    ),
     telemetry: { isEnabled: false },
     // A provider stream error is observed by providerEvents, never retried or logged raw.
     onError() {},

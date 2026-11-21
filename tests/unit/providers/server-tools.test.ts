@@ -13,7 +13,10 @@ import { providerStreams } from '../../support/providers/streams';
 import { resolveModelMetadata } from '../../../shared/models/metadata';
 import { includeServerToolCost } from '../../../shared/usage/server-tools';
 import type { SaveProviderArtifact } from '../../../worker/providers/artifacts';
+import type { HostedMcpCredential } from '../../../worker/providers/hosted-mcp';
+import { hostedMcpLabel } from '../../../shared/tools/remote-mcp';
 import { inputHash } from '../../../worker/providers/input-receipt';
+import { probeServerTool } from '../../../worker/providers/server-tool-probe';
 
 const providerId = 'd23a51be-0e3d-41c6-aa15-e775c0555241';
 const fixture = (
@@ -44,6 +47,7 @@ async function run(
   config: ProviderConfig,
   request?: ProviderToolRequest,
   save?: SaveProviderArtifact,
+  credentials?: HostedMcpCredential[],
 ) {
   const body = await openProviderStream(
     config,
@@ -55,6 +59,7 @@ async function run(
     undefined,
     undefined,
     save,
+    credentials,
   );
   const parser = new ProviderStream(config.provider, true);
   for await (const bytes of body) parser.feed(bytes);
@@ -73,6 +78,194 @@ test('provider tools are bound to the configured endpoint and model', () => {
   assert.throws(() =>
     fixture({}, [{ tool: 'file-search', resources: ['fileSearchStores/mismatch'] }]),
   );
+});
+
+test('OpenAI hosted MCP requests are approved with stateless, allowlisted replay', async (t) => {
+  const connection = typeHostedConnection(false);
+  const config = fixture({ remoteMcp: [connection] }, []);
+  const credentials = [{ id: connection.id, token: 'fixture-scope-token' }];
+  const item = {
+    type: 'mcp_approval_request',
+    id: 'mcpr_fixture',
+    server_label: hostedMcpLabel(connection.id),
+    name: 'fixture_tool',
+    arguments: '{"text":"approved value"}',
+  };
+  const hostedCall = {
+    type: 'mcp_call',
+    id: 'mcp_result',
+    server_label: item.server_label,
+    name: item.name,
+    arguments: item.arguments,
+    status: 'completed',
+    output: 'Done',
+    approval_request_id: item.id,
+  };
+  const usage = () =>
+    frame({
+      type: 'response.completed',
+      response: { usage: { input_tokens: 12, output_tokens: 3 }, incomplete_details: null },
+    });
+  const frames = (item: unknown, index: number) =>
+    frame({ type: 'response.output_item.added', output_index: index, item }) +
+    frame({ type: 'response.output_item.done', output_index: index, item });
+  const message = { type: 'message', role: 'assistant', id: 'mcp_answer', content: [] };
+  const answer =
+    frame({ type: 'response.output_item.added', output_index: 4, item: message }) +
+    frame({
+      type: 'response.output_text.delta',
+      item_id: message.id,
+      output_index: 4,
+      content_index: 0,
+      delta: 'Finished',
+    }) +
+    frame({
+      type: 'response.output_text.done',
+      item_id: message.id,
+      output_index: 4,
+      content_index: 0,
+      text: 'Finished',
+    }) +
+    frame({
+      type: 'response.output_item.done',
+      output_index: 4,
+      item: {
+        ...message,
+        status: 'completed',
+        content: [{ type: 'output_text', text: 'Finished', annotations: [] }],
+      },
+    }) +
+    usage();
+  const observed: any[] = [];
+  t.mock.method(globalThis, 'fetch', async (_: unknown, init: RequestInit) => {
+    observed.push(JSON.parse(String(init.body)));
+    return observed.length === 1
+      ? stream(frames(item, 0) + usage())
+      : stream(frames(hostedCall, 3) + answer);
+  });
+  const enabled = ['remote_mcp'] as const;
+  const pending = await run(config, { enabled }, undefined, credentials);
+  assert.equal(pending.turn?.finishReason, 'tool-calls');
+  assert.equal(pending.turn?.calls[0]?.id, item.id);
+  assert.equal(pending.parser.checkpoint().finishReason, 'tool-calls');
+  const next = await run(
+    config,
+    {
+      enabled,
+      exchanges: [
+        {
+          turn: pending.turn!,
+          outcomes: [
+            { id: item.id, name: 'remote_mcp', status: 'completed', sources: [], approved: true },
+          ],
+        },
+      ],
+    },
+    undefined,
+    credentials,
+  );
+  next.parser.assertComplete();
+  assert.deepEqual(observed[0].tools, [
+    {
+      type: 'mcp',
+      server_label: item.server_label,
+      server_url: connection.endpoint,
+      allowed_tools: [item.name],
+      require_approval: 'always',
+      authorization: 'fixture-scope-token',
+    },
+  ]);
+  assert.equal(observed[1].store, false);
+  assert.equal(observed[1].previous_response_id, undefined);
+  assert.deepEqual(observed[1].input.slice(-2), [
+    item,
+    {
+      type: 'mcp_approval_response',
+      approval_request_id: item.id,
+      approve: true,
+    },
+  ]);
+  assert.doesNotMatch(JSON.stringify(pending.turn), /fixture-scope-token/);
+  assert.equal(next.parser.checkpoint().serverTools?.[0]?.tool, 'remote-mcp');
+});
+
+function typeHostedConnection(readOnly: boolean) {
+  return {
+    id: providerId,
+    revision: crypto.randomUUID(),
+    name: 'Fixture tools',
+    endpoint: 'https://tools.example.org/mcp',
+    executor: 'provider' as const,
+    tools: [
+      {
+        name: 'fixture_tool',
+        title: 'Fixture',
+        description: '',
+        readOnly,
+        inputSchema: '{"type":"object"}',
+      },
+    ],
+  };
+}
+
+test('Anthropic hosted MCP sends a disabled-by-default readonly toolset and records results', async (t) => {
+  const connection = typeHostedConnection(true);
+  const config = fixture(
+    {
+      provider: 'anthropic',
+      baseUrl: 'https://api.anthropic.com/v1',
+      model: 'claude-sonnet-4-6',
+      remoteMcp: [connection],
+    },
+    [],
+  );
+  const label = hostedMcpLabel(connection.id);
+  t.mock.method(globalThis, 'fetch', async (_: unknown, init: RequestInit) => {
+    const request = JSON.parse(String(init.body));
+    assert.match(new Headers(init.headers).get('anthropic-beta') ?? '', /mcp-client-2025-11-20/);
+    assert.deepEqual(request.mcp_servers, [{ type: 'url', name: label, url: connection.endpoint }]);
+    assert.deepEqual(request.tools, [
+      {
+        type: 'mcp_toolset',
+        mcp_server_name: label,
+        default_config: { enabled: false },
+        configs: { fixture_tool: { enabled: true } },
+      },
+    ]);
+    return stream(
+      anthropicStart +
+        block(0, {
+          type: 'mcp_tool_use',
+          id: 'mcptoolu_fixture',
+          server_name: label,
+          name: 'fixture_tool',
+          input: {},
+        }) +
+        block(1, {
+          type: 'mcp_tool_result',
+          tool_use_id: 'mcptoolu_fixture',
+          is_error: false,
+          content: [{ type: 'text', text: 'Result' }],
+        }) +
+        frame({
+          type: 'content_block_start',
+          index: 2,
+          content_block: { type: 'text', text: '' },
+        }) +
+        frame({
+          type: 'content_block_delta',
+          index: 2,
+          delta: { type: 'text_delta', text: 'Finished' },
+        }) +
+        frame({ type: 'content_block_stop', index: 2 }) +
+        anthropicFinish('end_turn'),
+    );
+  });
+  const { parser } = await run(config, { enabled: ['remote_mcp'] }, undefined, [
+    { id: connection.id },
+  ]);
+  parser.assertComplete();
+  assert.equal(parser.checkpoint().serverTools?.[0]?.status, 'completed');
 });
 
 test('OpenAI Responses executes web search in the provider and keeps only safe public citations', async (t) => {
@@ -429,4 +622,42 @@ test('Responses image events over the ordinary limit save one preview and one fi
   assert.equal(result.artifacts?.[0]?.mediaType, 'image/webp');
   assert.equal(result.artifacts?.[0]?.sha256, inputHash(image));
   assert.ok(JSON.stringify(result).length < 4096);
+});
+
+test('a provider availability probe requires execution evidence and uses one bounded request', async (t) => {
+  const config = fixture({ model: 'gpt-experimental' }, []);
+  assert.deepEqual(serverToolCatalog(config), []);
+  const response = providerStreams['openai-responses'];
+  const call = {
+    type: 'web_search_call',
+    id: 'probe_native',
+    status: 'completed',
+    action: { type: 'search', query: 'RFC' },
+  };
+  let count = 0;
+  t.mock.method(globalThis, 'fetch', async (_: unknown, init: RequestInit) => {
+    const request = JSON.parse(String(init.body));
+    assert.equal(request.max_tool_calls, 1);
+    assert.equal(request.max_output_tokens, 256);
+    assert.equal(request.store, false);
+    const toolWire =
+      count++ > 0
+        ? frame({
+            type: 'response.output_item.added',
+            output_index: 9,
+            item: { ...call, status: 'in_progress' },
+          }) + frame({ type: 'response.output_item.done', output_index: 9, item: call })
+        : '';
+    return stream(response.partial + toolWire + response.finish);
+  });
+  const first = await probeServerTool(config, 'web-search', async () => {});
+  assert.equal(first.complete, true);
+  assert.equal(first.confirmed, false);
+  const second = await probeServerTool(config, 'web-search', async () => {});
+  assert.equal(second.confirmed, true);
+  assert.equal(count, 2);
+  assert.equal(
+    serverToolCatalog({ ...config, testedServerTools: { 'web-search': Date.now() } })[0]?.source,
+    'tested',
+  );
 });

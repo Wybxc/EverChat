@@ -1,5 +1,5 @@
 import type { ProviderApiKind } from '../providers/types';
-import type { ReportedServerTools } from '../tools/server-tools';
+import type { ReportedServerTools, TestedServerTools } from '../tools/server-tools';
 export interface ModelSelection {
   providerId: string;
   model: string;
@@ -15,6 +15,7 @@ export interface ChatModel extends ModelSelection {
   reasoningEfforts: ReasoningEffort[];
   metadata: ResolvedModelMetadata;
   reportedServerTools?: ReportedServerTools;
+  testedServerTools?: TestedServerTools;
 }
 
 export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
@@ -61,5 +62,6 @@ export interface ProviderModel {
     updatedAt: number;
   };
   testedCapabilities?: { imageInput?: true; toolCalls?: true; testedAt: number };
+  testedServerTools?: TestedServerTools;
   metadataOverrides?: ModelMetadataOverrides;
 }

@@ -10,9 +10,12 @@ import type { ChatModel } from '../../../shared/models/types';
 import {
   selectedModelServerTools,
   serverToolCatalog,
+  serverToolProbeCandidates,
   serverToolSelectionSchema,
   type ModelServerTools,
   type ServerToolSelection,
+  type ServerToolProbeKind,
+  type TestedServerTools,
 } from '../../../shared/tools/server-tools';
 import './locales';
 import { api } from '../../platform/api';
@@ -20,16 +23,49 @@ import { api } from '../../platform/api';
 export function ProviderTools({
   model,
   open,
+  hostedMcp,
   settings = [],
   onChange,
 }: {
   model?: ChatModel;
   open: boolean;
+  hostedMcp: boolean;
   settings?: ModelServerTools[];
   onChange: (value: ModelServerTools[]) => void;
 }) {
   const { t } = useTranslation('chat', { useSuspense: false });
-  const catalog = model ? serverToolCatalog(model) : [];
+  const [tested, setTested] = useState<TestedServerTools>({});
+  const [testing, setTesting] = useState<ServerToolProbeKind>();
+  const [notice, setNotice] = useState<'confirmed' | 'unconfirmed'>();
+  const catalog = model
+    ? serverToolCatalog({
+        ...model,
+        testedServerTools: { ...model.testedServerTools, ...tested },
+      })
+    : [];
+  const probes = model
+    ? serverToolProbeCandidates(model).filter(
+        ({ tool }) => !catalog.some((entry) => entry.tool === tool),
+      )
+    : [];
+  const probe = async (tool: ServerToolProbeKind) => {
+    if (!model || testing) return;
+    setTesting(tool);
+    try {
+      const result = await api<{ confirmed: boolean; testedAt?: number }>(
+        `/settings/providers/${model.providerId}/server-tools/test`,
+        'POST',
+        { model: model.model, tool },
+      );
+      if (result.confirmed && result.testedAt)
+        setTested((before) => ({ ...before, [tool]: result.testedAt }));
+      setNotice(result.confirmed ? 'confirmed' : 'unconfirmed');
+    } catch {
+      setNotice('unconfirmed');
+    } finally {
+      setTesting(undefined);
+    }
+  };
   const stores = useInfiniteQuery({
     enabled: open && catalog.some(({ tool }) => tool === 'file-search'),
     queryKey: ['provider-tool-stores', model?.providerId, model?.model],
@@ -85,6 +121,7 @@ export function ProviderTools({
           selected.some(
             (item) => item.tool !== tool && (item.tool === 'file-search' || tool === 'file-search'),
           );
+        const prerequisite = tool === 'tool-search' && !hostedMcp;
         if (tool === 'file-search') {
           const prefix = resources === 'vector-stores' ? 'vs_' : 'fileSearchStores/';
           const valid =
@@ -188,15 +225,48 @@ export function ProviderTools({
         }
         return (
           <label className="flex min-h-9 items-center justify-between gap-3 text-sm" key={tool}>
-            {t(($) => $.providerToolNames[tool])}
+            <span>
+              {t(($) => $.providerToolNames[tool])}
+              {prerequisite && (
+                <span className="block text-xs text-muted-foreground">
+                  {t(($) => $.providerToolSearchNeedsMcp)}
+                </span>
+              )}
+            </span>
             <Switch
               checked={enabled}
-              disabled={!enabled && incompatible}
+              disabled={!enabled && (incompatible || prerequisite)}
               onCheckedChange={(checked) => update(tool, checked ? { tool } : undefined)}
             />
           </label>
         );
       })}
+      {!!probes.length && (
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">{t(($) => $.providerToolProbeHint)}</p>
+          <div className="flex flex-wrap gap-2">
+            {probes.map(({ tool }) => (
+              <Button
+                key={tool}
+                type="button"
+                size="sm"
+                variant="secondary"
+                disabled={Boolean(testing)}
+                onClick={() => void probe(tool as ServerToolProbeKind)}
+              >
+                {t(($) => $.providerToolProbe, { tool: t(($) => $.providerToolNames[tool]) })}
+              </Button>
+            ))}
+          </div>
+        </div>
+      )}
+      {notice && (
+        <p role="status" className="text-xs text-muted-foreground">
+          {notice === 'confirmed'
+            ? t(($) => $.providerToolConfirmed)
+            : t(($) => $.providerToolUnconfirmed)}
+        </p>
+      )}
     </section>
   );
 }

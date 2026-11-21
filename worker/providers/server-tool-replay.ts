@@ -1,5 +1,14 @@
 import type { ProviderConfig } from '../../shared/providers/types';
 import { ProviderError } from '../generation/errors';
+import * as v from 'valibot';
+import {
+  hostedMcpVendor,
+  providerMcpConnections,
+  remoteMcpCallSchema,
+  REMOTE_MCP_TOOL,
+} from '../../shared/tools/remote-mcp';
+import type { WebToolCall } from '../../shared/tools/tasks';
+import { hostedMcpTool } from './hosted-mcp';
 
 type Block = Record<string, unknown>;
 const object = (value: unknown): Block =>
@@ -15,6 +24,9 @@ const allowedResponsesItems = new Set([
   'code_interpreter_call',
   'shell_call',
   'shell_call_output',
+  'mcp_list_tools',
+  'mcp_approval_request',
+  'mcp_call',
 ]);
 const allowedAnthropicBlocks = new Set([
   'text',
@@ -27,6 +39,10 @@ const allowedAnthropicBlocks = new Set([
   'code_execution_tool_result',
   'bash_code_execution_tool_result',
   'text_editor_code_execution_tool_result',
+  'advisor_tool_result',
+  'tool_search_tool_result',
+  'mcp_tool_use',
+  'mcp_tool_result',
 ]);
 const invalid = () => new ProviderError('供应商没有提供完整的服务端工具续接资料。');
 
@@ -47,7 +63,7 @@ export function validateServerToolReplay(
       config.provider === 'openai-chat' &&
       config.serverTools?.[0]?.vendor === 'deepseek');
   if (
-    !config.serverTools?.length ||
+    !(config.serverTools?.length || providerMcpConnections(config).length) ||
     !validType ||
     !Array.isArray(replay.blocks) ||
     !replay.blocks.length ||
@@ -59,11 +75,11 @@ export function validateServerToolReplay(
   const anthropic = replay.type === 'anthropic';
   const types = anthropic ? allowedAnthropicBlocks : allowedResponsesItems;
   if (replay.blocks.some((part) => !types.has(String(part?.type)))) throw invalid();
-  const ids = replay.blocks.flatMap((part) =>
-    part.type === (anthropic ? 'tool_use' : 'function_call')
-      ? [part.id && anthropic ? part.id : part.call_id]
-      : [],
-  );
+  const ids = replay.blocks.flatMap((part) => {
+    if (anthropic) return part.type === 'tool_use' ? [part.id] : [];
+    if (part.type === 'function_call') return [part.call_id];
+    return part.type === 'mcp_approval_request' ? [part.id] : [];
+  });
   if (ids.length !== calls.length || calls.some(({ id }) => !ids.includes(id))) throw invalid();
   if (
     anthropic &&
@@ -81,7 +97,10 @@ export class ServerToolReplayCollector {
   private hosted = false;
   private invalid = false;
   private bytes = 0;
-  constructor(private readonly config: ProviderConfig) {}
+  constructor(
+    private readonly config: ProviderConfig,
+    private readonly secrets: readonly string[] = [],
+  ) {}
 
   observe(raw: Block) {
     if (this.invalid) return;
@@ -99,6 +118,9 @@ export class ServerToolReplayCollector {
         'shell_call',
         'shell_call_output',
         'image_generation_call',
+        'mcp_list_tools',
+        'mcp_approval_request',
+        'mcp_call',
       ].includes(String(item.type));
       // Generated image bytes go to attachment storage and are never replayed.
       if (item.type !== 'image_generation_call') this.set(raw.output_index, item, false);
@@ -144,7 +166,9 @@ export class ServerToolReplayCollector {
     if (raw.type === 'content_block_start') {
       const block = object(raw.content_block);
       this.hosted ||=
-        block.type === 'server_tool_use' || String(block.type).endsWith('_tool_result');
+        block.type === 'server_tool_use' ||
+        block.type === 'mcp_tool_use' ||
+        String(block.type).endsWith('_tool_result');
       this.set(raw.index, block, true);
       return;
     }
@@ -215,13 +239,52 @@ export class ServerToolReplayCollector {
     validateServerToolReplay(replay, this.config, calls);
     return replay;
   }
+
+  approvals(): Extract<WebToolCall, { name: typeof REMOTE_MCP_TOOL }>[] {
+    if (hostedMcpVendor(this.config) !== 'openai') return [];
+    const requests = [...this.parts.values()].filter(
+      ({ block }) => block.type === 'mcp_approval_request',
+    );
+    return requests.map(({ block }) => {
+      const tool = hostedMcpTool(this.config, block.server_label, block.name);
+      const id = block.id,
+        args = block.arguments;
+      if (
+        !tool ||
+        typeof id !== 'string' ||
+        !/^mcpr_[a-zA-Z0-9_-]{1,120}$/.test(id) ||
+        typeof args !== 'string' ||
+        Buffer.byteLength(args) > 8192 ||
+        this.secrets.some((secret) => secret && args.includes(secret))
+      )
+        throw invalid();
+      const input = v.safeParse(remoteMcpCallSchema, {
+        connection: tool.connection.id,
+        tool: block.name,
+        arguments: JSON.parse(args),
+      });
+      if (!input.success) throw invalid();
+      return {
+        id,
+        name: REMOTE_MCP_TOOL,
+        input: input.output,
+        hosted: true,
+        approval: { endpoint: tool.connection.endpoint, title: tool.title },
+      };
+    });
+  }
 }
 
 export function applyServerToolReplay(
   payload: Block,
-  replays: readonly { replay: ServerToolReplay; marker: string; callIds: string[] }[],
+  replays: readonly {
+    replay: ServerToolReplay;
+    marker: string;
+    callIds: string[];
+    decisions?: { id: string; approve: boolean }[];
+  }[],
 ) {
-  for (const { replay, marker, callIds } of replays) {
+  for (const { replay, marker, callIds, decisions } of replays) {
     if (replay.type === 'anthropic') {
       let matches = 0;
       for (const message of blocks(payload.messages)) {
@@ -238,10 +301,20 @@ export function applyServerToolReplay(
       let matches = 0;
       payload.input = blocks(payload.input).flatMap((item) => {
         const content = blocks(item.content);
-        if (item.role !== 'assistant' || content.length !== 1 || content[0]?.text !== marker)
+        if (
+          item.role !== 'assistant' ||
+          (item.content !== marker && (content.length !== 1 || content[0]?.text !== marker))
+        )
           return [item];
         matches++;
-        return replay.blocks;
+        return [
+          ...replay.blocks,
+          ...(decisions ?? []).map(({ id, approve }) => ({
+            type: 'mcp_approval_response',
+            approval_request_id: id,
+            approve,
+          })),
+        ];
       });
       if (matches !== 1) throw invalid();
     } else {

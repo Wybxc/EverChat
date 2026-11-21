@@ -72,6 +72,8 @@ import { ArchiveRestorer } from '../backup/restore';
 import type { Env } from '../http/env';
 import { HttpError, json, readJsonStream } from '../http/response';
 import { RemoteMcpStore } from '../remote-mcp/store';
+import type { ServerToolProbeKind } from '../../shared/tools/server-tools';
+import { probeServerTool } from '../providers/server-tool-probe';
 import type {
   RemoteMcpConnectionInput,
   RemoteMcpSelection,
@@ -393,6 +395,45 @@ export class Library extends DurableObject<Env> {
     );
     this.ctx.waitUntil(this.accounting.deliver().finally(() => this.scheduleMaintenance()));
     return json(result);
+  }
+  async probeProviderServerTool(providerId: string, model: string, tool: ServerToolProbeKind) {
+    const config = this.providerConfig({ providerId, model });
+    if (!config)
+      return json({ issue: problem('MODEL_UNAVAILABLE'), error: '找不到可用模型。' }, 404);
+    const requestId = `provider-tool-probe:${crypto.randomUUID()}`;
+    try {
+      const evidence = await probeServerTool(config, tool, async () => {
+        await this.accounting.start(
+          {
+            id: requestId,
+            taskId: requestId,
+            conversationId: null,
+            messageId: null,
+            kind: 'probe',
+          },
+          modelIdentity(config),
+        );
+        await this.scheduleMaintenance();
+      });
+      const testedAt = Date.now();
+      const confirmed = this.ctx.storage.transactionSync(() => {
+        this.accounting.finish(requestId, {
+          status: evidence.complete ? 'completed' : 'failed',
+          usage: evidence.usage,
+          usageIsFinal: evidence.usageIsFinal,
+          usageSources: evidence.usageSources,
+          serverToolUsage: evidence.serverToolUsage,
+        });
+        return evidence.confirmed && this.providers.confirmServerTool(config, tool, testedAt);
+      });
+      this.ctx.waitUntil(this.accounting.deliver().finally(() => this.scheduleMaintenance()));
+      return json({ confirmed, ...(confirmed ? { tool, testedAt } : {}) });
+    } catch (error) {
+      return json(
+        { issue: issueOf(error, 'TOOL_INVALID'), error: '无法测试当前供应商工具。' },
+        400,
+      );
+    }
   }
   async saveNotificationDevice(owner: string, input: NotificationDevice) {
     try {

@@ -26,6 +26,8 @@ import {
   type ProviderToolRequest,
 } from './tool-turn';
 import { applyServerToolReplay } from './server-tool-replay';
+import { addHostedMcp, type HostedMcpCredential } from './hosted-mcp';
+import { providerMcpConnections, REMOTE_MCP_TOOL } from '../../shared/tools/remote-mcp';
 import { ProviderArtifacts, rewriteArtifactStream, type SaveProviderArtifact } from './artifacts';
 import { coreProviderStream } from './core';
 import { sdkProviderError } from './sdk-diagnostics';
@@ -52,10 +54,12 @@ export async function openProviderStream(
   beforeRequest?: (input: SubmittedInput) => Promise<void>,
   onOutput?: (receivedAt: number) => void,
   saveArtifact?: SaveProviderArtifact,
+  hostedCredentials: readonly HostedMcpCredential[] = [],
 ): Promise<ProviderResponse> {
   if (!config.apiKey)
     throw new ProviderError('尚未配置供应商 API 密钥。', providerFailure(config, 'connect'));
-  const secrets = context.map((message) => message.content);
+  const hostedSecrets = hostedCredentials.flatMap(({ token }) => (token ? [token] : []));
+  const secrets = [...context.map((message) => message.content), ...hostedSecrets];
   const guard = new ProviderWireGuard();
   const artifacts =
     saveArtifact && config.serverTools?.length
@@ -68,13 +72,20 @@ export async function openProviderStream(
   const replayMarkers = exchanges.map(({ turn }) =>
     turn.serverReplay ? `everchat-replay-${crypto.randomUUID()}` : '',
   );
-  const replays = exchanges.flatMap(({ turn }, index) =>
+  const replays = exchanges.flatMap(({ turn, outcomes }, index) =>
     turn.serverReplay
       ? [
           {
             replay: turn.serverReplay,
             marker: replayMarkers[index],
             callIds: turn.calls.map(({ id }) => id),
+            decisions: turn.calls.flatMap((call) => {
+              if (call.invalid || call.name !== REMOTE_MCP_TOOL || !call.hosted) return [];
+              const outcome = outcomes.find(({ id }) => id === call.id);
+              return outcome?.status === 'completed' && typeof outcome.approved === 'boolean'
+                ? [{ id: call.id, approve: outcome.approved }]
+                : [];
+            }),
           },
         ]
       : [],
@@ -89,6 +100,10 @@ export async function openProviderStream(
       Boolean(toolRequest),
       toolRequest && (toolRequest.toolChoice ?? toolContinuationChoice(exchanges)),
     );
+    if (providerMcpConnections(config).length) {
+      if (!init) throw new ProviderError('无法构建供应商托管 MCP 请求。');
+      init = addHostedMcp(config, init, hostedCredentials);
+    }
     if (replays.length) {
       if (typeof init?.body !== 'string') throw new ProviderError('无法序列化服务端工具续接。');
       const payload = JSON.parse(init.body);
@@ -235,6 +250,7 @@ export async function openProviderStream(
       prompt,
       signal,
       toolRequest,
+      hostedSecrets,
     );
     return providerEvents(
       result.stream,

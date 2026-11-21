@@ -4,6 +4,11 @@ import type { InputReceiptItem } from '../../shared/streaming/input-receipt';
 import type { ProviderToolRequest } from './tool-turn';
 import { webToolDefinitions } from './tool-turn';
 import {
+  hostedMcpLabel,
+  hostedMcpVendor,
+  providerMcpConnections,
+} from '../../shared/tools/remote-mcp';
+import {
   documentKey,
   documentInputKey,
   type DocumentInputSnapshot,
@@ -141,21 +146,26 @@ export function assembledInput(
       snapshot: value,
     });
   }
+  const connectors = providerMcpConnections(config);
+  const hostedVendor = connectors.length ? hostedMcpVendor(config) : undefined;
   return {
     items,
     tools: [
       ...(toolRequest?.enabled ?? []),
       ...(config.serverTools?.map(({ vendor, wireName }) => `${vendor}:${wireName}`) ?? []),
+      ...connectors.map(({ id }) => `${hostedVendor}:mcp:${hostedMcpLabel(id)}`),
     ],
-    toolDefinitionsSha256: config.serverTools?.length
-      ? inputHash(
-          JSON.stringify({
-            functions: webToolDefinitions(toolRequest?.enabled ?? [], config),
-            serverTools: config.serverTools,
-          }),
-        )
-      : toolRequest
-        ? inputHash(JSON.stringify(webToolDefinitions(toolRequest.enabled, config)))
-        : null,
+    toolDefinitionsSha256:
+      config.serverTools?.length || connectors.length
+        ? inputHash(
+            JSON.stringify({
+              functions: webToolDefinitions(toolRequest?.enabled ?? [], config),
+              serverTools: config.serverTools,
+              ...(connectors.length ? { connectors } : {}),
+            }),
+          )
+        : toolRequest
+          ? inputHash(JSON.stringify(webToolDefinitions(toolRequest.enabled, config)))
+          : null,
   };
 }
