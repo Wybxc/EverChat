@@ -15,10 +15,10 @@ import {
   type ModelServerTools,
   type ServerToolSelection,
   type ServerToolProbeKind,
-  type TestedServerTools,
 } from '../../../shared/tools/server-tools';
 import './locales';
 import { api } from '../../platform/api';
+import { storageEpoch } from '../../platform/storage';
 
 export function ProviderTools({
   model,
@@ -26,23 +26,19 @@ export function ProviderTools({
   hostedMcp,
   settings = [],
   onChange,
+  onVerified,
 }: {
   model?: ChatModel;
   open: boolean;
   hostedMcp: boolean;
   settings?: ModelServerTools[];
   onChange: (value: ModelServerTools[]) => void;
+  onVerified: (model: ChatModel, tool: ServerToolProbeKind, testedAt: number) => void;
 }) {
   const { t } = useTranslation('chat', { useSuspense: false });
-  const [tested, setTested] = useState<TestedServerTools>({});
   const [testing, setTesting] = useState<ServerToolProbeKind>();
   const [notice, setNotice] = useState<'confirmed' | 'unconfirmed'>();
-  const catalog = model
-    ? serverToolCatalog({
-        ...model,
-        testedServerTools: { ...model.testedServerTools, ...tested },
-      })
-    : [];
+  const catalog = model ? serverToolCatalog(model) : [];
   const probes = model
     ? serverToolProbeCandidates(model).filter(
         ({ tool }) => !catalog.some((entry) => entry.tool === tool),
@@ -50,6 +46,7 @@ export function ProviderTools({
     : [];
   const probe = async (tool: ServerToolProbeKind) => {
     if (!model || testing) return;
+    const epoch = storageEpoch();
     setTesting(tool);
     try {
       const result = await api<{ confirmed: boolean; testedAt?: number }>(
@@ -57,9 +54,10 @@ export function ProviderTools({
         'POST',
         { model: model.model, tool },
       );
-      if (result.confirmed && result.testedAt)
-        setTested((before) => ({ ...before, [tool]: result.testedAt }));
-      setNotice(result.confirmed ? 'confirmed' : 'unconfirmed');
+      if (epoch !== storageEpoch()) return;
+      const confirmed = result.confirmed && Number.isSafeInteger(result.testedAt);
+      if (confirmed) onVerified(model, tool, result.testedAt!);
+      setNotice(confirmed ? 'confirmed' : 'unconfirmed');
     } catch {
       setNotice('unconfirmed');
     } finally {

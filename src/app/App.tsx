@@ -204,6 +204,7 @@ function AppContent({ initialSettings }: AppProps) {
     loggedOut,
     signOut,
     providerSaved,
+    serverToolVerified,
     reportSignOutError,
   } = useSession();
   const webToolSettings = useWebToolSettings(Boolean(session?.authenticated));
@@ -2601,6 +2602,7 @@ function AppContent({ initialSettings }: AppProps) {
             setFocusWebTools(false);
           }}
           onDraft={settingsDraftChanged}
+          onServerToolVerified={serverToolVerified}
           managePresets={() => {
             returnToConversationSettings.current = true;
             setRequestedSettingsTab('presets');

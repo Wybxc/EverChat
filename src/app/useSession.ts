@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { identityKey, type SessionInfo } from '../../shared/auth/types';
 import { chatModels } from '../../shared/models/selection';
+import type { ChatModel } from '../../shared/models/types';
+import type { ServerToolProbeKind } from '../../shared/tools/server-tools';
 import type { ProviderSettings } from '../../shared/providers/types';
 import { api, ApiError } from '../platform/api';
 import { authorizeNetwork, beginSignOut, pendingLogout } from '../platform/auth';
@@ -138,6 +140,25 @@ export function useSession() {
       return next;
     });
   }, []);
+  const serverToolVerified = useCallback(
+    (model: ChatModel, tool: ServerToolProbeKind, testedAt: number) => {
+      setSession((current) => {
+        if (!current?.authenticated || stopped.current) return current;
+        const models = current.models?.map((entry) =>
+          entry.providerId === model.providerId &&
+          entry.model === model.model &&
+          entry.provider === model.provider &&
+          entry.baseUrl === model.baseUrl
+            ? { ...entry, testedServerTools: { ...entry.testedServerTools, [tool]: testedAt } }
+            : entry,
+        );
+        const next = { ...current, models };
+        write('access-session', next);
+        return next;
+      });
+    },
+    [],
+  );
   useEffect(() => {
     // A fresh visit after Access login can resume; an offline local logout stays locked.
     if (pendingLogout()) {
@@ -196,6 +217,7 @@ export function useSession() {
     loggedOut,
     signOut,
     providerSaved,
+    serverToolVerified,
     reportSignOutError: setBootError,
   };
 }
