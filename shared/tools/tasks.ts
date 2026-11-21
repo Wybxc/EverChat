@@ -8,9 +8,10 @@ import * as v from 'valibot';
 import { AppError, errorIssueSchema, problem } from '../errors/descriptor';
 import { canAttemptCapability } from '../models/metadata';
 import type { ResolvedModelMetadata } from '../models/types';
+import { REMOTE_MCP_TOOL, remoteMcpCallSchema, remoteMcpDecisionSchema } from './remote-mcp';
 
 export const WEB_TOOL_NAMES = ['web_search', 'read_webpage'] as const;
-export const TOOL_NAMES = [...WEB_TOOL_NAMES, ...ATTACHMENT_TOOL_NAMES] as const;
+export const TOOL_NAMES = [...WEB_TOOL_NAMES, ...ATTACHMENT_TOOL_NAMES, REMOTE_MCP_TOOL] as const;
 export type WebToolName = (typeof TOOL_NAMES)[number];
 export type NetworkToolName = (typeof WEB_TOOL_NAMES)[number];
 export const MAX_TOOL_INPUT_BYTES = MAX_SQL_PAYLOAD_BYTES;
@@ -69,6 +70,7 @@ export const webToolInputSchemas = {
   ...attachmentToolSchemas,
   web_search: v.strictObject({ query: safeText(500) }),
   read_webpage: v.strictObject({ url: webUrlInput }),
+  remote_mcp: remoteMcpCallSchema,
 };
 export function webToolInputSchemasFor(provider?: 'tavily' | 'deepseek') {
   return provider === 'deepseek'
@@ -88,6 +90,12 @@ export function validateWebToolIdentity(id: string, toolName: string) {
     throw new AppError(problem('TOOL_INVALID'), '模型返回了未启用的工具或无效调用标识。');
 }
 const webToolCallSchema = v.variant('name', [
+  v.strictObject({
+    id: callId,
+    name: v.literal(REMOTE_MCP_TOOL),
+    input: remoteMcpCallSchema,
+    approval: v.optional(remoteMcpDecisionSchema),
+  }),
   v.strictObject({
     id: callId,
     name: v.literal('attachment_info'),
@@ -179,6 +187,7 @@ const webToolOutcomeSchema = v.variant('status', [
     status: v.literal('completed'),
     sources: v.array(sourceSchema),
     attachment: v.optional(attachmentToolResultSchema),
+    remoteOutput: v.optional(v.pipe(v.string(), v.maxLength(8192))),
     warnings: v.optional(v.pipe(v.array(safeText(200)), v.maxLength(5))),
   }),
   v.strictObject({
@@ -212,7 +221,7 @@ export type WebToolFailure = NonNullable<Extract<WebToolOutcome, { status: 'fail
 export interface PublicToolCall {
   round: number;
   call: WebToolCandidate;
-  state: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+  state: 'queued' | 'approval' | 'running' | 'completed' | 'failed' | 'cancelled';
   result?: WebToolOutcome;
   progress?: { scannedBytes: number };
 }
@@ -273,7 +282,7 @@ export const publicToolTaskSchema = v.pipe(
       v.strictObject({
         round,
         call: candidateSchema,
-        state: v.picklist(['queued', 'running', 'completed', 'failed', 'cancelled']),
+        state: v.picklist(['queued', 'approval', 'running', 'completed', 'failed', 'cancelled']),
         result: v.optional(webToolOutcomeSchema),
         progress: v.optional(
           v.strictObject({ scannedBytes: v.pipe(v.number(), v.safeInteger(), v.minValue(0)) }),
@@ -292,7 +301,13 @@ export const publicToolTaskSchema = v.pipe(
       task.calls.every((item) => {
         if (
           item.round > task.round ||
-          (task.status !== 'active' && ['queued', 'running'].includes(item.state)) ||
+          (task.status !== 'active' && ['queued', 'approval', 'running'].includes(item.state)) ||
+          (item.state === 'approval' &&
+            !(
+              item.call.name === REMOTE_MCP_TOOL &&
+              !('invalid' in item.call) &&
+              item.call.approval
+            )) ||
           (task.status === 'completed' && item.state === 'cancelled') ||
           ('invalid' in item.call && item.state !== 'failed')
         )

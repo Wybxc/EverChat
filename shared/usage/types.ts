@@ -10,6 +10,7 @@ export const usageKinds = [
   'probe',
   'web_search',
   'read_webpage',
+  'remote_mcp',
 ] as const;
 export type UsageKind = (typeof usageKinds)[number];
 export const usageStatuses = ['running', 'completed', 'failed', 'cancelled', 'unknown'] as const;

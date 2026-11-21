@@ -48,7 +48,7 @@ export function estimateCost(
     amount += BigInt(tokens) * decimalMicros(rate);
     known = true;
   };
-  if (kind === 'web_search' || kind === 'read_webpage') {
+  if (kind === 'web_search' || kind === 'read_webpage' || kind === 'remote_mcp') {
     if (price.perRequest === null) return unknown;
     amount = decimalMicros(price.perRequest) * 1_000_000n;
     known = true;

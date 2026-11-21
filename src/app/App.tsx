@@ -570,7 +570,7 @@ function AppContent({ initialSettings }: AppProps) {
         ? (snapshot.settings ?? DEFAULT_CONVERSATION_SETTINGS)
         : newConversationSettings;
   const resetNewTools = () => {
-    const settings = { ...newConversationSettings, tools: [], serverTools: [] };
+    const settings = { ...newConversationSettings, tools: [], serverTools: [], remoteMcp: [] };
     setNewConversationSettings(settings);
     write('conversation-settings:new', settings);
     writeChatCache('conversation-settings-draft:new', { settings, dirty: false });

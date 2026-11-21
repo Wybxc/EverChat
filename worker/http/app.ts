@@ -9,6 +9,7 @@ import { registerNotificationRoutes } from '../notifications/routes';
 import { storageErrorMessage } from '../platform/resource-limits';
 import { registerPresetsRoutes } from '../presets/routes';
 import { registerProvidersRoutes } from '../providers/routes';
+import { registerRemoteMcpRoutes } from '../remote-mcp/routes';
 import { registerSearchRoutes } from '../search/routes';
 import { registerSharingRoutes } from '../sharing/routes';
 import { registerUsageRoutes } from '../usage/routes';
@@ -41,6 +42,7 @@ export function createApi(
   registerSharingRoutes(app);
   registerNotificationRoutes(app);
   registerProvidersRoutes(app);
+  registerRemoteMcpRoutes(app);
   registerWebToolsRoutes(app);
   registerPresetsRoutes(app);
   registerLibraryRoutes(app);

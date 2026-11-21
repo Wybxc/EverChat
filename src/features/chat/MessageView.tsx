@@ -30,6 +30,7 @@ import { MessageEditor } from './MessageEditor';
 import { ReasoningContent } from './ReasoningContent';
 import { ProviderToolActivity } from './ProviderToolActivity';
 import { ProviderArtifacts } from './ProviderArtifacts';
+import { RemoteMcpApprovals } from './RemoteMcpApprovals';
 import { MarkdownContent } from './rendering/MarkdownContent';
 import { UserMessageBubble } from './UserMessageBubble';
 import { isReportedToolFailure } from './message-errors';
@@ -228,6 +229,7 @@ export function MessageView({
           <ReasoningContent message={message} />
           <ProviderToolActivity message={message} />
           <ProviderArtifacts message={message} conversationId={conversationId} />
+          <RemoteMcpApprovals message={message} conversationId={conversationId} />
           {editing ? (
             <MessageEditor {...editing} user={false} hasAttachments={false} />
           ) : messageText(message) ? (

@@ -30,6 +30,7 @@ import {
   type WebToolOutcome,
 } from '../../shared/tools/tasks';
 import { ProviderError } from '../generation/errors';
+import { REMOTE_MCP_TOOL } from '../../shared/tools/remote-mcp';
 import {
   ServerToolReplayCollector,
   validateServerToolReplay,
@@ -151,7 +152,11 @@ export function toolContinuationChoice(exchanges: ProviderToolExchange[]): 'auto
   if (exchanges.at(-1)?.turn.finishReason === 'pause') return 'auto';
   if (
     exchanges.some((exchange) =>
-      exchange.outcomes.some((outcome) => outcome.status === 'failed' && outcome.failure?.terminal),
+      exchange.outcomes.some(
+        (outcome) =>
+          outcome.status === 'failed' &&
+          (outcome.failure?.terminal || outcome.name === REMOTE_MCP_TOOL),
+      ),
     )
   )
     return 'none';
@@ -257,6 +262,19 @@ export function validateProviderToolTurn(
   for (const candidate of turn.calls) {
     const call = validateWebToolCandidate(candidate, enabled),
       matches = actual.filter((part) => part.toolCallId === call.id);
+    if (!call.invalid && call.name === REMOTE_MCP_TOOL) {
+      const connection = config.remoteMcp?.find(({ id }) => id === call.input.connection);
+      const declared = connection?.tools.find(({ name }) => name === call.input.tool);
+      if (
+        !connection ||
+        !declared ||
+        (declared.readOnly
+          ? call.approval !== undefined
+          : call.approval?.endpoint !== connection.endpoint ||
+            call.approval?.title !== declared.title)
+      )
+        throw new ProviderError('远程 MCP 调用与已授权的连接或审批要求不符。');
+    }
     if (
       used.has(call.id) ||
       matches.length !== 1 ||
@@ -448,6 +466,13 @@ export class ProviderToolCollector {
     try {
       if (part.invalid) throw new Error();
       call = validateWebToolCall({ id: part.toolCallId, name: part.toolName, input }, this.enabled);
+      if (call.name === REMOTE_MCP_TOOL && !call.invalid) {
+        const input = call.input;
+        const connection = this.config.remoteMcp?.find(({ id }) => id === input.connection);
+        const tool = connection?.tools.find(({ name }) => name === input.tool);
+        if (!tool || !connection) throw new Error();
+        if (!tool.readOnly) call.approval = { endpoint: connection.endpoint, title: tool.title };
+      }
     } catch {
       const known = this.enabled.includes(part.toolName as WebToolName);
       call = validateWebToolCandidate(
@@ -456,11 +481,14 @@ export class ProviderToolCollector {
           name: part.toolName,
           input,
           invalid: true,
-          error: known
-            ? part.toolName === 'web_search'
-              ? `web_search 仅允许 query 参数：非空字符串，最多 ${this.config.webTools?.provider === 'deepseek' ? '128 个 Unicode 字符' : '500 个字符'}。请修正参数后再调用。`
-              : 'read_webpage.url 必须是公开 HTTP 或 HTTPS 地址，最多 8192 个字符，不含凭据或自定义端口。请尝试有效来源。'
-            : '该工具未启用。请只使用本轮提供的工具。',
+          error:
+            part.toolName === REMOTE_MCP_TOOL
+              ? '远程 MCP 连接、工具或参数超出本轮授权范围。'
+              : known
+                ? part.toolName === 'web_search'
+                  ? `web_search 仅允许 query 参数：非空字符串，最多 ${this.config.webTools?.provider === 'deepseek' ? '128 个 Unicode 字符' : '500 个字符'}。请修正参数后再调用。`
+                  : 'read_webpage.url 必须是公开 HTTP 或 HTTPS 地址，最多 8192 个字符，不含凭据或自定义端口。请尝试有效来源。'
+                : '该工具未启用。请只使用本轮提供的工具。',
         },
         this.enabled,
       );
@@ -544,6 +572,9 @@ export function providerToolPrompt(
                   value: {
                     sources: outcome.sources,
                     ...(outcome.attachment ? { attachment: outcome.attachment } : {}),
+                    ...(outcome.remoteOutput !== undefined
+                      ? { remoteOutput: outcome.remoteOutput }
+                      : {}),
                     ...(outcome.warnings ? { warnings: outcome.warnings } : {}),
                   },
                 }

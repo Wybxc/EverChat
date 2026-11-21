@@ -84,6 +84,62 @@ function turn(calls: WebToolCall[] = [call()], text = '', reasoning = ''): Provi
     usageIsFinal: true,
   };
 }
+
+test('a remote write can only be claimed after durable approval, and denial is terminal', (t) => {
+  const { write } = database(t);
+  const connection = crypto.randomUUID();
+  const mcpCall: WebToolCall = {
+    id: 'remote-call',
+    name: 'remote_mcp',
+    input: { connection, tool: 'update_note', arguments: { title: 'Example' } },
+    approval: { endpoint: 'https://tools.example.org/mcp', title: 'Update note' },
+  };
+  const configured = {
+    ...config,
+    remoteMcp: [
+      {
+        id: connection,
+        revision: crypto.randomUUID(),
+        name: 'Notes',
+        endpoint: mcpCall.approval!.endpoint,
+        tools: [
+          {
+            name: 'update_note',
+            title: 'Update note',
+            description: '',
+            readOnly: false,
+            inputSchema: '{"type":"object"}',
+          },
+        ],
+      },
+    ],
+  };
+  for (const approve of [true, false]) {
+    const input = start({ enabled: ['remote_mcp'] });
+    write((journal) => {
+      journal.create(input, configured);
+      assert.equal(journal.claimModel(input.runId), true);
+      journal.saveTurn(input.runId, turn([mcpCall]), configured);
+      assert.equal(journal.publicTask(input.id).calls[0].state, 'approval');
+      assert.equal(journal.claimTool(input.id, mcpCall.id), false);
+    });
+    write((journal) => journal.decideRemoteCall(input.id, mcpCall.id, approve));
+    write((journal) => journal.decideRemoteCall(input.id, mcpCall.id, approve));
+    assert.throws(() =>
+      write((journal) => journal.decideRemoteCall(input.id, mcpCall.id, !approve)),
+    );
+    assert.equal(
+      write((journal) => journal.claimTool(input.id, mcpCall.id)),
+      approve,
+    );
+    if (approve)
+      assert.equal(
+        write((journal) => journal.claimTool(input.id, mcpCall.id)),
+        false,
+      );
+    write((journal) => journal.stop(input.id, 'cancelled'));
+  }
+});
 function database(t: TestContext) {
   const db = new DatabaseSync(':memory:');
   t.after(() => db.close());

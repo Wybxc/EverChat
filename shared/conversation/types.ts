@@ -7,6 +7,7 @@ import type { ModelSelection, ReasoningEffort } from '../models/types';
 import type { ActivityIndex, ConversationActivity } from './activity';
 import type { TitleSource, TitleTaskInfo } from './titles';
 import type { ModelServerTools } from '../tools/server-tools';
+import type { RemoteMcpSelection } from '../tools/remote-mcp';
 export type MessageStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 
 export interface Message {
@@ -86,6 +87,7 @@ export interface ConversationSettings {
   contextBudget: number | null;
   tools: WebToolName[];
   serverTools?: ModelServerTools[];
+  remoteMcp?: RemoteMcpSelection[];
   autoCompression: { enabled: boolean; threshold: number; model: ModelSelection | null };
 }
 

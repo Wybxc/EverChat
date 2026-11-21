@@ -64,6 +64,7 @@ export default {
   deepseekWeb: 'DeepSeek 联网',
   webSearch: '网页搜索',
   webFetch: '网页读取',
+  remoteMcp: '远程 MCP',
   tabs: '统计分类',
   overview: '概览',
   providers: '供应商',
