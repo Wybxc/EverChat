@@ -44,7 +44,10 @@ import { writeChatCache as write } from './cache';
 import { ProviderTools } from './ProviderTools';
 import { RemoteMcpControls } from './RemoteMcpControls';
 import { hostedMcpVendor } from '../../../shared/tools/remote-mcp';
-import type { ServerToolProbeKind } from '../../../shared/tools/server-tools';
+import {
+  preferredServerWebTools,
+  type ServerToolProbeKind,
+} from '../../../shared/tools/server-tools';
 import './locales';
 
 const withContextDefaults = conversationSettingsDefaults;
@@ -187,6 +190,10 @@ export function ConversationSettingsDialog({
     return autosave;
   });
   const { settings } = useSyncExternalStore(store.subscribe, store.getSnapshot);
+  const localToolsSupported = canAttemptCapability(model?.metadata, 'toolCalls');
+  const nativeWebAvailable = Boolean(
+    model && preferredServerWebTools(model, settings, WEB_TOOL_NAMES).length,
+  );
   useEffect(() => {
     if (cached?.dirty) store.update(withContextDefaults(cached.settings));
   }, [cached, store]);
@@ -532,18 +539,20 @@ export function ConversationSettingsDialog({
                     <Switch
                       checked={settings.tools.length > 0}
                       disabled={
-                        !settings.tools.length &&
-                        !canAttemptCapability(model?.metadata, 'toolCalls')
+                        !settings.tools.length && !nativeWebAvailable && !localToolsSupported
                       }
                       onCheckedChange={(checked) =>
                         update({ tools: checked ? [...WEB_TOOL_NAMES] : [] })
                       }
                     />
                   </label>
-                  {!canAttemptCapability(model?.metadata, 'toolCalls') && (
+                  {nativeWebAvailable && (
+                    <p className="text-xs text-muted-foreground">{t(($) => $.webPreferenceHint)}</p>
+                  )}
+                  {!nativeWebAvailable && !localToolsSupported && (
                     <p className="text-xs text-muted-foreground">{t(($) => $.toolsUnsupported)}</p>
                   )}
-                  {model?.metadata.sources.toolCalls === 'fallback' && (
+                  {!nativeWebAvailable && model?.metadata.sources.toolCalls === 'fallback' && (
                     <p className="text-xs text-muted-foreground">{t(($) => $.toolsUnknown)}</p>
                   )}
                   <Button
@@ -573,7 +582,7 @@ export function ConversationSettingsDialog({
                 />
                 <RemoteMcpControls
                   open={open && tab === 'tools'}
-                  enabled={canAttemptCapability(model?.metadata, 'toolCalls')}
+                  enabled={localToolsSupported}
                   hostedVendor={model ? hostedMcpVendor(model) : undefined}
                   selected={settings.remoteMcp}
                   onChange={(remoteMcp) => update({ remoteMcp })}

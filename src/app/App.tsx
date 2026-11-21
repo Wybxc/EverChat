@@ -66,6 +66,7 @@ import {
 import { modelSelectionKey } from '../../shared/models/selection';
 import { type ModelSelection, type ReasoningEffort } from '../../shared/models/types';
 import type { SearchResult } from '../../shared/search/query';
+import { preferredServerWebTools } from '../../shared/tools/server-tools';
 import { assertWebToolSupport, WEB_TOOL_NAMES } from '../../shared/tools/tasks';
 import {
   ActionMenu,
@@ -947,29 +948,7 @@ function AppContent({ initialSettings }: AppProps) {
     ) {
       input = { ...input, reasoningEffort: generationEffort };
     }
-    if (input.tools) {
-      try {
-        assertWebToolSupport(generationModel?.metadata, input.tools);
-        const service = navigator.onLine
-          ? await queryClient.fetchQuery({
-              queryKey: WEB_TOOL_SETTINGS_KEY,
-              queryFn: ({ signal }) => loadWebToolSettings(signal),
-              staleTime: 0,
-            })
-          : webToolSettings.data;
-        if (!service?.hasApiKey) throw new UiError(uiMessage('app', 'configureWebTools'));
-      } catch (error) {
-        if (selectedRef.current === origin && storageEpoch() === epoch)
-          return reject(errorMessage(error, uiMessage('app', 'webSettingsFailed')));
-        return false;
-      }
-      if (
-        selectedRef.current !== origin ||
-        storageEpoch() !== epoch ||
-        !sessionRef.current?.authenticated
-      )
-        return false;
-    }
+    let webTools = input.tools;
     if (generationModel) {
       try {
         const config = applyConversationSettings(
@@ -1019,7 +998,9 @@ function AppContent({ initialSettings }: AppProps) {
                 },
               ]
             : [],
+          preferredServerWebTools(generationModel, settings.output, input.tools),
         );
+        if (prepared.usesNativeWebTools) webTools = undefined;
         if (prepared.automatic) {
           const selection = settings.output.autoCompression.model;
           const model = selection
@@ -1036,6 +1017,29 @@ function AppContent({ initialSettings }: AppProps) {
       } catch (error) {
         return reject(errorMessage(error, uiMessage('app', 'invalidParameters')));
       }
+    }
+    if (webTools) {
+      try {
+        assertWebToolSupport(generationModel?.metadata, webTools);
+        const service = navigator.onLine
+          ? await queryClient.fetchQuery({
+              queryKey: WEB_TOOL_SETTINGS_KEY,
+              queryFn: ({ signal }) => loadWebToolSettings(signal),
+              staleTime: 0,
+            })
+          : webToolSettings.data;
+        if (!service?.hasApiKey) throw new UiError(uiMessage('app', 'configureWebTools'));
+      } catch (error) {
+        if (selectedRef.current === origin && storageEpoch() === epoch)
+          return reject(errorMessage(error, uiMessage('app', 'webSettingsFailed')));
+        return false;
+      }
+      if (
+        selectedRef.current !== origin ||
+        storageEpoch() !== epoch ||
+        !sessionRef.current?.authenticated
+      )
+        return false;
     }
     const conversation: ConversationInfo = currentConversation ?? {
       id: selected ?? crypto.randomUUID(),

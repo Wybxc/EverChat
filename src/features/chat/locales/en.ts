@@ -187,6 +187,7 @@ export default {
     'Makes extra summary model requests that incur provider charges. Original messages are kept.',
   toolsUnsupported: 'This model does not support tool calls.',
   toolsUnknown: 'Tool support is unknown. You can try it.',
+  webPreferenceHint: 'When enabled, web search prefers the current model’s native web tools.',
   webServiceSettings: 'Web service settings',
   configureWebService: 'Configure web service',
   webSettingsFailed: 'Could not load web service settings.',

@@ -42,7 +42,7 @@ export default {
   dailyLimitLabel: 'Web service daily request limit',
   refreshUsage: 'Refresh web service usage',
   usageHint:
-    'Web search in the composer enables both search and page fetching. Limits count requests; service and model charges may apply.',
+    'Web search prefers the model’s native tools. Search and page retrieval through the service configured here count toward its daily limit.',
   saving: 'Saving…',
   saved: 'Saved',
   retrySave: 'Retry saving',

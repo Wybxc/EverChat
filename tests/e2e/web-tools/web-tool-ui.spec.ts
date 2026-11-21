@@ -495,6 +495,59 @@ for (const [provider, tools] of combinations)
     }
   });
 
+test('composer prefers native search and page reading with no fallback service key', async ({
+  page,
+  context,
+}) => {
+  const f = await setup(context.request);
+  try {
+    const profile = f.config.providers[0];
+    profile.baseUrl = 'https://api.deepseek.com/v1';
+    profile.models[0].id = f.config.activeModel = 'deepseek-flash';
+    profile.models[0].metadataOverrides = { toolCalls: false, contextWindow: 131072 };
+    expect(
+      (await context.request.put('/api/settings/providers', { headers, data: f.config })).ok(),
+    ).toBe(true);
+    await f.saveService('');
+    const service = await f.settings();
+    expect(service.hasApiKey).toBe(false);
+    await page.goto('/');
+    await enable(page);
+    const sent = await send(page);
+    f.ids.push(sent.id);
+    await expect(page.getByTestId('assistant-message')).toHaveAttribute('data-status', 'completed');
+    const answer = (await f.snapshot(sent.id)).messages.at(-1);
+    expect(
+      answer?.generation?.serverTools?.map(({ tool, vendor, status }) => ({
+        tool,
+        vendor,
+        status,
+      })),
+    ).toEqual([
+      { tool: 'web-search', vendor: 'deepseek', status: 'completed' },
+      { tool: 'web-fetch', vendor: 'deepseek', status: 'completed' },
+    ]);
+    expect(answer?.tools).toBeUndefined();
+    expect((await f.settings()).usedToday).toBe(service.usedToday);
+
+    const toggle = page.getByRole('button', { name: '联网搜索', exact: true });
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    const next = await send(page, '简要总结');
+    expect(next.input.tools).toBeUndefined();
+    await expect(page.getByTestId('assistant-message')).toHaveCount(2);
+    await expect(page.getByTestId('assistant-message').last()).toHaveAttribute(
+      'data-status',
+      'completed',
+    );
+    expect((await f.snapshot(sent.id)).messages.at(-1)?.generation?.serverTools).toBeUndefined();
+  } finally {
+    await page.close();
+    await f.cleanup();
+  }
+});
+
 test('offline queue pins enabled tools and delivers the same request once after reconnect', async ({
   page,
   context,

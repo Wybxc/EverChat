@@ -3,7 +3,7 @@ import { hasOnDemandFiles } from '../../shared/attachments/input-mode';
 import { AttachmentToolRunner, ATTACHMENT_TOOL_JOBS_SCHEMA } from '../attachments/tool-runner';
 import { DurableObject } from 'cloudflare:workers';
 import { readMcpStatus } from '../mcp/conversation';
-import { DocumentError, type DocumentPart } from '../../shared/attachments/documents';
+import type { DocumentPart } from '../../shared/attachments/documents';
 import { McpHistory } from '../mcp/history';
 import { McpError, type McpFailure } from '../mcp/contracts';
 import { discussionSource } from '../mcp/discussion';
@@ -47,7 +47,7 @@ import type {
 import type { ErrorIssue } from '../../shared/errors/descriptor';
 import { AppError, issueOf, problem } from '../../shared/errors/descriptor';
 import type { ChatInput, ProviderConfig } from '../../shared/providers/types';
-import { mergeServerToolActivity } from '../../shared/tools/server-tools';
+import { mergeServerToolActivity, preferredServerWebTools } from '../../shared/tools/server-tools';
 import {
   hostedMcpVendor,
   providerMcpConnections,
@@ -106,7 +106,7 @@ import { ConversationContent } from './content';
 import { ConversationTitles, TITLE_JOBS_SCHEMA } from './titles';
 
 import { createHash } from 'node:crypto';
-import { ImageContextError, type ImagePart } from '../../shared/attachments/images';
+import type { ImagePart } from '../../shared/attachments/images';
 import type { ProviderFailure } from '../../shared/providers/failure';
 import { addGenerationUsage, type GenerationUsage } from '../../shared/streaming/generation';
 import { updateToolTask } from '../../shared/web-tools/reasoning-flow';
@@ -954,8 +954,10 @@ export class Conversation extends DurableObject<Env> {
     input: SubmitInput,
     config: ProviderConfig | null,
     automaticTitle: ProviderConfig | null = null,
+    options?: { preferNativeWebTools: boolean },
   ): Promise<Submission | Failure> {
-    if (this.deletedAt || (await this.env.LIBRARY.getByName('personal').deletedAt(conversationId)))
+    const library = this.env.LIBRARY.getByName('personal');
+    if (this.deletedAt || (await library.deletedAt(conversationId)))
       return { error: '这个对话已删除。', issue: problem('CONVERSATION_DELETED'), status: 410 };
     const accepted = await this.ctx.storage.transaction<
       Submission | Failure | { result: Submission; change: Change }
@@ -1021,27 +1023,19 @@ export class Conversation extends DurableObject<Env> {
           issue: problem('MODEL_UNAVAILABLE'),
           status: 400,
         };
-      if (input.tools) {
-        try {
-          assertWebToolSupport(config.modelMetadata, input.tools);
-        } catch (error) {
-          return {
-            issue: issueOf(error),
-            error: error instanceof Error ? error.message : '工具配置无效。',
-            status: 400,
-          };
-        }
-        if (!this.webToolsConfigured(input.tools, config.webTools))
-          return {
-            error: '尚未配置联网工具服务。',
-            issue: problem('TOOL_NOT_CONFIGURED'),
-            status: 400,
-          };
-        if (config.webTools) {
-          const quota = await this.env.LIBRARY.getByName('personal').webToolSettings();
-          if (quota.usedToday >= Math.min(quota.dailyLimit, config.webTools.dailyLimit))
-            return { error: WEB_TOOL_QUOTA_ERROR, status: 429 };
-        }
+      const useCurrentWebService = options?.preferNativeWebTools === true;
+      const settingsForWeb =
+        useCurrentWebService && input.tools
+          ? (input.settings ?? this.messages.settings())
+          : undefined;
+      const nativeWeb = settingsForWeb
+        ? preferredServerWebTools(config, settingsForWeb, input.tools)
+        : [];
+      let webService = config.webTools;
+      if (input.tools && !nativeWeb.length) {
+        const checked = await this.prepareWebToolService(config, input.tools, useCurrentWebService);
+        if ('error' in checked) return checked;
+        webService = checked.service;
       }
       if (
         this.query(
@@ -1153,10 +1147,10 @@ export class Conversation extends DurableObject<Env> {
           issue: problem('REQUEST_TOO_LARGE'),
           status: 400,
         };
-      const settings = input.settings ?? this.messages.settings();
+      const settings = settingsForWeb ?? input.settings ?? this.messages.settings();
       let generationConfig: ProviderConfig;
       try {
-        generationConfig = applyConversationSettings(config, settings);
+        generationConfig = applyConversationSettings({ ...config, webTools: webService }, settings);
         if (settings.remoteMcp?.length) {
           generationConfig.remoteMcp = await this.env.LIBRARY.getByName(
             'personal',
@@ -1189,13 +1183,6 @@ export class Conversation extends DurableObject<Env> {
             problem('ATTACHMENT_STORAGE_REQUIRED'),
             '图像生成需要已配置的附件存储。',
           );
-        if (
-          generationConfig.serverTools?.some(
-            ({ tool }) => tool === 'web-search' || tool === 'web-fetch',
-          ) &&
-          input.tools?.length
-        )
-          throw new AppError(problem('TOOL_INVALID'), '请为本轮选择一种联网工具执行方式。');
       } catch (error) {
         return {
           issue: issueOf(error),
@@ -1227,6 +1214,7 @@ export class Conversation extends DurableObject<Env> {
       let contextSelection: ContextSelection;
       let contextEstimate;
       let automatic: ReturnType<typeof summaryGeneration> | undefined;
+      let webTools = input.tools;
       try {
         const built = prepareChatContext(
           messages,
@@ -1238,7 +1226,24 @@ export class Conversation extends DurableObject<Env> {
           continuing ? [] : files,
           continuing ? { kind: 'generated' } : { kind: 'message', messageId: userId },
           requiredTail,
+          nativeWeb,
         );
+        generationConfig = built.config;
+        if (built.usesNativeWebTools) webTools = undefined;
+        if (
+          webTools?.length &&
+          generationConfig.serverTools?.some(
+            ({ tool }) => tool === 'web-search' || tool === 'web-fetch',
+          )
+        )
+          throw new AppError(problem('TOOL_INVALID'), '请为本轮选择一种联网工具执行方式。');
+        if (webTools && nativeWeb.length) {
+          const checked = await this.prepareWebToolService(config, webTools, useCurrentWebService);
+          if ('error' in checked) return checked;
+          generationConfig.webTools = checked.service;
+          if (checked.service && !built.automatic)
+            assertStoredContextFits(built.messages, generationConfig);
+        }
         context = built.messages;
         contextSelection = built.selection;
         contextEstimate = built.estimate;
@@ -1257,9 +1262,7 @@ export class Conversation extends DurableObject<Env> {
           automatic = summaryGeneration(messages, built.automatic.throughId, summaryConfig);
         }
       } catch (error) {
-        return error instanceof ContextBudgetError ||
-          error instanceof ImageContextError ||
-          error instanceof DocumentError
+        return error instanceof AppError
           ? { issue: issueOf(error), error: error.message, status: 400 }
           : {
               error: '消息分支关系无效，无法构建上下文。',
@@ -1328,7 +1331,7 @@ export class Conversation extends DurableObject<Env> {
       if (!automatic) this.inputReceipts.select(assistant.id, contextSelection);
       if (summary) this.progress.phase(assistant.id, 'preparing');
       const enabledTools = [
-        ...(input.tools ?? []),
+        ...(webTools ?? []),
         ...(hasOnDemandFiles(context) ? ATTACHMENT_TOOL_NAMES : []),
         ...(generationConfig.remoteMcp?.length ? [REMOTE_MCP_TOOL] : []),
       ];
@@ -1451,6 +1454,35 @@ export class Conversation extends DurableObject<Env> {
         JSON.stringify({ status: 'active', round: 0, calls: [], reasoningBreaks: [] }),
       );
     return summary;
+  }
+  private async prepareWebToolService(
+    config: ProviderConfig,
+    tools: readonly WebToolName[],
+    useCurrentService: boolean,
+  ): Promise<{ service?: WebToolServiceConfig } | Failure> {
+    try {
+      assertWebToolSupport(config.modelMetadata, tools);
+    } catch (error) {
+      return {
+        issue: issueOf(error),
+        error: error instanceof Error ? error.message : '工具配置无效。',
+        status: 400,
+      };
+    }
+    const library = this.env.LIBRARY.getByName('personal');
+    const service = useCurrentService ? await library.webToolConfig() : config.webTools;
+    if (!this.webToolsConfigured(tools, service))
+      return {
+        error: '尚未配置联网工具服务。',
+        issue: problem('TOOL_NOT_CONFIGURED'),
+        status: 400,
+      };
+    if (service) {
+      const quota = await library.webToolSettings();
+      if (quota.usedToday >= Math.min(quota.dailyLimit, service.dailyLimit))
+        return { error: WEB_TOOL_QUOTA_ERROR, status: 429 };
+    }
+    return { service };
   }
   protected webToolsConfigured(
     _enabled: readonly WebToolName[],

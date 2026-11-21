@@ -11,11 +11,13 @@ import {
 } from './context-budget';
 import type { DocumentPart } from '../attachments/documents';
 import type { ImagePart } from '../attachments/images';
+import { hasOnDemandFiles } from '../attachments/input-mode';
 import { messageFiles, messageImages, messageText } from './content';
 import { FALLBACK_MODEL_METADATA } from '../models/metadata';
 import { branchPath } from './branch-path';
 import { type ConversationSettings, type Message } from './types';
 import { type ChatInput, type ProviderConfig } from '../providers/types';
+import { canCombineServerAndLocalTools, type ServerToolCapability } from '../tools/server-tools';
 import { materialContext } from './materials';
 
 export const summaryCoverageSchema = v.pipe(
@@ -117,6 +119,7 @@ export function prepareChatContext(
   files: DocumentPart[] = [],
   currentSource?: ChatInput['source'],
   requiredTail: ChatInput[] = [],
+  nativeWeb: readonly ServerToolCapability[] = [],
 ) {
   const material = materialContext(
     messages,
@@ -129,18 +132,46 @@ export function prepareChatContext(
   );
   const prepared = summaryContext(material.messages, parentId),
     prefix = prepared.summary ? summaryPrefix(prepared.summary) : undefined;
-  const built = buildContext(
-    prepared.history,
-    content,
-    config,
-    settings,
-    prefix,
-    images,
-    tail.length ? [] : material.current,
-    currentSource,
-    material.pinned,
-    tail,
-  );
+  const build = (effective: ProviderConfig) =>
+    buildContext(
+      prepared.history,
+      content,
+      effective,
+      settings,
+      prefix,
+      images,
+      tail.length ? [] : material.current,
+      currentSource,
+      material.pinned,
+      tail,
+    );
+  let effective = config;
+  if (nativeWeb.length) {
+    const selected = config.serverTools ?? [];
+    effective = {
+      ...config,
+      serverTools: [
+        ...selected,
+        ...nativeWeb.filter((entry) => !selected.some(({ tool }) => entry.tool === tool)),
+      ],
+    };
+  }
+  let built = build(effective);
+  // Compression can bring earlier attachments back into the context.
+  if (
+    effective !== config &&
+    !canCombineServerAndLocalTools(config) &&
+    (hasOnDemandFiles(built.messages) ||
+      (settings.autoCompression.enabled &&
+        hasOnDemandFiles(
+          built.selection.omitted
+            .filter(({ reason }) => reason === 'context_budget')
+            .map(({ input }) => input),
+        )))
+  ) {
+    effective = config;
+    built = build(effective);
+  }
   for (const excluded of material.excluded)
     built.selection.omitted.push({
       input: {
@@ -164,7 +195,7 @@ export function prepareChatContext(
       buildContext(
         [],
         content,
-        config,
+        effective,
         settings,
         undefined,
         images,
@@ -177,7 +208,7 @@ export function prepareChatContext(
     const demand = measureContextDemand(
       prepared.history,
       content,
-      config,
+      effective,
       settings,
       prefix,
       images,
@@ -222,9 +253,9 @@ export function prepareChatContext(
   }
   if (!automatic) {
     assertContextFits(built.estimate);
-    assertStoredContextFits(built.messages, config);
+    assertStoredContextFits(built.messages, effective);
   }
-  return { ...built, automatic };
+  return { ...built, automatic, config: effective, usesNativeWebTools: effective !== config };
 }
 
 export const SUMMARY_CONTEXT_PREFIX =
