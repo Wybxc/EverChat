@@ -157,7 +157,6 @@ function ConnectionEditor({
           type="url"
           value={endpoint}
           maxLength={1200}
-          placeholder="https://example.com/mcp"
           onChange={(event) => setEndpoint(event.currentTarget.value)}
         />
       </label>
