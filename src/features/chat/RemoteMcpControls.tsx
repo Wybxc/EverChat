@@ -4,7 +4,9 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
+import { NativeSelect } from '@/components/ui/native-select';
 import {
+  type hostedMcpVendor,
   remoteMcpEndpoint,
   type RemoteMcpCatalog,
   type RemoteMcpConnection,
@@ -14,16 +16,19 @@ import { api } from '../../platform/api';
 import './locales';
 
 const key = ['remote-mcp-connections'];
+type HostedVendor = ReturnType<typeof hostedMcpVendor>;
 function ToolRoster({
   connection,
   selection,
   disabled,
+  hostedVendor,
   onChange,
 }: {
   connection: RemoteMcpConnection;
   selection?: RemoteMcpSelection;
   disabled: boolean;
-  onChange: (tools: string[]) => void;
+  hostedVendor?: HostedVendor;
+  onChange: (tools: string[], executor?: RemoteMcpSelection['executor']) => void;
 }) {
   const { t } = useTranslation('chat', { useSuspense: false });
   const catalog = useQuery({
@@ -40,6 +45,13 @@ function ToolRoster({
   });
   const tools = selection?.revision === connection.revision ? selection.tools : [];
   const stale = selection && selection.revision !== connection.revision;
+  const executor = selection?.executor ?? 'everchat';
+  const canUseProvider =
+    hostedVendor === 'openai' ||
+    (hostedVendor === 'anthropic' &&
+      tools.every((name) =>
+        catalog.data?.tools.some((entry) => entry.name === name && entry.readOnly),
+      ));
   return (
     <>
       <Button
@@ -57,6 +69,26 @@ function ToolRoster({
         </p>
       )}
       {stale && <p className="text-xs text-muted-foreground">{t(($) => $.remoteMcpChanged)}</p>}
+      {!!tools.length && (hostedVendor || executor === 'provider') && (
+        <label className="block space-y-1 text-xs">
+          <span>{t(($) => $.remoteMcpExecutor)}</span>
+          <NativeSelect
+            className="w-full"
+            value={executor}
+            onChange={(event) =>
+              onChange(tools, event.currentTarget.value === 'provider' ? 'provider' : 'everchat')
+            }
+          >
+            <option value="everchat">EverChat</option>
+            <option value="provider" disabled={!canUseProvider}>
+              {t(($) => $.remoteMcpViaProvider)}
+            </option>
+          </NativeSelect>
+          {executor === 'provider' && (
+            <span className="block text-muted-foreground">{t(($) => $.remoteMcpHostedHint)}</span>
+          )}
+        </label>
+      )}
       {catalog.data?.tools.length === 0 && (
         <p className="text-xs text-muted-foreground">{t(($) => $.remoteMcpNoTools)}</p>
       )}
@@ -72,7 +104,12 @@ function ToolRoster({
                 <label className="flex cursor-pointer items-start gap-2 text-sm">
                   <Checkbox
                     checked={selected}
-                    disabled={!selected && (disabled || tools.length >= 8)}
+                    disabled={
+                      !selected &&
+                      (disabled ||
+                        tools.length >= 8 ||
+                        (executor === 'provider' && hostedVendor === 'anthropic' && !tool.readOnly))
+                    }
                     onCheckedChange={(checked) =>
                       onChange(
                         checked
@@ -215,11 +252,13 @@ function ConnectionEditor({
 export function RemoteMcpControls({
   open,
   enabled,
+  hostedVendor,
   selected = [],
   onChange,
 }: {
   open: boolean;
   enabled: boolean;
+  hostedVendor?: HostedVendor;
   selected?: RemoteMcpSelection[];
   onChange: (selection: RemoteMcpSelection[]) => void;
 }) {
@@ -269,12 +308,20 @@ export function RemoteMcpControls({
                 <ToolRoster
                   connection={connection}
                   selection={selection}
+                  hostedVendor={hostedVendor}
                   disabled={!enabled || (!selection && selected.length >= 2)}
-                  onChange={(tools) =>
+                  onChange={(tools, executor = selection?.executor) =>
                     onChange([
                       ...selected.filter(({ id }) => id !== connection.id),
                       ...(tools.length
-                        ? [{ id: connection.id, revision: connection.revision, tools }]
+                        ? [
+                            {
+                              id: connection.id,
+                              revision: connection.revision,
+                              tools,
+                              ...(executor ? { executor } : {}),
+                            },
+                          ]
                         : []),
                     ])
                   }

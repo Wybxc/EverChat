@@ -12,6 +12,8 @@ import type {
   ProviderSettingsInput,
 } from '../../shared/providers/types';
 import type { Env } from '../http/env';
+import type { ServerToolProbeKind } from '../../shared/tools/server-tools';
+import { MAX_SQL_PAYLOAD_BYTES } from '../../shared/conversation/limits';
 import { HttpError, json, readJsonStream } from '../http/response';
 import { PromptPresetError, PromptPresets } from '../presets/store';
 import {
@@ -202,6 +204,32 @@ export class ProviderSettingsStore {
           models: model ? profile.models.filter((entry) => entry.id === model) : profile.models,
         }
       : null;
+  }
+  confirmServerTool(expected: ProviderConfig, tool: ServerToolProbeKind, at: number) {
+    const profile = this.providerSettingsData().providers.find(
+      ({ id }) => id === expected.providerId,
+    );
+    if (
+      !profile ||
+      profile.enabled === false ||
+      profile.provider !== expected.provider ||
+      profile.baseUrl !== expected.baseUrl ||
+      profile.apiKey !== expected.apiKey ||
+      !profile.models.some(({ id, enabled }) => enabled && id === expected.model)
+    )
+      return false;
+    const payload = JSON.stringify(
+      profile.models.map((model) =>
+        model.id === expected.model
+          ? { ...model, testedServerTools: { ...model.testedServerTools, [tool]: at } }
+          : model,
+      ),
+    );
+    if (Buffer.byteLength(payload) > MAX_SQL_PAYLOAD_BYTES) return false;
+    return (
+      this.storage.sql.exec('UPDATE provider_profiles SET models=? WHERE id=?', payload, profile.id)
+        .rowsWritten === 1
+    );
   }
 
   async providerModelsResponse(id: string): Promise<Response> {

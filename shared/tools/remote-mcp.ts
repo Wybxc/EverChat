@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import type { ProviderConfig } from '../providers/types';
 
 export const REMOTE_MCP_TOOL = 'remote_mcp';
 export const MAX_REMOTE_MCP_CALLS = 6;
@@ -72,6 +73,7 @@ export const remoteMcpSelectionsSchema = v.pipe(
     v.strictObject({
       id,
       revision: id,
+      executor: v.optional(v.picklist(['everchat', 'provider'])),
       tools: v.pipe(
         v.array(name),
         v.minLength(1),
@@ -84,7 +86,18 @@ export const remoteMcpSelectionsSchema = v.pipe(
   v.check((connections) => new Set(connections.map(({ id }) => id)).size === connections.length),
 );
 export type RemoteMcpSelection = v.InferOutput<typeof remoteMcpSelectionsSchema>[number];
-export type ResolvedRemoteMcp = Omit<RemoteMcpConnection, 'hasToken'> & { tools: RemoteMcpTool[] };
+export type ResolvedRemoteMcp = Omit<RemoteMcpConnection, 'hasToken'> & {
+  tools: RemoteMcpTool[];
+  executor?: RemoteMcpSelection['executor'];
+};
+export function hostedMcpVendor(config: Pick<ProviderConfig, 'provider' | 'baseUrl'>) {
+  const host = new URL(config.baseUrl).origin;
+  if (host === 'https://api.openai.com' && config.provider === 'openai-responses') return 'openai';
+  if (host === 'https://api.anthropic.com' && config.provider === 'anthropic') return 'anthropic';
+}
+export const providerMcpConnections = (config: Pick<ProviderConfig, 'remoteMcp'>) =>
+  config.remoteMcp?.filter((entry) => entry.executor === 'provider') ?? [];
+export const hostedMcpLabel = (id: string) => `everchat_${id.replaceAll('-', '')}`;
 
 export const remoteMcpCallSchema = v.strictObject({
   connection: id,

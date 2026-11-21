@@ -15,6 +15,7 @@ import type { ProviderWireGuard } from './stream-errors';
 import { ServerToolTrace } from './server-tool-activity';
 import type { ServerToolReplay } from './server-tool-replay';
 import type { ProviderArtifacts } from './artifacts';
+import { providerMcpConnections } from '../../shared/tools/remote-mcp';
 
 export interface ProviderResponse extends ReadableStream<Uint8Array> {
   toolTurn?: ProviderToolTurn;
@@ -40,9 +41,10 @@ export function providerEvents(
     usage = new ProviderUsage(),
     thoughts = new ResponseReasoning();
   const collector = native.collector;
-  const serverTools = config.serverTools?.length
-    ? new ServerToolTrace(config, [config.apiKey ?? '', config.systemPrompt, ...secrets], replays)
-    : undefined;
+  const serverTools =
+    config.serverTools?.length || providerMcpConnections(config).length
+      ? new ServerToolTrace(config, [config.apiKey ?? '', config.systemPrompt, ...secrets], replays)
+      : undefined;
   const budget = new ProviderStream(config.provider, true);
   let body: ProviderResponse;
   const diagnostics = (error: unknown, stage: 'stream' | 'protocol' = 'protocol') =>
@@ -193,7 +195,7 @@ export function providerEvents(
       if (activity) yield emit(activity);
       yield emit({
         type: 'finish',
-        reason,
+        reason: body.toolTurn?.finishReason === 'tool-calls' ? 'tool-calls' : reason,
         rawReason,
         message,
         usage: usage.usage,

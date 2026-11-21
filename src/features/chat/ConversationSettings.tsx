@@ -43,6 +43,7 @@ import { useWebToolSettings } from '../web-tools/web-tool-settings';
 import { writeChatCache as write } from './cache';
 import { ProviderTools } from './ProviderTools';
 import { RemoteMcpControls } from './RemoteMcpControls';
+import { hostedMcpVendor } from '../../../shared/tools/remote-mcp';
 import './locales';
 
 const withContextDefaults = conversationSettingsDefaults;
@@ -560,12 +561,16 @@ export function ConversationSettingsDialog({
                   key={model ? modelSelectionKey(model) : ''}
                   model={model}
                   open={open && tab === 'tools'}
+                  hostedMcp={Boolean(
+                    settings.remoteMcp?.some((entry) => entry.executor === 'provider'),
+                  )}
                   settings={settings.serverTools}
                   onChange={(serverTools) => update({ serverTools })}
                 />
                 <RemoteMcpControls
                   open={open && tab === 'tools'}
                   enabled={canAttemptCapability(model?.metadata, 'toolCalls')}
+                  hostedVendor={model ? hostedMcpVendor(model) : undefined}
                   selected={settings.remoteMcp}
                   onChange={(remoteMcp) => update({ remoteMcp })}
                 />

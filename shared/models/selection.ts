@@ -27,6 +27,7 @@ export function chatModels(settings: ProviderSettings | ProviderSettingsInput): 
               reasoningSupported: metadata.reasoning,
               reasoningEfforts: metadata.reasoningEfforts,
               metadata,
+              ...(model.testedServerTools ? { testedServerTools: model.testedServerTools } : {}),
               ...(model.reportedMetadata?.serverTools
                 ? { reportedServerTools: model.reportedMetadata.serverTools }
                 : {}),

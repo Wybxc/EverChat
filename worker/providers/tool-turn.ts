@@ -30,7 +30,11 @@ import {
   type WebToolOutcome,
 } from '../../shared/tools/tasks';
 import { ProviderError } from '../generation/errors';
-import { REMOTE_MCP_TOOL } from '../../shared/tools/remote-mcp';
+import {
+  hostedMcpLabel,
+  providerMcpConnections,
+  REMOTE_MCP_TOOL,
+} from '../../shared/tools/remote-mcp';
 import {
   ServerToolReplayCollector,
   validateServerToolReplay,
@@ -63,12 +67,25 @@ export interface ProviderToolRequest {
 export const providerToolIdentity = (config: ProviderConfig) =>
   JSON.stringify([config.provider, config.baseUrl, config.model]);
 export const needsServerToolRounds = (config: ProviderConfig) =>
-  config.provider === 'anthropic' && Boolean(config.serverTools?.length);
+  config.provider === 'anthropic' &&
+  Boolean(config.serverTools?.length || providerMcpConnections(config).length);
 export const pendingProviderToolTurn = (turn?: ProviderToolTurn) =>
   Boolean(turn?.calls.length || turn?.finishReason === 'pause');
 export function assertProviderToolSupport(config: ProviderConfig, enabled: readonly WebToolName[]) {
-  if (enabled.length || !needsServerToolRounds(config))
-    assertWebToolSupport(config.modelMetadata, enabled);
+  const hasHosted = providerMcpConnections(config).length > 0;
+  const local =
+    hasHosted && !config.remoteMcp?.some(({ executor }) => executor !== 'provider')
+      ? enabled.filter((name) => name !== REMOTE_MCP_TOOL)
+      : enabled;
+  if (
+    local.length &&
+    config.serverTools?.length &&
+    config.provider === 'gemini' &&
+    /^gemini-2\./.test(config.model)
+  )
+    throw new ProviderError('Gemini 2.x 的供应商工具无法与 EverChat 函数在同一轮使用。');
+  if (local.length || (!hasHosted && !needsServerToolRounds(config)))
+    assertWebToolSupport(config.modelMetadata, local);
 }
 const bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).byteLength;
 const object = (value: unknown): Record<string, unknown> =>
@@ -268,12 +285,27 @@ export function validateProviderToolTurn(
       if (
         !connection ||
         !declared ||
-        (declared.readOnly
+        (connection.executor === 'provider') !== Boolean(call.hosted) ||
+        (call.hosted && !turn.serverReplay) ||
+        (declared.readOnly && !call.hosted
           ? call.approval !== undefined
           : call.approval?.endpoint !== connection.endpoint ||
             call.approval?.title !== declared.title)
       )
         throw new ProviderError('远程 MCP 调用与已授权的连接或审批要求不符。');
+      if (call.hosted) {
+        const raw = turn.serverReplay?.blocks.find(
+          (item) => item.type === 'mcp_approval_request' && item.id === call.id,
+        );
+        if (
+          !raw ||
+          raw.server_label !== hostedMcpLabel(connection!.id) ||
+          raw.name !== call.input.tool ||
+          typeof raw.arguments !== 'string' ||
+          JSON.stringify(JSON.parse(raw.arguments)) !== JSON.stringify(call.input.arguments)
+        )
+          throw new ProviderError('供应商的 MCP 审批请求与展示的调用不符。');
+      }
     }
     if (
       used.has(call.id) ||
@@ -314,10 +346,14 @@ export class ProviderToolCollector {
   constructor(
     private readonly config: ProviderConfig,
     private readonly enabled: readonly WebToolName[],
+    secrets: readonly string[] = [],
   ) {
     assertProviderToolSupport(config, enabled);
     this.wireIdentity = toolWireIdentity(config);
-    this.replay = config.serverTools?.length ? new ServerToolReplayCollector(config) : undefined;
+    this.replay =
+      config.serverTools?.length || providerMcpConnections(config).length
+        ? new ServerToolReplayCollector(config, [config.apiKey ?? '', ...secrets])
+        : undefined;
   }
   add(part: LanguageModelV4StreamPart) {
     const { config, content, blocks, toolBlocks, wireIdentity } = this;
@@ -338,6 +374,7 @@ export class ProviderToolCollector {
           this.serverIds.has(part.id)) ||
         (part.type === 'tool-call' && part.providerExecuted) ||
         part.type === 'tool-result' ||
+        (part.type === 'tool-approval-request' && providerMcpConnections(config).length > 0) ||
         part.type === 'source' ||
         part.type === 'file'
       )
@@ -468,7 +505,9 @@ export class ProviderToolCollector {
       call = validateWebToolCall({ id: part.toolCallId, name: part.toolName, input }, this.enabled);
       if (call.name === REMOTE_MCP_TOOL && !call.invalid) {
         const input = call.input;
-        const connection = this.config.remoteMcp?.find(({ id }) => id === input.connection);
+        const connection = this.config.remoteMcp?.find(
+          ({ id, executor }) => id === input.connection && executor !== 'provider',
+        );
         const tool = connection?.tools.find(({ name }) => name === input.tool);
         if (!tool || !connection) throw new Error();
         if (!tool.readOnly) call.approval = { endpoint: connection.endpoint, title: tool.title };
@@ -498,8 +537,20 @@ export class ProviderToolCollector {
     this.calls.push(call);
   }
   finish(usage: StreamUsage, usageIsFinal: boolean, hasArtifact = false): ProviderToolTurn {
-    const { content, calls, blocks, toolBlocks, finishReason, config, enabled, wireIdentity } =
-      this;
+    const { blocks, toolBlocks, config, enabled, wireIdentity } = this;
+    const approvals = this.replay?.approvals() ?? [];
+    const calls = [...this.calls, ...approvals];
+    const content = [
+      ...this.content,
+      ...approvals.map((request): AssistantPart => ({
+        type: 'tool-call',
+        toolCallId: request.id,
+        toolName: request.name,
+        input: request.input,
+      })),
+    ];
+    const finishReason =
+      approvals.length && this.finishReason === 'stop' ? 'tool-calls' : this.finishReason;
     if (
       !finishReason ||
       blocks.size ||
@@ -512,7 +563,7 @@ export class ProviderToolCollector {
     )
       throw new ProviderError('供应商未完整返回工具调用或文字回答。');
     if (calls.length) assertPrivateReasoning(config, content);
-    wireIdentity.assertCalls(calls);
+    wireIdentity.assertCalls(this.calls);
     const turn: ProviderToolTurn = {
       identity: providerToolIdentity(config),
       content,
@@ -545,7 +596,7 @@ export function providerToolPrompt(
       if (!pendingProviderToolTurn(turn) || outcomes.length !== turn.calls.length)
         throw new Error();
       const actual = turn.content.filter((part) => part.type === 'tool-call');
-      const results = turn.calls.map((candidate) => {
+      const results = turn.calls.flatMap((candidate) => {
         const call = validateWebToolCandidate(candidate, enabled),
           matching = actual.find((part) => part.toolCallId === call.id);
         if (
@@ -561,25 +612,32 @@ export function providerToolPrompt(
         if (matches.length !== 1) throw new Error();
         const outcome = validateWebToolOutcome(matches[0]);
         if (outcome.name !== call.name) throw new Error();
-        return {
-          type: 'tool-result' as const,
-          toolCallId: call.id,
-          toolName: call.name,
-          output:
-            outcome.status === 'completed'
-              ? {
-                  type: 'json' as const,
-                  value: {
-                    sources: outcome.sources,
-                    ...(outcome.attachment ? { attachment: outcome.attachment } : {}),
-                    ...(outcome.remoteOutput !== undefined
-                      ? { remoteOutput: outcome.remoteOutput }
-                      : {}),
-                    ...(outcome.warnings ? { warnings: outcome.warnings } : {}),
-                  },
-                }
-              : { type: 'error-text' as const, value: outcome.error },
-        };
+        if (!call.invalid && call.name === REMOTE_MCP_TOOL && call.hosted) {
+          if (outcome.status !== 'completed' || typeof outcome.approved !== 'boolean')
+            throw new Error();
+          return [];
+        }
+        return [
+          {
+            type: 'tool-result' as const,
+            toolCallId: call.id,
+            toolName: call.name,
+            output:
+              outcome.status === 'completed'
+                ? {
+                    type: 'json' as const,
+                    value: {
+                      sources: outcome.sources,
+                      ...(outcome.attachment ? { attachment: outcome.attachment } : {}),
+                      ...(outcome.remoteOutput !== undefined
+                        ? { remoteOutput: outcome.remoteOutput }
+                        : {}),
+                      ...(outcome.warnings ? { warnings: outcome.warnings } : {}),
+                    },
+                  }
+                : { type: 'error-text' as const, value: outcome.error },
+          },
+        ];
       });
       const marker = replayMarkers?.[index];
       prompt.push({

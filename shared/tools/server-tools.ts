@@ -9,8 +9,12 @@ export const SERVER_TOOL_KINDS = [
   'code-execution',
   'image-generation',
   'shell',
+  'advisor',
+  'tool-search',
+  'remote-mcp',
 ] as const;
 export type ServerToolKind = (typeof SERVER_TOOL_KINDS)[number];
+type CatalogTool = Exclude<ServerToolKind, 'remote-mcp'>;
 export type ServerToolVendor = 'openai' | 'anthropic' | 'google' | 'deepseek' | 'openrouter';
 export const reportedServerToolsSchema = v.strictObject({
   'web-search': v.optional(v.boolean()),
@@ -18,12 +22,20 @@ export const reportedServerToolsSchema = v.strictObject({
   'web-fetch': v.optional(v.boolean()),
 });
 export type ReportedServerTools = v.InferOutput<typeof reportedServerToolsSchema>;
+export const serverToolProbeKinds = ['web-search', 'web-fetch'] as const;
+export type ServerToolProbeKind = (typeof serverToolProbeKinds)[number];
+const probedAt = v.optional(v.pipe(v.number(), v.safeInteger(), v.minValue(1)));
+export const testedServerToolsSchema = v.strictObject({
+  'web-search': probedAt,
+  'web-fetch': probedAt,
+});
+export type TestedServerTools = v.InferOutput<typeof testedServerToolsSchema>;
 export interface ServerToolCapability {
   vendor: ServerToolVendor;
-  tool: ServerToolKind;
+  tool: CatalogTool;
   wireName: string;
   resources?: 'vector-stores' | 'file-search-stores';
-  source?: 'provider';
+  source?: 'provider' | 'tested';
 }
 
 const toolKind = v.picklist(SERVER_TOOL_KINDS);
@@ -35,9 +47,17 @@ const resources = v.pipe(
   v.check((ids) => new Set(ids).size === ids.length),
 );
 export const serverToolSelectionSchema = v.variant('tool', [
-  ...(['web-search', 'web-fetch', 'code-execution', 'image-generation', 'shell'] as const).map(
-    (tool) => v.strictObject({ tool: v.literal(tool) }),
-  ),
+  ...(
+    [
+      'web-search',
+      'web-fetch',
+      'code-execution',
+      'image-generation',
+      'shell',
+      'advisor',
+      'tool-search',
+    ] as const
+  ).map((tool) => v.strictObject({ tool: v.literal(tool) })),
   v.strictObject({ tool: v.literal('file-search'), resources }),
 ]);
 export type ServerToolSelection = v.InferOutput<typeof serverToolSelectionSchema>;
@@ -64,9 +84,12 @@ export const modelServerToolsSchema = v.pipe(
 );
 export type ModelServerTools = v.InferOutput<typeof modelServerToolsSchema>[number];
 export type ResolvedServerTool = ServerToolCapability & { resourceIds?: string[] };
-type Model = Pick<ProviderConfig, 'baseUrl' | 'provider' | 'model' | 'reportedServerTools'>;
+type Model = Pick<
+  ProviderConfig,
+  'baseUrl' | 'provider' | 'model' | 'reportedServerTools' | 'testedServerTools'
+>;
 
-export function serverToolCatalog({
+function documentedServerTools({
   baseUrl,
   provider,
   model,
@@ -82,7 +105,7 @@ export function serverToolCatalog({
   const host = url.hostname;
   const add = (
     vendor: ServerToolVendor,
-    definitions: [ServerToolKind, string, ServerToolCapability['resources']?][],
+    definitions: [CatalogTool, string, ServerToolCapability['resources']?][],
   ) =>
     definitions.map(([tool, wireName, resources]) => ({
       vendor,
@@ -103,10 +126,7 @@ export function serverToolCatalog({
       ['code-execution', 'code_interpreter'],
       ['image-generation', 'image_generation'],
       ...(/^gpt-(?:5\.[1-6]|6(?:\.1)?)(?!.*-nano)(?:-|$)/.test(model)
-        ? ([['shell', 'shell']] as const).map(([kind, name]): [ServerToolKind, string] => [
-            kind,
-            name,
-          ])
+        ? ([['shell', 'shell']] as const).map(([kind, name]): [CatalogTool, string] => [kind, name])
         : []),
     ]);
   }
@@ -119,6 +139,12 @@ export function serverToolCatalog({
       ['web-search', 'web_search_20250305'],
       ['web-fetch', 'web_fetch_20250910'],
       ['code-execution', 'code_execution_20250825'],
+      ...(/^claude-(?:sonnet|haiku)-5(?:-5)?(?:-\d{8})?$/.test(model)
+        ? ([['advisor', 'advisor_20260301']] as [CatalogTool, string][])
+        : []),
+      ...(/^claude-(?:opus|sonnet|haiku)-(?:4-5|4-6|4-7|4-8|5)(?:-\d+)?$/.test(model)
+        ? ([['tool-search', 'tool_search_tool_bm25_20251119']] as [CatalogTool, string][])
+        : []),
     ]).flatMap((entry): ServerToolCapability[] => {
       const reported = reportedServerTools?.[entry.tool as keyof ReportedServerTools];
       return reported === true
@@ -141,11 +167,11 @@ export function serverToolCatalog({
       ['web-fetch', 'url_context'],
       ...(fileSearch
         ? [['file-search', 'file_search', 'file-search-stores'] as const].map(
-            ([tool, name, resources]): [
-              ServerToolKind,
-              string,
-              ServerToolCapability['resources'],
-            ] => [tool, name, resources],
+            ([tool, name, resources]): [CatalogTool, string, ServerToolCapability['resources']] => [
+              tool,
+              name,
+              resources,
+            ],
           )
         : []),
       ['code-execution', 'code_execution'],
@@ -166,6 +192,39 @@ export function serverToolCatalog({
       ['web-fetch', 'openrouter:web_fetch'],
     ]);
   return [];
+}
+
+export function serverToolProbeCandidates(model: Model): ServerToolCapability[] {
+  const catalogModel: Record<string, string> = {
+    'https://api.openai.com': 'gpt-6.1-sol',
+    'https://api.anthropic.com': 'claude-sonnet-4-6',
+    'https://generativelanguage.googleapis.com': 'gemini-4-argon',
+    'https://openrouter.ai': 'openai/gpt-6.1-sol',
+    'https://api.deepseek.com': model.model === 'deepseek-v4-pro' ? model.model : 'deepseek-flash',
+  };
+  try {
+    const known = catalogModel[new URL(model.baseUrl).origin];
+    return known
+      ? documentedServerTools({
+          ...model,
+          model: known,
+          reportedServerTools: undefined,
+        }).filter(({ tool }) => (serverToolProbeKinds as readonly string[]).includes(tool))
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+export function serverToolCatalog(model: Model): ServerToolCapability[] {
+  const documented = documentedServerTools(model);
+  const tested = serverToolProbeCandidates(model)
+    .filter(({ tool }) => Boolean(model.testedServerTools?.[tool as ServerToolProbeKind]))
+    .map((entry): ServerToolCapability => ({ ...entry, source: 'tested' }));
+  return [
+    ...documented.filter(({ tool }) => !tested.some((entry) => entry.tool === tool)),
+    ...tested,
+  ];
 }
 
 export function selectedModelServerTools(

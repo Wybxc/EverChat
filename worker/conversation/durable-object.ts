@@ -48,7 +48,11 @@ import type { ErrorIssue } from '../../shared/errors/descriptor';
 import { AppError, issueOf, problem } from '../../shared/errors/descriptor';
 import type { ChatInput, ProviderConfig } from '../../shared/providers/types';
 import { mergeServerToolActivity } from '../../shared/tools/server-tools';
-import { REMOTE_MCP_TOOL } from '../../shared/tools/remote-mcp';
+import {
+  hostedMcpVendor,
+  providerMcpConnections,
+  REMOTE_MCP_TOOL,
+} from '../../shared/tools/remote-mcp';
 import { callRemoteMcpTool } from '../remote-mcp/client';
 import type { SearchPage } from '../../shared/search/query';
 import { projectShare } from '../../shared/sharing/projection';
@@ -1154,11 +1158,29 @@ export class Conversation extends DurableObject<Env> {
       try {
         generationConfig = applyConversationSettings(config, settings);
         if (settings.remoteMcp?.length) {
-          assertWebToolSupport(generationConfig.modelMetadata, [REMOTE_MCP_TOOL]);
           generationConfig.remoteMcp = await this.env.LIBRARY.getByName(
             'personal',
           ).resolveRemoteMcp(settings.remoteMcp);
+          if (generationConfig.remoteMcp.some(({ executor }) => executor !== 'provider'))
+            assertWebToolSupport(generationConfig.modelMetadata, [REMOTE_MCP_TOOL]);
+          const hosted = providerMcpConnections(generationConfig);
+          const vendor = hostedMcpVendor(generationConfig);
+          if (
+            hosted.length &&
+            (!vendor ||
+              (vendor === 'anthropic' &&
+                hosted.some((connection) => connection.tools.some((tool) => !tool.readOnly))))
+          )
+            throw new AppError(problem('TOOL_INVALID'), '当前供应商不能托管所选的远程 MCP 工具。');
         }
+        if (
+          generationConfig.serverTools?.some(({ tool }) => tool === 'tool-search') &&
+          !providerMcpConnections(generationConfig).length
+        )
+          throw new AppError(
+            problem('TOOL_INVALID'),
+            '工具搜索需要先启用 Claude 托管的 MCP 工具。',
+          );
         if (
           generationConfig.serverTools?.some(({ tool }) => tool === 'image-generation') &&
           !this.env.ATTACHMENTS
@@ -1840,6 +1862,7 @@ export class Conversation extends DurableObject<Env> {
     if (candidate?.state === 'approval') return { ...state, approvalPending: true };
     if (candidate?.call.name === REMOTE_MCP_TOOL && !candidate.call.invalid) {
       const call = candidate.call;
+      if (call.hosted) return state;
       if (!this.ctx.storage.transactionSync(() => this.tools.claimTool(taskId, callId)))
         return this.toolTaskState(taskId);
       const abort = new AbortController();
@@ -2322,6 +2345,19 @@ export class Conversation extends DurableObject<Env> {
             runId,
           );
       };
+      const hostedCredentials = await Promise.all(
+        providerMcpConnections(claim.config).map(async (connection) => {
+          const credential = await this.env.LIBRARY.getByName('personal').remoteMcpCredential(
+            connection,
+            {
+              connection: connection.id,
+              tool: connection.tools[0].name,
+            },
+          );
+          return { id: connection.id, token: credential.token };
+        }),
+      );
+      abort.signal.throwIfAborted();
       const body = await this.openModelStream(
         claim.config,
         claim.context,
@@ -2402,6 +2438,7 @@ export class Conversation extends DurableObject<Env> {
               return saved.value;
             }
           : undefined,
+        hostedCredentials,
       );
       await consumeModelStream(body, active, (bytes) => active.buffer.add(bytes));
       this.progress.phase(claim.assistantId!, 'finalizing');

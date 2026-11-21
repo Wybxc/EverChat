@@ -5,7 +5,7 @@ import { AppError, problem } from '../errors/descriptor';
 import { MAX_MODEL_TOKENS, reasoningEfforts } from '../models/metadata';
 import { providerOptions } from './endpoints';
 import type { ProviderApiKind, ProviderSettingsInput } from './types';
-import { reportedServerToolsSchema } from '../tools/server-tools';
+import { reportedServerToolsSchema, testedServerToolsSchema } from '../tools/server-tools';
 
 export const providerTypes = providerOptions.map((option) => option.value) as [
   ProviderApiKind,
@@ -63,6 +63,7 @@ export const modelSchema = v.object({
       testedAt: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(Number.MAX_SAFE_INTEGER)),
     }),
   ),
+  testedServerTools: v.optional(testedServerToolsSchema),
   metadataOverrides: v.optional(v.strictObject(metadataFields)),
 });
 const profileSchema = v.object({
@@ -160,7 +161,7 @@ export function mergeProviderSettings(
       throw new AppError(problem('PROVIDER_KEY_INVALID'), 'API 密钥不能包含换行。');
     if (new Set(profile.models.map((model) => model.id)).size !== profile.models.length)
       throw new AppError(problem('PROVIDER_INVALID'), '模型 ID 不能重复。');
-    const models =
+    const mergedModels =
       existing && !options.restoreModelMetadata
         ? profile.models.map((model) =>
             !sameConnection
@@ -169,12 +170,20 @@ export function mergeProviderSettings(
                   reportedMetadata: undefined,
                   directoryMetadata: undefined,
                   testedCapabilities: undefined,
+                  testedServerTools: undefined,
                 }
               : apiKey !== existing.apiKey
-                ? { ...model, testedCapabilities: undefined }
+                ? { ...model, testedCapabilities: undefined, testedServerTools: undefined }
                 : model,
           )
         : profile.models;
+    const models = mergedModels.map(({ testedServerTools: _untrusted, ...model }) => {
+      const testedServerTools =
+        sameConnection && apiKey === existing?.apiKey
+          ? existing?.models.find(({ id }) => id === model.id)?.testedServerTools
+          : undefined;
+      return { ...model, ...(testedServerTools ? { testedServerTools } : {}) };
+    });
     const merged = { ...profile, models, baseUrl, apiKey };
     if (new TextEncoder().encode(JSON.stringify(merged)).byteLength > MAX_PROVIDER_PROFILE_BYTES)
       throw new AppError(
