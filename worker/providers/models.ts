@@ -2,7 +2,7 @@ import { MAX_BUFFERED_BODY_BYTES } from '../../shared/platform/limits';
 import { MAX_SQL_PAYLOAD_BYTES } from '../../shared/conversation/limits';
 import { AppError, problem } from '../../shared/errors/descriptor';
 import { MAX_MODEL_TOKENS, reasoningEfforts } from '../../shared/models/metadata';
-import type { DiscoveredModel, ModelMetadata } from '../../shared/models/types';
+import type { DiscoveredModel, ReportedModelMetadata } from '../../shared/models/types';
 import type { ProviderFailure } from '../../shared/providers/failure';
 import type { ProviderModelConfig } from '../../shared/providers/types';
 import { providerIssue } from '../generation/errors';
@@ -107,8 +107,8 @@ function record(value: unknown): Record<string, unknown> {
 function reportedMetadata(
   profile: ProviderModelConfig,
   item: Record<string, unknown>,
-): Partial<ModelMetadata> | undefined {
-  const metadata: Partial<ModelMetadata> = {};
+): ReportedModelMetadata | undefined {
+  const metadata: ReportedModelMetadata = {};
   const positiveLimit = (value: unknown): value is number =>
     typeof value === 'number' &&
     Number.isSafeInteger(value) &&
@@ -148,7 +148,19 @@ function reportedMetadata(
       metadata.reasoningEfforts = effort.supported
         ? reasoningEfforts.filter((level) => record(effort[level]).supported === true)
         : [];
-    // server_tools advertises hosted search/code execution, not client function calling.
+    if (new URL(profile.baseUrl).origin === 'https://api.anthropic.com') {
+      const hosted = record(capabilities.server_tools);
+      const tools: NonNullable<ReportedModelMetadata['serverTools']> = {};
+      for (const [kind, wire] of [
+        ['web-search', 'web_search'],
+        ['code-execution', 'code_execution'],
+        ['web-fetch', 'web_fetch'],
+      ] as const) {
+        const supported = record(hosted[wire]).supported;
+        if (typeof supported === 'boolean') tools[kind] = supported;
+      }
+      if (Object.keys(tools).length) metadata.serverTools = tools;
+    }
   }
   return Object.keys(metadata).length ? metadata : undefined;
 }

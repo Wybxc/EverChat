@@ -46,6 +46,7 @@ export interface ProviderToolTurn {
   calls: WebToolCandidate[];
   finishReason: 'stop' | 'length' | 'tool-calls' | 'pause';
   serverReplay?: ServerToolReplay;
+  hasArtifact?: true;
   usage: StreamUsage;
   usageIsFinal: boolean;
 }
@@ -226,7 +227,7 @@ export function validateProviderToolTurn(
   if (
     turn.identity !== providerToolIdentity(config) ||
     !Array.isArray(turn.content) ||
-    (!turn.content.length && turn.finishReason !== 'pause') ||
+    (!turn.content.length && turn.finishReason !== 'pause' && turn.hasArtifact !== true) ||
     !Array.isArray(turn.calls) ||
     bytes(turn) > MAX_TOOL_TURN_CONTEXT_BYTES ||
     !['stop', 'length', 'tool-calls', 'pause'].includes(turn.finishReason) ||
@@ -246,6 +247,7 @@ export function validateProviderToolTurn(
   if (
     text + reasoning > MAX_MESSAGE_TEXT_BYTES ||
     (!pendingProviderToolTurn(turn) &&
+      turn.hasArtifact !== true &&
       !turn.content.some((part) => part.type === 'text' && part.text.trim()))
   )
     throw new ProviderError('工具续接正文或思考内容无效。');
@@ -467,7 +469,7 @@ export class ProviderToolCollector {
     block.complete = true;
     this.calls.push(call);
   }
-  finish(usage: StreamUsage, usageIsFinal: boolean): ProviderToolTurn {
+  finish(usage: StreamUsage, usageIsFinal: boolean, hasArtifact = false): ProviderToolTurn {
     const { content, calls, blocks, toolBlocks, finishReason, config, enabled, wireIdentity } =
       this;
     if (
@@ -476,6 +478,7 @@ export class ProviderToolCollector {
       [...toolBlocks.values()].some((block) => !block.complete) ||
       calls.length > 0 !== (finishReason === 'tool-calls') ||
       (!calls.length &&
+        !hasArtifact &&
         finishReason !== 'pause' &&
         !content.some((part) => part.type === 'text' && part.text.trim()))
     )
@@ -489,6 +492,7 @@ export class ProviderToolCollector {
       finishReason,
       usage,
       usageIsFinal,
+      ...(hasArtifact ? { hasArtifact: true } : {}),
     };
     const replay = this.replay?.finish(calls, finishReason === 'pause');
     if (replay) turn.serverReplay = replay;

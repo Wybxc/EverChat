@@ -26,6 +26,7 @@ import {
   type ProviderToolRequest,
 } from './tool-turn';
 import { applyServerToolReplay } from './server-tool-replay';
+import { ProviderArtifacts, rewriteArtifactStream, type SaveProviderArtifact } from './artifacts';
 import { coreProviderStream } from './core';
 import { sdkProviderError } from './sdk-diagnostics';
 import { httpProviderError, providerFailure } from './failure';
@@ -50,11 +51,16 @@ export async function openProviderStream(
   toolRequest?: ProviderToolRequest,
   beforeRequest?: (input: SubmittedInput) => Promise<void>,
   onOutput?: (receivedAt: number) => void,
+  saveArtifact?: SaveProviderArtifact,
 ): Promise<ProviderResponse> {
   if (!config.apiKey)
     throw new ProviderError('尚未配置供应商 API 密钥。', providerFailure(config, 'connect'));
   const secrets = context.map((message) => message.content);
   const guard = new ProviderWireGuard();
+  const artifacts =
+    saveArtifact && config.serverTools?.length
+      ? new ProviderArtifacts(config, signal, saveArtifact)
+      : undefined;
   let responseHeaders: Headers | undefined;
   let assembled: AssembledInput | undefined;
   let requested = false;
@@ -121,12 +127,17 @@ export async function openProviderStream(
         }),
       );
     }
-    return new Response(guard.wrap(response.body, signal), {
+    const body = artifacts?.usesImageEvents
+      ? rewriteArtifactStream(response.body, artifacts)
+      : response.body;
+    return new Response(guard.wrap(body, signal), {
       status: response.status,
       headers: response.headers,
     });
   };
   try {
+    if (config.serverTools?.some(({ tool }) => tool === 'image-generation') && !artifacts)
+      throw new ProviderError('图像生成需要已配置的附件存储。');
     if (toolRequest) {
       try {
         assertProviderToolSupport(config, toolRequest.enabled);
@@ -235,6 +246,7 @@ export async function openProviderStream(
       result.native,
       onOutput,
       replays.map(({ replay }) => replay),
+      artifacts,
     );
   } catch (error) {
     await guard.cancel();

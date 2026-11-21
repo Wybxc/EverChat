@@ -12,11 +12,18 @@ export const SERVER_TOOL_KINDS = [
 ] as const;
 export type ServerToolKind = (typeof SERVER_TOOL_KINDS)[number];
 export type ServerToolVendor = 'openai' | 'anthropic' | 'google' | 'deepseek' | 'openrouter';
+export const reportedServerToolsSchema = v.strictObject({
+  'web-search': v.optional(v.boolean()),
+  'code-execution': v.optional(v.boolean()),
+  'web-fetch': v.optional(v.boolean()),
+});
+export type ReportedServerTools = v.InferOutput<typeof reportedServerToolsSchema>;
 export interface ServerToolCapability {
   vendor: ServerToolVendor;
   tool: ServerToolKind;
   wireName: string;
   resources?: 'vector-stores' | 'file-search-stores';
+  source?: 'provider';
 }
 
 const toolKind = v.picklist(SERVER_TOOL_KINDS);
@@ -57,9 +64,14 @@ export const modelServerToolsSchema = v.pipe(
 );
 export type ModelServerTools = v.InferOutput<typeof modelServerToolsSchema>[number];
 export type ResolvedServerTool = ServerToolCapability & { resourceIds?: string[] };
-type Model = Pick<ProviderConfig, 'baseUrl' | 'provider' | 'model'>;
+type Model = Pick<ProviderConfig, 'baseUrl' | 'provider' | 'model' | 'reportedServerTools'>;
 
-export function serverToolCatalog({ baseUrl, provider, model }: Model): ServerToolCapability[] {
+export function serverToolCatalog({
+  baseUrl,
+  provider,
+  model,
+  reportedServerTools,
+}: Model): ServerToolCapability[] {
   let url: URL;
   try {
     url = new URL(baseUrl);
@@ -89,6 +101,7 @@ export function serverToolCatalog({ baseUrl, provider, model }: Model): ServerTo
       ['web-search', 'web_search'],
       ['file-search', 'file_search', 'vector-stores'],
       ['code-execution', 'code_interpreter'],
+      ['image-generation', 'image_generation'],
       ...(/^gpt-(?:5\.[1-6]|6(?:\.1)?)(?!.*-nano)(?:-|$)/.test(model)
         ? ([['shell', 'shell']] as const).map(([kind, name]): [ServerToolKind, string] => [
             kind,
@@ -98,17 +111,22 @@ export function serverToolCatalog({ baseUrl, provider, model }: Model): ServerTo
     ]);
   }
   if (host === 'api.anthropic.com' && provider === 'anthropic') {
-    if (
-      !/^claude-(?:(?:opus|sonnet|haiku)-4(?:[.-]\d+)?|(?:opus|sonnet|haiku|fable|mythos)-5(?:[.-]\d+)?)(?:-\d{8})?$/.test(
+    const known =
+      /^claude-(?:(?:opus|sonnet|haiku)-4(?:[.-]\d+)?|(?:opus|sonnet|haiku|fable|mythos)-5(?:[.-]\d+)?)(?:-\d{8})?$/.test(
         model,
-      )
-    )
-      return [];
+      );
     return add('anthropic', [
       ['web-search', 'web_search_20250305'],
       ['web-fetch', 'web_fetch_20250910'],
       ['code-execution', 'code_execution_20250825'],
-    ]);
+    ]).flatMap((entry): ServerToolCapability[] => {
+      const reported = reportedServerTools?.[entry.tool as keyof ReportedServerTools];
+      return reported === true
+        ? [{ ...entry, source: 'provider' }]
+        : reported === false || !known
+          ? []
+          : [entry];
+    });
   }
   if (host === 'generativelanguage.googleapis.com' && provider === 'gemini') {
     if (

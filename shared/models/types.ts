@@ -1,4 +1,5 @@
 import type { ProviderApiKind } from '../providers/types';
+import type { ReportedServerTools } from '../tools/server-tools';
 export interface ModelSelection {
   providerId: string;
   model: string;
@@ -13,6 +14,7 @@ export interface ChatModel extends ModelSelection {
   reasoningSupported: boolean;
   reasoningEfforts: ReasoningEffort[];
   metadata: ResolvedModelMetadata;
+  reportedServerTools?: ReportedServerTools;
 }
 
 export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
@@ -40,8 +42,10 @@ export type ModelMetadataOverrides = Partial<Omit<ModelMetadata, 'reasoning'>>;
 export interface DiscoveredModel {
   id: string;
   name: string;
-  reportedMetadata?: Partial<ModelMetadata>;
+  reportedMetadata?: ReportedModelMetadata;
 }
+
+export type ReportedModelMetadata = Partial<ModelMetadata> & { serverTools?: ReportedServerTools };
 
 export interface ProviderModel {
   id: string;
@@ -50,7 +54,7 @@ export interface ProviderModel {
   useGlobalSystemPrompt?: boolean;
   systemPrompt?: string;
   reasoningSupport?: 'auto' | 'supported' | 'unsupported';
-  reportedMetadata?: Partial<ModelMetadata>;
+  reportedMetadata?: ReportedModelMetadata;
   directoryMetadata?: {
     values: Partial<ModelMetadata>;
     match: 'exact' | 'alias';

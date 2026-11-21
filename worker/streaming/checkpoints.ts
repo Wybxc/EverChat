@@ -1,4 +1,9 @@
 import { createHash } from 'node:crypto';
+import {
+  MAX_TOOL_ARTIFACTS,
+  mergeToolArtifacts,
+  type ToolArtifact,
+} from '../../shared/attachments/artifacts';
 import { messageText } from '../../shared/conversation/content';
 import { MAX_SQL_PAYLOAD_BYTES } from '../../shared/conversation/limits';
 import type { Message } from '../../shared/conversation/types';
@@ -175,11 +180,14 @@ export class GenerationCheckpoints {
         };
       }
       const parser = cached.parser;
+      const beforeArtifactCount = parser.artifactCount;
       for (const batch of commit.batches) {
         parser.feed(validateBatch(batch));
         parser.drainDeltas();
       }
-      const state = JSON.stringify(parser.checkpoint());
+      const checkpoint = parser.checkpoint();
+      const state = JSON.stringify(checkpoint);
+      const newArtifacts = checkpoint.artifacts?.slice(beforeArtifactCount);
       if (payloadBytes(state) > MAX_SQL_PAYLOAD_BYTES - 4096)
         throw new AppError(problem('REQUEST_TOO_LARGE'), '生成解析检查点超过存储保护大小。');
       const fromChunks =
@@ -225,6 +233,23 @@ export class GenerationCheckpoints {
               state,
               digest,
             );
+            if (newArtifacts?.length) {
+              const previous = this.store<{ payload: string }>(
+                'SELECT payload FROM message_files WHERE messageId=?',
+                commit.messageId,
+              ).toArray()[0];
+              const artifacts = mergeToolArtifacts(
+                previous ? (JSON.parse(previous.payload) as ToolArtifact[]) : [],
+                newArtifacts,
+              );
+              if (artifacts.length > MAX_TOOL_ARTIFACTS)
+                throw new AppError(problem('REQUEST_TOO_LARGE'), '回答的工具产物数量超过限制。');
+              this.store(
+                'INSERT INTO message_files VALUES (?,?) ON CONFLICT(messageId) DO UPDATE SET payload=excluded.payload',
+                commit.messageId,
+                JSON.stringify(artifacts),
+              );
+            }
             new GenerationProgressStore(this.store).content(commit.messageId, {
               content: {
                 length: parser.content.length,

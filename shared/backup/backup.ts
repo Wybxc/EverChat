@@ -205,6 +205,7 @@ export function validateBackup(value: unknown): EverChatBackup {
       !['user', 'assistant'].includes(String(message.role)) ||
       !parts.success ||
       (message.role === 'user' && parts.output.some((part) => part.type === 'reasoning')) ||
+      (message.role === 'user' && parts.output.some((part) => part.type === 'artifact')) ||
       (message.role === 'assistant' &&
         parts.output.some((part) => part.type === 'image' || part.type === 'file')) ||
       'content' in message ||

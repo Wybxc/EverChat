@@ -18,7 +18,11 @@ function sdkTool({ vendor, tool, resourceIds }: ResolvedServerTool) {
         case 'code-execution':
           return openai.tools.codeInterpreter();
         case 'image-generation':
-          return openai.tools.imageGeneration({ outputFormat: 'webp', quality: 'medium' });
+          return openai.tools.imageGeneration({
+            outputFormat: 'webp',
+            quality: 'medium',
+            partialImages: 1,
+          });
         case 'shell':
           return openai.tools.shell({
             environment: { type: 'containerAuto', networkPolicy: { type: 'disabled' } },

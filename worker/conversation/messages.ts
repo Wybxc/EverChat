@@ -1,11 +1,7 @@
 import { type DocumentPart } from '../../shared/attachments/documents';
+import type { ToolArtifact } from '../../shared/attachments/artifacts';
 import { type ImagePart } from '../../shared/attachments/images';
-import {
-  messageFiles,
-  messageImages,
-  messageParts,
-  messageText,
-} from '../../shared/conversation/content';
+import { messageImages, messageParts, messageText } from '../../shared/conversation/content';
 import { isActive } from '../../shared/conversation/message-state';
 import { branchPath } from '../../shared/conversation/branch-path';
 import { conversationSettingsDefaults } from '../../shared/conversation/settings';
@@ -69,7 +65,7 @@ export class ConversationMessages {
       parts: [
         ...messageParts(text.content, text.reasoning),
         ...(imageResult ? (JSON.parse(imageResult) as ImagePart[]) : []),
-        ...(fileResult ? (JSON.parse(fileResult) as DocumentPart[]) : []),
+        ...(fileResult ? (JSON.parse(fileResult) as (DocumentPart | ToolArtifact)[]) : []),
       ],
       ...(generationResult
         ? { generation: JSON.parse(generationResult) as Message['generation'] }
@@ -401,12 +397,9 @@ export class ConversationMessages {
         message.id,
         JSON.stringify(message.summary),
       );
-    if (messageFiles(message).length && !message.deletedAt)
-      this.query(
-        'INSERT INTO message_files VALUES (?, ?)',
-        message.id,
-        JSON.stringify(messageFiles(message)),
-      );
+    const files = message.parts.filter((part) => part.type === 'file' || part.type === 'artifact');
+    if (files.length && !message.deletedAt)
+      this.query('INSERT INTO message_files VALUES (?, ?)', message.id, JSON.stringify(files));
     if (message.tools && !message.deletedAt)
       this.query(
         'INSERT INTO message_web_tools VALUES (?, ?, ?, ?, ?)',
