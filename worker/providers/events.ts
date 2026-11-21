@@ -14,6 +14,7 @@ import type { ProviderNativeState } from './core';
 import type { ProviderWireGuard } from './stream-errors';
 import { ServerToolTrace } from './server-tool-activity';
 import type { ServerToolReplay } from './server-tool-replay';
+import type { ProviderArtifacts } from './artifacts';
 
 export interface ProviderResponse extends ReadableStream<Uint8Array> {
   toolTurn?: ProviderToolTurn;
@@ -33,6 +34,7 @@ export function providerEvents(
   native: ProviderNativeState,
   onOutput?: (receivedAt: number) => void,
   replays?: readonly ServerToolReplay[],
+  artifacts?: ProviderArtifacts,
 ): ProviderResponse {
   const reader = input.getReader(),
     usage = new ProviderUsage(),
@@ -47,6 +49,7 @@ export function providerEvents(
     sdkProviderError(error, config, stage, headers(), secrets);
   async function* events(): AsyncGenerator<Uint8Array> {
     let finished = false;
+    let hasArtifact = false;
     let nativeEnd = false,
       finishMessage: string | undefined;
     let pendingBudgetFailure: string | undefined;
@@ -56,7 +59,11 @@ export function providerEvents(
       const failure = budget.failure;
       // Deliver the bounded prefix before surfacing a capacity failure.
       if (failure) pendingBudgetFailure = failure;
-      if (onOutput && (event.type === 'text' || event.type === 'reasoning') && event.text) {
+      if (
+        onOutput &&
+        (((event.type === 'text' || event.type === 'reasoning') && event.text) ||
+          event.type === 'artifact')
+      ) {
         const observed = onOutput;
         onOutput = undefined;
         observed(Date.now());
@@ -98,6 +105,10 @@ export function providerEvents(
           serverTools?.observe(raw);
           const activity = serverTools?.drain();
           if (activity) yield emit(activity);
+          for (const artifact of (await artifacts?.observe(raw)) ?? []) {
+            hasArtifact ||= !artifact.preview;
+            yield emit(artifact);
+          }
           if (usage.observe(raw, config.provider))
             yield emit({ type: 'usage', usage: usage.usage, usageSources: usage.sources });
           if (config.provider === 'openai-responses') {
@@ -175,7 +186,7 @@ export function providerEvents(
       const accepted =
         ['stop', 'length'].includes(reason) || (reason === 'tool-calls' && !!collector);
       if (accepted && collector) {
-        body.toolTurn = collector.finish(usage.usage, usage.final);
+        body.toolTurn = collector.finish(usage.usage, usage.final, hasArtifact);
       }
       if (!paused) serverTools?.finish();
       const activity = serverTools?.drain();

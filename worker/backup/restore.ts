@@ -1,6 +1,11 @@
 import { sha256, type ArchiveManifest } from '../../shared/backup/archive';
 import { remapInputAttachments } from '../../shared/streaming/input-receipt';
-import { messageAttachments, messageFiles, messageImages } from '../../shared/conversation/content';
+import {
+  messageArtifacts,
+  messageAttachments,
+  messageFiles,
+  messageImages,
+} from '../../shared/conversation/content';
 import { issueOf, problem, type ErrorIssue } from '../../shared/errors/descriptor';
 import { AttachmentStore } from '../attachments/store';
 import { CopyJobs } from '../backup/copies';
@@ -317,9 +322,7 @@ export class ArchiveRestorer {
           ? { inputEvidence: remapInputAttachments(message.inputEvidence, mapped) }
           : {}),
         parts: message.parts.map((part) =>
-          part.type === 'image' || part.type === 'file'
-            ? { ...part, attachmentId: mapped.get(part.attachmentId)! }
-            : part,
+          'attachmentId' in part ? { ...part, attachmentId: mapped.get(part.attachmentId)! } : part,
         ),
       }));
       for (const { id: fileId, file } of this.imports.files(id)) {
@@ -354,6 +357,7 @@ export class ArchiveRestorer {
           id,
           messages.flatMap(messageImages),
           messages.flatMap(messageFiles),
+          messages.flatMap(messageArtifacts),
         );
         this.checkImport(id, 'finalizing');
       }

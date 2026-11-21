@@ -110,6 +110,9 @@ export function runtimeProviderConfig(
         model.useGlobalSystemPrompt === false ? (model.systemPrompt ?? '') : settings.systemPrompt,
       reasoningEnabled: metadata.reasoning,
       modelMetadata: metadata,
+      ...(model.reportedMetadata?.serverTools
+        ? { reportedServerTools: model.reportedMetadata.serverTools }
+        : {}),
       reasoningEffort: effort,
       maxOutputTokens: settings.maxOutputTokens,
       apiKey: selected.apiKey,

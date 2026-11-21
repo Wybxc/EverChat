@@ -3,7 +3,9 @@ import { problem } from '../../shared/errors/descriptor';
 import { modelProbeInputSchema } from '../../shared/models/probe';
 import { requireAuth, uuidSchema } from '../http/access';
 import type { ApiRouter } from '../http/app';
-import { HttpError, parseBody } from '../http/response';
+import { HttpError, json, parseBody } from '../http/response';
+import { serverToolCatalog } from '../../shared/tools/server-tools';
+import { providerToolStores } from './server-tool-stores';
 
 export function registerProvidersRoutes(app: ApiRouter) {
   app.get('/settings/providers', async (context) => {
@@ -28,6 +30,52 @@ export function registerProvidersRoutes(app: ApiRouter) {
     if (!v.safeParse(uuidSchema, id).success)
       throw new HttpError(404, '找不到这个供应商。', undefined, problem('NOT_FOUND'));
     return context.env.LIBRARY.getByName('personal').providerModelsResponse(id);
+  });
+
+  app.get('/settings/providers/:id/server-tools', async (context) => {
+    await requireAuth(context);
+    const id = context.req.param('id'),
+      model = context.req.query('model');
+    if (!v.is(uuidSchema, id) || (model?.length ?? 0) > 200)
+      throw new HttpError(404, '找不到这个供应商。', undefined, problem('NOT_FOUND'));
+    const profile = await context.env.LIBRARY.getByName('personal').providerForModelList(id, model);
+    if (!profile) throw new HttpError(404, '找不到这个供应商。', undefined, problem('NOT_FOUND'));
+    return json({
+      models: profile.models.map((model) => ({
+        id: model.id,
+        tools: serverToolCatalog({
+          ...profile,
+          model: model.id,
+          reportedServerTools: model.reportedMetadata?.serverTools,
+        }),
+      })),
+    });
+  });
+
+  app.get('/settings/providers/:id/server-tool-stores', async (context) => {
+    await requireAuth(context);
+    const providerId = context.req.param('id'),
+      model = context.req.query('model');
+    const cursor = context.req.query('cursor');
+    if (
+      !v.is(uuidSchema, providerId) ||
+      !model ||
+      model.length > 200 ||
+      (cursor?.length ?? 0) > 384
+    )
+      throw new HttpError(400, '检索库目录参数无效。', undefined, problem('INVALID_REQUEST'));
+    const config = await context.env.LIBRARY.getByName('personal').providerConfig({
+      providerId,
+      model,
+    });
+    if (!config)
+      throw new HttpError(404, '找不到这个模型。', undefined, problem('MODEL_UNAVAILABLE'));
+    try {
+      return json(await providerToolStores(config, cursor));
+    } catch (error) {
+      if (error instanceof HttpError) throw error;
+      throw new HttpError(502, '读取供应商检索库失败。', undefined, problem('PROVIDER_FAILED'));
+    }
   });
 
   app.post('/settings/providers/:id/models/test', async (context) => {

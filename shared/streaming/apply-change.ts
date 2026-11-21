@@ -3,6 +3,8 @@ import type { Snapshot, DurableChange, StreamBatch } from './protocol';
 import { ProviderStream } from './provider-stream';
 import { validateBatch, validateCommit } from './batches';
 import { localAnswerText, withAnswerDelta } from '../conversation/continuation';
+import { mergeToolArtifacts } from '../attachments/artifacts';
+import { messageArtifacts } from '../conversation/content';
 export function applyChange(snapshot: Snapshot, change: DurableChange): Snapshot {
   if (change.seq <= snapshot.seq) return snapshot;
   if (change.seq !== snapshot.seq + 1) throw new Error('Sync sequence gap');
@@ -49,9 +51,17 @@ export function appendMessage(message: Message, batch: StreamBatch): Message {
     localAnswerText(message, 'reasoning'),
   );
   parser.feed(bytes);
+  const checkpoint = parser.checkpoint();
+  const updated = withAnswerDelta(message, parser.content, parser.reasoning);
+  if (checkpoint.artifacts?.length) {
+    updated.parts = [
+      ...updated.parts.filter((part) => part.type !== 'artifact'),
+      ...mergeToolArtifacts(messageArtifacts(updated), checkpoint.artifacts),
+    ];
+  }
   return {
-    ...withAnswerDelta(message, parser.content, parser.reasoning),
-    streamState: parser.checkpoint(),
+    ...updated,
+    streamState: checkpoint,
     durableOffset: batch.endOffset,
   };
 }

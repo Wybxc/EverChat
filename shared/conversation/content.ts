@@ -8,13 +8,19 @@ import {
 } from './limits';
 import { documentPartSchema, type DocumentPart } from '../attachments/documents';
 import { imagePartSchema, type ImagePart } from '../attachments/images';
+import {
+  MAX_TOOL_ARTIFACTS,
+  toolArtifactSchema,
+  type ToolArtifact,
+} from '../attachments/artifacts';
 
 /** SDK UI text shapes; EverChat aggregates channels independently of SSE event order. */
 export type MessagePart =
   | Pick<TextUIPart, 'type' | 'text'>
   | Pick<ReasoningUIPart, 'type' | 'text'>
   | ImagePart
-  | DocumentPart;
+  | DocumentPart
+  | ToolArtifact;
 
 /** One nonempty part per channel, with reasoning before the answer. */
 export function messageParts(text: string, reasoning = ''): MessagePart[] {
@@ -36,9 +42,12 @@ export const messageImages = (message: { parts: readonly MessagePart[] } | undef
 
 export const messageFiles = (message: { parts: readonly MessagePart[] } | undefined) =>
   message?.parts.filter((part): part is DocumentPart => part.type === 'file') ?? [];
+export const messageArtifacts = (message: { parts: readonly MessagePart[] } | undefined) =>
+  message?.parts.filter((part): part is ToolArtifact => part.type === 'artifact') ?? [];
 export const messageAttachments = (message: { parts: readonly MessagePart[] } | undefined) => [
   ...messageImages(message),
   ...messageFiles(message),
+  ...messageArtifacts(message),
 ];
 
 const text = v.pipe(v.string(), v.minLength(1), v.maxLength(MAX_MESSAGE_TEXT_BYTES));
@@ -49,6 +58,7 @@ export const messagePartsSchema = v.pipe(
       v.strictObject({ type: v.literal('reasoning'), text }),
       imagePartSchema,
       documentPartSchema,
+      toolArtifactSchema,
     ]),
   ),
   v.check(
@@ -58,11 +68,12 @@ export const messagePartsSchema = v.pipe(
   v.check((parts) => {
     const channels = parts.filter((part) => part.type === 'text' || part.type === 'reasoning'),
       images = parts.filter((part) => part.type === 'image'),
-      files = parts.filter((part) => part.type === 'file');
+      files = parts.filter((part) => part.type === 'file' || part.type === 'artifact');
     const attachments = [...images, ...files];
     return (
       new TextEncoder().encode(JSON.stringify(images)).byteLength <= MAX_SQL_PAYLOAD_BYTES &&
       new TextEncoder().encode(JSON.stringify(files)).byteLength <= MAX_SQL_PAYLOAD_BYTES &&
+      messageArtifacts({ parts }).length <= MAX_TOOL_ARTIFACTS &&
       new Set(attachments.map((file) => file.attachmentId)).size === attachments.length &&
       channels.length <= 2 &&
       (channels.length < 2 || (channels[0].type === 'reasoning' && channels[1].type === 'text')) &&

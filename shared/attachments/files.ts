@@ -13,16 +13,17 @@ export const ATTACHMENT_MEDIA_TYPES = [
   'text/csv',
   'application/pdf',
 ] as const;
-export type AttachmentMediaType = (typeof ATTACHMENT_MEDIA_TYPES)[number];
+export type AttachmentMediaType =
+  (typeof ATTACHMENT_MEDIA_TYPES)[number] | 'application/octet-stream';
 
 /** Format hints select a pipeline; only the saved bytes establish valid text. */
 export function normalizeAttachmentMediaType(value: string): AttachmentMediaType | null {
   const mime = value.split(';', 1)[0].trim().toLowerCase();
-  if (ATTACHMENT_MEDIA_TYPES.includes(mime as AttachmentMediaType))
-    return mime as AttachmentMediaType;
+  if (mime === 'application/octet-stream') return 'text/plain';
+  if (ATTACHMENT_MEDIA_TYPES.includes(mime as (typeof ATTACHMENT_MEDIA_TYPES)[number]))
+    return mime as (typeof ATTACHMENT_MEDIA_TYPES)[number];
   if (
     !mime ||
-    mime === 'application/octet-stream' ||
     mime.startsWith('text/') ||
     mime === 'image/svg+xml' ||
     /^application\/[a-z0-9.!#$&^_+-]+$/.test(mime)
@@ -43,7 +44,9 @@ export const attachmentInputSchema = v.strictObject({
     v.string(),
     v.maxLength(256),
     v.check((value) => normalizeAttachmentMediaType(value) !== null),
-    v.transform((value) => normalizeAttachmentMediaType(value)!),
+    v.transform((value) =>
+      value === 'application/octet-stream' ? value : normalizeAttachmentMediaType(value)!,
+    ),
   ),
   originalMediaType: v.optional(v.pipe(v.string(), v.maxLength(256))),
   sha256: v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/)),
@@ -127,5 +130,6 @@ export function attachmentSignatureMatches(
   if (mediaType === 'image/jpeg') return bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255;
   if (mediaType === 'image/webp') return ascii(0, 'RIFF') && ascii(8, 'WEBP');
   if (mediaType === 'application/pdf') return ascii(0, '%PDF-');
+  if (mediaType === 'application/octet-stream') return true;
   return !bytes.includes(0); // Full UTF-8 validation belongs to the text extraction checkpoint.
 }

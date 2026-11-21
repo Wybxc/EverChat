@@ -558,6 +558,7 @@ export function ConversationSettingsDialog({
                 <ProviderTools
                   key={model ? modelSelectionKey(model) : ''}
                   model={model}
+                  open={open && tab === 'tools'}
                   settings={settings.serverTools}
                   onChange={(serverTools) => update({ serverTools })}
                 />

@@ -1,4 +1,4 @@
-import { messageParts, messageText } from './content';
+import { messageArtifacts, messageParts, messageText } from './content';
 import { isActive } from './message-state';
 import type { AnswerStage, Message } from './types';
 import * as v from 'valibot';
@@ -70,11 +70,16 @@ export function localAnswerText(message: Message, channel: 'text' | 'reasoning' 
 export function withAnswerDelta(message: Message, content: string, reasoning: string): Message {
   return {
     ...message,
-    parts: messageParts(
-      messageText(message).slice(0, message.continuation?.prefixTextLength ?? 0) + content,
-      messageText(message, 'reasoning').slice(0, message.continuation?.prefixReasoningLength ?? 0) +
-        reasoning,
-    ),
+    parts: [
+      ...messageParts(
+        messageText(message).slice(0, message.continuation?.prefixTextLength ?? 0) + content,
+        messageText(message, 'reasoning').slice(
+          0,
+          message.continuation?.prefixReasoningLength ?? 0,
+        ) + reasoning,
+      ),
+      ...messageArtifacts(message),
+    ],
   };
 }
 

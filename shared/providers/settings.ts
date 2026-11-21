@@ -5,6 +5,7 @@ import { AppError, problem } from '../errors/descriptor';
 import { MAX_MODEL_TOKENS, reasoningEfforts } from '../models/metadata';
 import { providerOptions } from './endpoints';
 import type { ProviderApiKind, ProviderSettingsInput } from './types';
+import { reportedServerToolsSchema } from '../tools/server-tools';
 
 export const providerTypes = providerOptions.map((option) => option.value) as [
   ProviderApiKind,
@@ -37,7 +38,11 @@ export const modelSchema = v.object({
   systemPrompt: v.optional(v.pipe(v.string(), v.maxLength(MAX_SYSTEM_PROMPT_LENGTH))),
   reasoningSupport: v.optional(v.picklist(['auto', 'supported', 'unsupported'])),
   reportedMetadata: v.optional(
-    v.strictObject({ ...metadataFields, reasoning: v.optional(v.boolean()) }),
+    v.strictObject({
+      ...metadataFields,
+      reasoning: v.optional(v.boolean()),
+      serverTools: v.optional(reportedServerToolsSchema),
+    }),
   ),
   directoryMetadata: v.optional(
     v.strictObject({

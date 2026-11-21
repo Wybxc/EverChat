@@ -29,6 +29,7 @@ import { MessageActions } from './MessageActions';
 import { MessageEditor } from './MessageEditor';
 import { ReasoningContent } from './ReasoningContent';
 import { ProviderToolActivity } from './ProviderToolActivity';
+import { ProviderArtifacts } from './ProviderArtifacts';
 import { MarkdownContent } from './rendering/MarkdownContent';
 import { UserMessageBubble } from './UserMessageBubble';
 import { isReportedToolFailure } from './message-errors';
@@ -226,6 +227,7 @@ export function MessageView({
           </MessageHeader>
           <ReasoningContent message={message} />
           <ProviderToolActivity message={message} />
+          <ProviderArtifacts message={message} conversationId={conversationId} />
           {editing ? (
             <MessageEditor {...editing} user={false} hasAttachments={false} />
           ) : messageText(message) ? (

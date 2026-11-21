@@ -12,6 +12,8 @@ import type { ProviderToolRequest } from '../../../worker/providers/tool-turn';
 import { providerStreams } from '../../support/providers/streams';
 import { resolveModelMetadata } from '../../../shared/models/metadata';
 import { includeServerToolCost } from '../../../shared/usage/server-tools';
+import type { SaveProviderArtifact } from '../../../worker/providers/artifacts';
+import { inputHash } from '../../../worker/providers/input-receipt';
 
 const providerId = 'd23a51be-0e3d-41c6-aa15-e775c0555241';
 const fixture = (
@@ -38,7 +40,11 @@ const stream = (body: string) =>
   new Response(body, { headers: { 'content-type': 'text/event-stream' } });
 const context = [{ role: 'user' as const, content: 'Find the official report.' }];
 
-async function run(config: ProviderConfig, request?: ProviderToolRequest) {
+async function run(
+  config: ProviderConfig,
+  request?: ProviderToolRequest,
+  save?: SaveProviderArtifact,
+) {
   const body = await openProviderStream(
     config,
     context,
@@ -46,6 +52,9 @@ async function run(config: ProviderConfig, request?: ProviderToolRequest) {
     undefined,
     undefined,
     request,
+    undefined,
+    undefined,
+    save,
   );
   const parser = new ProviderStream(config.provider, true);
   for await (const bytes of body) parser.feed(bytes);
@@ -355,4 +364,69 @@ test('Gemini GenerateContent exposes grounding sources and URL retrieval status'
     ],
   );
   assert.equal(parser.checkpoint().serverToolUsage?.[0]?.count, 1);
+});
+
+test('Responses image events over the ordinary limit save one preview and one final asset', async (t) => {
+  const config = fixture({}, [{ tool: 'image-generation' }]);
+  const prefix = Buffer.from('52494646ffffffff57454250', 'hex');
+  const preview = prefix.toString('base64');
+  const image = Buffer.concat([prefix, Buffer.alloc(2_100_000)]);
+  const item = {
+    type: 'image_generation_call',
+    id: 'ig_fixture',
+    status: 'completed',
+    result: image.toString('base64'),
+  };
+  const response =
+    frame({
+      type: 'response.output_item.added',
+      output_index: 0,
+      item: { ...item, status: 'in_progress', result: null },
+    }) +
+    frame({
+      type: 'response.image_generation_call.partial_image',
+      item_id: item.id,
+      output_index: 0,
+      partial_image_index: 0,
+      partial_image_b64: preview,
+    }) +
+    frame({
+      type: 'response.output_item.done',
+      output_index: 0,
+      item,
+    }) +
+    frame({
+      type: 'response.completed',
+      response: {
+        output: [item],
+        usage: { input_tokens: 12, output_tokens: 110 },
+        incomplete_details: null,
+      },
+    });
+  t.mock.method(globalThis, 'fetch', async (_: unknown, init: RequestInit) => {
+    assert.equal(JSON.parse(String(init.body)).tools[0].partial_images, 1);
+    return stream(response);
+  });
+  const saved: { preview: boolean; bytes: number }[] = [];
+  const { parser } = await run(config, undefined, async (name, mediaType, bytes, preview) => {
+    saved.push({ preview, bytes: bytes.length });
+    return {
+      type: 'artifact',
+      attachmentId: crypto.randomUUID(),
+      name,
+      mediaType,
+      size: bytes.length,
+      sha256: inputHash(bytes),
+    };
+  });
+  parser.assertComplete();
+  assert.deepEqual(saved, [
+    { preview: true, bytes: prefix.length },
+    { preview: false, bytes: image.length },
+  ]);
+  const result = parser.checkpoint();
+  assert.equal(result.previewArtifact, undefined);
+  assert.equal(result.artifacts?.[0]?.mediaType, 'image/webp');
+  assert.equal(result.artifacts?.[0]?.sha256, inputHash(image));
+  assert.ok(JSON.stringify(result).length < 4096);
 });

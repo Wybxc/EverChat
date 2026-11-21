@@ -34,7 +34,13 @@ import {
   type BackupSettings,
 } from '../../shared/backup/backup';
 import type { ConversationActivity } from '../../shared/conversation/activity';
-import { messageAttachments, messageFiles, messageImages } from '../../shared/conversation/content';
+import {
+  messageArtifacts,
+  messageAttachments,
+  messageFiles,
+  messageImages,
+} from '../../shared/conversation/content';
+import type { ToolArtifact } from '../../shared/attachments/artifacts';
 import { MAX_SQL_PAYLOAD_BYTES } from '../../shared/conversation/limits';
 import type { TitleSource } from '../../shared/conversation/titles';
 import type { ConversationInfo, ConversationSettings } from '../../shared/conversation/types';
@@ -609,7 +615,9 @@ export class Library extends DurableObject<Env> {
         );
         await this.beginDelete(copy.id);
       }
-    await this.attachments.cleanup();
+    await this.attachments.cleanup((conversationId, id) =>
+      this.env.CONVERSATIONS.getByName(conversationId).usesAttachment(id),
+    );
     await this.mcpAttachments().cleanup();
     this.mcpOAuth().cleanup();
     await this.imports.cleanup();
@@ -812,9 +820,10 @@ export class Library extends DurableObject<Env> {
       if (requestedHead && headPosition < 0)
         throw new HttpError(404, '找不到待复制的显示分支。', undefined, problem('NOT_FOUND'));
       const images = saved.messages.flatMap(messageImages),
-        files = saved.messages.flatMap(messageFiles);
-      if (images.length || files.length) {
-        await this.attachments.pinAttachments(source.id, images, files);
+        files = saved.messages.flatMap(messageFiles),
+        artifacts = saved.messages.flatMap(messageArtifacts);
+      if (images.length || files.length || artifacts.length) {
+        await this.attachments.pinAttachments(source.id, images, files, artifacts);
         check();
       }
       const required = new Set(
@@ -842,20 +851,19 @@ export class Library extends DurableObject<Env> {
           ? { inputEvidence: remapInputAttachments(message.inputEvidence, mapped) }
           : {}),
         parts: message.parts.map((part) =>
-          part.type === 'image' || part.type === 'file'
-            ? { ...part, attachmentId: mapped.get(part.attachmentId)! }
-            : part,
+          'attachmentId' in part ? { ...part, attachmentId: mapped.get(part.attachmentId)! } : part,
         ),
       }));
       const copiedImages = messages.flatMap(messageImages),
-        copiedFiles = messages.flatMap(messageFiles);
+        copiedFiles = messages.flatMap(messageFiles),
+        copiedArtifacts = messages.flatMap(messageArtifacts);
       await this.attachments.documents.restoreInputEvidence(
         id,
         messages.map((m) => m.inputEvidence),
       );
       check();
-      if (copiedImages.length || copiedFiles.length) {
-        await this.attachments.pinAttachments(id, copiedImages, copiedFiles);
+      if (copiedImages.length || copiedFiles.length || copiedArtifacts.length) {
+        await this.attachments.pinAttachments(id, copiedImages, copiedFiles, copiedArtifacts);
         check();
       }
       const payload = JSON.stringify({
@@ -1445,6 +1453,21 @@ export class Library extends DurableObject<Env> {
     return 'error' in result
       ? json({ error: result.error, issue: result.issue }, result.status)
       : result.value;
+  }
+  async saveProviderArtifact(
+    conversationId: string,
+    name: string,
+    mediaType: ToolArtifact['mediaType'],
+    bytes: Uint8Array<ArrayBuffer>,
+    preview: boolean,
+  ) {
+    try {
+      return await this.attachmentAction(() =>
+        this.attachments.saveToolArtifact(conversationId, name, mediaType, bytes, preview),
+      );
+    } finally {
+      await this.scheduleMaintenance();
+    }
   }
   async removeAttachment(conversationId: string, id: string) {
     const result = await this.attachmentAction(async () => {

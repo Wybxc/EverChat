@@ -15,6 +15,12 @@ import type { ProviderKind } from '../providers/types';
 import { usageSourcesSchema, type UsageSources } from '../usage/evidence';
 import { serverToolUsageSchema, type ServerToolUsage } from '../usage/server-tools';
 import {
+  MAX_TOOL_ARTIFACTS,
+  mergeToolArtifacts,
+  toolArtifactSchema,
+  type ToolArtifact,
+} from '../attachments/artifacts';
+import {
   mergeServerToolActivity,
   serverToolActivitySchema,
   type ServerToolActivity,
@@ -44,6 +50,7 @@ export interface StreamUsage {
 export type GenerationEvent =
   | { type: 'text' | 'reasoning'; text: string; replace?: true }
   | { type: 'server-tools'; activities: ServerToolActivity[]; usage: ServerToolUsage[] }
+  | { type: 'artifact'; artifact: ToolArtifact; preview?: true }
   | {
       type: 'usage';
       usage: StreamUsage;
@@ -79,6 +86,8 @@ export interface StreamState {
   usageSources?: UsageSources;
   serverTools?: ServerToolActivity[];
   serverToolUsage?: ServerToolUsage[];
+  artifacts?: ToolArtifact[];
+  previewArtifact?: ToolArtifact;
 }
 type ParsedDelta = { kind: 'content' | 'reasoning'; text: string; replace?: true };
 const usageKeys = new Set<keyof StreamUsage>([
@@ -150,6 +159,9 @@ export class ProviderStream {
   }
   get failure() {
     return this.state.failure;
+  }
+  get artifactCount() {
+    return this.state.artifacts?.length ?? 0;
   }
   /** Apply an already structured event without encoding or cloning a checkpoint. */
   accept(event: GenerationEvent) {
@@ -228,7 +240,8 @@ export class ProviderStream {
         this.state.finishMessage ??
           `模型供应商未正常完成回答${this.state.rawFinishReason ? `（${this.state.rawFinishReason}）` : ''}。已保存部分内容。`,
       );
-    if (!this.content) throw new StreamParseError('模型供应商未返回文字回答。');
+    if (!this.content && !this.artifactCount)
+      throw new StreamParseError('模型供应商未返回文字回答。');
   }
   private fail(message: string) {
     this.state.failure ??= message;
@@ -278,6 +291,15 @@ export class ProviderStream {
         v.parse(serverToolActivitySchema, event.activities),
       );
       this.state.serverToolUsage = v.parse(serverToolUsageSchema, event.usage);
+    } else if (event.type === 'artifact') {
+      const artifact = v.parse(toolArtifactSchema, event.artifact);
+      if (event.preview === true) this.state.previewArtifact = artifact;
+      else {
+        const next = mergeToolArtifacts(this.state.artifacts ?? [], [artifact]);
+        if (next.length > MAX_TOOL_ARTIFACTS) throw new Error('Too many tool artifacts');
+        this.state.artifacts = next;
+        delete this.state.previewArtifact;
+      }
     } else if (event.type === 'usage' || event.type === 'finish') {
       if (event.usageSources !== undefined)
         this.state.usageSources = {
@@ -307,6 +329,7 @@ export class ProviderStream {
         )
           throw new Error('Invalid finish');
         this.state.done = true;
+        delete this.state.previewArtifact;
         this.state.finishReason = event.reason;
         this.state.rawFinishReason = event.rawReason;
         this.state.finishMessage = event.message;

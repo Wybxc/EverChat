@@ -16,6 +16,7 @@ import {
 import { branchPath } from '../../shared/conversation/branch-path';
 import {
   messageFiles,
+  messageArtifacts,
   messageImages,
   messageParts,
   messageText,
@@ -1151,6 +1152,14 @@ export class Conversation extends DurableObject<Env> {
       try {
         generationConfig = applyConversationSettings(config, settings);
         if (
+          generationConfig.serverTools?.some(({ tool }) => tool === 'image-generation') &&
+          !this.env.ATTACHMENTS
+        )
+          throw new AppError(
+            problem('ATTACHMENT_STORAGE_REQUIRED'),
+            '图像生成需要已配置的附件存储。',
+          );
+        if (
           generationConfig.serverTools?.some(
             ({ tool }) => tool === 'web-search' || tool === 'web-fetch',
           ) &&
@@ -2243,6 +2252,21 @@ export class Conversation extends DurableObject<Env> {
           this.ctx.waitUntil(this.accounting.deliver().finally(() => this.scheduleAlarm()));
         },
         observeOutput,
+        this.env.ATTACHMENTS
+          ? async (name, mediaType, bytes, preview) => {
+              abort.signal.throwIfAborted();
+              const run = this.run(runId)!;
+              const saved = await this.env.LIBRARY.getByName('personal').saveProviderArtifact(
+                run.conversationId,
+                name,
+                mediaType,
+                bytes,
+                preview,
+              );
+              if ('error' in saved) throw new ProviderError(saved.error);
+              return saved.value;
+            }
+          : undefined,
       );
       await consumeModelStream(body, active, (bytes) => active.buffer.add(bytes));
       this.progress.phase(claim.assistantId!, 'finalizing');
@@ -2457,7 +2481,10 @@ export class Conversation extends DurableObject<Env> {
           failureIssue ??= issueOf(failure, 'GENERATION_INTERRUPTED');
         }
       }
-      message.parts = messageParts(parser.content, parser.reasoning);
+      message.parts = [
+        ...messageParts(parser.content, parser.reasoning),
+        ...messageArtifacts(message),
+      ];
       message.streamState = parser.checkpoint();
       message.generation = {
         ...message.generation,

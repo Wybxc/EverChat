@@ -1,4 +1,10 @@
 import * as v from 'valibot';
+import { createHash } from 'node:crypto';
+import {
+  MAX_TOOL_ARTIFACT_BYTES,
+  toolArtifactSchema,
+  type ToolArtifact,
+} from '../../shared/attachments/artifacts';
 import { documentKey, type DocumentPart } from '../../shared/attachments/documents';
 import {
   ATTACHMENT_LEASE,
@@ -24,6 +30,7 @@ import type { UploadSigner } from './signing';
 const directExpiry = (token: string | null) =>
   token?.startsWith('direct:') ? Number(token.slice(7)) : null;
 const UPLOAD_CLEANUP_GRACE = 15 * 60_000;
+const TOOL_ARTIFACT_LEASE = 20 * 60_000;
 
 type Row = Attachment & {
   key: string;
@@ -110,7 +117,7 @@ export class AttachmentStore {
       throw new HttpError(410, '对话不存在或已删除。', undefined, problem('ATTACHMENT_INVALID'));
     return this.storage.sql
       .exec<Row>(
-        'SELECT * FROM attachments WHERE conversationId = ? AND removed = 0 ORDER BY createdAt, id',
+        "SELECT * FROM attachments WHERE conversationId = ? AND removed = 0 AND token IS NOT 'generated-preview' ORDER BY createdAt, id",
         conversationId,
       )
       .toArray()
@@ -184,7 +191,12 @@ export class AttachmentStore {
       };
     });
   }
-  async pinAttachments(conversationId: string, images: ImagePart[], files: DocumentPart[]) {
+  async pinAttachments(
+    conversationId: string,
+    images: ImagePart[],
+    files: DocumentPart[],
+    artifacts: ToolArtifact[] = [],
+  ) {
     const unique = new Map(images.map((image) => [image.attachmentId, image]));
     for (const image of unique.values()) {
       const row = this.require(conversationId, image.attachmentId);
@@ -215,7 +227,17 @@ export class AttachmentStore {
     }
     const documents = new Map(files.map((file) => [documentKey(file), file]));
     for (const file of documents.values()) await this.documents.validate(conversationId, file);
-    const references = [...unique.values(), ...documents.values()];
+    for (const artifact of artifacts) {
+      const row = this.require(conversationId, artifact.attachmentId);
+      if (
+        row.status !== 'ready' ||
+        (['name', 'mediaType', 'size', 'sha256'] as const).some(
+          (field) => row[field] !== artifact[field],
+        )
+      )
+        throw new HttpError(409, '工具产物与附件不符。', undefined, problem('ATTACHMENT_INVALID'));
+    }
+    const references = [...unique.values(), ...documents.values(), ...artifacts];
     // Recheck every row after the last R2 await. A concurrent deletion must win before acceptance.
     for (const image of references) this.require(conversationId, image.attachmentId);
     this.storage.transactionSync(() => {
@@ -227,6 +249,40 @@ export class AttachmentStore {
         );
     });
     await this.storage.sync();
+  }
+  async saveToolArtifact(
+    conversationId: string,
+    name: string,
+    mediaType: ToolArtifact['mediaType'],
+    bytes: Uint8Array<ArrayBuffer>,
+    preview: boolean,
+  ) {
+    if (!bytes.length || bytes.length > MAX_TOOL_ARTIFACT_BYTES)
+      throw new HttpError(413, '工具产物超过保存大小。', undefined, problem('ATTACHMENT_INVALID'));
+    const image = v.safeParse(imageMediaTypeSchema, mediaType);
+    if (image.success) assertChatImage(bytes, image.output);
+    const artifact = v.parse(toolArtifactSchema, {
+      type: 'artifact',
+      attachmentId: crypto.randomUUID(),
+      name,
+      mediaType,
+      size: bytes.byteLength,
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+    });
+    this.register(conversationId, {
+      id: artifact.attachmentId,
+      name,
+      mediaType,
+      sha256: artifact.sha256,
+      size: artifact.size,
+    });
+    await this.upload(
+      conversationId,
+      artifact.attachmentId,
+      new Response(bytes).body!,
+      preview ? 'generated-preview' : 'generated',
+    );
+    return artifact;
   }
   usage(id: string) {
     return this.storage.sql
@@ -402,7 +458,12 @@ export class AttachmentStore {
     await this.storage.sync();
     return this.public(this.require(conversationId, id));
   }
-  async upload(conversationId: string, id: string, body: ReadableStream<Uint8Array>) {
+  async upload(
+    conversationId: string,
+    id: string,
+    body: ReadableStream<Uint8Array>,
+    generated?: 'generated' | 'generated-preview',
+  ) {
     const bucket = this.configuredBucket();
     const row = this.require(conversationId, id);
     if (row.status === 'ready') {
@@ -504,10 +565,20 @@ export class AttachmentStore {
       const current = this.row(id);
       if (!current || current.removed || current.token !== token || !this.exists(conversationId))
         throw new HttpError(410, '附件或对话已删除。', undefined, problem('ATTACHMENT_INVALID'));
-      this.storage.sql.exec(
-        "UPDATE attachments SET status = 'ready', token = NULL, lease = 0 WHERE id = ?",
-        id,
-      );
+      this.storage.transactionSync(() => {
+        this.storage.sql.exec(
+          "UPDATE attachments SET status = 'ready', token = ?, lease = ? WHERE id = ?",
+          generated ?? null,
+          generated ? Date.now() + TOOL_ARTIFACT_LEASE : 0,
+          id,
+        );
+        if (generated)
+          this.storage.sql.exec(
+            'INSERT INTO attachment_usage VALUES (?, ?)',
+            id,
+            crypto.randomUUID(),
+          );
+      });
       await this.storage.sync();
       return this.public(this.row(id)!);
     } catch (error) {
@@ -613,19 +684,19 @@ export class AttachmentStore {
     if (!this.bucket) return undefined;
     const next = this.storage.sql
       .exec<{ next: number }>(
-        "SELECT MIN(lease) AS next FROM attachments WHERE removed = 1 OR status != 'ready' HAVING COUNT(*) > 0",
+        "SELECT MIN(lease) AS next FROM attachments WHERE removed = 1 OR status != 'ready' OR token IN ('generated','generated-preview') HAVING COUNT(*) > 0",
       )
       .toArray()[0]?.next;
     const document = this.documents.nextCleanup();
     return next === undefined ? document : document === undefined ? next : Math.min(next, document);
   }
-  async cleanup() {
+  async cleanup(inUse?: (conversationId: string, id: string) => Promise<boolean>) {
     if (!this.bucket) return true;
     await this.documents.cleanup();
     let failed = false;
     const rows = this.storage.sql
       .exec<Row>(
-        "SELECT * FROM attachments WHERE (removed = 1 OR status != 'ready') AND lease <= ? ORDER BY lease LIMIT 4",
+        "SELECT * FROM attachments WHERE (removed = 1 OR status != 'ready' OR token IN ('generated','generated-preview')) AND lease <= ? ORDER BY lease LIMIT 4",
         Date.now(),
       )
       .toArray();
@@ -636,7 +707,10 @@ export class AttachmentStore {
         !current ||
         current.key !== row.key ||
         current.lease > Date.now() ||
-        (!current.removed && current.status === 'ready')
+        (!current.removed &&
+          current.status === 'ready' &&
+          current.token !== 'generated' &&
+          current.token !== 'generated-preview')
       )
         continue;
       if (this.active.has(row.id) || this.documents.isActive(row.id)) {
@@ -646,6 +720,24 @@ export class AttachmentStore {
           row.id,
         );
         continue;
+      }
+      if (!current.removed && current.token === 'generated') {
+        const usage = this.usage(row.id);
+        try {
+          const used = !inUse || (await inUse(row.conversationId, row.id));
+          if (usage !== this.usage(row.id) || this.row(row.id)?.token !== 'generated') continue;
+          if (used) {
+            this.storage.sql.exec('UPDATE attachments SET token=NULL, lease=0 WHERE id=?', row.id);
+            continue;
+          }
+        } catch {
+          this.storage.sql.exec(
+            'UPDATE attachments SET lease=? WHERE id=?',
+            Date.now() + 30_000,
+            row.id,
+          );
+          continue;
+        }
       }
       // Close the registration synchronously so it cannot be uploaded while deletion awaits R2.
       this.storage.sql.exec('UPDATE attachments SET removed = 1 WHERE id = ?', row.id);
