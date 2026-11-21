@@ -125,7 +125,7 @@ async function parameters(page: Page) {
   await expect(page.getByRole('combobox', { name: '聊天模型', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '会话参数', exact: true }).click();
   const modal = page.getByRole('dialog', { name: /^(新对话参数|会话参数)$/ });
-  await modal.getByRole('tab', { name: '联网', exact: true }).click();
+  await modal.getByRole('tab', { name: '工具', exact: true }).click();
   return modal;
 }
 async function enable(page: Page) {
