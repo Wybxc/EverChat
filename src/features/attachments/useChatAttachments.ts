@@ -50,7 +50,7 @@ export function useChatAttachments({
   refreshLibrary: () => void;
   setError: (error: UiMessage) => void;
 }) {
-  const { draft, draftImages, draftFiles, setDraftImages, setDraftFiles } = chatDraft;
+  const { draftText, draftImages, draftFiles, setDraftImages, setDraftFiles } = chatDraft;
   const imageUpload = useRef<{ origin: string | null; controller: AbortController } | null>(null);
   const [failure, setFailure] = useState<{ id: string | null; message: UiMessage } | null>(null);
   useEffect(() => {
@@ -77,6 +77,7 @@ export function useChatAttachments({
       setError(uiMessage('attachments', 'waitSync'));
       return;
     }
+    const draft = draftText.getSnapshot();
     const origin = selected,
       controller = new AbortController(),
       operation = { origin, controller };

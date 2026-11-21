@@ -3,14 +3,14 @@ import * as v from 'valibot';
 import { type DocumentPart } from '../../../shared/attachments/documents';
 import { type ImagePart } from '../../../shared/attachments/images';
 import type { SessionInfo } from '../../../shared/auth/types';
-import { buildContext, contextSource } from '../../../shared/conversation/context-budget';
+import { buildContext } from '../../../shared/conversation/context-budget';
 import {
   applyConversationSettings,
   conversationSettingsSchema,
 } from '../../../shared/conversation/settings';
 import {
   prepareChatContext,
-  summaryContext,
+  type summaryContext,
   summaryGeneration,
   summaryPrefix,
 } from '../../../shared/conversation/summaries';
@@ -25,6 +25,7 @@ import { UiError, errorMessage, uiMessage } from '../../platform/i18n/messages';
 export function useContextPreview({
   messages,
   parentId,
+  previewHistory,
   draft,
   draftImages,
   draftFiles,
@@ -36,6 +37,7 @@ export function useContextPreview({
 }: {
   messages: Message[];
   parentId: string | null;
+  previewHistory: ReturnType<typeof summaryContext> | null;
   draft: string;
   draftImages: ImagePart[];
   draftFiles: DocumentPart[];
@@ -45,15 +47,7 @@ export function useContextPreview({
   reasoningEffort: ReasoningEffort | '';
   session: SessionInfo | null;
 }) {
-  const previewSource = contextSource(messages, { content: draft, parentId });
-  const previewHistory = useMemo(() => {
-    try {
-      return summaryContext(messages, previewSource.parentId);
-    } catch {
-      return null;
-    }
-  }, [messages, previewSource.parentId]);
-  const contextPreview = useMemo(() => {
+  return useMemo(() => {
     if (!selectedModel || !previewHistory) return null;
     const settings = v.safeParse(conversationSettingsSchema, conversationSettings);
     if (!settings.success) return null;
@@ -81,7 +75,7 @@ export function useContextPreview({
       ).estimate;
       const prepared = prepareChatContext(
         messages,
-        previewSource.parentId,
+        parentId,
         draft.trim(),
         config,
         settings.output,
@@ -120,7 +114,7 @@ export function useContextPreview({
     selectedModel,
     models,
     messages,
-    previewSource.parentId,
+    parentId,
     previewHistory,
     conversationSettings,
     draft,
@@ -130,5 +124,4 @@ export function useContextPreview({
     session?.systemPrompt,
     session?.maxOutputTokens,
   ]);
-  return { previewHistory, contextPreview };
 }
