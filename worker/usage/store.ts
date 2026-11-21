@@ -1,6 +1,7 @@
 import * as v from 'valibot';
 import { AppError, problem } from '../../shared/errors/descriptor';
 import { estimateCost } from '../../shared/usage/pricing';
+import { includeServerToolCost } from '../../shared/usage/server-tools';
 import {
   priceInputSchema,
   type UsageAttempt,
@@ -104,7 +105,10 @@ export class UsageLedger {
     if (previous && previous.status !== 'running' && attempt.status === 'running') return;
     const record: UsageRecord = {
       ...attempt,
-      cost: estimateCost(attempt.usage, attempt.usageIsFinal, attempt.price, attempt.kind),
+      cost: includeServerToolCost(
+        estimateCost(attempt.usage, attempt.usageIsFinal, attempt.price, attempt.kind),
+        attempt.serverToolUsage,
+      ),
     };
     if (previous) this.rollup(previous, -1);
     this.query(

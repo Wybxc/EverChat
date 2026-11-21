@@ -7,6 +7,7 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import type { ProviderConfig } from '../../shared/providers/types';
 import { normalizeBaseUrl } from './config';
 import { ProviderError } from '../generation/errors';
+import { addServerToolOptions } from './server-tools';
 
 // Public diagnostics are bounded and redacted by EverChat; do not also log
 // provider warning payloads through Core's process-wide default logger.
@@ -17,16 +18,18 @@ export function providerRequestInit(
   config: ProviderConfig,
   init: RequestInit | undefined,
   includeEncrypted = false,
+  toolChoice?: 'auto' | 'none',
 ): RequestInit | undefined {
-  if (
-    config.provider !== 'openai-responses' ||
-    new URL(config.baseUrl).hostname === 'api.openai.com' ||
-    typeof init?.body !== 'string'
-  )
+  const compatibleResponses =
+    config.provider === 'openai-responses' && new URL(config.baseUrl).hostname !== 'api.openai.com';
+  if ((!compatibleResponses && !config.serverTools?.length) || typeof init?.body !== 'string')
     return init;
-  const payload = JSON.parse(init.body);
-  payload.store = false;
-  if (includeEncrypted) payload.include = ['reasoning.encrypted_content'];
+  const payload = JSON.parse(init.body) as Record<string, unknown>;
+  if (compatibleResponses) {
+    payload.store = false;
+    if (includeEncrypted) payload.include = ['reasoning.encrypted_content'];
+  }
+  addServerToolOptions(payload, config, toolChoice);
   return { ...init, body: JSON.stringify(payload) };
 }
 

@@ -6,6 +6,7 @@ import type { PublicToolTask, WebToolName } from '../tools/tasks';
 import type { ModelSelection, ReasoningEffort } from '../models/types';
 import type { ActivityIndex, ConversationActivity } from './activity';
 import type { TitleSource, TitleTaskInfo } from './titles';
+import type { ModelServerTools } from '../tools/server-tools';
 export type MessageStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 
 export interface Message {
@@ -84,6 +85,7 @@ export interface ConversationSettings {
   recentMessages: number | null;
   contextBudget: number | null;
   tools: WebToolName[];
+  serverTools?: ModelServerTools[];
   autoCompression: { enabled: boolean; threshold: number; model: ModelSelection | null };
 }
 

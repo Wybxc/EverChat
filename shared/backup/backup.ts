@@ -18,6 +18,7 @@ import { modelSchema } from '../providers/settings';
 import type { ProviderApiKind } from '../providers/types';
 import { addGenerationUsage, generationSchema } from '../streaming/generation';
 import { publicToolTaskSchema, validReasoningBreaks } from '../tools/tasks';
+import { mergeServerToolActivity } from '../tools/server-tools';
 import { inputEvidenceBackupSchema, type InputEvidenceBackup } from '../streaming/input-receipt';
 
 export const BACKUP_FORMAT = 'everchat-backup';
@@ -79,6 +80,10 @@ export interface EverChatBackup {
 
 export function backupMessage(message: Message): BackupMessage {
   const partial = message.status === 'queued' || message.status === 'running';
+  const serverTools =
+    partial && message.streamState
+      ? mergeServerToolActivity(message.generation?.serverTools, message.streamState.serverTools)
+      : undefined;
   const generation =
     partial && message.streamState
       ? {
@@ -96,6 +101,15 @@ export function backupMessage(message: Message): BackupMessage {
             usageIsFinal: false,
             usageSources: message.streamState.usageSources,
           }),
+          ...(serverTools
+            ? {
+                serverTools: serverTools.map((activity) =>
+                  activity.status === 'running'
+                    ? { ...activity, status: 'interrupted' as const }
+                    : activity,
+                ),
+              }
+            : {}),
         }
       : message.generation;
   return {

@@ -2,6 +2,7 @@ import type { DocumentPart } from '../attachments/documents';
 import type { ImagePart } from '../attachments/images';
 import type { WebToolServiceConfig } from '../web-tools/service';
 import type { TitleSettings } from '../conversation/titles';
+import type { ResolvedServerTool } from '../tools/server-tools';
 import type {
   ChatModel,
   ProviderModel,
@@ -50,6 +51,7 @@ export interface ProviderConfig {
   reasoningEffort?: ReasoningEffort;
   modelMetadata?: ResolvedModelMetadata;
   webTools?: WebToolServiceConfig;
+  serverTools?: ResolvedServerTool[];
   /** Internal MCP permission pinned at acceptance, never a supplier parameter. */
   receiptSystemPrompt?: boolean;
 }

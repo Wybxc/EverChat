@@ -46,6 +46,7 @@ import type {
 import type { ErrorIssue } from '../../shared/errors/descriptor';
 import { AppError, issueOf, problem } from '../../shared/errors/descriptor';
 import type { ChatInput, ProviderConfig } from '../../shared/providers/types';
+import { mergeServerToolActivity } from '../../shared/tools/server-tools';
 import type { SearchPage } from '../../shared/search/query';
 import { projectShare } from '../../shared/sharing/projection';
 import { commitAck, STREAM_VERSION, validateCommit } from '../../shared/streaming/batches';
@@ -112,7 +113,11 @@ import {
   type WebToolOutcome,
 } from '../../shared/tools/tasks';
 import { providerFailure } from '../providers/failure';
-import { type ProviderToolTurn } from '../providers/tool-turn';
+import {
+  needsServerToolRounds,
+  pendingProviderToolTurn,
+  type ProviderToolTurn,
+} from '../providers/tool-turn';
 import { executeWebTool, type WebToolFetch } from '../web-tools/service';
 import { WEB_TOOL_QUOTA_ERROR } from '../web-tools/settings';
 import { ToolTaskJournal, type ToolTaskState } from '../web-tools/task-journal';
@@ -1145,6 +1150,13 @@ export class Conversation extends DurableObject<Env> {
       let generationConfig: ProviderConfig;
       try {
         generationConfig = applyConversationSettings(config, settings);
+        if (
+          generationConfig.serverTools?.some(
+            ({ tool }) => tool === 'web-search' || tool === 'web-fetch',
+          ) &&
+          input.tools?.length
+        )
+          throw new AppError(problem('TOOL_INVALID'), '请为本轮选择一种联网工具执行方式。');
       } catch (error) {
         return {
           issue: issueOf(error),
@@ -1280,7 +1292,7 @@ export class Conversation extends DurableObject<Env> {
         ...(input.tools ?? []),
         ...(hasOnDemandFiles(context) ? ATTACHMENT_TOOL_NAMES : []),
       ];
-      if (enabledTools.length)
+      if (enabledTools.length || needsServerToolRounds(generationConfig))
         this.query(
           'INSERT INTO message_web_tools VALUES (?, ?, ?, ?, ?)',
           assistant.id,
@@ -2431,7 +2443,7 @@ export class Conversation extends DurableObject<Env> {
       parser.end();
       if (status === 'completed') {
         try {
-          if (toolTurn?.calls.length) parser.assertEnded();
+          if (pendingProviderToolTurn(toolTurn)) parser.assertEnded();
           else parser.assertComplete();
         } catch (failure) {
           status = 'failed';
@@ -2449,6 +2461,14 @@ export class Conversation extends DurableObject<Env> {
       message.streamState = parser.checkpoint();
       message.generation = {
         ...message.generation,
+        serverTools: mergeServerToolActivity(
+          toolModel?.round ? prior?.serverTools : undefined,
+          message.streamState.serverTools?.map((activity) =>
+            activity.status === 'running' && toolTurn?.finishReason !== 'pause'
+              ? { ...activity, status: 'interrupted' }
+              : activity,
+          ),
+        ),
         finishReason: message.streamState.finishReason,
         rawFinishReason: message.streamState.rawFinishReason,
         finishMessage: message.streamState.finishMessage,
@@ -2505,7 +2525,7 @@ export class Conversation extends DurableObject<Env> {
       message.continuation &&
       status === 'completed' &&
       !messageText(message).trim() &&
-      !toolTurn?.calls.length
+      !pendingProviderToolTurn(toolTurn)
     ) {
       status = 'failed';
       error = '供应商未返回新增正文，原回答已保留。';
@@ -2542,6 +2562,9 @@ export class Conversation extends DurableObject<Env> {
       this.accounting.finish(`model:${runId}`, {
         status,
         ...roundUsage,
+        ...(message.streamState?.serverToolUsage?.length
+          ? { serverToolUsage: message.streamState.serverToolUsage }
+          : {}),
         firstTokenMs:
           roundTiming?.firstTokenAt == null
             ? undefined

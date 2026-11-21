@@ -11,7 +11,6 @@ import type { ErrorIssue } from '../../shared/errors/descriptor';
 import { AppError, problem } from '../../shared/errors/descriptor';
 import type { ProviderConfig } from '../../shared/providers/types';
 import {
-  assertWebToolSupport,
   validateWebToolOutcome,
   type PublicToolTask,
   type WebToolCandidate,
@@ -21,6 +20,8 @@ import {
 import type { SqlQuery } from '../generation/metrics';
 import {
   providerToolIdentity,
+  assertProviderToolSupport,
+  pendingProviderToolTurn,
   webToolDefinitions,
   providerToolPrompt,
   validateProviderToolTurn,
@@ -30,7 +31,9 @@ import {
 
 export const TOOL_TASK_TIMEOUT_MS = 10 * 60_000;
 export const toolDefinitionTokens = (enabled: readonly WebToolName[], config: ProviderConfig) =>
-  estimateTextTokens(JSON.stringify(webToolDefinitions(enabled, config))) + 32;
+  estimateTextTokens(JSON.stringify(webToolDefinitions(enabled, config))) +
+  (config.serverTools?.length ? estimateTextTokens(JSON.stringify(config.serverTools)) : 0) +
+  32;
 type Terminal = 'completed' | 'failed' | 'cancelled';
 type Root = {
   id: string;
@@ -249,7 +252,7 @@ export class ToolTaskJournal {
       !/^[0-9a-f]{64}$/.test(input.requestHash)
     )
       taskError('工具任务标识无效。');
-    assertWebToolSupport(config.modelMetadata, input.enabled);
+    assertProviderToolSupport(config, input.enabled);
     const existing = this.query<Root>(
       'SELECT * FROM web_tool_tasks WHERE id = ?',
       input.id,
@@ -372,7 +375,7 @@ export class ToolTaskJournal {
     if (!publicTaskFits(projected)) taskError('工具过程超过数据库单行存储大小。');
     this.query(
       'UPDATE web_tool_models SET phase = ?, turn = ?, turnHash = ? WHERE runId = ?',
-      turn.calls.length ? 'tools' : 'completed',
+      pendingProviderToolTurn(turn) ? 'tools' : 'completed',
       payload,
       digest,
       runId,
@@ -404,7 +407,7 @@ export class ToolTaskJournal {
       ),
     );
     this.notify(root, model.round);
-    if (!turn.calls.length) this.stop(root.id, 'completed');
+    if (!pendingProviderToolTurn(turn)) this.stop(root.id, 'completed');
     return true;
   }
   claimTool(rootId: string, callId: string): boolean {
@@ -487,7 +490,7 @@ export class ToolTaskJournal {
       validateProviderToolTurn(turn, JSON.parse(root.enabled), config);
       const calls = this.calls(model.runId);
       if (
-        turn.finishReason !== 'tool-calls' ||
+        !pendingProviderToolTurn(turn) ||
         calls.length !== turn.calls.length ||
         calls.some((call) => call.outcome === null || !['completed', 'failed'].includes(call.state))
       )
@@ -523,13 +526,17 @@ export class ToolTaskJournal {
     if (round !== root.round + 1 || this.current(root).phase !== 'tools')
       taskError('不能跳过或重新开始模型轮次。');
     const exchanges = this.exchanges(rootId, round, config);
+    if (exchanges.filter(({ turn }) => turn.finishReason === 'pause').length > 3)
+      taskError('供应商工具已达到暂停续接次数上限。');
     const planned =
       root.initialTokens +
       toolDefinitionTokens(JSON.parse(root.enabled), config) +
       exchanges.reduce(
         (sum, exchange) =>
           sum +
-          estimateTextTokens(serialized(exchange.turn.content)) +
+          estimateTextTokens(
+            serialized(exchange.turn.serverReplay?.blocks ?? exchange.turn.content),
+          ) +
           estimateTextTokens(serialized(exchange.outcomes)) +
           32,
         0,

@@ -90,6 +90,28 @@ export default {
   general: 'General',
   context: 'Context',
   webTools: 'Web',
+  toolSettings: 'Tools',
+  providerTools: 'Provider tools',
+  providerToolHint: 'The selected model may use these tools during a reply. Provider rates apply.',
+  providerToolsUnavailable: 'This model and API have no verified provider tools.',
+  providerToolResources: 'Store IDs',
+  providerToolResourceHint:
+    'Enter up to two stores from this provider account, separated by commas.',
+  providerToolSaveStores: 'Use these stores',
+  providerToolNames: {
+    'web-search': 'Web search',
+    'web-fetch': 'Read URLs',
+    'file-search': 'File search',
+    'code-execution': 'Code execution',
+    'image-generation': 'Image generation',
+    shell: 'Hosted shell',
+  },
+  providerToolStatuses: {
+    running: 'Running',
+    completed: 'Completed',
+    failed: 'Failed',
+    interrupted: 'Interrupted',
+  },
   notSet: 'Not set',
   sessionChanged: 'Your sign-in session has changed.',
   invalidParameters:

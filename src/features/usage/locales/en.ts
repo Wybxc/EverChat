@@ -40,6 +40,8 @@ export default {
   partial: ' (partial)',
   invalidUsage: ' (invalid usage)',
   finalUsage: 'Final provider usage',
+  providerToolUnits: { call: 'calls', query: 'queries', 'image-query': 'image queries' },
+  providerToolEvidence: { observed: 'Observed', reported: 'Provider reported' },
   incompleteUsage: 'Incomplete usage',
   usageDetails: 'Input {{input}} · Output {{output}} · Cache read {{cache}}',
   duration: 'Duration {{seconds}} s',

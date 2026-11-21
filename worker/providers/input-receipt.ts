@@ -143,9 +143,19 @@ export function assembledInput(
   }
   return {
     items,
-    tools: [...(toolRequest?.enabled ?? [])],
-    toolDefinitionsSha256: toolRequest
-      ? inputHash(JSON.stringify(webToolDefinitions(toolRequest.enabled, config)))
-      : null,
+    tools: [
+      ...(toolRequest?.enabled ?? []),
+      ...(config.serverTools?.map(({ vendor, wireName }) => `${vendor}:${wireName}`) ?? []),
+    ],
+    toolDefinitionsSha256: config.serverTools?.length
+      ? inputHash(
+          JSON.stringify({
+            functions: webToolDefinitions(toolRequest?.enabled ?? [], config),
+            serverTools: config.serverTools,
+          }),
+        )
+      : toolRequest
+        ? inputHash(JSON.stringify(webToolDefinitions(toolRequest.enabled, config)))
+        : null,
   };
 }

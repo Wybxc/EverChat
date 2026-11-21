@@ -41,6 +41,7 @@ import { read, storageEpoch } from '../../platform/storage';
 import { PromptPresetPicker } from '../presets/PromptPresets';
 import { useWebToolSettings } from '../web-tools/web-tool-settings';
 import { writeChatCache as write } from './cache';
+import { ProviderTools } from './ProviderTools';
 import './locales';
 
 const withContextDefaults = conversationSettingsDefaults;
@@ -48,7 +49,7 @@ const withContextDefaults = conversationSettingsDefaults;
 const parameterTabs = [
   { id: 'general', label: 'general' },
   { id: 'context', label: 'context' },
-  { id: 'tools', label: 'webTools' },
+  { id: 'tools', label: 'toolSettings' },
 ] as const;
 type ParameterTab = (typeof parameterTabs)[number]['id'];
 
@@ -553,7 +554,13 @@ export function ConversationSettingsDialog({
                       ? t(($) => $.webServiceSettings)
                       : t(($) => $.configureWebService)}
                   </Button>
-                </div>{' '}
+                </div>
+                <ProviderTools
+                  key={model ? modelSelectionKey(model) : ''}
+                  model={model}
+                  settings={settings.serverTools}
+                  onChange={(serverTools) => update({ serverTools })}
+                />
                 {service.isError && !service.data && (
                   <div className="flex items-center gap-2 text-xs">
                     <span role="alert">{t(($) => $.webSettingsFailed)}</span>

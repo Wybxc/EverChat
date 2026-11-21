@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import './locales';
 import { useEffect, useRef, useState } from 'react';
-import { Globe, SlidersHorizontal } from 'lucide-react';
+import { Globe, SlidersHorizontal, Wrench } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -17,6 +17,8 @@ export function ComposerParameters({
   chooseEffort,
   webEnabled,
   toggleWeb,
+  providerToolsEnabled,
+  openTools,
   estimate,
   focusComposer,
 }: {
@@ -26,6 +28,8 @@ export function ComposerParameters({
   chooseEffort: (effort: ReasoningEffort | '') => void;
   webEnabled: boolean;
   toggleWeb: () => void;
+  providerToolsEnabled: boolean;
+  openTools: () => void;
   estimate?: ContextEstimate;
   focusComposer: () => void;
 }) {
@@ -67,17 +71,32 @@ export function ComposerParameters({
       <Globe className="size-[1.125rem]" />
     </Button>
   );
+  const providerTools = model && (
+    <Button
+      variant="ghost"
+      size="icon"
+      type="button"
+      className={`composer-icon ${providerToolsEnabled ? 'bg-accent text-accent-foreground' : ''}`}
+      aria-label={t(($) => $.providerTools)}
+      title={t(($) => $.providerTools)}
+      onClick={openTools}
+    >
+      <Wrench className="size-[1.125rem]" />
+    </Button>
+  );
   if (!compact)
     return (
       <>
         {reasoning}
         {web}
+        {providerTools}
         {estimate && <ContextEstimateView estimate={estimate} />}
       </>
     );
   return (
     <>
       {web}
+      {providerTools}
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger
           render={
